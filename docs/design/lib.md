@@ -1,16 +1,16 @@
 # lib
 
-Provisional, 2026-10-03. The design of `skein-lib`: the building blocks
-every step crate shares, in skein and in every service built on it. The
-mechanics are those of programming-model.md; this document says what lib
-holds and what each part promises.
+Provisional, 2026-10-03, revised 2026-10-10. The design of `skein-lib`:
+the building blocks every step crate shares, in skein and in every
+service built on it. The mechanics are those of programming-model.md;
+this document says what lib holds and what each part promises.
 
 ## 1. In one page
 
 - **Everything step code needs and the subset does not give it.** Typed
   handles and the slabs that issue them, bounded containers, cursors over
-  owned bytes, the stream vocabulary and its intake, deadlines, time,
-  randomness, and the environment a step reads.
+  owned bytes, secrets' bytes and base64, the stream vocabulary and its
+  intake, deadlines, time, randomness, and the environment a step reads.
 - **Bounded, and priced.** Every container has a capacity fixed when it
   is made, refuses past it, and reports its own `worst_case(capacity)`,
   bookkeeping included, so a layer adds up what its containers report.
@@ -29,6 +29,16 @@ holds and what each part promises.
 
 lib depends on nothing. Every other crate, in skein and in a service,
 depends on it. It is the only part of skein a service's domain uses.
+
+**Built for WebAssembly too.** lib, `skein-codec` and `skein-http` build
+for `wasm32-unknown-unknown` as well as for the host: none of them
+depends on io, the shell or a platform's API. A client compiled to
+WebAssembly, such as jig's in a browser, links lib's containers and
+base64, the generated codecs, HTTP's client and the event-stream reader
+(http.md, section 2), and its shell hands them what its platform streams.
+Nothing in them assumes a 64-bit `usize`: a conversion that could fail on
+a 32-bit target is checked. skein's gate builds the three for that target
+(testing.md, section 6).
 
 ## 3. Handles and slabs
 
@@ -89,6 +99,39 @@ entries.
   is an assertion.
 - **`Decimal`** holds the decimal digits of a count, for a step that
   writes a number as text without formatting: measure it, then put it.
+- **`Secret`** holds a secret's owned bytes: a credential, a token, a
+  key. Its `Debug` shows its length only, never its bytes, so a record
+  that holds one prints, logs and traces without it (codec.md, section 3).
+  Its owner reads the bytes with `expose`, which makes each use visible in
+  review. Clone, equality and `Hash` are over its bytes, as a record's
+  derives need; it neither zeroes nor locks memory (io.md, 5.3).
+
+### 6.1 Base64
+
+`lib::base64` encodes bytes as base64 text and decodes it back (RFC
+4648), for every crate that carries bytes in text: PKCE's challenge and a
+token's claims (oauth.md), PEM's certificates (shell.md, 6.2), a
+browser's screenshots (browser.md), a record in an event's data. skein's
+crates use it and keep no copy of their own.
+
+- **Two alphabets, each with its padding:** `Alphabet::Standard` (`+`,
+  `/`), padded with `=` to whole groups of four; and `Alphabet::Url` (`-`,
+  `_`), unpadded, as JWTs and PKCE use it (RFC 7515, RFC 7636).
+- **Measured, then written.** `encoded_len` gives the text's length
+  before anything is set aside, and `encode` writes into a `Writer` with
+  that much room left (section 6): nothing allocates but the box its
+  caller sized.
+- **Decoding is bounded and canonical.** `decode` takes a maximum of
+  decoded bytes and refuses past it before setting anything aside. It
+  refuses, with `base64::Error`: a symbol outside the alphabet; padding
+  where the alphabet takes none, or anywhere but the end; a length no
+  encoding has; trailing bits that are not zero. So one value has one
+  encoding.
+- **In pieces.** A `Decoder` takes text in pieces, carrying what a piece
+  leaves of a group, within the same maximum and the same refusals, so a
+  reader that skips what surrounds the text (PEM's line breaks) or
+  receives it in chunks (an event's data) decodes it without copying it
+  whole first.
 
 ## 7. Streams
 
@@ -430,3 +473,7 @@ traits, takes no closures, and uses no `dyn` (programming-model.md,
 - **A state digest** for replay: a fixed-key hasher over the state types'
   derived `Hash`, independent of their layout in memory
   (testing-strategy.md, 6).
+- **The build for `wasm32-unknown-unknown`** (section 2), **`Secret`**
+  (section 6) and **`base64`** (6.1), with skein's own copies moved onto
+  it: `skein-oauth`'s PKCE and claims, `skein-shell`'s PEM and
+  `skein-browser`'s screenshots.

@@ -1,6 +1,6 @@
 # HTTP
 
-Provisional, 2026-10-04; revised 2026-10-09. The design of
+Provisional, 2026-10-04; revised 2026-10-10. The design of
 `skein-http`: the protocol machines for HTTP/1.1, client and server, and
 for server-sent events, reader and writer. They are step machines of a
 connection's stack (programming-model.md, 4): each depends on lib only,
@@ -110,6 +110,11 @@ intake and output caps; `sse::largest_demand` against the client's
 and `writer::largest_room` against its `Limits::send`. The method and the version a start line names
 (`Method`, `Version`) and a field (`Header`) are the crate's, both sides
 the same.
+
+The crate builds for `wasm32-unknown-unknown` too (lib.md, section 2), so
+a client compiled to WebAssembly stacks the same machines: the
+event-stream reader over the body its platform's fetch streams, and the
+client wherever its shell gives it a byte stream.
 
 ## 3. The HTTP/1.1 client
 

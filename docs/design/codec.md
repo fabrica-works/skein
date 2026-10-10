@@ -1,6 +1,6 @@
 # Codecs from schemas
 
-Provisional, 2026-10-06, revised 2026-10-09. How an application protocol
+Provisional, 2026-10-06, revised 2026-10-10. How an application protocol
 built on skein encodes its records. A schema says each record's fields
 and their bounds. skein's generator turns it into plain Rust codecs,
 limits, worst cases and golden bytes, and `skein-codec` holds the little
@@ -38,8 +38,9 @@ the generated code shares. Codecs carry the bodies of a framed channel
 
 ## 2. In skein
 
-- **`skein-codec`** depends on lib only. It holds what the generated code
-  shares:
+- **`skein-codec`** depends on lib only, and builds for
+  `wasm32-unknown-unknown` as lib does (lib.md, section 2), with the code
+  generated for it. It holds what the generated code shares:
   - the reasons a decoding fails;
   - bounded reads of lengths, counts and text;
   - reading a versioned record's version.
@@ -87,6 +88,7 @@ enum Form {
 | `duration` | a `u64` of nanoseconds | `lib::Duration` |
 | `fixed N` | N bytes | `[u8; N]` |
 | `bytes N` | a `u32` length, then at most N bytes | `Box<[u8]>` |
+| `secret N` | as `bytes N` | `lib::Secret` |
 | `text N` | a `u32` length, then at most N bytes of UTF-8 | `Box<[u8]>`, checked UTF-8 |
 | `list N T` | a `u32` count, then at most N items | `lib::List<T>` |
 | `option T` | a byte, 0 for none or 1 for some, then the value | `Option<T>` |
@@ -108,6 +110,11 @@ enum Form {
 - **A record marked `versioned`** starts with its family's version, a
   `u16`. A reader of bytes kept elsewhere learns from it which code reads
   them.
+- **A credential is a `secret N`,** never `bytes N`: a token, a key, a
+  secret, a grant's value. Its bytes cross as `bytes N` would; its type,
+  lib's `Secret` (lib.md, section 6), shows only its length in `Debug`, so
+  a record that holds one is printed, logged or traced without it. Its
+  owner reads the bytes with `expose`, to use or send them.
 
 ## 4. What is generated
 
@@ -128,7 +135,8 @@ For each record and enumeration:
     them;
   - accessors read the fields, and a function that consumes the value
     hands its fields back, so bytes move and are not copied;
-  - the derives are `Debug`, `Clone`, equality and `Hash`.
+  - the derives are `Debug`, `Clone`, equality and `Hash`; a `secret`
+    field's `Debug` is its length (section 3).
 - **Measuring:** its encoded length. This cannot overflow, since the
   ceilings bound it.
 - **Encoding** into a `lib::Writer` with that much room left: the rest of a

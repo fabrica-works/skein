@@ -25,17 +25,17 @@ Section 2 names an increment of the reliability plan as
 |---|---|---|
 | `foundation/programming-model.md` | yes | 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 6: the teardown invariant (reliability 02.4); 6: state digests, transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 12: `Slab::get2_mut`, the state digest: not planned |
+| `lib.md` | partly | 2: the build for `wasm32-unknown-unknown`, 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it: not built; 13: `Slab::get2_mut`, the state digest: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 9: fixed files, 10: the ring's descriptor limit: not planned |
 | `io.md` | partly | 5.3: private files, making a directory (reliability 01.7); 6.1: `Usage` (01.8, running); 7: `Resized`, `Window` (02.6); 3.5: joined sockets, 4: in-process addresses, DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 3.3: cuts at an operation (reliability 01.11); 5: the state digest: not planned |
-| `shell.md` | partly | 6.1–6.2: startup reads, trust roots (reliability 01.10); 6.3: terminal modes (02.6, after smith's session 10); 12: `next_policy_deadline` (02.4); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
+| `shell.md` | partly | 6.1–6.2: startup reads, trust roots (reliability 01.10); 6.1: `read_private_file`: not built; 6.3: terminal modes (02.6, after smith's session 10); 12: `next_policy_deadline` (02.4); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 6: the echo's worlds under the teardown check (reliability 02.4); 8: the HTTP example, the echo's domain worlds: not planned |
-| `testing.md` | partly | 5: the teardown check (reliability 02.4); 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
+| `testing.md` | partly | 5: the teardown check (reliability 02.4); 6: the gate's build for `wasm32-unknown-unknown`: not built; 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
 | `json.md` | partly | 5.1: `Tagged` in the collector (reliability 05.tagged, running); 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
-| `http.md` | partly | 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
+| `http.md` | partly | 2: the build for `wasm32-unknown-unknown`: not built; 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
 | `tls.md` | partly | 3.4: `Config::from_der` (reliability 01.9); 8: roots read at startup (01.10); 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
-| `codec.md` | yes | 7: maps and sets, smaller integers, other languages: not planned |
+| `codec.md` | partly | 2: the build for `wasm32-unknown-unknown`, 3–4: `secret N`: not built; 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 2.5: `TimedOut { phase }` (reliability 04.12); 4.1–4.3: `Declared`, limits by meaning, `derive` and its checks (05.7, 05.8); 4.4: selective decoding (05.6); 4.7: breakpoints (04.10, running); 6: Codex routing state, WebSocket: not planned |
@@ -75,13 +75,13 @@ process trees in the end-to-end kit).
   without io_uring, and for measurements.
 - **The ring's descriptor limit** (`kernel.md`, section 10): waits for a
   way to lower it without `unsafe` outside the ring adapter.
-- **State digests for replay** (`lib.md`, section 12; `simulator.md`,
+- **State digests for replay** (`lib.md`, section 13; `simulator.md`,
   section 5; `testing-strategy.md`, section 6): waits for a plan. smith's
   worlds take them after skein's harness.
 - **Transition coverage and fuzz targets** (`testing-strategy.md`,
   section 6; the "Not built yet" sections of `json.md`, `http.md` and
   `tls.md`): wait for `cargo llvm-cov` and a nightly toolchain.
-- **`Slab::get2_mut`** (`lib.md`, section 12): waits for its first user.
+- **`Slab::get2_mut`** (`lib.md`, section 13): waits for its first user.
 - **HTTP's remaining features** (`http.md`, sections 8 and 9): chunked
   uploads, content codings, trailers, reconnecting event streams and their
   `retry` block, HTTP/2 and upgrades, a request body read while

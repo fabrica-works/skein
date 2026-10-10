@@ -1,6 +1,6 @@
 # Testing skein
 
-Provisional, 2026-10-03, revised 2026-10-09. How testing-strategy.md
+Provisional, 2026-10-03, revised 2026-10-10. How testing-strategy.md
 applies to skein itself: which tiers skein has, what they run, the
 example services and the minimal fake machine they need, where the tests
 live, what skein supplies for a service's own tiers, and where things
@@ -241,8 +241,11 @@ A machine's worlds are a crate of their own, `tests/<machine>`, with its
 transcripts in `transcripts/` beside its tests. The minimal machine joins
 the io worlds with files and processes; the protocol worlds are a crate
 of their own, `tests/protocol`. `scripts/check.sh` runs what CI runs:
-formatting, the lints as errors, then the focused suite and the fuzzy
-suite, with nextest (section 7).
+formatting, the lints as errors, a build of `skein-lib`, `skein-codec`
+and `skein-http` alone for `wasm32-unknown-unknown` (lib.md, section 2),
+then the focused suite and the fuzzy suite, with nextest (section 7). The
+build for that target needs only the target installed: it runs nothing,
+since the three hold no io and their tests run on the host.
 
 ## 7. Where things stand
 
@@ -292,6 +295,7 @@ worst case, so that it keeps reaching the limits.
   (examples.md, 8).
 - **The referee's purity** in the echo's simulated worlds: it reads
   `svc.listening()` and calls `svc.shutdown()` (examples.md, 6).
+- **The gate's build for `wasm32-unknown-unknown`** (section 6).
 
 By check: state digests for replay, transition coverage (it needs
 `cargo llvm-cov`), fuzzing.

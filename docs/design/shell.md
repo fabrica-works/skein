@@ -137,8 +137,8 @@ Before its loop, a service's `main`, with the kit:
    roots, or a DER file (6.2; tls.md);
 7. reads the seed and opens the kernel.
 
-What startup reads, its configuration and certificates, it reads with
-the kit (6.1). Then `main` makes the service and calls `drive`
+What startup reads, its configuration, its secrets and certificates, it
+reads with the kit (6.1). Then `main` makes the service and calls `drive`
 (section 12).
 
 `panic = "abort"` in every profile: a panic is fail-stop, and a
@@ -154,6 +154,26 @@ what it opened is a regular file, reads it, and closes it. It answers the
 bytes, or why not: absent, not a regular file, past its maximum, or the
 kernel's error. Once the loop runs, files are io's (io.md, 5).
 
+`read_private_file` reads a secret that configuration names (a key, a
+credential, a digest) the same way, within the same maximum, and makes
+io's private-file checks (io.md, 5.3) on what it opened before it reads a
+byte:
+
+- a regular file, reached through no link: no component of its path is
+  one;
+- no group or other permission bits;
+- one link;
+- owned by the process's effective user, which startup reads once
+  (`effective_user()`, below).
+
+Anything else is refused unread, and the service does not start: the
+refusal says what was unsafe, as io's `Unsafe` names it (a link, the
+kind, the bits, the link count, the owner). A file another user keeps
+private fails its open for want of permission; the read names it as io
+does, by a path-only open whose stat decides nothing (io.md, 5.3). The
+bytes are a secret's: the caller keeps them out of logs, traces and
+`Debug` (lib.md, section 6).
+
 **The process's own identity** is read the same way, once, at startup,
 through the ring adapter:
 - `effective_user()`, the effective user ID, for io's private files
@@ -164,6 +184,7 @@ through the ring adapter:
 Neither is read again: a process's identity does not change while it
 runs. A service never reads them itself, with `std::process` or a
 syscall of its own. It takes them from its shell.
+
 ### 6.2 Trust roots
 
 A TLS client trusts the roots its configuration names, one of two:
@@ -349,6 +370,7 @@ and changes no code above io:
   startup as a service's would (examples.md, 4). Startup is each
   service's `main`, with the kit, so the kit holds no startup function of
   its own.
+- **The private read at startup,** `read_private_file` (6.1).
 - **The readiness backend** and the deferred optimisations.
 
 ## 12. The loop: `Host` and `drive`
