@@ -27,7 +27,7 @@ Section 2 names an increment of the reliability plan as
 | `foundation/testing-strategy.md` | partly | 6: the teardown invariant (reliability 02.4); 6: state digests, transition coverage, `cargo fuzz`: not planned |
 | `lib.md` | partly | 12: `Slab::get2_mut`, the state digest: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 9: fixed files, 10: the ring's descriptor limit: not planned |
-| `io.md` | partly | 5.3: private files, making a directory (reliability 01.7); 6.1: `Usage` (01.8, running); 7: `Resized`, `Window` (02.6); 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
+| `io.md` | partly | 5.3: private files, making a directory (reliability 01.7); 6.1: `Usage` (01.8, running); 7: `Resized`, `Window` (02.6); 3.5: joined sockets, 4: in-process addresses, DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 3.3: cuts at an operation (reliability 01.11); 5: the state digest: not planned |
 | `shell.md` | partly | 6.1–6.2: startup reads, trust roots (reliability 01.10); 6.3: terminal modes (02.6, after smith's session 10); 12: `next_policy_deadline` (02.4); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 6: the echo's worlds under the teardown check (reliability 02.4); 8: the HTTP example, the echo's domain worlds: not planned |
@@ -60,6 +60,9 @@ process trees in the end-to-end kit).
   of the file system per tree, stopped whole and proved empty, in place
   of process groups. Waits for `draft/process.md` to become a design, then
   a plan of its own; smith's containment checks wait on it.
+- **Joined sockets** (`io.md`, sections 3.5 and 4): in-process
+  addresses, and sockets joined in memory within one process, for jig's
+  one-process shape. Waits for its plan, which follows.
 - **Names while running** (`io.md`, section 4; `llm-connection.md`,
   section 9): a DNS client, and the datagram sockets it needs. Waits for a
   service that must resolve while it runs.

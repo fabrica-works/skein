@@ -314,7 +314,9 @@ the load, which ends in one of three ways:
   and nothing a check refused is overwritten.
 
 **Loading again.** An account that holds no record loads again before
-it answers its next grant or sign-in. A person who fixes or removes the
+it answers its next grant or sign-in. A refresh that fails as sign in
+again drops the account's record, whose refresh token is then dead, so
+the account holds none and loads again before its next grant. A person who fixes or removes the
 file, or signs in from another process, is then heard without a
 restart. An account that holds a record never reloads it: it owns that
 record, and a store states the record's digest, so a writer elsewhere

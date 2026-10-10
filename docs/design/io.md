@@ -1,6 +1,6 @@
 # io
 
-Provisional, 2026-10-03, revised 2026-10-09. The design of `skein-io`'s
+Provisional, 2026-10-03, revised 2026-10-10. The design of `skein-io`'s
 step layer: the lowest step layer of every service. It owns sockets,
 pipes, files and child processes, the operations in flight on them, and
 the receive and send queues, and it is the only layer that sees a
@@ -27,17 +27,21 @@ descriptor or a kernel error. Below it is the kernel boundary
   durably, privately when it is a secret (5.2, 5.3); a trace or a log is
   a write stream on a file opened to append, with a write deadline for a
   filesystem that stalls (5.1).
-- **Addresses, never names.** io connects to an address; names are
-  resolved before it.
+- **Addresses, never host names.** io connects to an address: a socket
+  address, the host's name resolved before it, or an in-process name,
+  which needs no resolving (section 4).
+- **Joined sockets in one process.** A connect to an in-process name is
+  joined in memory to a socket its listener accepts, with no kernel
+  between them, through the same requests and events as TCP (3.5).
 
 ## 2. In skein
 
 `skein-io` depends on lib. A service's protocol layer depends on it, and
 so do the backends, for the kernel records. io's limits are counted in
 its worst case like any layer's: the shared entity slots, the operations
-in flight, each stream's intake and queued output, and children's pipe
-lists. The command buffers supplied to `Spawn` belong to the caller's
-memory bound.
+in flight, each stream's intake and queued output, children's pipe
+lists, and the in-process names (3.5). The command buffers supplied to
+`Spawn` belong to the caller's memory bound.
 
 ```rust
 // skein-io, the protocol side, for sockets
@@ -73,6 +77,8 @@ pub enum Event {
 }
 
 pub enum Error { Refused, Unreachable, TimedOut, Reset, Busy, Other }
+
+pub enum Addr { Ip(SocketAddr), InProcess(Name) }     // section 4
 ```
 
 An accepted socket is announced to the listener's owner, which binds to
@@ -103,9 +109,10 @@ hands the kernel.
 - **io has its own `Error`,** carrying only what the layer above can act
   on: `Refused` (nothing listened there), `Unreachable`, `TimedOut` (the
   kernel gave up on the peer), `Reset`, and `Busy`, a refusal at io's
-  entrance: no socket slot, or the kernel out of descriptors, local ports
-  or buffers. Every other kernel error is `Other`, among them an address
-  in use or not this host's; one the contract rules out is an assertion.
+  entrance: no socket slot, no in-process name free (3.5), or the kernel
+  out of descriptors, local ports or buffers. Every other kernel error is
+  `Other`, among them an address in use or not this host's; one the
+  contract rules out is an assertion.
   A stream's failure is lib's `Fault`: `Reset` when the peer is gone
   (reset, timed out, unreachable, the pipe broken), `Other` otherwise.
 - **io has no connect timeout.** That is policy above
@@ -418,15 +425,111 @@ what the containers report (programming-model.md, 6.3), including a
 child's pipe IDs and the temporary arrays on spawn completion. The
 caller budgets the command buffers it supplies to `Spawn`.
 
+### 3.5 Joined sockets
+
+A listener on an in-process name (section 4) accepts sockets joined in
+memory to those that connect to it, with no kernel between them. Their
+owners make the same requests and hear the same events, in the same
+orders, as over TCP, so a component listens and connects where its
+configuration says, and its stack runs over either. jig's one-process
+shape joins its roots this way.
+
+| On a socket | On a joined socket |
+|---|---|
+| `Socket`, `Bind`, `Listen` | the name taken, in `down` |
+| `Accept` | the first connector waiting on the name, joined |
+| `Connect` | waiting on the listener until it accepts |
+| `Recv` | none: the peer's moves fill the intake |
+| `Send` | a move into the peer's intake, as far as its room allows |
+| `Shutdown` | the peer's end, after the last byte moved |
+| `Close` | the pair unjoined |
+| `Cancel` | none: nothing waits on the kernel |
+
+The machines are 3.2's and 3.3's, each kernel operation replaced as the
+table says. The states that wait only on the kernel (a listener's
+Socket, Binding and Arming; a stream's Socket, Settling and Releasing)
+are passed through at once, and no retry deadline is ever armed.
+
+- **The name.** `Listen` takes the name for its listener until the
+  listener's `Closed`, which frees it. A name already taken, or the empty
+  name, is answered `Failed` with `Other`, as an address in use is. With
+  all `Limits::names` held, a `Listen` on a name is refused at the
+  entrance (`Busy`), as one without a slot is.
+- **Connecting.** `Connecting` comes as over TCP, and io looks the name
+  up then. A name unbound, or held by a listener that is closing, is told
+  `Failed` with `Refused`, then `Closed`. Otherwise the connector waits on
+  the listener, in its own slot and in the order connectors came, until
+  it is accepted or its owner aborts it (io has no connect timeout,
+  section 2). A listener that closes refuses those still waiting.
+- **Accepting** follows 3.2: armed one at a time while the listener's
+  owner has room, with a free slot and room in the accept batch, starved
+  without a slot. Armed, it takes the first connector waiting: io makes
+  the accepted end, joins the two, tells the listener's owner `Accepted`,
+  its `peer` the empty name, and the connector `Connected`. The owner
+  binds or rejects it as over TCP. Nothing moves into an end until it is
+  bound.
+- **Moving bytes.** Each end has an intake and an output under section
+  3's caps, and no receive buffer. One move is in flight per end, in
+  order: the head of its output, copied into the peer's intake as far as
+  that has room, a short move continuing from the same box's offset, the
+  box dropped once all of it is in. A full intake stops the peer's moves,
+  so the peer's output fills and its owner's room waits: the reader's
+  intake is the backpressure. Demands are met by 3.3's delivered, and
+  independent output reservations (3.3) are offered as on a socket, the
+  move counting as the send in flight.
+- **Ends.** A half-close reaches the peer after the last byte moved, and
+  the peer hears `End` as 3.3 tells it. A graceful close keeps section 3's
+  four steps: what is queued moves; the peer is half-closed; what the
+  peer moves meanwhile is discarded as it comes, until its own end or the
+  close deadline; then the pair is unjoined. An end whose peer has closed
+  fails as `Reset` at its next move, its bytes lost, as after TCP's late
+  reset. One whose peer aborts, is rejected, or meets its close deadline
+  before its flush is done fails as `Reset` at once, or, if closing, ends
+  its close. 3.1's rules hold as they stand; an end never settles, as it
+  has nothing in the kernel, so a close with nothing to flush or drain,
+  or an abort, is told `Closed` in the next up pass.
+- **Nothing happens inside a request.** `down` records a request and puts
+  its end on the ready list, telling nothing (section 2). io moves bytes,
+  joins, unjoins and tells what came of each when it resumes an end, in
+  the next up pass, as early as a kernel's completion could come; a move,
+  or room made in an intake, wakes the peer through the same list. A
+  joined end submits nothing and holds no slot of the operation table:
+  its move in flight is state, the head box and its offset. Boxes come
+  only from a down pass's `Send`s, and an intake drains only to a demand
+  stated there or to a close, so each up pass ends.
+- **Memory.** A pair holds two slots of `Limits::sockets`, one per end,
+  as a loopback connection within one process does. An end holds no more
+  than a socket's stream, so 3.4's bound covers it; `worst_case` adds the
+  names table, `Limits::names` entries of a name and its listener's id.
+- **In the simulator** joined sockets run as in the real loop: they are
+  io's own, never the kernel's records, so the simulator's faults and
+  latency never reach them and its trace does not show them; a cut
+  (simulator.md, 3.3) drops both ends with their process. What an end
+  meets comes from the owners at both ends and from the limits: short
+  moves under small intakes, a peer that stops reading, closes early,
+  never ends, or aborts.
+- **No TLS.** The bytes never leave the process: TLS is not stacked on a
+  joined socket, and no world checks it there.
+
 ## 4. Addresses and names
 
-- **io connects to addresses only.**
-- **To start:** the shell resolves the configured peer names at startup
-  and hands in the addresses as configuration (shell.md, 6).
-- **Later:** when a service must resolve names while it runs, the next
-  protocol machine is a DNS client over UDP sockets. It reads the hosts
-  file and the resolver configuration at startup. io gains datagram
-  sockets for it.
+- **io connects to addresses only:** an `Addr` is a socket address, IPv4
+  or IPv6 with a port, or an in-process name. The kernel's records carry
+  only socket addresses (kernel.md, 3).
+- **To start:** the shell resolves the configured peer host names at
+  startup and hands in the socket addresses as configuration (shell.md,
+  6).
+- **An in-process name** is at most `Name::MAX` bytes, compared as bytes
+  and held inline, so an `Addr` stays a plain value that allocates
+  nothing. It lives in io's own namespace: the names its listeners hold,
+  which no other process, and no other io, sees. Nothing resolves it, at
+  startup or later: configuration gives it as it is. A listener on one
+  accepts joined sockets (3.5); the empty name is a connector's, which
+  has none.
+- **Later:** when a service must resolve host names while it runs, the
+  next protocol machine is a DNS client over UDP sockets. It reads the
+  hosts file and the resolver configuration at startup. io gains
+  datagram sockets for it.
 
 ## 5. Files
 
@@ -845,6 +948,27 @@ To come with what section 9 builds:
 - **Resource usage:** in the simulator, a usage asked before and after a
   child's close, its part joining the children's only at the close; on
   the real kernel, the conformance suite's (kernel.md, 8).
+- **Joined sockets** (3.5): step tests of each cell the table changes,
+  and a check at every call that a joined end submits nothing. io worlds
+  with scripted owners at both ends of each pair, in one process: accept,
+  bind and reject, the connector then reset; connects refused by an
+  unbound name and by a closing listener; connectors waiting on a
+  listener with no room or no slot, one aborted as it waits; two
+  listeners under one accept batch; a name taken, then taken again after
+  its listener's `Closed`; every name held; an exchange both ways under
+  intakes small enough to cut every move; backpressure through io; the
+  refusal mid-upload that still reaches the peer, which hears the end and
+  no reset; abort, heard as a reset; the close deadline against a peer
+  that never ends; closes and aborts at random moments. The ledger holds
+  both halves of the stream contract as for sockets. A few seeds each in
+  the focused suite, the random one in the fuzzy suite.
+- **The same owners over either:** a calm world whose owners run the
+  same plans over a loopback pair and over a joined pair, and read the
+  same bytes, ends and failures over each.
+- **Memory:** every name held and every slot a joined end, against
+  `worst_case`.
+- **One process, on the real ring:** a listener on loopback and one on an
+  in-process name in one `drive`, an exchange over each.
 
 ## 9. Remaining work
 
@@ -863,6 +987,8 @@ built. What remains:
 - **File streams and datagram sockets,** when a user needs them.
 - **Transition coverage** of the handlers (testing-strategy.md, 6), which
   waits for `cargo llvm-cov`.
+- **Joined sockets and in-process addresses** (3.5, section 4), with
+  `Limits::names`, and their worlds (section 8).
 
 ## 10. Open questions
 
@@ -873,3 +999,7 @@ built. What remains:
 - **Operations the kernel cannot interrupt.** A cancelled write on a
   filesystem in uninterruptible sleep keeps its stream settling, and its
   process from ending (notes.md).
+- **Faults between joined ends.** The simulator's faults never reach a
+  joined pair (3.5), so an application's one-process worlds meet only
+  what the owners at either end do. Whether io gives a world a way to
+  reset a pair, or cut a move short, as a socket world can.

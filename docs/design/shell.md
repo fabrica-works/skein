@@ -1,6 +1,6 @@
 # The shell kit
 
-Provisional, 2026-10-03, revised 2026-10-09. The design of
+Provisional, 2026-10-03, revised 2026-10-10. The design of
 `skein-shell`: what a service's `main` runs its loop on. The kernel (the
 io_uring backend of the kernel boundary, kernel.md), the clock and the
 seed; the loop itself, over a service's `Host`, and how it ends; what
@@ -130,7 +130,9 @@ Before its loop, a service's `main`, with the kit:
    beneath it, but only after the device's own `open` has run. It opens
    the files it appends to beneath them, a trace among them, which io
    adopts as streams once the service is made (io.md, 5.1);
-5. resolves the configured peer names into addresses (io.md);
+5. resolves the configured peer host names into socket addresses
+   (io.md, 4), and hands on an in-process name as configured,
+   unresolved;
 6. reads certificates, keys and root stores for TLS: the machine's trust
    roots, or a DER file (6.2; tls.md);
 7. reads the seed and opens the kernel.
