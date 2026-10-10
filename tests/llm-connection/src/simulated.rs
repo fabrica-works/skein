@@ -38,7 +38,12 @@ fn limits(calls: u32) -> Limits {
             close_timeout: Duration::from_secs(1),
             retry: Duration::from_millis(1),
         },
-        tls: skein_tls::client::Limits { read: 4096, send: 4096, records: skein_tls::client::MAX_RECORD },
+        // HTTP may demand one whole head line; TLS must admit that derived read.
+        tls: skein_tls::client::Limits {
+            read: skein_llm::client::largest_read(&skein_llm_world::limits()),
+            send: 4096,
+            records: skein_tls::client::MAX_RECORD,
+        },
     }
 }
 
