@@ -73,8 +73,9 @@ and only its source renews it (section 6.3).
 
 The public flow uses a fresh transaction-specific verifier of 43–128 allowed
 ASCII bytes, and `S256`: base64url without padding of SHA-256 over the
-verifier. The verifier is supplied by the caller's seeded random source;
-the machine never draws entropy. It also takes an independent fresh state
+verifier. The verifier is supplied by the caller's seeded cryptographic
+generator (lib.md, section 8: `CryptoRng`); the machine never draws
+entropy. It also takes an independent fresh state
 value. The authorization URL carries `response_type=code`, client id,
 registered redirect URI, state, requested scope, challenge, and
 `code_challenge_method=S256`. `Visit` gives the URL to the caller to show or
@@ -212,8 +213,9 @@ the forge. Designed now; not built.
   io's vocabulary, `skein-http`, `skein-tls` and the client of sections 1 to
   5. It knows no service's domain, account names or policy.
 - **Its owner** reports its earliest deadline and fires its deadlines where
-  it fires its own, and seeds its random state, from which each sign-in's
-  state and verifier are drawn (programming-model.md, 9).
+  it fires its own, and seeds its cryptographic generator (lib.md,
+  section 8), from which each sign-in's state and verifier are drawn
+  (programming-model.md, 9).
 
 ### 6.2 Accounts
 

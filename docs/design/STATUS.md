@@ -25,7 +25,7 @@ Section 2 names an increment of the reliability plan as
 |---|---|---|
 | `foundation/programming-model.md` | yes | 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 6: the teardown invariant (reliability 02.4); 6: state digests, transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 2: the build for `wasm32-unknown-unknown`, 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it: not built; 13: `Slab::get2_mut`, the state digest: not planned |
+| `lib.md` | partly | 2: the build for `wasm32-unknown-unknown`, 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it: not built; 13: `Slab::get2_mut`, the state digest: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 9: fixed files, 10: the ring's descriptor limit: not planned |
 | `io.md` | partly | 5.3: private files, making a directory (reliability 01.7); 6.1: `Usage` (01.8, running); 7: `Resized`, `Window` (02.6); 3.5: joined sockets, 4: in-process addresses, DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 3.3: cuts at an operation (reliability 01.11); 5: the state digest: not planned |

@@ -304,7 +304,12 @@ cannot manufacture independent room.
   have passed, each removed before its handler runs. It is a pair of
   B-trees, priced at capacity.
 - **`Rng`** is a seeded generator held in a layer's state: `next_u64`,
-  `below`, `between`, `chance`.
+  `below`, `between`, `chance`. It is never used for secrets.
+- **`CryptoRng`** is a cryptographic generator held in a layer's state,
+  ChaCha20 keyed by a 32-byte seed the shell draws from the kernel at
+  start, or a world from its own seed: `fill` writes fresh bytes into a
+  bounded buffer. Whatever must not be guessed is drawn from it: secrets,
+  OAuth states and PKCE verifiers, sign-ins' secrets.
 
 ## 9. The environment
 
