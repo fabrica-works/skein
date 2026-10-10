@@ -98,6 +98,9 @@ pub enum Rule {
 
 mod arithmetic;
 
+#[cfg(test)]
+mod tests;
+
 // Archived response.headers rendered as HTTP/1.1 200 OK plus each field and
 // the blank line: tool-result-final reaches 1935 bytes and all three have 42
 // fields. Its message id/phase replay is 86 compact bytes; tool-call's item id
@@ -105,8 +108,10 @@ mod arithmetic;
 // fixed decoded bytes at tool-call's output_item.added, excluding arguments,
 // answer text and encrypted_content. These measurements travel with fixtures.
 const CODEX: arithmetic::Constants = arithmetic::Constants {
-    response_head: 1935,
-    response_fields: 42,
+    // Provider/proxy growth: at least four times the largest archived head,
+    // and never below 16 KiB / 128 fields (llm.md, sections 4.2 and 7).
+    response_head: 16 * 1024,
+    response_fields: 4 * 42,
     error_bytes: 16 * 1024,
     detail_bytes: 1024,
     metadata: 86,
@@ -128,8 +133,10 @@ const CODEX: arithmetic::Constants = arithmetic::Constants {
 // other block metadata is not replayed by this dialect. Thinking/unknown
 // envelopes belong to reasoning. Error/detail are policy (llm.md, 4.2 and 7).
 const ANTHROPIC: arithmetic::Constants = arithmetic::Constants {
-    response_head: 1435,
-    response_fields: 31,
+    // Four times 1435 bytes / 31 fields falls below both policy floors
+    // (llm.md, sections 4.2 and 7); captures fit within a quarter.
+    response_head: 16 * 1024,
+    response_fields: 128,
     error_bytes: 16 * 1024,
     detail_bytes: 1024,
     metadata: 0,

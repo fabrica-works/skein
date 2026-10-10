@@ -1,4 +1,6 @@
 //! Declared models derive both dialects before endpoint transport composition.
+use std::fmt::Write as _;
+
 use skein_llm::{Cap, Declared, Endpoint, Error, Limits, Provider, Rule, Violation, client};
 use skein_llm_world::{TINY_DECL, World, call, limits_for};
 
@@ -6,7 +8,7 @@ use skein_llm_world::{TINY_DECL, World, call, limits_for};
 fn declared_quantities_price_the_retained_event_and_leave_transport_to_the_owner() {
     let derived = Limits::derive(&TINY_DECL).expect("declaration");
     for (provider, head, fields, fixed_tokens, fixed_text, metadata, tool) in
-        [(Provider::OpenAiCodex, 1935, 42, 30, 196, 86, 78), (Provider::Anthropic, 1435, 31, 29, 202, 0, 47)]
+        [(Provider::OpenAiCodex, 16384, 168, 30, 196, 86, 78), (Provider::Anthropic, 16384, 128, 29, 202, 0, 47)]
     {
         let limits = derived.dialect(provider);
         assert_eq!(limits.http.head, head);
@@ -114,7 +116,7 @@ fn captured_head(provider: Provider, scenario: &str) -> (Vec<u8>, u32) {
 }
 
 #[test]
-fn archived_heads_reach_each_derived_bound_and_complete_with_derived_limits() {
+fn archived_heads_fit_with_headroom_and_complete_with_derived_limits() {
     for provider in [Provider::OpenAiCodex, Provider::Anthropic] {
         let bounds = limits_for(provider);
         let mut maximum = 0;
@@ -146,7 +148,45 @@ fn archived_heads_reach_each_derived_bound_and_complete_with_derived_limits() {
                 world.seen
             );
         }
-        assert_eq!(maximum, bounds.http.head);
-        assert_eq!(maximum_fields, bounds.http.headers);
+        assert!(maximum <= bounds.http.head / 4);
+        assert!(maximum_fields <= bounds.http.headers / 4);
     }
+}
+
+#[test]
+fn a_codex_response_with_one_hundred_fields_in_nine_kib_completes() {
+    let body = skein_llm_world::events(&[
+        skein_llm_world::TEXT_ADDED,
+        skein_llm_world::TEXT_DELTA,
+        skein_llm_world::TEXT_DONE,
+        skein_llm_world::TERMINAL,
+    ]);
+    let mut headers = "Content-Type: text/event-stream\r\n".to_owned();
+    // Content-Type, Content-Length, this padded field and 97 extension fields.
+    headers.push_str("X-Padding: ");
+    let mut extensions = String::new();
+    for index in 0..97 {
+        write!(extensions, "X-{index}: x\r\n").unwrap();
+    }
+    let bare = skein_llm_world::response(200, &(headers.clone() + "\r\n" + &extensions), &body, false);
+    let size = bare.windows(4).position(|part| part == b"\r\n\r\n").unwrap() + 4;
+    headers.extend(std::iter::repeat_n('x', 9 * 1024 - size));
+    headers.push_str("\r\n");
+    headers.push_str(&extensions);
+    let wire = skein_llm_world::response(200, &headers, &body, false);
+    let head = wire.windows(4).position(|part| part == b"\r\n\r\n").unwrap() + 4;
+    assert_eq!(head, 9 * 1024);
+    assert_eq!(wire[..head].split(|byte| *byte == b'\n').count() - 3, 100);
+    let mut world = World::new(call(1), limits_for(Provider::OpenAiCodex), wire, 29);
+    world.fragmentation(31, 1);
+    world.request(client::Request::Start);
+    world.run();
+    world.settle();
+    world.assert_once();
+    assert!(
+        world.seen.iter().any(|event| matches!(event, client::Event::Completed { completion, .. }
+        if matches!(completion.content.as_ref(), [skein_llm::Block::Text { text, .. }] if text.as_ref() == b"Hello"))),
+        "{:?}",
+        world.seen
+    );
 }
