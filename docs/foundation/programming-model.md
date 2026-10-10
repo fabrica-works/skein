@@ -1,6 +1,6 @@
 # Programming model (Rust)
 
-Provisional, 2026-10-03, revised 2026-10-09. How code is written in skein
+Provisional, 2026-10-03, revised 2026-10-10. How code is written in skein
 and in every service built on it. Read this first, before writing or
 reviewing any of it.
 
@@ -275,6 +275,15 @@ the shell's kernel, clock and seed, and the simulator. A service provides
 its protocol layer, domain, `iterate` and the shell's loop, may add
 machines of its own, and has worlds: test harnesses that run its layers
 against fakes, or its `iterate` on the simulator.
+
+- **A hint for naming a consumer's crates:** by layer, under the
+  project's name: `<project>-domain-<name>` for a domain and its child
+  domains, `<project>-protocol-<name>` for the protocol layer's machines,
+  components, codecs and translations, and `<project>-service` for its
+  `iterate`; test kits and worlds by their kind. A crate's name then says
+  what it may depend on. The layers need not pair up: a domain crate has
+  no protocol crate of the same name, and the reverse. skein's own crates
+  are named by what they provide, as a kit's are.
 
 - **Every completion goes through io first.** The domain never sees a raw
   completion, a file descriptor, a kernel error code or a half-filled
