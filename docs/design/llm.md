@@ -378,7 +378,9 @@ derivation's own:
   send, follow the transport (llm-connection.md, section 7).
 - **Heads.** The request head's limit is measured per endpoint
   (llm-connection.md, section 3). The response head and its field count
-  are the dialect's constants, sized for its provider's header set.
+  are the dialect's constants, sized for its provider's header set with
+  headroom (section 7): the provider and every proxy in front of it add
+  headers without notice.
 - **The error body** and the failure detail are the dialect's constants.
   An error body is evidence for the failure's detail and its finer class
   (a context too long, a retry hint in the body). It never decides
@@ -640,10 +642,18 @@ unless marked:
   within Codex's `input_tokens`, as cached tokens are, is not yet seen on
   the wire. Section 4.6 assumes it is; a capture that shows otherwise
   changes only the dialect's arithmetic.
-- **`TOKEN_BYTES`** and the dialects' smallest tool and item, and
-  response head constants, are set from captures, and checked against
-  fresh captures as models change, which a consumer's benchmarks can
-  take.
+- **`TOKEN_BYTES`** and the dialects' smallest tool and item are set
+  from captures, and checked against fresh captures as models change,
+  which a consumer's benchmarks can take.
+- **A bound on what the provider sends has headroom over its captures.**
+  The response head's bytes and fields are the provider's and its
+  proxies' to grow. Each is at least four times the largest captured,
+  and never below 16 KiB and 128 fields: 16 KiB and 168 fields for
+  Codex, 16 KiB and 128 fields for Anthropic. Each capture must fit
+  within a quarter of its bound. A fresh capture past a quarter is a
+  warning to raise the bound, and is never met by a live failure first.
+  On 2026-10-10, bounds set at exactly the largest capture (1,935 bytes,
+  42 fields) failed every live Codex call.
 - **The error body's bound is a policy value,** since a body past it
   changes no class (4.2): 16 KiB for each dialect. That holds any
   provider's JSON error with room to spare, at a worst case the memory
