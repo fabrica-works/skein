@@ -22,17 +22,19 @@ smith never names temper, and jig never names temper.
 ## The process
 
 skein's `docs/foundation/development.md` says how work goes from an idea
-to `main`: the roles (designer, planner, coordinator, implementer), where
-designs, plans and runs live, how increments land, and how a run
-escalates. Its tools are in `skein/scripts/dev/`: `heavy`, `land` and
-`plan`.
+to `main`: the roles (designer, planner, supervisor, coordinator,
+implementer, and the retrospective's author), where designs, plans and
+runs live, how increments land, how a run is supervised and escalates,
+and how it ends with a retrospective and its metrics. Its tools are in
+`skein/scripts/dev/`: `heavy`, `land` and `plan`.
 
 - **The design** of each project is in `<repository>/docs/design/`, with
   drafts in `docs/design/draft/`. Only the designer edits it.
 - **How far each project is from its design** is in
   `<repository>/docs/design/STATUS.md`.
-- **Plans** are in `docs/plans/<plan>/` of the most downstream repository
-  they change.
+- **Plans** are in `docs/development/plans/<plan>/` of the most
+  downstream repository they change, with their retrospective and
+  metrics once run.
 - **A run's state** is in `tmp/<repository>/<plan>/`, and
   `tmp/active-plan` names this machine's run.
 
@@ -57,23 +59,38 @@ say:
 **A plan.** In the designer's session or a fresh one:
 
 > Plan <the design documents, or the STATUS.md rows> as development.md,
-> section 5, says, in <repository>/docs/plans/<name>/.
+> section 5, says, in <repository>/docs/development/plans/<name>/.
 
 **A run.** Run these from `~/src/rust`:
 
-1. `plan check --fix <repository>/docs/plans/<name>`, until it passes.
-2. `plan claim <repository>/docs/plans/<name>`
-3. Start the coordinator:
+1. `plan check --fix <repository>/docs/development/plans/<name>`, until
+   it passes.
+2. `plan claim <repository>/docs/development/plans/<name>`
+3. Start the supervisor: Claude (Opus 5.5, effort xhigh) in `~/src/rust`,
+   on the same machine:
+
+   > Supervise the run of <repository>/docs/development/plans/<name> as
+   > skein's docs/foundation/development.md, sections 2.5, 3.3, 4.5, 6,
+   > 7.6, 10 and 14, say.
+
+4. Start the coordinator:
 
    ```
-   codex -p coordinator "Coordinate the run of <repository>/docs/plans/<name>,
+   codex -p coordinator "Coordinate the run of <repository>/docs/development/plans/<name>,
    as skein's docs/foundation/development.md, section 7, says."
    ```
 
-4. Then, in the designer's Claude session, on the same machine:
+5. If the plan may raise design questions, in the designer's Claude
+   session, on the same machine:
 
-   > The run of <name> has started: mark it active and watch it, as
-   > development.md, sections 6 and 10.5, say.
+   > Answer the design questions of the run of <name> as development.md,
+   > sections 2.1, 6, 10.4 and 10.5, say.
+
+**After a run.** Start a fresh Claude (Opus 5.5, effort xhigh) in
+`~/src/rust`:
+
+> Write the retrospective of the run of <name>, as skein's
+> docs/foundation/development.md, section 15, says.
 
 **Where things stand:**
 - a run: `cat tmp/<repository>/<plan>/status.md`, or `plan status`;
@@ -115,4 +132,4 @@ When the plan ends:
 - smith's primary checkout returns to `main`, and every landing pushes;
 - smith and temper get `scripts/check.sh`;
 - the push rules in the repositories' `AGENTS.md` become "land pushes";
-- the plan moves to `smith/docs/plans/reliability/`.
+- the plan moves to `smith/docs/development/plans/reliability/`.
