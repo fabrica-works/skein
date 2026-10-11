@@ -1,11 +1,239 @@
 //! Bridge between the provider-neutral vocabulary and Codex documents.
+//! No state or owner references are retained. Measurement and encoding borrow
+//! schemas/replay into the reserved bytes (llm.md, sections 4.2, 4.5 and 4.7).
 use crate::{Block, Error, Failure, Prompt, Provider, Replay, Role, Stop, Usage, openai};
 use alloc::boxed::Box;
 use skein_json::{Kind, writer};
+#[cfg(test)]
 use skein_lib::{List, Writer, bytes};
 
 const TOOL_ERROR: &[u8] = b"Error: ";
 
+/// Measures the borrowed vocabulary without constructing a native request.
+pub(crate) fn measure_request(prompt: &Prompt, limits: &openai::Limits) -> Result<u32, Error> {
+    validate_codex(prompt, limits)?;
+    let bounded = writer::Limits { depth: limits.depth, length: limits.request };
+    let mut out = writer::Encoder::measure(&bounded);
+    write_request(&mut out, prompt)?;
+    match openai::measured(out, bounded, crate::Cap::Request) {
+        Ok(length) => Ok(length),
+        Err(error) => Err(decode(error)),
+    }
+}
+
+/// Writes directly into the reserved body; schemas, text and replay stay borrowed.
+pub(crate) fn encode_request(prompt: &Prompt, limits: &openai::Limits) -> Result<Box<[u8]>, Error> {
+    let length = measure_request(prompt, limits)?;
+    let mut out = writer::Encoder::write(length, &writer::Limits { depth: limits.depth, length: limits.request });
+    write_request(&mut out, prompt)?;
+    Ok(out.finish())
+}
+
+fn validate_codex(prompt: &Prompt, limits: &openai::Limits) -> Result<(), Error> {
+    if prompt.max_output_tokens.is_some() {
+        return Err(Error::Unsupported);
+    }
+    validate(prompt, Provider::OpenAiCodex, limits)
+}
+
+fn write_request(out: &mut writer::Encoder, prompt: &Prompt) -> Result<(), Error> {
+    out.object_start();
+    out.key(b"model");
+    out.string(&prompt.model);
+    out.key(b"instructions");
+    out.string(&prompt.instructions);
+    out.key(b"stream");
+    out.boolean(true);
+    out.key(b"store");
+    out.boolean(false);
+    out.key(b"include");
+    out.array_start();
+    out.string(b"reasoning.encrypted_content");
+    out.array_end();
+    out.key(b"tools");
+    out.array_start();
+    for tool in &prompt.tools {
+        out.object_start();
+        out.key(b"type");
+        out.string(b"function");
+        out.key(b"name");
+        out.string(&tool.name);
+        out.key(b"description");
+        out.string(&tool.description);
+        out.key(b"parameters");
+        tool.schema.write(out);
+        out.key(b"strict");
+        out.boolean(false);
+        out.object_end();
+    }
+    out.array_end();
+    out.key(b"tool_choice");
+    out.string(match &prompt.choice {
+        crate::ToolChoice::Auto | crate::ToolChoice::Only(_) => b"auto",
+        crate::ToolChoice::None => b"none",
+    });
+    out.key(b"parallel_tool_calls");
+    out.boolean(true);
+    out.key(b"input");
+    out.array_start();
+    for message in &prompt.messages {
+        for block in &message.content {
+            write_block(out, block, message.role)?;
+        }
+    }
+    out.array_end();
+    if let Some(effort) = &prompt.reasoning_effort {
+        out.key(b"reasoning");
+        out.object_start();
+        out.key(b"effort");
+        out.string(effort);
+        out.object_end();
+    }
+    if let Some(affinity) = prompt.affinity {
+        out.key(b"prompt_cache_key");
+        out.string(&crate::affinity::uuid(&affinity.key));
+    }
+    out.key(b"text");
+    out.object_start();
+    out.key(b"verbosity");
+    out.string(openai::identity::VERBOSITY);
+    out.object_end();
+    out.object_end();
+    Ok(())
+}
+
+fn write_block(out: &mut writer::Encoder, block: &Block, role: Role) -> Result<(), Error> {
+    match block {
+        Block::Dropped { .. } => {}
+        Block::Oversize { .. } | Block::Cut { .. } => return Err(Error::Invalid),
+        Block::Reasoning { replay } => write_reasoning(out, replay)?,
+        Block::Text { text, replay } | Block::Refusal { text, replay } => {
+            let refusal = match block {
+                Block::Refusal { .. } => true,
+                Block::Text { .. } => false,
+                Block::ToolCall { .. }
+                | Block::ToolResult { .. }
+                | Block::Reasoning { .. }
+                | Block::Oversize { .. }
+                | Block::Cut { .. }
+                | Block::Dropped { .. } => unreachable!("text arm"),
+            };
+            out.object_start();
+            out.key(b"type");
+            out.string(b"message");
+            out.key(b"role");
+            out.string(match role {
+                Role::User => b"user",
+                Role::Assistant => b"assistant",
+            });
+            if let Some(id) = replay_text_ref(replay.as_ref(), b"id")? {
+                out.key(b"id");
+                out.string(id);
+            }
+            if let Some(phase) = replay_text_ref(replay.as_ref(), b"phase")? {
+                out.key(b"phase");
+                out.string(phase);
+            }
+            out.key(b"content");
+            out.array_start();
+            out.object_start();
+            out.key(b"type");
+            out.string(match role {
+                Role::User => b"input_text",
+                Role::Assistant => {
+                    if refusal {
+                        b"refusal"
+                    } else {
+                        b"output_text"
+                    }
+                }
+            });
+            out.key(if refusal { b"refusal" } else { b"text" });
+            out.string(text);
+            out.object_end();
+            out.array_end();
+            out.object_end();
+        }
+        Block::ToolCall { id, name, arguments, replay } => {
+            out.object_start();
+            out.key(b"type");
+            out.string(b"function_call");
+            out.key(b"call_id");
+            out.string(id);
+            if let Some(item) = replay_text_ref(replay.as_ref(), b"item_id")? {
+                out.key(b"id");
+                out.string(item);
+            }
+            out.key(b"name");
+            out.string(name);
+            out.key(b"arguments");
+            out.string(arguments);
+            out.object_end();
+        }
+        Block::ToolResult { id, text, is_error } => {
+            out.object_start();
+            out.key(b"type");
+            out.string(b"function_call_output");
+            out.key(b"call_id");
+            out.string(id);
+            out.key(b"output");
+            if *is_error {
+                out.string_parts(&[TOOL_ERROR, text]);
+            } else {
+                out.string(text);
+            }
+            out.object_end();
+        }
+    }
+    Ok(())
+}
+
+fn write_reasoning(out: &mut writer::Encoder, replay: &Replay) -> Result<(), Error> {
+    let view = replay.value.view();
+    let kind = match openai::json::required(view, b"type") {
+        Ok(value) => value,
+        Err(error) => return Err(decode(error)),
+    };
+    let kind = match openai::json::value_at(view, kind) {
+        Ok(value) => value,
+        Err(error) => return Err(decode(error)),
+    };
+    let text = match openai::json::text_ref(kind) {
+        Ok(value) => value,
+        Err(error) => return Err(decode(error)),
+    };
+    match text {
+        b"" | b"message" | b"function_call" | b"function_call_output" => return Err(Error::Invalid),
+        _ => replay.value.write(out),
+    }
+    Ok(())
+}
+
+fn replay_text_ref<'a>(replay: Option<&'a Replay>, name: &[u8]) -> Result<Option<&'a [u8]>, Error> {
+    let Some(replay) = replay else {
+        return Ok(None);
+    };
+    let view = replay.value.view();
+    let at = match openai::json::field(view, name) {
+        Ok(Some(at)) => at,
+        Ok(None) => return Ok(None),
+        Err(error) => return Err(decode(error)),
+    };
+    let value = match openai::json::value_at(view, at) {
+        Ok(value) => value,
+        Err(error) => return Err(decode(error)),
+    };
+    if openai::json::len(value) == 1 && openai::json::kind(value, 0) == Some(Kind::Null) {
+        Ok(None)
+    } else {
+        match openai::json::text_ref(value) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) => Err(decode(error)),
+        }
+    }
+}
+
+#[cfg(test)]
 #[expect(clippy::manual_map, reason = "the strict subset excludes closure-taking maps")]
 pub(crate) fn request(prompt: &Prompt, provider: Provider, limits: &openai::Limits) -> Result<openai::Request, Error> {
     if provider != Provider::OpenAiCodex || prompt.max_output_tokens.is_some() {
@@ -366,6 +594,7 @@ fn metadata(replay: Option<&Replay>, first: &[u8], second: &[u8]) -> Result<(), 
     }
     Ok(())
 }
+#[cfg(test)]
 fn input_block(block: &Block, role: Role) -> Result<openai::Input, Error> {
     match block {
         Block::Oversize { .. } | Block::Cut { .. } | Block::Dropped { .. } => Err(Error::Invalid),
@@ -430,6 +659,7 @@ fn input_block(block: &Block, role: Role) -> Result<openai::Input, Error> {
         }
     }
 }
+#[cfg(test)]
 fn replay_text(replay: Option<&Replay>, name: &[u8]) -> Result<Option<Box<[u8]>>, Error> {
     let Some(replay) = replay else {
         return Ok(None);
@@ -571,7 +801,7 @@ pub(crate) const fn failure(value: openai::Failure) -> Failure {
 
 #[cfg(test)]
 mod tests {
-    use super::{failure, part, request, stop, usage};
+    use super::{failure, part, stop, usage};
     use crate::{Block, Error, Failure, Message, Prompt, Provider, Replay, Role, Stop, Usage, openai};
     use alloc::boxed::Box;
     use skein_lib::{Duration, bytes};
@@ -593,6 +823,13 @@ mod tests {
         receiving: 1_048_576,
         skip: 8192,
     };
+    // The old owned translator is a test oracle only: every successful replay
+    // shape exercises the borrowed encoder against its previous exact bytes.
+    fn request(prompt: &Prompt, provider: Provider, limits: &openai::Limits) -> Result<openai::Request, Error> {
+        let raw = super::request(prompt, provider, limits)?;
+        assert_eq!(super::encode_request(prompt, limits)?, openai::encode_request(&raw, limits).unwrap());
+        Ok(raw)
+    }
     fn prompt(role: Role, block: Block) -> Prompt {
         Prompt {
             model: bytes::copy_of(b"test"),
@@ -603,6 +840,85 @@ mod tests {
             affinity: None,
             choice: crate::ToolChoice::Auto,
             max_output_tokens: None,
+        }
+    }
+    #[test]
+    #[expect(
+        clippy::disallowed_types,
+        clippy::disallowed_methods,
+        clippy::disallowed_macros,
+        reason = "ordinary fixture code converts archived native values to neutral prompts"
+    )]
+    fn borrowed_encoder_matches_every_archived_codex_request() {
+        for scenario in ["single-text", "tool-call", "tool-result-final"] {
+            let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/openai/fixtures")
+                .join(scenario)
+                .join("request.json");
+            let captured = std::fs::read(file).unwrap();
+            let wrapper = openai::Json::from_bytes(&captured, &LIMITS.document()).unwrap();
+            let body = openai::json::text_ref(
+                openai::json::value_at(wrapper.view(), openai::json::required(wrapper.view(), b"body").unwrap())
+                    .unwrap(),
+            )
+            .unwrap();
+            let native =
+                openai::decode_request(&openai::Json::from_bytes(body, &LIMITS.document()).unwrap(), &LIMITS).unwrap();
+            let expected = openai::encode_request(&native, &LIMITS).unwrap();
+            assert!(native.prompt_cache_key.is_none());
+            let tools = native
+                .tools
+                .into_vec()
+                .into_iter()
+                .map(|tool| crate::Tool { name: tool.name, description: tool.description, schema: tool.schema })
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            let messages = native
+                .input
+                .into_vec()
+                .into_iter()
+                .map(|input| {
+                    let (role, block) = match input {
+                        openai::Input::Message { role, text, id, phase, refusal } => {
+                            assert!(id.is_none() && phase.is_none());
+                            let role = match role {
+                                openai::Role::User => Role::User,
+                                openai::Role::Assistant => Role::Assistant,
+                            };
+                            let block = if refusal {
+                                Block::Refusal { text, replay: None }
+                            } else {
+                                Block::Text { text, replay: None }
+                            };
+                            (role, block)
+                        }
+                        openai::Input::FunctionCall { call_id, item_id, name, arguments } => {
+                            assert!(item_id.is_none());
+                            (Role::Assistant, Block::ToolCall { id: call_id, name, arguments, replay: None })
+                        }
+                        openai::Input::FunctionOutput { call_id, output } => {
+                            (Role::User, Block::ToolResult { id: call_id, text: output, is_error: false })
+                        }
+                        openai::Input::Opaque { value } => (
+                            Role::Assistant,
+                            Block::Reasoning { replay: Replay { provider: Provider::OpenAiCodex, value } },
+                        ),
+                    };
+                    Message { role, content: Box::new([block]) }
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            let input = Prompt {
+                model: native.model,
+                instructions: native.instructions,
+                tools,
+                messages,
+                reasoning_effort: native.effort,
+                affinity: None,
+                choice: native.choice,
+                max_output_tokens: None,
+            };
+            assert_eq!(super::encode_request(&input, &LIMITS).unwrap(), expected, "{scenario}");
         }
     }
     #[test]

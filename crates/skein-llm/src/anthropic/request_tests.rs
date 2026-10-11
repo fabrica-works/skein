@@ -508,3 +508,43 @@ fn native_peer_admits_four_cache_marks_and_refuses_invalid_markers() {
         let _error = super::decode_request(&value, &LIMITS).expect_err("invalid cache marker");
     }
 }
+
+#[test]
+fn argument_text_keeps_the_previous_invalid_argument_failures() {
+    let cases = [
+        b"".as_slice(),
+        b"{",
+        b"{} {}",
+        b"[1,]",
+        b"[]",
+        b"null",
+        b"{\"x\":01}",
+        b"{\"x\":\"\\uD800\"}",
+        b"{\"x\":\"\xFF\"}",
+        b"{\"x\":\"\x01\"}",
+        b"{\"x\":111111111111111111111111111111111}",
+    ];
+    for arguments in cases {
+        let legacy = match Json::from_bytes(arguments, &LIMITS.request_document()) {
+            Err(error) => Err(crate::translate::decode(error)),
+            Ok(value) => {
+                if openai::json::kind(value.view(), 0) == Some(skein_json::Kind::ObjectStart) {
+                    Ok(())
+                } else {
+                    Err(Error::Invalid)
+                }
+            }
+        };
+        assert!(legacy.is_err(), "control is invalid");
+        let input = prompt(
+            Role::Assistant,
+            Block::ToolCall {
+                id: bytes::copy_of(b"call"),
+                name: bytes::copy_of(b"read"),
+                arguments: bytes::copy_of(arguments),
+                replay: None,
+            },
+        );
+        assert_eq!(measure_request(&input, 4096, &LIMITS).err(), legacy.err(), "{arguments:?}");
+    }
+}

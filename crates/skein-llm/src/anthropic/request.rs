@@ -418,13 +418,6 @@ fn write_block(out: &mut writer::Encoder, block: &Block, marked: bool, limits: &
             out.object_end();
         }
         Block::ToolCall { id, name, arguments, replay: _ } => {
-            let value = match Json::from_bytes(arguments, &limits.request_document()) {
-                Ok(value) => value,
-                Err(error) => return Err(crate::translate::decode(error)),
-            };
-            if openai::json::kind(value.view(), 0) != Some(Kind::ObjectStart) {
-                return Err(Error::Invalid);
-            }
             out.object_start();
             out.key(b"type");
             out.string(b"tool_use");
@@ -433,7 +426,7 @@ fn write_block(out: &mut writer::Encoder, block: &Block, marked: bool, limits: &
             out.key(b"name");
             out.string(name);
             out.key(b"input");
-            value.write(out);
+            write_arguments(out, arguments, limits)?;
             cache_control(out, marked);
             out.object_end();
         }
@@ -452,6 +445,41 @@ fn write_block(out: &mut writer::Encoder, block: &Block, marked: bool, limits: &
         }
     }
     Ok(())
+}
+
+fn write_arguments(out: &mut writer::Encoder, arguments: &[u8], limits: &openai::Limits) -> Result<(), Error> {
+    let bounded = skein_json::tokenizer::Limits {
+        depth: limits.depth,
+        string: 0,
+        number: 32,
+        chunk: 256,
+        length: limits.request,
+    };
+    if let Err(error) = out.json_text(arguments, &bounded) {
+        return Err(match error {
+            skein_json::tokenizer::Error::TooLong => Error::limit(crate::Cap::Retained, limits.request),
+            skein_json::tokenizer::Error::TooDeep => Error::limit(crate::Cap::Depth, limits.depth),
+            skein_json::tokenizer::Error::NumberTooLong => Error::limit(crate::Cap::Number, 32),
+            skein_json::tokenizer::Error::StringTooLong => Error::limit(crate::Cap::Strings, limits.request),
+            skein_json::tokenizer::Error::Unexpected
+            | skein_json::tokenizer::Error::Trailing
+            | skein_json::tokenizer::Error::Number
+            | skein_json::tokenizer::Error::Escape
+            | skein_json::tokenizer::Error::Surrogate
+            | skein_json::tokenizer::Error::Utf8
+            | skein_json::tokenizer::Error::Control
+            | skein_json::tokenizer::Error::Truncated
+            | skein_json::tokenizer::Error::Stream(_) => Error::Invalid,
+        });
+    }
+    for byte in arguments {
+        match byte {
+            b' ' | b'\t' | b'\r' | b'\n' => {}
+            b'{' => return Ok(()),
+            _ => return Err(Error::Invalid),
+        }
+    }
+    Err(Error::Invalid)
 }
 
 fn has_native_block(content: &[Block]) -> bool {

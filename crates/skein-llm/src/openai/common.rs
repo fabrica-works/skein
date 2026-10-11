@@ -50,17 +50,36 @@ impl Limits {
         tokenizer::Limits { depth: self.depth, string: self.strings, number: 32, chunk: 256, length: self.skip }
     }
 }
-/// A conservative bound for native admission, request encoding and decoded
-/// output. The client's selective collector prices streamed events separately.
+/// Fixed scratch for writing borrowed requests (llm.md, section 4.2).
+/// The body belongs to its reservation; nesting and grammar are the only heap.
+#[must_use]
+pub fn encoding_worst_case(limits: &Limits) -> Option<u64> {
+    let writer = writer::worst_case(&writer::Limits { depth: limits.depth, length: 0 })?;
+    let grammar = tokenizer::validation_worst_case(&tokenizer::Limits {
+        depth: limits.depth,
+        string: 0,
+        number: 32,
+        chunk: 256,
+        length: 0,
+    })?;
+    writer
+        .checked_mul(2)?
+        .checked_add(grammar)?
+        .checked_add(u64::try_from(size_of::<writer::Encoder>()).ok()?.checked_mul(2)?)?
+        .checked_add(u64::try_from(size_of::<tokenizer::Tokenizer>()).ok()?)
+}
+
+/// Conservative native whole-value admission and decoded output bounds.
+/// Request encoding uses `encoding_worst_case`, without compact copies.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     // Native temporary values belong to the request, answer or replay
     // budgets. A discarded wire event contributes no document-sized buffer.
     let temporary = limits.request.max(limits.answer).max(limits.input).max(limits.reasoning).max(limits.metadata);
     let tokens = document::worst_case(&document::Limits { tokens: limits.tokens, text: temporary })?;
-    // Translation validates the aggregate request before it clones it.
+    // Standalone whole-value request decoding admits caller documents here.
     // Every JSON token costs at least one byte in that request budget.
-    // The caller's prompt and its translated copy may coexist until encoding.
+    // Its collector and the decoded native documents may briefly coexist.
     let request_count = u64::from(limits.request);
     let request_tokens = request_count.checked_mul(u64::try_from(size_of::<Compact>()).ok()?)?.checked_mul(2)?;
     let answer_records = u64::from(limits.output_items)
