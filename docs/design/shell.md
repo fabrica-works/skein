@@ -152,6 +152,16 @@ what it opened is a regular file, reads it, and closes it. It answers the
 bytes, or why not: absent, not a regular file, past its maximum, or the
 kernel's error. Once the loop runs, files are io's (io.md, 5).
 
+**The process's own identity** is read the same way, once, at startup,
+through the ring adapter:
+- `effective_user()`, the effective user ID, for io's private files
+  (io.md, 5.3);
+- `process_id()`, the process ID, for a service that reports it, such
+  as smith's `session.started`.
+
+Neither is read again: a process's identity does not change while it
+runs. A service never reads them itself, with `std::process` or a
+syscall of its own. It takes them from its shell.
 ### 6.2 Trust roots
 
 A TLS client trusts the roots its configuration names, one of two:
