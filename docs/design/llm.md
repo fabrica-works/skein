@@ -380,6 +380,17 @@ derivation's own:
   272,000-token window, and allocates them all. The owner declares them
   instead. A request within its byte limit that would carry more is
   refused by name, as any count past its bound is.
+- **The encoding scratch follows the items.** A request is built in
+  compact documents and tokens before it is encoded. Their bound is:
+  - the request's declared counts (history items, tools, calls) times
+    the dialect's tokens per item;
+  - plus its fixed fields.
+
+  It is never derived from the encoded request's bytes, a token per
+  byte, which charged 577 MB for one 272,000-token window. The tokens
+  per item are the dialect's constant, set from captures with headroom
+  (section 7). The component holds one scratch, which one call's
+  preparation uses at a time, since a step prepares one call.
 - **Sent text has no cap of its own.** A string the caller sends is
   bounded by the request as a whole; what the caller renders into it is
   the caller's to bound.

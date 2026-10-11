@@ -284,6 +284,8 @@ client's evidence: unsent, possibly sent, or a response received.
     state. These are the socket's own buffers, never the owner's io worst
     case, which the owner counts once;
   - the waiting calls' records, `calls` of them;
+  - one encoding scratch, which one call's preparation uses at a time
+    (llm.md, 4.2), never one per call or per connection;
   - and the component's own state.
 
   The pool at least one largest call's reservation is checked when the
