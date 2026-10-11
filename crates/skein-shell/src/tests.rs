@@ -12,6 +12,11 @@ use skein_scratch::Scratch;
 use crate::ring::{Config, Kernel, Wait, close, list, open_root, status_flags};
 
 #[test]
+fn startup_process_id_is_this_process() {
+    assert_eq!(crate::process_id(), std::process::id());
+}
+
+#[test]
 fn a_name_that_fits_in_no_names_is_too_long_and_stays_next() {
     let scratch = Scratch::new("shell");
     fs::write(scratch.path().join("a-name-of-twenty-bytes"), b"").expect("a file laid");

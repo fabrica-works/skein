@@ -1672,6 +1672,14 @@ pub fn effective_user() -> u32 {
     unsafe { libc::geteuid() }
 }
 
+/// The process ID, read once by startup for the service's report (shell.md, section 6.1).
+#[must_use]
+pub fn process_id() -> u32 {
+    // SAFETY: getpid takes no pointers and has no preconditions.
+    let process = unsafe { libc::getpid() };
+    u32::try_from(process).expect("getpid returns a positive process ID")
+}
+
 #[cfg(test)]
 mod tests {
     use skein_io::kernel::{Done, Op, ServiceSignal, Submit};
