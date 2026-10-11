@@ -97,17 +97,40 @@ pub(crate) enum Piece {
     Closed,
 }
 
+/// One decoded fragment, at most one scalar, held entirely inline.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Decoded {
+    pub(crate) after: Option<Text>,
+    bytes: [u8; 4],
+    length: u8,
+    /// Reserve the whole character at its first byte, before its continuation.
+    room: u8,
+}
+
+impl Decoded {
+    pub(crate) fn bytes(&self) -> &[u8] {
+        self.bytes.get(..usize::from(self.length)).expect("at most four bytes")
+    }
+
+    fn empty(after: Option<Text>) -> Decoded {
+        Decoded { after, bytes: [0; 4], length: 0, room: 0 }
+    }
+
+    fn byte(after: Text, byte: u8, room: u8) -> Decoded {
+        Decoded { after: Some(after), bytes: [byte, 0, 0, 0], length: 1, room }
+    }
+}
+
 /// Decodes `piece`, the next bytes of a string's text after `text`, onto
-/// `out`, which may hold at most `limit` bytes.
-///
-/// A piece is a scan to the next quote, so a quote can only be its last
-/// byte; one that closes the string anywhere else is the side below's
-/// bug, asserted.
+/// `out`, which may hold at most `limit` bytes. A closing quote is last.
 pub(crate) fn decode(text: Text, piece: &[u8], out: &mut Buffer) -> Result<Piece, Error> {
     let mut text = text;
     // Bounded by the piece, which is at most the scan's maximum.
     for (at, &byte) in piece.iter().enumerate() {
-        match next(text, byte, out)? {
+        let decoded = next(text, byte)?;
+        out.room(u32::from(decoded.room))?;
+        out.put(decoded.bytes());
+        match decoded.after {
             Some(after) => text = after,
             None => {
                 assert!(at.checked_add(1) == Some(piece.len()), "a scan ends at its first quote");
@@ -118,60 +141,57 @@ pub(crate) fn decode(text: Text, piece: &[u8], out: &mut Buffer) -> Result<Piece
     Ok(Piece::More(text))
 }
 
-/// The state after `byte`, or `None` when it closes the string.
-fn next(text: Text, byte: u8, out: &mut Buffer) -> Result<Option<Text>, Error> {
+/// Decodes one byte without allocating or retaining its string. The tokenizer
+/// retains the fragment; borrowed JSON spelling writes it immediately.
+pub(crate) fn next(text: Text, byte: u8) -> Result<Decoded, Error> {
     match text {
-        Text::Plain => plain(byte, out),
+        Text::Plain => plain(byte),
         Text::Char { more, low, high } => {
             let after = Utf8::Within { more, low, high }.next(byte).ok_or(Error::Utf8)?;
             // The room for the whole character was made at its first byte.
-            out.put(&[byte]);
-            Ok(Some(character(after)))
+            Ok(Decoded::byte(character(after), byte, 0))
         }
-        Text::Escape => escape(byte, out),
+        Text::Escape => escape(byte),
         Text::Unicode { digits, unit } => {
             let unit = hex(unit, byte)?;
             match count(digits) {
-                4 => unit_escaped(unit, out),
-                digits => Ok(Some(Text::Unicode { digits, unit })),
+                4 => unit_escaped(unit),
+                digits => Ok(Decoded::empty(Some(Text::Unicode { digits, unit }))),
             }
         }
         Text::High { high } => match byte {
-            b'\\' => Ok(Some(Text::HighEscape { high })),
+            b'\\' => Ok(Decoded::empty(Some(Text::HighEscape { high }))),
             _ => Err(Error::Surrogate),
         },
         Text::HighEscape { high } => match byte {
-            b'u' => Ok(Some(Text::Low { high, digits: 0, unit: 0 })),
+            b'u' => Ok(Decoded::empty(Some(Text::Low { high, digits: 0, unit: 0 }))),
             _ => Err(Error::Surrogate),
         },
         Text::Low { high, digits, unit } => {
             let unit = hex(unit, byte)?;
             match count(digits) {
-                4 => pair_escaped(high, unit, out),
-                digits => Ok(Some(Text::Low { high, digits, unit })),
+                4 => pair_escaped(high, unit),
+                digits => Ok(Decoded::empty(Some(Text::Low { high, digits, unit }))),
             }
         }
     }
 }
 
 /// A byte between characters.
-fn plain(byte: u8, out: &mut Buffer) -> Result<Option<Text>, Error> {
+fn plain(byte: u8) -> Result<Decoded, Error> {
     match byte {
-        b'"' => Ok(None),
-        b'\\' => Ok(Some(Text::Escape)),
+        b'"' => Ok(Decoded::empty(None)),
+        b'\\' => Ok(Decoded::empty(Some(Text::Escape))),
         0x00..=0x1F => Err(Error::Control),
         _ => {
             let after = Utf8::Between.next(byte).ok_or(Error::Utf8)?;
             // The whole character must fit, decided at its first byte, so
-            // that whether it is too long does not wait on whether it is
-            // UTF-8.
+            // that whether it is too long does not wait on whether it is UTF-8.
             let width = match after {
                 Utf8::Between => 1,
-                Utf8::Within { more, .. } => u32::from(more).checked_add(1).expect("at most four bytes"),
+                Utf8::Within { more, .. } => more.checked_add(1).expect("at most four bytes"),
             };
-            out.room(width)?;
-            out.put(&[byte]);
-            Ok(Some(character(after)))
+            Ok(Decoded::byte(character(after), byte, width))
         }
     }
 }
@@ -185,7 +205,7 @@ fn character(utf8: Utf8) -> Text {
 }
 
 /// The byte after a backslash.
-fn escape(byte: u8, out: &mut Buffer) -> Result<Option<Text>, Error> {
+fn escape(byte: u8) -> Result<Decoded, Error> {
     let unescaped = match byte {
         b'"' => b'"',
         b'\\' => b'\\',
@@ -195,45 +215,37 @@ fn escape(byte: u8, out: &mut Buffer) -> Result<Option<Text>, Error> {
         b'n' => b'\n',
         b'r' => b'\r',
         b't' => b'\t',
-        b'u' => return Ok(Some(Text::Unicode { digits: 0, unit: 0 })),
+        b'u' => return Ok(Decoded::empty(Some(Text::Unicode { digits: 0, unit: 0 }))),
         _ => return Err(Error::Escape),
     };
-    out.room(1)?;
-    out.put(&[unescaped]);
-    Ok(Some(Text::Plain))
+    Ok(Decoded::byte(Text::Plain, unescaped, 1))
 }
 
 /// A `\u` escape's four digits read, outside a surrogate pair.
-fn unit_escaped(unit: u16, out: &mut Buffer) -> Result<Option<Text>, Error> {
+fn unit_escaped(unit: u16) -> Result<Decoded, Error> {
     match unit {
-        0xD800..=0xDBFF => Ok(Some(Text::High { high: unit })),
+        0xD800..=0xDBFF => Ok(Decoded::empty(Some(Text::High { high: unit }))),
         0xDC00..=0xDFFF => Err(Error::Surrogate),
-        _ => {
-            scalar(u32::from(unit), out)?;
-            Ok(Some(Text::Plain))
-        }
+        _ => Ok(scalar(u32::from(unit))),
     }
 }
 
 /// The low surrogate's four digits read, after `high`.
-fn pair_escaped(high: u16, low: u16, out: &mut Buffer) -> Result<Option<Text>, Error> {
+fn pair_escaped(high: u16, low: u16) -> Result<Decoded, Error> {
     if !(0xDC00..=0xDFFF).contains(&low) {
         return Err(Error::Surrogate);
     }
     // Ten bits from each half, above the basic plane.
     let bits = (u32::from(high) & 0x3FF).wrapping_shl(10) | (u32::from(low) & 0x3FF);
-    scalar(bits.checked_add(0x1_0000).expect("at most U+10FFFF"), out)?;
-    Ok(Some(Text::Plain))
+    Ok(scalar(bits.checked_add(0x1_0000).expect("at most U+10FFFF")))
 }
 
-/// Puts the UTF-8 of the scalar value `point`, which an escape spelled.
-fn scalar(point: u32, out: &mut Buffer) -> Result<(), Error> {
+/// The UTF-8 of the scalar value `point`, which an escape spelled.
+fn scalar(point: u32) -> Decoded {
     let character = char::from_u32(point).expect("neither a surrogate nor past U+10FFFF");
-    let mut buffer = [0; 4];
-    let bytes = character.encode_utf8(&mut buffer).as_bytes();
-    out.room(u32::try_from(bytes.len()).expect("at most four bytes"))?;
-    out.put(bytes);
-    Ok(())
+    let mut bytes = [0; 4];
+    let length = u8::try_from(character.encode_utf8(&mut bytes).len()).expect("at most four bytes");
+    Decoded { after: Some(Text::Plain), bytes, length, room: length }
 }
 
 /// `unit` with the hex digit `byte` appended.

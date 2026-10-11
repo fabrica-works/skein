@@ -441,6 +441,7 @@ version = "0.0.0"
 dependencies = [
  "skein-http",
  "skein-json",
+ "skein-json-world",
  "skein-lib",
 ]
 

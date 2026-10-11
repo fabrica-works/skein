@@ -548,3 +548,49 @@ fn argument_text_keeps_the_previous_invalid_argument_failures() {
         assert_eq!(measure_request(&input, 4096, &LIMITS).err(), legacy.err(), "{arguments:?}");
     }
 }
+
+#[test]
+fn valid_whitespace_argument_keeps_parent_request_admission() {
+    let mut arguments = skein_lib::List::with_capacity(8000);
+    arguments.push(b'{').unwrap();
+    for _ in 0..7998_u32 {
+        arguments.push(b' ').unwrap();
+    }
+    arguments.push(b'}').unwrap();
+    check_argument_spelling_admission("whitespace", arguments.into_boxed(), 201);
+}
+
+#[test]
+fn valid_escaped_argument_keeps_parent_request_admission() {
+    let mut arguments = skein_lib::List::with_capacity(8108);
+    for &byte in b"{\"x\":\"" {
+        arguments.push(byte).unwrap();
+    }
+    for _ in 0..1350_u32 {
+        for &byte in b"\\u0061" {
+            arguments.push(byte).unwrap();
+        }
+    }
+    for &byte in b"\"}" {
+        arguments.push(byte).unwrap();
+    }
+    check_argument_spelling_admission("escaped", arguments.into_boxed(), 1557);
+}
+
+fn check_argument_spelling_admission(name: &str, arguments: Box<[u8]>, expected_compact: u32) {
+    let charged = arguments.len().checked_add(25).expect("model and call identifiers fit");
+    assert!(charged < 8192, "existing aggregate prompt admission passes");
+    let input = prompt(
+        Role::Assistant,
+        Block::ToolCall { id: bytes::copy_of(b"call"), name: bytes::copy_of(b"read"), arguments, replay: None },
+    );
+    let diagnostic = openai::Limits { request: 9000, ..LIMITS };
+    let diagnostic_measure = measure_request(&input, 4096, &diagnostic).expect("diagnostic framing fits");
+    let diagnostic_wire = encode_request(&input, 4096, &diagnostic).expect("diagnostic writes at measured length");
+    assert_eq!(diagnostic_wire.len(), usize::try_from(diagnostic_measure).expect("bounded length"));
+    let admitted = measure_request(&input, 4096, &LIMITS);
+    assert_eq!(diagnostic_measure, expected_compact, "{name}: unchanged compact framing");
+    assert_eq!(admitted, Ok(expected_compact), "{name}: parent admitted this exact valid argument spelling");
+    let wire = encode_request(&input, 4096, &LIMITS).expect("parent's admitted request encodes");
+    assert_eq!(wire.len(), usize::try_from(expected_compact).expect("compact length"));
+}
