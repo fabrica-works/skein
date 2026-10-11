@@ -107,7 +107,7 @@ fn run(seed: u64) -> (Vec<String>, (u32, u32, bool)) {
                     fragments += 1;
                     component.down(&env, Request::Next { call }, &mut up, &mut io);
                 }
-                Event::Completed { call, completion } => {
+                Event::Completed { call, completion, .. } => {
                     assert_eq!(call, Token::new(u64::from(completed) + 7));
                     assert!(!completion.content.is_empty());
                     completed += 1;

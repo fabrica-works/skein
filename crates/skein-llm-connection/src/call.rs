@@ -61,7 +61,7 @@ pub(crate) struct Connection {
     pub(crate) socket_close_sent: bool,
     pub(crate) deadlines: Table,
     pub(crate) waiting: bool,
-    activity: u64,
+    pub(crate) activity: u64,
     control: Control,
     llm_events: Queue<llm::Event>,
     plain_down: Queue<Down>,
@@ -263,11 +263,30 @@ impl Connection {
         match &mut self.tls {
             Some(client) => tls::up(client, &tls_env, event, &mut self.tls_events, &mut self.cipher_down),
             None => {
-                let llm_env = Env { now: env.now, wall: env.wall, limits: self.llm_limits };
-                llm::up(&mut self.llm, &llm_env, event, &mut self.llm_events, &mut self.plain_down);
+                self.plain_up(env, event);
             }
         }
         self.route(env, owner, up, io);
+    }
+
+    fn plain_up(&mut self, env: &Env<Limits>, event: Up) {
+        if self.call.is_some() && self.calling() {
+            match &event {
+                Up::Bytes(bytes) if !bytes.is_empty() => self.deadlines.response_bytes(env.now),
+                Up::Bytes(_) | Up::End | Up::Room | Up::Failed(_) => {}
+            }
+        }
+        let llm_env = Env { now: env.now, wall: env.wall, limits: self.llm_limits };
+        llm::up(&mut self.llm, &llm_env, event, &mut self.llm_events, &mut self.plain_down);
+    }
+
+    fn sync_activity(&mut self, now: Time) {
+        let activity = self.llm.activity();
+        if activity != self.activity {
+            let events = activity.checked_sub(self.activity).expect("call activity only increases");
+            self.activity = activity;
+            self.deadlines.activity(now, events);
+        }
     }
 
     pub(crate) fn closed(&mut self, env: &Env<Limits>, owner: Token, up: &mut Queue<Event>, io: &mut Queue<IoRequest>) {
@@ -352,12 +371,13 @@ impl Connection {
             llm::down(&mut self.llm, &llm_env, llm::Request::Close, &mut self.llm_events, &mut self.plain_down);
         }
         for _ in 0_u32..64_u32 {
+            self.sync_activity(env.now);
             if let Some(event) = self.llm_events.pop() {
                 match event {
                     llm::Event::Delta { owner: call, delta } => up.push(Event::Delta { call, delta }),
                     llm::Event::Block { owner: call, block } => up.push(Event::Block { call, block }),
                     llm::Event::Completed { owner: call, completion } => {
-                        up.push(Event::Completed { call, completion });
+                        up.push(Event::Completed { call, completion, measures: self.deadlines.measures() });
                         self.call = None;
                         self.terminal();
                         if self.closing() && !self.waiting {
@@ -371,7 +391,7 @@ impl Connection {
                         }
                     }
                     llm::Event::Failed { owner: call, failure, evidence, detail } => {
-                        up.push(Event::Failed { call, failure, evidence, detail });
+                        up.push(Event::Failed { call, failure, evidence, detail, measures: self.deadlines.measures() });
                         self.call = None;
                         self.terminal();
                         if self.closing() && !self.waiting {
@@ -385,7 +405,7 @@ impl Connection {
                         }
                     }
                     llm::Event::Cancelled { owner: call } => {
-                        up.push(Event::Cancelled { call });
+                        up.push(Event::Cancelled { call, measures: self.deadlines.measures() });
                         self.call = None;
                         self.terminal();
                         if self.closing() && !self.waiting {
@@ -420,7 +440,8 @@ impl Connection {
                 if self.calling() || (self.phase == Phase::Idle || self.phase == Phase::Ready) {
                     match &down {
                         Down::Send(bytes) if !bytes.is_empty() && self.phase == Phase::Head => {
-                            self.deadlines.sent(env.now);
+                            let measured = self.llm.measured();
+                            self.deadlines.sent(env.now, measured_request_bytes(measured));
                         }
                         Down::Send(_) | Down::Demand { .. } | Down::Finish => {}
                     }
@@ -455,7 +476,7 @@ impl Connection {
                         if self.aborting() {
                             continue;
                         }
-                        llm::up(&mut self.llm, &llm_env, plain, &mut self.llm_events, &mut self.plain_down);
+                        self.plain_up(env, plain);
                     }
                     tls::Event::Failed(_) => {
                         llm::abort(
@@ -485,11 +506,21 @@ impl Connection {
         if self.phase == Phase::Head && self.llm.response_received() {
             self.phase = Phase::Streaming;
         }
-        let activity = self.llm.activity();
-        if activity != self.activity {
-            self.activity = activity;
-            self.deadlines.activity(env.now);
-        }
+        self.sync_activity(env.now);
         self.sync_deadlines(env);
+    }
+}
+
+fn measured_request_bytes(measured: llm::Measured) -> u64 {
+    u64::from(measured.head).checked_add(u64::from(measured.body)).expect("two u32 lengths fit u64")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_largest_head_and_body_have_an_exact_request_byte_measure() {
+        assert_eq!(measured_request_bytes(llm::Measured { head: u32::MAX, body: u32::MAX }), 8_589_934_590);
     }
 }

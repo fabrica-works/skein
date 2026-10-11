@@ -84,7 +84,7 @@ pub struct MaxOut {
     pub below: u32,
 }
 
-/// Reserve this much room before each component entrance.
+/// Reserve this much room before each component entrance; measures add no event.
 pub const MAX_OUT: MaxOut = MaxOut { above: 64, below: 64 };
 
 impl Component {
@@ -411,7 +411,7 @@ impl Component {
                                 .take()
                                 .expect("cancelled waiting call");
                             self.release_waiting(&waiting);
-                            up.push(Event::Cancelled { call });
+                            up.push(Event::Cancelled { call, measures: waiting.deadlines.measures() });
                             self.refresh_waiting();
                             return;
                         }
@@ -524,7 +524,7 @@ impl Component {
                     let waiting = self.waiting.get_mut(index).expect("waiting index").take().expect("waiting call");
                     self.release_waiting(&waiting);
                     if self.lifecycle == Lifecycle::Aborting {
-                        up.push(Event::Cancelled { call: waiting.call });
+                        up.push(Event::Cancelled { call: waiting.call, measures: waiting.deadlines.measures() });
                     } else {
                         let bound =
                             self.endpoints.get(waiting.endpoint).expect("admitted endpoint").limits.detail_bytes;
@@ -532,6 +532,7 @@ impl Component {
                         let take = detail.len().min(usize::try_from(bound).expect("u32 fits usize"));
                         up.push(Event::Failed {
                             call: waiting.call,
+                            measures: waiting.deadlines.measures(),
                             failure: llm::Failure::TimedOut { phase: llm::Phase::Whole },
                             evidence: llm::client::Evidence::Unsent,
                             detail: Box::from(detail.get(..take).expect("bounded detail")),
@@ -866,6 +867,7 @@ impl Component {
                 Ok(()) => {}
                 Err(_) => unreachable!("a reusable client accepts the prepared call"),
             }
+            connection.activity = 0;
             connection.reservation = waiting.reservation;
             connection.call = Some(waiting.call);
             connection.phase = Phase::Head;
