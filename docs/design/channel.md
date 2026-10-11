@@ -104,7 +104,15 @@ The machine refuses a schema in which:
 - a kind appears twice in a version;
 - an application kind lies in the channel's own range;
 - a version in the range has no table;
-- a kind's largest frame does not fit the output cap.
+- a kind this role sends has a largest frame that does not fit the output
+  cap. Only the kinds whose direction is this role's own are checked
+  against it. A kind this role receives is bounded by its largest body,
+  which its terms state and its input admits, and is never held to the
+  output cap. A side that receives large frames (a responder's whole
+  restore, say) and sends only small ones keeps a small output cap.
+
+The machine's worst case follows the same split: its output holds the
+largest frame this role sends, and its input the largest it receives.
 
 ## 5. Opening
 
