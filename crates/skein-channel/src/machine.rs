@@ -151,7 +151,7 @@ impl Machine {
 
     /// Checks a channel with an explicit one-stream or two-pipe topology.
     pub fn with_mode(schema: Schema, role: Role, limits: Limits, mode: StreamMode) -> Result<Machine, SchemaError> {
-        schema.check(&limits)?;
+        schema.check(role, &limits)?;
         let output_capacity = limits.output_frames.checked_add(3).ok_or(SchemaError::InvalidLimit)?;
         let (phase, read) = match role {
             Role::Initiator => (Phase::Idle, ReadState::Idle),

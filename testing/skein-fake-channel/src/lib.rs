@@ -63,7 +63,7 @@ impl ScriptedPeer {
     /// # Errors
     /// Returns `Limits` if the schema, selected version, or credential bound is invalid.
     pub fn new(schema: Schema, role: Role, limits: Limits, chosen: u16, credential: Box<[u8]>) -> Result<Self, Error> {
-        schema.check(&limits).map_err(|_| Error::Limits)?;
+        schema.check(role, &limits).map_err(|_| Error::Limits)?;
         if schema.version(chosen).is_none()
             || credential.len() > usize::try_from(limits.credential).map_err(|_| Error::Limits)?
         {

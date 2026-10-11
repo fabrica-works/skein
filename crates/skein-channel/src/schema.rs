@@ -65,8 +65,8 @@ pub enum SchemaError {
 }
 
 impl Schema {
-    /// Checks the whole table before a machine keeps it (channel.md, section 4).
-    pub fn check(&self, limits: &Limits) -> Result<(), SchemaError> {
+    /// Checks the whole table and this role's sent frames (channel.md, section 4).
+    pub fn check(&self, role: Role, limits: &Limits) -> Result<(), SchemaError> {
         if limits.chunk == 0
             || limits.output_frames == 0
             || limits.output_bytes < 8
@@ -82,6 +82,10 @@ impl Schema {
         if self.versions.is_empty() {
             return Err(SchemaError::Versions);
         }
+        let sent = match role {
+            Role::Initiator => Direction::FromInitiator,
+            Role::Responder => Direction::FromResponder,
+        };
         let mut previous: Option<u16> = None;
         for version in &self.versions {
             if previous.is_some() && previous != version.version.checked_sub(1) {
@@ -92,9 +96,19 @@ impl Schema {
                 return Err(SchemaError::Kind);
             }
             for (index, kind) in version.kinds.iter().enumerate() {
-                let length = kind.largest.checked_add(8).ok_or(SchemaError::Kind)?;
-                if kind.kind < 0x0100 || length > limits.output_bytes {
+                if kind.kind < 0x0100
+                    || usize::try_from(kind.largest).is_err()
+                    || isize::try_from(kind.largest).is_err()
+                {
                     return Err(SchemaError::Kind);
+                }
+                // Received bodies are admitted by their own terms/input bound,
+                // never by this role's output queue (channel.md, section 4).
+                if kind.direction == sent {
+                    let length = kind.largest.checked_add(8).ok_or(SchemaError::Kind)?;
+                    if length > limits.output_bytes {
+                        return Err(SchemaError::Kind);
+                    }
                 }
                 for earlier in version.kinds.iter().take(index) {
                     if earlier.kind == kind.kind {
