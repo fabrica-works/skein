@@ -25,6 +25,25 @@ impl Deadlines {
     }
 }
 
+/// Observations carried by every call terminal to its owner (llm-connection.md, section 4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Measures {
+    /// Encoded head and body bytes, present once the request starts sending.
+    pub request_bytes: Option<u64>,
+    /// From the first request send to the first plaintext response byte.
+    pub first_byte: Option<Duration>,
+    /// Between complete response events, including pings; none before a pair.
+    pub largest_gap: Option<Duration>,
+}
+
+impl Measures {
+    /// No request send, response bytes or response event pair has been observed.
+    #[must_use]
+    pub const fn none() -> Measures {
+        Measures { request_bytes: None, first_byte: None, largest_gap: None }
+    }
+}
+
 /// A request from the owning protocol layer.
 #[expect(missing_debug_implementations, reason = "Start holds a bearer credential")]
 #[expect(clippy::large_enum_variant, reason = "the owning protocol layer moves each Start directly into the component")]
@@ -76,11 +95,11 @@ pub enum Event {
     /// A completed provider block for an outstanding demand.
     Block { call: Token, block: Block },
     /// The accepted call completed successfully.
-    Completed { call: Token, completion: Completion },
+    Completed { call: Token, completion: Completion, measures: Measures },
     /// The accepted call failed with the client's sending evidence.
-    Failed { call: Token, failure: Failure, evidence: Evidence, detail: Box<[u8]> },
+    Failed { call: Token, failure: Failure, evidence: Evidence, detail: Box<[u8]>, measures: Measures },
     /// The accepted call ended at the owner's request.
-    Cancelled { call: Token },
+    Cancelled { call: Token, measures: Measures },
 }
 
 /// A component-issued io request; the owner translates its token to io's.

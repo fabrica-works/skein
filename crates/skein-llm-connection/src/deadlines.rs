@@ -1,11 +1,12 @@
 //! Per-call deadlines (llm-connection.md, section 6). This table stores the
-//! five absolute monotonic times and the durations needed to rearm idleness.
+//! five absolute monotonic times, activity anchors and terminal measures.
 //! It never reads a clock: the owner supplies one `Env` snapshot to every
-//! entry point. `due` names a phase that must end through the LLM client.
+//! entry point. `due` names a phase that must end through the LLM client;
+//! `sent`, `response_bytes` and `activity` record only existing stream observations.
 
 use skein_lib::Time;
 
-use crate::boundary::Deadlines;
+use crate::boundary::{Deadlines, Measures};
 
 /// The call or connection phase, selecting all armed deadlines in one place.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -32,6 +33,9 @@ pub(crate) enum Due {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct Table {
     config: Deadlines,
+    sent_at: Option<Time>,
+    event_at: Option<Time>,
+    measures: Measures,
     connect: Option<Time>,
     handshake: Option<Time>,
     head: Option<Time>,
@@ -44,6 +48,9 @@ impl Table {
     pub(crate) fn new(config: Deadlines, now: Time) -> Table {
         Table {
             config,
+            sent_at: None,
+            event_at: None,
+            measures: Measures::none(),
             connect: at(now, config.connect),
             handshake: None,
             head: None,
@@ -77,11 +84,39 @@ impl Table {
         self.keep = selected(self.keep, keep, now, Some(idle_keep));
     }
 
-    pub(crate) fn sent(&mut self, now: Time) {
+    pub(crate) fn sent(&mut self, now: Time, request_bytes: u64) {
+        if self.sent_at.is_none() {
+            self.sent_at = Some(now);
+            self.measures.request_bytes = Some(request_bytes);
+        }
         self.head = at(now, self.config.head);
     }
 
-    pub(crate) fn activity(&mut self, now: Time) {
+    pub(crate) fn response_bytes(&mut self, now: Time) {
+        if self.measures.first_byte.is_none()
+            && let Some(sent) = self.sent_at
+        {
+            self.measures.first_byte = Some(now.saturating_since(sent));
+        }
+    }
+
+    pub(crate) const fn measures(&self) -> Measures {
+        self.measures
+    }
+
+    pub(crate) fn activity(&mut self, now: Time, events: u64) {
+        let gap = match self.event_at {
+            Some(previous) => Some(now.saturating_since(previous)),
+            None if events > 1 => Some(skein_lib::Duration::ZERO),
+            None => None,
+        };
+        if let Some(gap) = gap {
+            self.measures.largest_gap = Some(match self.measures.largest_gap {
+                Some(previous) => previous.max(gap),
+                None => gap,
+            });
+        }
+        self.event_at = Some(now);
         self.idle = at(now, self.config.idle);
     }
 
@@ -171,7 +206,7 @@ mod tests {
             (Phase::Closed, [false; 6]),
         ] {
             let mut table = Table::new(config, Time::ZERO);
-            table.sent(Time::ZERO);
+            table.sent(Time::ZERO, 1);
             table.arm(phase, Time::ZERO, Duration::from_secs(10));
             assert_eq!(
                 [
@@ -217,5 +252,33 @@ mod tests {
         table.arm(Phase::Connecting, Time::from_nanos(3_000_000_000), Duration::from_secs(10));
         assert_eq!(table.connect, Some(Time::from_nanos(4_000_000_000)));
         assert_eq!(table.whole, Some(Time::from_nanos(5_000_000_000)));
+    }
+}
+
+#[cfg(test)]
+mod measure_tests {
+    use super::*;
+    use skein_lib::Duration;
+
+    #[test]
+    fn measured_request_above_u32_max_is_exact_and_later_upload_does_not_move_send_time() {
+        let mut table = Table::new(Deadlines::none(), Time::ZERO);
+        let bytes = u64::from(u32::MAX).checked_add(u64::from(u32::MAX)).unwrap();
+        table.sent(Time::from_nanos(100), bytes);
+        table.sent(Time::from_nanos(200), bytes);
+        table.response_bytes(Time::from_nanos(300));
+        assert_eq!(
+            table.measures(),
+            Measures { request_bytes: Some(bytes), first_byte: Some(Duration::from_nanos(200)), largest_gap: None }
+        );
+    }
+
+    #[test]
+    fn one_response_event_is_unobserved_as_a_gap_and_two_simultaneous_events_have_a_real_zero_gap() {
+        let mut table = Table::new(Deadlines::none(), Time::ZERO);
+        table.activity(Time::from_nanos(100), 1);
+        assert_eq!(table.measures().largest_gap, None);
+        table.activity(Time::from_nanos(100), 1);
+        assert_eq!(table.measures().largest_gap, Some(Duration::ZERO));
     }
 }

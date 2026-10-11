@@ -80,7 +80,10 @@ fn the_referee_rejects_a_second_closed() {
 fn the_referee_rejects_an_event_after_closed() {
     let mut judge = Judge::default();
     judge.observe(&Event::Closed);
-    judge.observe(&Event::Cancelled { call: skein_lib::Token::new(7) });
+    judge.observe(&Event::Cancelled {
+        call: skein_lib::Token::new(7),
+        measures: skein_llm_connection::Measures::none(),
+    });
 }
 
 #[test]

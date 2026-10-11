@@ -42,6 +42,8 @@ fn a_cancel_while_waiting_answers_cancelled_at_once() {
     world.request(Request::Cancel { call: Token::new(8) });
     world.tick();
     assert_eq!(world.judge.cancelled, 1);
+    assert!(world.events.iter().any(|event| event.contains("Cancelled { call: Token(8)")
+        && event.contains("Measures { request_bytes: None, first_byte: None, largest_gap: None }")));
     world.request(Request::Close);
     world.finish();
     assert_eq!(world.judge.completed, 1);

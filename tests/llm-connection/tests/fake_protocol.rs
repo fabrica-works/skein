@@ -133,7 +133,7 @@ fn run(dialect: Provider, seed: u64) -> (Vec<String>, (u32, u32)) {
                     fragments += 1;
                     component.down(&env, Request::Next { call }, &mut up, &mut io);
                 }
-                Event::Completed { call, completion } => {
+                Event::Completed { call, completion, .. } => {
                     assert_eq!(call, Token::new(7));
                     assert!(!completion.content.is_empty());
                     completed += 1;

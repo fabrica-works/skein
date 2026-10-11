@@ -284,7 +284,7 @@ fn complete_request(bytes: &[u8]) -> bool {
 fn assert_failure(world: &World, failure: Failure, evidence: Evidence) {
     assert_eq!(world.terminals.len(), 1);
     match &world.terminals[0] {
-        Event::Failed { call, failure: got, evidence: seen, detail } => {
+        Event::Failed { call, failure: got, evidence: seen, detail, .. } => {
             assert_eq!(*call, Token::new(7));
             assert_eq!(*got, failure);
             assert_eq!(*seen, evidence);
@@ -330,6 +330,7 @@ fn handshake_deadline_expires_before_any_request_bytes() {
     assert_eq!(world.component.next_deadline(), Some(Time::from_nanos(1_000_000_000)));
     world.at(Time::from_nanos(1_000_000_000));
     assert_failure(&world, Failure::TimedOut { phase: Phase::Handshake }, Evidence::Unsent);
+    assert_eq!(terminal_measures(&world), skein_llm_connection::Measures::none());
 }
 
 fn run_cancel_before_a_provider_terminal_waits_for_socket_close(seed: u64) -> World {
@@ -346,7 +347,7 @@ fn run_cancel_before_a_provider_terminal_waits_for_socket_close(seed: u64) -> Wo
     }
     assert_eq!(world.terminals.len(), 1);
     match &world.terminals[0] {
-        Event::Cancelled { call } => assert_eq!(*call, Token::new(7)),
+        Event::Cancelled { call, .. } => assert_eq!(*call, Token::new(7)),
         other @ (Event::Closed
         | Event::Refused { .. }
         | Event::Delta { .. }
@@ -617,5 +618,147 @@ fn a_connect_deadline_keeps_unsent_evidence_through_late_socket_settlement() {
         let env = world.env();
         world.component.up(&env, IoEvent::Connecting { owner, socket: Token::new(100) }, &mut world.up, &mut world.io);
         let _settled = world.report();
+    }
+}
+
+#[test]
+fn a_scripted_call_carries_its_observed_measures_on_the_terminal() {
+    let mut world = World::new(Deadlines::none(), 71, false);
+    // Connecting and waiting time is excluded from first-byte latency.
+    world.now = Time::from_nanos(1_000_000_000);
+    world.run_until_request();
+    let request_bytes = world.wire.received().len();
+    world.now = Time::from_nanos(1_125_000_000);
+    world.wire.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
+    for _ in 0..1000 {
+        world.tick();
+    }
+    for (now, event) in [
+        (1_200_000_000, b"data: {\"type\":\"ping\"}\n\n".as_slice()),
+        (1_500_000_000, b"data: {\"type\":\"ping\"}\n\n".as_slice()),
+    ] {
+        world.now = Time::from_nanos(now);
+        world.wire.write(format!("{:x}\r\n", event.len()).as_bytes());
+        world.wire.write(event);
+        world.wire.write(b"\r\n");
+        for _ in 0..1000 {
+            world.tick();
+        }
+    }
+    world.now = Time::from_nanos(1_700_000_000);
+    let response = skein_llm_world::text_response(true);
+    let body = response.windows(4).position(|part| part == b"\r\n\r\n").expect("head") + 4;
+    world.wire.write(&response[body..]);
+    for _ in 0..20_000 {
+        world.tick();
+        if !world.terminals.is_empty() {
+            break;
+        }
+    }
+    assert!(matches!(world.terminals.as_slice(), [Event::Completed { .. }]));
+    let terminal = format!("{:?}", world.terminals[0]);
+    assert!(terminal.contains(&format!("request_bytes: Some({request_bytes})")), "{terminal}");
+    assert!(terminal.contains("first_byte: Some(Duration(125000000))"), "{terminal}");
+    assert!(terminal.contains("largest_gap: Some(Duration(300000000))"), "{terminal}");
+}
+
+fn terminal_measures(world: &World) -> skein_llm_connection::Measures {
+    assert_eq!(world.terminals.len(), 1);
+    match &world.terminals[0] {
+        Event::Completed { measures, .. } | Event::Failed { measures, .. } | Event::Cancelled { measures, .. } => {
+            *measures
+        }
+        other @ (Event::Closed | Event::Refused { .. } | Event::Delta { .. } | Event::Block { .. }) => {
+            panic!("expected call terminal, got {other:?}");
+        }
+    }
+}
+
+#[test]
+fn cancellation_before_send_keeps_every_measure_unobserved() {
+    for handshake in [false, true] {
+        let mut world = World::new(Deadlines::none(), 79, handshake);
+        let env = world.env();
+        world.component.down(&env, Request::Cancel { call: Token::new(7) }, &mut world.up, &mut world.io);
+        for _ in 0..20_000 {
+            world.tick();
+            if !world.terminals.is_empty() {
+                break;
+            }
+        }
+        assert!(matches!(world.terminals.as_slice(), [Event::Cancelled { .. }]));
+        assert!(world.wire.received().is_empty());
+        assert_eq!(terminal_measures(&world), skein_llm_connection::Measures::none());
+    }
+}
+
+#[test]
+fn failure_after_the_head_keeps_the_first_plaintext_byte_before_the_complete_head() {
+    for handshake in [false, true] {
+        let mut world =
+            World::new(Deadlines { idle: Some(Duration::from_secs(1)), ..Deadlines::none() }, 83, handshake);
+        world.now = Time::from_nanos(1_000_000_000);
+        world.run_until_request();
+        let request_bytes = u64::try_from(world.wire.received().len()).unwrap();
+        world.now = Time::from_nanos(1_125_000_000);
+        world.wire.write(b"HTTP/1.1 200 OK\r\n");
+        for _ in 0..1000 {
+            world.tick();
+        }
+        world.now = Time::from_nanos(1_250_000_000);
+        world.wire.write(b"Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
+        world.run_until_head();
+        world.at(Time::from_nanos(2_250_000_000));
+        assert_failure(&world, Failure::TimedOut { phase: Phase::Idle }, Evidence::Response { status: 200 });
+        assert_eq!(
+            terminal_measures(&world),
+            skein_llm_connection::Measures {
+                request_bytes: Some(request_bytes),
+                first_byte: Some(Duration::from_millis(125)),
+                largest_gap: None,
+            }
+        );
+    }
+}
+
+#[test]
+fn the_terminal_event_is_in_the_largest_gap_for_plaintext_and_tls() {
+    for handshake in [false, true] {
+        let mut world = World::new(Deadlines::none(), 89, handshake);
+        world.now = Time::from_nanos(1_000_000_000);
+        world.run_until_request();
+        let request_bytes = u64::try_from(world.wire.received().len()).unwrap();
+        world.now = Time::from_nanos(1_125_000_000);
+        world.wire.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
+        for _ in 0..1000 {
+            world.tick();
+        }
+        world.now = Time::from_nanos(1_500_000_000);
+        let ping = b"data: {\"type\":\"ping\"}\n\n";
+        world.wire.write(format!("{:x}\r\n", ping.len()).as_bytes());
+        world.wire.write(ping);
+        world.wire.write(b"\r\n");
+        for _ in 0..1000 {
+            world.tick();
+        }
+        world.now = Time::from_nanos(2_100_000_000);
+        let response = skein_llm_world::text_response(true);
+        let body = response.windows(4).position(|part| part == b"\r\n\r\n").unwrap() + 4;
+        world.wire.write(&response[body..]);
+        for _ in 0..20_000 {
+            world.tick();
+            if !world.terminals.is_empty() {
+                break;
+            }
+        }
+        assert!(matches!(world.terminals.as_slice(), [Event::Completed { .. }]));
+        assert_eq!(
+            terminal_measures(&world),
+            skein_llm_connection::Measures {
+                request_bytes: Some(request_bytes),
+                first_byte: Some(Duration::from_millis(125)),
+                largest_gap: Some(Duration::from_millis(600)),
+            }
+        );
     }
 }

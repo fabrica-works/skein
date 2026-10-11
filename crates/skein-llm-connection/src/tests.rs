@@ -198,7 +198,7 @@ fn cancel_while_connecting_waits_for_socket_settlement() {
     }
     component.up(&env, LowerEvent::Closed { owner }, &mut up, &mut io);
     match up.pop() {
-        Some(Event::Cancelled { call }) => assert_eq!(call, Token::new(7)),
+        Some(Event::Cancelled { call, .. }) => assert_eq!(call, Token::new(7)),
         other => panic!("expected cancellation, got {other:?}"),
     }
     assert!(up.is_empty());

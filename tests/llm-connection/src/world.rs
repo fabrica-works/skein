@@ -57,7 +57,7 @@ impl Judge {
                 assert!(self.pending.remove(call), "one terminal per call");
                 self.completed += 1;
             }
-            Event::Cancelled { call } => {
+            Event::Cancelled { call, .. } => {
                 assert!(self.pending.remove(call), "one terminal per call");
                 self.cancelled += 1;
             }

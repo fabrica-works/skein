@@ -65,6 +65,8 @@ pub fn worst_case(limits: &Limits, endpoints: &List<crate::Endpoint>) -> Option<
         scratch = scratch.max(skein_llm::client::encoding_worst_case(&client)?.checked_add(fixed)?);
     }
     let pool = largest.checked_mul(u64::from(limits.connections))?;
+    // Slab and waiting-record sizes include each call's measure table and
+    // anchors. Measures move in its existing terminal, adding no routing queue.
     pool.checked_add(limits.memory)?
         .checked_add(scratch)?
         .checked_add(Slab::<Connection>::worst_case(limits.connections)?)?
