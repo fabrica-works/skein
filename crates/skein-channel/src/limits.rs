@@ -6,19 +6,25 @@ use core::mem::size_of;
 use skein_lib::{List, Queue};
 
 use crate::machine::Queued;
-use crate::{Event, Kind, Limits, Lower, MAX_DOWN, MAX_UP, Machine, Schema, Term, Version};
+use crate::{Direction, Event, Kind, Limits, Lower, MAX_DOWN, MAX_UP, Machine, Role, Schema, Term, Version};
 
-/// The most channel-owned heap at the configured ceilings.
+/// This role's channel-owned heap: sent queue bytes and received body capacity.
 #[must_use]
-pub fn worst_case(schema: &Schema, limits: &Limits) -> Option<u64> {
-    schema.check(limits).ok()?;
+pub fn worst_case(schema: &Schema, role: Role, limits: &Limits) -> Option<u64> {
+    schema.check(role, limits).ok()?;
     let queue_capacity = limits.output_frames.checked_add(3)?;
     let mut schema_heap = List::<Version>::worst_case(schema.versions.capacity())?;
+    let received = match role {
+        Role::Initiator => Direction::FromResponder,
+        Role::Responder => Direction::FromInitiator,
+    };
     let mut largest_body = 0_u32;
     for version in &schema.versions {
         schema_heap = schema_heap.checked_add(List::<Kind>::worst_case(version.kinds.capacity())?)?;
         for kind in &version.kinds {
-            largest_body = largest_body.max(kind.largest);
+            if kind.direction == received {
+                largest_body = largest_body.max(kind.largest);
+            }
         }
     }
     let terms_body = limits.kinds.checked_mul(6)?.checked_add(4)?;

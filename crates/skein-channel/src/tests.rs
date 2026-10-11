@@ -28,11 +28,11 @@ fn schema() -> Schema {
 #[test]
 fn checked_schema_rejects_gaps_duplicates_reserved_and_oversize() {
     let mut source = schema();
-    assert_eq!(source.check(&limits()), Ok(()));
+    assert_eq!(source.check(Role::Responder, &limits()), Ok(()));
     assert_eq!(source.range(), Some((1, 2)));
     assert_eq!(source.version(2).expect("version 2").kind(0x0101).expect("kind").largest, 64);
     source.versions.get_mut(1).expect("second version").version = 3;
-    assert_eq!(source.check(&limits()), Err(SchemaError::Versions));
+    assert_eq!(source.check(Role::Responder, &limits()), Err(SchemaError::Versions));
     source.versions.get_mut(1).expect("second version").version = 2;
     source
         .versions
@@ -41,12 +41,12 @@ fn checked_schema_rejects_gaps_duplicates_reserved_and_oversize() {
         .kinds
         .push(Kind { kind: 0x0101, direction: Direction::FromResponder, largest: 1 })
         .expect("second kind");
-    assert_eq!(source.check(&limits()), Err(SchemaError::Kind));
+    assert_eq!(source.check(Role::Responder, &limits()), Err(SchemaError::Kind));
     source.versions.get_mut(1).expect("second version").kinds.get_mut(1).expect("second kind").kind = 6;
-    assert_eq!(source.check(&limits()), Err(SchemaError::Kind));
+    assert_eq!(source.check(Role::Responder, &limits()), Err(SchemaError::Kind));
     source.versions.get_mut(1).expect("second version").kinds.get_mut(1).expect("second kind").kind = 0x0102;
     source.versions.get_mut(1).expect("second version").kinds.get_mut(1).expect("second kind").largest = 1017;
-    assert_eq!(source.check(&limits()), Err(SchemaError::Kind));
+    assert_eq!(source.check(Role::Responder, &limits()), Err(SchemaError::Kind));
 }
 
 #[test]
@@ -813,4 +813,56 @@ fn write_failure_during_refusal_reports_stream_terminal() {
     }
     responder.machine.poll(&mut responder.events, &mut responder.below);
     assert!(responder.below.is_empty());
+}
+
+#[test]
+fn role_aware_schema_accepts_large_received_kinds_and_refuses_large_sent_kinds() {
+    for role in [Role::Initiator, Role::Responder] {
+        let mut source = schema();
+        let bounds = Limits { output_bytes: 128, ..limits() };
+        for version_index in 0..source.versions.len() {
+            let version = source.versions.get_mut(version_index).unwrap();
+            for kind_index in 0..version.kinds.len() {
+                let kind = version.kinds.get_mut(kind_index).unwrap();
+                let sent = match role {
+                    Role::Initiator => kind.direction == Direction::FromInitiator,
+                    Role::Responder => kind.direction == Direction::FromResponder,
+                };
+                kind.largest = if sent { 120 } else { 4096 };
+            }
+        }
+        assert_eq!(source.check(role, &bounds), Ok(()));
+        Machine::new(source.clone(), role, bounds).expect("large received body is independent of output");
+        for mode in [StreamMode::One, StreamMode::Two] {
+            Machine::with_mode(source.clone(), role, bounds, mode).expect("both transports admit the same local role");
+        }
+        for version_index in 0..source.versions.len() {
+            let version = source.versions.get_mut(version_index).unwrap();
+            for kind_index in 0..version.kinds.len() {
+                let kind = version.kinds.get_mut(kind_index).unwrap();
+                let sent = match role {
+                    Role::Initiator => kind.direction == Direction::FromInitiator,
+                    Role::Responder => kind.direction == Direction::FromResponder,
+                };
+                if sent {
+                    kind.largest = 121;
+                }
+            }
+        }
+        assert_eq!(source.check(role, &bounds), Err(SchemaError::Kind));
+        assert_eq!(Machine::new(source.clone(), role, bounds).err(), Some(SchemaError::Kind));
+        assert_eq!(Machine::with_mode(source, role, bounds, StreamMode::Two).err(), Some(SchemaError::Kind));
+    }
+}
+
+#[test]
+fn role_aware_worst_case_prices_only_received_application_bodies() {
+    let mut source = schema();
+    source.versions.get_mut(0).unwrap().kinds.get_mut(0).unwrap().largest = 4096;
+    let bounds = Limits { output_bytes: 8192, ..limits() };
+    let initiator = super::worst_case(&source, Role::Initiator, &bounds).unwrap();
+    let responder = super::worst_case(&source, Role::Responder, &bounds).unwrap();
+    // Initiator's receive bound is the fixed 262-byte control body; its
+    // 4096-byte application body belongs to its output queue, never input.
+    assert_eq!(responder - initiator, 4096 - 262);
 }

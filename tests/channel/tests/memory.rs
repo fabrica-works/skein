@@ -33,6 +33,7 @@ fn feed(
     drain_output: bool,
     ready: &mut bool,
     body_seen: &mut bool,
+    expected: (u16, usize),
 ) {
     let mut offset = 0;
     for _ in 0..200 {
@@ -70,8 +71,9 @@ fn feed(
             match event {
                 Event::Opening { .. } => machine.down(Request::Accept { version: 1 }, above, below),
                 Event::Ready { .. } => *ready = true,
-                Event::Body { kind: 0x0100, body } => {
-                    assert_eq!(body.len(), 120);
+                Event::Body { kind, body } => {
+                    assert_eq!(kind, expected.0);
+                    assert_eq!(body.len(), expected.1);
                     *body_seen = true;
                 }
                 Event::Drained | Event::Sent { .. } => {}
@@ -92,7 +94,7 @@ fn feed(
 fn largest_input_body_with_full_output_frame_stays_within_worst_case() {
     let source = schema();
     let limits = limits();
-    let bound = worst_case(&source, &limits).expect("checked bound");
+    let bound = worst_case(&source, Role::Responder, &limits).expect("checked bound");
     let open = control_frame(
         &Control::Open { magic: *b"heap", lowest: 1, highest: 1, features: 0, credential: Box::from([]) },
         &limits,
@@ -113,8 +115,28 @@ fn largest_input_body_with_full_output_frame_stays_within_worst_case() {
     let mut pending = None;
     let mut ready = false;
     let mut body_seen = false;
-    feed(&mut machine, &mut above, &mut below, &mut pending, open.bytes(), true, &mut ready, &mut body_seen);
-    feed(&mut machine, &mut above, &mut below, &mut pending, terms.bytes(), true, &mut ready, &mut body_seen);
+    feed(
+        &mut machine,
+        &mut above,
+        &mut below,
+        &mut pending,
+        open.bytes(),
+        true,
+        &mut ready,
+        &mut body_seen,
+        (0x0100, 120),
+    );
+    feed(
+        &mut machine,
+        &mut above,
+        &mut below,
+        &mut pending,
+        terms.bytes(),
+        true,
+        &mut ready,
+        &mut body_seen,
+        (0x0100, 120),
+    );
     assert!(ready);
     let mut output = frame_writer(0x0101, 120).expect("output");
     output.put(&[9; 120]).expect("body");
@@ -124,7 +146,17 @@ fn largest_input_body_with_full_output_frame_stays_within_worst_case() {
         &mut below,
     );
     machine.down(Request::Read, &mut above, &mut below);
-    feed(&mut machine, &mut above, &mut below, &mut pending, input.bytes(), false, &mut ready, &mut body_seen);
+    feed(
+        &mut machine,
+        &mut above,
+        &mut below,
+        &mut pending,
+        input.bytes(),
+        false,
+        &mut ready,
+        &mut body_seen,
+        (0x0100, 120),
+    );
     assert!(body_seen);
     let measured = meter.end();
     assert!(measured.peak() >= 240, "both largest bodies were held");
@@ -133,4 +165,89 @@ fn largest_input_body_with_full_output_frame_stays_within_worst_case() {
     drop(above);
     drop(below);
     assert_eq!(meter.held(), 0);
+}
+
+#[test]
+fn role_aware_large_receive_with_small_output_fits_the_checked_heap_bound() {
+    for role in [Role::Initiator, Role::Responder] {
+        let mut source = schema();
+        let limits = Limits { chunk: 64, ..limits() };
+        let (sent, received): (u16, u16) = match role {
+            Role::Initiator => (0x0100, 0x0101),
+            Role::Responder => (0x0101, 0x0100),
+        };
+        source.versions.get_mut(0).unwrap().kinds.get_mut(u32::from(received - 0x0100)).unwrap().largest = 4096;
+        let bound = worst_case(&source, role, &limits).expect("large receive and small output have a finite bound");
+        let opening = match role {
+            Role::Initiator => Control::Accept { version: 1, features: 0 },
+            Role::Responder => {
+                Control::Open { magic: *b"heap", lowest: 1, highest: 1, features: 0, credential: Box::new([]) }
+            }
+        };
+        let opening = control_frame(&opening, &limits).unwrap();
+        let mut entries = List::with_capacity(1);
+        entries.push(Term { kind: sent, largest: 120 }).unwrap();
+        let terms = control_frame(&Control::Terms { entries }, &limits).unwrap();
+        let mut input = frame_writer(received, 4096).unwrap();
+        input.put(&[7; 4096]).unwrap();
+        let input = input.finish().unwrap();
+        let meter = Meter::new();
+        meter.start();
+        let mut machine = Machine::new(source.clone(), role, limits).unwrap();
+        let mut above = Queue::<Event>::with_capacity(MAX_UP);
+        let mut below = Queue::<Lower>::with_capacity(MAX_DOWN);
+        let mut pending = None;
+        let mut ready = false;
+        let mut body_seen = false;
+        if role == Role::Initiator {
+            machine.down(Request::Open { credential: Box::new([]) }, &mut above, &mut below);
+        }
+        feed(
+            &mut machine,
+            &mut above,
+            &mut below,
+            &mut pending,
+            opening.bytes(),
+            true,
+            &mut ready,
+            &mut body_seen,
+            (received, 4096),
+        );
+        feed(
+            &mut machine,
+            &mut above,
+            &mut below,
+            &mut pending,
+            terms.bytes(),
+            true,
+            &mut ready,
+            &mut body_seen,
+            (received, 4096),
+        );
+        assert!(ready);
+        let mut output = frame_writer(sent, 120).unwrap();
+        output.put(&[9; 120]).unwrap();
+        machine.down(Request::Send { token: Token::new(1), frame: output.finish().unwrap() }, &mut above, &mut below);
+        machine.down(Request::Read, &mut above, &mut below);
+        feed(
+            &mut machine,
+            &mut above,
+            &mut below,
+            &mut pending,
+            input.bytes(),
+            false,
+            &mut ready,
+            &mut body_seen,
+            (received, 4096),
+        );
+        assert!(body_seen);
+        let measured = meter.end();
+        assert!(measured.peak() >= 4096 + 128, "large input and full small output coexist");
+        assert!(measured.peak() <= bound, "{role:?} peak {} exceeds {bound}", measured.peak());
+        eprintln!("{role:?} large receive4096/output128 peak={} bound={bound}", measured.peak());
+        drop(machine);
+        drop(above);
+        drop(below);
+        assert_eq!(meter.held(), 0);
+    }
 }
