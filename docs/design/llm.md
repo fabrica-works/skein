@@ -387,9 +387,12 @@ derivation's own:
     are serialized by reference, never cloned into a compact copy;
   - JSON text a request carries, such as a call's arguments that a
     dialect sends as an object, is checked by a streaming pass of the
-    tokenizer and copied as text, never parsed into a compact document.
-    What fails the pass is handled as the dialect already handles
-    invalid arguments.
+    tokenizer, which writes each token in the compact serializer's
+    spelling as it reads it. That means no insignificant whitespace, and
+    escapes as the serializer writes them. So the bytes sent, and what
+    is admitted against the request bound, are exactly those of parsing
+    and serializing it, without a compact document. What fails the pass
+    is handled as the dialect already handles invalid arguments.
 
   So the encoder's scratch is its fixed state and a stack bounded by the
   dialect's nesting depth, held once by the component. Dense JSON, many
