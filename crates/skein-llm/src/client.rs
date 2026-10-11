@@ -317,13 +317,7 @@ pub fn measure(
 ) -> Result<Measured, Error> {
     check_preparation(limits)?;
     let body = match endpoint.provider {
-        Provider::OpenAiCodex => {
-            let request = translate::request(prompt, endpoint.provider, &limits.native())?;
-            match openai::measure_request(&request, &limits.native()) {
-                Ok(length) => length,
-                Err(error) => return Err(admission(error)),
-            }
-        }
+        Provider::OpenAiCodex => translate::measure_request(prompt, &limits.native())?,
         Provider::Anthropic => anthropic::measure_request(prompt, limits.declared_output_tokens, &limits.native())?,
     };
     let head = measure_headers(endpoint, credential, prompt.affinity, limits, body)?;
@@ -378,16 +372,9 @@ impl Client {
         let affinity = input.prompt.affinity;
         let (headers, body) = match provider {
             Provider::OpenAiCodex => {
-                let request = translate::request(&input.prompt, provider, &limits.native())?;
-                let length = match openai::measure_request(&request, &limits.native()) {
-                    Ok(length) => length,
-                    Err(error) => return Err(admission(error)),
-                };
+                let length = translate::measure_request(&input.prompt, &limits.native())?;
                 let headers = headers(&input.endpoint, &input.credential, affinity, limits, length)?;
-                let body = match openai::encode_request(&request, &limits.native()) {
-                    Ok(body) => body,
-                    Err(error) => return Err(admission(error)),
-                };
+                let body = translate::encode_request(&input.prompt, &limits.native())?;
                 (headers, body)
             }
             Provider::Anthropic => {
@@ -1388,16 +1375,14 @@ pub fn call_worst_case(limits: &Limits) -> Option<u64> {
     worst_case(limits)?
         .checked_mul(2)?
         .checked_add(largest_reservation(limits)?)?
-        .checked_add(openai::worst_case(&limits.native())?.max(anthropic::worst_case(&limits.native())?))
+        .checked_add(encoding_worst_case(limits)?)
 }
 
-fn admission(error: openai::DecodeError) -> Error {
-    match error {
-        openai::DecodeError::TooLarge { which, bound } => Error::Limit { which, bound },
-        openai::DecodeError::Malformed | openai::DecodeError::Missing | openai::DecodeError::WrongType => {
-            Error::Invalid
-        }
-    }
+/// One borrowed request's fixed encoder/grammar scratch, excluding its reserved bytes.
+/// Neither document density nor request counts grow it (llm.md, section 4.2).
+#[must_use]
+pub fn encoding_worst_case(limits: &Limits) -> Option<u64> {
+    openai::encoding_worst_case(&limits.native())
 }
 
 #[expect(clippy::manual_map, reason = "the strict subset excludes closure-taking maps")]

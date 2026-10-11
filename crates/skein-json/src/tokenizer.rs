@@ -102,6 +102,69 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     open.checked_add(text)?.checked_add(u64::from(largest_demand(limits)))
 }
 
+/// Heap used to validate borrowed JSON without retaining any token or string.
+/// Only nesting, the fixed number grammar and one delivery are held.
+#[must_use]
+pub fn validation_worst_case(limits: &Limits) -> Option<u64> {
+    let bounded = Limits { string: 0, ..*limits };
+    worst_case(&bounded)?.checked_add(Queue::<Event>::worst_case(1)?)?.checked_add(Queue::<Down>::worst_case(1)?)
+}
+
+/// Checks one borrowed value through `Skip`, including trailing whitespace.
+/// Strings and keys are checked but never retained; no token count is imposed.
+pub fn validate(input: &[u8], limits: &Limits) -> Result<(), Error> {
+    if input.len() > usize::try_from(limits.length).expect("u32 fits usize") {
+        return Err(Error::TooLong);
+    }
+    let bounded = Limits { string: 0, ..*limits };
+    let env = Env { now: skein_lib::Time::ZERO, wall: skein_lib::Wall::EPOCH, limits: bounded };
+    let mut machine = Tokenizer::new(&bounded);
+    let mut above = Queue::with_capacity(1);
+    let mut below = Queue::with_capacity(1);
+    down(&mut machine, &env, Request::Skip, &mut above, &mut below);
+    let mut at = 0_usize;
+    let ticks = input.len().saturating_mul(4).saturating_add(16);
+    for _tick in 0..ticks {
+        match above.pop() {
+            Some(Event::Skipped(_)) => {
+                down(&mut machine, &env, Request::Next, &mut above, &mut below);
+                continue;
+            }
+            Some(Event::Done) => return Ok(()),
+            Some(Event::Failed(error)) => return Err(error),
+            Some(Event::Token(_) | Event::Long(_) | Event::Closed) => return Err(Error::Unexpected),
+            None => {}
+        }
+        let demand = below.pop().ok_or(Error::Unexpected)?;
+        let read = match demand {
+            Down::Demand { read, .. } => read,
+            Down::Send(_) | Down::Finish => return Err(Error::Unexpected),
+        };
+        let remaining = input.get(at..).ok_or(Error::Unexpected)?;
+        let count = match read {
+            Read::Fill(count) => usize::try_from(count).expect("u32 fits usize"),
+            Read::Scan { until, max } => {
+                let max = usize::try_from(max).expect("u32 fits usize");
+                let scanned = remaining.get(..remaining.len().min(max)).expect("bounded slice");
+                match skein_lib::bytes::find(scanned, until.as_bytes()) {
+                    Some(position) => position.saturating_add(until.as_bytes().len()),
+                    None => max,
+                }
+            }
+            Read::Nothing | Read::Line { .. } => return Err(Error::Unexpected),
+        };
+        let delivery = if count <= remaining.len() {
+            let bytes = skein_lib::bytes::copy_of(remaining.get(..count).expect("delivery within input"));
+            at = at.checked_add(count).ok_or(Error::TooLong)?;
+            Up::Bytes(bytes)
+        } else {
+            Up::End
+        };
+        up(&mut machine, &env, delivery, &mut above, &mut below);
+    }
+    Err(Error::Unexpected)
+}
+
 /// The most an entry point emits in one call, into each of its two queues.
 /// Whoever calls it reserves this much room in each first
 /// (programming-model.md, 2).

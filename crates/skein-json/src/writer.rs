@@ -30,7 +30,8 @@
 //! writing pass of another length than its measuring pass) is a bug,
 //! asserted.
 //!
-//! The document is compact, with no whitespace. A string escapes `"`, `\`
+//! The document is compact, apart from borrowed `json_text` values whose
+//! validated spelling and whitespace are preserved. A string escapes `"`, `\`
 //! and the control characters, the common ones in their short forms and the
 //! rest as `\u00XX`; every other byte, `/` and non-ASCII included, is
 //! written as it is.
@@ -193,6 +194,56 @@ impl Encoder {
         }
         self.put_string(text);
         self.after_value();
+    }
+
+    /// One string from borrowed UTF-8 pieces, without concatenating them.
+    pub fn string_parts(&mut self, parts: &[&[u8]]) {
+        if !self.before_value() {
+            return;
+        }
+        let mut length = 2_u64;
+        for part in parts {
+            let Some(escaped) = escaped_len(part) else {
+                self.refuse(Refusal::Text);
+                return;
+            };
+            length = length.saturating_add(escaped.saturating_sub(2));
+        }
+        match &mut self.sink {
+            Sink::Measuring { len, .. } => *len = len.saturating_add(length),
+            Sink::Refused(_) => {}
+            Sink::Writing(writer) => {
+                put(writer, b"\"");
+                for part in parts {
+                    write_escaped_content(writer, part);
+                }
+                put(writer, b"\"");
+            }
+        }
+        self.after_value();
+    }
+
+    /// Checks and copies borrowed JSON as one value without retaining tokens.
+    /// The tokenizer checks its grammar; nesting also fits this writer's stack.
+    pub fn json_text(&mut self, text: &[u8], limits: &crate::tokenizer::Limits) -> Result<(), crate::tokenizer::Error> {
+        crate::tokenizer::validate(text, limits)?;
+        if self.is_refused() {
+            return Ok(());
+        }
+        let depth = self.open.capacity().checked_sub(self.open.len()).expect("bounded stack");
+        if let Err(error) = crate::tokenizer::validate(text, &crate::tokenizer::Limits { depth, ..*limits }) {
+            if error == crate::tokenizer::Error::TooDeep {
+                self.refuse(Refusal::TooDeep);
+            } else {
+                return Err(error);
+            }
+            return Ok(());
+        }
+        if self.before_value() {
+            self.put(text);
+            self.after_value();
+        }
+        Ok(())
     }
 
     /// A number, its text as JSON's grammar has it (RFC 8259, section 6),
@@ -461,6 +512,11 @@ fn escaped_len(text: &[u8]) -> Option<u64> {
 /// Writes `text` quoted and escaped, the bytes between escapes in runs.
 fn write_escaped(writer: &mut Writer, text: &[u8]) {
     put(writer, b"\"");
+    write_escaped_content(writer, text);
+    put(writer, b"\"");
+}
+
+fn write_escaped_content(writer: &mut Writer, text: &[u8]) {
     // Where the run of bytes written as they are begins.
     let mut run = 0;
     for (at, &byte) in text.iter().enumerate() {
@@ -474,7 +530,6 @@ fn write_escaped(writer: &mut Writer, text: &[u8]) {
         run = at.checked_add(1).expect("within the text");
     }
     put(writer, text.get(run..).expect("the run is within the text"));
-    put(writer, b"\"");
 }
 
 /// The hex digit of a value below sixteen.

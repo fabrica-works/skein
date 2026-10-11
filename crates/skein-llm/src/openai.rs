@@ -7,7 +7,9 @@ pub(crate) mod json;
 mod request;
 pub(crate) mod response;
 pub(crate) use common::clipped as clip_detail;
-pub use common::{DecodeError, Failure, Limits, ProviderError, RateLimit, Stop, Usage, classify, worst_case};
+pub use common::{
+    DecodeError, Failure, Limits, ProviderError, RateLimit, Stop, Usage, classify, encoding_worst_case, worst_case,
+};
 pub use json::Json;
 pub use request::{Input, Request, Role, Tool, decode_request, encode_request, measure_request};
 pub use response::{

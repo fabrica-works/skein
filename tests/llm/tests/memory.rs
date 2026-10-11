@@ -9,6 +9,89 @@ use skein_llm_world::{World, call, limits, text_response};
 static HEAP: Counting = Counting;
 
 #[test]
+fn codex_dense_request_encoding_uses_only_reserved_bytes_and_fixed_scratch() {
+    dense_request_encoding(skein_llm::Provider::OpenAiCodex);
+}
+
+#[test]
+fn anthropic_dense_request_encoding_uses_only_reserved_bytes_and_fixed_scratch() {
+    dense_request_encoding(skein_llm::Provider::Anthropic);
+}
+
+fn dense_request_encoding(provider: skein_llm::Provider) {
+    use skein_llm::{Block, Json, Message, Provider, Replay, Role, Tool};
+    for count in [32, 4096] {
+        let mut bounds = skein_llm_world::limits_for(provider);
+        bounds.request = 131_072;
+        bounds.reasoning = 131_072;
+        let value = format!("{{\"values\":[{}]}}", vec!["null"; count].join(","));
+        let document = skein_llm::DocumentLimits {
+            bytes: bounds.request,
+            strings: bounds.request,
+            tokens: bounds.request,
+            depth: bounds.depth,
+        };
+        let mut input = call(1);
+        if provider == Provider::Anthropic {
+            input.endpoint = skein_llm::Endpoint::anthropic();
+            input.credential.account_id = Box::new([]);
+        }
+        input.prompt.tools = Box::new([Tool {
+            name: b"read".to_vec().into(),
+            description: Box::new([]),
+            schema: Json::from_bytes(value.as_bytes(), &document).expect("dense schema fits owner admission"),
+        }]);
+        let mut blocks = vec![Block::ToolCall {
+            id: b"call".to_vec().into(),
+            name: b"read".to_vec().into(),
+            arguments: value.as_bytes().to_vec().into(),
+            replay: None,
+        }];
+        if provider == Provider::OpenAiCodex {
+            let opaque = format!("{{\"type\":\"extension\",\"values\":[{}]}}", vec!["null"; count].join(","));
+            blocks.push(Block::Reasoning {
+                replay: Replay {
+                    provider,
+                    value: Json::from_bytes(opaque.as_bytes(), &document).expect("dense replay fits owner admission"),
+                },
+            });
+        }
+        input.prompt.messages = Box::new([Message { role: Role::Assistant, content: blocks.into_boxed_slice() }]);
+        let original = input.prompt.clone();
+        let scratch = client::encoding_worst_case(&bounds).expect("fixed scratch is representable");
+        let measuring = Span::start();
+        let measured = client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds)
+            .expect("dense request fits the whole window");
+        let growth = measuring.end();
+        let measuring_peak = growth.peak;
+        assert!(
+            growth.peak <= i64::try_from(scratch).expect("scratch fits i64"),
+            "{provider:?}/{count}: measure peak {} exceeds fixed scratch {scratch}",
+            growth.peak
+        );
+        assert_eq!(input.prompt, original, "the borrowed owner retains every document and byte");
+        let bound = scratch
+            + client::worst_case(&bounds).expect("client bound is representable")
+            + u64::from(measured.head)
+            + u64::from(measured.body);
+        let preparing = Span::start();
+        let prepared = client::Client::prepare(input, &bounds).expect("dense request prepares");
+        let growth = preparing.end();
+        assert!(
+            growth.peak <= i64::try_from(bound).expect("prepared bound fits i64"),
+            "{provider:?}/{count}: preparation peak {} exceeds reserved body and fixed state {bound}",
+            growth.peak
+        );
+        assert_eq!(prepared.measured(), measured);
+        eprintln!(
+            "{provider:?}/{count}: scratch={scratch}, measurement peak={}, prepared peak={}, bound={bound}",
+            measuring_peak, growth.peak
+        );
+        drop(prepared);
+    }
+}
+
+#[test]
 fn preparation_and_streaming_stay_within_the_declared_bound() {
     for chunked in [false, true] {
         let bounds = limits();

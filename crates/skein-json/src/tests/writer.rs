@@ -231,3 +231,36 @@ fn a_writing_pass_shorter_than_its_measure_is_a_bug() {
     json.string(b"a");
     drop(json.finish());
 }
+
+#[test]
+fn borrowed_json_is_grammar_checked_and_preserves_its_text() {
+    let limits = crate::tokenizer::Limits { depth: 4, string: 0, number: 32, chunk: 3, length: 256 };
+    for valid in [br#" {"a":[null,true,false,-2e3,"\u0061"]} "#.as_slice(), b"null", b"\"longer than the chunk\""] {
+        assert_eq!(crate::tokenizer::validate(valid, &limits), Ok(()));
+        let mut measure = Encoder::measure(&WRITER);
+        measure.array_start();
+        measure.json_text(valid, &limits).unwrap();
+        measure.array_end();
+        let length = measure.measured().unwrap();
+        let mut write = Encoder::write(length, &WRITER);
+        write.array_start();
+        write.json_text(valid, &limits).unwrap();
+        write.array_end();
+        let written = write.finish();
+        assert_eq!(written.first(), Some(&b'['));
+        assert_eq!(written.last(), Some(&b']'));
+        assert_eq!(&written[1..written.len() - 1], valid);
+    }
+    for bad in
+        [b"".as_slice(), b"{", b"[1,]", b"{} {}", b"01", b"{\"x\":\"\\uD800\"}", b"\"\xFF\"", b"{\"x\":\"\x01\"}"]
+    {
+        assert!(crate::tokenizer::validate(bad, &limits).is_err(), "{bad:?}");
+    }
+    assert_eq!(crate::tokenizer::validate(b"[[[[[]]]]]", &limits), Err(crate::tokenizer::Error::TooDeep));
+    let mut measure = Encoder::measure(&WRITER);
+    measure.array_start();
+    measure.json_text(b"[[[[]]]]", &limits).unwrap();
+    measure.array_end();
+    assert_eq!(measure.measured(), Err(Refusal::TooDeep), "embedding counts the open parent");
+    assert_eq!(written(|out| out.string_parts(&[b"Error: ", b"a\n\"b"])).as_ref(), br#""Error: a\n\"b""#);
+}

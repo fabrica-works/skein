@@ -60,13 +60,9 @@ pub fn worst_case(limits: &Limits, endpoints: &List<crate::Endpoint>) -> Option<
         let each = socket.checked_add(transport)?.checked_add(fixed)?.checked_add(routes)?;
         largest = largest.max(each);
         // One entrance measures or prepares one call, never one per connection.
-        // Its borrowed prompt remains the owner's; translated codec tables,
-        // validated replay copies and temporary JSON belong to this scratch.
-        scratch = scratch.max(
-            skein_llm::openai::worst_case(&client.native())?
-                .max(skein_llm::anthropic::worst_case(&client.native())?)
-                .checked_add(fixed)?,
-        );
+        // Its prompt stays borrowed; only depth-bounded encoding state and
+        // one fresh client's overlap during reuse belong to this scratch.
+        scratch = scratch.max(skein_llm::client::encoding_worst_case(&client)?.checked_add(fixed)?);
     }
     let pool = largest.checked_mul(u64::from(limits.connections))?;
     pool.checked_add(limits.memory)?
@@ -75,4 +71,37 @@ pub fn worst_case(limits: &Limits, endpoints: &List<crate::Endpoint>) -> Option<
         .checked_add(List::<Option<Id<Connection>>>::worst_case(limits.connections)?)?
         .checked_add(List::<Option<crate::component::Waiting>>::worst_case(limits.calls)?)?
         .checked_add(List::<crate::Endpoint>::worst_case(limits.endpoints)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encoding_scratch_is_charged_once_for_all_connections() {
+        let small = crate::tests::endpoint();
+        let mut large = crate::tests::endpoint();
+        large.limits.depth = small.limits.depth + 2;
+        let scratch_growth = skein_llm::client::encoding_worst_case(&large.limits).unwrap()
+            - skein_llm::client::encoding_worst_case(&small.limits).unwrap();
+        let fixed_growth = skein_llm::client::worst_case(&large.limits).unwrap()
+            - skein_llm::client::worst_case(&small.limits).unwrap();
+        assert!(scratch_growth > 0);
+        let mut small_endpoints = List::with_capacity(1);
+        small_endpoints.push(small).unwrap();
+        let mut large_endpoints = List::with_capacity(1);
+        large_endpoints.push(large).unwrap();
+        for connections in [1, 4] {
+            let mut limits = crate::tests::limits();
+            limits.connections = connections;
+            limits.io.sockets = connections;
+            let small = worst_case(&limits, &small_endpoints).unwrap();
+            let large = worst_case(&limits, &large_endpoints).unwrap();
+            assert_eq!(
+                large - small - u64::from(connections + 1) * fixed_growth,
+                scratch_growth,
+                "one encoding scratch, even with {connections} sockets"
+            );
+        }
+    }
 }
