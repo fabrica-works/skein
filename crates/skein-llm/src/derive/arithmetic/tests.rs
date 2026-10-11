@@ -9,16 +9,22 @@ const SYNTHETIC: Constants = Constants {
     error_bytes: 64,
     detail_bytes: 32,
     metadata: 16,
-    smallest_tool: 77,
-    smallest_item: 12,
     fixed_tokens: 32,
     fixed_text: 64,
     event_field: 64,
     depth: 16,
 };
 
-const DECLARED: Declared =
-    Declared { window: 64, output: 32, reasoning_item: 48, tool_payload: 8, calls_per_response: 3, conversations: 2 };
+const DECLARED: Declared = Declared {
+    window: 64,
+    output: 32,
+    reasoning_item: 48,
+    tool_payload: 8,
+    calls_per_response: 3,
+    conversations: 2,
+    tools: 8,
+    history_items: 16,
+};
 
 #[test]
 fn each_rule_follows_the_declared_quantities_and_explicit_constants() {
@@ -34,8 +40,8 @@ fn each_rule_follows_the_declared_quantities_and_explicit_constants() {
     let event = 80 * u32::try_from(size_of::<Compact>()).unwrap() + 320;
     assert_eq!(limits.receiving, 256 + 8 * 48 + event);
     assert_eq!(limits.skip, 3072 + 6 * limits.receiving);
-    assert_eq!(limits.tools, 3072 / 77);
-    assert_eq!(limits.history_items, 256);
+    assert_eq!(limits.tools, DECLARED.tools);
+    assert_eq!(limits.history_items, DECLARED.history_items);
     assert_eq!(limits.metadata, 16);
     assert_eq!(limits.depth, 16);
     assert_eq!(limits.http.head, 128);
@@ -73,14 +79,6 @@ fn overflowing_declarations_name_the_first_rule_without_wrapping() {
     assert_eq!(
         dialect(&DECLARED, &Constants { fixed_text: u32::MAX, ..SYNTHETIC }),
         Err(Violation::Overflow { rule: Rule::Retained })
-    );
-    assert_eq!(
-        dialect(&DECLARED, &Constants { smallest_tool: 0, ..SYNTHETIC }),
-        Err(Violation::Overflow { rule: Rule::Tools })
-    );
-    assert_eq!(
-        dialect(&DECLARED, &Constants { smallest_item: 0, ..SYNTHETIC }),
-        Err(Violation::Overflow { rule: Rule::HistoryItems })
     );
 }
 
@@ -125,8 +123,12 @@ fn drawn_declarations_keep_every_relationship_and_the_whole_event_reservation() 
             tool_payload: u32::try_from(random.next_u64() % u64::from(output * TOKEN_BYTES / ESCAPE + 1)).unwrap(),
             calls_per_response: u32::try_from(random.next_u64() % 100).unwrap(),
             conversations: u32::try_from(random.next_u64() % 16).unwrap(),
+            tools: u32::try_from(random.next_u64() % 32).unwrap(),
+            history_items: u32::try_from(random.next_u64() % 128).unwrap(),
         };
         let limits = dialect(&declared, &SYNTHETIC).unwrap();
+        assert_eq!(limits.tools, declared.tools);
+        assert_eq!(limits.history_items, declared.history_items);
         assert!(limits.input <= limits.answer);
         assert!(limits.output_items >= declared.calls_per_response);
         assert!(limits.strings >= limits.input);

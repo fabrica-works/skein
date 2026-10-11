@@ -13,6 +13,8 @@ pub const TINY_DECL: skein_llm::Declared = skein_llm::Declared {
     tool_payload: 342,
     calls_per_response: 7,
     conversations: 1,
+    tools: 174,
+    history_items: 684,
 };
 
 #[must_use]

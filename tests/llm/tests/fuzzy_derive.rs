@@ -13,11 +13,15 @@ fn ten_thousand_declarations_preserve_all_client_relationships() {
             tool_payload: u32::try_from(rng.between(0, 8192)).unwrap(),
             calls_per_response: u32::try_from(rng.between(0, 32)).unwrap(),
             conversations: u32::try_from(rng.between(0, 65536)).unwrap(),
+            tools: u32::try_from(rng.between(0, 256)).unwrap(),
+            history_items: u32::try_from(rng.between(0, 65536)).unwrap(),
         };
         match Limits::derive(&declared) {
             Ok(derived) => {
                 for provider in [Provider::OpenAiCodex, Provider::Anthropic] {
                     let bounds = derived.dialect(provider);
+                    assert_eq!(bounds.tools, declared.tools);
+                    assert_eq!(bounds.history_items, declared.history_items);
                     assert!(bounds.input <= bounds.answer);
                     assert!(bounds.output_items >= declared.calls_per_response);
                     assert!(bounds.strings >= bounds.input);

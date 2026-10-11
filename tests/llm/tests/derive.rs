@@ -7,8 +7,8 @@ use skein_llm_world::{TINY_DECL, World, call, limits_for};
 #[test]
 fn declared_quantities_price_the_retained_event_and_leave_transport_to_the_owner() {
     let derived = Limits::derive(&TINY_DECL).expect("declaration");
-    for (provider, head, fields, fixed_tokens, fixed_text, metadata, tool) in
-        [(Provider::OpenAiCodex, 16384, 168, 30, 196, 86, 78), (Provider::Anthropic, 16384, 128, 29, 202, 0, 47)]
+    for (provider, head, fields, fixed_tokens, fixed_text, metadata) in
+        [(Provider::OpenAiCodex, 16384, 168, 30, 196, 86), (Provider::Anthropic, 16384, 128, 29, 202, 0)]
     {
         let limits = derived.dialect(provider);
         assert_eq!(limits.http.head, head);
@@ -37,8 +37,8 @@ fn declared_quantities_price_the_retained_event_and_leave_transport_to_the_owner
         assert_eq!(limits.skip, limits.request + 6 * limits.receiving);
         assert_eq!(limits.sse.line, limits.skip);
         assert_eq!(limits.sse.event, limits.skip);
-        assert_eq!(limits.tools, limits.request / tool);
-        assert_eq!(limits.history_items, limits.request / 12);
+        assert_eq!(limits.tools, TINY_DECL.tools);
+        assert_eq!(limits.history_items, TINY_DECL.history_items);
         assert_eq!(limits.metadata, metadata);
         assert_eq!(limits.error_bytes, 16 * 1024);
         assert_eq!(limits.detail_bytes, 1024);
