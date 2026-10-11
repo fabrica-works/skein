@@ -13,11 +13,15 @@ This file is skein's `scripts/dev/workspace/AGENTS.md`, linked into
 |---|---|---|---|
 | `skein` | the io and protocol kit, and the foundation documents | — | `scripts/check.sh` |
 | `smith` | the agent kit | skein | `docs/development/workflow.md`, section 1 |
-| `temper` | the application | skein, smith | `docs/development/workflow.md`, section 1 |
-| `temper/jig` | the kit carved out of temper, built in temper's repository until it moves | skein | temper's |
+| `jig` | the kit for agentic applications | skein, smith | `docs/development/workflow.md`, section 1 |
+| `temper` | the application | skein, smith, jig | `docs/development/workflow.md`, section 1 |
 
 Dependencies point upstream only: skein names neither smith nor temper,
 smith never names temper, and jig never names temper.
+
+This directory is the workspace. On a machine that keeps its checkouts
+elsewhere (`~/src/` rather than `~/src/rust/`), read that directory where
+this file says `~/src/rust`; the tools find it by themselves.
 
 ## The process
 
@@ -36,7 +40,7 @@ and how it ends with a retrospective and its metrics. Its tools are in
   downstream repository they change, with their retrospective and
   metrics once run.
 - **A run's state** is in `tmp/<repository>/<plan>/`, and
-  `tmp/active-plan` names this machine's run.
+  `tmp/active-plan` names this machine's run. `plan status` shows it.
 
 ## Starting things
 
@@ -65,32 +69,18 @@ say:
 
 1. `plan check --fix <repository>/docs/development/plans/<name>`, until
    it passes.
-2. `plan claim <repository>/docs/development/plans/<name>`
-3. Start the supervisor: Claude (Opus 5.5, effort xhigh) in `~/src/rust`,
-   on the same machine:
+2. `plan start <repository>/docs/development/plans/<name>`. It claims the
+   run, starts the supervisor (a background Claude session) and the
+   coordinator (a thread on Codex's daemon), and returns.
+3. If the plan may raise design questions, in the designer's Claude
+   session: `plan join designer`. The supervisor wakes it with each
+   question.
 
-   > Supervise the run of <repository>/docs/development/plans/<name> as
-   > skein's docs/foundation/development.md, sections 2.5, 3.3, 4.5, 6,
-   > 7.6, 10 and 14, say.
+**While it runs:** `plan status`; `plan attach supervisor`, `plan attach
+coordinator`. After a restart of the machine: `plan resume`.
 
-4. Start the coordinator:
-
-   ```
-   codex -p coordinator "Coordinate the run of <repository>/docs/development/plans/<name>,
-   as skein's docs/foundation/development.md, section 7, says."
-   ```
-
-5. If the plan may raise design questions, in the designer's Claude
-   session, on the same machine:
-
-   > Answer the design questions of the run of <name> as development.md,
-   > sections 2.1, 6, 10.4 and 10.5, say.
-
-**After a run.** Start a fresh Claude (Opus 5.5, effort xhigh) in
-`~/src/rust`:
-
-> Write the retrospective of the run of <name>, as skein's
-> docs/foundation/development.md, section 15, says.
+**After a run.** The supervisor starts the retrospective (`plan retro`),
+a fresh Claude session that writes it beside the plan.
 
 **Where things stand:**
 - a run: `cat tmp/<repository>/<plan>/status.md`, or `plan status`;

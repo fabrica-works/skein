@@ -15,7 +15,14 @@
 set -euo pipefail
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
-root=${DEV_ROOT:-$HOME/src/rust}
+# The workspace: DEV_ROOT, or the directory holding the skein checkout these
+# tools come from (development.md, section 3.6), or ~/src/rust.
+workspace() {
+    local skein
+    skein=$(cd "$kit/../.." && pwd)
+    if [[ $(basename "$skein") == skein ]]; then dirname "$skein"; else echo "$HOME/src/rust"; fi
+}
+root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
 build_jobs=${HEAVY_BUILD_JOBS:-4}
 

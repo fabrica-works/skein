@@ -48,6 +48,10 @@ card, stands on its own: it is what an implementing agent reads. Section
   the repositories, in `~/src/rust/tmp/<repository>/<plan>/`: the ledger,
   the log, the escalation files and the session worktrees. A machine runs
   at most one plan; several machines run different plans at once.
+- **`plan start` launches a run, and every role runs in the background:**
+  the supervisor as a Claude Code session, the coordinator as a thread on
+  Codex's daemon. `plan status` shows them, `plan attach` opens one, and
+  `plan resume` starts them again after a restart.
 - **Every increment lands through `land`:** rebase on `origin/main`, run
   the gate, record its evidence in the commit, push. The push is the
   merge, and its rejection says that main moved. The local `main` follows.
@@ -172,9 +176,12 @@ card, stands on its own: it is what an implementing agent reads. Section
 ### 3.1 Repositories
 
 - **Each project is a repository under `~/src/rust/`,** on GitHub under
-  `forgetic`: skein, then smith, which builds on skein, then temper, which
-  builds on both. jig is built inside temper's repository (`temper/jig/`)
-  until it moves to its own.
+  `forgetic`: skein, then smith, which builds on skein, then jig, which
+  builds on both, then temper, which builds on all three.
+- **The workspace is the directory that holds the checkouts:** `~/src/rust/`
+  by default. The tools find it as the directory holding the skein
+  checkout they come from, so a machine may keep its checkouts elsewhere;
+  `DEV_ROOT` overrides it. This document writes `~/src/rust/` for it.
 - **Dependencies point upstream only.** An upstream repository's code never
   depends on a downstream one. Its documents may name a consumer as the
   reason for a feature, unless its `AGENTS.md` says otherwise: jig never
@@ -284,8 +291,8 @@ machine's run. Nothing here is versioned.
 | `status.md` | `plan status` | the ledger, rendered, checked against `origin/main` |
 | `log.md` | the coordinator | every report as received, every escalation and its answer; appended only |
 | `context.md` | the coordinator | what a restarted coordinator needs; rewritten, never appended |
-| `thread` | the coordinator | its Codex thread's id, for the doorbell and the metrics |
-| `claude.tsv` | the supervisor, the designer | one line per Claude Code session that works on the run: its role and its `$CLAUDE_CODE_SESSION_ID`, for the metrics |
+| `thread`, `threads` | `plan start`, `plan resume`, the coordinator | the coordinator's Codex thread's id, for the doorbell; every thread it has had, with when, for the metrics |
+| `claude.tsv` | `plan start`, `join`, `wake`, `retro` | one line per Claude Code session that works on the run: its role, its session id and when, for `plan attach`, `plan wake` and the metrics |
 | `heartbeat` | the coordinator | touched at every wake-up |
 | `.watch` | `plan watch` | the escalations and events the supervisor, or the designer, has seen |
 | `blocked.md` | the coordinator | open escalations (section 10.2) |
@@ -325,21 +332,39 @@ are on every agent's `PATH`, and the files into place. The tools read
 | `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11) |
 | `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local` |
 | `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and the plan when given one (sections 6 and 12) |
-| `plan claim PLAN_DIR`, `plan release` | start and end the machine's run |
+| `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
+| `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
+| `plan resume` | after a restart, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn (section 7.6) |
+| `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
+| `plan wake ROLE MESSAGE` | resumes a Claude Code role's session in the background with MESSAGE (section 10.4) |
+| `plan retro [PLAN_DIR]` | starts the run's retrospective (section 15) |
+| `plan claim PLAN_DIR`, `plan release` | start and end the machine's run; `plan start` claims |
 | `plan worktree [--remove] REPOSITORY NAME` | a session's worktree, at `origin/main` |
 | `plan set STEP KEY=VALUE…` | adds or changes a ledger row |
 | `plan status` | renders `status.md` |
 | `plan watch [--designer]` | waits until the supervisor has something to do, or with `--designer`, the designer (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
 | `plan ring MESSAGE` | rings the coordinator's doorbell (section 7.4) |
-| `plan metrics [--history]` | computes the run's metrics into the plan's `metrics.tsv`; with `--history`, prints every plan's metrics side by side (section 15.2) |
+| `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
+| `test-plan [--live]` | tests `plan` on a workspace of its own; `--live` also starts real roles, on cheap models |
 
-`plan pulse`, `plan ring`, `plan metrics`, `plan watch --designer` and the
-ledger's `thread` column are not built yet (section 13).
+The roles run in the background:
+- **Claude Code roles** are background sessions (`claude --bg`), started in
+  the workspace, which Claude Code must trust: run `claude` there once,
+  and accept.
+- **The coordinator** is a thread on Codex's app-server daemon, reached
+  through `codex app-server proxy` (`scripts/dev/codex.sh`). It goes on
+  without a client attached.
+- **`PLAN_CLAUDE_MODEL`, `PLAN_CLAUDE_EFFORT`** (claude-opus-5-5, xhigh)
+  set the Claude Code roles' model and effort. The coordinator's come from
+  `workspace/coordinator.config.toml`, overridden by `PLAN_CODEX_MODEL`,
+  `PLAN_CODEX_EFFORT` and `PLAN_CODEX_THREADS`. Its sandbox is
+  `PLAN_CODEX_SANDBOX` (danger-full-access), since no one is there to
+  approve.
 
 `HEAVY_BUILD_JOBS`, `HEAVY_BUILD_SLOTS` and `HEAVY_TAIL` tune the queue;
-`PLAN_MIN_DISK_GB`, `PLAN_MIN_MEM_GB`, `PLAN_QUIET` and `PLAN_POLL` tune
-`plan`.
+`PLAN_MIN_DISK_GB`, `PLAN_MIN_MEM_GB`, `PLAN_QUIET`, `PLAN_POLL` and
+`PLAN_CLAUDE_DIR` (where the Claude Code roles start) tune `plan`.
 
 ## 4. Designing
 
@@ -500,8 +525,18 @@ user only what they and the design leave open, and asks before writing.
 - **Live services:** each one the plan uses, with its budget of calls or
   tokens;
 - **Pulse:** what `plan pulse` looks for in this plan's diffs (section
-  14): the words the plan forbids in code, and the type names that signal
-  a parallel type (for example `Owner*`, `*V2`, `Legacy*`);
+  14), as lines of their own, in a code block:
+
+  ```
+  words: actual|exact|genuine|real
+  types: ^(Owner|Legacy)[A-Z]|V2$
+  file-lines: 800
+  budgets: 15 60
+  ```
+
+  `words` are the words the plan forbids in code, `types` the names that
+  signal a parallel type, `file-lines` the plan's file limit, and
+  `budgets` the focused and fuzzy suites' budgets in seconds;
 - **Done when:** observable conditions.
 
 **`code-organization.md`:**
@@ -730,46 +765,44 @@ shows them precisely.
 
 1. **The plan is on `origin/main`,** with its row `ready` in `STATUS.md`.
 2. **The machine is ready.** `plan check --fix <plan-dir>` passes. It
-   checks the plan and its `STATUS.md` row, the primary checkouts (on
-   `main`, clean, equal to `origin/main`), the tools, pueued and the
-   queue's lanes, memory, disk and the coordinator's Codex profile.
-   `--fix` links the tools, starts pueued as a user service, and creates
-   and starts the lanes.
-3. **The run is claimed:** `plan claim <plan-dir>` creates its directory
-   and names it in `~/src/rust/tmp/active-plan`.
-4. **The supervisor starts,** on the same machine, since the run's files
-   are local. In a new Claude session (Opus 5.5, xhigh) in `~/src/rust`:
-   "Supervise the run of `<plan-dir>` as skein's
-   docs/foundation/development.md, sections 2.5, 3.3, 4.5, 6, 7.6, 10 and
-   14, say." It:
-   - adds its line to the run's `claude.tsv`: `supervisor`, then
-     `$CLAUDE_CODE_SESSION_ID`;
+   checks:
+   - the plan and its `STATUS.md` row;
+   - the primary checkouts: on `main`, clean, equal to `origin/main`;
+   - the tools, pueued and the queue's lanes, memory and disk;
+   - that Claude Code trusts the workspace, Codex's daemon, and the
+     coordinator's Codex profile.
+
+   `--fix` links the tools, starts pueued (as a user service where
+   systemd has a user bus) and Codex's daemon, and creates and starts the
+   lanes.
+3. **`plan start <plan-dir>`** does the rest, and returns:
+   - it runs `plan check`, and claims the run, naming it in
+     `~/src/rust/tmp/active-plan`;
+   - it starts the supervisor, a background Claude Code session (Opus 5.5,
+     xhigh) in the workspace, named `<plan> supervisor`, with "Supervise the
+     run of `<plan-dir>` as skein's docs/foundation/development.md,
+     sections 2.5, 3.3, 4.5, 6, 7.6, 10 and 14, say.";
+   - it starts the coordinator, a thread on Codex's daemon named `<plan>
+     coordinator`, with "Coordinate the run of `<plan-dir>`, as skein's
+     docs/foundation/development.md, section 7, says.";
+   - it rings the doorbell once, which the coordinator logs (section 7.4).
+     If the ring fails, steers wait for the coordinator's next wake-up.
+4. **The supervisor, first:**
    - marks the plan `active on <machine> since <date>` in each `STATUS.md`
      that has its row, with `land --docs`; the row is what keeps another
      machine from claiming the same plan;
    - starts its watch, `plan watch`, in the background (section 10.5);
    - starts its hourly check (section 14): in Claude Code, a loop or a
      cron job, which lasts only as long as the session.
-5. **The coordinator starts,** from `~/src/rust`:
+5. **The designer joins,** if the plan may raise design questions: in its
+   Claude Code session, it runs `plan join designer`, so that the
+   supervisor can wake it (section 10.4).
+6. **The user looks in when they want:** `plan status` shows the steps and
+   the roles; `plan attach supervisor` and `plan attach coordinator` open
+   their sessions.
 
-   ```
-   codex -p coordinator "Coordinate the run of <plan-dir>, as skein's
-   docs/foundation/development.md, section 7, says."
-   ```
-
-6. **The supervisor tests the doorbell** once the coordinator has written
-   its `thread` file: `plan ring "doorbell test"`. The coordinator logs
-   the ring. If it does not, steers wait for the coordinator's next
-   wake-up (section 7.4).
-7. **The designer answers design questions,** if the plan may raise some:
-   in its Claude session, "Answer the design questions of the run of
-   `<plan>` as development.md, sections 2.1, 6, 10.4 and 10.5, say." It
-   adds its line to
-   `claude.tsv` (`designer`, then `$CLAUDE_CODE_SESSION_ID`), and runs
-   `plan watch --designer` in the background.
-
-A session that takes over from another, supervisor or designer, adds its
-own line too.
+A session that takes over from another, supervisor or designer, records
+itself with `plan join <role>`.
 
 ## 7. Coordinating
 
@@ -827,8 +860,8 @@ An implementer reports when an increment lands, when it stops on a
 question, and when its session ends or yields (section 8.6). After each
 report:
 
-1. Append it to `log.md`, as received, under a heading naming the
-   repository, the session and the time.
+1. Append it to `log.md`, as received, under the heading `## <repository>
+   <NN>, <UTC time>`, for example `## jig 22, 2026-10-11T10:05:00Z`.
 2. Check it with git only, in the session's worktree. For a landed step:
    - `git merge-base --is-ancestor <commit> origin/main` succeeds;
    - `git log -1 --format='%(trailers:key=Step,valueonly)' <commit>`
@@ -928,8 +961,11 @@ resumed when the dependency lands.
      mid-increment: its implementer inspects them, then finishes or
      discards them. The coordinator never discards them itself.
 
-  After a reboot, the user restarts the supervisor's session too, with
-  its watch and its hourly check (section 6, step 4). The coordinator
+  After a restart of the machine, the user runs `plan resume`. It starts
+  pueued and Codex's daemon if they are down, resumes the supervisor's
+  session (which starts its watch and its hourly check again), and
+  starts a coordinator turn with "Resume the run of `<plan-dir>` as skein's
+  docs/foundation/development.md, section 7.6, says." The coordinator
   starts no Claude session.
 - **End** when every step has landed or been dropped.
   1. Write `done.md`:
@@ -1301,7 +1337,11 @@ Reverses: <the time of an earlier answer this one reverses>, or nothing.
   for the retrospective (section 15).
 - **The designer decides a design gap.** The supervisor writes the
   question to the run's `question.md`, in `blocked.md`'s shape, with its
-  own reading of the design. The designer:
+  own reading of the design, and wakes the designer: `plan wake designer
+  "question.md has a question: answer it as development.md, section 10.4,
+  says."` This resumes the designer's own session in the background, with
+  its context; a designer session the user has open gets a copy instead.
+  The designer:
   1. decides;
   2. amends the design with `land --docs`, then the session files that
      mention the point;
@@ -1333,10 +1373,11 @@ Reverses: <the time of an earlier answer this one reverses>, or nothing.
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
   supervisor rings the doorbell. If it is still old ten minutes later,
   the supervisor alerts the user (in Claude Code, a push notification).
-  The alert gives the restart command, `codex resume <thread>`, and the
-  prompt "Resume the run as development.md, section 7.6, says."
+  The alert gives the restart command, `plan resume`.
 - **The designer's watch,** `plan watch --designer`, ends when
-  `question.md` has headings it has not shown.
+  `question.md` has headings it has not shown. A designer the user keeps
+  open runs it; one that waits in the background needs none, since `plan
+  wake` resumes it.
 - **When the supervisor's context grows past about half its window,** a
   fresh supervisor session takes over. It reads `blocked.md` and the end
   of `supervision.md` first: the watch does not show again what it has
@@ -1371,6 +1412,8 @@ the run heading away from its plan's "Done when".
 - **pueued runs as a systemd user service,** never from an agent's command:
   a daemon started by an agent dies with it. Lingering
   (`loginctl enable-linger`) keeps it running when the user logs out.
+  Where systemd has no user bus (some containers), `plan check --fix` and
+  `plan resume` start it on its own.
 - **Two lanes:**
   - **gate** (parallelism 1) runs gates, whole suites, measurements,
     probes and benchmarks. A gate task pauses every other pueue group,
@@ -1451,28 +1494,19 @@ that machine.
   is gated again each time another lands first. A single lander that
   rebases and gates several branches in turn could cut it. The metric
   `gates_per_step` (section 15.2) shows what it would save.
-- **The doorbell.** `plan ring` is to send `turn/steer` to the
-  coordinator's thread through `codex app-server proxy`. A user typing
-  into a running coordinator ends its `wait_agent` the same way, but the
-  route from outside is untested. `codex queue --thread` is no doorbell:
-  it delivers at the end of a turn, and the coordinator's turn lasts until
-  it restarts.
-- **`wait_agent`'s longest timeout.** 300 seconds works. Codex's
+- **`wait_agent`'s longest timeout.** 300 seconds works, and the doorbell
+  ends such a wait within a second (tested 2026-10-11). Codex's
   `multi_agent_v2.max_wait_timeout_ms` bounds it; its default is unknown.
+  `codex queue --thread` is no doorbell: it delivers at the end of a
+  turn, and the coordinator's turn lasts until it restarts.
 - **`$CODEX_THREAD_ID`** names the thread in Codex's commands' environment,
   as far as the binary shows. The first run confirms it.
-- **Tools this document names that the kit lacks:**
-  - `plan pulse`, `plan ring`, `plan metrics` and `plan watch --designer`;
-  - `plan watch` ending on `answer.md`, and raising its quiet alarm again
-    ten minutes after the first;
-  - the ledger's `thread` column;
-  - the `plan` script's own comments, which still name the designer and
-    `docs/plans/`.
-
-  They are built before the next run.
-- **Waking the designer at once.** Claude Code can message another local
-  session. The supervisor could message the designer's session with each
-  question, with `question.md` kept as the record. Untested.
+- **Attaching to a working coordinator.** `plan attach coordinator` runs
+  `codex resume --remote unix:// <thread>`, which needs a terminal, and is
+  untested on a thread whose turn is running.
+- **A coordinator after a reboot.** `plan resume` loads its thread again
+  with `thread/resume` before starting a turn. That path is untested
+  after a real reboot.
 - **Closing finished Codex threads,** instead of reusing slots, if the
   runtime allows it.
 - **Credentials under load.** Does a run's work that borrows the Codex
@@ -1596,7 +1630,8 @@ question and its own budget, or waits for the retrospective.
   directory is removed. The supervisor may also call for one in the
   middle of a run, when a check finds the run off course.
 - **Who:** a fresh Claude Code session, Opus 5.5 at xhigh, which took no
-  part in the run. It uses read-only sub-agents, one per source.
+  part in the run. The supervisor starts it with `plan retro`, or the user
+  does. It uses read-only sub-agents, one per source.
 - **It reads:**
   - the plan, with `decisions.md`;
   - the run's ledger, `log.md`, `supervision.md` and `done.md`, and the
@@ -1605,13 +1640,13 @@ question and its own budget, or waits for the retrospective.
     trailers;
   - `logs/heavy.tsv`;
   - the Codex traces of the coordinator and of each session (from the
-    run's `thread` file and the ledger's `thread` column), and the Claude
+    run's `threads` file, and the threads each spawned), and the Claude
     Code transcripts of the supervisor and the designer (from
     `claude.tsv`);
   - the earlier plans' metrics (`plan metrics --history`) and their
     retrospectives.
-- **It runs `plan metrics`,** which writes the plan's `metrics.tsv`
-  (section 15.2).
+- **It runs `plan metrics --out <its branch's plan directory>/metrics.tsv
+  <plan-dir>`** (section 15.2).
 - **It writes `retrospective.md`** beside the plan, and lands it with
   `metrics.tsv`, with `land --docs`. Its shape:
   1. **In one page.**
@@ -1649,11 +1684,11 @@ counts them by hand.
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |
 | `blocked_h` | hours in which at least one block was open |
 | `answers_reversed` | unblocks whose `Reverses:` line names an earlier answer |
-| `steers` | steers sent, and points not followed at the next check |
+| `steers` | steers sent, and points the coordinator refused |
 | `restarts` | `log.md`'s "Coordinator resumed" headings, by cause |
-| `tokens_coordinator` | input and output tokens of the coordinator's thread |
-| `tokens_implementers` | input and output tokens of every session's threads |
-| `tokens_claude` | input and output tokens of the supervisor's and the designer's sessions |
+| `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads |
+| `tokens_implementers` | the same, for every thread the coordinator spawned, at any depth |
+| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv`, their sub-agents included |
 | `tokens_per_step` | all of the above, per landed step |
 | `coordinator_requests` | the coordinator's model requests, and those that only saw a wait end |
 | `compactions` | the coordinator's context compactions |

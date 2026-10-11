@@ -1,0 +1,486 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2154 # plan sets root, repos, name, plan, plan_dir and run
+# The run's numbers: `plan pulse`, what changed since the supervisor's last
+# check (development.md, section 14.2), and `plan metrics`, the run's
+# metrics (section 15.2). Sourced by plan, not run.
+#
+# They read the run's directory, the plan's commits on each repository's
+# main (their Plan, Step, Proof and Gate-Result trailers), the queue's
+# statistics (logs/heavy.tsv), the coordinator's and its sessions' Codex
+# rollouts, and the Claude Code sessions' transcripts.
+
+codex_home=${CODEX_HOME:-$HOME/.codex}
+claude_home=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
+
+# The repositories the plan may change: the workspace's, and the plan's own.
+plan_repos() {
+    # shellcheck disable=SC2086 # the repositories, one word each
+    printf '%s\n' $repos "${name%%/*}" | awk '!seen[$0]++'
+}
+
+# The plan's commits on main, oldest first: repository, hash, commit time,
+# Step, Proof, Gate-Result, with "-" for a missing trailer (read collapses
+# empty fields between tabs). With an argument, only those made after that
+# second.
+plan_commits() {
+    local since=${1:-} repo
+    [[ $since != 0 && -n $since ]] && since=$((since + 1)) || since=
+    for repo in $(plan_repos); do
+        [[ -d $root/$repo/.git ]] || continue
+        git -C "$root/$repo" log main --reverse ${since:+--since="@$since"} --format="%H%x09%ct%x09%(trailers:key=Plan,valueonly,separator=)%x09%(trailers:key=Step,valueonly,separator=)%x09%(trailers:key=Proof,valueonly,separator=)%x09%(trailers:key=Gate-Result,valueonly,separator=)" 2>/dev/null |
+            awk -F'\t' -v OFS='\t' -v plan="$plan" -v repo="$repo" '$3 == plan {
+                for (i = 4; i <= 6; i++) if ($i == "") $i = "-"
+                print repo, $1, $2, $4, $5, $6 }' || true
+    done | sort -s -t$'\t' -k3,3n
+}
+
+# A layer's rank (development.md, section 5.5); 0 when unknown.
+layer_rank() {
+    case ${1,,} in
+    unit) echo 1 ;; world) echo 2 ;; joint) echo 3 ;; process) echo 4 ;; live) echo 5 ;; *) echo 0 ;;
+    esac
+}
+
+# The layer a step's increment names in its session file's Proof line.
+planned_layer() {
+    local step=$1 repo session item file
+    repo=${step%-*}
+    session=${step##*-}
+    item=${session#*.}
+    session=${session%%.*}
+    for file in "$plan_dir/$repo/$session"-*.md; do
+        [[ -f $file ]] || continue
+        awk -v id="$((10#$session)).$item" '
+            /^### / { inside = ($2 == id) }
+            inside && /^Proof:/ { sub(/^Proof: */, ""); sub(/[ ,.;].*/, ""); print; exit }' "$file"
+        return
+    done
+}
+
+# Codex's rollout directories that exist.
+rollout_dirs() {
+    local dir
+    for dir in "$codex_home/sessions" "$codex_home/archived_sessions"; do
+        [[ -d $dir ]] && echo "$dir"
+    done
+    return 0
+}
+
+# A thread's Codex rollout files.
+rollout_of() {
+    local dirs
+    mapfile -t dirs < <(rollout_dirs)
+    ((${#dirs[@]})) || return 0
+    find "${dirs[@]}" -name "rollout-*-$1.jsonl" 2>/dev/null || true
+}
+
+# The coordinator's threads (the thread file and the history plan keeps),
+# then every thread spawned under them, at any depth.
+run_threads() {
+    local parents children file
+    parents=$( { cat "$run/thread" "$run/threads" 2>/dev/null || true; } | awk 'NF { print $1 }' | sort -u)
+    [[ -n $parents ]] || return 0
+    printf '%s\n' "$parents" | sed 's/^/coordinator\t/'
+    local all
+    local dirs
+    mapfile -t dirs < <(rollout_dirs)
+    ((${#dirs[@]})) || return 0
+    all=$({ find "${dirs[@]}" -name 'rollout-*.jsonl' -newermt "@$(run_started)" 2>/dev/null || true; } |
+        while read -r file; do
+            head -n1 "$file" | jq -r '[.payload.id, (.payload.parent_thread_id // .payload.source.subagent.thread_spawn.parent_thread_id // "")] | @tsv' 2>/dev/null || true
+        done)
+    children=$parents
+    while [[ -n $children ]]; do
+        children=$(LIST=$children awk -F'\t' '
+            BEGIN { n = split(ENVIRON["LIST"], p, "\n"); for (i = 1; i <= n; i++) want[p[i]] = 1 }
+            $2 in want { print $1 }' <<<"$all" | sort -u)
+        [[ -z $children ]] || printf '%s\n' "$children" | sed 's/^/session\t/'
+    done
+}
+
+# A Codex thread's tokens, from its last token count: input, output, and
+# the part of the input read from the cache.
+codex_tokens() {
+    local file
+    file=$(rollout_of "$1" | head -n1)
+    [[ -n $file ]] || { echo "0 0 0"; return; }
+    grep '"total_token_usage"' "$file" | tail -n1 |
+        jq -r '.payload.info.total_token_usage | "\(.input_tokens // 0) \(.output_tokens // 0) \(.cached_input_tokens // 0)"' 2>/dev/null || echo "0 0 0"
+}
+
+# A Claude Code session's tokens, its sub-agents' included: input (fresh,
+# cache writes and cache reads), output, and the cache reads, each message
+# counted once.
+claude_tokens() {
+    local files
+    files=$(find "$claude_home/projects" \( -name "$1.jsonl" -o -path "*/$1/subagents/*.jsonl" \) 2>/dev/null || true)
+    [[ -n $files ]] || { echo "0 0 0"; return; }
+    # shellcheck disable=SC2086 # one path per line, none with spaces
+    jq -r 'select(.type == "assistant" and .message.usage != null) | .message as $m | $m.usage as $u
+        | [$m.id, (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0) + ($u.cache_read_input_tokens // 0)), ($u.output_tokens // 0), ($u.cache_read_input_tokens // 0)]
+        | @tsv' $files 2>/dev/null |
+        awk -F'\t' '{ i[$1] = $2; o[$1] = $3; c[$1] = $4 } END { for (k in i) { a += i[k]; b += o[k]; d += c[k] } printf "%d %d %d\n", a, b, d }' || true
+}
+
+# When the run started: its claim, from log.md.
+run_started() {
+    local at
+    at=$(sed -nE 's/^## Claimed, (.*)$/\1/p' "$run/log.md" 2>/dev/null | head -n1)
+    date -u -d "${at:-now}" +%s
+}
+
+run_ended() {
+    if [[ -f $run/done.md ]]; then stat -c %Y "$run/done.md"; else date +%s; fi
+}
+
+# Seconds the coordinator worked: the span of its rollouts' events, less
+# every gap of more than ten minutes.
+running_seconds() {
+    local files thread
+    files=$(for thread in $( { cat "$run/thread" "$run/threads" 2>/dev/null || true; } | awk 'NF { print $1 }' | sort -u); do
+        rollout_of "$thread"
+    done)
+    if [[ -z $files ]]; then
+        echo $(($(run_ended) - $(run_started)))
+        return
+    fi
+    # shellcheck disable=SC2086 # one path per line, none with spaces
+    jq -r '.timestamp // empty | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601' $files 2>/dev/null | sort -n |
+        awk -v gap="${PLAN_GAP:-600}" 'NR > 1 { d = $1 - last; if (d <= gap) total += d } { last = $1 } END { print total + 0 }'
+}
+
+# The plan's README settings for the pulse (development.md, section 5.2):
+# lines `words: …`, `types: …`, `file-lines: N`, `budgets: FOCUSED FUZZY`.
+pulse_setting() {
+    sed -nE "s/^ *$1: *(.*[^ ]) *$/\\1/p" "$plan_dir/README.md" 2>/dev/null | head -n1
+}
+
+is_test_path() {
+    [[ $1 =~ (^|/)(tests?|testing)(/|$) || $1 =~ tests?\.rs$ || $1 =~ _tests?\.rs$ ]]
+}
+
+# The reports' lengths in log.md, in lines that are not blank: sections
+# headed `## <repository> <NN>, <time>` (development.md, section 7.3), from
+# line $1 on.
+report_lengths() {
+    awk -v from="${1:-1}" '
+        NR < from { next }
+        /^## / {
+            if (inside) print n
+            inside = ($0 ~ /^## [A-Za-z0-9_-]+ [0-9]+, /); n = 0; next
+        }
+        inside && NF { n++ }
+        END { if (inside) print n }' "$run/log.md" 2>/dev/null
+}
+
+median_and_p90() {
+    sort -n | awk '{ v[NR] = $1 } END {
+        if (!NR) { print "0 0"; exit }
+        m = v[int((NR + 1) / 2)]; p = v[int(NR * 0.9 + 0.999)]; if (p == "") p = v[NR]
+        print m, p }'
+}
+
+# Lines added and removed in code and in tests, by the given commits
+# (repository and hash per line): code+ code- tests+ tests-.
+line_counts() {
+    local repo hash added removed path ca=0 cr=0 ta=0 tr=0
+    while IFS=$'\t' read -r repo hash; do
+        while IFS=$'\t' read -r added removed path; do
+            [[ $added == - ]] && continue
+            if is_test_path "$path"; then
+                ta=$((ta + added)); tr=$((tr + removed))
+            else
+                ca=$((ca + added)); cr=$((cr + removed))
+            fi
+        done < <(git -C "$root/$repo" show --format= --numstat "$hash")
+    done
+    echo "$ca $cr $ta $tr"
+}
+
+pulse() {
+    load
+    ledger_upgrade
+    local mark=$run/.pulse since from now_s
+    now_s=$(date +%s)
+    if [[ -f $mark ]]; then
+        read -r since from <"$mark"
+    else
+        since=$(($(run_started) - 1))
+        from=1
+    fi
+    # Everything counted happened after the mark's second.
+    local after
+    after=$(date -u -d "@$((since + 1))" +%FT%TZ)
+    local hours
+    hours=$(awk -v s="$since" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }')
+    echo "# Pulse of $name, $(now), since $after ($hours h)"
+    echo
+
+    # Progress.
+    local ledger=$run/ledger.tsv
+    awk -F'\t' -v since="$since" -v three="$((now_s - 10800))" -v now="$now_s" '
+        function epoch(t,   c) { c = "date -u -d \"" t "\" +%s"; c | getline e; close(c); return e }
+        NR == 1 { next }
+        {
+            added = ($1 ~ /\.s[0-9]+$/)
+            if ($4 == "landed") {
+                if (added) la++; else lp++
+                t = epoch($9)
+                if (t > since) { if (added) na++; else np++ }
+                if (t >= three && !added) n3++
+            } else if ($4 != "dropped") { if (added) ra++; else rp++ }
+            if ($4 == "running") run[++r] = $1 " (" $5 ") " sprintf("%.1f", (now - epoch($9)) / 3600)
+        }
+        END {
+            printf "- Progress: %d planned and %d added steps landed since; in all %d of %d planned landed, %d added (%d to go); %d planned in the last 3 h.\n",
+                np, na, lp, lp + rp, la, ra, n3
+            line = ""
+            for (i = 1; i <= r; i++) { split(run[i], f, " "); flag = (f[3] > 2) ? "!" : ""; line = line (i > 1 ? "; " : "") f[1] " " f[2] " " f[3] " h" flag }
+            printf "- Running: %s\n", (r ? line : "none")
+        }' "$ledger"
+
+    # The channel.
+    local file line=""
+    for file in blocked question steer unblock answer; do
+        [[ -f $run/$file.md ]] || continue
+        line+="$file.md $(grep -c '^## ' "$run/$file.md" || true) headings, $(((now_s - $(stat -c %Y "$run/$file.md")) / 60)) min old; "
+    done
+    echo "- Channel: ${line:-nothing open; }$(grep -c '^## Steered' "$run/log.md" 2>/dev/null || true) steers in all, $(grep -cE '^Steer .*point [0-9]+: cannot' "$run/log.md" 2>/dev/null || true) points refused"
+
+    # Proofs, and the commits since.
+    local commits repo hash at step proof layer want proofs="" missing="" lower=""
+    commits=$(plan_commits "$since")
+    while IFS=$'\t' read -r repo hash at step proof _; do
+        [[ -n $repo ]] || continue
+        if [[ $proof == - ]]; then
+            missing+="$step "
+            continue
+        fi
+        layer=${proof%%[ ,]*}
+        want=$(planned_layer "$step")
+        proofs+="$step $layer; "
+        if [[ -n $want ]] && (($(layer_rank "$layer") < $(layer_rank "$want"))); then
+            lower+="$step ($layer, planned $want) "
+        fi
+    done <<<"$commits"
+    echo "- Proofs: ${proofs:-none landed}${lower:+ below plan: $lower}${missing:+ no Proof line: $missing}"
+
+    # Waste.
+    local log_lines reports gates landed_since wait_run files scripts
+    log_lines=$(wc -l <"$run/log.md" 2>/dev/null || echo 0)
+    reports=$(report_lengths "$from" | median_and_p90)
+    landed_since=$(grep -c . <<<"$commits" || true)
+    gates=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { n++ } END { print n + 0 }' "$run/logs/heavy.tsv" 2>/dev/null || echo 0)
+    wait_run=$(awk -F'\t' -v s="$after" '$3 >= s { w += $4; r += $5 } END { printf "%d s waiting, %d s running", w, r }' "$run/logs/heavy.tsv" 2>/dev/null || echo "no queue statistics")
+    files=$(find "$run/logs" -type f -newermt "@$((since + 1))" 2>/dev/null | wc -l)
+    scripts=$(find "$run/logs" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' \) -newermt "@$((since + 1))" 2>/dev/null | wc -l)
+    echo "- Waste: log +$((log_lines - from + 1)) lines; reports ${reports/ / lines median, } p90; $gates gates for $landed_since landings; queue $wait_run; logs/ +$files files, $scripts scripts."
+
+    # Tests.
+    local budgets focused fuzzy last_gate counts
+    budgets=$(pulse_setting budgets)
+    read -r focused fuzzy <<<"${budgets:-15 60}"
+    last_gate=$(awk -F'\t' '$6 != "" && $6 != "-" { g = $6 } END { print g }' <<<"$commits")
+    if [[ -n $last_gate ]]; then
+        echo "- Tests: last gate: $last_gate; $(awk -v g="$last_gate" -v f="$focused" -v z="$fuzzy" 'BEGIN {
+            n = split(g, part, ";"); out = ""
+            for (i = 1; i <= n; i++) if (match(part[i], /[0-9.]+ s/)) {
+                t = substr(part[i], RSTART, RLENGTH - 2) + 0; b = (i == 1) ? f : (i == 2) ? z : 0
+                if (b && t > 0.8 * b) out = out sprintf("suite %d at %.0f%% of its %d s; ", i, 100 * t / b, b)
+            }
+            print (out == "" ? "within four fifths of the budgets" : out) }')"
+    else
+        echo "- Tests: no gate since"
+    fi
+    local slow
+    slow=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { print $9 }' "$run/logs/heavy.tsv" 2>/dev/null |
+        while read -r file; do grep -c 'SLOW \[' "$file" 2>/dev/null || true; done | awk '{ n += $1 } END { print n + 0 }')
+    counts=$(cut -f1,2 <<<"$commits" | { grep . || true; } | line_counts)
+    read -r ca cr ta tr <<<"$counts"
+    echo "  SLOW lines in gate logs: $slow; lines added and removed: code +$ca -$cr, tests +$ta -$tr."
+
+    # Code signals in the added lines.
+    local limit words types added big exceptions word_hits type_hits helpers
+    limit=$(pulse_setting file-lines)
+    limit=${limit:-800}
+    words=$(pulse_setting words)
+    types=$(pulse_setting types)
+    added=$(while IFS=$'\t' read -r repo hash _; do
+        [[ -n $repo ]] || continue
+        git -C "$root/$repo" show --format= -U0 "$hash" | awk -v repo="$repo" '
+            /^\+\+\+ / { path = substr($2, 3); next } /^\+/ { print repo "\t" path "\t" substr($0, 2) }'
+    done <<<"$commits")
+    big=$(cut -f1,2 <<<"$added" | sort -u | while IFS=$'\t' read -r repo path; do
+        [[ -n $path ]] || continue
+        n=$(git -C "$root/$repo" show "main:$path" 2>/dev/null | wc -l)
+        if ((n > limit)); then echo "$path ($n)"; fi
+    done | paste -sd ' ' -)
+    exceptions=$(cut -f3 <<<"$added" | grep -cE '(expect|allow)\(clippy::too_many_(lines|arguments)' || true)
+    word_hits=""
+    [[ -z $words ]] || word_hits=$(cut -f3 <<<"$added" | { grep -oiwE "$words" || true; } | tr '[:upper:]' '[:lower:]' | sort | uniq -c | awk '{ printf "%s%s %d", (NR > 1 ? ", " : ""), $2, $1 }')
+    type_hits=""
+    [[ -z $types ]] || type_hits=$(cut -f3 <<<"$added" | sed -nE 's/.*\b(struct|enum|type) ([A-Za-z0-9_]+).*/\2/p' | grep -E "$types" | sort -u | paste -sd ' ' - || true)
+    helpers=$(awk -F'\t' '{ print $1 "\t" $2 "\t" $3 }' <<<"$added" | while IFS=$'\t' read -r repo path text; do
+        is_test_path "$path" || continue
+        if [[ $text =~ ^[[:space:]]*(pub(\(crate\))?[[:space:]]+)?fn[[:space:]]+([a-z_0-9]+)\( ]]; then
+            echo "$repo ${BASH_REMATCH[3]}"
+        fi
+    done | sort -u | while read -r repo fn; do
+        n=$(git -C "$root/$repo" grep -lE "fn $fn\\(" main -- '*tests*' '*testing*' 2>/dev/null | wc -l)
+        if ((n > 3)); then echo "$fn ($n files)"; fi
+    done | paste -sd ' ' -)
+    echo "- Code: over $limit lines: ${big:-none}; new lint exceptions: $exceptions; forbidden words: ${word_hits:-none}; types like a parallel one: ${type_hits:-none}; test helpers in more than three files: ${helpers:-none}."
+
+    # Cost so far, and the machine.
+    local coordinator_in=0 coordinator_out=0 sessions_in=0 sessions_out=0 claude_in=0 claude_out=0 kind thread a b session
+    while IFS=$'\t' read -r kind thread; do
+        [[ -n $thread ]] || continue
+        read -r a b _ <<<"$(codex_tokens "$thread")"
+        if [[ $kind == coordinator ]]; then
+            coordinator_in=$((coordinator_in + a)); coordinator_out=$((coordinator_out + b))
+        else
+            sessions_in=$((sessions_in + a)); sessions_out=$((sessions_out + b))
+        fi
+    done < <(run_threads)
+    while read -r session; do
+        read -r a b _ <<<"$(claude_tokens "$session")"
+        claude_in=$((claude_in + a)); claude_out=$((claude_out + b))
+    done < <(cut -f2 "$run/claude.tsv" 2>/dev/null | sort -u)
+    echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out."
+    local beat mem disk
+    beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$now_s")
+    mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
+    disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
+    echo "- Machine: heartbeat $((now_s - beat)) s ago; $mem GB memory and $disk GB disk free."
+
+    printf '%s %s\n' "$now_s" "$((log_lines + 1))" >"$mark"
+}
+
+# The run's metrics (development.md, section 15.2): name, value, unit.
+metrics_of() {
+    ledger_upgrade
+    local started ended running landed planned added dropped
+    started=$(run_started)
+    ended=$(run_ended)
+    running=$(running_seconds)
+    read -r planned added dropped <<<"$(awk -F'\t' 'NR > 1 {
+        if ($4 == "landed") { if ($1 ~ /\.s[0-9]+$/) a++; else p++ } else if ($4 == "dropped") d++ }
+        END { print p + 0, a + 0, d + 0 }' "$run/ledger.tsv" 2>/dev/null || echo "0 0 0")"
+    landed=$((planned + added))
+    m() { printf '%s\t%s\t%s\n' "$1" "$2" "$3"; }
+    m wall_h "$(awk -v s="$started" -v e="$ended" 'BEGIN { printf "%.1f", (e - s) / 3600 }')" h
+    m running_h "$(awk -v r="$running" 'BEGIN { printf "%.1f", r / 3600 }')" h
+    m steps_planned "$planned" steps
+    m steps_added "$added" steps
+    m steps_dropped "$dropped" steps
+    m step_h "$(awk -v r="$running" -v n="$landed" 'BEGIN { printf "%.2f", n ? r / 3600 / n : 0 }')" "h per step"
+
+    # Escalations: each Kind and Since line belongs to the "Blocked and
+    # unblocked" heading above it (development.md, section 10.3).
+    local escalations
+    escalations=$(awk '
+        /^## Blocked and unblocked, / { at = $0; sub(/^## Blocked and unblocked, */, "", at); kind = ""; next }
+        /^- Kind: / && at != "" { kind = $0; sub(/^- Kind: */, "", kind) }
+        /^- Since: / && at != "" { since = $0; sub(/^- Since: */, "", since); sub(/\. .*$/, "", since); print at "\t" since "\t" kind }
+        ' "$run/log.md" 2>/dev/null |
+        while IFS=$'\t' read -r at since kind; do
+            a=$(date -u -d "$at" +%s 2>/dev/null) || continue
+            b=$(date -u -d "$since" +%s 2>/dev/null) || continue
+            printf '%s\t%s\t%s\n' "$b" "$a" "${kind:-unknown}"
+        done)
+    m escalations "$(cut -f3 <<<"$escalations" | grep . | sort | uniq -c | awk '{ k = $2; for (i = 3; i <= NF; i++) k = k " " $i; printf "%s%s %d", (NR > 1 ? ", " : ""), k, $1 }')" "by kind"
+    m escalation_wait_min "$(awk -F'\t' 'NF == 3 { print ($2 - $1) / 60 }' <<<"$escalations" | median_and_p90 | awk '{ printf "%.1f", $1 }')" "min, median"
+    m blocked_h "$(awk -F'\t' 'NF == 3 { print $1 "\t" $2 }' <<<"$escalations" | sort -n |
+        awk -F'\t' '{ if ($1 > end) { total += end - start; start = $1; end = $2 } else if ($2 > end) end = $2 }
+            END { total += end - start; printf "%.1f", total / 3600 }')" h
+    m answers_reversed "$(grep -cE '^Reverses: [^n]' "$run/log.md" 2>/dev/null || true)" answers
+    m steers "$(grep -c '^## Steered' "$run/log.md" 2>/dev/null || true) sent, $(grep -cE '^Steer .*point [0-9]+: cannot' "$run/log.md" 2>/dev/null || true) points refused" ""
+    m restarts "$(sed -nE 's/^## Coordinator resumed, .*: ([^:]*)$/\1/p' "$run/log.md" 2>/dev/null | sort | uniq -c | awk '{ printf "%s%s %d", (NR > 1 ? ", " : ""), $2, $1 }')" "by cause"
+
+    # Tokens.
+    local kind thread a b c session ci=0 co=0 cc=0 si=0 so=0 sc=0 li=0 lo=0 lc=0 requests=0 idle=0 compactions=0 file
+    while IFS=$'\t' read -r kind thread; do
+        [[ -n $thread ]] || continue
+        read -r a b c <<<"$(codex_tokens "$thread")"
+        if [[ $kind == coordinator ]]; then
+            ci=$((ci + a)); co=$((co + b)); cc=$((cc + c))
+            for file in $(rollout_of "$thread"); do
+                requests=$((requests + $(grep -c '"total_token_usage"' "$file" || true)))
+                idle=$((idle + $(grep -cE 'Wait timed out|\\"timed_out\\":true' "$file" || true)))
+                compactions=$((compactions + $(grep -c '"type":"compacted"' "$file" || true)))
+            done
+        else
+            si=$((si + a)); so=$((so + b)); sc=$((sc + c))
+        fi
+    done < <(run_threads)
+    while read -r session; do
+        read -r a b c <<<"$(claude_tokens "$session")"
+        li=$((li + a)); lo=$((lo + b)); lc=$((lc + c))
+    done < <(cut -f2 "$run/claude.tsv" 2>/dev/null | sort -u)
+    share() { awk -v c="$1" -v a="$2" 'BEGIN { printf "%d%%", a ? 100 * c / a : 0 }'; }
+    m tokens_coordinator "$ci in ($(share "$cc" "$ci") cached), $co out" tokens
+    m tokens_implementers "$si in ($(share "$sc" "$si") cached), $so out" tokens
+    m tokens_claude "$li in ($(share "$lc" "$li") cached), $lo out" tokens
+    m tokens_per_step "$(((ci + co + si + so + li + lo) / (landed ? landed : 1)))" "tokens per step"
+    m coordinator_requests "$requests, $idle after a wait ran out" requests
+    m compactions "$compactions" compactions
+
+    # The queue.
+    local tsv=$run/logs/heavy.tsv
+    m gates_per_step "$(awk -F'\t' -v n="$landed" '$2 == "gate" { g++ } END { printf "%.1f", n ? g / n : 0 }' "$tsv" 2>/dev/null || echo 0)" "gates per step"
+    m queue_wait_ratio "$(awk -F'\t' '{ w += $4; r += $5 } END { printf "%.2f", r ? w / r : 0 }' "$tsv" 2>/dev/null || echo 0)" "waiting per running"
+
+    # The commits.
+    local commits
+    commits=$(plan_commits 0)
+    m suites "first: $(awk -F'\t' '$6 != "" && $6 != "-" { print $6; exit }' <<<"$commits"); last: $(awk -F'\t' '$6 != "" && $6 != "-" { g = $6 } END { print g }' <<<"$commits")" "Gate-Result"
+    local repo hash at step proof layer want below=0
+    local -A by_layer=()
+    while IFS=$'\t' read -r repo hash at step proof _; do
+        [[ -n $repo ]] || continue
+        layer=${proof%%[ ,]*}
+        [[ $layer != - ]] || layer=none
+        by_layer[$layer]=$((${by_layer[$layer]:-0} + 1))
+        want=$(planned_layer "$step")
+        if [[ -n $want && $layer != none ]] && (($(layer_rank "$layer") < $(layer_rank "$want"))); then
+            below=$((below + 1))
+        fi
+    done <<<"$commits"
+    m proofs "$(for layer in unit world joint process live none; do [[ -n ${by_layer[$layer]:-} ]] && printf '%s %s, ' "$layer" "${by_layer[$layer]}"; done)$below below plan" steps
+    m report_lines "$(report_lengths 1 | median_and_p90 | awk '{ print $1 " median, " $2 " p90" }')" lines
+    local ca cr ta tr
+    read -r ca cr ta tr <<<"$(cut -f1,2 <<<"$commits" | grep . | line_counts)"
+    m lines "code +$ca -$cr, tests +$ta -$tr" lines
+}
+
+metrics() {
+    if [[ ${1:-} == --history ]]; then
+        local file
+        for file in "$root"/*/docs/development/plans/*/metrics.tsv; do
+            [[ -f $file ]] || continue
+            awk -F'\t' -v plan="$(basename "$(dirname "$file")")" '{ print plan "\t" $1 "\t" $2 }' "$file"
+        done | awk -F'\t' '
+            { if (!($1 in p)) { p[$1] = 1; plans[++np] = $1 } if (!($2 in k)) { k[$2] = 1; keys[++nk] = $2 } v[$1, $2] = $3 }
+            END {
+                if (!np) { print "no metrics.tsv in any plan"; exit }
+                printf "| Metric |"; for (j = 1; j <= np; j++) printf " %s |", plans[j]; print ""
+                printf "|---|"; for (j = 1; j <= np; j++) printf "---|"; print ""
+                for (i = 1; i <= nk; i++) { printf "| %s |", keys[i]; for (j = 1; j <= np; j++) printf " %s |", v[plans[j], keys[i]]; print "" }
+            }'
+        return
+    fi
+    local out=""
+    [[ ${1:-} == --out ]] && { out=${2:?file}; shift 2; }
+    if (($#)); then
+        locate "$1"
+    else
+        load
+    fi
+    [[ -d $run ]] || die "no run directory at $run"
+    if [[ -n $out ]]; then
+        metrics_of >"$out"
+        echo "wrote $out"
+    else
+        metrics_of
+    fi
+}

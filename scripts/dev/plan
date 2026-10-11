@@ -1,36 +1,72 @@
 #!/usr/bin/env bash
-# A plan's run on this machine (development.md, sections 6, 7 and 10).
+# A plan's run on this machine (development.md, sections 6, 7, 10, 14, 15).
 #
 #   plan check [--fix] [PLAN_DIR] is the machine ready (to run the plan)?
+#   plan start PLAN_DIR           check, claim, start the supervisor and the coordinator
+#   plan status                   render status.md from the ledger, with the roles
+#   plan attach ROLE              open a role's session: coordinator, supervisor, designer
+#   plan resume                   after a restart, start the roles again
 #   plan claim PLAN_DIR           make it this machine's active run
 #   plan release                  end the active run
 #   plan worktree REPO NAME       a session's worktree, at origin/main
 #   plan worktree --remove REPO NAME
 #   plan set STEP KEY=VALUE...    add or change a step in the ledger
-#   plan status                   render status.md from the ledger
-#   plan watch                    wait for something the designer must see
+#   plan watch [--designer]       wait for something the supervisor (or the designer) must see
+#   plan ring MESSAGE             ring the coordinator's doorbell
+#   plan join ROLE                record this Claude Code session as the run's ROLE
+#   plan wake ROLE MESSAGE        resume a Claude Code role's session with MESSAGE
+#   plan pulse                    the run's numbers since the last check
+#   plan metrics [--out FILE] [PLAN_DIR]  the run's metrics, as TSV
+#   plan metrics --history        every plan's metrics, side by side
+#   plan retro [PLAN_DIR]         start the run's retrospective
 #
 # PLAN_DIR is the plan's directory in its repository's primary checkout,
-# for example ~/src/rust/smith/docs/plans/reliability. A run lives in
-# $DEV_TMP/<repository>/<plan>/, and $DEV_TMP/active-plan names it; the
+# for example ~/src/rust/smith/docs/development/plans/reliability. The
+# workspace is $DEV_ROOT, or the directory holding the skein checkout these
+# tools come from. A run lives in $DEV_TMP/<repository>/<plan>/ (DEV_TMP is
+# the workspace's tmp/ by default), and $DEV_TMP/active-plan names it; the
 # commands after claim act on that run.
 # shellcheck disable=SC2015 # in check, ok and warn always succeed
 set -euo pipefail
 
-root=${DEV_ROOT:-$HOME/src/rust}
+kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+# The workspace: DEV_ROOT, or the directory holding the skein checkout these
+# tools come from (development.md, section 3.6), or ~/src/rust.
+workspace() {
+    local skein
+    skein=$(cd "$kit/../.." && pwd)
+    if [[ $(basename "$skein") == skein ]]; then dirname "$skein"; else echo "$HOME/src/rust"; fi
+}
+root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
-repos=${DEV_REPOS:-skein smith temper}
+repos=${DEV_REPOS:-skein smith jig temper}
 active=$tmp/active-plan
-columns='step	repo	session	state	slot	branch	commit	updated	title	note'
+columns='step	repo	session	state	slot	thread	branch	commit	updated	title	note'
+
+# The roles' programs, models and efforts (development.md, section 2). The
+# coordinator's come from its Codex profile in the kit.
+profile=$kit/workspace/coordinator.config.toml
+profile_value() { sed -nE "s/^$1 *= *\"?([^\"]*)\"? *$/\1/p" "$profile" | head -n1; }
+claude_model=${PLAN_CLAUDE_MODEL:-claude-opus-5-5}
+claude_effort=${PLAN_CLAUDE_EFFORT:-xhigh}
+codex_model=${PLAN_CODEX_MODEL:-$(profile_value model)}
+codex_effort=${PLAN_CODEX_EFFORT:-$(profile_value model_reasoning_effort)}
+codex_threads=${PLAN_CODEX_THREADS:-$(profile_value max_threads)}
+codex_sandbox=${PLAN_CODEX_SANDBOX:-danger-full-access}
+# Where the Claude Code roles start: the workspace, which Claude Code must trust.
+claude_dir=${PLAN_CLAUDE_DIR:-$root}
 
 die() { echo "plan: $*" >&2; exit 2; }
 
 usage() {
-    sed -n '3,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    sed -n '3,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 
 now() { date -u +%FT%TZ; }
+
+# This machine's name; some containers have no hostname command.
+host() { hostname 2>/dev/null || uname -n; }
 
 # The active run: its name (repository/plan), plan directory and path.
 load() {
@@ -60,8 +96,6 @@ check() {
     ok() { echo "ok    $*"; }
     warn() { echo "warn  $*"; }
     fail() { echo "FAIL  $*"; failed=1; }
-    local kit
-    kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
     (($#)) && check_plan "$1"
 
     # Every primary checkout: on main, clean, and equal to origin's main.
@@ -122,7 +156,7 @@ check_plan() {
     state=$(awk -F'|' '{ gsub(/^ +| +$/, "", $3); print $3 }' <<<"$row")
     case $state in
     "") warn "no row for $plan in $project's docs/design/STATUS.md" ;;
-    ready | "active on $(hostname)"*) ok "STATUS.md says $state" ;;
+    ready | "active on $(host)"*) ok "STATUS.md says $state" ;;
     *) fail "STATUS.md says $state" ;;
     esac
 }
@@ -173,16 +207,33 @@ check_machine() {
     grep -qs 'git-fetch-with-cli *= *true' "$HOME/.cargo/config.toml" &&
         ok "cargo fetches with git" ||
         fail "cargo must fetch with git: [net] git-fetch-with-cli = true in ~/.cargo/config.toml"
+    local bus=0
+    systemctl --user show-environment >/dev/null 2>&1 && bus=1
     if grep -qs kache "$HOME/.cargo/config.toml"; then
-        systemctl --user is-active --quiet kache && ok "kache is running" ||
-            warn "kache is configured but not running"
+        if ((bus)); then
+            systemctl --user is-active --quiet kache && ok "kache is running" ||
+                warn "kache is configured but not running"
+        else
+            ok "kache is configured"
+        fi
     else
         warn "no kache rustc-wrapper in ~/.cargo/config.toml"
     fi
 
-    # The queue: the daemon as a user service, and its two lanes.
+    # The queue: the daemon as a user service, and its two lanes. Without a
+    # systemd user bus (some containers), pueued runs on its own, and `plan
+    # resume` starts it again after a restart.
     local unit=$HOME/.config/systemd/user/pueued.service
-    if systemctl --user is-active --quiet pueued; then
+    if ((!bus)); then
+        if pueue status >/dev/null 2>&1; then
+            ok "pueued is running (no systemd user bus: plan resume starts it after a restart)"
+        elif ((fix)); then
+            pueued --daemonize >/dev/null 2>&1 && sleep 1
+            pueue status >/dev/null 2>&1 && ok "pueued started" || fail "pueued does not start"
+        else
+            fail "pueued is not running (--fix starts it)"
+        fi
+    elif systemctl --user is-active --quiet pueued; then
         ok "pueued is running as a user service"
         [[ $(systemctl --user show pueued -p UnitFileState --value) == enabled ]] ||
             warn "pueued's unit is not enabled: it will not start after a reboot (stop it when the queue is idle, then --fix)"
@@ -201,7 +252,7 @@ check_machine() {
     else
         fail "pueued is not running as a user service (--fix starts it)"
     fi
-    [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) == yes ]] ||
+    ((!bus)) || [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) == yes ]] ||
         warn "no lingering: user services stop when $USER logs out (loginctl enable-linger)"
     local group want have status
     for group in gate build; do
@@ -239,6 +290,24 @@ check_machine() {
     ((mem >= ${PLAN_MIN_MEM_GB:-6})) && ok "memory: ${mem} GB available" ||
         fail "memory: ${mem} GB available, want ${PLAN_MIN_MEM_GB:-6}"
 
+    # The roles' programs: Claude Code trusts the workspace, where the
+    # supervisor starts, and Codex's daemon answers.
+    if command -v claude >/dev/null; then
+        jq -e --arg d "$claude_dir" '.projects[$d].hasTrustDialogAccepted == true' "$HOME/.claude.json" >/dev/null 2>&1 &&
+            ok "Claude Code trusts $claude_dir" ||
+            fail "Claude Code does not trust $claude_dir: run claude there once, and accept"
+    else
+        fail "no claude"
+    fi
+    if command -v codex >/dev/null; then
+        codex app-server daemon version >/dev/null 2>&1 || { ((fix)) && codex app-server daemon start >/dev/null 2>&1; } || true
+        codex app-server daemon version 2>/dev/null | jq -e '.status == "running"' >/dev/null &&
+            ok "Codex's app-server daemon is running" ||
+            fail "Codex's app-server daemon is not running (--fix starts it)"
+    else
+        fail "no codex"
+    fi
+
     # The coordinator's Codex profile.
     local profile=${CODEX_HOME:-$HOME/.codex}/coordinator.config.toml
     grep -qs max_threads "$profile" && ok "Codex profile coordinator sets max_threads" ||
@@ -253,13 +322,13 @@ claim() {
     fi
     mkdir -p "$run"/{logs,sessions,wt}
     [[ -f $run/ledger.tsv ]] || printf '%s\n' "$columns" >"$run/ledger.tsv"
-    [[ -f $run/log.md ]] || printf '# %s on %s\n\n' "$name" "$(hostname)" >"$run/log.md"
+    [[ -f $run/log.md ]] || printf '# %s on %s\n\n' "$name" "$(host)" >"$run/log.md"
     if [[ -f $active ]]; then
         echo "$run"
         return
     fi
-    printf '%s\n%s\n%s\n%s\n' "$name" "$plan_dir" "$(hostname)" "$(now)" >"$active"
-    printf '## Claimed, %s\n\nThe run of %s started on %s.\n\n' "$(now)" "$plan_dir" "$(hostname)" >>"$run/log.md"
+    printf '%s\n%s\n%s\n%s\n' "$name" "$plan_dir" "$(host)" "$(now)" >"$active"
+    printf '## Claimed, %s\n\nThe run of %s started on %s.\n\n' "$(now)" "$plan_dir" "$(host)" >>"$run/log.md"
     touch "$run/heartbeat"
     echo "$run"
 }
@@ -290,15 +359,25 @@ worktree() {
     echo "$path"
 }
 
+# A ledger written before the thread column gains it, empty.
+ledger_upgrade() {
+    local ledger=$run/ledger.tsv
+    [[ -f $ledger ]] || return 0
+    [[ $(head -n1 "$ledger") == "${columns//	thread/}" ]] || return 0
+    awk -F'\t' -v OFS='\t' '{ $5 = $5 OFS (NR == 1 ? "thread" : ""); print }' "$ledger" >"$ledger.new"
+    mv "$ledger.new" "$ledger"
+}
+
 set_step() {
     load
+    ledger_upgrade
     local step=${1:?step}
     shift
     local pairs=() pair key
     for pair in "$@"; do
         key=${pair%%=*}
         case $key in
-        repo | session | slot | branch | commit | title | note) ;;
+        repo | session | slot | thread | branch | commit | title | note) ;;
         state)
             case ${pair#*=} in
             waiting | ready | running | blocked | landed | dropped) ;;
@@ -316,7 +395,7 @@ set_step() {
     STEP=$step AT=$(now) SETS=$(printf '%s\n' "${pairs[@]}") awk -F'\t' -v OFS='\t' '
         BEGIN {
             step = ENVIRON["STEP"]; at = ENVIRON["AT"]; sets = ENVIRON["SETS"]
-            n = split("step repo session state slot branch commit updated title note", name, " ")
+            n = split("step repo session state slot thread branch commit updated title note", name, " ")
             for (i = 1; i <= n; i++) col[name[i]] = i
             m = split(sets, line, "\n")
             for (i = 1; i <= m; i++) if (line[i] != "") {
@@ -326,14 +405,14 @@ set_step() {
             }
         }
         function apply(   i) {
-            for (i = 1; i <= 10; i++) if (i in given) $i = value[i]
+            for (i = 1; i <= n; i++) if (i in given) $i = value[i]
             $col["updated"] = at
         }
         NR > 1 && $1 == step { apply(); found = 1 }
         { print }
         END {
             if (!found) {
-                $0 = step; for (i = 2; i <= 10; i++) $i = ""
+                $0 = step; for (i = 2; i <= n; i++) $i = ""
                 if (!("4" in given)) { value[4] = "waiting"; given[4] = 1 }
                 apply(); print
             }
@@ -344,13 +423,14 @@ set_step() {
 
 status() {
     load
+    ledger_upgrade
     local ledger=$run/ledger.tsv out=$run/status.md landed_git
     # Steps landed according to origin/main's trailers, in every repository.
     landed_git=$(for repo in $repos; do
         [[ -d $root/$repo/.git ]] || continue
         git -C "$root/$repo" log origin/main --since="$(sed -n 4p "$active")" \
             --format='%(trailers:key=Plan,valueonly,separator=)%x09%(trailers:key=Step,valueonly,separator=)' 2>/dev/null |
-            awk -F'\t' -v plan="$plan" '$1 == plan { print $2 }'
+            awk -F'\t' -v plan="$plan" '$1 == plan { print $2 }' || true
     done)
     {
         printf '# %s on %s\n\nRendered %s from ledger.tsv.\n\n' "$name" "$(sed -n 3p "$active")" "$(now)"
@@ -379,11 +459,11 @@ status() {
                 }
                 if (r) {
                     print "\n## Running\n\n| Step | Slot | Branch | Since | Title |\n|---|---|---|---|---|"
-                    for (i = 1; i <= r; i++) { split(running[i], f, "\t"); printf "| %s | %s | %s | %s | %s |\n", f[1], f[5], f[6], f[8], f[9] }
+                    for (i = 1; i <= r; i++) { split(running[i], f, "\t"); printf "| %s | %s | %s | %s | %s |\n", f[1], f[5], f[7], f[9], f[10] }
                 }
                 if (b) {
                     print "\n## Blocked\n\n| Step | Since | Note |\n|---|---|---|"
-                    for (i = 1; i <= b; i++) { split(blocked[i], f, "\t"); printf "| %s | %s | %s |\n", f[1], f[8], f[10] }
+                    for (i = 1; i <= b; i++) { split(blocked[i], f, "\t"); printf "| %s | %s | %s |\n", f[1], f[9], f[11] }
                 }
                 if (x || y) {
                     print "\n## Ledger and origin/main disagree\n"
@@ -391,18 +471,37 @@ status() {
                     for (i = 1; i <= y; i++) printf "- %s: on origin/main, not landed in the ledger\n", extra[i]
                 }
             }' "$ledger"
+        [[ ${PLAN_NO_ROLES:-} == 1 ]] || roles
     } >"$out.new"
     mv "$out.new" "$out"
     cat "$out"
 }
 
-# Wait until the designer has something to do: a new blocked report, the
-# coordinator gone quiet, a pause or the end. Prints what, and exits.
+# Wait until the supervisor has something to do (development.md, section
+# 10.5): a new blocked report, the designer's answer, the coordinator gone
+# quiet (once, and again after as long), a pause or the end. With
+# --designer, wait for a new design question instead. Prints what, and exits.
 watch() {
     load
-    local seen=$run/.watch quiet=${PLAN_QUIET:-600} sig beat
+    local designer=0
+    [[ ${1:-} == --designer ]] && designer=1
+    local seen=$run/.watch quiet=${PLAN_QUIET:-600} sig beat age
+    ((designer)) && seen=$run/.watch-designer
     touch "$seen"
     while :; do
+        if ((designer)); then
+            if [[ -f $run/question.md && ! -f $run/answer.md ]]; then
+                sig=question:$(grep '^## ' "$run/question.md" | sha1sum | cut -c1-12)
+                if ! grep -qxF "$sig" "$seen"; then
+                    echo "$sig" >>"$seen"
+                    echo "question: $run/question.md"
+                    grep '^## ' "$run/question.md" || true
+                    return
+                fi
+            fi
+            sleep "${PLAN_POLL:-30}"
+            continue
+        fi
         if [[ -f $run/done.md ]] && ! grep -qx "done" "$seen"; then
             echo "done" >>"$seen"
             echo "done: $run/done.md"
@@ -421,32 +520,317 @@ watch() {
             if ! grep -qxF "$sig" "$seen"; then
                 echo "$sig" >>"$seen"
                 echo "blocked: $run/blocked.md"
-                grep '^## ' "$run/blocked.md"
+                grep '^## ' "$run/blocked.md" || true
+                return
+            fi
+        fi
+        if [[ -f $run/answer.md ]]; then
+            sig=answer:$(stat -c %Y "$run/answer.md")
+            if ! grep -qxF "$sig" "$seen"; then
+                echo "$sig" >>"$seen"
+                echo "answer: $run/answer.md"
                 return
             fi
         fi
         if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md ]]; then
             beat=$(stat -c %Y "$run/heartbeat")
-            sig=quiet:$beat
-            if (($(date +%s) - beat > quiet)) && ! grep -qxF "$sig" "$seen"; then
-                echo "$sig" >>"$seen"
-                echo "quiet: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
-                return
-            fi
+            age=$(($(date +%s) - beat))
+            for sig in quiet2:$beat quiet:$beat; do
+                if [[ $sig == quiet2:* ]] && { ((age <= 2 * quiet)) || ! grep -qxF "quiet:$beat" "$seen"; }; then
+                    continue
+                fi
+                if ((age > quiet)) && ! grep -qxF "$sig" "$seen"; then
+                    echo "quiet:$beat" >>"$seen"
+                    echo "$sig" >>"$seen"
+                    if [[ $sig == quiet2:* ]]; then
+                        echo "quiet again: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
+                    else
+                        echo "quiet: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
+                    fi
+                    return
+                fi
+            done
         fi
         sleep "${PLAN_POLL:-30}"
     done
 }
 
+# The run's roles (development.md, section 2): the coordinator's Codex
+# thread, in the run's thread file, and the Claude Code sessions, one line
+# each in claude.tsv: role, session id, time recorded.
+
+# Every Claude Code session this machine knows, as JSON.
+claude_sessions() { claude agents --json --all 2>/dev/null || echo '[]'; }
+
+# The latest session id recorded for a role.
+role_session() {
+    [[ -f $run/claude.tsv ]] || return 0
+    awk -F'\t' -v role="$1" '$1 == role { id = $2 } END { print id }' "$run/claude.tsv"
+}
+
+record_role() {
+    printf '%s\t%s\t%s\n' "$1" "$2" "$(now)" >>"$run/claude.tsv"
+}
+
+# A Claude Code session's state: running, idle, or gone.
+session_state() {
+    claude_sessions | jq -r --arg s "$1" '
+        [.[] | select(.sessionId == $s)] | last
+        | if . == null then "gone" else (.status // .state // "running") end'
+}
+
+# Starts a background Claude Code session for a role, in the workspace's
+# directory, and records it. With a session id, continues that session.
+claude_role() {
+    local role=$1 prompt=$2 resume=${3:-} out id session
+    local args=(--bg -n "$plan $role" --model "$claude_model" --effort "$claude_effort"
+        --dangerously-skip-permissions)
+    [[ -n $resume ]] && args+=(--resume "$resume")
+    out=$(cd "$claude_dir" && claude "${args[@]}" "$prompt" 2>&1) ||
+        die "claude did not start the $role: $out"
+    id=$(grep -oE '\b[0-9a-f]{8}\b' <<<"$out" | head -n1 || true)
+    session=$(claude_sessions | jq -r --arg id "$id" --arg name "$plan $role" '
+        [.[] | select((.id == $id and $id != "") or .name == $name)] | last | .sessionId // empty')
+    [[ -n $session ]] || session=$resume
+    [[ -n $session ]] || die "cannot find the $role's session: $out"
+    record_role "$role" "$session"
+    echo "$role: Claude Code session $session"
+}
+
+# The coordinator's thread on the Codex daemon: loaded, with its turn's state.
+coordinator_state() {
+    local thread
+    thread=$(cat "$run/thread" 2>/dev/null || true)
+    [[ -n $thread ]] || { echo "none"; return; }
+    (
+        # shellcheck source=codex.sh
+        source "$kit/codex.sh"
+        codex_open >/dev/null 2>&1 || { echo "unreachable"; exit; }
+        codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" 2>/dev/null |
+            jq -r '[.thread.turns[]? | .status] | last // "idle" | if . == "inProgress" then "working" else "idle" end' ||
+            echo "not loaded"
+        codex_close
+    )
+}
+
+ring() {
+    load
+    local message=${1:?message} thread turn
+    thread=$(cat "$run/thread" 2>/dev/null) || die "no coordinator thread in $run/thread"
+    # shellcheck source=codex.sh
+    source "$kit/codex.sh"
+    codex_open || exit 1
+    turn=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" |
+        jq -r '[.thread.turns[]? | select(.status == "inProgress")] | last | .id // empty') ||
+        { echo "plan: the coordinator's thread is not loaded: plan resume" >&2; exit 3; }
+    [[ -n $turn ]] || { echo "plan: the coordinator has no turn in progress: plan resume" >&2; exit 3; }
+    codex_call turn/steer "$(jq -cn --arg t "$thread" --arg u "$turn" --arg m "$message" \
+        '{threadId: $t, expectedTurnId: $u, input: [{type: "text", text: $m}]}')" >/dev/null
+    codex_close
+    echo "rang the coordinator: $message"
+}
+
+# The roles' prompts. Tests replace them through PLAN_*_PROMPT.
+coordinator_prompt() {
+    local text="Coordinate the run of $plan_dir, as skein's docs/foundation/development.md, section 7, says."
+    echo "${PLAN_COORDINATOR_PROMPT:-$text}"
+}
+
+coordinator_resume_prompt() {
+    local text="Resume the run of $plan_dir as skein's docs/foundation/development.md, section 7.6, says."
+    echo "${PLAN_COORDINATOR_RESUME:-$text}"
+}
+
+start_coordinator() {
+    local result thread
+    # shellcheck source=codex.sh
+    source "$kit/codex.sh"
+    codex_open || die "the Codex daemon does not answer: codex app-server daemon start"
+    result=$(codex_call thread/start "$(jq -cn --arg cwd "$root" --arg model "$codex_model" \
+        --arg effort "$codex_effort" --argjson threads "${codex_threads:-8}" --arg sandbox "$codex_sandbox" \
+        '{cwd: $cwd, model: $model, sandbox: $sandbox, approvalPolicy: "never",
+          config: {model_reasoning_effort: $effort, agents: {max_threads: $threads}}}')") ||
+        die "the Codex daemon did not start the coordinator's thread"
+    thread=$(jq -r '.thread.id' <<<"$result")
+    printf '%s\n' "$thread" >"$run/thread"
+    printf '%s\t%s\n' "$thread" "$(now)" >>"$run/threads"
+    codex_call thread/name/set "$(jq -cn --arg t "$thread" --arg n "$plan coordinator" \
+        '{threadId: $t, name: $n}')" >/dev/null || true
+    codex_call turn/start "$(jq -cn --arg t "$thread" --arg p "$(coordinator_prompt)" \
+        '{threadId: $t, input: [{type: "text", text: $p}]}')" >/dev/null ||
+        die "the Codex daemon did not start the coordinator's turn"
+    codex_close
+    echo "coordinator: Codex thread $thread"
+}
+
+supervisor_prompt() {
+    local text="Supervise the run of $plan_dir as skein's docs/foundation/development.md, sections 2.5, 3.3, 4.5, 6, 7.6, 10 and 14, say. The run's directory is $run."
+    echo "${PLAN_SUPERVISOR_PROMPT:-$text}"
+}
+
+supervisor_resume_prompt() {
+    local text="Your session restarted. Start your watch and your hourly check again (development.md, section 6, step 4), read the end of supervision.md, and go on supervising the run of $plan_dir."
+    echo "${PLAN_SUPERVISOR_RESUME:-$text}"
+}
+
+retro_prompt() {
+    local text="Write the retrospective of the run of $plan_dir, as skein's docs/foundation/development.md, section 15, says. The run's directory is $run."
+    echo "${PLAN_RETRO_PROMPT:-$text}"
+}
+
+start() {
+    local dir=${1:?plan directory}
+    if [[ ${PLAN_START_UNCHECKED:-} != 1 ]]; then
+        check "$dir" || die "the machine is not ready: fix what check says (plan check --fix $dir), then start again"
+    fi
+    claim "$dir" >/dev/null
+    load
+    [[ ! -s $run/thread ]] || die "the run has a coordinator already: plan resume"
+    claude_role supervisor "$(supervisor_prompt)"
+    start_coordinator
+    sleep "${PLAN_RING_DELAY:-5}"
+    ring "Doorbell test: log it as development.md, section 7.4, says, and go on." ||
+        echo "plan: the doorbell did not ring; steers wait for the coordinator's next wake-up" >&2
+    echo "started $name: plan status, plan attach supervisor, plan attach coordinator"
+}
+
+attach() {
+    load
+    local role=${1:?role: coordinator, supervisor, designer or retrospective} session line
+    if [[ $role == coordinator ]]; then
+        line=(codex resume --remote unix:// "$(cat "$run/thread")")
+    else
+        session=$(role_session "$role")
+        [[ -n $session ]] || die "no $role recorded in $run/claude.tsv"
+        if [[ $(session_state "$session") == gone ]]; then
+            line=(claude --resume "$session")
+        else
+            line=(claude attach "${session:0:8}")
+        fi
+    fi
+    if [[ ${PLAN_DRY_RUN:-} == 1 ]]; then
+        echo "${line[*]}"
+        return
+    fi
+    exec "${line[@]}"
+}
+
+# After a restart, or a role's crash: start what is not running again.
+resume() {
+    load
+    [[ ! -f $run/done.md ]] || die "the run is done"
+    pueue status >/dev/null 2>&1 ||
+        { systemctl --user start pueued 2>/dev/null || pueued --daemonize >/dev/null 2>&1 || true; }
+    codex app-server daemon start >/dev/null 2>&1 || true
+
+    local session state thread
+    session=$(role_session supervisor)
+    state=$(session_state "${session:-none}")
+    if [[ -z $session ]]; then
+        claude_role supervisor "$(supervisor_prompt)"
+    elif [[ $state == gone || $state == exited || $state == stopped ]]; then
+        claude_role supervisor "$(supervisor_resume_prompt)" "$session"
+    else
+        echo "supervisor: running ($state)"
+    fi
+
+    thread=$(cat "$run/thread" 2>/dev/null || true)
+    if [[ -z $thread ]]; then
+        start_coordinator
+        return
+    fi
+    # shellcheck source=codex.sh
+    source "$kit/codex.sh"
+    codex_open || die "the Codex daemon does not answer: codex app-server daemon start"
+    state=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" 2>/dev/null |
+        jq -r '[.thread.turns[]? | .status] | last // "none"') || state="not loaded"
+    if [[ $state == "not loaded" ]]; then
+        codex_call thread/resume "$(jq -cn --arg t "$thread" --arg sandbox "$codex_sandbox" \
+            '{threadId: $t, sandbox: $sandbox, approvalPolicy: "never"}')" >/dev/null ||
+            die "the Codex daemon cannot load the coordinator's thread $thread"
+    fi
+    if [[ $state == inProgress ]]; then
+        echo "coordinator: working"
+    else
+        codex_call turn/start "$(jq -cn --arg t "$thread" --arg p "$(coordinator_resume_prompt)" \
+            '{threadId: $t, input: [{type: "text", text: $p}]}')" >/dev/null ||
+            die "the Codex daemon did not start the coordinator's turn"
+        echo "coordinator: resumed, Codex thread $thread"
+    fi
+    codex_close
+}
+
+join() {
+    load
+    local role=${1:?role}
+    [[ -n ${CLAUDE_CODE_SESSION_ID:-} ]] || die "run plan join from the Claude Code session itself"
+    record_role "$role" "$CLAUDE_CODE_SESSION_ID"
+    echo "$role: Claude Code session $CLAUDE_CODE_SESSION_ID"
+}
+
+# Resumes a role's Claude Code session in the background with a message. A
+# session already running gets a copy, which Claude Code names.
+wake() {
+    load
+    local role=${1:?role} message=${2:?message} session
+    session=$(role_session "$role")
+    [[ -n $session ]] || die "no $role recorded in $run/claude.tsv (plan join $role)"
+    claude_role "$role" "$message" "$session"
+}
+
+retro() {
+    if (($#)); then
+        locate "$1"
+    else
+        load
+    fi
+    [[ -d $run ]] || die "no run directory at $run"
+    claude_role retrospective "$(retro_prompt)"
+}
+
+roles() {
+    local session thread
+    echo
+    echo "## Roles"
+    echo
+    thread=$(cat "$run/thread" 2>/dev/null || true)
+    echo "- coordinator: ${thread:-not started}, $(coordinator_state); heartbeat $(($(date +%s) - $(stat -c %Y "$run/heartbeat" 2>/dev/null || date +%s))) s ago"
+    local role
+    for role in supervisor designer retrospective; do
+        session=$(role_session "$role")
+        [[ -n $session ]] && echo "- $role: $session, $(session_state "$session")"
+    done
+    local file
+    for file in blocked unblock steer question answer paused "done"; do
+        [[ -f $run/$file.md ]] && echo "- $file.md: $(grep -c '^## ' "$run/$file.md" || true) headings, since $(date -u -d "@$(stat -c %Y "$run/$file.md")" +%FT%TZ)"
+    done
+    if [[ -f $run/supervision.md ]]; then
+        echo "- last check: $(grep '^## ' "$run/supervision.md" | tail -n1 | sed 's/^## //')"
+    fi
+    return 0
+}
+
+# shellcheck source=numbers.sh
+source "$kit/numbers.sh"
+
 cmd=${1:-}
 (($#)) && shift
 case $cmd in
 check) check "$@" ;;
+start) start "$@" ;;
+attach) attach "$@" ;;
+resume) resume ;;
 claim) claim "$@" ;;
 release) release ;;
 worktree) worktree "$@" ;;
 set) set_step "$@" ;;
 status) status ;;
-watch) watch ;;
+watch) watch "$@" ;;
+ring) ring "$@" ;;
+join) join "$@" ;;
+wake) wake "$@" ;;
+pulse) pulse ;;
+metrics) metrics "$@" ;;
+retro) retro "$@" ;;
 *) usage ;;
 esac
