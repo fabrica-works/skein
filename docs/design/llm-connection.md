@@ -281,7 +281,8 @@ client's evidence: unsent, possibly sent, or a response received.
     state;
   - for each connection of the pool, what it holds whatever its call:
     io's buffers for its socket, TLS's state and skein's client's fixed
-    state;
+    state. These are the socket's own buffers, never the owner's io worst
+    case, which the owner counts once;
   - the waiting calls' records, `calls` of them;
   - and the component's own state.
 

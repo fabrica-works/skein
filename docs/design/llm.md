@@ -321,6 +321,8 @@ pub struct Declared {
     pub tool_payload: u32,        // bytes of one tool call's arguments once unescaped
     pub calls_per_response: u32,  // tool calls in one completion
     pub conversations: u32,       // calls outstanding at once, across the owner
+    pub tools: u32,               // tools one request offers, at most
+    pub history_items: u32,       // messages and blocks one request carries, at most
 }
 ```
 
@@ -329,6 +331,10 @@ pub struct Declared {
   each. Head and idle, also per model, are deadlines the owner gives per
   call (llm-connection.md, section 6), not inputs to byte limits.
 - **Per deployment:** tool payload, calls per response and conversations.
+- **Counts, from the owner:** the tools one request offers and the history
+  items it carries. The owner knows both from what it holds in memory.
+  smith's are its offered tools, and its history's bytes over a block's
+  cell (smith's `protocol/limits.md`, section 3).
 - **skein ships no catalogue.** A model's window and output are the
   provider's facts and change too often for a kit. The application
   declares them; smith's come from its shell's presets and settings.
@@ -364,12 +370,16 @@ derivation's own:
 | retained text | the largest of answer, input and reasoning, + the dialect's constant for its short kept fields | bytes of text kept from one event, unescaped: the collector's `text` |
 | receiving | answer + output items × reasoning + one event's retained values | what one call holds of its answer at once: its memory reservation, beside its measured request |
 | skip | request + `ESCAPE` × receiving | bytes of one event the dialect scans without keeping: an echo of the request and of the whole answer, escaped once more |
-| tools | request ÷ the dialect's smallest encoded tool | tools in one request |
-| history items | request ÷ the dialect's smallest encoded item | messages and blocks in one request |
+| tools | the declared `tools` | tools in one request |
+| history items | the declared `history_items` | messages and blocks in one request |
 
-- **Counts follow bytes.** Tools and history items bound tables, not
-  memory: a request within its byte limit can hold no more of either, so
-  neither is a cliff of its own.
+- **Counts are memory, so they are declared.** skein's tables allocate
+  their capacity when made, so a count is memory. A count derived as the
+  request over the smallest encoded item gives counts that only a
+  request of empty items reaches, a million history items for one
+  272,000-token window, and allocates them all. The owner declares them
+  instead. A request within its byte limit that would carry more is
+  refused by name, as any count past its bound is.
 - **Sent text has no cap of its own.** A string the caller sends is
   bounded by the request as a whole; what the caller renders into it is
   the caller's to bound.
