@@ -11,5 +11,9 @@ skein-lib.workspace = true
 skein-http.workspace = true
 skein-json.workspace = true
 
+[dev-dependencies]
+# Draw existing generic JSON spelling controls; production has no world dependency.
+skein-json-world = { path = "../../tests/json" }
+
 [lints]
 workspace = true

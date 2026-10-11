@@ -30,8 +30,7 @@
 //! writing pass of another length than its measuring pass) is a bug,
 //! asserted.
 //!
-//! The document is compact, apart from borrowed `json_text` values whose
-//! validated spelling and whitespace are preserved. A string escapes `"`, `\`
+//! The document is compact, including borrowed `json_text` values. A string escapes `"`, `\`
 //! and the control characters, the common ones in their short forms and the
 //! rest as `\u00XX`; every other byte, `/` and non-ASCII included, is
 //! written as it is.
@@ -41,6 +40,7 @@ use alloc::boxed::Box;
 use skein_lib::{Decimal, Stack, Writer};
 
 use crate::number;
+use crate::string::{self, Text};
 use crate::utf8::Utf8;
 use crate::{Document, Kind, Token};
 
@@ -121,6 +121,13 @@ enum Position {
     Value,
     /// The document's value is whole: nothing comes next.
     Whole,
+}
+
+/// Borrowed JSON spelling retains only the current string's decoder state.
+#[derive(Clone, Copy, Debug)]
+enum Spelling {
+    Outside,
+    String(Text),
 }
 
 impl Encoder {
@@ -223,7 +230,7 @@ impl Encoder {
         self.after_value();
     }
 
-    /// Checks and copies borrowed JSON as one value without retaining tokens.
+    /// Checks and writes borrowed JSON in compact spelling without retaining tokens.
     /// The tokenizer checks its grammar; nesting also fits this writer's stack.
     pub fn json_text(&mut self, text: &[u8], limits: &crate::tokenizer::Limits) -> Result<(), crate::tokenizer::Error> {
         crate::tokenizer::validate(text, limits)?;
@@ -240,10 +247,55 @@ impl Encoder {
             return Ok(());
         }
         if self.before_value() {
-            self.put(text);
+            self.put_json_spelling(text);
             self.after_value();
         }
         Ok(())
+    }
+
+    /// Grammar was checked without retention. Replay its spelling through
+    /// the same string decoder and escapes as the compact document writer
+    /// (llm.md, section 4.2); no value or decoded string is constructed.
+    fn put_json_spelling(&mut self, text: &[u8]) {
+        let mut state = Spelling::Outside;
+        for &byte in text {
+            state = match state {
+                Spelling::Outside => match byte {
+                    b' ' | b'\t' | b'\n' | b'\r' => Spelling::Outside,
+                    b'"' => {
+                        self.put(b"\"");
+                        Spelling::String(Text::Plain)
+                    }
+                    _ => {
+                        self.put(&[byte]);
+                        Spelling::Outside
+                    }
+                },
+                Spelling::String(before) => {
+                    let fragment = string::next(before, byte).expect("grammar checked the string");
+                    for &decoded in fragment.bytes() {
+                        match escaped(decoded) {
+                            Escaped::Plain => self.put(&[decoded]),
+                            Escaped::Short(letter) => self.put(&[b'\\', letter]),
+                            Escaped::Unicode => {
+                                self.put(&[b'\\', b'u', b'0', b'0', hex(decoded.wrapping_shr(4)), hex(decoded & 0x0F)]);
+                            }
+                        }
+                    }
+                    match fragment.after {
+                        Some(next) => Spelling::String(next),
+                        None => {
+                            self.put(b"\"");
+                            Spelling::Outside
+                        }
+                    }
+                }
+            };
+        }
+        match state {
+            Spelling::Outside => {}
+            Spelling::String(_) => unreachable!("grammar checked a whole value"),
+        }
     }
 
     /// A number, its text as JSON's grammar has it (RFC 8259, section 6),

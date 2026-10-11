@@ -842,6 +842,55 @@ mod tests {
             max_output_tokens: None,
         }
     }
+
+    #[test]
+    fn drawn_carried_json_matches_the_old_compact_spelling_in_both_dialects() {
+        use skein_json::Token;
+        use skein_json_world::generate::{self, Shape};
+        for seed in 0..60 {
+            let mut rng = skein_lib::Rng::new(seed);
+            let mut tokens = generate::tokens(&mut rng, Shape { depth: 4, width: 3, string: 8 });
+            tokens.insert(0, Token::Key(bytes::copy_of(b"value")));
+            tokens.insert(0, Token::ObjectStart);
+            tokens.push(Token::ObjectEnd);
+            let arguments = generate::render(&mut rng, &tokens).into_boxed_slice();
+            let owner = crate::Json::from_bytes(&arguments, &LIMITS.request_document()).unwrap();
+            let compact = owner.to_bytes(&LIMITS.request_document()).unwrap();
+            let mut input = prompt(
+                Role::Assistant,
+                Block::ToolCall { id: bytes::copy_of(b"call"), name: bytes::copy_of(b"read"), arguments, replay: None },
+            );
+            input.tools = Box::new([crate::Tool {
+                name: bytes::copy_of(b"read"),
+                description: bytes::copy_of(b""),
+                schema: owner,
+            }]);
+            let old_codex = super::request(&input, Provider::OpenAiCodex, &LIMITS).unwrap();
+            assert_eq!(
+                super::encode_request(&input, &LIMITS).unwrap(),
+                openai::encode_request(&old_codex, &LIMITS).unwrap(),
+                "Codex seed {seed}: schemas are borrowed, arguments remain text"
+            );
+            let actual = crate::anthropic::encode_request(&input, 4096, &LIMITS).unwrap();
+            input.messages = Box::new([Message {
+                role: Role::Assistant,
+                content: Box::new([Block::ToolCall {
+                    id: bytes::copy_of(b"call"),
+                    name: bytes::copy_of(b"read"),
+                    arguments: compact,
+                    replay: None,
+                }]),
+            }]);
+            assert_eq!(
+                actual,
+                crate::anthropic::encode_request(&input, 4096, &LIMITS).unwrap(),
+                "Anthropic seed {seed}: arguments match the old parse-and-write spelling"
+            );
+            let reference = crate::Json::from_bytes(&actual, &LIMITS.request_document()).unwrap();
+            assert_eq!(actual, reference.to_bytes(&LIMITS.request_document()).unwrap(), "seed {seed}");
+        }
+    }
+
     #[test]
     #[expect(
         clippy::disallowed_types,

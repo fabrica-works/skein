@@ -233,9 +233,17 @@ fn a_writing_pass_shorter_than_its_measure_is_a_bug() {
 }
 
 #[test]
-fn borrowed_json_is_grammar_checked_and_preserves_its_text() {
+fn borrowed_json_is_grammar_checked_and_writes_compact_spelling() {
     let limits = crate::tokenizer::Limits { depth: 4, string: 0, number: 32, chunk: 3, length: 256 };
-    for valid in [br#" {"a":[null,true,false,-2e3,"\u0061"]} "#.as_slice(), b"null", b"\"longer than the chunk\""] {
+    for (valid, compact) in [
+        (br#" {"a":[null,true,false,-2e3,"\u0061"]} "#.as_slice(), br#"{"a":[null,true,false,-2e3,"a"]}"#.as_slice()),
+        (b"null".as_slice(), b"null".as_slice()),
+        (b"\"longer than the chunk\"".as_slice(), b"\"longer than the chunk\"".as_slice()),
+        (
+            br#""\u0000\u0008\u000c\u000A\u000d\u0009\/\u0022\u005c\ud83d\ude00""#.as_slice(),
+            "\"\\u0000\\b\\f\\n\\r\\t/\\\"\\\\😀\"".as_bytes(),
+        ),
+    ] {
         assert_eq!(crate::tokenizer::validate(valid, &limits), Ok(()));
         let mut measure = Encoder::measure(&WRITER);
         measure.array_start();
@@ -249,7 +257,7 @@ fn borrowed_json_is_grammar_checked_and_preserves_its_text() {
         let written = write.finish();
         assert_eq!(written.first(), Some(&b'['));
         assert_eq!(written.last(), Some(&b']'));
-        assert_eq!(&written[1..written.len() - 1], valid);
+        assert_eq!(&written[1..written.len() - 1], compact);
     }
     for bad in
         [b"".as_slice(), b"{", b"[1,]", b"{} {}", b"01", b"{\"x\":\"\\uD800\"}", b"\"\xFF\"", b"{\"x\":\"\x01\"}"]
