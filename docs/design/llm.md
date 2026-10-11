@@ -380,17 +380,24 @@ derivation's own:
   272,000-token window, and allocates them all. The owner declares them
   instead. A request within its byte limit that would carry more is
   refused by name, as any count past its bound is.
-- **The encoding scratch follows the items.** A request is built in
-  compact documents and tokens before it is encoded. Their bound is:
-  - the request's declared counts (history items, tools, calls) times
-    the dialect's tokens per item;
-  - plus its fixed fields.
+- **The encoder makes no copies.** A request is written from the values
+  its owner holds, borrowed, straight into the request's bytes, which
+  the memory pool reserves:
+  - tool schemas, replayed reasoning values and other compact documents
+    are serialized by reference, never cloned into a compact copy;
+  - JSON text a request carries, such as a call's arguments that a
+    dialect sends as an object, is checked by a streaming pass of the
+    tokenizer and copied as text, never parsed into a compact document.
+    What fails the pass is handled as the dialect already handles
+    invalid arguments.
 
-  It is never derived from the encoded request's bytes, a token per
-  byte, which charged 577 MB for one 272,000-token window. The tokens
-  per item are the dialect's constant, set from captures with headroom
-  (section 7). The component holds one scratch, which one call's
-  preparation uses at a time, since a step prepares one call.
+  So the encoder's scratch is its fixed state and a stack bounded by the
+  dialect's nesting depth, held once by the component. Dense JSON, many
+  tokens in few bytes, costs no memory, and no count of JSON tokens is
+  admitted or refused. Sizing the scratch from the encoded request's
+  bytes, a token per byte, charged 577 MB for one 272,000-token window.
+  A per-item token constant would undercount dense JSON, so neither is
+  used.
 - **Sent text has no cap of its own.** A string the caller sends is
   bounded by the request as a whole; what the caller renders into it is
   the caller's to bound.
