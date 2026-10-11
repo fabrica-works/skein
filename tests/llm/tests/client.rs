@@ -664,8 +664,90 @@ fn non_json_errors_keep_their_status_and_exact_error_body_bound() {
                 let expected_detail = [b"error body cut: ".as_slice(), &body[..bound]].concat();
                 assert_eq!(detail.as_ref(), expected_detail);
             } else {
-                assert_eq!(detail.as_ref(), format!("provider HTTP error {status}").as_bytes());
+                assert_eq!(detail.as_ref(), body);
             }
+        }
+    }
+}
+
+#[test]
+fn undecoded_error_bodies_keep_their_clipped_provider_text_for_both_dialects() {
+    let bodies: &[&[u8]] = &[
+        br#"{"message":"another envelope"}"#,
+        b"upstream failed",
+        b"<html>proxy denied</html>",
+        br#"{"error":{"message":"missing kind"}}"#,
+        br#"{"error":"wrong type"}"#,
+        br#"{"error":{"code": "#,
+        b"",
+    ];
+    for provider in [skein_llm::Provider::OpenAiCodex, skein_llm::Provider::Anthropic] {
+        for chunked in [false, true] {
+            for body in bodies {
+                for detail_bound in [0, 1, body.len().saturating_sub(1), body.len()] {
+                    let mut bounds = skein_llm_world::limits_for(provider);
+                    bounds.detail_bytes = u32::try_from(detail_bound).unwrap();
+                    let mut input = call(12);
+                    if provider == skein_llm::Provider::Anthropic {
+                        input.endpoint = skein_llm::Endpoint::anthropic();
+                        input.credential = skein_llm::Credential::anthropic(b"fixture".as_slice().into());
+                        input.prompt.affinity = None;
+                    }
+                    let mut world = World::new(input, bounds, response(400, "", body, chunked), 12);
+                    world.fragmentation(1, 1);
+                    world.request(client::Request::Start);
+                    world.run();
+                    world.settle();
+                    world.assert_once();
+                    assert!(
+                        world.seen.iter().any(|event| matches!(event,
+                        client::Event::Failed {
+                            failure: Failure::Invalid,
+                            evidence: client::Evidence::Response { status: 400 },
+                            detail,
+                            ..
+                        } if detail.as_ref() == &body[..detail_bound.min(body.len())])),
+                        "{provider:?}, {chunked}, {body:?}, {detail_bound}: {:?}",
+                        world.seen
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn decoded_error_messages_and_undecoded_utf8_bodies_keep_the_detail_boundary() {
+    for provider in [skein_llm::Provider::OpenAiCodex, skein_llm::Provider::Anthropic] {
+        for (body, expected) in [
+            (r#"{"error":{"code":"invalid_api_key","message":"héllo"}}"#.as_bytes(), b"h".as_slice()),
+            ("héllo".as_bytes(), b"h".as_slice()),
+        ] {
+            let mut bounds = skein_llm_world::limits_for(provider);
+            bounds.detail_bytes = 2;
+            let mut input = call(13);
+            if provider == skein_llm::Provider::Anthropic {
+                input.endpoint = skein_llm::Endpoint::anthropic();
+                input.credential = skein_llm::Credential::anthropic(b"fixture".as_slice().into());
+                input.prompt.affinity = None;
+            }
+            let mut world = World::new(input, bounds, response(401, "", body, true), 13);
+            world.fragmentation(1, 1);
+            world.request(client::Request::Start);
+            world.run();
+            world.settle();
+            world.assert_once();
+            assert!(
+                world.seen.iter().any(|event| matches!(event,
+                client::Event::Failed {
+                    failure: Failure::Unauthorized,
+                    evidence: client::Evidence::Response { status: 401 },
+                    detail,
+                    ..
+                } if detail.as_ref() == expected)),
+                "{provider:?}, {body:?}: {:?}",
+                world.seen
+            );
         }
     }
 }

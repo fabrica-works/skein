@@ -1197,17 +1197,7 @@ fn error_end(client: &mut Client, env: &Env<Limits>, above: &mut Queue<Event>) {
     let failure = translate::failure(openai::classify(client.status, error.as_ref(), client.rate, env.wall));
     let detail = match error {
         Some(error) => error.message,
-        None => {
-            let status = Decimal::of(u64::from(client.status));
-            let length = b"provider HTTP error "
-                .len()
-                .checked_add(status.as_bytes().len())
-                .expect("status diagnostic fits usize");
-            let mut detail = Writer::new(length);
-            detail.put(b"provider HTTP error ").expect("measured prefix");
-            detail.put(status.as_bytes()).expect("measured HTTP status");
-            detail.finish()
-        }
+        None => openai::clip_detail(client.error.as_slice(), env.limits.detail_bytes),
     };
     client.error.clear();
     fail(client, failure, detail, above);
