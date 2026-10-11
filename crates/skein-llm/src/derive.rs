@@ -18,6 +18,10 @@ pub struct Declared {
     pub calls_per_response: u32,
     /// Calls outstanding across the owner; consumed by its connection pool.
     pub conversations: u32,
+    /// Offered tools; fixes the native translation table capacity.
+    pub tools: u32,
+    /// Messages and blocks carried by one request; fixes its translation capacity.
+    pub history_items: u32,
 }
 
 /// Largest JSON expansion of one byte, as `\u00XX`.
@@ -115,11 +119,6 @@ const CODEX: arithmetic::Constants = arithmetic::Constants {
     error_bytes: 16 * 1024,
     detail_bytes: 1024,
     metadata: 86,
-    // Captured function-tool member spelling, with a one-byte nonempty name,
-    // empty description/schema and strict:false: 78 encoded bytes.
-    smallest_tool: 78,
-    // The smallest replayable native envelope has a one-byte type: {"type":"a"}.
-    smallest_item: 12,
     fixed_tokens: 30,
     fixed_text: 196,
     // function_call_arguments.delta is the longest archived SSE event name.
@@ -140,9 +139,6 @@ const ANTHROPIC: arithmetic::Constants = arithmetic::Constants {
     error_bytes: 16 * 1024,
     detail_bytes: 1024,
     metadata: 0,
-    // Captured Messages tool spelling, one-byte name, empty description/schema.
-    smallest_tool: 47,
-    smallest_item: 12,
     fixed_tokens: 29,
     fixed_text: 202,
     event_field: 19,

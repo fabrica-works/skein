@@ -722,3 +722,39 @@ fn measurement_refuses_large_starts_without_copying_their_owned_bytes() {
         );
     }
 }
+
+#[test]
+fn twenty_five_thousand_history_items_allocate_only_the_declared_translation_tables() {
+    use skein_llm::{Block, Declared, Limits, Message, Provider, Role, openai};
+    let declared = Declared { window: 272_000, tools: 8, history_items: 25_000, ..skein_llm_world::TINY_DECL };
+    let mut bounds = Limits::derive(&declared).expect("large model with owner counts").dialect(Provider::OpenAiCodex);
+    bounds.http.request = 4096;
+    bounds.http.read = 256;
+    bounds.http.send = 256;
+    bounds.sse.chunk = 256;
+    let mut input = call(1);
+    input.prompt.messages = Box::new([Message {
+        role: Role::User,
+        content: vec![Block::Text { text: Box::new([]), replay: None }; 25_000].into(),
+    }]);
+    // Translation owns native table capacity and may overlap its exact boxed
+    // result. The owner's prompt is outside this span; empty text allocates no
+    // payload. Small fixed writer/header scratch is independently bounded.
+    let tables = skein_lib::List::<openai::Input>::worst_case(declared.history_items).unwrap()
+        + skein_lib::List::<openai::Tool>::worst_case(declared.tools).unwrap();
+    let bound = 2 * tables + 64 * 1024;
+    let span = Span::start();
+    let measured =
+        client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds).expect("all declared items fit");
+    let grown = span.end();
+    assert!(measured.body <= bounds.request);
+    assert!(
+        grown.peak <= i64::try_from(bound).unwrap(),
+        "translation peak {} exceeds owner table bound {bound}",
+        grown.peak
+    );
+    eprintln!(
+        "history items={} tools={} translation peak={} bound={bound}",
+        declared.history_items, declared.tools, grown.peak
+    );
+}

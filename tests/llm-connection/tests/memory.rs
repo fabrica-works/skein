@@ -249,3 +249,46 @@ fn two_endpoints_with_different_limits_fit_their_measured_component_bound() {
     drop(world);
     assert_eq!(meter.held(), 0);
 }
+
+#[test]
+fn connection_bound_counts_socket_buffers_and_pool_without_the_owners_io() {
+    let mut limits = full_pool_limits();
+    let mut endpoints = List::with_capacity(1);
+    endpoints
+        .push(Endpoint {
+            address: Addr::from((Ipv4Addr::LOCALHOST, 443)),
+            transport: skein_llm_connection::Transport::Tls {
+                server_name: skein_tls::Name::new("skein.test").expect("name"),
+                trust: pki::client(&[]),
+            },
+            llm: skein_llm::Endpoint::codex(),
+            limits: skein_llm_world::limits(),
+            credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+        })
+        .unwrap();
+    let small_bound = skein_llm_connection::worst_case(&limits, &endpoints).unwrap();
+    // Owner entity/refusal tables belong to its io, not this connection pool.
+    limits.io.sockets += 1000;
+    limits.io.refusals += 1000;
+    assert_eq!(skein_llm_connection::worst_case(&limits, &endpoints).unwrap(), small_bound);
+    // Every physical pool slot prices its own intake, receive and output.
+    limits.io.intake += 1024;
+    limits.io.receive += 512;
+    limits.io.output += 2048;
+    let delta = u64::from(limits.connections) * (1024 + 512 + 2048);
+    assert_eq!(skein_llm_connection::worst_case(&limits, &endpoints).unwrap(), small_bound + delta);
+    limits.memory += 1024;
+    assert_eq!(skein_llm_connection::worst_case(&limits, &endpoints).unwrap(), small_bound + delta + 1024);
+    limits.io.sends += 1;
+    let queue_delta = u64::from(limits.connections) * u64::try_from(size_of::<Box<[u8]>>()).unwrap();
+    assert_eq!(
+        skein_llm_connection::worst_case(&limits, &endpoints).unwrap(),
+        small_bound + delta + 1024 + queue_delta
+    );
+    endpoints.get_mut(0).unwrap().transport = skein_llm_connection::Transport::Plaintext;
+    let tls = skein_tls::client::worst_case(&limits.tls).unwrap() * u64::from(limits.connections);
+    assert_eq!(
+        skein_llm_connection::worst_case(&limits, &endpoints).unwrap(),
+        small_bound + delta + 1024 + queue_delta - tls
+    );
+}

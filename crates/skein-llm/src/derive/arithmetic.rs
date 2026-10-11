@@ -10,8 +10,6 @@ pub(super) struct Constants {
     pub error_bytes: u32,
     pub detail_bytes: u32,
     pub metadata: u32,
-    pub smallest_tool: u32,
-    pub smallest_item: u32,
     pub fixed_tokens: u32,
     pub fixed_text: u32,
     pub event_field: u32,
@@ -43,9 +41,6 @@ pub(super) fn dialect(declared: &Declared, constants: &Constants) -> Result<clie
     let receiving = held.checked_add(event).ok_or(Violation::Overflow { rule: Rule::Receiving })?;
     let escaped = receiving.checked_mul(ESCAPE).ok_or(Violation::Overflow { rule: Rule::Skip })?;
     let skip = request.checked_add(escaped).ok_or(Violation::Overflow { rule: Rule::Skip })?;
-    let tools = request.checked_div(constants.smallest_tool).ok_or(Violation::Overflow { rule: Rule::Tools })?;
-    let history_items =
-        request.checked_div(constants.smallest_item).ok_or(Violation::Overflow { rule: Rule::HistoryItems })?;
     let limits = client::Limits {
         http: http::Limits {
             request: 0,
@@ -66,8 +61,8 @@ pub(super) fn dialect(declared: &Declared, constants: &Constants) -> Result<clie
         retained,
         receiving,
         skip,
-        tools,
-        history_items,
+        tools: declared.tools,
+        history_items: declared.history_items,
         depth: constants.depth,
         error_bytes: constants.error_bytes,
         detail_bytes: constants.detail_bytes,

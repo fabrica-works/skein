@@ -1,6 +1,7 @@
 //! Startup limits and checked memory bounds (llm-connection.md, section 7).
 
-use skein_lib::{Duration, Id, List, Queue, Slab};
+use alloc::boxed::Box;
+use skein_lib::{Duration, Id, Intake, List, Queue, Slab};
 
 use crate::call::Connection;
 
@@ -34,6 +35,12 @@ pub fn worst_case(limits: &Limits, endpoints: &List<crate::Endpoint>) -> Option<
     let routes = Queue::<skein_llm::client::Event>::worst_case(64)?
         .checked_add(Queue::<skein_lib::stream::Down>::worst_case(256)?.checked_mul(2)?)?
         .checked_add(Queue::<skein_tls::client::Event>::worst_case(64)?)?;
+    // One physical socket owns these buffers. The owner prices io's entity,
+    // flight and deadline tables once; they are never a pool multiplier.
+    let socket = Intake::worst_case(limits.io.intake)?
+        .checked_add(u64::from(limits.io.receive))?
+        .checked_add(u64::from(limits.io.output))?
+        .checked_add(Queue::<Box<[u8]>>::worst_case(limits.io.sends)?)?;
     let mut largest = 0_u64;
     let mut scratch = 0_u64;
     for endpoint in endpoints {
@@ -50,7 +57,7 @@ pub fn worst_case(limits: &Limits, endpoints: &List<crate::Endpoint>) -> Option<
             crate::Transport::Tls { .. } => skein_tls::client::worst_case(&limits.tls)?,
             crate::Transport::Plaintext => 0,
         };
-        let each = transport.checked_add(fixed)?.checked_add(routes)?;
+        let each = socket.checked_add(transport)?.checked_add(fixed)?.checked_add(routes)?;
         largest = largest.max(each);
         // One entrance measures or prepares one call, never one per connection.
         // Its borrowed prompt remains the owner's; translated codec tables,
@@ -67,6 +74,5 @@ pub fn worst_case(limits: &Limits, endpoints: &List<crate::Endpoint>) -> Option<
         .checked_add(Slab::<Connection>::worst_case(limits.connections)?)?
         .checked_add(List::<Option<Id<Connection>>>::worst_case(limits.connections)?)?
         .checked_add(List::<Option<crate::component::Waiting>>::worst_case(limits.calls)?)?
-        .checked_add(List::<crate::Endpoint>::worst_case(limits.endpoints)?)?
-        .checked_add(skein_io::worst_case(&limits.io)?)
+        .checked_add(List::<crate::Endpoint>::worst_case(limits.endpoints)?)
 }

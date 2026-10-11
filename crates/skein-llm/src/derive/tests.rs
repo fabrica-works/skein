@@ -12,8 +12,16 @@ use skein_http::client as http;
 use skein_lib::stream::{Down, Up};
 use skein_lib::{Env, Intake, Queue, Time, Wall};
 
-const DECLARED: Declared =
-    Declared { window: 64, output: 32, reasoning_item: 48, tool_payload: 8, calls_per_response: 3, conversations: 2 };
+const DECLARED: Declared = Declared {
+    window: 64,
+    output: 32,
+    reasoning_item: 48,
+    tool_payload: 8,
+    calls_per_response: 3,
+    conversations: 2,
+    tools: 8,
+    history_items: 16,
+};
 
 #[test]
 fn every_archived_head_fits_within_a_quarter_of_its_derived_bounds() {
@@ -147,5 +155,61 @@ fn headroom_flows_into_fixed_client_memory_without_changing_the_call_reservation
         assert!(delta > 0);
         assert_eq!(client::worst_case(&limits).unwrap() - client::worst_case(&captured).unwrap(), delta);
         assert_eq!(client::largest_reservation(&limits), client::largest_reservation(&captured));
+    }
+}
+
+#[test]
+fn owner_declared_counts_accept_the_boundary_and_refuse_one_more_by_name() {
+    let declared = Declared { tools: 2, history_items: 3, ..DECLARED };
+    let derived = Limits::derive(&declared).unwrap();
+    for provider in [Provider::OpenAiCodex, Provider::Anthropic] {
+        let mut bounds = derived.dialect(provider);
+        bounds.http.request = 4096;
+        bounds.http.read = 256;
+        bounds.http.send = 256;
+        bounds.sse.chunk = 256;
+        let endpoint = match provider {
+            Provider::OpenAiCodex => crate::Endpoint::codex(),
+            Provider::Anthropic => crate::Endpoint::anthropic(),
+        };
+        let credential = match provider {
+            Provider::OpenAiCodex => {
+                crate::Credential { access_token: b"fake".as_slice().into(), account_id: b"fake".as_slice().into() }
+            }
+            Provider::Anthropic => crate::Credential::anthropic(b"fake".as_slice().into()),
+        };
+        let schema = Json::from_bytes(b"{}", &DocumentLimits { bytes: 2, strings: 2, depth: 2, tokens: 2 }).unwrap();
+        let tool = crate::Tool { name: b"t".as_slice().into(), description: Box::new([]), schema };
+        let block = crate::Block::Text { text: Box::new([]), replay: None };
+        let mut prompt = crate::Prompt {
+            model: b"fixture".as_slice().into(),
+            instructions: Box::new([]),
+            tools: alloc::vec![tool.clone(); 2].into(),
+            messages: Box::new([crate::Message {
+                role: crate::Role::User,
+                content: alloc::vec![block.clone(); 3].into(),
+            }]),
+            reasoning_effort: None,
+            affinity: None,
+            choice: crate::ToolChoice::Auto,
+            max_output_tokens: None,
+        };
+        client::measure(&prompt, &credential, &endpoint, &bounds).expect("declared counts are accepted");
+        prompt.tools = alloc::vec![tool; 3].into();
+        assert_eq!(
+            client::measure(&prompt, &credential, &endpoint, &bounds),
+            Err(crate::Error::Limit { which: crate::Cap::Tools, bound: 2 })
+        );
+        prompt.tools = Box::new([]);
+        prompt.messages[0].content = alloc::vec![block; 4].into();
+        assert_eq!(
+            client::measure(&prompt, &credential, &endpoint, &bounds),
+            Err(crate::Error::Limit { which: crate::Cap::HistoryItems, bound: 3 })
+        );
+        prompt.messages = alloc::vec![crate::Message { role: crate::Role::User, content: Box::new([]) }; 4].into();
+        assert_eq!(
+            client::measure(&prompt, &credential, &endpoint, &bounds),
+            Err(crate::Error::Limit { which: crate::Cap::HistoryItems, bound: 3 })
+        );
     }
 }
