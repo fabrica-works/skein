@@ -221,8 +221,8 @@ There is one independent output demand or grant at a time. It can coexist
 with a classic read-only Demand, which it neither answers nor withdraws.
 Bytes, End and classic Room cannot settle it. Classic room demands and
 grants cannot coexist with independent output ownership, and a classic
-Send cannot spend an independent grant. Existing joined Demand semantics
-remain unchanged for classic consumers.
+Send cannot spend an independent grant. Classic consumers keep the joined
+Demand.
 
 Cancel names a pending output demand. Cancellation wins only before the
 lower has emitted its terminal. A Granted terminal already queued above
@@ -242,12 +242,12 @@ no competing classic room ownership creates an obligation; the lower
 retains only its active cell, without a history of the caller's tokens.
 Neither a grant nor Closed proves peer receipt or durable commitment.
 
-Finish keeps its classic restriction: withdraw a read only when closing
-or after End, settle any pending output demand, and finish once. This
-extension introduces no general live-read cancellation or new Finish
-terminal. End still concerns reading alone; independent output can
-progress after it. Native lower support is required: an adapter over an
-arbitrary classic combined Demand cannot manufacture independent room.
+Finish keeps its classic restriction: withdraw a read only when closing or
+after End, settle any pending output demand, and finish once. There is no
+general live-read cancellation and no Finish terminal. End concerns
+reading alone; independent output can progress after it. Native lower
+support is required: an adapter over an arbitrary classic combined Demand
+cannot manufacture independent room.
 
 ## 8. Time, deadlines and randomness
 
@@ -281,6 +281,10 @@ The byte search is also compared with a naive one, and the intake with a
 plain reference, over random cases drawn from a seed: a few hundred in
 the step tests, and 20,000 from the same seeds in the fuzzy suite, in
 `tests/lib` (testing-strategy.md, 8).
+
+The request table's step tests are `src/tests/requests.rs`; its independent
+obligation model, replay and seeded sweep are in `tests/lib/src/request_table.rs`
+and `tests/lib/tests/{request_table,fuzzy_request_table}.rs`.
 
 Each `worst_case` is checked against the counting allocator (testing.md,
 5), in `tests/lib/tests/memory.rs`, in the focused suite. Every container
@@ -348,7 +352,78 @@ The journal uses generic types and lib's containers. It defines no
 traits, takes no closures, and uses no `dyn` (programming-model.md,
 10.2).
 
-## 12. Not built yet
+## 12. The request table
+
+`RequestTable<O, R>` keeps bounded keyed requests until their answers are
+final. It is generic over the asker's owner value and the requests it
+holds, and inspects neither owners, requests nor answers. It belongs in
+lib because it is a data structure with a lifecycle, like a queue or the journal; a service does not hand-roll one
+(programming-model.md, 10.2).
+
+- **Owner:** each request keeps the asker's own value, of a `Copy` type,
+  held and handed back with progress and a final answer, never read. An
+  asker composing several parts names each owner with a variant of its
+  own enum, carrying the part's token, or naming a restored request whose
+  asker is gone. It can then route by the variant to the part that asked
+  without keeping a routing table of its own. The owner is not required
+  to be a token: a token's holder never interprets it (section 2).
+- **Keys:** each admitted request gets a key drawn from the seed given
+  at construction, never reused for another request. A restored request
+  keeps its key. Exhausting the key space refuses admission rather than
+  reusing a key.
+- **Scope:** each request keeps an opaque number its asker gives. Only
+  requests whose scope is confirmed may be sent.
+- **Kept before sent:** each admitted request emits its record for the
+  asker's store: its key, scope, request and first sending's wall time,
+  if it has been sent. Its first sending updates that record. Records
+  leave before the sends they cover, in order; each take emits at most
+  its configured count. Retiring a request emits its erase.
+- **One attempt:** a request has at most one attempt in flight. Each
+  attempt has its own fresh token, independent of the owner value.
+  An answer for a superseded or retired attempt changes nothing.
+- **Envelopes:** the protocol layer says which kind of answer came.
+  *Final* retires the request and hands back its owner value, so the
+  asker routes the answer unopened. *Again* schedules a retry under the
+  same key. *Lost* does likewise while the link is up, and parks while
+  it is down. *Signed out* parks until the request's scope is confirmed
+  again. Retry spans start at a configured first span, double to a
+  configured most, and are jittered from the seed.
+- **Parking and resuming:** a down link parks requests and sends
+  nothing. An up link resumes the confirmed scope's parked requests;
+  confirming a scope permits only that scope's requests. Changing the
+  scope parks every other scope's requests.
+- **Retention:** the asker tells the table how long answers are kept.
+  A request first sent longer ago than that span less the configured
+  margin is never sent again: it is retired, erased, and its owner told
+  that its outcome is unknown. The saved first sending is a wall time,
+  so the cutoff survives a restart; retries and the cutoff use monotonic
+  deadlines computed from the supplied clocks (programming-model.md,
+  section 9). A restored request is not sent until retention is known.
+- **Restoration:** records are admitted at startup within the same
+  limits, keeping their keys and first sending times. They begin parked
+  until the link is up and their scope is confirmed. The asker supplies
+  their owner values and declared sizes again.
+- **Progress:** changes to in flight, retrying, parked or unknown leave
+  with the owner value, for display. The table never reads the answer
+  or decides how progress is shown.
+- **Admission and memory:** capacities are fixed at construction. A
+  request past the held-request count or the sum of owners' declared
+  bytes is refused at admission, returning ownership and changing
+  nothing. The table does not measure a request. `worst_case` prices its
+  containers, owner values and bookkeeping from the limits with checked
+  arithmetic; the owner prices the payload bytes it declares separately.
+
+The asker decides each request's scope and contents, supplies its owner
+value and declared size, and tells the table the link, confirmed scope,
+retention and clocks. The protocol layer classifies envelopes; final
+answers go directly to their owner. The table decides keys, attempts,
+backoff, parking, retention cutoffs, store records and progress.
+
+The table uses generic types and lib's own containers. It defines no
+traits, takes no closures, and uses no `dyn` (programming-model.md,
+10.2).
+
+## 13. Not built yet
 
 - **`Slab::get2_mut`,** which looks up two entities at once and fails on
   equal handles (programming-model.md, 5.1).

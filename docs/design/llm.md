@@ -14,8 +14,8 @@ account ID. The default endpoint is `chatgpt.com/backend-api/codex/responses`.
 Transport connects to that authority and provides a secured plaintext
 stream. Endpoint overrides support fakes and explicitly chosen deployment
 routes; the caller must bind the stream to the endpoint it supplied.
-Historical client identity strings are optional data, not silently installed
-as defaults. Sign-in and refresh are outside this crate.
+Client identity strings are optional data, never installed as defaults.
+Sign-in and refresh are outside this crate.
 Anthropic uses `api.anthropic.com/v1/messages`, a bearer token with no account
 header, an API version and the OAuth beta flag. Version/beta overrides are
 explicit endpoint headers; reserved credential/framing headers are rejected.
@@ -72,10 +72,7 @@ pairs the exact result; the item ID moves into complete replay metadata and
 returns unchanged on a continued request. Neither field is joined or split.
 The native answer budget charges both ID payloads, name and input. Its slot
 bound uses the enlarged `Part`/`Opened` wrapper size, with active ID/kind bytes
-and admitted ready payloads priced simultaneously. Actual Client controls
-complete pipe/escaped IDs, restore durable metadata and observe exact continuation
-pairing. An independent observer rejects altered identity evidence. The controls
-reach both maximum ID payloads under the installed counting allocator.
+and admitted ready payloads priced simultaneously.
 
 Generic tool calls retain raw JSON argument text; the application validates and
 translates it into its own tool types before execution. Codex history carries
@@ -599,16 +596,11 @@ drive the real HTTP/SSE/JSON stack over a demand-checking in-memory stream,
 with fragmentation, slow reads, early response, truncation, transport faults,
 cancellation and reuse. Memory tests compare the counting allocator's high
 water with `worst_case`. Fuzzy cases live in the separate nextest profile.
-Archived Temper/Tongs transcripts retain their provenance; synthetic cases
+Archived provider transcripts retain their provenance; synthetic cases
 are labelled as such. Live subscription admission is not implied by offline
-tests and requires a caller-provided current credential.
-
-The [shared scripted peer](fake-llm.md) composes an independent lib-only
-script domain with native bounded byte codecs. Applications supply schemas,
-body menus, invalid inputs and scripts. Signed/redacted replay preserves all
-bounded provider extension fields; known fields are validated without dropping
-unknown opaque data. Historical Anthropic captures retain provenance and
-flow through the actual Client independently of synthetic scripts.
+tests and requires a caller-provided current credential. Worlds answer the
+actual Client with the [shared scripted peer](fake-llm.md); applications
+supply its schemas, body menus, invalid inputs and scripts.
 
 The contracts of sections 2 and 4 add these, all in the focused suite
 unless marked:

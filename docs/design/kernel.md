@@ -468,9 +468,9 @@ for its backend.
   the fuzzy seeds. `EMLINK` (`TooManyLinks` on a `Rename`
   or a `MakeDirectory`) neither backend provokes. A `Rename` across
   filesystems (`Other(EXDEV)`) is the ring's own test, between the
-  temporary directory and `/dev/shm` where they are two mounts. Short reads and writes
-  are an outcome the simulator draws and the ring never gives on a
-  regular file: the fuzzy suite asserts both counts appear over its
+  temporary directory and `/dev/shm` where they are two mounts. Short
+  reads and writes are an outcome the simulator draws and the ring never
+  gives on a regular file: the fuzzy suite asserts both counts appear over its
   seeds, and a calm world counts every byte, as the ring does.
 - **Appending.** A scenario opens a file to append as the shell does, in
   its own root: `Append`s land at the end in order, after bytes another

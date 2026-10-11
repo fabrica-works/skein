@@ -341,26 +341,12 @@ and changes no code above io:
 
 ## 11. Not built yet
 
-- **Startup** (section 6): names, TLS's configuration, and the files a
-  service appends to. The ring's probe is built, and so are `open_root`
-  for roots and `open_termination_signals`, which blocks `SIGINT` and
-  `SIGTERM` and opens the signalfd io adopts; the echo's `main` runs the
-  rest of startup as a service's would (examples.md, 4):
-  its limits checked, each machine's largest demand within io's caps, and
-  the sum of the worst cases within the memory configured, before the
-  seed and the kernel. Startup is each service's `main`, with the kit, so
-  the kit holds no startup function of its own.
-- **The records io's next parts pull** (kernel.md, 10): a signal to a
-  child's group, a wait that does not reap and the reap at close, an
-  append, a `Stat` that answers owner and links, and reading resource
-  usage. Sockets, files and processes are built: spawning, waiting,
-  signalling a child, its pipes, and reading termination signals, with
-  listing a directory, spawning and signalling the synchronous ones.
-- **`Host` and `drive` in skein-shell,** with the hook (section 12).
-  Today `Host` is `skein-world`'s, and each `main` writes its loop out;
-  the echo's already ends once the service holds nothing (section 13).
-- **Startup reads and trust roots** (6.1, 6.2), and **terminal modes**
-  (6.3).
+- **Startup** (section 6): resolving names, and reading TLS's
+  configuration. The ring's probe is built, and so are `open_root` for
+  roots and `open_termination_signals`; the echo's `main` runs the rest of
+  startup as a service's would (examples.md, 4). Startup is each
+  service's `main`, with the kit, so the kit holds no startup function of
+  its own.
 - **The readiness backend** and the deferred optimisations.
 
 ## 12. The loop: `Host` and `drive`

@@ -55,8 +55,9 @@ runs against it in `tests/conformance/sim` (testing.md, 6).
   to the next thing due (a late completion, a raced cancel, a connect's
   timeout), or to a given instant. A world that hosts services moves it
   to the earlier of what the simulator has due and the services' earliest
-  deadline, so an idle world jumps straight there. The wall clock starts
-  at a fixed date, so it replays too.
+  deadline, once no process has work or deferred work, so an idle world
+  jumps straight there. The wall clock starts at a fixed date, so it
+  replays too.
 - **The machine seam.** File and process operations go to the embedder's
   fake machine, which answers the file operations and runs the programs.
   A spawned program may be another service, which the world then starts
@@ -235,31 +236,4 @@ was metered as its own, which also finds a leak.
 
 ## 7. Not built yet
 
-- **Groups, the observing `Wait` and its reap, and usage** (3.2). Today
-  a `Wait` reaps at the exit, and a signal reaches the child alone.
-- **Files appended to, and `Stat`'s owner and links** (3.1).
-- **Cuts at an operation** (3.3). The minimal machine's crash model is
-  built, and skein-kv's tests cut by hand: they drop the simulator and
-  the store and build both again over what the machine kept. The
-  simulator's own cut, which keeps the world and its other processes,
-  is not.
-- **A state digest** in the trace, beside the records (lib.md, 11).
-
-Sockets, files through the machine seam, and processes are built:
-spawns through the seam's calls for programs, pipes, exits, signals to a
-child, termination signals on a process's signal source, and hosting the
-services a spawn starts. `skein-world` serves the machine's calls after
-each submit, and opens a process's startup roots in its machine.
-
-Hosting services is built: `skein-world` (testing.md, 5)
-hosts each process's `iterate` over the simulator, moving time to the
-earlier of `next_due` and the processes' earliest deadline only when no
-process has work and none has deferred work (section 3), and the echo's
-worlds run on it (examples.md, 6). So is the check of memory at every
-iteration, which is the harness's, not the simulator's (section 5): it
-meters around the processes' own calls, building each and each
-`iterate`, with the counting allocator's span, so that what grew within
-the simulator's calls and the harness's own is left out, and checks once
-settled that each process, dropped, frees what was metered as its own.
-The harness's own tests (`tests/world`) show it holds time while deferred
-work waits, and catches a process past its worst case and one that leaks.
+- **A state digest** in the trace, beside the records (lib.md, 12).

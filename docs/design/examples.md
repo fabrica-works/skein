@@ -1,12 +1,12 @@
 # The examples
 
-Provisional, 2026-10-04, revised 2026-10-09. The design of skein's
-example services (testing.md, 3): what each one is, the steps README.md
-asks for before code (the wire protocol, the limits, the entities, the
-state machines), its fakes, the harness its worlds run on, and how it is
-tested. The examples exist to be tested and to be copied: a service
-starts from them. The echo server is built; the HTTP server and its
-client come with `skein-http`.
+Provisional, 2026-10-04. The design of skein's example services
+(testing.md, 3): what each one is, the steps README.md asks for before
+code (the wire protocol, the limits, the entities, the state machines),
+its fakes, the harness its worlds run on, and how it is tested. The
+examples exist to be tested and to be copied: a service starts from
+them. The echo server is built; the HTTP server and its client are not
+(section 8).
 
 ## 1. In one page
 
@@ -123,8 +123,7 @@ to stop. The connections it has drain (programming-model.md, 5.2): one
 waiting for the peer's next line, or for its greeting's room, is idle and
 closes at once; one with a line out answers it, then closes. None waits
 for its idle deadline, so the echo ends without one firing
-(testing-strategy.md, 6). Today the connections run to their end, each
-until its peer ends or its idle deadline passes (section 8).
+(testing-strategy.md, 6).
 
 ### 3.4 State machines
 
@@ -238,10 +237,10 @@ shell's `Kernel` and `Clock`.
   loop exits once the service holds nothing, with a success (shell.md,
   13). A listener that fails, as when the address is in use, ends it too,
   with the failure on standard error.
-- **Its loop is `drive`** (shell.md, 12), over the echo's `Host`, once
-  `drive` is in the kit. Its hook says once that the echo listens, and at
+- **Its loop is `drive`** (shell.md, 12), over the echo's `Host`, from
+  skein-shell. Its hook says once that the echo listens, and at
   what address, and once that a listen refused for want of resources is
-  being retried: what `main`'s loop says today between `iterate` and the
+  being retried: the startup facts emitted between `iterate` and the
   submit.
 
 ## 5. The fake echo client
@@ -317,12 +316,10 @@ processes, each a host of an `iterate` (a service, or a fake client):
   echo down once the clients are done, or at a given time, so that the
   world settles. Both reach into the service where the referee should
   only watch from outside (testing-strategy.md, 7): its reading of
-  `svc.listening()` stands in for the fact `main` prints, "listening at",
-  which the service will emit as a fact; and its call of `svc.shutdown()`
-  stands in for the termination signal, which io's `Shutdown` event
-  already carries to the shipped echo (io.md, 7), and which the simulator
-  can deliver to a process's signal source. Each moves out of the
-  referee.
+  `svc.listening()` stands in for the "listening at" line `main` prints,
+  which the service does not emit as a fact; and its call of
+  `svc.shutdown()` for the termination signal, which the end-to-end test
+  sends the binary instead.
 - **The real loop** runs the same processes and referee over one ring, in
   one thread on loopback, with deadlines on the real clock. An idle loop
   blocks on the ring until the next completion or deadline.
@@ -431,6 +428,9 @@ processes, each a host of an `iterate` (a service, or a fake client):
 - **The real loop** (`tests/echo/tests/real.rs`): the echo and its fake
   clients in one loop over the shell's ring, on loopback, quick, failing
   clearly where `io_uring` is unusable.
+- **End to end** (`tests/echo/tests/end_to_end.rs`, built with the
+  shell's package): the shipped binary against two fake clients, seen
+  only through loopback, its stderr and its exit, stopped by SIGTERM.
 
 ## 8. Not built yet
 

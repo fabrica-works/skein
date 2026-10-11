@@ -65,8 +65,9 @@ pub enum Event {
     Output     { owner: Token, up: stream::OutputUp },
     Spawned   { owner: Token, child: Token, pipes: Box<[Token]> },
     Exited    { owner: Token, exit: Exit },
-    Usage     { owner: Token, usage: Usage },         // for a Usage: its one terminal
-    // File { owner, result }; Shutdown { signal }, Resized, Window { owner, size } (section 7)
+    Usage     { owner: Token, usage: Measured },      // for a Usage: its one terminal
+    Shutdown  { signal: ServiceSignal },              // section 7
+    // File { owner, result }; Resized, Window { owner, size } (section 7)
     Failed     { owner: Token, error: Error },
     Closed     { owner: Token },                      // terminal
 }
@@ -75,17 +76,18 @@ pub enum Error { Refused, Unreachable, TimedOut, Reset, Busy, Other }
 ```
 
 An accepted socket is announced to the listener's owner, which binds to
-it or rejects it (programming-model.md, 4.2).
+it or rejects it (programming-model.md, 4.2). Files have requests and
+events of their own, `skein_io::file`'s (section 5).
 
-The loop drives io through four entry points, each declaring its
-`MAX_OUT` (programming-model.md, section 2): `resume` takes one entry of
-the ready list, `up` one completion, `fire` one expired deadline (a
-graceful close's, or a retry's), and `down` one request. io's stage in the up pass is `resume` until the
-ready list is empty, then `up` for each completion, then `fire` while a
-deadline is due; the loop hands io no completion while the ready list
-holds something, so what the down pass made is told first. Requests to
-the kernel go out as `Submit` records into the queue the loop hands the
-kernel.
+The loop drives io through four entry points, each declaring its `MAX_OUT`
+(programming-model.md, section 2): `resume` takes one entry of the ready
+list, `up` one completion, `fire` one expired deadline (a graceful
+close's, or a retry's), and `down` one request. io's stage in the up pass
+is `resume` until the ready list is empty, then `up` for each completion,
+then `fire` while a deadline is due; the loop hands io no completion while
+the ready list holds something, so what the down pass made is told first.
+Requests to the kernel go out as `Submit` records into the queue the loop
+hands the kernel.
 
 **Decisions.**
 
@@ -265,16 +267,15 @@ they are not admitted after failure or closing. Cancelling an admitted
 pending reservation stages its exact terminal for the next up pass.
 Close/Abort likewise stages Cancelled before Closed; a genuine stream
 failure emits the pending reservation's Failed terminal before classic
-Failed. A previously emitted Granted is never answered again. Existing
-Close/Abort's promise of only Closed applies to the classic face; the
-independent face additionally owes its already admitted pending terminal.
+Failed. A previously emitted Granted is never answered again. Close and
+Abort's promise of only Closed applies to the classic face; the
+independent face also owes its already admitted pending terminal.
 
 The loop reserves the declared maximum for all simultaneous events,
 including Bytes, End and an independent output terminal. The extra cell,
 staged terminal and actual enum layouts enter io's checked worst-case
-bound. IO support alone does not establish TLS support: a TLS consumer
-must implement this face natively at both its plaintext and ciphertext
-boundaries before a framed connection uses it.
+bound. Over TLS, a framed connection uses TLS's native face (tls.md, 3.6),
+which implements it at both its plaintext and ciphertext boundaries.
 
 | State | Holds | In flight | Serves | Deadline |
 |---|---|---|---|---|
@@ -429,24 +430,58 @@ caller budgets the command buffers it supplies to `Spawn`.
 
 ## 5. Files
 
-- **Paths resolve beneath a root.** A root is an open directory, and it
-  is an io entity. Every file operation names a root and a path relative
-  to it. The kernel resolves the path beneath the root (`openat2` with
-  `RESOLVE_BENEATH`), so neither `..` nor a symlink can leave it.
-- **Where roots come from.** The shell opens the first roots at startup,
-  from configuration. Any other root is opened beneath an existing one.
-- **Whole-file operations come first:**
-  - read a file, up to a stated maximum;
-  - write a file, replacing it atomically: write a temporary, sync it,
-    rename it (below);
-  - stat;
-  - list a directory, up to a stated count;
-  - make a directory;
-  - remove;
-  - rename.
+Files are a machine of their own beside io's: `FileIo`
+(`skein_io::file_layer`), its requests and events in `skein_io::file`. A
+service holds both, submits the records of each to the one kernel, and
+hands each completion back to the machine whose operation it was.
 
-  Each is one request with one terminal event. Beneath it, io runs the
-  open, the reads or writes, and the close.
+```rust
+// skein_io::file
+pub enum Request {
+    // whole files, beneath a root's token
+    Load  { owner, root: Token, path, max: u32, no_follow },                       // Loaded, TooLarge
+    Scan  { owner, root: Token, path, max: u32, max_bytes: u64, no_follow },       // Scanned
+    Store { owner, root: Token, path, bytes, expected: Expect, no_follow }, // Stored, Conflict
+    MakeDirectory { owner, root: Token, path, mode },                            // Made
+    OpenPrivate { owner, root: Token, path },                                    // Opened, Refused
+    // open files, at offsets
+    Create, CreateNoFollow { owner, root: Fd, name, mode },                        // Opened
+    OpenRead, OpenReadNoFollow { owner, root: Fd, name },                          // Opened
+    OpenDirectory { owner, root: Fd, name, no_follow },                            // Opened: a root
+    ReadAt  { owner, file: Token, offset: u64, max: u32 },                         // Read
+    WriteAt { owner, file: Token, offset: u64, bytes },                            // Written
+    Stat { owner, file }, Sync { owner, file }, Close { owner, file },
+    // the entries of a directory
+    SyncDirectory { owner, root: Fd }, List { owner, root: Fd },
+    Rename { owner, root: Fd, from, to }, Remove { owner, root: Fd, name },
+}
+// each request ends in one event: its own, Failed { error } or Cancelled
+```
+
+- **Paths resolve beneath a root.** A root is an open directory. Every
+  request names one, and a path relative to it that the kernel resolves
+  beneath it (`openat2` with `RESOLVE_BENEATH`), so neither `..` nor a
+  symbolic link leaves it. `no_follow` refuses a symbolic link in any
+  part of the path.
+- **Where roots come from.** The shell opens the first at startup, from
+  configuration (`open_root`), and the service gives each to
+  `FileIo::adopt_root` for its token. `OpenDirectory` opens another
+  beneath one. The whole-file requests name a root by its token, the
+  others still by its descriptor (section 9).
+- **Whole files** are one request each; io runs the opens, the reads or
+  writes and the closes beneath it:
+  - `Load` reads a file of at most `max` bytes; a larger one is
+    `TooLarge`, with its size and none of its bytes;
+  - `Scan` lists a directory, keeping its first entries in name order
+    within `max` entries and `max_bytes` of names, and counts those left
+    out;
+  - `Store` replaces a file, conditionally and atomically (below).
+- **Open files** stay open across requests, behind tokens, up to the
+  number the driver is made with. `ReadAt` and `WriteAt` work at an
+  offset, and io continues a short transfer until the request is met or
+  a read reaches the end. `Sync` makes a file's writes durable,
+  `SyncDirectory` a directory's entries. These are what kv.md's log
+  segments need (kv.md, section 8).
 - **What the records allow** (kernel.md, 6.1). Only an `Open` resolves a
   path beneath a root, so io opens the directory a name lies in, beneath
   the root, before it renames or removes that name or makes a directory
@@ -460,24 +495,31 @@ caller budgets the command buffers it supplies to `Spawn`.
   directory, with those bits; `Write` it all; `Sync` it; `Close` it;
   `Rename` it over the target; `Sync` the directory. A reader sees the old
   file or the new, never part of either, and after the last `Sync` the
-  new one survives a crash (kernel.md, 6.1).
+  new one survives a crash (kernel.md, 6.1). Before the rename, io
+  rechecks the target against the stated expectation (5.2); a recheck is
+  not a lock, so an outside writer could still race with the rename.
+  `Stored` carries the new content's digest.
   - The temporary is named from the target's name and a suffix drawn
     from io's seeded randomness; a `Create` that finds the name taken
     (`Exists`) draws another.
   - The old file's permission bits are kept. A target that does not
-    exist, or cannot be opened to read, is made with the default,
-    `0o666` less the umask.
+    exist, or cannot be opened to read, is made with `0o666` less the
+    umask.
   - A symbolic link at the target is replaced by the file, not written
-    through: the link's own name gets the new file. Writing through links
-    is not offered.
-- **A deadline can give up on a file** (kernel.md, 6.1). An `Open`,
-  `Read`, `Write` or `Sync` on a filesystem that stalls may wait for good,
-  so a whole-file operation has a deadline, and at it io cancels what is
-  in flight, tells the owner, and keeps the entity settling until the
-  cancelled operation completes, as for a socket (section 3). Settling
-  entities still hold their slots and their operations, so io caps the
-  operations on files in flight, and takes no request past the cap
-  (`FileIo::takes`).
+    through: the rename gives the link's own name the new file.
+- **One request at a time, each with a deadline:** the driver's timeout
+  from when it starts, or the owner's own (`down_until`). At the
+  deadline, or when the owner cancels, io cancels the operation in
+  flight and holds the request until it settles; then, once every
+  descriptor the request opened is closed, it sends the one terminal:
+  `Failed` with `TimedOut`, or `Cancelled`, if the stop won, and the
+  request's own if the operation finished first. A store gives up only
+  before its rename: once the new file is in place, it runs to the commit
+  terminal described in section 5.2.
+- **Memory:** `FileIo::worst_case` counts the open files' table, the
+  driver's own buffers, and an admitted `Load`, `Scan` or `Store` at its
+  bounds. The buffers an owner hands in, `WriteAt`'s bytes and paths,
+  are the owner's.
 - **Beyond whole files:** a file appended to as a stream (5.1); the
   durable replace that services keep their records with (5.2); and
   private files, for secrets (5.3). A file read as a stream, by demand,
@@ -771,6 +813,15 @@ Built, for sockets:
   counting-allocator test fills the entity slab with a child and its
   pipes, checks the spawn completion and arms a read on every pipe
   against `worst_case`.
+- **Files:** step tests drive `FileIo` by hand
+  (`crates/skein-io/src/tests/file.rs`, `store.rs`): short transfers,
+  bounds refused after the close, a scan's prefix across batches, each
+  request's deadline, cancels that win and that come too late, and every
+  step of a store, its conflicts, a taken temporary name, and a rename
+  that settles at its deadline. The kernel records for files are held to
+  the ring by the conformance suite (kernel.md, 8), and kv's tests run
+  the driver over the simulator, on a fake machine that crashes at every
+  step of a commit and a snapshot (kv.md, section 9).
 
 To come with what section 9 builds:
 
@@ -797,30 +848,21 @@ To come with what section 9 builds:
 
 ## 9. Remaining work
 
-Built:
+Sockets, processes with pipes, files and signals to the service are
+built. What remains:
 
-- sockets, and socket io worlds;
-- processes with pipes, each child in a process group of its own;
-- signals to the service, read from the signalfd the shell opens at
-  startup (section 7);
-- files, as io's file layer (`FileIo`): the whole-file operations of
-  section 5, each one request with one terminal under its owner's
-  deadline: a load within a maximum, a scan within an entry count and a
-  byte bound, a store that replaces a file durably with its version
-  check (5.2), stat, rename and remove; and open, read, write, sync and
-  close for an owner that keeps a file open, as skein-kv does.
-
-Not built yet, in the order their first users pull them:
-
-1. signalling a child's group, and reaping a child only when it closes
-   (section 6);
-2. append streams (5.1), private files (5.3) and resource usage (6.1),
-   for a trace, a token store and a report at a process's end;
-3. making a directory as a file request (section 5);
-4. streams that read files, and datagram sockets, when a user needs them.
-
-Transition coverage of the handlers (testing-strategy.md, 6) waits for
-`cargo llvm-cov`, which is not installed.
+- **Roots by token everywhere.** `Create`, `OpenRead`, `OpenDirectory`,
+  `SyncDirectory`, `List`, `Rename` and `Remove` name a root by its
+  descriptor, which the owner reads from `FileIo::descriptor`, though io
+  is the only layer that should see one. They are to take its token, as
+  `Load`, `Scan` and `Store` do.
+- **Opening an existing file to write,** and cutting a file to a
+  length, for kv.md's payload logs (section 6) and temper's transcript
+  files.
+- **io worlds for files,** beyond the step tests and kv's.
+- **File streams and datagram sockets,** when a user needs them.
+- **Transition coverage** of the handlers (testing-strategy.md, 6), which
+  waits for `cargo llvm-cov`.
 
 ## 10. Open questions
 
