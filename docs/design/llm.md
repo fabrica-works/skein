@@ -250,6 +250,11 @@ pub enum Failure {
   time ran out. That is the distinction an owner's retry policy needs.
 - **Provider text** stays in the failure's detail, within the detail
   limit. It is data: what to show, and where, is the owner's policy.
+  An error body that does not decode as the dialect's error document
+  (another JSON shape, plain text, a proxy's page) is provider text
+  too: its detail is the body itself, clipped to the detail limit, as a
+  cut body's is. The client never puts a diagnostic of its own in its
+  place; the status is in the evidence already.
 
 ## 3. Driving the stack
 
@@ -628,7 +633,8 @@ unless marked:
   holding it is refused; the Codex reasoning opt-in drops an item at one
   byte over and fails without the opt-in.
 - **Typed failures:** each limit, at its edge and one over, names itself
-  and its bound; a non-JSON error body carries its status; each deadline's
+  and its bound; a non-JSON error body, or JSON of another shape, carries
+  its status and its own clipped text as the detail; each deadline's
   phase reaches the failure.
 - **Derivation:** properties over drawn declarations: `derive` either
   refuses, naming a relationship, or returns limits for which every
