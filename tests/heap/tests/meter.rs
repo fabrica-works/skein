@@ -114,6 +114,20 @@ fn a_step_with_more_highs_than_the_meter_keeps_is_checked_soundly() {
     meter.check(measured, 499, &"a step");
 }
 
+#[test]
+fn a_burst_of_rising_peaks_keeps_its_last_peak() {
+    let meter = Meter::new();
+    let mut kept = black_box(Vec::with_capacity(1024));
+    meter.start();
+    for _ in 0..1024 {
+        kept.push(black_box(Box::new(0_u8)));
+    }
+    let measured = meter.end();
+    assert_eq!((measured.peak(), measured.held()), (9216, 9216));
+    assert_eq!(meter.check(measured, 9216, &"a rising burst"), 9216);
+    drop(kept);
+}
+
 /// A step whose peak, 101 bytes of its own, is a byte allocated right after
 /// 100: the narrowest span between two of its highs, so the first two the
 /// meter merges. It frees both, then hands out 400 blocks of 2 bytes, each a

@@ -70,21 +70,26 @@ struct High {
     handed: u64,
 }
 
-/// The highs of the step measured last. Beyond its room, two adjacent highs
-/// become one that counts the later's heap at the earlier's moment, the two
-/// whose moments it then spans the least: it holds no less of the step's own
-/// than any moment it stands for, so a check stays sound, and errs by no
-/// more than the heap its moments span.
+/// The highs of the step measured last. Beyond its room, disjoint adjacent
+/// pairs within a span become one each, counting the later's heap at
+/// the earlier's moment: each holds no less of the step's own than any
+/// moment it stands for, so a check stays sound, and errs by no more than
+/// the heap its moments span.
 #[derive(Debug)]
 struct Highs {
     /// The steps started on this thread, which names the last: a step that
     /// allocates nothing has the same first high as the next.
     step: u64,
     len: usize,
+    /// The least span between adjacent highs, kept as highs are appended.
+    least: i64,
+    /// The next pass's span, chosen among the highs the last pass kept.
+    /// New smaller spans fit it too, rather than narrowing the next pass.
+    merge_span: Option<i64>,
     at: [High; KEPT],
 }
 
-/// The highs kept before two become one.
+/// The highs kept before a compaction pass.
 const KEPT: usize = 256;
 
 /// The bytes of a block's number, in the header before it.
@@ -166,7 +171,13 @@ fn broken() -> ! {
 }
 
 impl Highs {
-    const NONE: Highs = Highs { step: 0, len: 0, at: [High { made: 0, low: 0, live: 0, handed: 0 }; KEPT] };
+    const NONE: Highs = Highs {
+        step: 0,
+        len: 0,
+        least: i64::MAX,
+        merge_span: None,
+        at: [High { made: 0, low: 0, live: 0, handed: 0 }; KEPT],
+    };
 
     fn kept(&self) -> &[High] {
         let Some(kept) = self.at.get(..self.len) else { broken() };
@@ -182,32 +193,43 @@ impl Highs {
         if self.len == KEPT {
             self.merge();
         }
+        self.append(high);
+    }
+
+    fn append(&mut self, high: High) {
+        if let Some(earlier) = self.kept().last() {
+            self.least = self.least.min(high.live.saturating_sub(earlier.low));
+        }
         let Some(slot) = self.at.get_mut(self.len) else { broken() };
         *slot = high;
         let Some(len) = self.len.checked_add(1) else { broken() };
         self.len = len;
     }
 
-    /// Makes room: two adjacent highs become one.
+    /// Makes room in one pass, merging disjoint pairs within the chosen span.
+    /// Appending the kept highs also finds the next least span. No heap is
+    /// allocated, and each write is at or before the high being read.
     fn merge(&mut self) {
-        let mut first = 0;
-        let mut least = i64::MAX;
-        for (at, pair) in self.kept().windows(2).enumerate() {
-            let [earlier, later] = pair else { broken() };
-            let span = later.live.saturating_sub(earlier.low);
-            if span < least {
-                (first, least) = (at, span);
+        let (len, span) = (self.len, self.merge_span.unwrap_or(self.least));
+        self.len = 0;
+        self.least = i64::MAX;
+        let mut pending: Option<High> = None;
+        for at in 0..len {
+            let Some(high) = self.at.get(at).copied() else { broken() };
+            if let Some(mut earlier) = pending.take() {
+                if high.live.saturating_sub(earlier.low) <= span {
+                    earlier.live = high.live;
+                    self.append(earlier);
+                    continue;
+                }
+                self.append(earlier);
             }
+            pending = Some(high);
         }
-        let Some(from) = self.kept_mut().get_mut(first..) else { broken() };
-        let [earlier, later, ..] = from else { broken() };
-        earlier.live = later.live;
-        // The later goes: turned to the end of the highs kept, which then
-        // end before it.
-        let Some(after) = from.get_mut(1..) else { broken() };
-        after.rotate_left(1);
-        let Some(len) = self.len.checked_sub(1) else { broken() };
-        self.len = len;
+        if let Some(high) = pending {
+            self.append(high);
+        }
+        self.merge_span = Some(self.least);
     }
 
     /// The block numbered `number`, of `bytes`, was handed out: by each high
@@ -344,6 +366,8 @@ impl Meter {
         HIGHS.with_borrow_mut(|highs| {
             highs.step = highs.step.wrapping_add(1);
             highs.len = 0;
+            highs.least = i64::MAX;
+            highs.merge_span = None;
             highs.push(High { made, low: live, live, handed: 0 });
         });
         PHASE.set(Phase::Stepping);
