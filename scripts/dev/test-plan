@@ -136,7 +136,8 @@ base=$(date -u -d '-3 hours' +%s)
 } >"$CODEX_HOME/sessions/2026/10/11/rollout-x-$coordinator.jsonl"
 {
     printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"t-impl-1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"%s"}}}}}\n' "$(date -u -d "@$base" +%FT%TZ)" "$coordinator"
-    printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
+    printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":260000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
+    printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":250000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
 } >"$CODEX_HOME/sessions/2026/10/11/rollout-x-t-impl-1.jsonl"
 session=11111111-2222-3333-4444-555555555555
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p/$session/subagents"
@@ -163,7 +164,8 @@ expect pulse "$pulse" \
     "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
     "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 116/15" \
     "1 steers in all, 1 points refused" \
-    "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none."
+    "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
+    "- Contexts: t-impl-1 250K (past 200K: t-impl-1)."
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 sleep 1
 expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
@@ -179,9 +181,11 @@ expect metrics "$metrics" \
     $'gates_per_step\t0.7\t' $'queue_wait_ratio\t0.10\t' \
     $'suites\tfirst: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
     $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90' \
-    $'pin_lag\tnone\t'
+    $'pin_lag\tnone\t' $'contexts\t260K median, 260K p90 of the sessions\' peaks; 0 handovers'
 "$plan" metrics --out "$dir/metrics.tsv" >/dev/null
 expect history "$("$plan" metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
+
+expect contexts "$("$plan" contexts)" "  250K, peak 260K  past 200K: hand over"
 
 # Nothing in the workspace pins alpha.
 expect downstream "$("$plan" downstream)" "downstream: no repository pins alpha"

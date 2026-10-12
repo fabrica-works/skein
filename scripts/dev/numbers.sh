@@ -108,6 +108,24 @@ codex_tokens() {
         jq -r '.payload.info.total_token_usage | "\(.input_tokens // 0) \(.output_tokens // 0) \(.cached_input_tokens // 0)"' 2>/dev/null || echo "0 0 0"
 }
 
+# Each Codex thread's context, the input of its last model request, and
+# the largest it reached: kind, slot (the agent's path), thread, last,
+# peak. The coordinator's threads first, then the sessions'.
+thread_contexts() {
+    local kind thread file slot sizes
+    while IFS=$'\t' read -r kind thread; do
+        [[ -n $thread ]] || continue
+        file=$(rollout_of "$thread" | head -n1)
+        [[ -n $file ]] || continue
+        slot=coordinator
+        [[ $kind == coordinator ]] ||
+            slot=$(head -n1 "$file" | jq -r --arg t "${thread:0:13}" '.payload.agent_path // .payload.source.subagent.thread_spawn.agent_path // $t' 2>/dev/null || true)
+        sizes=$(grep '"last_token_usage"' "$file" | jq -r '.payload.info.last_token_usage.input_tokens // 0' 2>/dev/null |
+            awk '{ last = $1; if ($1 > peak) peak = $1 } END { printf "%d\t%d", last, peak }' || true)
+        printf '%s\t%s\t%s\t%s\n' "$kind" "${slot:-?}" "$thread" "${sizes:-0	0}"
+    done < <(run_threads)
+}
+
 # A Claude Code session's tokens, its sub-agents' included: input (fresh,
 # cache writes and cache reads), output, and the cache reads, each message
 # counted once. In three parts (development.md, section 15.2): before the
@@ -417,6 +435,9 @@ pulse() {
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
     echo "- Pins behind upstream main, in commits: $(pin_lag)."
+    echo "- Contexts: $(thread_contexts | awk -F'\t' -v limit="${PLAN_CONTEXT_LIMIT:-200000}" '
+        $1 == "session" { line = line (n++ ? ", " : "") $2 " " int($4 / 1000) "K"; if ($4 > limit) past = past (p++ ? ", " : "") $2 }
+        END { printf "%s", (n ? line : "no session yet"); if (p) printf " (past %dK: %s)", limit / 1000, past }')."
     echo "- Machine: heartbeat $((now_s - beat)) s ago; $mem GB memory and $disk GB disk free."
 
     printf '%s %s\n' "$now_s" "$((log_lines + 1))" >"$mark"
@@ -520,6 +541,8 @@ metrics_of() {
     read -r ca cr ta tr <<<"$(cut -f1,2 <<<"$commits" | grep . | line_counts)"
     m lines "code +$ca -$cr, tests +$ta -$tr" lines
     m pin_lag "$(pin_lag)" "commits behind upstream main"
+    m contexts "$(thread_contexts | awk -F'\t' '$1 == "session" { print $5 }' | median_and_p90 |
+        awk '{ printf "%dK median, %dK p90", $1 / 1000, $2 / 1000 }') of the sessions' peaks; $(grep -c '^Handover, ' "$run/log.md" 2>/dev/null || true) handovers" ""
 }
 
 metrics() {

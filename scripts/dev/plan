@@ -17,6 +17,7 @@
 #   plan wake ROLE MESSAGE        resume a Claude Code role's session with MESSAGE
 #   plan pulse                    the run's numbers since the last check
 #   plan downstream               type-check each downstream repository against the plan's upstream mains
+#   plan contexts                 each Codex thread's context, and the sessions past the limit
 #   plan metrics [--out FILE] [PLAN_DIR]  the run's metrics, as TSV (the last run's, by default)
 #   plan metrics --history        every plan's metrics, side by side
 #   plan retro [PLAN_DIR]         start the run's retrospective (the last run's, by default)
@@ -62,7 +63,7 @@ claude_dir=${PLAN_CLAUDE_DIR:-$root}
 die() { echo "plan: $*" >&2; exit 2; }
 
 usage() {
-    sed -n '3,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    sed -n '3,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 
@@ -913,6 +914,20 @@ downstream() {
     ((probed)) || echo "downstream: no repository pins $(tr '\n' ' ' <<<"$changed" | sed 's/ $//')"
 }
 
+# Each Codex thread's context, the input of its last request: the
+# coordinator's, then each session's. A session past PLAN_CONTEXT_LIMIT
+# (200,000 tokens) hands over after its next landing (development.md,
+# section 7.3).
+contexts() {
+    load
+    local limit=${PLAN_CONTEXT_LIMIT:-200000} kind slot thread last peak flag
+    while IFS=$'\t' read -r kind slot thread last peak; do
+        flag=""
+        [[ $kind != session ]] || ((last <= limit)) || flag="  past $((limit / 1000))K: hand over"
+        printf '%-14s %s  %dK, peak %dK%s\n' "$slot" "$thread" "$((last / 1000))" "$((peak / 1000))" "$flag"
+    done < <(thread_contexts)
+}
+
 cmd=${1:-}
 (($#)) && shift
 case $cmd in
@@ -931,6 +946,7 @@ join) join "$@" ;;
 wake) wake "$@" ;;
 pulse) pulse ;;
 downstream) downstream ;;
+contexts) contexts ;;
 metrics) metrics "$@" ;;
 retro) retro "$@" ;;
 *) usage ;;

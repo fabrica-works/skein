@@ -134,6 +134,8 @@ card, stands on its own: it is what an implementing agent reads. Section
 - **Implements one session at a time,** increment by increment, in its own
   worktree (section 8). It lands its own increments and resolves its own
   rebase conflicts.
+- **Hands over between increments** when its context grows past 200,000
+  tokens: a fresh implementer goes on from its checkpoint (section 7.3).
 - **Escalates to the coordinator,** and only on real gaps (section 8.7).
 
 ### 2.5 The supervisor
@@ -350,6 +352,7 @@ and those upstream of it, or all four without a plan.
 | `plan status` | renders `status.md` |
 | `plan watch` | waits until the supervisor has something to do (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
+| `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (200,000 tokens) (section 7.3) |
 | `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane, and lands nothing (sections 5.7 and 14.1) |
 | `plan ring MESSAGE` | rings the coordinator's doorbell (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
@@ -631,6 +634,11 @@ may veto.
 
 ### 5.3 Increments
 
+- **A session holds about four or five increments.** An implementer's
+  context starts near 100,000 tokens, from what it reads before its first
+  change, and grows by about 30,000 with each increment; past 200,000 it
+  hands over (section 7.3). An area that needs more is two sessions, the
+  second needing the first.
 - **Small, and landed on its own.** Each passes the gate within budget and
   leaves `main` coherent: nothing half-built visible to users, no dead
   code. Prefer several small increments to one large one: parallel
@@ -947,12 +955,16 @@ itself with `plan join <role>`.
   (`context.md`). When restarting a session, add what you found: its last
   landed step, its branch, and whether its worktree has uncommitted
   changes.
-- **Slots.** Codex counts finished sub-agent threads against
-  `max_threads`. Give each thread a slot name (`w1` to `w8`) and record it
-  in the ledger's `slot` column, with the thread's id, as `spawn_agent`
-  returned it, in the `thread` column. If `plan set` refuses `thread=`,
-  put `thread=<id>` in the step's `note` instead. When a spawn is refused, reuse a
-  finished slot with `followup_task`: say that its previous session is
+- **Slots.** At most eight sessions run at once. Codex counts finished
+  sub-agent threads against `max_threads` (24 in the coordinator's
+  profile) and has no tool to close one, and a reused thread keeps its
+  old session's whole context. So spawn a fresh thread for each session
+  and for each handover. Give each thread a slot name (`w1`, `w2`, …) and
+  record it in the ledger's `slot` column, with the thread's id, as
+  `spawn_agent` returned it, in the `thread` column. If `plan set` refuses
+  `thread=`, put `thread=<id>` in the step's `note` instead. Only when a
+  spawn is refused, reuse the finished slot whose context `plan contexts`
+  shows smallest, with `followup_task`: say that its previous session is
   over, and give the new session's prompt.
 
 ### 7.3 Reports
@@ -977,7 +989,20 @@ report:
    `followup_task` if it has ended its turn), and wait for its next
    report.
 3. `plan set` the step's new state and commit, then `plan status`.
-4. Start what the plan now allows, and resume the sessions waiting for
+4. **Hand over a large context.** After a landing, run `plan contexts`. A
+   session it marks past the limit hands over, between increments, never
+   in one:
+   - send it, with `send_message`: "Hand over: write your checkpoint as
+     section 8.6 says, then end your turn with your report.";
+   - when it has reported, append `Handover, <UTC time>: <repository>
+     <NN> at <its context>` to `log.md`, and start the session's next
+     increment in a fresh thread, as for a restarted session (section
+     7.2), with its checkpoint.
+
+   A session that yielded is checked the same way before it is resumed:
+   past the limit, its next step goes to a fresh thread instead of a
+   `followup_task`.
+5. Start what the plan now allows, and resume the sessions waiting for
    what landed.
 
 A report's question goes into `blocked.md` (section 10.2), unless it is
@@ -1029,7 +1054,8 @@ resumed when the dependency lands.
   as at any wake-up. A ring that names no file: append `Rang, <UTC time>:
   <message>` to `log.md`, and wait again.
 - **A finished implementer** ends its turn with its last report. Give a
-  session that yielded its next step with `followup_task`.
+  session that yielded its next step with `followup_task`, unless its
+  context is past the limit (section 7.3).
 - **The user and the designer are reached only through the supervisor.**
   The coordinator uses no other channel to them.
 
@@ -1249,6 +1275,13 @@ Worktree: <clean, or what is in it>
 **The checkpoint.** After each report, overwrite your checkpoint,
 `sessions/<repository>-<NN>.md`, with the same facts and with what is in
 progress. A restarted implementer continues from it.
+
+**Hand over** when the coordinator says so, after a landing: overwrite
+your checkpoint, then end your turn with your report. The checkpoint adds,
+in at most 15 lines, what the next increment needs from what you learned
+and the session file does not say: the files and fixtures it touches, the
+commands that worked, the traps you met. A fresh implementer reads it
+instead of finding them again.
 
 ### 8.7 When to stop
 
@@ -1667,8 +1700,9 @@ that machine.
 - **A coordinator after a reboot.** `plan resume` loads its thread again
   with `thread/resume` before starting a turn. That path is untested
   after a real reboot.
-- **Closing finished Codex threads,** instead of reusing slots, if the
-  runtime allows it.
+- **Closing finished Codex threads,** instead of raising `max_threads`.
+  Codex 0.160's coordinator has no `close_agent` (checked 2026-10-12),
+  though its binary has the handler.
 - **Credentials under load.** Does a run's work that borrows the Codex
   login (benchmarks, probes) put the coordinator's own session at risk?
   A `CODEX_HOME` of their own for such work is a candidate answer.
@@ -1743,6 +1777,8 @@ Since the last check:
   run so far;
 - **pins:** how many commits each repository's pins are behind the
   upstream mains;
+- **contexts:** each session's context, and those past the limit
+  (section 7.3);
 - **the machine:** the heartbeat's age, memory and disk.
 
 The numbers come from the script, not from reading: a log read by eye is
@@ -1867,6 +1903,7 @@ counts them by hand.
 | `proofs` | landed steps by proof layer, and those below their increment's layer |
 | `report_lines` | the reports' median and 90th percentile length |
 | `lines` | lines added and removed, in code and in tests |
+| `contexts` | the median and 90th percentile of the largest context each session's thread reached, and the handovers (`log.md`'s `Handover` lines) |
 | `pin_lag` | how many commits each repository's pins are behind the upstream mains, when `plan metrics` runs |
 
 - **`metrics.tsv`** holds one line per metric: its name, its value and its
