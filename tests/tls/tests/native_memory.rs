@@ -1,5 +1,5 @@
 //! Native TLS heap steps against the checked bound (tls.md, 3.6 and 5;
-//! testing-strategy.md, 5). The real peer runs between steps. All emitted
+//! Testing-strategy.md, 5). The real peer runs between steps. All emitted
 //! boxes are copied into reserved harness buffers and dropped before checking;
 //! caller plaintext is charged separately. A complete sealed box dropped by
 //! an encryption error remains a step allocation, never a handed-out box.
@@ -11,7 +11,7 @@ use skein_heap::{Counting, Span};
 use skein_lib::stream::{Down, OutputDown, OutputOutcome, OutputUp, Read, Up};
 use skein_lib::{Env, Queue, Time, Token};
 use skein_tls::client::{self, Error, Limits, native};
-use skein_tls_world::native_pair::{Output, Peer};
+use skein_tls_world::native_pair::{Output, Pair, Peer};
 use skein_tls_world::native_peer::Tls12;
 use skein_tls_world::pki::{self, Chain, Versions};
 use skein_tls_world::server::Server;
@@ -45,7 +45,7 @@ struct Measured {
     failed: Option<Error>,
 }
 
-/// Genuine controls admitted by pinned rustls, never predicted reply counts.
+/// Controls admitted by pinned rustls, never predicted reply counts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Control {
     Idle,
@@ -54,7 +54,7 @@ enum Control {
 }
 
 /// The server's and harness's heap is independently measured between native
-/// steps; no peer allocation is silently counted as TLS memory (tls.md, 5).
+/// steps; no peer allocation is silently counted as TLS memory.
 struct Harness {
     metered: Steps,
     sealed: usize,
@@ -199,7 +199,11 @@ impl Harness {
                     let peer = self.peer.rustls_mut();
                     peer.key_update();
                     let requesting_record = peer.transmit();
-                    assert_eq!(requesting_record.len(), 27, "each of32 actual requesting KeyUpdate records is emitted");
+                    assert_eq!(
+                        requesting_record.len(),
+                        27,
+                        "each of32 observed requesting KeyUpdate records is emitted"
+                    );
                     self.wire.extend(requesting_record);
                 }
             }
@@ -227,14 +231,14 @@ impl Harness {
         }
         self.control();
         if !self.responded && self.peer_received().len() == self.request.len() {
-            assert_eq!(self.peer_received(), self.request, "actual authenticated maximal caller payload");
+            assert_eq!(self.peer_received(), self.request, "observed authenticated maximal caller payload");
             self.responded = true;
             if let Peer::Rustls(peer) = &mut self.peer {
                 peer.write(&self.response);
             } else {
                 let peer = self.peer.extracted_mut();
-                assert_eq!(peer.alerts, [[1, 100]], "one authenticated actual refusal before full plaintext");
-                assert_eq!(peer.records.first(), Some(&rustls::ContentType::Alert), "actual owed prefix first");
+                assert_eq!(peer.alerts, [[1, 100]], "one authenticated observed refusal before full plaintext");
+                assert_eq!(peer.records.first(), Some(&rustls::ContentType::Alert), "observed owed prefix first");
                 peer.write(&self.response);
             }
             let start = self.wire.len();
@@ -279,19 +283,19 @@ impl Harness {
             return;
         }
         if self.phase == Phase::Closing {
-            assert_eq!(self.output, Output::Idle, "all actual output obligations settled before physical Closed");
+            assert_eq!(self.output, Output::Idle, "all observed output obligations settled before physical Closed");
             self.up(native::LowerEvent::Closed);
             return;
         }
         if self.failed.is_some() || self.received.len() == self.response.len() {
             if self.failed.is_none() {
-                assert_eq!(self.received, self.response, "actual complete maximal intake payload");
+                assert_eq!(self.received, self.response, "observed complete maximal intake payload");
             }
             self.phase = Phase::Closing;
             self.down(native::Request::Client(client::Request::Close));
             return;
         }
-        assert_eq!(self.phase, Phase::Exchange, "actual handshake must retain lower work");
+        assert_eq!(self.phase, Phase::Exchange, "observed handshake must retain lower work");
         if !self.upper_read {
             self.ask_read();
             return;
@@ -394,14 +398,14 @@ fn measure(limits: Limits, versions: Versions, chain: Chain, corrupt: bool) -> M
 }
 
 #[test]
-fn native_full_payload_intake_and_complete_ciphertext_are_metered_at_original_small_and_large_limits() {
+fn payload_intake_and_ciphertext_fit_small_and_large_bounds() {
     for versions in [Versions::Tls12, Versions::Tls13] {
         for limits in [SMALL, LARGE] {
             let measured = measure(limits, versions, Chain::Leaf, false);
             assert_eq!(measured.failed, None, "{versions:?} {limits:?} {measured:?}");
             assert!(measured.most > u64::from(limits.read + client::MAX_PLAINTEXT + limits.records + client::FLIGHT));
             if limits == LARGE {
-                assert!(measured.sealed >= 40_000, "actual maximal encrypted caller payload: {measured:?}");
+                assert!(measured.sealed >= 40_000, "observed maximal encrypted caller payload: {measured:?}");
                 assert_eq!(
                     measured.sealed,
                     match versions {
@@ -409,7 +413,7 @@ fn native_full_payload_intake_and_complete_ciphertext_are_metered_at_original_sm
                         Versions::Tls12 => 31 + 40_000 + 3 * 29,
                         Versions::Both => unreachable!("explicit version cases"),
                     },
-                    "complete actual requesting-control response plus maximal plaintext: {measured:?}"
+                    "complete observed requesting-control response plus maximal plaintext: {measured:?}"
                 );
             }
         }
@@ -417,111 +421,100 @@ fn native_full_payload_intake_and_complete_ciphertext_are_metered_at_original_sm
 }
 
 #[test]
-fn native_big_chain_and_actual_decrypt_error_keep_full_retention_and_release() {
+fn big_chain_and_decrypt_error_release_the_clients_heap() {
     for versions in [Versions::Tls12, Versions::Tls13] {
         let measured = measure(LARGE, versions, Chain::Big, false);
         assert_eq!(measured.failed, None, "{measured:?}");
         let buffers = u64::from(LARGE.read + client::MAX_PLAINTEXT + LARGE.records + client::FLIGHT);
-        assert!(measured.most > buffers + 2 * 38_000, "actual double held decoded chain: {measured:?}");
+        assert!(measured.most > buffers + 2 * 38_000, "observed double held decoded chain: {measured:?}");
         assert_eq!(measure(LARGE, versions, Chain::Leaf, true).failed, Some(Error::Decrypt));
     }
 }
 
 #[test]
-fn real_queued_fill_boxes_drop_exactly_after_withdrawal_or_finish_without_step_allocation() {
-    use skein_tls_world::native_pair::Pair;
+fn queued_header_drops_after_withdrawal_without_allocation() {
     for versions in [Versions::Tls12, Versions::Tls13] {
-        for body in [false, true] {
-            for finish in [false, true] {
-                let server = pki::Server { versions, ..pki::Server::plain() };
-                let server_config = server.config();
-                let ticket_records = server_config.send_tls13_tickets;
-                let mut pair = Pair::new(&pki::client(&[]), pki::name(), LARGE, Server::new(server_config));
-                let mut events = pair.down(native::Request::Client(client::Request::Handshake));
-                events.extend(pair.settle());
-                assert!(matches!(&events[..], [native::Event::Client(client::Event::Ready(_))]));
-                assert!(
-                    pair.down(native::Request::Client(client::Request::Stream(Down::Demand {
-                        read: Read::Fill(LARGE.read),
-                        room: 0
-                    })))
-                    .is_empty()
-                );
-                // Caller-owned full heap payload stays live outside the native
-                // delivery Span; no large stack array or uncharged step copy.
-                let plaintext = vec![b'x'; 40_000];
-                pair.peer.rustls_mut().write(&plaintext);
-                pair.pull();
-                let winner = if body {
-                    queued_maximal_body(&mut pair, versions, ticket_records)
-                } else {
-                    pair.answer().expect("actual emitted Header Fill")
-                };
-                let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else {
-                    panic!("real owning queued Fill box")
-                };
-                let count = i64::try_from(bytes.len()).expect("bounded Fill");
-                assert!(count > 0 && count <= i64::from(client::LARGEST_READ));
-                if body {
-                    assert!(
-                        count >= i64::from(client::MAX_PLAINTEXT),
-                        "actual maximum record body pressure: {versions:?}, body={body}, finish={finish}, count={count}"
-                    );
-                }
-                assert!(pair.read.is_none(), "box ownership moved out of actual Fill");
-                assert!(
-                    pair.down(native::Request::Client(client::Request::Stream(Down::Demand {
-                        read: Read::Nothing,
-                        room: 0
-                    })))
-                    .is_empty()
-                );
-                if finish {
-                    assert!(pair.down(native::Request::Client(client::Request::Stream(Down::Finish))).is_empty());
-                }
-                let span = Span::start();
-                assert!(pair.up(winner).is_empty(), "disposed winner emits no synthetic observation");
-                let step = span.end();
-                assert_eq!(step.net, -count, "only the actual caller-owned queued ciphertext box is released");
-                assert_eq!(step.peak, 0, "withdrawn winner is dropped without copying or processing");
-                assert!(pair.read.is_none());
-                assert_eq!(plaintext.len(), 40_000, "full caller-owned payload retained throughout disposal");
-                drop(plaintext);
-            }
-        }
+        let (mut pair, winner, plaintext) = Pair::maximal_winner(versions, false);
+        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("owning queued Fill box") };
+        let count = i64::try_from(bytes.len()).expect("bounded Fill");
+        assert!(count > 0 && count <= i64::from(client::LARGEST_READ));
+
+        assert!(pair.read.is_none(), "box ownership moved out of Fill");
+        assert!(pair.withdraw().is_empty());
+
+        let span = Span::start();
+        assert!(pair.up(winner).is_empty(), "disposed winner emits no observation");
+        let step = span.end();
+        assert_eq!(step.net, -count, "only the caller-owned queued ciphertext box is released");
+        assert_eq!(step.peak, 0, "withdrawn winner is dropped without copying or processing");
+        assert!(pair.read.is_none());
+        assert_eq!(plaintext.len(), 40_000, "caller-owned payload retained throughout disposal");
+        drop(plaintext);
     }
 }
 
-/// Process every genuine pre-data ticket record, then retain an actual maximal
-/// Body winner. The real configured ticket count bounds the prefix; neither
-/// peer tickets nor TLS controls are suppressed (tls.md, 3.6; testing-strategy.md, 2.4).
-fn queued_maximal_body(
-    pair: &mut skein_tls_world::native_pair::Pair,
-    versions: Versions,
-    ticket_records: usize,
-) -> native::LowerEvent {
-    let records = ticket_records.checked_add(1).expect("configured ticket prefix plus first data record");
-    for prefix in 0..records {
-        let header = pair.answer().expect("actual emitted Header before maximal Body");
-        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("actual Header Fill box") };
-        assert_eq!(bytes.len(), usize::try_from(client::HEADER).expect("Header"));
-        let length = u32::try_from(records::length(bytes)).expect("bounded record");
-        assert!(pair.up(header).is_empty(), "Header cannot fabricate a plaintext or output answer");
-        assert_eq!(pair.read, Some(Read::Fill(length)), "exact actual next Body Fill");
-        let winner = pair.answer().expect("actual emitted Body Fill");
-        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("actual Body Fill box") };
-        assert_eq!(bytes.len(), usize::try_from(length).expect("bounded Body"));
-        if length >= client::MAX_PLAINTEXT {
-            if versions == Versions::Tls13 {
-                assert!(prefix > 0, "actual post-handshake ticket flight preceded the full peer data");
-            }
-            return winner;
-        }
-        assert_eq!(versions, Versions::Tls13, "only the actual TLS13 ticket flight precedes maximal data");
-        assert!(
-            pair.up(winner).is_empty(),
-            "actual ticket record is processed, never discarded or a short Fill answer"
-        );
+#[test]
+fn queued_header_drops_after_finish_without_allocation() {
+    for versions in [Versions::Tls12, Versions::Tls13] {
+        let (mut pair, winner, plaintext) = Pair::maximal_winner(versions, false);
+        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("owning queued Fill box") };
+        let count = i64::try_from(bytes.len()).expect("bounded Fill");
+        assert!(count > 0 && count <= i64::from(client::LARGEST_READ));
+
+        assert!(pair.read.is_none(), "box ownership moved out of Fill");
+        assert!(pair.withdraw().is_empty());
+        assert!(pair.finish().is_empty());
+        let span = Span::start();
+        assert!(pair.up(winner).is_empty(), "disposed winner emits no observation");
+        let step = span.end();
+        assert_eq!(step.net, -count, "only the caller-owned queued ciphertext box is released");
+        assert_eq!(step.peak, 0, "withdrawn winner is dropped without copying or processing");
+        assert!(pair.read.is_none());
+        assert_eq!(plaintext.len(), 40_000, "caller-owned payload retained throughout disposal");
+        drop(plaintext);
     }
-    panic!("actual configured ticket flight followed by maximal40000 data must yield a maximum Body: {versions:?}");
+}
+
+#[test]
+fn queued_body_drops_after_withdrawal_without_allocation() {
+    for versions in [Versions::Tls12, Versions::Tls13] {
+        let (mut pair, winner, plaintext) = Pair::maximal_winner(versions, true);
+        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("owning queued Fill box") };
+        let count = i64::try_from(bytes.len()).expect("bounded Fill");
+        assert!(count > 0 && count <= i64::from(client::LARGEST_READ));
+        assert!(count >= i64::from(client::MAX_PLAINTEXT), "maximum record body pressure: {versions:?}, count={count}");
+        assert!(pair.read.is_none(), "box ownership moved out of Fill");
+        assert!(pair.withdraw().is_empty());
+
+        let span = Span::start();
+        assert!(pair.up(winner).is_empty(), "disposed winner emits no observation");
+        let step = span.end();
+        assert_eq!(step.net, -count, "only the caller-owned queued ciphertext box is released");
+        assert_eq!(step.peak, 0, "withdrawn winner is dropped without copying or processing");
+        assert!(pair.read.is_none());
+        assert_eq!(plaintext.len(), 40_000, "caller-owned payload retained throughout disposal");
+        drop(plaintext);
+    }
+}
+
+#[test]
+fn queued_body_drops_after_finish_without_allocation() {
+    for versions in [Versions::Tls12, Versions::Tls13] {
+        let (mut pair, winner, plaintext) = Pair::maximal_winner(versions, true);
+        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("owning queued Fill box") };
+        let count = i64::try_from(bytes.len()).expect("bounded Fill");
+        assert!(count > 0 && count <= i64::from(client::LARGEST_READ));
+        assert!(count >= i64::from(client::MAX_PLAINTEXT), "maximum record body pressure: {versions:?}, count={count}");
+        assert!(pair.read.is_none(), "box ownership moved out of Fill");
+        assert!(pair.withdraw().is_empty());
+        assert!(pair.finish().is_empty());
+        let span = Span::start();
+        assert!(pair.up(winner).is_empty(), "disposed winner emits no observation");
+        let step = span.end();
+        assert_eq!(step.net, -count, "only the caller-owned queued ciphertext box is released");
+        assert_eq!(step.peak, 0, "withdrawn winner is dropped without copying or processing");
+        assert!(pair.read.is_none());
+        assert_eq!(plaintext.len(), 40_000, "caller-owned payload retained throughout disposal");
+        drop(plaintext);
+    }
 }
