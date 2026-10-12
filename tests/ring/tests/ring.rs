@@ -204,6 +204,15 @@ fn the_clock_moves_forward_and_the_seed_varies() {
 }
 
 #[test]
+fn two_cryptographic_seeds_differ_and_hold_32_bytes() {
+    let first = skein_shell::crypto_seed().expect("kernel entropy");
+    let second = skein_shell::crypto_seed().expect("kernel entropy");
+    assert_eq!(first.expose().len(), 32);
+    assert_eq!(second.expose().len(), 32);
+    assert_ne!(first, second, "independent cryptographic seed draws");
+}
+
+#[test]
 fn a_kernel_dropped_with_operations_in_flight_leaves_their_memory_to_the_kernel() {
     let mut world = World::new(8);
     let (listener, addr) = world.listener(v4(0));

@@ -73,7 +73,7 @@ pub(crate) mod terminal;
 mod opens;
 use opens::open;
 
-pub(crate) use startup::read_file;
+pub(crate) use startup::{read_file, read_private_file};
 
 use std::cell::UnsafeCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -1646,14 +1646,13 @@ pub(crate) fn clock_nanos(id: libc::clockid_t) -> Option<u64> {
     secs.checked_mul(NANOS_PER_SEC)?.checked_add(nanos)
 }
 
-/// Eight random bytes from `getrandom`, as a `u64`.
-pub(crate) fn random() -> Result<u64, i32> {
-    let mut bytes = [0_u8; 8];
+/// Fills startup's caller buffer from one `getrandom` call.
+pub(crate) fn random(bytes: &mut [u8]) -> Result<(), i32> {
     // SAFETY: `bytes` is a live, exclusive borrow of its length, which the
     // kernel writes during the call only.
-    let read = unsafe { libc::getrandom(ptr::from_mut(&mut bytes).cast(), bytes.len(), 0) };
+    let read = unsafe { libc::getrandom(bytes.as_mut_ptr().cast(), bytes.len(), 0) };
     match usize::try_from(read) {
-        Ok(8) => Ok(u64::from_ne_bytes(bytes)),
+        Ok(read) if read == bytes.len() => Ok(()),
         // A read of up to 256 bytes is never short once it starts.
         Ok(_) => Err(libc::EIO),
         Err(_) => Err(last_errno()),

@@ -133,13 +133,13 @@ impl Owner {
         let expected = match self.story {
             Story::Create | Story::Replace => None,
             Story::RootDeniedSafe | Story::FileDeniedSafe => unreachable!("denied entries checked above"),
-            Story::RootMode => Some(Unsafe::Mode(0o755)),
+            Story::RootMode => Some(Unsafe::Mode(0o055)),
             Story::RootOwner | Story::FileOwner => {
                 Some(Unsafe::Owner { found: effective_user + 1, expected: effective_user })
             }
             Story::RootLink | Story::FileLink => Some(Unsafe::Link),
             Story::RootKind => Some(Unsafe::Kind(Kind::File)),
-            Story::FileMode => Some(Unsafe::Mode(0o644)),
+            Story::FileMode => Some(Unsafe::Mode(0o044)),
             Story::FileKind => Some(Unsafe::Kind(Kind::Directory)),
             Story::FileLinks => Some(Unsafe::Links(2)),
         };

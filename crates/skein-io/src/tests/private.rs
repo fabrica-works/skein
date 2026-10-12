@@ -84,7 +84,7 @@ fn file_stat() -> Stat {
 fn private_roots_refuse_each_group_or_other_bit_kind_and_another_user() {
     let mut cases = Vec::new();
     for bit in [0o040, 0o020, 0o010, 0o004, 0o002, 0o001] {
-        cases.push((Stat { mode: 0o700 | bit, ..root_stat() }, Unsafe::Mode(0o700 | bit)));
+        cases.push((Stat { mode: 0o700 | bit, ..root_stat() }, Unsafe::Mode(bit)));
     }
     cases.push((Stat { kind: Kind::File, ..root_stat() }, Unsafe::Kind(Kind::File)));
     cases.push((Stat { owner: USER + 1, ..root_stat() }, Unsafe::Owner { found: USER + 1, expected: USER }));
@@ -101,7 +101,7 @@ fn private_roots_refuse_each_group_or_other_bit_kind_and_another_user() {
 fn private_loads_refuse_each_unsafe_metadata_before_submitting_any_read() {
     let mut cases = Vec::new();
     for bit in [0o040, 0o020, 0o010, 0o004, 0o002, 0o001] {
-        cases.push((Stat { mode: 0o600 | bit, ..file_stat() }, Unsafe::Mode(0o600 | bit)));
+        cases.push((Stat { mode: 0o600 | bit, ..file_stat() }, Unsafe::Mode(bit)));
     }
     cases.push((Stat { kind: Kind::Directory, ..file_stat() }, Unsafe::Kind(Kind::Directory)));
     cases.push((Stat { links: 2, ..file_stat() }, Unsafe::Links(2)));

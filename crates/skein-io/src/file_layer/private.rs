@@ -80,7 +80,7 @@ pub(super) fn unsafe_root(stat: Stat, expected: u32) -> Option<Unsafe> {
         return Some(Unsafe::Kind(stat.kind));
     }
     if stat.mode & 0o077 != 0 {
-        return Some(Unsafe::Mode(stat.mode));
+        return Some(Unsafe::Mode(stat.mode & 0o077));
     }
     None
 }
@@ -96,7 +96,7 @@ pub(super) fn unsafe_file(stat: Stat, expected: u32) -> Option<Unsafe> {
         return Some(Unsafe::Kind(stat.kind));
     }
     if stat.mode & 0o077 != 0 {
-        return Some(Unsafe::Mode(stat.mode));
+        return Some(Unsafe::Mode(stat.mode & 0o077));
     }
     if stat.links != 1 {
         return Some(Unsafe::Links(stat.links));

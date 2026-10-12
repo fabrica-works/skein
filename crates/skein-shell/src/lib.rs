@@ -38,7 +38,7 @@ pub use ring::{
     signal_current_thread, signal_kept_child, start_binary, start_binary_in_cgroup, subreaper, wait_cgroup_change,
     write_service_signal,
 };
-pub use seed::seed;
-pub use startup::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_trust_roots};
+pub use seed::{crypto_seed, seed};
+pub use startup::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_private_file, read_trust_roots};
 
 pub use terminal::{Input, Kept, Keys, Modes, Watch, open_signals, raw_input, resize_terminal, terminal_modes};

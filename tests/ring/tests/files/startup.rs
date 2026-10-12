@@ -1,14 +1,123 @@
 //! Startup reads against real filesystem entries and bounded PEM bundles.
 
 use std::fs;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::process::Command;
 
-use skein_io::kernel::Error;
+use skein_io::file::Unsafe;
+use skein_io::kernel::{Error, Kind};
 use skein_scratch::Scratch;
-use skein_shell::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_trust_roots};
+use skein_shell::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_private_file, read_trust_roots};
 
 const BOUNDS: RootBounds = RootBounds { bundle_bytes: 4_096, certificates: 8, certificate_bytes: 32 };
+
+fn private_token(scratch: &Scratch) -> std::path::PathBuf {
+    let path = scratch.path().join("token");
+    fs::write(&path, b"secret").expect("plant the token file");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("make it private");
+    path
+}
+
+#[test]
+fn a_private_file_is_read_within_its_bound() {
+    let scratch = Scratch::new("private");
+    let path = private_token(&scratch);
+    let user = skein_shell::effective_user();
+    assert_eq!(read_private_file(&path, 6, user).expect("at bound").expose(), b"secret");
+    assert_eq!(read_private_file(&path, 5, user), Err(Unread::TooLarge { max: 5 }));
+}
+
+#[test]
+fn a_file_with_group_or_other_bits_is_refused_unread_as_mode() {
+    let scratch = Scratch::new("private");
+    let path = private_token(&scratch);
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).expect("make it group-readable");
+    let user = skein_shell::effective_user();
+    assert_eq!(read_private_file(&path, 64, user), Err(Unread::Unsafe(Unsafe::Mode(0o040))));
+}
+
+#[test]
+fn a_symbolic_link_at_the_file_is_refused_as_link() {
+    let scratch = Scratch::new("private");
+    let token = private_token(&scratch);
+    let path = scratch.path().join("link");
+    symlink(token, &path).expect("plant a symbolic link");
+    assert_eq!(read_private_file(&path, 64, skein_shell::effective_user()), Err(Unread::Unsafe(Unsafe::Link)));
+}
+
+#[test]
+fn a_symbolic_link_in_a_parent_is_refused_as_link() {
+    let scratch = Scratch::new("private");
+    private_token(&scratch);
+    let parent = scratch.path().join("parent-link");
+    symlink(scratch.path(), &parent).expect("plant a parent symbolic link");
+    assert_eq!(
+        read_private_file(&parent.join("token"), 64, skein_shell::effective_user()),
+        Err(Unread::Unsafe(Unsafe::Link))
+    );
+}
+
+#[test]
+fn a_file_with_two_links_is_refused_as_links() {
+    let scratch = Scratch::new("private");
+    let path = private_token(&scratch);
+    fs::hard_link(&path, scratch.path().join("second-link")).expect("plant a second link");
+    assert_eq!(read_private_file(&path, 64, skein_shell::effective_user()), Err(Unread::Unsafe(Unsafe::Links(2))));
+}
+
+#[test]
+fn a_directory_and_a_fifo_are_refused_as_their_kind() {
+    let scratch = Scratch::new("private");
+    let fifo = scratch.path().join("fifo");
+    assert!(Command::new("mkfifo").arg(&fifo).status().expect("mkfifo runs").success(), "plant a FIFO");
+    let user = skein_shell::effective_user();
+    assert_eq!(read_private_file(scratch.path(), 64, user), Err(Unread::Unsafe(Unsafe::Kind(Kind::Directory))));
+    assert_eq!(read_private_file(&fifo, 64, user), Err(Unread::Unsafe(Unsafe::Kind(Kind::Other))));
+}
+
+#[test]
+fn a_file_owned_by_another_expected_user_is_refused_as_owner() {
+    let scratch = Scratch::new("private");
+    let path = private_token(&scratch);
+    let found = skein_shell::effective_user();
+    let expected = found.checked_add(1).expect("the effective user is not the sentinel");
+    assert_eq!(read_private_file(&path, 64, expected), Err(Unread::Unsafe(Unsafe::Owner { found, expected })));
+}
+
+#[test]
+fn a_denied_own_file_is_named_by_its_path_only_stat() {
+    let status = fs::read_to_string("/proc/self/status").expect("read effective capabilities");
+    let capabilities = status.lines().find_map(|line| line.strip_prefix("CapEff:")).expect("CapEff").trim();
+    if u64::from_str_radix(capabilities, 16).expect("hex capabilities") & (1_u64 << 1_u32) != 0 {
+        eprintln!("CAP_DAC_OVERRIDE bypasses file modes; skipping the denied-open case");
+        return;
+    }
+    let scratch = Scratch::new("private");
+    let path = private_token(&scratch);
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("deny the own file's read");
+    assert_eq!(read_private_file(&path, 64, skein_shell::effective_user()), Err(Unread::Kernel(Error::Permission)));
+}
+
+#[test]
+fn private_reads_leave_no_descriptor_open() {
+    let scratch = Scratch::new("private");
+    let path = private_token(&scratch);
+    let user = skein_shell::effective_user();
+    let descriptors = fs::read_dir("/proc/self/fd").expect("descriptor observer").count();
+    for _ in 0..8 {
+        assert!(read_private_file(&path, 6, user).is_ok(), "safe file read");
+        assert_eq!(read_private_file(&path, 5, user), Err(Unread::TooLarge { max: 5 }));
+        assert_eq!(
+            read_private_file(&path, 6, user + 1),
+            Err(Unread::Unsafe(Unsafe::Owner { found: user, expected: user + 1 }))
+        );
+        assert_eq!(read_private_file(scratch.path(), 64, user), Err(Unread::Unsafe(Unsafe::Kind(Kind::Directory))));
+        assert_eq!(read_private_file(&scratch.path().join("missing"), 64, user), Err(Unread::Absent));
+        assert_eq!(read_private_file(Path::new("nul\0inside"), 64, user), Err(Unread::Kernel(Error::InvalidArgument)));
+    }
+    assert_eq!(fs::read_dir("/proc/self/fd").expect("descriptor observer").count(), descriptors, "private reads close");
+}
 
 fn bundle(scratch: &Scratch, bytes: &[u8], bounds: RootBounds) -> Result<Roots, RootsRefusal> {
     let path = scratch.path().join("bundle");

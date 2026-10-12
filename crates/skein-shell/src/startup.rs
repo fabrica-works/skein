@@ -14,6 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use skein_io::kernel;
+use skein_lib::Secret;
 use skein_lib::base64::{self, Alphabet};
 
 /// Why startup's regular-file read returned no bytes.
@@ -27,12 +28,20 @@ pub enum Unread {
     TooLarge { max: u32 },
     /// The adapter's kernel call failed.
     Kernel(kernel::Error),
+    /// The private-file checks refused what was opened, before reading bytes.
+    Unsafe(skein_io::file::Unsafe),
 }
 
 /// Reads a regular file whole within `max` bytes, without blocking on an
 /// entry such as a FIFO or taking a controlling terminal (shell.md, 6.1).
 pub fn read_file(path: &Path, max: u32) -> Result<Box<[u8]>, Unread> {
     crate::ring::read_file(path, max)
+}
+
+/// Reads a secret within `max` bytes after io's private-file checks,
+/// using the expected owner supplied by startup (shell.md, 6.1).
+pub fn read_private_file(path: &Path, max: u32, user: u32) -> Result<Secret, Unread> {
+    crate::ring::read_private_file(path, max, user)
 }
 
 /// The trust source startup's configuration asks the shell to read.
