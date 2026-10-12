@@ -4,5 +4,6 @@ model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 
 [agents]
-# Sub-agent threads open at once, besides the coordinator's own.
+# Sub-agents running at once: the sessions a run holds open (section 7.2).
+# A finished one frees its place (tested with Codex 0.160.1 and 0.162.1).
 max_threads = 8
