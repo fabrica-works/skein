@@ -1,7 +1,7 @@
 //! One-way pipes, whether inherited at startup or returned by a child,
 //! and adopted append files, exposed through the same stream requests and
-//! events (io.md, sections 3, 5.1 and 6). Append writes keep the owner's
-//! deadline; graceful closing replaces it with io's close deadline.
+//! events (io.md, sections 3, 5.1 and 6). Output writes keep the owner's
+//! optional deadline; graceful closing replaces it with io's close deadline.
 
 use alloc::boxed::Box;
 use skein_lib::stream::{Down, Fault, OutputDown, OutputOutcome, Read, Up};
@@ -22,7 +22,8 @@ pub(crate) struct Pipe {
     child: Option<Id<Entity>>,
     way: Way,
     fd: Option<Fd>,
-    append_timeout: Option<Duration>,
+    append: bool,
+    write_timeout: Option<Duration>,
     intake: Option<Intake>,
     demand: Option<(Read, u32)>,
     granted: u32,
@@ -47,7 +48,8 @@ impl Pipe {
             child: None,
             way,
             fd: None,
-            append_timeout: None,
+            append: false,
+            write_timeout: None,
             intake: None,
             demand: None,
             granted: 0,
@@ -71,14 +73,15 @@ impl Pipe {
         self.child = Some(child);
         self.fd = Some(fd);
     }
-    pub(crate) fn inherited(fd: Fd, way: Way) -> Pipe {
+    pub(crate) fn inherited(fd: Fd, way: Way, write_timeout: Option<Duration>) -> Pipe {
         let mut pipe = Pipe::pending(way);
         pipe.fd = Some(fd);
+        pipe.write_timeout = write_timeout;
         pipe
     }
     pub(crate) fn append(fd: Fd, write_timeout: Duration) -> Pipe {
-        let mut pipe = Self::inherited(fd, Way::In);
-        pipe.append_timeout = Some(write_timeout);
+        let mut pipe = Self::inherited(fd, Way::In, Some(write_timeout));
+        pipe.append = true;
         pipe
     }
 
@@ -224,9 +227,9 @@ pub(crate) fn landed(
             up.push(Event::Closed { owner: id.token() });
         }
         Purpose::Cancel(target) => {
-            if pipe.append_timeout.is_some() && crate::layer::unsubmitted(landed.result) && pipe.write == Some(target) {
-                // A stalled filesystem still holds the append. Keep its cancel
-                // outstanding until the backend actually submits one.
+            if pipe.write_timeout.is_some() && crate::layer::unsubmitted(landed.result) && pipe.write == Some(target) {
+                // A stalled write still holds its bytes. Keep its cancel
+                // outstanding until the backend submits one.
                 tables.cancel(subs, id, target);
             } else {
                 pipe.cancels = pipe.cancels.checked_sub(1).expect("cancel in flight");
@@ -280,7 +283,7 @@ pub(crate) fn close(
         return;
     }
     if !abort && pipe.way == Way::In {
-        if pipe.append_timeout.is_some() {
+        if pipe.write_timeout.is_some() {
             tables
                 .deadlines
                 .arm((id, Timer::Close), env.now.saturating_add(env.limits.close_timeout))
@@ -392,18 +395,15 @@ fn submit_write(
     subs: &mut Queue<Submit>,
 ) {
     let fd = pipe.fd.expect("active output stream has its descriptor");
-    let operation = match pipe.append_timeout {
-        Some(write_timeout) => {
-            if !pipe.closing {
-                tables
-                    .deadlines
-                    .arm((id, Timer::Close), env.now.saturating_add(write_timeout))
-                    .expect("one write timer fits its entity slots");
-            }
-            Op::Append { fd, bytes, from }
-        }
-        None => Op::PipeWrite { fd, bytes, from },
-    };
+    if let Some(write_timeout) = pipe.write_timeout
+        && !pipe.closing
+    {
+        tables
+            .deadlines
+            .arm((id, Timer::Close), env.now.saturating_add(write_timeout))
+            .expect("one write timer fits its entity slots");
+    }
+    let operation = if pipe.append { Op::Append { fd, bytes, from } } else { Op::PipeWrite { fd, bytes, from } };
     pipe.write = Some(tables.submit(subs, id, Purpose::PipeWrite, operation));
 }
 
@@ -415,7 +415,7 @@ pub(crate) fn expired(
     up: &mut Queue<Event>,
     subs: &mut Queue<Submit>,
 ) {
-    assert!(pipe.append_timeout.is_some(), "only append streams arm a pipe deadline");
+    assert!(pipe.write_timeout.is_some(), "only output streams with a timeout arm a pipe deadline");
     if pipe.fd.is_none() {
         return;
     }
@@ -569,7 +569,7 @@ fn landed_write(
     let id = landed.entity;
     assert!(pipe.write.take() == Some(landed.flight), "write flight matches");
     let (bytes, from) = written(landed.kind);
-    if pipe.append_timeout.is_some() && !pipe.closing {
+    if pipe.write_timeout.is_some() && !pipe.closing {
         tables.deadlines.cancel((id, Timer::Close));
     }
     let total = u32::try_from(bytes.len()).expect("queued write fits u32");
@@ -587,15 +587,15 @@ fn landed_write(
             pipe.independent.retire(OutputOutcome::Failed(fault(error)));
             emit_terminal(pipe, id, up);
             up.push(Event::Stream { owner: id.token(), up: Up::Failed(fault(error)) });
-            if pipe.append_timeout.is_some() {
+            if pipe.write_timeout.is_some() {
                 close(pipe, id, true, env, tables, subs);
             } else {
                 pipe.closing = true;
             }
         }
         Err(_) => {
-            if pipe.append_timeout.is_some() {
-                // A failed flush cannot skip a piece and append later ones.
+            if pipe.write_timeout.is_some() {
+                // A failed flush cannot skip a piece and write later ones.
                 // Close still owes only Closed; abort the remaining output.
                 close(pipe, id, true, env, tables, subs);
             }

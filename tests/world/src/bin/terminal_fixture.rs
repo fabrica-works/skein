@@ -154,7 +154,7 @@ fn run() -> ExitCode {
     };
     let mut io = Io::new(&limits);
     let input = io.adopt_read_pipe(Fd::new(0)).expect("input");
-    let output = io.adopt_write_pipe(Fd::new(2)).expect("stderr");
+    let output = io.adopt_write_pipe(Fd::new(2), None).expect("stderr");
     let signals = io.adopt_signals(open_signals(Watch::TerminationAndWindow).expect("signals")).expect("source");
     let mut host = Terminal {
         io,

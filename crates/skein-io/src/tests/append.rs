@@ -1,4 +1,4 @@
-//! Adopted append streams, their write deadline, and graceful close replacing it.
+//! Adopted output streams, their write deadline, and graceful close replacing it.
 
 use alloc::boxed::Box;
 use skein_lib::stream::{Down, Fault, OutputDown, OutputOutcome, OutputUp, Read, Up};
@@ -29,6 +29,98 @@ fn finish(rig: &mut Rig, stream: Token, close: Submit) {
     assert_eq!(close.kind, Op::Close { fd: Fd::new(40) });
     assert_eq!(rig.complete(close, Ok(Done::Nothing)).events, [Event::Closed { owner: stream }]);
     rig.empty();
+}
+
+fn write_pipe(timeout: Option<Duration>) -> (Rig, Token) {
+    let mut rig = Rig::new(limits());
+    let stream = rig.io.adopt_write_pipe(Fd::new(40), timeout).expect("write pipe slot");
+    rig.next().nothing();
+    (rig, stream)
+}
+
+#[test]
+fn inherited_write_pipe_deadline_drops_queued_bytes_and_fails_once_while_cancel_settles() {
+    let (mut rig, stream) = write_pipe(Some(Duration::from_millis(10)));
+    let first = send(&mut rig, stream, b"one").take(Kind::PipeWrite);
+    send(&mut rig, stream, b"two").nothing();
+    rig.at(Time::ZERO.saturating_add(Duration::from_millis(9))).nothing();
+    let mut expired = rig.at(Time::ZERO.saturating_add(Duration::from_millis(10)));
+    assert_eq!(expired.events, [Event::Stream { owner: stream, up: Up::Failed(Fault::Other) }]);
+    let cancel = expired.take(Kind::Cancel);
+    assert_eq!(cancel.kind, Op::Cancel { target: first.op });
+    rig.at(Time::ZERO.saturating_add(Duration::from_secs(2))).nothing();
+    rig.complete(first, Err(Error::Cancelled)).nothing();
+    let close = rig.complete(cancel, Ok(Done::Nothing)).take(Kind::Close);
+    finish(&mut rig, stream, close);
+}
+
+#[test]
+fn inherited_write_pipe_without_a_deadline_waits_for_its_reader() {
+    let (mut rig, stream) = write_pipe(None);
+    let first = send(&mut rig, stream, b"one").take(Kind::PipeWrite);
+    send(&mut rig, stream, b"two").nothing();
+    assert_eq!(rig.io.next_deadline(), None);
+    rig.at(Time::ZERO.saturating_add(Duration::from_secs(60))).nothing();
+    let second = rig.complete(first, Ok(Done::Count(3))).take(Kind::PipeWrite);
+    rig.complete(second, Ok(Done::Count(3))).nothing();
+    let close = rig.down(Request::Stream { stream, down: Down::Finish }).take(Kind::Close);
+    finish(&mut rig, stream, close);
+}
+
+#[test]
+fn inherited_write_pipe_short_writes_rearm_and_completion_cancels_the_deadline() {
+    let (mut rig, stream) = write_pipe(Some(Duration::from_millis(10)));
+    let first = send(&mut rig, stream, b"one").take(Kind::PipeWrite);
+    rig.at(Time::ZERO.saturating_add(Duration::from_millis(5))).nothing();
+    let remainder = rig.complete(first, Ok(Done::Count(1))).take(Kind::PipeWrite);
+    assert_eq!(rig.io.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_millis(15))));
+    let Op::PipeWrite { from, .. } = &remainder.kind else { panic!("pipe continuation") };
+    assert_eq!(*from, 1);
+    rig.at(Time::ZERO.saturating_add(Duration::from_millis(10))).nothing();
+    rig.complete(remainder, Ok(Done::Count(2))).nothing();
+    assert_eq!(rig.io.next_deadline(), None);
+    rig.at(Time::ZERO.saturating_add(Duration::from_millis(15))).nothing();
+    let close = rig.down(Request::Stream { stream, down: Down::Finish }).take(Kind::Close);
+    finish(&mut rig, stream, close);
+}
+
+#[test]
+fn inherited_write_pipe_close_replaces_the_write_deadline() {
+    let (mut rig, stream) = write_pipe(Some(Duration::from_millis(10)));
+    let first = send(&mut rig, stream, b"one").take(Kind::PipeWrite);
+    rig.down(Request::Close { entity: stream }).nothing();
+    assert_eq!(rig.io.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(1))));
+    rig.at(Time::ZERO.saturating_add(Duration::from_millis(10))).nothing();
+    let mut expired = rig.at(Time::ZERO.saturating_add(Duration::from_secs(1)));
+    assert!(expired.events.is_empty());
+    let cancel = expired.take(Kind::Cancel);
+    rig.complete(cancel, Ok(Done::Nothing)).nothing();
+    let close = rig.complete(first, Err(Error::Cancelled)).take(Kind::Close);
+    finish(&mut rig, stream, close);
+}
+
+#[test]
+fn inherited_write_pipe_completion_that_wins_cancel_does_not_restart_the_queue() {
+    let (mut rig, stream) = write_pipe(Some(Duration::from_millis(10)));
+    let first = send(&mut rig, stream, b"one").take(Kind::PipeWrite);
+    send(&mut rig, stream, b"two").nothing();
+    let cancel = rig.at(Time::ZERO.saturating_add(Duration::from_millis(10))).take(Kind::Cancel);
+    rig.complete(cancel, Err(Error::TooLate)).nothing();
+    let close = rig.complete(first, Ok(Done::Count(1))).take(Kind::Close);
+    finish(&mut rig, stream, close);
+}
+
+#[test]
+fn inherited_write_pipe_retries_a_cancel_the_backend_could_not_submit() {
+    let (mut rig, stream) = write_pipe(Some(Duration::from_millis(10)));
+    let first = send(&mut rig, stream, b"one").take(Kind::PipeWrite);
+    let cancel = rig.at(Time::ZERO.saturating_add(Duration::from_millis(10))).take(Kind::Cancel);
+    let mut retried = rig.complete(cancel, Err(Error::Other(12)));
+    assert!(retried.events.is_empty());
+    let cancel = retried.take(Kind::Cancel);
+    rig.complete(first, Err(Error::Cancelled)).nothing();
+    let close = rig.complete(cancel, Ok(Done::Nothing)).take(Kind::Close);
+    finish(&mut rig, stream, close);
 }
 
 #[test]

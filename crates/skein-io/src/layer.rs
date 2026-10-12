@@ -46,7 +46,7 @@ pub(crate) enum Entity {
 pub(crate) struct Tables {
     /// The operations in flight, each for its entity.
     pub(crate) flights: Slab<Flight>,
-    /// Each entity's deadlines: a close or append write, and a retry.
+    /// Each entity's deadlines: a close or output write, and a retry.
     pub(crate) deadlines: Deadlines<(Id<Entity>, Timer)>,
     pub(crate) ready: Ready,
     /// The owners of the `Listen`s and `Connect`s refused for want of a
@@ -94,7 +94,7 @@ pub(crate) enum Purpose {
     Cancel(Id<Flight>),
 }
 
-/// What an entity's deadline is for: a close or append write (io.md, 3 and 5.1), or
+/// What an entity's deadline is for: a close or output write (io.md, 3 and 5.1), or
 /// a retry of what found the kernel out of buffers or descriptors (io.md,
 /// 3.2 and 3.3). An entity has at most one of each.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -156,13 +156,16 @@ impl Io {
     /// `Stream`/`Close`/`Abort` vocabulary (io.md, sections 3 and 6). If the
     /// entity slab is full, the caller retains the descriptor.
     pub fn adopt_read_pipe(&mut self, fd: Fd) -> Result<Token, Fd> {
-        self.adopt_pipe(fd, Way::Out)
+        self.adopt_pipe(fd, Way::Out, None)
     }
 
     /// Takes an inherited writable pipe descriptor at startup, with the same
     /// stream and ownership contract as [`Io::adopt_read_pipe`].
-    pub fn adopt_write_pipe(&mut self, fd: Fd) -> Result<Token, Fd> {
-        self.adopt_pipe(fd, Way::In)
+    /// Each write has the owner's optional `write_timeout` (io.md, 5.1);
+    /// without one it waits on its reader. With one, Close replaces it with
+    /// io's close timeout.
+    pub fn adopt_write_pipe(&mut self, fd: Fd, write_timeout: Option<Duration>) -> Result<Token, Fd> {
+        self.adopt_pipe(fd, Way::In, write_timeout)
     }
 
     /// Takes an output-only append file at startup. Each Append has the owner's
@@ -178,8 +181,8 @@ impl Io {
         }
     }
 
-    fn adopt_pipe(&mut self, fd: Fd, way: Way) -> Result<Token, Fd> {
-        match self.entities.insert(Entity::Pipe(Pipe::inherited(fd, way))) {
+    fn adopt_pipe(&mut self, fd: Fd, way: Way, write_timeout: Option<Duration>) -> Result<Token, Fd> {
+        match self.entities.insert(Entity::Pipe(Pipe::inherited(fd, way, write_timeout))) {
             Ok(id) => {
                 self.tables.ready.mark(id);
                 Ok(id.token())
