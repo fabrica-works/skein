@@ -283,3 +283,25 @@ fn numbers_drawn_at_every_width_match_the_standard_library() {
         assert_eq!(Decimal::of(n).as_bytes(), format!("{n}").as_bytes());
     }
 }
+
+#[test]
+fn a_secrets_debug_shows_its_length_and_not_its_bytes() {
+    let secret = crate::Secret::new(crate::bytes::copy_of(b"a credential"));
+    assert_eq!(alloc::fmt::format(format_args!("{secret:?}")), "Secret { len: 12 }");
+    assert_eq!(secret.expose(), b"a credential");
+    assert!(!secret.is_empty());
+    assert!(crate::Secret::new(Box::from([])).is_empty());
+}
+
+#[test]
+fn secrets_compare_and_hash_over_their_bytes() {
+    use core::hash::{Hash, Hasher};
+    let secret = crate::Secret::new(crate::bytes::copy_of(b"key"));
+    assert_eq!(secret, secret.clone());
+    assert_ne!(secret, crate::Secret::new(crate::bytes::copy_of(b"other")));
+    let mut secret_hash = std::hash::DefaultHasher::new();
+    let mut bytes_hash = std::hash::DefaultHasher::new();
+    secret.hash(&mut secret_hash);
+    b"key".as_slice().hash(&mut bytes_hash);
+    assert_eq!(secret_hash.finish(), bytes_hash.finish());
+}

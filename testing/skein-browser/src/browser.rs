@@ -1673,7 +1673,10 @@ impl Browser {
             }
             Step::Screenshot => {
                 let png = match field_text(result, b"data") {
-                    Some(base64) => crate::wire::base64::decode(&base64, env.limits.screenshot).ok(),
+                    Some(base64) => {
+                        skein_lib::base64::decode(skein_lib::base64::Alphabet::Standard, &base64, env.limits.screenshot)
+                            .ok()
+                    }
                     None => None,
                 };
                 if let Some(png) = png {

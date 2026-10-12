@@ -15,6 +15,7 @@
 
 extern crate alloc;
 
+pub mod base64;
 mod btree;
 pub mod bytes;
 mod deadlines;
@@ -29,6 +30,7 @@ mod queue;
 mod reader;
 mod requests;
 mod rng;
+mod secret;
 mod set;
 mod slab;
 mod stack;
@@ -54,6 +56,7 @@ pub use requests::{
     RequestTable, RequestTake,
 };
 pub use rng::Rng;
+pub use secret::Secret;
 pub use set::Set;
 pub use slab::Slab;
 pub use stack::Stack;

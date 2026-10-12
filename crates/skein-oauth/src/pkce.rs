@@ -2,7 +2,6 @@
 
 use crate::DecodeError;
 use alloc::boxed::Box;
-use skein_lib::bytes;
 
 const K: [u32; 64] = [
     0x428a_2f98,
@@ -70,7 +69,6 @@ const K: [u32; 64] = [
     0xbef9_a3f7,
     0xc671_78f2,
 ];
-const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /// A bounded RFC 7636 S256 challenge, without base64 padding.
 pub fn challenge(verifier: &[u8]) -> Result<Box<[u8]>, DecodeError> {
@@ -83,34 +81,10 @@ pub fn challenge(verifier: &[u8]) -> Result<Box<[u8]>, DecodeError> {
         }
     }
     let digest = sha256(verifier);
-    let mut encoded = [0_u8; 43];
-    let mut offset = 0_usize;
-    for group in digest.chunks(3) {
-        let first = *group.first().ok_or(DecodeError::Malformed)?;
-        let second = *group.get(1).unwrap_or(&0);
-        let third = *group.get(2).unwrap_or(&0);
-        let values = [
-            first >> 2_u32,
-            ((first & 3_u8) << 4_u32) | (second >> 4_u32),
-            ((second & 15_u8) << 2_u32) | (third >> 6_u32),
-            third & 63_u8,
-        ];
-        let count: usize = match group.len() {
-            1 => 2,
-            2 => 3,
-            3 => 4,
-            _ => return Err(DecodeError::Malformed),
-        };
-        for value in values.get(..count).ok_or(DecodeError::Malformed)? {
-            let slot = encoded.get_mut(offset).ok_or(DecodeError::TooLarge)?;
-            *slot = *ALPHABET.get(usize::from(*value)).ok_or(DecodeError::Malformed)?;
-            offset = offset.checked_add(1).ok_or(DecodeError::TooLarge)?;
-        }
-    }
-    if offset != 43 {
-        return Err(DecodeError::Malformed);
-    }
-    Ok(bytes::copy_of(&encoded))
+    let mut encoded = skein_lib::Writer::new(43);
+    skein_lib::base64::encode(skein_lib::base64::Alphabet::Url, &digest, &mut encoded)
+        .expect("a SHA-256 digest encodes to 43 characters");
+    Ok(encoded.finish())
 }
 
 #[expect(clippy::arithmetic_side_effects, reason = "SHA-256 fixed block and round indices stay within their arrays")]

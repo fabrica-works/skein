@@ -8,17 +8,13 @@ use skein_tls::{Config, Parsed, Refusal};
 use skein_tls_world::pki;
 
 fn certificate(bytes: &[u8]) -> Vec<u8> {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let alphabet = skein_lib::base64::Alphabet::Standard;
+    let len =
+        skein_lib::base64::encoded_len(alphabet, u32::try_from(bytes.len()).expect("fixture fits")).expect("fits");
+    let mut writer = skein_lib::Writer::new(usize::try_from(len).expect("fits"));
+    skein_lib::base64::encode(alphabet, bytes, &mut writer).expect("measured room");
     let mut text = Vec::from(b"-----BEGIN CERTIFICATE-----\n".as_slice());
-    for part in bytes.chunks(3) {
-        let a = part[0];
-        let b = part.get(1).copied().unwrap_or(0);
-        let c = part.get(2).copied().unwrap_or(0);
-        text.push(ALPHABET[usize::from(a >> 2)]);
-        text.push(ALPHABET[usize::from(((a & 3) << 4) | (b >> 4))]);
-        text.push(if part.len() > 1 { ALPHABET[usize::from(((b & 15) << 2) | (c >> 6))] } else { b'=' });
-        text.push(if part.len() > 2 { ALPHABET[usize::from(c & 63)] } else { b'=' });
-    }
+    text.extend_from_slice(&writer.finish());
     text.extend_from_slice(b"\n-----END CERTIFICATE-----\n");
     text
 }

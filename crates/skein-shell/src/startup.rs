@@ -14,6 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use skein_io::kernel;
+use skein_lib::base64::{self, Alphabet};
 
 /// Why startup's regular-file read returned no bytes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -124,7 +125,7 @@ fn source(path: &Path, max: u32) -> Result<Box<[u8]>, RootsRefusal> {
 
 fn pem(bundle: &[u8], path: &Path, bounds: &RootBounds) -> Result<Roots, RootsRefusal> {
     let mut certificates = Vec::new();
-    let mut current: Option<Decoder> = None;
+    let mut current: Option<(u32, base64::Decoder, u32, bool)> = None;
     let mut certificate_blocks: u32 = 0;
     let mut other_blocks: u32 = 0;
     let mut malformed: u32 = 0;
@@ -133,7 +134,12 @@ fn pem(bundle: &[u8], path: &Path, bounds: &RootBounds) -> Result<Roots, RootsRe
         if let Some(label) = boundary(line, b"-----BEGIN ") {
             finish(current.take(), false, bounds, &mut certificates, &mut malformed)?;
             if label == b"CERTIFICATE" {
-                current = Some(Decoder::new(certificate_blocks));
+                current = Some((
+                    certificate_blocks,
+                    base64::Decoder::new(Alphabet::Standard, bounds.certificate_bytes),
+                    0,
+                    false,
+                ));
                 certificate_blocks = certificate_blocks.checked_add(1).expect("blocks fit bounded bundle bytes");
             } else {
                 other_blocks = other_blocks.checked_add(1).expect("blocks fit bounded bundle bytes");
@@ -141,8 +147,13 @@ fn pem(bundle: &[u8], path: &Path, bounds: &RootBounds) -> Result<Roots, RootsRe
         } else if let Some(label) = boundary(line, b"-----END ") {
             finish(current.take(), label == b"CERTIFICATE", bounds, &mut certificates, &mut malformed)?;
         } else if let Some(decoder) = &mut current {
-            for byte in line {
-                decoder.push(*byte, bounds.certificate_bytes)?;
+            for run in line.split(|byte| whitespace(*byte)) {
+                decoder.3 |= run.contains(&b'=');
+                decoder.2 =
+                    decoder.2.checked_add(u32::try_from(run.len()).expect("bounded bundle")).expect("bounded bundle");
+                if let Err(base64::Error::TooLong { max }) = decoder.1.push(run) {
+                    return Err(RootsRefusal::TooLong { index: decoder.0, bound: max });
+                }
             }
         }
     }
@@ -176,88 +187,32 @@ fn trim_whitespace(mut bytes: &[u8]) -> &[u8] {
 }
 
 fn finish(
-    decoder: Option<Decoder>,
+    decoder: Option<(u32, base64::Decoder, u32, bool)>,
     ended: bool,
     bounds: &RootBounds,
     certificates: &mut Vec<Box<[u8]>>,
     malformed: &mut u32,
 ) -> Result<(), RootsRefusal> {
-    if let Some(decoder) = decoder {
-        if ended && decoder.valid() {
-            if u64::try_from(certificates.len()).expect("count fits") >= u64::from(bounds.certificates) {
-                return Err(RootsRefusal::TooMany { bound: bounds.certificates });
+    if let Some((index, mut decoder, symbols, padded)) = decoder {
+        // RFC 7468's lax PEM accepts an unpadded final group as well.
+        if !padded && symbols % 4 != 0 {
+            for _ in symbols % 4..4 {
+                if let Err(base64::Error::TooLong { max }) = decoder.push(b"=") {
+                    return Err(RootsRefusal::TooLong { index, bound: max });
+                }
             }
-            certificates.push(decoder.bytes.into_boxed_slice());
-        } else {
-            *malformed = malformed.checked_add(1).expect("blocks fit bounded bundle bytes");
+        }
+        match decoder.finish() {
+            Ok(bytes) if ended => {
+                if u64::try_from(certificates.len()).expect("count fits") >= u64::from(bounds.certificates) {
+                    return Err(RootsRefusal::TooMany { bound: bounds.certificates });
+                }
+                certificates.push(bytes);
+            }
+            Ok(_) | Err(_) => *malformed = malformed.checked_add(1).expect("blocks fit bounded bundle bytes"),
         }
     }
     Ok(())
-}
-
-struct Decoder {
-    index: u32,
-    bytes: Vec<u8>,
-    symbols: u32,
-    carry: u32,
-    bits: u32,
-    padding: u32,
-    invalid: bool,
-}
-
-impl Decoder {
-    fn new(index: u32) -> Decoder {
-        Decoder { index, bytes: Vec::new(), symbols: 0, carry: 0, bits: 0, padding: 0, invalid: false }
-    }
-
-    fn push(&mut self, byte: u8, bound: u32) -> Result<(), RootsRefusal> {
-        if self.invalid || whitespace(byte) {
-            return Ok(());
-        }
-        if byte == b'=' {
-            self.padding = self.padding.checked_add(1).expect("padding stops at its first defect");
-            let remainder = self.symbols % 4;
-            if remainder < 2 || self.padding > 4_u32.checked_sub(remainder).expect("remainder below four") {
-                self.invalid = true;
-            }
-            return Ok(());
-        }
-        let value = match byte {
-            b'A'..=b'Z' => u32::from(byte.checked_sub(b'A').expect("uppercase range")),
-            b'a'..=b'z' => u32::from(byte.checked_sub(b'a').expect("lowercase range")).checked_add(26).expect("sextet"),
-            b'0'..=b'9' => u32::from(byte.checked_sub(b'0').expect("digit range")).checked_add(52).expect("sextet"),
-            b'+' => 62,
-            b'/' => 63,
-            _ => {
-                self.invalid = true;
-                return Ok(());
-            }
-        };
-        if self.padding != 0 {
-            self.invalid = true;
-            return Ok(());
-        }
-        self.symbols = self.symbols.checked_add(1).expect("symbols fit bounded bundle bytes");
-        self.carry = (self.carry << 6) | value;
-        self.bits = self.bits.checked_add(6).expect("at most twelve bits");
-        if self.bits >= 8 {
-            self.bits = self.bits.checked_sub(8).expect("one output byte");
-            if u64::try_from(self.bytes.len()).expect("length fits") >= u64::from(bound) {
-                return Err(RootsRefusal::TooLong { index: self.index, bound });
-            }
-            self.bytes.push(u8::try_from(self.carry >> self.bits).expect("one decoded byte"));
-            self.carry &= (1_u32 << self.bits).checked_sub(1).expect("positive bit mask");
-        }
-        Ok(())
-    }
-
-    fn valid(&self) -> bool {
-        let remainder = self.symbols % 4;
-        !self.invalid
-            && remainder != 1
-            && self.carry == 0
-            && (self.padding == 0 || self.padding == 4_u32.checked_sub(remainder).expect("remainder below four"))
-    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 //! driven through its operations, at and past its capacity, and each value
 //! type through its edges, one module per area of lib.md.
 
+mod base64;
 mod bytes;
 mod containers;
 mod handles;
