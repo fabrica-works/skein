@@ -956,7 +956,7 @@ itself with `plan join <role>`.
   landed step, its branch, and whether its worktree has uncommitted
   changes.
 - **Slots.** At most eight sessions run at once. Codex counts finished
-  sub-agent threads against `max_threads` (24 in the coordinator's
+  sub-agent threads against `max_threads` (64 in the coordinator's
   profile) and has no tool to close one, and a reused thread keeps its
   old session's whole context. So spawn a fresh thread for each session
   and for each handover. Give each thread a slot name (`w1`, `w2`, …) and
@@ -1701,6 +1701,7 @@ that machine.
   with `thread/resume` before starting a turn. That path is untested
   after a real reboot.
 - **Closing finished Codex threads,** instead of raising `max_threads`.
+  A plan of about 25 sessions with two handovers each would reach 64.
   Codex 0.160's coordinator has no `close_agent` (checked 2026-10-12),
   though its binary has the handler.
 - **Credentials under load.** Does a run's work that borrows the Codex

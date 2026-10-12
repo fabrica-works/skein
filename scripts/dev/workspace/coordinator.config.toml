@@ -5,6 +5,7 @@ model_reasoning_effort = "high"
 
 [agents]
 # Sub-agent threads, finished ones included: Codex counts them and has no
-# tool to close one. Room for a fresh thread at each handover (section
-# 7.2); at most 8 sessions run at once.
-max_threads = 24
+# tool to close one. Room for a fresh thread for each session and each
+# handover of a long plan (section 7.2); at most 8 sessions run at once.
+# One coordinator held 117 threads in the client run.
+max_threads = 64
