@@ -370,7 +370,7 @@ fn native_classic_room_is_rejected_before_effects() {
 }
 
 #[test]
-#[should_panic(expected = "actual lower terminal precedes physical Closed")]
+#[should_panic(expected = "lower terminal precedes physical Closed")]
 fn physical_closed_cannot_invent_a_missing_lower_output_terminal() {
     let mut machine = Machine::new();
     machine.started();

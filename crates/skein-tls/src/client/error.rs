@@ -28,7 +28,8 @@ pub enum Error {
     /// The stream below failed.
     Stream(Fault),
     /// rustls failed for a reason of its own: no entropy from the kernel,
-    /// or its keys exhausted.
+    /// or its keys exhausted; on the native face, also when its tokens below
+    /// run out.
     Other,
 }
 

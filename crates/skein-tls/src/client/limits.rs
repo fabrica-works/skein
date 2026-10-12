@@ -122,9 +122,9 @@ pub(super) fn intake_cap(limits: &Limits) -> Option<u32> {
 /// handshakes of either version, a retry, the longest ALPN list, the
 /// longest chain the records hold, records of every size each way, and a
 /// hostile server's messages of the shortest entries (tls.md, 5): its own
-/// state ([`RUSTLS`]), and the decoded form of the longest handshake
-/// message, [`HANDSHAKE`] bytes for each of the fewer of the records held
-/// and [`MAX_HANDSHAKE`].
+/// state (`RUSTLS`), and the decoded form of the longest handshake
+/// message, `HANDSHAKE` bytes for each of the fewer of the records held
+/// and `MAX_HANDSHAKE`.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     if limits.read == 0 || limits.send == 0 || limits.records < MAX_RECORD {

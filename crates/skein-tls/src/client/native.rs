@@ -1,29 +1,22 @@
-//! Native TLS output beside independent plaintext and ciphertext reads.
-//! The caller selects this face at construction; it shares the concrete rustls
-//! engine and buffers with the classic client (tls.md, 3.6; lib.md, 7.1).
+//! The TLS client with independent output on both sides: for a side above
+//! that must write while its read waits (tls.md, 3.6; lib.md, 7.1).
 //!
-//! It keeps one upper read, one upper output cell, one exact ciphertext read
-//! and one lower output cell, plus one exact withdrawn Fill winner size,
-//! bounded intake/record/owed buffers and a
-//! checked never-reused lower token generator. A held upper grant retains its
-//! actual lower byte and Send-slot backing while real control records grow the
-//! owed prefix; encryption copies that prefix before the plaintext ciphertext.
-//! It never knows socket state, kernel progress, timers, current lower credit
-//! or framing. The resource owner supplies actual named terminals and Closed.
+//! It shares the classic client's session and buffers. Its four cells each
+//! hold at most one obligation: the read above, the output right above, the
+//! read below and the output right below. Tokens below are checked, never
+//! reused and never wrapped. A grant above keeps its bytes and one Send slot
+//! below until it is spent; what TLS owes goes before the data within it.
 //!
-//! `down` accepts one Handshake, read-only classic Stream and native output;
-//! native Finish requires Ready, no live upper read and no pending output.
-//! A ready withdrawn/finished read drops its one actual queued Fill winner;
-//! handshake-internal reads keep progressing through genuine Ready.
-//! `up` accepts actual Fill bytes/read faults, native terminals and physical
-//! Closed. Identity is checked before a matching output's size. A local Close
-//! waits for physical Closed and all actual lower settlements. Unsolicited
-//! lower cancellation reports `TransportClosing`; physical Closed settles any
-//! still-Wanted upper output before `TransportClosed`, including before Ready.
-//! A coordinated native Close delivered after `TransportClosed` is inert.
-//! Each caller reserves the documented per-entry queue maxima and drains them;
-//! construction checks concrete configured read/byte/queued-Send caps before
-//! allocating. Dynamic unavailable credit leaves an honest unanswered right.
+//! The owner closes the stream below and reports `LowerEvent::Closed` after
+//! every right below settles. Unsolicited cancellation below reports
+//! `TransportClosing`; without a close pending, closure reports
+//! `TransportClosed`. With one pending, `Closed` answers it. A close after
+//! `TransportClosed` does nothing. The client keeps no timer or descriptor.
+//!
+//! `Finish` comes after `Ready`, with no read above but one that crossed
+//! `End`, and no output right pending. A withdrawn read may already be
+//! answered below: its bytes are dropped before deciphering or sealing.
+//! Each caller reserves the entry point's maximum output and drains it.
 
 use alloc::boxed::Box;
 use core::mem;
@@ -39,128 +32,92 @@ use crate::held::Held;
 use crate::session::{self, Connection};
 use crate::{Config, MaxOut, Name};
 
-/// Upper read/handshake/close requests or named plaintext output from the owner.
-/// Output never answers a read (tls.md, 3.6; lib.md, 7.1).
+/// The read, handshake and close above, or its output right.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Request {
-    /// Handshake once, read-only Stream or Close. Positive classic room and
-    /// classic Send violate receiving rules before effects (tls.md, 3.6).
-    Client(
-        /// Owner's moved handshake/read/close request, preserving the contained
-        /// receiving caps and native Finish rules (tls.md, 3.6; lib.md, 7.1).
-        super::Request,
-    ),
+    /// Handshake once, a read-only Stream, or Close. A demand of room or a
+    /// Send on the classic stream is a bug, asserted before effects.
+    Client(super::Request),
 
-    /// An independent plaintext right, within `Limits.send`; one Settled answers
-    /// admitted Room, and one Send/Release spends a grant (tls.md, 3.6; lib.md, 7.1).
-    Output(
-        /// Owner's moved named plaintext request/box within `Limits.send`; Room
-        /// receives one terminal, Send/Release spends backing (tls.md, 3.6; lib.md, 7.1).
-        OutputDown,
-    ),
+    /// An independent plaintext output right, within `Limits::send`. A
+    /// terminal answers Room; Send or Release spends a grant.
+    Output(OutputDown),
 }
 
-/// Actual native TLS observations to its owner (tls.md, 3.6).
+/// Events to the side above.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Event {
-    /// Ready, plaintext read/End/Failed, TLS Failed, or a local Close's Closed.
-    /// Native Handshake may instead end by `TransportClosed`; Failed(Other) also
-    /// names checked local lower-token exhaustion (tls.md, 3.6).
-    Client(
-        /// TLS's moved actual handshake/read/local-close observation to its owner;
-        /// it never settles an output right (tls.md, 3.6; lib.md, 7.1).
-        super::Event,
-    ),
+    /// Ready, plaintext Bytes, End or Failed, a connection failure, or Closed.
+    /// A handshake may also end with `TransportClosed`.
+    Client(super::Event),
 
-    /// Exactly one terminal for admitted plaintext output; an emitted winner
-    /// remains authoritative across cancellation/closing (tls.md, 3.6; lib.md, 7.1).
-    Output(
-        /// TLS's actual named plaintext terminal moved to its owner; Granted is
-        /// authoritative and consumes no read (tls.md, 3.6; lib.md, 7.1).
-        OutputUp,
-    ),
+    /// One terminal for an admitted output right. A Granted that went up
+    /// stays its terminal through cancellation or closing.
+    Output(OutputUp),
 
-    /// Actual unsolicited lower output cancellation. Owner closes the physical
-    /// resource and requests native Close; TLS owns no timer (tls.md, 3.6).
+    /// An unsolicited cancellation below makes the stream below unusable.
+    /// The owner closes it and requests Close.
     TransportClosing,
 
-    /// Actual physical lower Closed, without a local Close. Ends Handshake and
-    /// read lifecycle after settling any Wanted output; no invented EOF/fault
-    /// or second `Client::Closed` follows (tls.md, 3.6).
+    /// The stream below closed, with no Close pending. It first cancels an
+    /// output right pending above, then ends the connection. No Closed follows.
     TransportClosed,
 }
 
-/// Requests to the real ciphertext endpoint (tls.md, 3.6; lib.md, 7.1).
+/// Requests to the side below.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum LowerRequest {
-    /// Read-only classic Fill/withdrawal or Finish; never combined output room.
-    /// The physical owner remains responsible for Close (tls.md, 3.6).
-    Stream(
-        /// TLS's moved exact Fill/withdrawal/Finish request to the resource owner;
-        /// lower read caps apply independently of output (tls.md, 3.6; lib.md, 7.1).
-        Down,
-    ),
+    /// A read-only Fill, a withdrawal, or Finish. The owner closes the
+    /// stream below.
+    Stream(Down),
 
-    /// Named ciphertext bytes and one actual Send slot, independently of the
-    /// lower read. TLS generates every token without reuse (tls.md, 3.6; lib.md, 7.1).
-    Output(
-        /// TLS's moved named ciphertext reservation or owned Send box; configured
-        /// bytes and one Send slot back its terminal (tls.md, 3.6; lib.md, 7.1).
-        OutputDown,
-    ),
+    /// An output right below, independent of the read. The client makes its
+    /// tokens without reuse.
+    Output(OutputDown),
 }
 
-/// Actual observations from the exact ciphertext resource (tls.md, 3.6).
+/// Events from the side below.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum LowerEvent {
-    /// Actual read Bytes/End/Failed. Classic Room is a receiving violation;
-    /// none of these impersonates an output terminal (tls.md, 3.6).
-    Stream(
-        /// Resource owner's moved real read observation, including a queued Fill
-        /// winner after withdrawal; no output settlement (tls.md, 3.6; lib.md, 7.1).
-        Up,
-    ),
+    /// Bytes that answer a Fill, End, or Failed. Room is a bug: this stream
+    /// only reads.
+    Stream(Up),
 
-    /// The real named lower terminal, observed even after local failure or Close
-    /// and before physical Closed (tls.md, 3.6; lib.md, 7.1).
-    Output(
-        /// Resource owner's actual named terminal moved to TLS; a queued winner
-        /// settles its exact reservation once (tls.md, 3.6; lib.md, 7.1).
-        OutputUp,
-    ),
+    /// The terminal of a right below, also after a failure or Close, before
+    /// Closed.
+    Output(OutputUp),
 
-    /// Actual physical IO Closed. All admitted lower output requests must have
-    /// settled; pending upper output is cancelled before lifecycle termination.
-    /// The bridge checks resource generation (tls.md, 3.6).
+    /// The owner closed the stream below, after every right below settled.
+    /// A pending right above is cancelled first. The owner checks that the
+    /// closure is for this client's stream.
     Closed,
 }
 
-/// Maximum genuine Ready plus output Failed, plaintext Failed and TLS Failed;
-/// below at most a withdrawal/Send/next independent Room (tls.md, 3.6).
+/// Above, Ready, an output failure, a stream failure and a client failure.
+/// Below, a withdrawal or Send, then the next output right.
 pub const UP_MAX_OUT: MaxOut = MaxOut { above: 4, below: 3 };
 
-/// Pending output terminal plus plaintext/TLS failure; below at most read
-/// withdrawal, actual `close_notify` Send and Finish (tls.md, 3.6).
+/// Above, a pending output terminal, a stream failure and a client failure.
+/// Below, a withdrawal, `close_notify` sent and Finish.
 pub const DOWN_MAX_OUT: MaxOut = MaxOut { above: 3, below: 3 };
 
-/// Ciphertext reservation includes the whole bounded owed-control prefix and
-/// the original encryption/key-update allowance (tls.md, 3.6; lib.md, 7.1).
+/// The room below for the plaintext's records and everything TLS may owe
+/// before them, within FLIGHT.
 #[must_use]
 pub fn room_for(plaintext: u32) -> Option<u32> {
     super::room_for(plaintext)?.checked_add(FLIGHT)
 }
 
-/// Checked startup output cap, with one actual Send slot, required below this
-/// native client. Classic `largest_room` is unchanged (tls.md, 3.6).
+/// The configured output cap needed below, for `Limits::send`.
 #[must_use]
 pub fn largest_room(limits: &Limits) -> Option<u32> {
     Some(room_for(limits.send)?.max(FLIGHT))
 }
 
-/// Native client value, buffers, rustls and transient work, including complete
-/// owed-plus-encrypted allocation before emission or an error. Incoming Bytes
-/// is dropped before process/encrypt, so work is their checked maximum. Caller
-/// input and emitted boxes/queues remain separately owned (tls.md, 3.6).
+/// The classic worst case, with its delivery replaced by the larger of
+/// `LARGEST_READ` and the room below, plus this client's size. The bytes read
+/// are dropped before deciphering or sealing; allocations that overlap
+/// are counted as their sum. The caller counts its plaintext and queues.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     let work = u64::from(largest_room(limits)?.max(LARGEST_READ));
@@ -215,26 +172,22 @@ enum LowerOutput {
     Granted { right: Token, bytes: u32 },
 }
 
-/// Configured receiving bounds of the concrete ciphertext endpoint. The owner
-/// supplies these before construction; dynamic available credit is independent
-/// (tls.md, 3.6; lib.md, 7.1).
+/// The configured caps of the stream below, checked before construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LowerLimits {
-    /// Maximum classic Fill accepted below, at least `LARGEST_READ` (tls.md, 3.6).
+    /// The largest Fill accepted below, at least `LARGEST_READ`.
     pub read: u32,
 
-    /// Total native output byte cap, at least `largest_room`(limits); actual
-    /// flight and queued boxes both consume it (tls.md, 3.6; lib.md, 7.1).
+    /// The output byte cap, at least `largest_room(limits)`. It counts
+    /// boxes queued and in flight.
     pub output: u32,
 
-    /// Genuine queued Send slots, at least one, beside one IO flight/stalled
-    /// Send. This is the configured N, not current free slots (tls.md, 3.6).
+    /// Queued Send slots, at least one beside the one in flight or stalled.
     pub sends: u32,
 }
 
-/// Explicitly selected native connection. Four independent bounded obligations
-/// share the same session/held engine; no output history or hidden IO exists.
-/// Its value is included in `worst_case` (tls.md, 3.6; lib.md, 7.1).
+/// A client with four independent cells and the classic client's engine.
+/// Its size is counted by `worst_case`.
 #[derive(Debug)]
 pub struct Client {
     state: State,
@@ -242,7 +195,7 @@ pub struct Client {
     upper_read: Read,
     reading: Reading,
     lower_read: Option<Read>,
-    // One possible already-emitted Fill winner; withdrawal itself needs no acknowledgement.
+    // A withdrawn Fill may already be answered; withdrawal needs no answer.
     withdrawn_read: Option<Read>,
     record: Record,
     lower_ended: bool,
@@ -252,11 +205,9 @@ pub struct Client {
 }
 
 impl Client {
-    /// Refuse incompatible configured read, output byte or queued-Send caps
-    /// before any allocation/effect. At least one real queued Send slot and
-    /// `LARGEST_READ` intake are checked independently of the byte envelope;
-    /// dynamic unavailable credit remains an admitted waiting right, not startup
-    /// refusal (tls.md, 3.6; lib.md, 7.1).
+    /// Refuse caps below that cannot honour the read, output bytes or queued
+    /// Send slots, before allocating or cloning. Credit short at a given
+    /// moment leaves an admitted right waiting.
     #[must_use]
     pub fn new(config: &Config, name: Name, limits: &Limits, lower: &LowerLimits) -> Option<Client> {
         worst_case(limits)?;
@@ -282,8 +233,7 @@ impl Client {
         })
     }
 
-    /// State-only deadline category; read and output can remain unanswered
-    /// independently. The owner arms timers (tls.md, 3.6).
+    /// What it waits for: a function of its state. The owner arms timers.
     #[must_use]
     pub fn waiting(&self) -> Waiting {
         match &self.state {
@@ -311,8 +261,8 @@ impl Client {
     }
 }
 
-/// Consume one actual ciphertext observation. Caller reserves `UP_MAX_OUT` and
-/// drains every real lower right even after failure/closing (tls.md, 3.6).
+/// An event from below. The caller reserves `UP_MAX_OUT` and drains
+/// every right below, also after failure or closing.
 pub fn up(
     client: &mut Client,
     _env: &Env<Limits>,
@@ -328,9 +278,8 @@ pub fn up(
     settle(client, above, below);
 }
 
-/// Consume an upper request with injected wall time. Caller reserves `DOWN_MAX_OUT`;
-/// identity precedes payload checks, and native Close after `TransportClosed` is
-/// inert before classic dispatch (tls.md, 3.6; lib.md, 7.1).
+/// A request from above. The caller reserves `DOWN_MAX_OUT`. Identity
+/// is checked before size; Close after `TransportClosed` does nothing.
 pub fn down(
     client: &mut Client,
     env: &Env<Limits>,
@@ -441,7 +390,7 @@ fn received(client: &mut Client, bytes: Box<[u8]>, above: &mut Queue<Event>, bel
     match &client.state {
         State::Open(open) if open.handshake == Handshake::Done && client.reading == Reading::Withdrawn => {
             assert!(client.lower_read.is_none(), "ready withdrawal leaves no active ciphertext Fill");
-            let read = client.withdrawn_read.take().expect("queued Bytes answers an actual withdrawn Fill");
+            let read = client.withdrawn_read.take().expect("queued Bytes answers an withdrawn Fill");
             assert!(read == Read::Fill(super::fill(&bytes)), "withdrawn ciphertext Fill is answered exactly");
             return;
         }
@@ -452,7 +401,7 @@ fn received(client: &mut Client, bytes: Box<[u8]>, above: &mut Queue<Event>, bel
             return;
         }
     }
-    let read = client.lower_read.take().expect("actual Bytes answers native ciphertext Fill");
+    let read = client.lower_read.take().expect("Bytes answers native ciphertext Fill");
     assert!(read == Read::Fill(super::fill(&bytes)), "ciphertext Fill is answered exactly");
     client.buffers.records.append(&bytes).expect("native read fits retained records");
     client.record = match client.record {
@@ -585,7 +534,7 @@ fn send_plain(client: &mut Client, plain: Box<[u8]>, above: &mut Queue<Event>, b
     let lower = mem::replace(&mut client.lower_output, LowerOutput::Idle);
     let (right, bytes) = match lower {
         LowerOutput::Granted { right, bytes } => (right, bytes),
-        LowerOutput::Idle | LowerOutput::Wanted { .. } => unreachable!("upper grant retains actual lower backing"),
+        LowerOutput::Idle | LowerOutput::Wanted { .. } => unreachable!("upper grant retains lower backing"),
     };
     let open = match &mut client.state {
         State::Open(open) => open,
@@ -636,9 +585,9 @@ fn output_up(
 ) {
     let (expected, bytes, purpose, cancellation) = match client.lower_output {
         LowerOutput::Wanted { right, bytes, purpose, cancellation } => (right, bytes, purpose, cancellation),
-        LowerOutput::Idle | LowerOutput::Granted { .. } => unreachable!("one actual terminal for admitted lower right"),
+        LowerOutput::Idle | LowerOutput::Granted { .. } => unreachable!("one terminal for admitted lower right"),
     };
-    assert!(right == expected, "actual lower token matches the admitted obligation");
+    assert!(right == expected, "lower token matches the admitted obligation");
     client.lower_output = LowerOutput::Idle;
     match outcome {
         OutputOutcome::Granted => {
@@ -705,7 +654,7 @@ fn fail(client: &mut Client, error: Error, above: &mut Queue<Event>, below: &mut
 }
 
 fn transport_closed(client: &mut Client, above: &mut Queue<Event>) {
-    assert!(!lower_wanted(client.lower_output), "actual lower terminal precedes physical Closed");
+    assert!(!lower_wanted(client.lower_output), "lower terminal precedes physical Closed");
     client.lower_output = LowerOutput::Idle;
     client.lower_read = None;
     client.withdrawn_read = None;

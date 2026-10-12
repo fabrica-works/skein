@@ -45,7 +45,7 @@
 //! included; [`LARGEST_READ`] and [`largest_room`] are what whoever stacks
 //! it checks against the caps of the stream below at startup.
 
-/// Explicit native output on both TLS boundaries (tls.md, 3.6; lib.md, 7.1).
+/// The client with independent output on both sides (tls.md, 3.6; lib.md, 7.1).
 pub mod native;
 
 mod above;
@@ -142,7 +142,8 @@ pub enum Waiting {
     Bytes,
     /// For the side above: to demand, send, finish or close.
     Above,
-    /// For the side above to close it: it failed.
+    /// For the side above to close it: it failed; on the native face, also
+    /// while a close waits for the owner's `Closed`, and after `TransportClosing`.
     Close,
     /// For nothing: it is closed.
     Nothing,
