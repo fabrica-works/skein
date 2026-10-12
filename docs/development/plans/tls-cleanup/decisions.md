@@ -103,6 +103,17 @@ supervisor's rulings during the run, appended below them.
     implementation choice: the README's rules now say which types are
     boundary types in this plan, so that the next such choice is made
     and reported, not asked.
+17. **Edits beyond an increment's Files** (the supervisor, 2026-10-12;
+    plan defect, blocked report of 2026-10-12T00:41:10Z). 1.2's Proof
+    asks for `cargo doc` "with no warning", and it warns of four links
+    to private items outside 1.2's Files: `worst_case`'s doc to
+    `RUSTLS`, `HANDSHAKE` and `MAX_HANDSHAKE` (`client/limits.rs:125-127`,
+    since 1.1 made `MAX_HANDSHAKE` `pub(crate)` and moved them) and
+    `Config`'s to `Config::at` (`config.rs:38`). They become plain code.
+    The second block of this kind, after ruling 13: the README's rules
+    now let a session make such an edit, within its own files, at most
+    20 lines, changing no test's expected value or name, and name it in
+    the commit body.
 
 ## For the user
 

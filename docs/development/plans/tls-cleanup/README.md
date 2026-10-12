@@ -81,6 +81,14 @@ are done.
   the session's files (README, "Files are owned by session") is not one:
   changing its fields is an implementation choice (development.md,
   8.2), said in the commit body, and never a question.
+- **Edits beyond an increment's Files** (`decisions.md`, ruling 17). An
+  edit outside the files or lines an increment's Files names is an
+  implementation choice, made without asking and named in the commit
+  body, when all four hold: the increment's own change, its Proof or the
+  gate needs it; it is in the session's own files (README, "Files are
+  owned by session"); it is at most 20 lines; and it changes no test's
+  expected value or name. Anything else outside the Files is still a
+  question (development.md, 8.7).
 
 ## Live services
 

@@ -89,7 +89,9 @@ Needs: `client.rs` split into its modules, `client/error.rs` among them
 Files: `client/native.rs` (docs and messages only), `lib.rs`,
   `client.rs` (its `pub mod native` doc), `client/error.rs`
   (`Error::Other`), the `Waiting::Close` doc, `config.rs:152` and the
-  `expect` messages of `config.rs:205-232`.
+  `expect` messages of `config.rs:205-232`; the four private links
+  `cargo doc` warns of, in `client/limits.rs:125-127` and
+  `config.rs:38`, become plain code (ruling 17).
 Shape:
   - `native.rs`'s module doc: at most 25 lines, in tls.md, 3.6's words:
     what the face is for, its four cells, who closes the stream below,
