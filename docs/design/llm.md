@@ -114,8 +114,16 @@ which completed blocks are delivered. A part's index within an item, a
 message's content part or a reasoning summary's part, is not an output
 item: parts are streamed as deltas and their bytes are within the answer,
 so no count bounds them, and a reasoning summary has as many parts as the
-model writes. Tool arguments are incomplete JSON
-until the whole call block arrives. A local size limit is a failure, not a
+model writes. A run of consecutive reasoning items is one block: Codex
+writes a reasoning item for each segment of its reasoning, many before one
+call, and Anthropic may write thinking blocks back to back. The block
+holds the run's items in order, each as it came, and replays them as they
+came, so a completion's blocks follow its calls and texts, not its
+reasoning's segments. Each item is within the reasoning limit; the run's
+items together are within the completion's share of reasoning, output
+items × reasoning, which the receiving reservation already holds, and
+their replay values within one block's retained tokens (section 4.2). Tool arguments are incomplete JSON until the whole call
+block arrives. A local size limit is a failure, not a
 provider token-limit stop. A tool call past the input limit is the one
 exception: a per-call outcome (section 2.4). A Codex reasoning item past
 its limit is dropped instead only where the owner opted in (section 4.6).
@@ -370,7 +378,7 @@ derivation's own:
 | input | tool payload × `ESCAPE` | one call's argument text as received; past it, an oversize block (2.4) |
 | reasoning | reasoning item | one reasoning item: Codex's encrypted content, Anthropic's thinking and signature |
 | metadata | the dialect's constant | one block's other replay metadata: item IDs, phase |
-| output items | 2 × calls per response + 2 | blocks in one completion: each call with a reasoning item before it, a text and a refusal. A part's index within an item is not one (section 2) |
+| output items | 2 × calls per response + 2 | blocks in one completion: each call with a reasoning block before it, a text and a refusal. A reasoning block is a run of consecutive reasoning items, and a part's index within an item is not an item (section 2) |
 | strings | the larger of answer and reasoning | the longest single string the decoder keeps |
 | retained tokens | the dialect's fixed fields + reasoning | tokens kept from one event: an opaque value takes at most a token per byte |
 | retained text | the largest of answer, input and reasoning, + the dialect's constant for its short kept fields | bytes of text kept from one event, unescaped: the collector's `text` |
@@ -639,6 +647,13 @@ unless marked:
 - **Parts:** a Codex reasoning summary of more parts than output items,
   and a message of more content parts, complete, their deltas forwarded
   with their indexes, under limits whose output items are two.
+- **Reasoning runs:** under limits whose output items are two, a Codex
+  completion of more reasoning items than that before its final text,
+  and one of more reasoning items than output items before one call,
+  complete with one reasoning block per run; each block replays its
+  items in order, byte for byte; an Anthropic completion of thinking
+  blocks back to back does the same; a run whose items pass the
+  completion's share of reasoning fails as `Limit`, naming it.
 - **Typed failures:** each limit, at its edge and one over, names itself
   and its bound; a non-JSON error body, or JSON of another shape, carries
   its status and its own clipped text as the detail; each deadline's

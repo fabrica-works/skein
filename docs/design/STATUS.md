@@ -39,7 +39,7 @@ Section 2 names an increment of smith's reliability plan as
 | `codec.md` | partly | 3–4: `secret N` (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
-| `llm.md` | partly | 2, 4.2: a part's index not bounded as an output item (smith's reliability plan, a step its supervisor names). 6: Codex routing state, WebSocket: not planned |
+| `llm.md` | partly | 2, 4.2: a run of consecutive reasoning items as one block (smith's reliability plan, a step its supervisor names). 6: Codex routing state, WebSocket: not planned |
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
 | `fake-llm.md` | partly | 7: providers' cache granularity: not planned |
 | `oauth.md` | partly | 6.4: a record dropped when its refresh fails as sign in again (jig's jig-protocol); 7: IPv6 loopback, device authorization, a credential helper: not planned |
