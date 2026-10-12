@@ -4,7 +4,7 @@
 
 use crate::{Declaration, Enumeration, Field, Record, Schema, Type, emit_limits};
 
-fn rust_type(ty: &Type) -> String {
+pub(crate) fn rust_type(ty: &Type) -> String {
     match ty {
         Type::U8 => "u8".into(),
         Type::U16 => "u16".into(),
@@ -134,6 +134,7 @@ fn emit_limit_checks(schema: &Schema, out: &mut String) {
 }
 
 fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
+    let start = out.len();
     let grouped = grouped_bools(record);
     let bool_count = record.fields.iter().filter(|field| matches!(field.ty, Type::Bool)).count();
     out.push_str(&format!(
@@ -210,6 +211,9 @@ fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
         out.push_str("        Ok(())\n    }\n");
     }
     out.push_str("}\n\n");
+    let split = crate::emit_functions::split_record_functions(record, out.get(start..).expect("record source"));
+    out.truncate(start);
+    out.push_str(&split);
 }
 
 fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {

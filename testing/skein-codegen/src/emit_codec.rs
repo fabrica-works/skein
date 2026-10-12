@@ -231,6 +231,7 @@ fn decode_type(ty: &Type, schema: &Schema, bound_name: &str, path: &str, depth: 
 }
 
 fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
+    let start = out.len();
     if record.fields.is_empty() && !record.versioned {
         out.push_str(&format!("impl {} {{\n    /// Measures this empty record's wire encoding.\n    #[must_use]\n    pub fn measure(&self) -> u32 {{ 0_u32 }}\n\n", record.name));
     } else {
@@ -307,6 +308,9 @@ fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
     } else {
         out.push_str(&format!("        Self::new(limits, {}Parts {{ {members} }})\n    }}\n}}\n\n", record.name));
     }
+    let split = crate::emit_functions::split_record_functions(record, out.get(start..).expect("record source"));
+    out.truncate(start);
+    out.push_str(&split);
 }
 
 fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
