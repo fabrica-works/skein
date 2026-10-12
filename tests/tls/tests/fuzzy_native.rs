@@ -20,11 +20,11 @@ fn independent_reads_and_output_settle_under_short_reordered_io() {
     let mut completed = 0;
     for seed in 1..=8 {
         for version in [Version::Tls12, Version::Tls13] {
-            let observed = conversation(seed, config, Case::Late, version);
-            assert_eq!(observed.server_plaintext, b"ping");
-            assert_eq!(observed.reply, b"ok");
-            assert!(observed.behind_both_reads);
-            assert_eq!(observed.closed, 1);
+            let outcome = conversation(seed, config, Case::Late, version);
+            assert_eq!(outcome.server_plaintext, b"ping");
+            assert_eq!(outcome.reply, b"ok");
+            assert!(outcome.behind_both_reads);
+            assert_eq!(outcome.closed, 1);
             completed += 1;
         }
     }

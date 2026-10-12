@@ -33,13 +33,13 @@ pub enum Case {
     /// bytes still hold the full next envelope exactly.
     SlotsFull,
     /// io closes after `ClientHello` with an output request above before Ready.
-    /// No request below remains to emit Cancelled before physical Closed.
+    /// No request below remains to emit Cancelled before Closed from below.
     DirectClosed,
     /// io closes and cancels a blocked output right below. Native Close
     /// arrives before Closed from below.
     LocalCloseFirst,
-    /// The same lifecycle has physical Closed before queued native
-    /// close, which must be inert and emit no second `Client::Closed`.
+    /// Closed from below arrives before queued native Close, which must be
+    /// inert and emit no second `Client::Closed`.
     PhysicalCloseFirst,
 }
 
@@ -59,11 +59,11 @@ pub struct Outcome {
     /// Byte/slot backpressure witnessed before a retained kernel Send
     /// completion freed its ownership.
     pub blocked: bool,
-    /// Native local Close terminal count, after physical Closed.
+    /// Native Close terminal count, after Closed from below.
     pub closed: u32,
     /// Number of unsolicited cancellations from below.
     pub transport_closing: u32,
-    /// Physical termination count when no local Close won first.
+    /// Number of `TransportClosed` events when no native Close won first.
     pub transport_closed: u32,
 }
 
@@ -89,8 +89,8 @@ struct Progress {
 
 /// Distinct close witnesses in the bounded IO world.
 struct Close {
-    physical_close_queued: bool,
-    physical_close_issued: bool,
+    queued: bool,
+    issued: bool,
     native_close_queued: bool,
 }
 
@@ -177,7 +177,7 @@ impl Driver {
         requests.push(IoRequest::Listen { owner: LISTENER, addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)) });
         Self {
             evidence: Evidence { blocked: false, behind_both_reads: false },
-            close: Close { physical_close_queued: false, physical_close_issued: false, native_close_queued: false },
+            close: Close { queued: false, issued: false, native_close_queued: false },
             progress: Progress { ready: false, responded: false, server_closing: false },
             reads: Reads { upper_read: false, lower_read: false },
             resources: Resources { listener: false, client: false, server: false },
@@ -193,7 +193,7 @@ impl Driver {
                 &LIMITS,
                 &native::LowerLimits { read: io_limits.intake, output: io_limits.output, sends: io_limits.sends },
             )
-            .expect("compatible observed IO cap"),
+            .expect("compatible IO cap"),
             tls_env: Env { now: Time::ZERO, wall: pki::VALID, limits: LIMITS },
             above: Queue::with_capacity(native::UP_MAX_OUT.above),
             below: Queue::with_capacity(native::UP_MAX_OUT.below),
@@ -238,7 +238,7 @@ impl Driver {
     fn route(&mut self, maximum: skein_tls::MaxOut) {
         assert!(self.above.len() <= maximum.above && self.below.len() <= maximum.below);
         while let Some(request) = self.below.pop() {
-            let socket = self.client_socket.expect("observed client endpoint");
+            let socket = self.client_socket.expect("client endpoint");
             match request {
                 native::LowerRequest::Stream(down) => self.requests.push(IoRequest::Stream { stream: socket, down }),
                 native::LowerRequest::Output(down) => {
@@ -259,7 +259,7 @@ impl Driver {
                         {
                             assert_eq!(
                                 bytes.len(),
-                                usize::try_from(self.first_record).expect("observed record length"),
+                                usize::try_from(self.first_record).expect("record length"),
                                 "real one-byte encrypted record, no assumed owed control"
                             );
                             assert!(self.watch_bytes.replace(bytes.clone()).is_none());
@@ -268,7 +268,7 @@ impl Driver {
                     let direct_close = self.case == Case::DirectClosed && matches!(&down, OutputDown::Send { .. });
                     self.requests.push(IoRequest::Output { stream: socket, down });
                     if direct_close {
-                        self.queue_physical_close();
+                        self.queue_close();
                     }
                 }
             }
@@ -304,10 +304,10 @@ impl Driver {
                 assert_eq!(self.reply, b"ok");
                 self.close.native_close_queued = true;
                 self.tls_down(native::Request::Client(client::Request::Close));
-                self.queue_physical_close();
+                self.queue_close();
             }
             native::Event::Client(client::Event::Closed) => {
-                assert!(self.resources.client, "native local terminal follows observed physical Closed");
+                assert!(self.resources.client, "Closed answers native Close after io closed the client's socket");
                 self.closed += 1;
                 self.close_server();
             }
@@ -320,12 +320,12 @@ impl Driver {
                     }
                     Case::PhysicalCloseFirst => self.close.native_close_queued = true,
                     Case::Late | Case::ByteOneShort | Case::ByteExact | Case::SlotsFull | Case::DirectClosed => {
-                        panic!("unexpected physical cancellation")
+                        panic!("TransportClosing belongs to a closing case")
                     }
                 }
             }
             native::Event::TransportClosed => {
-                assert!(self.resources.client, "observed physical lifecycle");
+                assert!(self.resources.client, "TransportClosed after io closed the client's socket");
                 self.transport_closed += 1;
                 if self.close.native_close_queued || self.case == Case::DirectClosed {
                     self.tls_down(native::Request::Client(client::Request::Close));
@@ -346,13 +346,13 @@ impl Driver {
     }
 
     fn plain_terminal(&mut self, right: Token, outcome: OutputOutcome) {
-        assert_eq!(self.pending_upper.take(), Some(right), "observed exact upper right");
+        assert_eq!(self.pending_upper.take(), Some(right), "exact upper right");
         self.terminals.push((right, outcome));
         match outcome {
             OutputOutcome::Granted => {
                 assert!(
                     self.reads.upper_read && self.reads.lower_read && self.reply.is_empty(),
-                    "both observed reads still unanswered when plaintext grant wins"
+                    "both reads still unanswered when plaintext grant wins"
                 );
                 self.evidence.behind_both_reads = true;
                 self.next_plain += 1;
@@ -383,23 +383,23 @@ impl Driver {
             }
             OutputOutcome::Cancelled => assert!(
                 matches!(self.case, Case::DirectClosed | Case::LocalCloseFirst | Case::PhysicalCloseFirst),
-                "only observed lifecycle modes cancel pending upper"
+                "only lifecycle modes cancel pending upper"
             ),
             OutputOutcome::Failed(fault) => panic!("positive native output failed: {fault:?}"),
         }
     }
 
-    fn queue_physical_close(&mut self) {
-        if !self.close.physical_close_queued {
-            self.close.physical_close_queued = true;
-            self.requests.push(IoRequest::Close { entity: self.client_socket.expect("observed client resource") });
+    fn queue_close(&mut self) {
+        if !self.close.queued {
+            self.close.queued = true;
+            self.requests.push(IoRequest::Close { entity: self.client_socket.expect("client resource") });
         }
     }
 
     fn close_server(&mut self) {
         if !self.progress.server_closing {
             self.progress.server_closing = true;
-            self.requests.push(IoRequest::Close { entity: self.server_socket.expect("observed server resource") });
+            self.requests.push(IoRequest::Close { entity: self.server_socket.expect("server resource") });
         }
     }
 
@@ -438,11 +438,7 @@ impl Driver {
         };
         self.peer_body = !self.peer_body;
         self.peer.receive(bytes);
-        assert!(
-            self.peer.failed.is_none(),
-            "observed server authenticates native client's ciphertext: {:?}",
-            self.peer.failed
-        );
+        assert!(self.peer.failed.is_none(), "server authenticates native client's ciphertext: {:?}", self.peer.failed);
         if self.peer.received == b"ping" && !self.progress.responded {
             self.progress.responded = true;
             self.peer.write(b"ok");
@@ -470,7 +466,7 @@ impl Driver {
                 self.server_socket = Some(socket);
                 self.requests.push(IoRequest::Bind { socket, owner: SERVER });
                 self.peer_read(client::HEADER);
-                self.requests.push(IoRequest::Close { entity: self.listener.expect("observed listener") });
+                self.requests.push(IoRequest::Close { entity: self.listener.expect("listener") });
             }
             IoEvent::Connected { owner } => {
                 assert_eq!(owner, CLIENT);
@@ -491,7 +487,7 @@ impl Driver {
                     match up {
                         Up::Bytes(bytes) if !self.progress.server_closing => self.peer_bytes(&bytes),
                         Up::Bytes(_) | Up::End | Up::Failed(_) => {
-                            assert!(self.progress.server_closing || self.close.physical_close_queued);
+                            assert!(self.progress.server_closing || self.close.queued);
                         }
                         Up::Room => panic!("real server IO uses native output"),
                     }
@@ -500,13 +496,13 @@ impl Driver {
             IoEvent::Output { owner, up } => {
                 if owner == CLIENT {
                     let OutputUp::Settled { right, .. } = &up;
-                    let (expected, _) = self.client_output.take().expect("observed issued client IO output right");
-                    assert_eq!(*right, expected, "observed IO terminal settles its exact issued reservation");
+                    let (expected, _) = self.client_output.take().expect("issued client IO output right");
+                    assert_eq!(*right, expected, "IO terminal settles its exact issued reservation");
                     self.tls_up(native::LowerEvent::Output(up));
                 } else {
                     assert_eq!(owner, SERVER);
                     let OutputUp::Settled { right, outcome } = up;
-                    let (expected, cap) = self.peer_right.take().expect("observed pending server IO output");
+                    let (expected, cap) = self.peer_right.take().expect("pending server IO output");
                     assert_eq!(right, expected);
                     match outcome {
                         OutputOutcome::Granted => {
@@ -539,7 +535,7 @@ impl Driver {
             IoEvent::Failed { owner, error } => {
                 assert!(
                     owner == SERVER && self.progress.server_closing,
-                    "positive observed IO owner failed: {owner:?} {error:?}"
+                    "positive IO owner failed: {owner:?} {error:?}"
                 );
             }
             IoEvent::Spawned { .. } | IoEvent::Exited { .. } | IoEvent::Usage { .. } | IoEvent::Shutdown { .. } => {
@@ -554,11 +550,11 @@ impl Driver {
         if let Some(watch) = &self.watch_bytes {
             let count = self.submissions.len();
             for _ in 0..count {
-                let submission = self.submissions.pop().expect("bounded observed submissions");
+                let submission = self.submissions.pop().expect("bounded submissions");
                 if let Op::Send { bytes, .. } = &submission.kind
                     && bytes.as_ref() == watch.as_ref()
                 {
-                    assert!(self.watch_op.replace(submission.op).is_none(), "one observed ciphertext Send");
+                    assert!(self.watch_op.replace(submission.op).is_none(), "one ciphertext Send");
                 }
                 self.submissions.push(submission);
             }
@@ -570,12 +566,12 @@ impl Driver {
 
     fn release_pressure(&mut self) {
         if self.evidence.blocked
-            && self.close.physical_close_issued
+            && self.close.issued
             && matches!(self.case, Case::LocalCloseFirst | Case::PhysicalCloseFirst)
             && self.held.is_some()
         {
             self.released = true;
-            self.completions.push(self.held.take().expect("observed held winner after real IO Close admission"));
+            self.completions.push(self.held.take().expect("held winner after real IO Close admission"));
             return;
         }
         if self.held.is_some() {
@@ -593,22 +589,20 @@ impl Driver {
                 && self.client_output.is_some()
                 && !self.io.is_ready()
             {
-                let (_, asked) = self.client_output.expect("observed IO has consumed the pending ciphertext Room");
+                let (_, asked) = self.client_output.expect("IO has consumed the pending ciphertext Room");
                 assert_eq!(asked, native::room_for(LIMITS.send).expect("checked exact full envelope"));
                 match self.case {
                     Case::ByteOneShort | Case::SlotsFull | Case::LocalCloseFirst | Case::PhysicalCloseFirst => {
                         self.evidence.blocked = true;
                         if matches!(self.case, Case::LocalCloseFirst | Case::PhysicalCloseFirst) {
-                            self.queue_physical_close();
+                            self.queue_close();
                         }
                     }
                     Case::Late | Case::ByteExact | Case::DirectClosed => {}
                 }
-                if !matches!(self.case, Case::LocalCloseFirst | Case::PhysicalCloseFirst)
-                    || self.close.physical_close_issued
-                {
+                if !matches!(self.case, Case::LocalCloseFirst | Case::PhysicalCloseFirst) || self.close.issued {
                     self.released = true;
-                    self.completions.push(self.held.take().expect("observed held winner released"));
+                    self.completions.push(self.held.take().expect("held winner released"));
                 }
             } else if self.case == Case::ByteExact && self.next_plain == 2 {
                 self.released = true;
@@ -619,7 +613,7 @@ impl Driver {
 
     fn completion(&mut self, completion: Complete) {
         if !self.released && self.watch_op == Some(completion.op) {
-            assert!(self.held.replace(completion).is_none(), "one observed retained kernel winner");
+            assert!(self.held.replace(completion).is_none(), "one retained kernel winner");
             return;
         }
         let events = self.io_events.len();
@@ -633,8 +627,8 @@ impl Driver {
     }
 
     fn check_io(&self, events: u32, submissions: u32, maximum: skein_io::MaxOut) {
-        assert!(self.io_events.len() - events <= maximum.events, "observed IO event maximum");
-        assert!(self.submissions.len() - submissions <= maximum.submissions, "observed IO kernel maximum");
+        assert!(self.io_events.len() - events <= maximum.events, "IO event maximum");
+        assert!(self.submissions.len() - submissions <= maximum.submissions, "IO kernel maximum");
     }
 
     fn iterate(&mut self) {
@@ -665,12 +659,12 @@ impl Driver {
                 self.reads.lower_read = *read != Read::Nothing;
             }
             if matches!(&request, IoRequest::Close { entity } if Some(*entity) == self.client_socket) {
-                self.close.physical_close_issued = true;
+                self.close.issued = true;
             }
             if let IoRequest::Output { stream, down: OutputDown::Room { right, bytes } } = &request
                 && Some(*stream) == self.client_socket
             {
-                assert!(self.client_output.replace((*right, *bytes)).is_none(), "one observed issued IO output right");
+                assert!(self.client_output.replace((*right, *bytes)).is_none(), "one issued IO output right");
             }
             let events = self.io_events.len();
             let submissions = self.submissions.len();
@@ -725,8 +719,8 @@ pub fn conversation(seed: u64, mut config: Config, case: Case, version: Version)
                 Some(kernel) => Some(driver.io.next_deadline().map_or(kernel, |io| kernel.min(io))),
                 None => driver.io.next_deadline(),
             };
-            sim.advance_to(next.expect("unsettled observed TLS world retains real work"));
+            sim.advance_to(next.expect("unsettled TLS world retains real work"));
         }
     }
-    panic!("bounded observed IO/TLS conversation settles: {}", sim.render_trace());
+    panic!("bounded IO/TLS conversation settles: {}", sim.render_trace());
 }

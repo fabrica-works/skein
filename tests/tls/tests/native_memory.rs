@@ -231,14 +231,14 @@ impl Harness {
         }
         self.control();
         if !self.responded && self.peer_received().len() == self.request.len() {
-            assert_eq!(self.peer_received(), self.request, "observed authenticated maximal caller payload");
+            assert_eq!(self.peer_received(), self.request, "authenticated maximal caller payload");
             self.responded = true;
             if let Peer::Rustls(peer) = &mut self.peer {
                 peer.write(&self.response);
             } else {
                 let peer = self.peer.extracted_mut();
-                assert_eq!(peer.alerts, [[1, 100]], "one authenticated observed refusal before full plaintext");
-                assert_eq!(peer.records.first(), Some(&rustls::ContentType::Alert), "observed owed prefix first");
+                assert_eq!(peer.alerts, [[1, 100]], "one authenticated refusal before full plaintext");
+                assert_eq!(peer.records.first(), Some(&rustls::ContentType::Alert), "owed prefix first");
                 peer.write(&self.response);
             }
             let start = self.wire.len();
@@ -283,19 +283,19 @@ impl Harness {
             return;
         }
         if self.phase == Phase::Closing {
-            assert_eq!(self.output, Output::Idle, "all observed output obligations settled before physical Closed");
+            assert_eq!(self.output, Output::Idle, "all output obligations settled before Closed from below");
             self.up(native::LowerEvent::Closed);
             return;
         }
         if self.failed.is_some() || self.received.len() == self.response.len() {
             if self.failed.is_none() {
-                assert_eq!(self.received, self.response, "observed complete maximal intake payload");
+                assert_eq!(self.received, self.response, "complete maximal intake payload");
             }
             self.phase = Phase::Closing;
             self.down(native::Request::Client(client::Request::Close));
             return;
         }
-        assert_eq!(self.phase, Phase::Exchange, "observed handshake must retain lower work");
+        assert_eq!(self.phase, Phase::Exchange, "handshake must retain lower work");
         if !self.upper_read {
             self.ask_read();
             return;
@@ -406,7 +406,7 @@ fn payload_intake_and_ciphertext_fit_small_and_large_bounds() {
             let buffers = if limits == SMALL { 36_870 } else { 113_743 };
             assert!(measured.most > buffers);
             if limits == LARGE {
-                assert!(measured.sealed >= 40_000, "observed maximal encrypted caller payload: {measured:?}");
+                assert!(measured.sealed >= 40_000, "maximal encrypted caller payload: {measured:?}");
                 assert_eq!(
                     measured.sealed,
                     match versions {
@@ -414,7 +414,7 @@ fn payload_intake_and_ciphertext_fit_small_and_large_bounds() {
                         Versions::Tls12 => pki::TLS12_ALERT_RECORD + 40_000 + 3 * pki::TLS12_OVERHEAD,
                         Versions::Both => unreachable!("explicit version cases"),
                     },
-                    "complete observed requesting-control response plus maximal plaintext: {measured:?}"
+                    "complete requesting-control response plus maximal plaintext: {measured:?}"
                 );
             }
         }
@@ -426,7 +426,7 @@ fn big_chain_and_decrypt_error_release_the_clients_heap() {
     for versions in [Versions::Tls12, Versions::Tls13] {
         let measured = measure(LARGE, versions, Chain::Big, false);
         assert_eq!(measured.failed, None, "{measured:?}");
-        assert!(measured.most > 189_743, "observed double held decoded chain: {measured:?}");
+        assert!(measured.most > 189_743, "double held decoded chain: {measured:?}");
         assert_eq!(measure(LARGE, versions, Chain::Leaf, true).failed, Some(Error::Decrypt));
     }
 }

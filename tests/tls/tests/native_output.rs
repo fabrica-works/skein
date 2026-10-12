@@ -17,13 +17,13 @@ use skein_tls_world::{
 #[test]
 fn late_plaintext_sends_while_both_reads_wait() {
     for version in [Version::Tls12, Version::Tls13] {
-        let observed = conversation(801, Config { buffer: 7, ..Config::calm() }, Case::Late, version);
-        assert_eq!(observed.server_plaintext, b"ping");
-        assert_eq!(observed.reply, b"ok");
-        assert!(observed.behind_both_reads);
-        assert_eq!(observed.terminals.len(), 1);
-        assert_eq!(observed.terminals[0].1, OutputOutcome::Granted);
-        assert_eq!((observed.closed, observed.transport_closing, observed.transport_closed), (1, 0, 0));
+        let outcome = conversation(801, Config { buffer: 7, ..Config::calm() }, Case::Late, version);
+        assert_eq!(outcome.server_plaintext, b"ping");
+        assert_eq!(outcome.reply, b"ok");
+        assert!(outcome.behind_both_reads);
+        assert_eq!(outcome.terminals.len(), 1);
+        assert_eq!(outcome.terminals[0].1, OutputOutcome::Granted);
+        assert_eq!((outcome.closed, outcome.transport_closing, outcome.transport_closed), (1, 0, 0));
     }
 }
 
@@ -58,24 +58,24 @@ fn exact_ciphertext_credit_admits_the_output() {
 #[test]
 fn full_send_slots_wait_despite_available_byte_credit() {
     for version in [Version::Tls12, Version::Tls13] {
-        let observed = conversation(803, Config { buffer: 7, ..Config::calm() }, Case::SlotsFull, version);
-        assert_eq!(observed.server_plaintext, b"ping");
-        assert_eq!(observed.reply, b"ok");
-        assert!(observed.behind_both_reads && observed.blocked);
-        assert_eq!(observed.terminals.len(), 3);
-        assert!(observed.terminals.iter().all(|(_, terminal)| *terminal == OutputOutcome::Granted));
-        assert_eq!((observed.closed, observed.transport_closing, observed.transport_closed), (1, 0, 0));
+        let outcome = conversation(803, Config { buffer: 7, ..Config::calm() }, Case::SlotsFull, version);
+        assert_eq!(outcome.server_plaintext, b"ping");
+        assert_eq!(outcome.reply, b"ok");
+        assert!(outcome.behind_both_reads && outcome.blocked);
+        assert_eq!(outcome.terminals.len(), 3);
+        assert!(outcome.terminals.iter().all(|(_, terminal)| *terminal == OutputOutcome::Granted));
+        assert_eq!((outcome.closed, outcome.transport_closing, outcome.transport_closed), (1, 0, 0));
     }
 }
 
 #[test]
 fn io_closed_before_ready_cancels_the_output_above() {
     for version in [Version::Tls12, Version::Tls13] {
-        let observed = conversation(804, Config { buffer: 7, ..Config::calm() }, Case::DirectClosed, version);
-        assert!(observed.server_plaintext.is_empty() && observed.reply.is_empty());
-        assert_eq!(observed.terminals.len(), 1);
-        assert_eq!(observed.terminals[0].1, OutputOutcome::Cancelled);
-        assert_eq!((observed.closed, observed.transport_closing, observed.transport_closed), (0, 0, 1));
+        let outcome = conversation(804, Config { buffer: 7, ..Config::calm() }, Case::DirectClosed, version);
+        assert!(outcome.server_plaintext.is_empty() && outcome.reply.is_empty());
+        assert_eq!(outcome.terminals.len(), 1);
+        assert_eq!(outcome.terminals[0].1, OutputOutcome::Cancelled);
+        assert_eq!((outcome.closed, outcome.transport_closing, outcome.transport_closed), (0, 0, 1));
     }
 }
 
@@ -94,7 +94,7 @@ fn local_close_answers_once_after_io_cancellation() {
 }
 
 #[test]
-fn physical_close_answers_once_after_io_cancellation() {
+fn close_answers_once_after_io_cancellation() {
     for version in [Version::Tls12, Version::Tls13] {
         let result = conversation(805, Config { buffer: 7, ..Config::calm() }, Case::PhysicalCloseFirst, version);
         assert!(result.reply.is_empty());
@@ -113,7 +113,7 @@ fn queued_grant_releases_after_cancellation_before_the_next_right() {
     let first = Token::new(50);
     let next = Token::new(51);
     assert!(pair.down(native::Request::Output(OutputDown::Room { right: first, bytes: 16 })).is_empty());
-    let queued = pair.answer().expect("observed emitted lower winner");
+    let queued = pair.answer().expect("emitted lower winner");
     assert!(matches!(queued, native::LowerEvent::Output(OutputUp::Settled { outcome: OutputOutcome::Granted, .. })));
     assert_eq!(
         pair.down(native::Request::Output(OutputDown::Cancel { right: first })),
@@ -179,11 +179,7 @@ fn key_updates_precede_plaintext_under_the_grant_held() {
     }
     let payload = vec![b'x'; 16];
     assert!(pair.down(native::Request::Output(OutputDown::Send { right, bytes: payload.clone().into() })).is_empty());
-    assert_eq!(
-        pair.peer.rustls().received,
-        payload,
-        "every observed owed key-update response precedes authenticated data"
-    );
+    assert_eq!(pair.peer.rustls().received, payload, "every owed key-update response precedes authenticated data");
     assert_eq!(
         usize::try_from(pair.last_send().expect("deferred reply plus maximum16 Send").1).expect("record size"),
         pki::KEY_UPDATE_RECORD + 16 + pki::TLS13_OVERHEAD,
@@ -206,7 +202,7 @@ fn empty_send_and_release_each_spend_the_grant() {
     assert!(pair.down(native::Request::Output(OutputDown::Room { right, bytes: 4 })).is_empty());
     assert_eq!(pair.settle(), [native::Event::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted })]);
     assert!(pair.down(native::Request::Output(OutputDown::Send { right, bytes: Box::from(*b"ping") })).is_empty());
-    assert_eq!(pair.peer.rustls().received, b"ping", "both spent real slots admit the next observed Send");
+    assert_eq!(pair.peer.rustls().received, b"ping", "both spent real slots admit the next Send");
 }
 
 #[test]
@@ -224,16 +220,16 @@ fn owed_output_drains_in_order_across_an_older_grant() {
     pair.peer.extracted_mut().hello_request();
     pair.pull();
     for _ in 0..2 {
-        let observed = pair.answer().expect("observed HelloRequest header/body");
-        assert!(matches!(observed, native::LowerEvent::Stream(_)));
-        assert!(pair.up(observed).is_empty());
+        let event = pair.answer().expect("HelloRequest header/body");
+        assert!(matches!(event, native::LowerEvent::Stream(_)));
+        assert!(pair.up(event).is_empty());
     }
-    let original = pair.output_bytes().expect("observed TLS-owned refusal reservation");
+    let original = pair.output_bytes().expect("TLS-owned refusal reservation");
     assert_eq!(usize::try_from(original).expect("record size"), pki::TLS12_ALERT_RECORD);
-    let winner = pair.answer().expect("observed older full output grant emitted by proxy");
+    let winner = pair.answer().expect("older full output grant emitted by proxy");
     let native::LowerEvent::Output(OutputUp::Settled { right: first, outcome: OutputOutcome::Granted }) = &winner
     else {
-        panic!("observed queued winner")
+        panic!("queued winner")
     };
     let first = *first;
     assert!(pair.close().is_empty());
@@ -241,18 +237,18 @@ fn owed_output_drains_in_order_across_an_older_grant() {
     assert_eq!(pair.last_send(), Some((first, original)), "fitting ordered prefix spends original full grant");
     assert_eq!(pair.peer.extracted().alerts, [[1, 100]], "authenticated warning refusal first");
     assert_eq!(pair.output_bytes(), Some(original), "exact retained close suffix needs a distinct right");
-    assert!(pair.settle().is_empty(), "draining ciphertext alone cannot impersonate physical Closed");
-    let (second, suffix) = pair.last_send().expect("observed close suffix Send");
+    assert!(pair.settle().is_empty(), "draining TLS output still waits for Closed from below");
+    let (second, suffix) = pair.last_send().expect("close suffix Send");
     assert_ne!(second, first, "checked distinct lower generation");
     assert_eq!(suffix, original, "whole ordered suffix, no lost control bytes");
     let peer = pair.peer.extracted();
-    assert_eq!(peer.alerts, [[1, 100], [1, 0]], "observed warning then observed close_notify authenticate in order");
+    assert_eq!(peer.alerts, [[1, 100], [1, 0]], "warning then close_notify authenticate in order");
     assert_eq!(peer.records, [ContentType::Alert, ContentType::Alert]);
-    assert!(peer.received.is_empty(), "no invented data from two observed control records");
+    assert!(peer.received.is_empty(), "no invented data from two control records");
     assert_eq!(
         pair.up(native::LowerEvent::Closed),
         [native::Event::Client(client::Event::Closed)],
-        "bounded proxy lifetime terminates after both settled Sends; observed IO closure tested separately"
+        "Closed answers Close after both Sends settle"
     );
 }
 
@@ -270,7 +266,7 @@ fn tls12_refusal_precedes_plaintext_under_the_grant_held() {
     pair.peer.extracted_mut().hello_request();
     pair.pull();
     assert!(pair.settle().is_empty(), "refusal neither answers the read nor consumes backed upper grant");
-    assert_eq!(pair.last_send(), before, "owed warning stays held behind the observed upper grant");
+    assert_eq!(pair.last_send(), before, "owed warning stays held behind the upper grant");
     assert!(
         pair.down(native::Request::Output(OutputDown::Send { right: upper, bytes: Box::from([b'x'; 16]) })).is_empty()
     );
@@ -281,7 +277,7 @@ fn tls12_refusal_precedes_plaintext_under_the_grant_held() {
     let peer = pair.peer.extracted();
     assert_eq!(peer.alerts, [[1, 100]]);
     assert_eq!(peer.records, [ContentType::Alert, ContentType::ApplicationData], "complete prefix precedes data");
-    assert_eq!(peer.received, [b'x'; 16], "full plaintext authenticates after observed owed warning");
+    assert_eq!(peer.received, [b'x'; 16], "full plaintext authenticates after owed warning");
 }
 
 #[test]
@@ -385,7 +381,7 @@ fn withdrawn_header_drops_before_finish() {
         assert!(pair.read.is_none() && pair.output_bytes().is_none());
         assert!(pair.close().is_empty());
         assert_eq!(pair.up(native::LowerEvent::Closed), [native::Event::Client(client::Event::Closed)]);
-        assert!(pair.settle().is_empty(), "physical Closed has no second terminal");
+        assert!(pair.settle().is_empty(), "no second terminal after Closed from below");
     }
 }
 
@@ -407,7 +403,7 @@ fn withdrawn_header_drops_during_flush() {
         assert!(pair.read.is_none() && pair.output_bytes().is_none());
         assert!(pair.close().is_empty());
         assert_eq!(pair.up(native::LowerEvent::Closed), [native::Event::Client(client::Event::Closed)]);
-        assert!(pair.settle().is_empty(), "physical Closed has no second terminal");
+        assert!(pair.settle().is_empty(), "no second terminal after Closed from below");
     }
 }
 
@@ -431,7 +427,7 @@ fn withdrawn_header_drops_after_finish() {
         assert!(pair.read.is_none() && pair.output_bytes().is_none());
         assert!(pair.close().is_empty());
         assert_eq!(pair.up(native::LowerEvent::Closed), [native::Event::Client(client::Event::Closed)]);
-        assert!(pair.settle().is_empty(), "physical Closed has no second terminal");
+        assert!(pair.settle().is_empty(), "no second terminal after Closed from below");
     }
 }
 
@@ -452,7 +448,7 @@ fn withdrawn_body_drops_before_finish() {
         assert!(pair.read.is_none() && pair.output_bytes().is_none());
         assert!(pair.close().is_empty());
         assert_eq!(pair.up(native::LowerEvent::Closed), [native::Event::Client(client::Event::Closed)]);
-        assert!(pair.settle().is_empty(), "physical Closed has no second terminal");
+        assert!(pair.settle().is_empty(), "no second terminal after Closed from below");
     }
 }
 
@@ -474,7 +470,7 @@ fn withdrawn_body_drops_during_flush() {
         assert!(pair.read.is_none() && pair.output_bytes().is_none());
         assert!(pair.close().is_empty());
         assert_eq!(pair.up(native::LowerEvent::Closed), [native::Event::Client(client::Event::Closed)]);
-        assert!(pair.settle().is_empty(), "physical Closed has no second terminal");
+        assert!(pair.settle().is_empty(), "no second terminal after Closed from below");
     }
 }
 
@@ -498,7 +494,7 @@ fn withdrawn_body_drops_after_finish() {
         assert!(pair.read.is_none() && pair.output_bytes().is_none());
         assert!(pair.close().is_empty());
         assert_eq!(pair.up(native::LowerEvent::Closed), [native::Event::Client(client::Event::Closed)]);
-        assert!(pair.settle().is_empty(), "physical Closed has no second terminal");
+        assert!(pair.settle().is_empty(), "no second terminal after Closed from below");
     }
 }
 
@@ -513,7 +509,7 @@ fn withdrawal_during_handshake_keeps_engine_reads_until_ready() {
             Server::new(server.config()),
         );
         assert!(pair.down(native::Request::Client(client::Request::Handshake)).is_empty());
-        assert_eq!(pair.read, Some(Read::Fill(client::HEADER)), "observed handshake engine read");
+        assert_eq!(pair.read, Some(Read::Fill(client::HEADER)), "handshake engine read");
         assert!(pair.read(16).is_empty());
         assert!(pair.withdraw().is_empty());
         assert_eq!(

@@ -33,12 +33,12 @@ impl Tls12 {
     /// its real rx/tx sequences continue without reset.
     #[must_use]
     pub fn new(server: Server) -> Self {
-        assert!(!server.handshaking(), "observed completed peer before extracting keys");
+        assert!(!server.handshaking(), "completed peer before extracting keys");
         let secrets = server.into_secrets();
         let (sequence, ConnectionTrafficSecrets::Aes128Gcm { key, iv }) = secrets.rx else {
-            panic!("observed extractable TLS1.2 AES128-GCM receive keys")
+            panic!("extractable TLS1.2 AES128-GCM receive keys")
         };
-        let SupportedCipherSuite::Tls12(suite) = pki::EXTRACTABLE else { panic!("observed TLS1.2 suite") };
+        let SupportedCipherSuite::Tls12(suite) = pki::EXTRACTABLE else { panic!("TLS1.2 suite") };
         Self {
             sealer: pki::Sealer::new(secrets.tx),
             opener: suite.aead_alg.decrypter(key, &iv.as_ref()[..4]),
@@ -62,7 +62,7 @@ impl Tls12 {
     /// All recorded bytes came from the native engine.
     pub fn receive(&mut self, mut bytes: &[u8]) {
         while !bytes.is_empty() {
-            let [typ, 3, 3, _, _, rest @ ..] = bytes else { panic!("observed complete TLS1.2 header") };
+            let [typ, 3, 3, _, _, rest @ ..] = bytes else { panic!("complete TLS1.2 header") };
             let count = crate::records::length(bytes);
             assert!(count <= usize::try_from(client::MAX_BODY).expect("finite record"));
             let (body, remaining) = rest.split_at(count);
@@ -73,7 +73,7 @@ impl Tls12 {
                     InboundOpaqueMessage::new(ContentType::from(*typ), ProtocolVersion::TLSv1_2, &mut body),
                     self.sequence,
                 )
-                .expect("observed native ciphertext authenticates under real peer sequence");
+                .expect("native ciphertext authenticates under real peer sequence");
             self.sequence = self.sequence.checked_add(1).expect("bounded peer transcript");
             self.records.push(record.typ);
             if let ContentType::ApplicationData = record.typ {
@@ -82,7 +82,7 @@ impl Tls12 {
                 let [level, description] = record.payload else { panic!("authenticated two-byte TLS alert") };
                 self.alerts.push([*level, *description]);
             } else {
-                panic!("observed post-handshake data/refusal/close records only");
+                panic!("post-handshake data/refusal/close records only");
             }
             bytes = remaining;
         }

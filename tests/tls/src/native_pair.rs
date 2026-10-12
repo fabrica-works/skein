@@ -193,14 +193,14 @@ impl Pair {
         self.pull();
         assert_eq!(self.read, Some(Read::Fill(client::HEADER)));
         let header = self.answer().expect("real emitted Header winner");
-        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("observed Header box") };
+        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("Header box") };
         assert_eq!(bytes.len(), usize::try_from(client::HEADER).expect("Header"));
         let length = u32::try_from(records::length(bytes)).expect("bounded record");
         if body {
             assert!(self.up(header).is_empty(), "Header alone invents no upper answer");
             assert_eq!(self.read, Some(Read::Fill(length)));
             let winner = self.answer().expect("real emitted Body winner");
-            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("observed Body box") };
+            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("Body box") };
             assert_eq!(bytes.len(), usize::try_from(length).expect("bounded real Body"));
             assert!(self.read.is_none(), "Fill ownership moved to queued box");
             winner
@@ -216,30 +216,25 @@ impl Pair {
     pub fn queued_maximal_body(&mut self, versions: pki::Versions, ticket_records: usize) -> native::LowerEvent {
         let records = ticket_records.checked_add(1).expect("configured ticket prefix plus first data record");
         for prefix in 0..records {
-            let header = self.answer().expect("observed emitted Header before maximal Body");
-            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("observed Header Fill box") };
+            let header = self.answer().expect("emitted Header before maximal Body");
+            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("Header Fill box") };
             assert_eq!(bytes.len(), usize::try_from(client::HEADER).expect("Header"));
             let length = u32::try_from(records::length(bytes)).expect("bounded record");
             assert!(self.up(header).is_empty(), "Header cannot fabricate a plaintext or output answer");
-            assert_eq!(self.read, Some(Read::Fill(length)), "exact observed next Body Fill");
-            let winner = self.answer().expect("observed emitted Body Fill");
-            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("observed Body Fill box") };
+            assert_eq!(self.read, Some(Read::Fill(length)), "exact next Body Fill");
+            let winner = self.answer().expect("emitted Body Fill");
+            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("Body Fill box") };
             assert_eq!(bytes.len(), usize::try_from(length).expect("bounded Body"));
             if length >= client::MAX_PLAINTEXT {
                 if versions == pki::Versions::Tls13 {
-                    assert!(prefix > 0, "observed post-handshake ticket flight preceded the full peer data");
+                    assert!(prefix > 0, "post-handshake ticket flight preceded the full peer data");
                 }
                 return winner;
             }
-            assert_eq!(versions, pki::Versions::Tls13, "only the observed TLS13 ticket flight precedes maximal data");
-            assert!(
-                self.up(winner).is_empty(),
-                "observed ticket record is processed, never discarded or a short Fill answer"
-            );
+            assert_eq!(versions, pki::Versions::Tls13, "only the TLS13 ticket flight precedes maximal data");
+            assert!(self.up(winner).is_empty(), "ticket record is processed, never discarded or a short Fill answer");
         }
-        panic!(
-            "observed configured ticket flight followed by maximal40000 data must yield a maximum Body: {versions:?}"
-        );
+        panic!("configured ticket flight followed by maximal40000 data must yield a maximum Body: {versions:?}");
     }
 
     #[must_use]
@@ -276,7 +271,7 @@ impl Pair {
     pub fn up(&mut self, event: native::LowerEvent) -> Vec<native::Event> {
         if let native::LowerEvent::Stream(Up::Bytes(bytes)) = &event {
             assert_eq!(
-                Some(u32::try_from(bytes.len()).expect("bounded observed Fill winner")),
+                Some(u32::try_from(bytes.len()).expect("bounded Fill winner")),
                 self.queued_read.take(),
                 "only the proxy's  emitted exact Fill box is delivered"
             );
@@ -292,7 +287,7 @@ impl Pair {
         if let Some(Read::Fill(bytes)) = self.read
             && self.wire.len() >= usize::try_from(bytes).expect("bounded record")
         {
-            assert!(self.queued_read.replace(bytes).is_none(), "one observed queued Fill winner");
+            assert!(self.queued_read.replace(bytes).is_none(), "one queued Fill winner");
             self.read = None;
             let bytes: Vec<u8> = self.wire.drain(..usize::try_from(bytes).expect("bounded Fill")).collect();
             return Some(native::LowerEvent::Stream(Up::Bytes(bytes.into())));
@@ -363,7 +358,7 @@ impl Pair {
                 native::LowerRequest::Stream(Down::Demand { read: Read::Nothing, room: 0 }) => {
                     assert!(
                         self.read.take().is_some() || self.queued_read.is_some(),
-                        "withdraw only an observed live Fill or its already emitted winner"
+                        "withdraw only a live Fill or its already emitted winner"
                     );
                 }
                 native::LowerRequest::Stream(Down::Demand { read, room: 0 }) => {
@@ -384,12 +379,12 @@ impl Pair {
                 },
                 native::LowerRequest::Output(OutputDown::Send { right, bytes }) => {
                     let Output::Granted { right: granted, bytes: cap } = self.output else {
-                        panic!("observed backed native Send")
+                        panic!("backed native Send")
                     };
                     assert_eq!(right, granted);
                     assert!(bytes.len() <= usize::try_from(cap).expect("bounded ciphertext"));
                     self.output = Output::Idle;
-                    self.last_send = Some((right, u32::try_from(bytes.len()).expect("bounded observed ciphertext")));
+                    self.last_send = Some((right, u32::try_from(bytes.len()).expect("bounded ciphertext")));
                     match &mut self.peer {
                         Peer::Rustls(server) => server.receive(&bytes),
                         Peer::Extracted(server) => server.receive(&bytes),
@@ -397,7 +392,7 @@ impl Pair {
                     self.pull();
                 }
                 native::LowerRequest::Output(OutputDown::Release { right }) => {
-                    assert!(matches!(self.output, Output::Granted { right: observed, .. } if observed == right));
+                    assert!(matches!(self.output, Output::Granted { right: granted, .. } if granted == right));
                     self.output = Output::Idle;
                 }
             }
