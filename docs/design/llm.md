@@ -1,11 +1,11 @@
 # LLM calls
 
-Provisional, 2026-10-09. `skein-llm` is a reusable composition of HTTP,
-SSE and a provider's JSON dialect. It depends on `skein-lib`, `skein-http`
-and `skein-json`, and knows nothing of a service's domain, sockets,
-credentials store or tools. This is a composition crate, rather than a
-primitive protocol machine: the lib-only rule for the individual machines
-remains in force.
+Provisional, 2026-10-09, revised 2026-10-12. `skein-llm` is a reusable
+composition of HTTP, SSE and a provider's JSON dialect. It depends on
+`skein-lib`, `skein-http` and `skein-json`, and knows nothing of a
+service's domain, sockets, credentials store or tools. This is a
+composition crate, rather than a primitive protocol machine: the lib-only
+rule for the individual machines remains in force.
 
 Providers are OpenAI's ChatGPT/Codex subscription Responses route and Anthropic's
 OAuth subscription Messages route.
@@ -110,7 +110,11 @@ accepted call has one terminal: `Completed`, `Failed` or `Cancelled`.
 Completed blocks and deltas are separate events; completion includes all
 completed blocks in provider order, its stop reason and token usage.
 Delta indexes are the provider's output/content indexes, not the order in
-which completed blocks are delivered. Tool arguments are incomplete JSON
+which completed blocks are delivered. A part's index within an item, a
+message's content part or a reasoning summary's part, is not an output
+item: parts are streamed as deltas and their bytes are within the answer,
+so no count bounds them, and a reasoning summary has as many parts as the
+model writes. Tool arguments are incomplete JSON
 until the whole call block arrives. A local size limit is a failure, not a
 provider token-limit stop. A tool call past the input limit is the one
 exception: a per-call outcome (section 2.4). A Codex reasoning item past
@@ -366,7 +370,7 @@ derivation's own:
 | input | tool payload × `ESCAPE` | one call's argument text as received; past it, an oversize block (2.4) |
 | reasoning | reasoning item | one reasoning item: Codex's encrypted content, Anthropic's thinking and signature |
 | metadata | the dialect's constant | one block's other replay metadata: item IDs, phase |
-| output items | 2 × calls per response + 2 | blocks in one completion: each call with a reasoning item before it, a text and a refusal; also the content indexes |
+| output items | 2 × calls per response + 2 | blocks in one completion: each call with a reasoning item before it, a text and a refusal. A part's index within an item is not one (section 2) |
 | strings | the larger of answer and reasoning | the longest single string the decoder keeps |
 | retained tokens | the dialect's fixed fields + reasoning | tokens kept from one event: an opaque value takes at most a token per byte |
 | retained text | the largest of answer, input and reasoning, + the dialect's constant for its short kept fields | bytes of text kept from one event, unescaped: the collector's `text` |
@@ -632,6 +636,9 @@ unless marked:
   oversized call's size; a cut `tool_use` arrives as `Cut` and a history
   holding it is refused; the Codex reasoning opt-in drops an item at one
   byte over and fails without the opt-in.
+- **Parts:** a Codex reasoning summary of more parts than output items,
+  and a message of more content parts, complete, their deltas forwarded
+  with their indexes, under limits whose output items are two.
 - **Typed failures:** each limit, at its edge and one over, names itself
   and its bound; a non-JSON error body, or JSON of another shape, carries
   its status and its own clipped text as the detail; each deadline's
