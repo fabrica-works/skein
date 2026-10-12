@@ -2,7 +2,7 @@
 
 use super::{Client, Event, LowerEvent, LowerOutput, LowerRequest, Request, State, UpperOutput};
 use crate::Name;
-use crate::client::{self, Limits};
+use crate::client::{self, Limits, Waiting};
 use crate::tests::{LIMITS, config};
 use alloc::boxed::Box;
 use skein_lib::stream::{Down, OutputDown, OutputOutcome, OutputUp, Read, Up};
@@ -87,6 +87,20 @@ impl Machine {
 fn wanted(machine: &mut Machine, right: Token) {
     machine.down(Request::Output(OutputDown::Room { right, bytes: 1 }));
     assert!(machine.above.is_empty() && machine.below.is_empty(), "upper Wanted waits for real Ready");
+}
+
+#[test]
+fn a_fresh_native_client_waits_for_its_handshake() {
+    let machine = Machine::new();
+    assert_eq!(machine.client.waiting(), Waiting::Handshake);
+}
+
+#[test]
+fn a_transport_closing_client_waits_for_its_close() {
+    let mut machine = Machine::new();
+    let right = machine.started();
+    machine.up(LowerEvent::Output(OutputUp::Settled { right, outcome: OutputOutcome::Cancelled }));
+    assert_eq!(machine.client.waiting(), Waiting::Close);
 }
 
 #[test]
