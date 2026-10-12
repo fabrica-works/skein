@@ -8,7 +8,7 @@ section 3.3).
 
 | Plan | State | Takes the design to | Where |
 |---|---|---|---|
-| jig's jig-protocol | active on carbon-forge since 2026-10-12 | io.md 3.5 (joined sockets), section 4 (in-process addresses), 5 (`OpenWrite`, `Cut`); kernel.md 6.1 (the `Write` open, `Truncate`); simulator.md 3.1 (a cut kept until synced); shell.md 5 (the cryptographic seed), 6.1 (`read_private_file`); lib.md 6 (`Secret`), 6.1 (`base64`), 8 (`CryptoRng`); codec.md 3–4 (`secret N`); oauth.md 6.4 (a record dropped on sign in again) | jig's `docs/development/plans/jig-protocol/` |
+| jig's jig-protocol | active on carbon-forge since 2026-10-12 | io.md 3.5 (joined sockets), section 4 (in-process addresses), 5 (`OpenWrite`, `Cut`); kernel.md 6.1 (the `Write` open, `Truncate`); simulator.md 3.1 (a cut kept until synced); shell.md 5 (the cryptographic seed), 6.1 (`read_private_file`); lib.md 6 (`Secret`), 6.1 (`base64`), 8 (`CryptoRng`); codec.md 3–4 (`secret N`, `boxed` variants), 6 (lints); oauth.md 6.4 (a record dropped on sign in again) | jig's `docs/development/plans/jig-protocol/` |
 | tls-cleanup | done 2026-10-12 | tls.md 3.6 (the code in its words, one engine for both faces); the crate's and its world's tests, one behaviour each | `docs/development/plans/tls-cleanup/` |
 | smith's reliability | active on debian-16gb-hel1-1 since 2026-10-12 | kernel.md 6.3, io.md 7 and shell.md 6.3: terminal modes (skein 02.6). Its first run (2026-10-09 to 2026-10-12) built io.md 5–7; kernel.md 6; simulator.md 3; shell.md 6, 12–13; tls.md 3.4; json.md 3, 5; http.md 4; llm.md 2, 4; llm-connection.md 4–7; fake-llm.md 2–3; oauth.md 1, 6; examples.md 3.3, 6; testing-strategy.md 6 | smith's `docs/development/plans/reliability/` |
 | smith-testing | done 2026-10-08 | simulator.md 3 (hosted spawns); llm-connection.md and oauth.md, plaintext to loopback; fake-llm.md 3 (peers on loopback); examples.md 6, 8; testing-strategy.md 2.8–2.9 | `~/src/rust/plans/smith-testing/` (not versioned) |
@@ -36,7 +36,7 @@ Section 2 names an increment of smith's reliability plan as
 | `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
 | `http.md` | partly | 2: the build for `wasm32-unknown-unknown`: not built; 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
 | `tls.md` | partly | 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
-| `codec.md` | partly | 3–4: `secret N` (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
+| `codec.md` | partly | 3–4: `secret N`, `boxed` variants; 6: generated files that pass the lints with no allowances (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 2, 4.2: a run of consecutive reasoning items as one block (smith's reliability plan, a step its supervisor names). 6: Codex routing state, WebSocket: not planned |

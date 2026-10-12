@@ -1,6 +1,6 @@
 # Codecs from schemas
 
-Provisional, 2026-10-06, revised 2026-10-10. How an application protocol
+Provisional, 2026-10-06, revised 2026-10-12. How an application protocol
 built on skein encodes its records. A schema says each record's fields
 and their bounds. skein's generator turns it into plain Rust codecs,
 limits, worst cases and golden bytes, and `skein-codec` holds the little
@@ -93,7 +93,7 @@ enum Form {
 | `list N T` | a `u32` count, then at most N items | `lib::List<T>` |
 | `option T` | a byte, 0 for none or 1 for some, then the value | `Option<T>` |
 | a record | its fields, in order | a struct |
-| an enumeration | a byte tag, the variants numbered in order from 0, then the variant's record, if it has one | an enum |
+| an enumeration | a byte tag, the variants numbered in order from 0, then the variant's record, if it has one | an enum; a `boxed` variant's record in a `Box` |
 
 - **Durations, never times.** A time means something only on its writer's
   clock. A peer turns a duration into a deadline on its own clock
@@ -102,6 +102,15 @@ enum Form {
   there are no defaults.
 - **A variant holds one record, or nothing.** The record seals its own
   bounds, which an enum variant's fields could not.
+- **A variant marked `boxed`** (`report: boxed Report`) holds its record
+  in a `Box`, and its bytes are the record's as they would be. Its owner
+  marks a variant whose record is much larger than its siblings', where
+  the workspace's lints report it (section 6): only the compiler knows a
+  type's size (section 4), so the generator never guesses one, and every
+  other variant's record stays inline, costing no allocation. Like
+  `secret`, the word changes the Rust type and not the bytes, so marking
+  a variant or unmarking it moves no golden bytes and no version
+  (section 5).
 - **A type uses only types declared before it.** The types form a tree, and
   decoding nests to a fixed depth.
 - **No imports.** A record of another family, such as a charter carried in
@@ -157,7 +166,8 @@ For each record and enumeration:
   - the most bytes it encodes to, which must fit a `u32` at the ceilings or
     the schema is refused;
   - the most heap its decoded value holds, as a function over the limits
-    and the sizes of the generated types, which only the compiler knows.
+    and the sizes of the generated types, which only the compiler knows,
+    a `boxed` variant's record counting its own size.
 
 ## 5. Versions
 
@@ -193,7 +203,10 @@ For each record and enumeration:
   fails, saying how to write them again, which the same test does when an
   environment variable asks it to.
 - **Generated files** say so in their first line. They are left out of
-  formatting, and pass the workspace's lints with no allowances.
+  formatting, and pass the workspace's lints with no allowances: the
+  generator writes what the lints accept (functions short enough, no
+  nesting to collapse), and an owner marks `boxed` an enum's variant the
+  lints find too large (section 3).
 - **Fuzzing,** in the fuzzy suite: each top-level record's decoder over
   arbitrary bytes. It never panics, and what decodes encodes back to the
   same bytes.
