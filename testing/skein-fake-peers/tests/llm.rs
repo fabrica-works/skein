@@ -4,8 +4,11 @@ use std::net::{Ipv4Addr, SocketAddr};
 use skein_fake_llm_domain::{self as domain, api};
 use skein_fake_llm_protocol::{documents, provider};
 use skein_fake_peers::{Limits, Transport, llm};
+use skein_io::kernel::{Done, Family, Op};
 use skein_lib::{Duration, Time};
 use skein_world::Host;
+
+mod support;
 
 fn limits() -> Limits {
     Limits {
@@ -106,4 +109,45 @@ fn fake_peer_refuses_non_loopback_configuration_before_effects() {
         make(SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), 80)), Transport::Plaintext),
         Err(skein_fake_peers::Error::Limits)
     ));
+}
+
+#[test]
+fn a_connection_past_the_peers_limit_is_rejected_and_the_peer_settles() {
+    let mut peer = make(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), Transport::Plaintext).unwrap();
+    let mut sim = skein_sim::Sim::new(23, skein_sim::Config::calm());
+    let (pid, client) = (sim.spawn_process(), sim.spawn_process());
+    for _ in 0..100 {
+        sim.reap(pid, peer.completions());
+        peer.iterate(sim.now(), sim.wall());
+        sim.submit(pid, peer.submissions());
+        if peer.address().is_some() {
+            break;
+        }
+        if let Some(next) = sim.next_due() {
+            sim.advance_to(next);
+        }
+    }
+    let Done::Fd(fd) = support::call(&mut sim, client, 1, Op::Socket { family: Family::Ipv4 }) else {
+        panic!("a socket returns its descriptor");
+    };
+    assert_eq!(support::call(&mut sim, client, 2, Op::Connect { fd, addr: peer.address().unwrap() }), Done::Nothing);
+    // The accept is already in flight when admission stops.
+    peer.shutdown();
+    for _ in 0..100 {
+        sim.reap(pid, peer.completions());
+        peer.iterate(sim.now(), sim.wall());
+        sim.submit(pid, peer.submissions());
+        if peer.is_empty() {
+            break;
+        }
+        if let Some(next) = sim.next_due() {
+            sim.advance_to(next);
+        }
+    }
+    assert!(peer.is_empty());
+    sim.assert_quiescent(pid);
+    sim.assert_no_open_fds(pid);
+    assert_eq!(support::call(&mut sim, client, 3, Op::Close { fd }), Done::Nothing);
+    sim.assert_quiescent(client);
+    sim.assert_no_open_fds(client);
 }

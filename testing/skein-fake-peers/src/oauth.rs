@@ -168,7 +168,7 @@ impl Peer {
                 if self.face.stopping
                     || self.connections.len() == usize::try_from(self.face.limits.connections).expect("u32 fits")
                 {
-                    self.face.requests.push(io::Request::Abort { entity: socket });
+                    self.face.requests.push(io::Request::Reject { socket });
                     return;
                 }
                 let owner = Token::new(self.next);
