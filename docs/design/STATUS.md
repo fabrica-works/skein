@@ -30,7 +30,7 @@ Section 2 names an increment of smith's reliability plan as
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 9: fixed files, 10: the ring's descriptor limit: not planned |
 | `io.md` | partly | 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut` (jig's jig-protocol); 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 3.1: a cut kept until synced (jig's jig-protocol); 5: the state digest: not planned |
-| `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
+| `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol), `directory_access` (smith's reliability plan, a step its supervisor names); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
 | `testing.md` | partly | 6: the gate's build for `wasm32-unknown-unknown`: not built; 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
 | `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |

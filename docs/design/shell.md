@@ -1,6 +1,6 @@
 # The shell kit
 
-Provisional, 2026-10-03, revised 2026-10-10. The design of
+Provisional, 2026-10-03, revised 2026-10-12. The design of
 `skein-shell`: what a service's `main` runs its loop on. The kernel (the
 io_uring backend of the kernel boundary, kernel.md), the clock and the
 seed; the loop itself, over a service's `Host`, and how it ends; what
@@ -190,6 +190,20 @@ Neither is read again: a process's identity does not change while it
 runs. A service never reads them itself, with `std::process` or a
 syscall of its own. It takes them from its shell.
 
+**Whether a directory can be written** is asked the same way, at
+startup only, for a service that confirms a directory something it runs
+will write, such as smith's writable caches. `directory_access(path)`
+answers, through the ring adapter, as the kernel answers for the
+process's effective user, its groups, the directory's ACLs and a
+read-only mount: whether `path` is a directory that user may write and
+search (`faccessat2` with `AT_EACCESS`, and `W_OK | X_OK`). It answers
+writable, absent, not a directory, or denied with the kernel's error. It
+creates nothing, opens nothing for writing and changes nothing. The
+answer is the kernel's at that moment: a confirmation for a person,
+never a guard, since what later writes there finds out for itself. A
+mode bit or an owner read from a stat is never taken in its place: it
+cannot see groups, ACLs or a read-only mount.
+
 ### 6.2 Trust roots
 
 A TLS client trusts the roots its configuration names, one of two:
@@ -346,7 +360,10 @@ and changes no code above io:
   other blocks, a certificate that does not parse, and malformed blocks
   of each kind (invalid base64, unterminated, ended by another label,
   with headers), each skipped and counted while the rest are taken; a
-  bundle past each bound refused; a DER file.
+  bundle past each bound refused; a DER file. `directory_access`: a
+  writable directory, an absent path, a file, a directory without write
+  permission for the user, each answered as such, and nothing created
+  or changed by any of them.
 - **Terminal modes,** end to end under a pseudo-terminal
   (testing-strategy.md, 2.9): input read a key at a time, the modes found
   again once the binary exits, and a size change heard.
