@@ -123,6 +123,15 @@ supervisor's rulings during the run, appended below them.
     this plan reaches them. The gate may be run once more; a second
     failure on the same tree is a question. A wall-clock bound in the
     gate is for the retrospective.
+19. **One retry for any timeout** (the supervisor, 2026-10-12;
+    infrastructure, blocked report of 2026-10-12T00:56:08Z). 2.2's gate
+    hit the focused suite's 15-second global timeout: 1,426 passed,
+    eight `skein-io` `tests::store` tests got `SIGTERM`, none failed an
+    assertion; the suite took 9.993 s in 1.1's gate. The second block of
+    the kind after ruling 18: ruling 18's retry now covers a gate that
+    fails only on a timeout, in tests outside the session's files
+    (README, "Rules"). What loads the machine during a gate is for the
+    hourly check.
 
 ## For the user
 

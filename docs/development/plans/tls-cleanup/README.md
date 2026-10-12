@@ -89,11 +89,13 @@ are done.
   owned by session"); it is at most 20 lines; and it changes no test's
   expected value or name. Anything else outside the Files is still a
   question (development.md, 8.7).
-- **One retry for the real loop's timeouts** (`decisions.md`, ruling 18).
-  When a gate fails only in `skein-world-tests::end_to_end`, with "the
-  real loop settles within 1000 ms", run the same `land` command once
-  more, without asking, and name the retry in the step's report. If it
-  fails a second time on the same tree, that is a question.
+- **One retry for a timeout** (`decisions.md`, rulings 18 and 19). When
+  a gate fails only on a timeout, in tests outside the session's own
+  files, run the same `land` command once more, without asking, and name
+  the retry in the step's report. A timeout is: nextest's `TIMEOUT`;
+  "Cancelling due to global timeout" and the `SIGTERM`s after it; or
+  "the real loop settles within 1000 ms". If it fails a second time on
+  the same tree, that is a question.
 
 ## Live services
 
