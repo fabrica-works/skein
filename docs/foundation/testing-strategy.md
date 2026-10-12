@@ -1,6 +1,6 @@
 # Testing strategy
 
-Provisional, 2026-10-03, revised 2026-10-09. How code in skein and in
+Provisional, 2026-10-03, revised 2026-10-12. How code in skein and in
 every service built on it is tested. Read it with programming-model.md,
 whose terms it uses, before writing or reviewing tests.
 
@@ -460,6 +460,17 @@ are enforced: each nextest profile has a global timeout, so a suite that
 runs past its budget fails. A change that breaks a budget is fixed by
 making tests cheaper, or by moving randomized ones to the fuzzy suite.
 Raising a budget is an explicit decision, not a fix.
+
+**A test is a process.** nextest runs each test in a process of its own,
+which costs some milliseconds before the test checks anything, more for
+a large binary. So cases of one behaviour that each cost less than that
+(a golden value per type, a refusal per limit, a check per source file)
+are rows of one table test, which checks every row and names each that
+fails; a group of rows takes a test of its own only to share the work
+across threads. A test is cheaper by its algorithm first: a fixture
+built once per test, not per case; a lookup by key, not a scan; the
+library's own searches, which run optimized in unoptimized builds,
+rather than a loop over bytes.
 
 A fuzzy test lives beside its world and uses that world's settings,
 random ones included. When a fuzzy seed fails, the bug is fixed and the

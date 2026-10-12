@@ -36,7 +36,7 @@ Section 2 names an increment of smith's reliability plan as
 | `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
 | `http.md` | partly | 2: the build for `wasm32-unknown-unknown`: not built; 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
 | `tls.md` | partly | 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
-| `codec.md` | partly | 3–4: `secret N`, `boxed` variants; 6: generated files that pass the lints with no allowances (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
+| `codec.md` | partly | 3–4: `secret N`, `boxed` variants; 6: generated files that pass the lints with no allowances, table tests, bounds at small test limits, a generator linear in its schema (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 2, 4.2: a run of consecutive reasoning items as one block (smith's reliability plan, a step its supervisor names). 6: Codex routing state, WebSocket: not planned |

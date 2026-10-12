@@ -197,11 +197,23 @@ For each record and enumeration:
   Their encodings sit in a file beside the code, and each type's values
   must encode and decode as recorded.
 - **Bounds:** generated tests decode a field at its limit, and one past it,
-  without stored files.
+  without stored files. The limit is a test's own, a few bytes or items,
+  with every other limit at its ceiling: decoding checks the limit it is
+  given, so a small one checks the same code as the ceiling, which the
+  worst case (section 4) and the memory test check.
+- **Table tests:** each generated test checks a group of cases, golden
+  values or bounds, about 64, and names every case that fails. A test
+  process costs more to start than one case costs to check
+  (testing-strategy.md, section 8).
 - **Drift:** a test runs the generator on the schema and compares the
   result with the committed code and golden bytes. On a difference it
   fails, saying how to write them again, which the same test does when an
   environment variable asks it to.
+- **The generator's cost grows with its schema,** not with its square:
+  what it needs of a type or a field (its declaration by name, whether a
+  type holds bounds, a field's path) is found once per generation. The
+  limits are checked against the ceilings once per family, not in each
+  type.
 - **Generated files** say so in their first line. They are left out of
   formatting, and pass the workspace's lints with no allowances: the
   generator writes what the lints accept (functions short enough, no
