@@ -123,6 +123,34 @@ fn owner_of(request: &file::Request) -> Token {
 }
 
 #[test]
+fn a_refresh_refused_as_sign_in_again_loads_the_file_at_the_next_grant() {
+    let mut owner = Owner::new();
+    owner.ask(Request::Grant { account: 0 });
+    let load = owner.opened();
+    let mut record = tests_record(0);
+    record.refresh_token = Some(bytes::copy_of(b"refresh"));
+    record.expires_at = Wall::from_nanos(5_000_000_000);
+    owner.terminal(file::Event::Loaded {
+        owner: load,
+        bytes: skein_oauth::encode_record(&record, &owner.env.limits.client.document).expect("private record"),
+    });
+    component::refuse_refresh(&mut owner.component, &owner.env, &mut owner.above, &mut owner.io);
+    assert_event(
+        owner.above.pop(),
+        Event::Failed { account: 0, ends: Ends::Grant, failure: Failure::Exchange(skein_oauth::Failure::Refused) },
+    );
+    owner.ask(Request::Grant { account: 0 });
+    let request = owner.next();
+    check_file(&request, 1);
+    owner.terminal(file::Event::Loaded {
+        owner: owner_of(&request),
+        bytes: skein_oauth::encode_record(&tests_record(1), &owner.env.limits.client.document).expect("new record"),
+    });
+    assert_granted(owner.above.pop(), 1, 30);
+    assert!(owner.files.is_empty(), "loading again neither erases nor rewrites the person's file");
+}
+
+#[test]
 fn requests_during_a_load_join_it_and_end_once() {
     let mut owner = Owner::new();
     owner.ask(Request::SignIn { account: 0 });

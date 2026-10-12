@@ -1,6 +1,15 @@
 use skein_oauth_accounts_world::world::{self, Story};
 
 #[test]
+fn an_access_only_record_expiring_is_handed_in_again_and_lent() {
+    let (facts, _) = world::protocol(101, Story::HandedIn);
+    assert_eq!(
+        facts,
+        vec![world::Fact::Granted(0), world::Fact::Expiring, world::Fact::Granted(1), world::Fact::Closed]
+    );
+}
+
+#[test]
 fn refresh_keeping_rejection_release_and_teardown_cross_real_http_streams() {
     for story in [
         Story::Lead,
@@ -21,6 +30,8 @@ fn refresh_keeping_rejection_release_and_teardown_cross_real_http_streams() {
             Story::Abort | Story::Repeated => assert!(facts.iter().any(|fact| matches!(fact, world::Fact::Failed(_)))),
             Story::Released | Story::NotKept => assert!(facts.contains(&world::Fact::Granted(0))),
             Story::Retry
+            | Story::HandedIn
+            | Story::SignInAgain
             | Story::Lead
             | Story::Rotate
             | Story::Omit

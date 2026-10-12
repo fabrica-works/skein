@@ -6,6 +6,21 @@ use skein_oauth_accounts_world::world::Fact;
 static HEAP: skein_heap::Counting = skein_heap::Counting;
 
 #[test]
+fn a_record_refused_as_sign_in_again_is_dropped_and_its_replacement_lent() {
+    let mut outcome = private::run(97, Story::SignInAgain);
+    assert_eq!(
+        private::facts(&outcome.procs),
+        &[Fact::Failed(Failure::Exchange(skein_oauth::Failure::Refused)), Fact::Granted(1), Fact::Closed,]
+    );
+    assert!(outcome.machine.faulted, "the person wrote between the first and second loads");
+    assert!(outcome.machine.reads >= 2, "the replacement is loaded without a restart");
+    assert_eq!(outcome.machine.writes, 0, "the account never rewrites the person's file");
+    assert_eq!(outcome.machine.renames, 0);
+    assert_eq!(outcome.machine.record().generation, 1);
+    outcome.machine.finish();
+}
+
+#[test]
 fn a_refreshed_record_is_stored_privately_before_it_is_lent() {
     let mut outcome = private::run(37, Story::Refresh);
     assert_eq!(private::facts(&outcome.procs), &[Fact::Keep(1), Fact::Granted(1), Fact::Closed]);

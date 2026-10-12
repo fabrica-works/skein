@@ -20,8 +20,8 @@ impl Component {
         };
         let can_wait = match *self.bindings.get(account).expect("account binding") {
             Some(id) => match self.exchanges.get(id).expect("bound exchange").stage {
-                Stage::Loading => true,
-                Stage::Running | Stage::Keeping { .. } | Stage::Finished => false,
+                Stage::Loading | Stage::Finished => true,
+                Stage::Running | Stage::Keeping { .. } => false,
             },
             None => true,
         };

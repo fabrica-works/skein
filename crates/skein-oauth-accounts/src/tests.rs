@@ -401,6 +401,27 @@ fn refresh_account(account: u32, address: core::net::SocketAddr) -> Account {
 }
 
 #[test]
+fn a_refresh_refused_as_sign_in_again_drops_an_owner_kept_record() {
+    let profile = limits();
+    let mut configured = List::with_capacity(1);
+    assert!(configured.push(refresh_account(0, ([127, 0, 0, 1], 31000).into())).is_ok());
+    let mut component = Component::new(configured, &profile, crypto(1)).expect("owner-kept account");
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: profile };
+    let mut above = Queue::with_capacity(MAX_OUT_DOWN.above);
+    let mut io = Queue::with_capacity(MAX_OUT_DOWN.io);
+    let mut files = Queue::with_capacity(1);
+    component.down(&env, Request::Grant { account: 0 }, &mut above, &mut io, &mut files);
+    component::refuse_refresh(&mut component, &env, &mut above, &mut io);
+    assert_event(
+        above.pop(),
+        Event::Failed { account: 0, ends: Ends::Grant, failure: Failure::Exchange(skein_oauth::Failure::Refused) },
+    );
+    component.down(&env, Request::Grant { account: 0 }, &mut above, &mut io, &mut files);
+    assert_expired(above.pop());
+    assert!(above.is_empty() && io.is_empty() && files.is_empty(), "the dead record starts no new refresh");
+}
+
+#[test]
 fn an_exchange_bound_refuses_a_second_account_before_admitting_its_grant() {
     let mut limits = limits();
     limits.exchanges = 1;

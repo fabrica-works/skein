@@ -19,6 +19,10 @@ const REDIRECT: &[u8] = b"http://localhost:31234/callback";
 /// The owner behaviour the referee expects from this run.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Story {
+    /// A private record's revoked refresh is refused before its replacement loads.
+    SignInAgain,
+    /// An access-only source hands in a new generation when its old one is expiring.
+    HandedIn,
     /// A held valid grant refreshes at its lead, then the owner closes.
     Lead,
     /// A grant within the lead waits for a rotating refresh and its keep.
@@ -130,6 +134,8 @@ pub(crate) fn registration(transport: Transport) -> oauth::Registration {
 pub enum Fact {
     /// The owner heard a usable generation.
     Granted(u64),
+    /// The access-only generation reached its refresh lead once.
+    Expiring,
     /// The candidate reached the owner's keeper.
     Keep(u64),
     /// The owner's hold or pending request failed.
@@ -289,42 +295,49 @@ impl Client {
     }
     pub(crate) fn start(&mut self, env: &Env<accounts::Limits>) {
         let mut configured = List::with_capacity(1);
-        let seconds = if matches!(self.story, Story::Lead | Story::Rejected | Story::Repeated | Story::Released) {
+        let seconds = if matches!(
+            self.story,
+            Story::Lead | Story::Rejected | Story::Repeated | Story::Released | Story::HandedIn
+        ) {
             30
         } else {
             5
         };
-        let record = oauth::SavedToken {
+        let mut record = Some(oauth::SavedToken {
             key: 0,
             generation: 0,
             access_token: bytes::copy_of(b"old"),
-            refresh_token: Some(bytes::copy_of(b"seed")),
+            refresh_token: (self.story != Story::HandedIn).then(|| bytes::copy_of(b"seed")),
             metadata: None,
             expires_at: Wall::from_nanos(
                 env.wall.as_nanos().checked_add(Duration::from_secs(seconds).as_nanos()).expect("wall lifetime"),
             ),
-        };
+        });
         assert!(
             configured
-                .push(accounts::Account::SignIn {
-                    registration: registration(self.transport),
-                    endpoint: accounts::Endpoint {
-                        address: self.address.expect("referee supplied peer address"),
-                        transport: match self.transport {
-                            Transport::Plaintext => accounts::Transport::Plaintext,
-                            Transport::Tls => accounts::Transport::Tls {
-                                server_name: skein_tls_world::pki::name(),
-                                trust: skein_tls_world::pki::client(&[])
+                .push(if self.story == Story::HandedIn {
+                    accounts::Account::HandedIn
+                } else {
+                    accounts::Account::SignIn {
+                        registration: registration(self.transport),
+                        endpoint: accounts::Endpoint {
+                            address: self.address.expect("referee supplied peer address"),
+                            transport: match self.transport {
+                                Transport::Plaintext => accounts::Transport::Plaintext,
+                                Transport::Tls => accounts::Transport::Tls {
+                                    server_name: skein_tls_world::pki::name(),
+                                    trust: skein_tls_world::pki::client(&[]),
+                                },
                             },
-                        }
-                    },
-                    keeper: match &self.file_driver {
-                        Some(driver) => accounts::Keeper::Private {
-                            root: driver.root(),
-                            directory: bytes::copy_of(b"secret"),
-                            file: bytes::copy_of(b"record")
                         },
-                        None => accounts::Keeper::Owner { kept: Some(record) },
+                        keeper: match &self.file_driver {
+                            Some(driver) => accounts::Keeper::Private {
+                                root: driver.root(),
+                                directory: bytes::copy_of(b"secret"),
+                                file: bytes::copy_of(b"record"),
+                            },
+                            None => accounts::Keeper::Owner { kept: record.take() },
+                        },
                     }
                 })
                 .is_ok()
@@ -335,6 +348,17 @@ impl Client {
             skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed"),
         )
         .expect("configured accounts");
+        if self.story == Story::HandedIn {
+            let record = record.take().expect("handed-in source keeps its startup record");
+            self.records.push(record.clone());
+            component.down(
+                env,
+                accounts::Request::HandIn { account: 0, record },
+                &mut self.above,
+                &mut self.requests,
+                &mut self.files,
+            );
+        }
         component.down(
             env,
             accounts::Request::Grant { account: 0 },
@@ -409,7 +433,10 @@ impl Client {
                 accounts::Event::Failed { failure, .. } => {
                     self.contracts.failed();
                     self.facts.push(Fact::Failed(failure));
-                    if matches!(failure, accounts::Failure::Unloaded { .. }) && self.retry_load.take().is_some() {
+                    if (matches!(failure, accounts::Failure::Unloaded { .. })
+                        || failure == accounts::Failure::Exchange(oauth::Failure::Refused))
+                        && self.retry_load.take().is_some()
+                    {
                         self.contracts.grant.open(0, ());
                         self.ask(env, accounts::Request::Grant { account: 0 });
                     } else {
@@ -424,10 +451,20 @@ impl Client {
                         driver.close_root(env.now);
                     }
                 }
-                accounts::Event::Expiring { .. }
-                | accounts::Event::Refused { .. }
-                | accounts::Event::Visit { .. }
-                | accounts::Event::SignedIn { .. } => {
+                accounts::Event::Expiring { account, generation } => {
+                    assert_eq!(self.story, Story::HandedIn);
+                    assert_eq!(generation, 0);
+                    self.facts.push(Fact::Expiring);
+                    self.contracts.kept.push(1);
+                    let mut record = self.records.pop().expect("handed-in access-only record");
+                    record.generation = 1;
+                    record.access_token = bytes::copy_of(b"new");
+                    record.expires_at = Wall::from_nanos(
+                        env.wall.as_nanos().checked_add(Duration::from_secs(30).as_nanos()).expect("wall lifetime"),
+                    );
+                    self.ask(env, accounts::Request::HandIn { account, record });
+                }
+                accounts::Event::Refused { .. } | accounts::Event::Visit { .. } | accounts::Event::SignedIn { .. } => {
                     panic!("positive story has no such event")
                 }
             }
@@ -771,6 +808,11 @@ impl Referee<Process> for Judge {
         if client.closed {
             assert_eq!(client.facts.last(), Some(&Fact::Closed));
             match self.story {
+                Story::HandedIn => {
+                    assert_eq!(posts, 0);
+                    assert_eq!(client.facts, vec![Fact::Granted(0), Fact::Expiring, Fact::Granted(1), Fact::Closed]);
+                }
+                Story::SignInAgain => assert_eq!(posts, 1),
                 Story::Repeated => {
                     assert!(client.facts.contains(&Fact::Failed(accounts::Failure::Expired)));
                     assert_eq!(posts, 0);
@@ -838,7 +880,7 @@ pub(crate) fn issuer(transport: Transport, story: Story, address: SocketAddr) ->
             client_id: bytes::copy_of(b"client"),
             client_secret: None,
             redirect_uri: bytes::copy_of(REDIRECT),
-            refresh_token: bytes::copy_of(b"seed"),
+            refresh_token: bytes::copy_of(if story == Story::SignInAgain { b"revoked" } else { b"seed" }),
         },
         fake::Limits {
             document: profile.client.document,

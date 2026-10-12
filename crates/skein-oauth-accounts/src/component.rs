@@ -22,6 +22,17 @@ mod sign_in;
 #[cfg(test)]
 pub(crate) use sign_in::draw;
 
+#[cfg(test)]
+pub(crate) fn refuse_refresh(
+    component: &mut Component,
+    env: &Env<Limits>,
+    up: &mut Queue<Event>,
+    io: &mut Queue<Lower>,
+) {
+    let id = component.bindings.get(0).expect("account binding").expect("refresh exchange");
+    component.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Refused), up, io);
+}
+
 /// An io request the owner sends on, translating component tokens to io tokens.
 pub type Lower = skein_io::Request;
 
@@ -851,6 +862,9 @@ impl Component {
             if exchange.pending_grant || (!exchange.signing_in() && held(slot)) {
                 set_held(slot, false);
                 failed(account, failure, up);
+            }
+            if !exchange.signing_in() && failure == Failure::Exchange(oauth::Failure::Refused) {
+                *slot = State::Empty;
             }
         }
         match self.keepers.get_mut(account).expect("account keeper") {

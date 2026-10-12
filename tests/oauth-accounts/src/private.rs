@@ -14,6 +14,8 @@ use std::net::Ipv4Addr;
 /// The private record or file fault the scenario plants.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Story {
+    /// The issuer refuses a revoked refresh and a person's replacement is loaded next.
+    SignInAgain,
     /// Loads a kept valid record before answering Grant.
     Load,
     /// A failed read ends its waiting grant.
@@ -108,7 +110,8 @@ impl FileSystem {
                 items.push(Item::file(b"secret/record", &encoded).mode(0o600));
                 items.push(Item::hard_link(b"secret/other", b"secret/record"));
             }
-            Story::Load
+            Story::SignInAgain
+            | Story::Load
             | Story::LoadFailed
             | Story::LoadStalled
             | Story::Conflict
@@ -208,6 +211,24 @@ impl Machine for FileSystem {
     }
 
     fn step(&mut self, call: Call, answers: &mut Queue<Answer>) {
+        if self.story == Story::SignInAgain
+            && !self.faulted
+            && self.reads > 0
+            && matches!(call.ask, Ask::Open { how: skein_io::kernel::OpenHow::ReadNoFollow, .. })
+        {
+            self.faulted = true;
+            let record = oauth::SavedToken {
+                key: 0,
+                generation: 1,
+                access_token: bytes::copy_of(b"new"),
+                refresh_token: Some(bytes::copy_of(b"seed")),
+                metadata: None,
+                expires_at: Wall::from_nanos(Duration::from_secs(30).as_nanos()),
+            };
+            self.person_writes(
+                &oauth::encode_record(&record, &world::limits().client.document).expect("person's replacement record"),
+            );
+        }
         self.reads += usize::from(matches!(call.ask, Ask::Read { .. }));
         self.writes += usize::from(matches!(call.ask, Ask::Write { .. }));
         self.syncs += usize::from(matches!(call.ask, Ask::Sync { .. }));
@@ -301,7 +322,9 @@ impl Referee<Process> for Judge {
 pub fn run(seed: u64, story: Story) -> skein_world::Outcome<Process, FileSystem> {
     let mut files = FileSystem::new(story);
     let root = files.startup();
-    let owner_story = if matches!(story, Story::Refresh | Story::CloseKeeping | Story::AbortKeeping) {
+    let owner_story = if story == Story::SignInAgain {
+        OwnerStory::SignInAgain
+    } else if matches!(story, Story::Refresh | Story::CloseKeeping | Story::AbortKeeping) {
         OwnerStory::Rotate
     } else {
         OwnerStory::NotKept
@@ -321,7 +344,8 @@ pub fn run(seed: u64, story: Story) -> skein_world::Outcome<Process, FileSystem>
         client.stop_at_store = match story {
             Story::CloseKeeping => Some(false),
             Story::AbortKeeping => Some(true),
-            Story::Load
+            Story::SignInAgain
+            | Story::Load
             | Story::LoadFailed
             | Story::LoadStalled
             | Story::Fixed
@@ -343,7 +367,8 @@ pub fn run(seed: u64, story: Story) -> skein_world::Outcome<Process, FileSystem>
         client.stop_at_load = match story {
             Story::CloseLoading => Some(false),
             Story::AbortLoading => Some(true),
-            Story::Load
+            Story::SignInAgain
+            | Story::Load
             | Story::LoadFailed
             | Story::LoadStalled
             | Story::Fixed
@@ -362,7 +387,8 @@ pub fn run(seed: u64, story: Story) -> skein_world::Outcome<Process, FileSystem>
             | Story::CloseKeeping
             | Story::AbortKeeping => None,
         };
-        client.retry_load = matches!(story, Story::Fixed | Story::LoadFailed | Story::LoadStalled).then_some(());
+        client.retry_load =
+            matches!(story, Story::Fixed | Story::LoadFailed | Story::LoadStalled | Story::SignInAgain).then_some(());
         Process::Client(Box::new(client))
     });
     let mut stalled = false;
