@@ -137,6 +137,15 @@ supervisor's rulings during the run, appended below them.
     "62 less the removed", forgetting that 2.2 splits six tests into 22
     (`c7834bc`'s body). `git grep -c '#\[test\]'` over `tests/tls` gives
     64 at `73c900b` and 80 after 2.3, 16 more; the list count is 78.
+21. **The world crate's native files in plain words** (the supervisor,
+    2026-10-12; the check of 01:17Z). 2.2 wrote "observed" where
+    "actual" was: 9 in the crate and its world at `73c900b`, 106 at
+    `3925a5d`, 102 in `tests/tls`; "physical" is in 15 of its lines,
+    against tls.md's words. The Pulse rule held to the letter, and the
+    plan's aim, "fewer, plainer words", did not. Step `skein-02.s1`
+    (`skein/02-s1-plain-words.md`), after 2.4, takes them out. "observed"
+    is not added to the Pulse list: it has uses that mean something, and
+    3.2 writes the list into the gate.
 
 ## For the user
 
