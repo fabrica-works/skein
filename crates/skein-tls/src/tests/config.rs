@@ -4,13 +4,13 @@
 use rustls::RootCertStore;
 use skein_lib::stream::Fault;
 
-use super::{LIMITS, roots};
+use super::{LIMITS, fixture, roots};
 use crate::client::{self, Certificate, Error, Limits};
 use crate::{ALPN, Config, Name, Parsed, Refusal, roots_worst_case};
 
 #[test]
 fn der_roots_count_supported_certificates_and_skip_the_rest() {
-    let root = std::fs::read("../../tests/tls/fixtures/root.der").expect("actual fixture root");
+    let root = fixture("root.der");
     // Change only the SPKI algorithm OID: still valid DER for rustls's
     // anchor parser, but absent from ring's supported key algorithms.
     let mut unsupported = Vec::from(root.as_slice());
@@ -35,7 +35,7 @@ fn der_roots_count_supported_certificates_and_skip_the_rest() {
 
 #[test]
 fn der_configuration_keeps_the_alpn_refusals() {
-    let root = std::fs::read("../../tests/tls/fixtures/root.der").expect("actual fixture root");
+    let root = fixture("root.der");
     let certificates = [root.into_boxed_slice()];
     assert_eq!(Config::from_der(&certificates, &[b""]).expect_err("empty ALPN"), Refusal::Alpn);
     assert_eq!(Config::from_der(&certificates, &[&[b'a'; 256]]).expect_err("long ALPN"), Refusal::Alpn);
@@ -67,18 +67,14 @@ fn room_for_a_send_counts_its_records_and_rustlss_slack() {
 }
 
 #[test]
-fn the_worst_case_adds_the_buffers_and_rustlss_heap() {
-    let worst = client::worst_case(&LIMITS).unwrap();
-    // The intake (the read and a record's plaintext), the records, the
-    // output owed, a delivery, rustls's own, and the decoded form of the
-    // longest handshake message the records hold.
-    let buffers = 16 + 16_384 + u64::from(client::MAX_RECORD) + u64::from(client::FLIGHT);
-    let rustls = u64::from(client::LARGEST_READ) + 16 * 1_024 + 20 * u64::from(client::MAX_RECORD);
-    assert_eq!(worst, buffers + rustls);
-    // rustls reads no handshake message past 64 KB, whatever the records.
+fn worst_case_counts_buffers_and_rustlss_heap() {
+    // Intake 16400, records 18437, owed 2048, delivery 18432,
+    // rustls 16384, and 20 bytes for each of 18437 handshake bytes.
+    assert_eq!(client::worst_case(&LIMITS), Some(440_441));
+    // With eight records: 147496 records and 20 * 65539 decoded bytes;
+    // the intake, owed output, delivery and rustls's state are the same.
     let large = Limits { records: 8 * client::MAX_RECORD, ..LIMITS };
-    let past = client::worst_case(&large).unwrap() - u64::from(7 * client::MAX_RECORD) - buffers;
-    assert_eq!(past, u64::from(client::LARGEST_READ) + 16 * 1_024 + 20 * u64::from(client::MAX_HANDSHAKE));
+    assert_eq!(client::worst_case(&large), Some(1_511_540));
     // Each limit that cannot be honoured.
     for limits in [
         Limits { read: 0, ..LIMITS },
