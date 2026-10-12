@@ -39,10 +39,21 @@ fn measure_type(ty: &Type, value: &str, depth: usize, out: &mut String) {
         }
         Type::List(_, item) => {
             add_size("4", out);
-            let item_name = format!("item_{depth}");
-            out.push_str(&format!("        for {item_name} in {value}.as_slice() {{\n"));
-            measure_type(item, &item_name, depth.checked_add(1).expect("schema depth"), out);
-            out.push_str("        }\n");
+            match fixed_size(item) {
+                Some(fixed) => add_size(
+                    &format!(
+                        "{value}.len().checked_mul({}).expect(\"schema ceilings fit u32\")",
+                        emit_limits::literal(fixed)
+                    ),
+                    out,
+                ),
+                None => {
+                    let item_name = format!("item_{depth}");
+                    out.push_str(&format!("        for {item_name} in {value}.as_slice() {{\n"));
+                    measure_type(item, &item_name, depth.checked_add(1).expect("schema depth"), out);
+                    out.push_str("        }\n");
+                }
+            }
         }
         Type::Option(item) => {
             add_size("1", out);

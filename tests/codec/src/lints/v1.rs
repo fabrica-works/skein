@@ -10,6 +10,8 @@ pub struct Limits {
     pub payload_data: u32,
     pub one_byte_items_items: u32,
     pub optional_payload_data_some: u32,
+    pub fixed_width_items_wide: u32,
+    pub fixed_width_items_narrow: u32,
 }
 
 /// The schema's maximum limits.
@@ -18,6 +20,8 @@ pub const CEILINGS: Limits = Limits {
     payload_data: 4,
     one_byte_items_items: 4,
     optional_payload_data_some: 4,
+    fixed_width_items_wide: 4,
+    fixed_width_items_narrow: 4,
 };
 
 /// A field or tag that caused a codec problem.
@@ -63,6 +67,12 @@ pub enum Path {
     BoxedChoiceTag,
     /// The tag of `InlineChoice`.
     InlineChoiceTag,
+    /// The `wide` field of `FixedWidthItems`.
+    FixedWidthItemsWide,
+    /// The `narrow` field of `FixedWidthItems`.
+    FixedWidthItemsNarrow,
+    /// Bytes after `FixedWidthItems`.
+    FixedWidthItemsTail,
 }
 
 /// A decoding or bound failure at a schema path.
@@ -133,6 +143,8 @@ impl HostTool {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         if self.payload.len() > usize::try_from(limits.host_tool_payload.min(CEILINGS.host_tool_payload)).expect("u32 fits usize") { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
@@ -174,6 +186,8 @@ impl Boundless {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -213,6 +227,8 @@ impl Payload {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         if self.data.len() > usize::try_from(limits.payload_data.min(CEILINGS.payload_data)).expect("u32 fits usize") { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
@@ -254,6 +270,8 @@ impl OtherPayload {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -288,6 +306,8 @@ impl Shared {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -327,6 +347,8 @@ impl OneByteItems {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         if self.items.capacity() > limits.one_byte_items_items.min(CEILINGS.one_byte_items_items) { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         for item_0 in self.items.as_slice() {
         item_0.check(limits)?;
@@ -370,6 +392,8 @@ impl OptionalPayload {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         if let Some(some_0) = self.data.as_ref() && some_0.len() > usize::try_from(limits.optional_payload_data_some.min(CEILINGS.optional_payload_data_some)).expect("u32 fits usize") { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
@@ -403,6 +427,8 @@ impl BoxedChoice {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -432,6 +458,58 @@ impl InlineChoice {
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
+/// Movable fields of `FixedWidthItems`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FixedWidthItemsParts {
+    /// The `wide` field.
+    pub wide: List<u64>,
+    /// The `narrow` field.
+    pub narrow: List<u32>,
+}
+
+/// `FixedWidthItems` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FixedWidthItems {
+    wide: List<u64>,
+    narrow: List<u32>,
+}
+
+impl FixedWidthItems {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: FixedWidthItemsParts) -> Result<Self, Problem> {
+        let FixedWidthItemsParts { wide, narrow } = parts;
+        let value = Self { wide, narrow };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `wide` field.
+    #[must_use]
+    pub fn wide(&self) -> &List<u64> { &self.wide }
+
+    /// Reads the `narrow` field.
+    #[must_use]
+    pub fn narrow(&self) -> &List<u32> { &self.narrow }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> FixedWidthItemsParts { FixedWidthItemsParts { wide: self.wide, narrow: self.narrow } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
+        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
+        if self.wide.capacity() > limits.fixed_width_items_wide.min(CEILINGS.fixed_width_items_wide) { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+        if self.narrow.capacity() > limits.fixed_width_items_narrow.min(CEILINGS.fixed_width_items_narrow) { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -774,8 +852,51 @@ impl InlineChoice {
     }
 }
 
+impl FixedWidthItems {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        let field_wide = &self.wide;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(field_wide.len().checked_mul(8).expect("schema ceilings fit u32")).expect("schema ceilings fit u32");
+        let field_narrow = &self.narrow;
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(field_narrow.len().checked_mul(4).expect("schema ceilings fit u32")).expect("schema ceilings fit u32");
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_wide = &self.wide;
+        writer.put(&field_wide.len().to_be_bytes())?;
+        for item_0 in field_wide.as_slice() {
+        writer.put(&item_0.to_be_bytes())?;
+        }
+        let field_narrow = &self.narrow;
+        writer.put(&field_narrow.len().to_be_bytes())?;
+        for item_0 in field_narrow.as_slice() {
+        writer.put(&item_0.to_be_bytes())?;
+        }
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::FixedWidthItemsTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_wide = { let count = match skein_codec::read_count(reader, limits.fixed_width_items_wide.min(CEILINGS.fixed_width_items_wide)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::FixedWidthItemsWide, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = reader.u64().ok_or(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Short })?; items_0.push(item).expect("count within capacity"); } items_0 };
+        let decoded_narrow = { let count = match skein_codec::read_count(reader, limits.fixed_width_items_narrow.min(CEILINGS.fixed_width_items_narrow)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::FixedWidthItemsNarrow, reason }), }; if count > reader.remaining() / 4 { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = reader.u32().ok_or(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Short })?; items_0.push(item).expect("count within capacity"); } items_0 };
+        Self::new(limits, FixedWidthItemsParts { wide: decoded_wide, narrow: decoded_narrow })
+    }
+}
+
 fn limits_valid(limits: &Limits) -> bool {
-    limits.host_tool_payload <= CEILINGS.host_tool_payload && limits.payload_data <= CEILINGS.payload_data && limits.one_byte_items_items <= CEILINGS.one_byte_items_items && limits.optional_payload_data_some <= CEILINGS.optional_payload_data_some
+    limits.host_tool_payload <= CEILINGS.host_tool_payload && limits.payload_data <= CEILINGS.payload_data && limits.one_byte_items_items <= CEILINGS.one_byte_items_items && limits.optional_payload_data_some <= CEILINGS.optional_payload_data_some && limits.fixed_width_items_wide <= CEILINGS.fixed_width_items_wide && limits.fixed_width_items_narrow <= CEILINGS.fixed_width_items_narrow
 }
 
 impl HostTool {
@@ -974,6 +1095,28 @@ impl InlineChoice {
     }
 }
 
+impl FixedWidthItems {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut size = 0_u64;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(8_u64)?)?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(4_u64)?)?)?;
+        Some(size)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut heap = 0_u64;
+        heap = heap.checked_add(List::<u64>::worst_case(limits.fixed_width_items_wide)?.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(0_u64)?)?)?;
+        heap = heap.checked_add(List::<u32>::worst_case(limits.fixed_width_items_narrow)?.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(0_u64)?)?)?;
+        Some(heap)
+    }
+}
+
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
@@ -988,6 +1131,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
     biggest = biggest.max(BoxedChoice::worst_case_bytes(limits)?);
     biggest = biggest.max(InlineChoice::worst_case_bytes(limits)?);
+    biggest = biggest.max(FixedWidthItems::worst_case_bytes(limits)?);
     Some(biggest)
 }
 
@@ -1005,12 +1149,13 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
     biggest = biggest.max(BoxedChoice::worst_case_heap(limits)?);
     biggest = biggest.max(InlineChoice::worst_case_heap(limits)?);
+    biggest = biggest.max(FixedWidthItems::worst_case_heap(limits)?);
     Some(biggest)
 }
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, HostTool, HostToolParts, Boundless, BoundlessParts, Payload, PayloadParts, OtherPayload, OtherPayloadParts, Shared, OneByteItems, OneByteItemsParts, OptionalPayload, OptionalPayloadParts, BoxedChoice, InlineChoice};
+    use super::{CEILINGS, Path, HostTool, HostToolParts, Boundless, BoundlessParts, Payload, PayloadParts, OtherPayload, OtherPayloadParts, Shared, OneByteItems, OneByteItemsParts, OptionalPayload, OptionalPayloadParts, BoxedChoice, InlineChoice, FixedWidthItems, FixedWidthItemsParts};
     use alloc::boxed::Box;
 
     #[test]
@@ -1314,6 +1459,26 @@ mod golden_tests {
     }
 
     #[test]
+    fn record_fixed_width_items_smallest() {
+        let value = FixedWidthItems::new(&CEILINGS, FixedWidthItemsParts { wide: skein_lib::List::with_capacity(0), narrow: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_fixed_width_items_full() {
+        let value = FixedWidthItems::new(&CEILINGS, FixedWidthItemsParts { wide: { let mut items = skein_lib::List::with_capacity(1); items.push(u64::MAX).expect("one slot"); items }, narrow: { let mut items = skein_lib::List::with_capacity(1); items.push(u32::MAX).expect("one slot"); items } }).expect("golden within ceilings");
+        let golden: &[u8] = &[0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
     fn bound_host_tool_payload() {
         fn wire(count: u32, payload: bool) -> Box<[u8]> {
             let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
@@ -1371,6 +1536,46 @@ mod golden_tests {
         OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
         let problem = OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
         assert_eq!((problem.path, problem.reason), (Path::OneByteItemsItems, skein_codec::Reason::Bound));
+    }
+
+    #[test]
+    fn bound_fixed_width_items_wide() {
+        fn wire(count: u32, payload: bool) -> Box<[u8]> {
+            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
+            let header = 0_usize.checked_add(4).expect("header size");
+            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
+            let mut writer = skein_lib::Writer::new(total);
+            writer.put(&[]).expect("prefix room");
+            writer.put(&count.to_be_bytes()).expect("length room");
+            if payload {
+                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
+                writer.put(&[0, 0, 0, 0]).expect("suffix room");
+            }
+            writer.finish()
+        }
+        FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
+        let problem = FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
+        assert_eq!((problem.path, problem.reason), (Path::FixedWidthItemsWide, skein_codec::Reason::Bound));
+    }
+
+    #[test]
+    fn bound_fixed_width_items_narrow() {
+        fn wire(count: u32, payload: bool) -> Box<[u8]> {
+            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(4).expect("schema ceiling");
+            let header = 4_usize.checked_add(4).expect("header size");
+            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
+            let mut writer = skein_lib::Writer::new(total);
+            writer.put(&[0, 0, 0, 0]).expect("prefix room");
+            writer.put(&count.to_be_bytes()).expect("length room");
+            if payload {
+                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0]).expect("item room"); }
+                writer.put(&[]).expect("suffix room");
+            }
+            writer.finish()
+        }
+        FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
+        let problem = FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
+        assert_eq!((problem.path, problem.reason), (Path::FixedWidthItemsNarrow, skein_codec::Reason::Bound));
     }
 
 }

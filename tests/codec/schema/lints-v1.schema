@@ -46,3 +46,8 @@ enum InlineChoice {
     payload: OptionalPayload
     empty
 }
+
+record FixedWidthItems {
+    wide: list 4 u64
+    narrow: list 4 u32
+}

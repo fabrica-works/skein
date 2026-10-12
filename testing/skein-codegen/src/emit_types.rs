@@ -82,17 +82,19 @@ fn emit_check(ty: &Type, value: &str, bound_name: &str, path: &str, depth: usize
         }
         Type::List(_, item) => {
             out.push_str(&format!("        if {value}.capacity() > limits.{bound_name}.min(CEILINGS.{bound_name}) {{ return Err({problem}); }}\n"));
-            let item_name = format!("item_{depth}");
-            out.push_str(&format!("        for {item_name} in {value}.as_slice() {{\n"));
-            emit_check(
-                item,
-                &item_name,
-                &format!("{bound_name}_item"),
-                path,
-                depth.checked_add(1).expect("schema nesting fits usize"),
-                out,
-            );
-            out.push_str("        }\n");
+            if needs_value_check(item) {
+                let item_name = format!("item_{depth}");
+                out.push_str(&format!("        for {item_name} in {value}.as_slice() {{\n"));
+                emit_check(
+                    item,
+                    &item_name,
+                    &format!("{bound_name}_item"),
+                    path,
+                    depth.checked_add(1).expect("schema nesting fits usize"),
+                    out,
+                );
+                out.push_str("        }\n");
+            }
         }
         Type::Option(item) => {
             let item_name = format!("some_{depth}");
