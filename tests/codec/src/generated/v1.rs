@@ -618,85 +618,89 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, Field, FieldParts, Effect, Report, ReportParts, Choice, Marker, MarkerParts};
+    use super::{CEILINGS, Field, FieldParts, Effect, Report, ReportParts, Choice, Marker, MarkerParts, Path};
     use super::Limits;
 
-    use alloc::{boxed::Box, string::String, vec::Vec};
-    use core::fmt::Debug;
+    use alloc::boxed::Box;
 
-    pub(super) fn golden<T: Debug + PartialEq, P: Debug, E: Debug, D: Debug>(
-        name: &str,
-        path: P,
+    type Case = (&'static str, fn() -> bool);
+
+    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+        let mut failures = [None; N];
+        let mut passed = true;
+        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+            if !case() {
+                *failure = Some(name);
+                passed = false;
+            }
+        }
+        assert!(passed, "{failures:?}");
+    }
+
+    pub(super) fn golden<T: PartialEq, E, D>(
         value: T,
         bytes: &[u8],
         encoded: Result<Box<[u8]>, E>,
         decoded: Result<T, D>,
-        failures: &mut Vec<String>,
-    ) {
-        match encoded {
-            Ok(encoded) if encoded.as_ref() == bytes => {}
-            other => failures.push(format!("{name} ({path:?}): encoding {other:?}, expected {bytes:?}")),
-        }
-        match decoded {
-            Ok(decoded) if decoded == value => {}
-            other => failures.push(format!("{name} ({path:?}): decoding {other:?}, expected {value:?}")),
-        }
+    ) -> bool {
+        let encoded = match encoded {
+            Ok(encoded) => encoded.as_ref() == bytes,
+            Err(_) => false,
+        };
+        let decoded = match decoded {
+            Ok(decoded) => decoded == value,
+            Err(_) => false,
+        };
+        encoded && decoded
     }
 
     type BoundDecode<T, L, P, R> = fn(&L, &[u8]) -> Result<T, (P, R)>;
 
-    pub(super) fn bound<T, L, P: Debug + PartialEq, R: Debug + PartialEq>(
-        label: (&str, P, R),
+    pub(super) fn bound<T, L, P: PartialEq, R: PartialEq>(
+        label: (P, R),
         limits: &L,
         at: &[u8],
         past: &[u8],
         decode: BoundDecode<T, L, P, R>,
-        failures: &mut Vec<String>,
-    ) {
-        let (name, path, reason) = label;
-        if let Err(problem) = decode(limits, at) {
-            failures.push(format!("{name} ({path:?}): at limit refused as {problem:?}"));
-        }
-        match decode(limits, past) {
-            Err((found_path, found_reason)) if found_path == path && found_reason == reason => {}
-            Err(problem) => failures.push(format!("{name} ({path:?}): past limit refused as {problem:?}")),
-            Ok(_) => failures.push(format!("{name} ({path:?}): past limit accepted")),
-        }
+    ) -> bool {
+        let (path, reason) = label;
+        let at = decode(limits, at).is_ok();
+        let past = match decode(limits, past) {
+            Err((found_path, found_reason)) => found_path == path && found_reason == reason,
+            Ok(_) => false,
+        };
+        at && past
     }
     #[test]
     fn golden_0() {
-        let cases: [fn(&mut Vec<String>); 14] = [
-        |failures| { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([].as_slice()), value: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_field_smallest", Path::FieldTail, value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_field_full", Path::FieldTail, value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Effect::Read; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_effect_read_smallest", Path::EffectTag, value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Effect::Read; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_effect_read_full", Path::EffectTag, value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Effect::Write; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_effect_write_smallest", Path::EffectTag, value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Effect::Write; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_effect_write_full", Path::EffectTag, value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Report::new(&CEILINGS, ReportParts { title: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0), effect: Effect::Read, present: None, nonce: [0_u8; 2], age: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_report_smallest", Path::ReportTail, value, bytes, encoded, Report::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Report::new(&CEILINGS, ReportParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, effect: Effect::Read, present: Some(true), nonce: [165_u8; 2], age: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 1, 1, 165, 165, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_report_full", Path::ReportTail, value, bytes, encoded, Report::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Choice::Report(Report::new(&CEILINGS, ReportParts { title: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0), effect: Effect::Read, present: None, nonce: [0_u8; 2], age: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_choice_report_smallest", Path::ChoiceTag, value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Choice::Report(Report::new(&CEILINGS, ReportParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, effect: Effect::Read, present: Some(true), nonce: [165_u8; 2], age: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 1, 1, 165, 165, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_choice_report_full", Path::ChoiceTag, value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Choice::Empty; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_choice_empty_smallest", Path::ChoiceTag, value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Choice::Empty; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_choice_empty_full", Path::ChoiceTag, value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Marker::new(&CEILINGS, MarkerParts {  }).expect("golden within ceilings"); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_marker_smallest", Path::MarkerTail, value, bytes, encoded, Marker::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Marker::new(&CEILINGS, MarkerParts {  }).expect("golden within ceilings"); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_marker_full", Path::MarkerTail, value, bytes, encoded, Marker::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        const CASES: [Case; 14] = [
+        ("record_field_smallest", || { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([].as_slice()), value: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_field_full", || { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_read_smallest", || { let value = Effect::Read; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_read_full", || { let value = Effect::Read; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_write_smallest", || { let value = Effect::Write; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_effect_write_full", || { let value = Effect::Write; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_report_smallest", || { let value = Report::new(&CEILINGS, ReportParts { title: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0), effect: Effect::Read, present: None, nonce: [0_u8; 2], age: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Report::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_report_full", || { let value = Report::new(&CEILINGS, ReportParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, effect: Effect::Read, present: Some(true), nonce: [165_u8; 2], age: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 1, 1, 165, 165, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Report::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_choice_report_smallest", || { let value = Choice::Report(Report::new(&CEILINGS, ReportParts { title: Box::from([].as_slice()), fields: skein_lib::List::with_capacity(0), effect: Effect::Read, present: None, nonce: [0_u8; 2], age: skein_lib::Duration::from_nanos(0_u64) }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_choice_report_full", || { let value = Choice::Report(Report::new(&CEILINGS, ReportParts { title: Box::from([97_u8, 98_u8, 99_u8].as_slice()), fields: { let mut items = skein_lib::List::with_capacity(1); items.push(Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")).expect("one slot"); items }, effect: Effect::Read, present: Some(true), nonce: [165_u8; 2], age: skein_lib::Duration::from_nanos(u64::MAX) }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 1, 0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255, 0, 1, 1, 165, 165, 255, 255, 255, 255, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_choice_empty_smallest", || { let value = Choice::Empty; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_choice_empty_full", || { let value = Choice::Empty; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Choice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_marker_smallest", || { let value = Marker::new(&CEILINGS, MarkerParts {  }).expect("golden within ceilings"); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Marker::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_marker_full", || { let value = Marker::new(&CEILINGS, MarkerParts {  }).expect("golden within ceilings"); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Marker::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ];
-        let mut failures = Vec::new();
-        for case in cases { case(&mut failures); }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        table(CASES);
     }
 
     #[test]
     fn bounds_0() {
-        let cases: [fn(&mut Vec<String>); 4] = [
-        |failures| bound(("bound_field_name", Path::FieldName, skein_codec::Reason::Bound), &Limits { field_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| Field::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
-        |failures| bound(("bound_field_value", Path::FieldValue, skein_codec::Reason::Bound), &Limits { field_value: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| Field::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
-        |failures| bound(("bound_report_title", Path::ReportTitle, skein_codec::Reason::Bound), &Limits { report_title: 3, ..CEILINGS }, &[0, 1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| Report::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
-        |failures| bound(("bound_report_fields", Path::ReportFields, skein_codec::Reason::Bound), &Limits { report_fields: 2, ..CEILINGS }, &[0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| Report::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        const CASES: [Case; 4] = [
+        ("bound_field_name", || bound((Path::FieldName, skein_codec::Reason::Bound), &Limits { field_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Field::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_field_value", || bound((Path::FieldValue, skein_codec::Reason::Bound), &Limits { field_value: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Field::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_report_title", || bound((Path::ReportTitle, skein_codec::Reason::Bound), &Limits { report_title: 3, ..CEILINGS }, &[0, 1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Report::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_report_fields", || bound((Path::ReportFields, skein_codec::Reason::Bound), &Limits { report_fields: 2, ..CEILINGS }, &[0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Report::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ];
-        let mut failures = Vec::new();
-        for case in cases { case(&mut failures); }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        table(CASES);
     }
 
 }

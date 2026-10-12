@@ -43,30 +43,24 @@ fn small_bound_family() -> crate::Output {
     generate(&schema)
 }
 
+fn planted_golden_failure() -> bool {
+    crate::test_helpers::golden(1_u8, &[1], Ok::<_, ()>(Box::from([2_u8])), Ok::<_, ()>(1_u8))
+}
+
 #[test]
-fn golden_tables_collect_and_name_each_planted_failure() {
+fn golden_tables_name_each_planted_failure() {
     let output = small_bound_family();
     assert!(output.rust.contains("fn golden_0()"), "one golden table is generated");
-    assert!(
-        output.rust.contains("golden(\"record_value_full\", Path::ValueTail"),
-        "the full case has its name and path"
-    );
-    let mut failures = Vec::new();
-    for name in ["record_value_smallest", "record_value_full"] {
-        crate::test_helpers::golden(
-            name,
-            "ValueTail",
-            1_u8,
-            &[1],
-            Ok::<_, ()>(Box::from([2_u8])),
-            Ok::<_, ()>(1_u8),
-            &mut failures,
-        );
-    }
-    assert_eq!(failures.len(), 2, "both failures are collected");
-    for (failure, name) in failures.iter().zip(["record_value_smallest", "record_value_full"]) {
-        assert!(failure.contains(name) && failure.contains("ValueTail"), "failure names its case and path: {failure}");
-    }
+    assert!(output.rust.contains("const CASES: [Case; 2]"));
+    let panic = std::panic::catch_unwind(|| {
+        crate::test_helpers::table([
+            ("record_value_smallest", planted_golden_failure),
+            ("record_value_full", planted_golden_failure),
+        ]);
+    })
+    .expect_err("planted failures refuse the table");
+    let message = panic.downcast_ref::<String>().expect("assertion message");
+    assert!(message.contains("record_value_smallest") && message.contains("record_value_full"), "{message}");
 }
 
 #[test]
@@ -78,19 +72,11 @@ fn bound_tables_decode_at_a_small_limit_and_one_past_it() {
         output.rust.contains("Limits { value_maybe_some: 3, ..CEILINGS }"),
         "an optional field is tested at its own limit"
     );
-    let mut failures = Vec::new();
-    crate::test_helpers::bound(
-        ("bound_value_payload", "ValuePayload", "Bound"),
-        &3_u8,
-        &[3],
-        &[4],
-        |limit, bytes| {
-            let count = *bytes.first().expect("count supplied");
-            if count <= *limit { Ok(()) } else { Err(("ValuePayload", "Bound")) }
-        },
-        &mut failures,
-    );
-    assert_eq!(failures, Vec::<String>::new(), "at the small limit decodes and one past is refused");
+    let passed = crate::test_helpers::bound(("ValuePayload", "Bound"), &3_u8, &[3], &[4], |limit, bytes| {
+        let count = *bytes.first().expect("count supplied");
+        if count <= *limit { Ok(()) } else { Err(("ValuePayload", "Bound")) }
+    });
+    assert!(passed, "at the small limit decodes and one past is refused");
 }
 
 #[test]
@@ -109,4 +95,13 @@ fn a_family_of_400_bounded_declarations_generates_in_half_a_second() {
         800,
         "one limits check per public constructor and decoder"
     );
+}
+
+#[test]
+fn an_optional_unbounded_record_needs_no_bound_check() {
+    let schema =
+        parse("family tiny 1\nrecord Number { n: u64 }\nrecord Value { payload: bytes 3 maybe: option Number }")
+            .expect("valid family");
+    let output = generate(&schema);
+    assert!(!output.rust.contains("if let Some(some_0) = self.maybe.as_ref()"));
 }

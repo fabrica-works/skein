@@ -7,6 +7,14 @@
 
 extern crate alloc;
 
+#[cfg(test)]
+extern crate self as skein_codec;
+
+#[cfg(test)]
+#[rustfmt::skip]
+#[path = "../../../tests/codec/src/generated/v1.rs"]
+pub mod generated_tests;
+
 use alloc::boxed::Box;
 use skein_lib::Reader;
 

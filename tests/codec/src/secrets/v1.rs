@@ -176,71 +176,75 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, Credential, CredentialParts};
+    use super::{CEILINGS, Credential, CredentialParts, Path};
     use super::Limits;
 
-    use alloc::{boxed::Box, string::String, vec::Vec};
-    use core::fmt::Debug;
+    use alloc::boxed::Box;
 
-    pub(super) fn golden<T: Debug + PartialEq, P: Debug, E: Debug, D: Debug>(
-        name: &str,
-        path: P,
+    type Case = (&'static str, fn() -> bool);
+
+    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+        let mut failures = [None; N];
+        let mut passed = true;
+        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+            if !case() {
+                *failure = Some(name);
+                passed = false;
+            }
+        }
+        assert!(passed, "{failures:?}");
+    }
+
+    pub(super) fn golden<T: PartialEq, E, D>(
         value: T,
         bytes: &[u8],
         encoded: Result<Box<[u8]>, E>,
         decoded: Result<T, D>,
-        failures: &mut Vec<String>,
-    ) {
-        match encoded {
-            Ok(encoded) if encoded.as_ref() == bytes => {}
-            other => failures.push(format!("{name} ({path:?}): encoding {other:?}, expected {bytes:?}")),
-        }
-        match decoded {
-            Ok(decoded) if decoded == value => {}
-            other => failures.push(format!("{name} ({path:?}): decoding {other:?}, expected {value:?}")),
-        }
+    ) -> bool {
+        let encoded = match encoded {
+            Ok(encoded) => encoded.as_ref() == bytes,
+            Err(_) => false,
+        };
+        let decoded = match decoded {
+            Ok(decoded) => decoded == value,
+            Err(_) => false,
+        };
+        encoded && decoded
     }
 
     type BoundDecode<T, L, P, R> = fn(&L, &[u8]) -> Result<T, (P, R)>;
 
-    pub(super) fn bound<T, L, P: Debug + PartialEq, R: Debug + PartialEq>(
-        label: (&str, P, R),
+    pub(super) fn bound<T, L, P: PartialEq, R: PartialEq>(
+        label: (P, R),
         limits: &L,
         at: &[u8],
         past: &[u8],
         decode: BoundDecode<T, L, P, R>,
-        failures: &mut Vec<String>,
-    ) {
-        let (name, path, reason) = label;
-        if let Err(problem) = decode(limits, at) {
-            failures.push(format!("{name} ({path:?}): at limit refused as {problem:?}"));
-        }
-        match decode(limits, past) {
-            Err((found_path, found_reason)) if found_path == path && found_reason == reason => {}
-            Err(problem) => failures.push(format!("{name} ({path:?}): past limit refused as {problem:?}")),
-            Ok(_) => failures.push(format!("{name} ({path:?}): past limit accepted")),
-        }
+    ) -> bool {
+        let (path, reason) = label;
+        let at = decode(limits, at).is_ok();
+        let past = match decode(limits, past) {
+            Err((found_path, found_reason)) => found_path == path && found_reason == reason,
+            Ok(_) => false,
+        };
+        at && past
     }
     #[test]
     fn golden_0() {
-        let cases: [fn(&mut Vec<String>); 2] = [
-        |failures| { let value = Credential::new(&CEILINGS, CredentialParts { name: Box::from([].as_slice()), value: skein_lib::Secret::new(Box::from([].as_slice())) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_credential_smallest", Path::CredentialTail, value, bytes, encoded, Credential::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Credential::new(&CEILINGS, CredentialParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: skein_lib::Secret::new(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_credential_full", Path::CredentialTail, value, bytes, encoded, Credential::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        const CASES: [Case; 2] = [
+        ("record_credential_smallest", || { let value = Credential::new(&CEILINGS, CredentialParts { name: Box::from([].as_slice()), value: skein_lib::Secret::new(Box::from([].as_slice())) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Credential::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_credential_full", || { let value = Credential::new(&CEILINGS, CredentialParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: skein_lib::Secret::new(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Credential::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ];
-        let mut failures = Vec::new();
-        for case in cases { case(&mut failures); }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        table(CASES);
     }
 
     #[test]
     fn bounds_0() {
-        let cases: [fn(&mut Vec<String>); 2] = [
-        |failures| bound(("bound_credential_name", Path::CredentialName, skein_codec::Reason::Bound), &Limits { credential_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| Credential::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
-        |failures| bound(("bound_credential_value", Path::CredentialValue, skein_codec::Reason::Bound), &Limits { credential_value: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| Credential::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        const CASES: [Case; 2] = [
+        ("bound_credential_name", || bound((Path::CredentialName, skein_codec::Reason::Bound), &Limits { credential_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Credential::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
+        ("bound_credential_value", || bound((Path::CredentialValue, skein_codec::Reason::Bound), &Limits { credential_value: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Credential::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ];
-        let mut failures = Vec::new();
-        for case in cases { case(&mut failures); }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        table(CASES);
     }
 
 }

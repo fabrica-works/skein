@@ -154,10 +154,10 @@ fn variant_expr(enumeration: &Enumeration, variant: &Variant, full: bool, schema
     }
 }
 
-fn golden_case(name: &str, ty: &str, path: &str, value: &str, bytes: &[u8]) -> String {
+fn golden_case(name: &str, ty: &str, value: &str, bytes: &[u8]) -> String {
     let bytes = bytes_literal(bytes);
     format!(
-        "        |failures| {{ let value = {value}; let bytes: &[u8] = {bytes}; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect(\"size fits usize\")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden(\"{name}\", Path::{path}, value, bytes, encoded, {ty}::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); }},\n"
+        "        (\"{name}\", || {{ let value = {value}; let bytes: &[u8] = {bytes}; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect(\"size fits usize\")); let encoded = match value.encode(&mut writer) {{ Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }}; golden(value, bytes, encoded, {ty}::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }}),\n"
     )
 }
 
@@ -252,7 +252,7 @@ fn bound_cases(record: &Record, schema: &Context<'_>, cases: &mut Vec<String>) {
             let at = bytes_literal(&bound_wire(record, index, &target, limit, schema));
             let past =
                 bytes_literal(&bound_wire(record, index, &target, limit.checked_add(1).expect("small limit"), schema));
-            cases.push(format!("        |failures| bound((\"bound_{target}\", Path::{path}, skein_codec::Reason::Bound), &Limits {{ {target}: {limit}, ..CEILINGS }}, {at}, {past}, |limits, bytes| {record}::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),\n", record = record.name));
+            cases.push(format!("        (\"bound_{target}\", || bound((Path::{path}, skein_codec::Reason::Bound), &Limits {{ {target}: {limit}, ..CEILINGS }}, {at}, {past}, |limits, bytes| match {record}::decode(limits, &mut skein_lib::Reader::new(bytes)) {{ Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) }})),\n", record = record.name));
         }
     }
 }
@@ -260,13 +260,13 @@ fn bound_cases(record: &Record, schema: &Context<'_>, cases: &mut Vec<String>) {
 fn tables(name: &str, cases: &[String], out: &mut String) {
     for (index, chunk) in cases.chunks(64).enumerate() {
         out.push_str(&format!(
-            "    #[test]\n    fn {name}_{index}() {{\n        let cases: [fn(&mut Vec<String>); {}] = [\n",
+            "    #[test]\n    fn {name}_{index}() {{\n        const CASES: [Case; {}] = [\n",
             chunk.len()
         ));
         for case in chunk {
             out.push_str(case);
         }
-        out.push_str("        ];\n        let mut failures = Vec::new();\n        for case in cases { case(&mut failures); }\n        assert!(failures.is_empty(), \"{}\", failures.join(\"\\n\"));\n    }\n\n");
+        out.push_str("        ];\n        table(CASES);\n    }\n\n");
     }
 }
 
@@ -279,13 +279,7 @@ fn golden_cases(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<Golden> {
                     let mut bytes = Vec::new();
                     write_record(record, full, schema, &mut bytes);
                     let name = format!("record_{}_{}", emit_limits::snake(&record.name), label);
-                    cases.push(golden_case(
-                        &name,
-                        &record.name,
-                        &format!("{}Tail", record.name),
-                        &record_expr(record, full, schema),
-                        &bytes,
-                    ));
+                    cases.push(golden_case(&name, &record.name, &record_expr(record, full, schema), &bytes));
                     goldens.push(Golden { name: format!("{name}.bin"), bytes });
                 }
             }
@@ -298,7 +292,6 @@ fn golden_cases(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<Golden> {
                         cases.push(golden_case(
                             &name,
                             &enumeration.name,
-                            &format!("{}Tag", enumeration.name),
                             &variant_expr(enumeration, variant, full, schema),
                             &bytes,
                         ));
@@ -312,7 +305,7 @@ fn golden_cases(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<Golden> {
 }
 
 pub(crate) fn emit(schema: &Context<'_>, out: &mut String) -> Vec<Golden> {
-    let mut imports = vec!["CEILINGS".to_string(), "Path".to_string()];
+    let mut imports = vec!["CEILINGS".to_string()];
     let mut bounds = Vec::new();
     for declaration in schema.declarations {
         match declaration {
@@ -323,6 +316,9 @@ pub(crate) fn emit(schema: &Context<'_>, out: &mut String) -> Vec<Golden> {
             }
             Declaration::Enum(enumeration) => imports.push(enumeration.name.clone()),
         }
+    }
+    if !bounds.is_empty() {
+        imports.push("Path".to_string());
     }
     let mut cases = Vec::new();
     let goldens = golden_cases(schema, &mut cases);

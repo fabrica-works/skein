@@ -375,45 +375,54 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, Empty, EmptyParts, Flag, Scalars, ScalarsParts};
+    use super::{CEILINGS, Empty, EmptyParts, Flag, Scalars, ScalarsParts};
 
-    use alloc::{boxed::Box, string::String, vec::Vec};
-    use core::fmt::Debug;
+    use alloc::boxed::Box;
 
-    pub(super) fn golden<T: Debug + PartialEq, P: Debug, E: Debug, D: Debug>(
-        name: &str,
-        path: P,
+    type Case = (&'static str, fn() -> bool);
+
+    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+        let mut failures = [None; N];
+        let mut passed = true;
+        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+            if !case() {
+                *failure = Some(name);
+                passed = false;
+            }
+        }
+        assert!(passed, "{failures:?}");
+    }
+
+    pub(super) fn golden<T: PartialEq, E, D>(
         value: T,
         bytes: &[u8],
         encoded: Result<Box<[u8]>, E>,
         decoded: Result<T, D>,
-        failures: &mut Vec<String>,
-    ) {
-        match encoded {
-            Ok(encoded) if encoded.as_ref() == bytes => {}
-            other => failures.push(format!("{name} ({path:?}): encoding {other:?}, expected {bytes:?}")),
-        }
-        match decoded {
-            Ok(decoded) if decoded == value => {}
-            other => failures.push(format!("{name} ({path:?}): decoding {other:?}, expected {value:?}")),
-        }
+    ) -> bool {
+        let encoded = match encoded {
+            Ok(encoded) => encoded.as_ref() == bytes,
+            Err(_) => false,
+        };
+        let decoded = match decoded {
+            Ok(decoded) => decoded == value,
+            Err(_) => false,
+        };
+        encoded && decoded
     }
 
     #[test]
     fn golden_0() {
-        let cases: [fn(&mut Vec<String>); 8] = [
-        |failures| { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_empty_smallest", Path::EmptyTail, value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_empty_full", Path::EmptyTail, value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Flag::Off; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_flag_off_smallest", Path::FlagTag, value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Flag::Off; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_flag_off_full", Path::FlagTag, value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Flag::On; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_flag_on_smallest", Path::FlagTag, value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Flag::On; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_flag_on_full", Path::FlagTag, value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Scalars::new(&CEILINGS, ScalarsParts { a: 0_u8, b: 0_u16, c: 0_u32, d: 0_u64, e: false, f: skein_lib::Duration::from_nanos(0_u64), g: [0_u8; 2], h: Flag::Off }); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_scalars_smallest", Path::ScalarsTail, value, bytes, encoded, Scalars::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
-        |failures| { let value = Scalars::new(&CEILINGS, ScalarsParts { a: u8::MAX, b: u16::MAX, c: u32::MAX, d: u64::MAX, e: true, f: skein_lib::Duration::from_nanos(u64::MAX), g: [165_u8; 2], h: Flag::Off }); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 165, 165, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_scalars_full", Path::ScalarsTail, value, bytes, encoded, Scalars::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        const CASES: [Case; 8] = [
+        ("record_empty_smallest", || { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_empty_full", || { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_flag_off_smallest", || { let value = Flag::Off; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_flag_off_full", || { let value = Flag::Off; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_flag_on_smallest", || { let value = Flag::On; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("enum_flag_on_full", || { let value = Flag::On; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_scalars_smallest", || { let value = Scalars::new(&CEILINGS, ScalarsParts { a: 0_u8, b: 0_u16, c: 0_u32, d: 0_u64, e: false, f: skein_lib::Duration::from_nanos(0_u64), g: [0_u8; 2], h: Flag::Off }); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Scalars::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
+        ("record_scalars_full", || { let value = Scalars::new(&CEILINGS, ScalarsParts { a: u8::MAX, b: u16::MAX, c: u32::MAX, d: u64::MAX, e: true, f: skein_lib::Duration::from_nanos(u64::MAX), g: [165_u8; 2], h: Flag::Off }); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 165, 165, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Scalars::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ];
-        let mut failures = Vec::new();
-        for case in cases { case(&mut failures); }
-        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        table(CASES);
     }
 
 }

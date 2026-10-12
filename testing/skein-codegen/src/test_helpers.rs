@@ -1,44 +1,52 @@
-//! Collect every failing case before a table makes its one assertion.
+//! Check every case and name failures without allocating diagnostic strings.
 
-use alloc::{boxed::Box, string::String, vec::Vec};
-use core::fmt::Debug;
+use alloc::boxed::Box;
 
-pub(super) fn golden<T: Debug + PartialEq, P: Debug, E: Debug, D: Debug>(
-    name: &str,
-    path: P,
+type Case = (&'static str, fn() -> bool);
+
+pub(super) fn table<const N: usize>(cases: [Case; N]) {
+    let mut failures = [None; N];
+    let mut passed = true;
+    for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+        if !case() {
+            *failure = Some(name);
+            passed = false;
+        }
+    }
+    assert!(passed, "{failures:?}");
+}
+
+pub(super) fn golden<T: PartialEq, E, D>(
     value: T,
     bytes: &[u8],
     encoded: Result<Box<[u8]>, E>,
     decoded: Result<T, D>,
-    failures: &mut Vec<String>,
-) {
-    match encoded {
-        Ok(encoded) if encoded.as_ref() == bytes => {}
-        other => failures.push(format!("{name} ({path:?}): encoding {other:?}, expected {bytes:?}")),
-    }
-    match decoded {
-        Ok(decoded) if decoded == value => {}
-        other => failures.push(format!("{name} ({path:?}): decoding {other:?}, expected {value:?}")),
-    }
+) -> bool {
+    let encoded = match encoded {
+        Ok(encoded) => encoded.as_ref() == bytes,
+        Err(_) => false,
+    };
+    let decoded = match decoded {
+        Ok(decoded) => decoded == value,
+        Err(_) => false,
+    };
+    encoded && decoded
 }
 
 type BoundDecode<T, L, P, R> = fn(&L, &[u8]) -> Result<T, (P, R)>;
 
-pub(super) fn bound<T, L, P: Debug + PartialEq, R: Debug + PartialEq>(
-    label: (&str, P, R),
+pub(super) fn bound<T, L, P: PartialEq, R: PartialEq>(
+    label: (P, R),
     limits: &L,
     at: &[u8],
     past: &[u8],
     decode: BoundDecode<T, L, P, R>,
-    failures: &mut Vec<String>,
-) {
-    let (name, path, reason) = label;
-    if let Err(problem) = decode(limits, at) {
-        failures.push(format!("{name} ({path:?}): at limit refused as {problem:?}"));
-    }
-    match decode(limits, past) {
-        Err((found_path, found_reason)) if found_path == path && found_reason == reason => {}
-        Err(problem) => failures.push(format!("{name} ({path:?}): past limit refused as {problem:?}")),
-        Ok(_) => failures.push(format!("{name} ({path:?}): past limit accepted")),
-    }
+) -> bool {
+    let (path, reason) = label;
+    let at = decode(limits, at).is_ok();
+    let past = match decode(limits, past) {
+        Err((found_path, found_reason)) => found_path == path && found_reason == reason,
+        Ok(_) => false,
+    };
+    at && past
 }

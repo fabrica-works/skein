@@ -115,6 +115,9 @@ fn emit_check(
                 depth.checked_add(1).expect("schema nesting fits usize"),
                 &mut inner,
             );
+            if inner.is_empty() {
+                return;
+            }
             if inner.lines().count() == 1 && inner.starts_with("        if ") {
                 out.push_str(&format!(
                     "        if let Some({item_name}) = {value}.as_ref() && {}",
