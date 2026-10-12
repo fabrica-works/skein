@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-09. How far skein's code is from its design, and which
+Updated 2026-10-12. How far skein's code is from its design, and which
 plans take it there. The designer keeps this file (development.md,
 section 3.3).
 
@@ -8,6 +8,7 @@ section 3.3).
 
 | Plan | State | Takes the design to | Where |
 |---|---|---|---|
+| tls-cleanup | ready | tls.md 3.6 (the code in its words, one engine for both faces); the crate's and its world's tests, one behaviour each | `docs/development/plans/tls-cleanup/` |
 | reliability-plan | active on debian-16gb-hel1-1 since 2026-10-09 | io.md 5–7; kernel.md 6; simulator.md 3; shell.md 6, 12–13; tls.md 3.4; json.md 3, 5; http.md 4; llm.md 2, 4; llm-connection.md 4–7; fake-llm.md 2–3; oauth.md 1, 6; examples.md 3.3, 6; testing-strategy.md 6 | `~/src/rust/plans/reliability-plan/` (not versioned) |
 | smith-testing | done 2026-10-08 | simulator.md 3 (hosted spawns); llm-connection.md and oauth.md, plaintext to loopback; fake-llm.md 3 (peers on loopback); examples.md 6, 8; testing-strategy.md 2.8–2.9 | `~/src/rust/plans/smith-testing/` (not versioned) |
 | smith-protocol-layer | done 2026-10-08 | codec.md; channel.md; llm-connection.md 3–6, 8 | `~/src/rust/plans/smith-protocol-layer/` (not versioned) |
@@ -33,7 +34,7 @@ Section 2 names an increment of the reliability plan as
 | `testing.md` | partly | 5: the teardown check (reliability 02.4); 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
 | `json.md` | partly | 5.1: `Tagged` in the collector (reliability 05.tagged, running); 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
 | `http.md` | partly | 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
-| `tls.md` | partly | 3.4: `Config::from_der` (reliability 01.9); 8: roots read at startup (01.10); 8: the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
+| `tls.md` | partly | 3.4: `Config::from_der` (reliability 01.9); 8: roots read at startup (01.10); 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
 | `codec.md` | yes | 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |

@@ -1,6 +1,6 @@
 # TLS
 
-Provisional, 2026-10-04, revised 2026-10-09. The design of
+Provisional, 2026-10-04, revised 2026-10-12. The design of
 `skein-tls`: a TLS stream machine over rustls, ciphertext below and
 plaintext above. It is the one exception of programming-model.md,
 section 3: the only step code that depends on a crate from outside skein
@@ -232,99 +232,125 @@ pub struct Limits {
   a read the end crossed withdrawn, the stream finished, and the next
   demand. **`DOWN_MAX_OUT`** is two and two.
 
-### 3.6 Native independent output
+### 3.6 The native face
 
-The explicit `client::native` face uses lib.md section 7.1 at both boundaries:
-read-only classic Demand/Up, plus named OutputDown/OutputUp. It shares the
-concrete rustls/session/held engine with the classic client. Its constructor
-fixes the face; the classic face's contracts are its own. A classic
-positive-room Demand or classic Send on the native face violates its
-receiving precondition before effects. No adapter over a
-classic combined lower demand can provide this independence.
+`client::native` is the client for a side above that must write while its
+read waits: a framed connection over TLS, whose writing never waits for
+its reading (channel.md, 7; io.md, 3.3). It keeps lib.md, 7.1's
+independent output on both its sides: on the plaintext above, and on the
+ciphertext below, read-only demands beside output rights. It is built on
+the classic client's engine: its session, its buffers, its reading of
+records (3.2) and its answers to reads (3.1). The two faces differ in how
+room is asked for and granted, how they finish and how they close.
+Whoever stacks the client picks the face by its constructor, and it stays
+fixed. The stream below must keep lib.md, 7.1 itself: no adapter over a
+stream that takes only the classic joined demand gives this
+independence.
 
-Each native connection retains separate upper read, upper output, lower read
-and lower output cells, with one lower token generator and no history. Lower
-Tokens are checked, never reused and permanently exhausted without wrapping.
-An upper output right is admitted only positive and within Limits.send, with
-idle output and usable writing; it can wait during an admitted Handshake but
-cannot be granted before Ready. Grant requires actual lower bytes and one Send
-slot. Its lower token remains the affine backing until matching Send/Release,
-empty Send, permitted Finish or actual close/failure consumes it. Check identity
-before size: stale operations are inert; only matching oversize is a caller bug.
-
-Native ciphertext room is checked `room_for(P) + FLIGHT`, with FLIGHT's actual
-2048-byte owed-control cap, and native largest room is the maximum of that
-requirement at Limits.send and FLIGHT. The complete owed prefix can grow while
-upper grant is held; TLS must preserve its backing slot instead of spending it
-on unrelated output. TLS-owned smaller flight grants send a fitting ordered
-prefix and retain its suffix for a fresh right.
-`client::native::LowerLimits` describes actual configured lower caps:
-`read` covers LARGEST_READ, `output` covers checked native largest_room,
-and `sends` is at least one queued Send slot beside one in-flight/stalled Send.
-`Client::new(config, name, limits, lower)` checks these before buffer allocation
-or cloning configuration, returning None if the lower cannot honour them. A
-lower configured sufficiently but one byte short of credit at the moment
-admits the request and waits. Bytes and queue slots are checked separately;
-independence needs no second queued Send slot.
-
-A matching upper cancellation settles Wanted once; lower cancellation retains
-its real identity until the actual lower winner arrives. An already emitted
-upper Grant remains its winner. A genuine failure settles pending upper output
-before classic plaintext Failed and TLS Failed, without answering it twice when
-both lower output Failed and classic Failed arrive. Genuine Ready is retained
-even when a following checked-token exhaustion fails output in the same step.
-Native `UP_MAX_OUT` is four events above and three requests below, and
-`DOWN_MAX_OUT` three and three; the classic maxima are section 3.5's.
-
-The native lower bridge carries actual Closed for the exact ciphertext entity.
-A recorded TLS self-cancel consumes only its output right. Unsolicited matching
-lower Cancelled instead makes transport unusable, stops fresh demands/output,
-settles still-Wanted upper output Cancelled once and emits TransportClosing
-unless local Close is already pending. The coordinating owner requests native
-Close and closes/aborts actual lower IO; TLS owns no timer or physical descriptor.
-No lower Failed, clean End, authenticated bytes or parse error is invented.
-
-Actual lower Closed first settles any still-Wanted upper output Cancelled,
-including pre-Ready with no lower Room and a new upper request crossing an older
-self-cancel. An emitted upper winner is preserved. Real lower obligations must
-already have settled; missing/wrong settlement is a trusted-bridge invariant
-violation. Without local Close, TransportClosed ends native Handshake/read and
-the connection. With local Close pending, Client::Closed answers it once after
-all actual lower output rights settle. A native Close queued after
-TransportClosing may arrive after TransportClosed: it is inert before classic
-core dispatch and creates no second Closed. Classic Close-after-Closed asserts.
-The owner retains physical resource responsibility and validates generation.
-
-Native Finish requires Ready and the existing no-live-upper-read/no-pending-
-output restrictions. After permitted closing withdrawal it admits no further
-positive reads. This read-no-more contract is narrower than the classic
-face's, which keeps pre-Ready Finish and read-after-Finish.
-Ready withdrawal retains one inline exact Fill-size witness for an actual
-Bytes winner already emitted by the lower resource. Its matching owned box is
-dropped before copying, processing or encryption, including across permitted
-Finish; no read acknowledgement or new terminal is required. Withdrawal can win
-without Bytes. No further positive read is admitted, and physical Closed clears
-the witness. During Handshake, withdrawal of the upper read leaves genuine
-internal ciphertext reads progressing through Ready.
-
-The native memory bound includes actual wrapper/cell layouts and checked work
-allowance max(LARGEST_READ,native_room_for(Limits.send)), with drop-before-
-process/encrypt sequencing. Complete owed-plus-sealed ciphertext is counted
-before handoff and on error-before-emission; overlapping allocations require
-the checked sum. Upper input remains caller ownership, not presumed released
-at a grant. Existing buffers/rustls scratch, IO queue/flight boxes and typed
-queues are priced once. The whole FLIGHT allocation and checked reservation
-envelope stay priced even when the logical output is smaller.
-
-The pinned rustls 0.23.41 coalesces several requested TLS 1.3 KeyUpdates
-into one deferred notification while the caller holds its grant: the native
-tests admit 32 requests and observe one notification beside the maximal
-plaintext send. A real TLS 1.2 HelloRequest produces a sealed refusal while
-the upper grant is held; it and a later `close_notify` drain in order,
-prefix then suffix, across an older, smaller queued grant. Capacity tests
-tell allocation bounds apart from the pinned peer's admitted control-record
-limits. TLS ciphertext is nondeterministic; simulator scheduling makes no
-claim to replay it.
+- **Requests and events.** Above, `Request::Client` carries the classic
+  `Request`, whose stream demands only read: a demand of room or a `Send`
+  is a bug, asserted before it has any effect. `Request::Output` carries
+  an output right's requests (lib.md, 7.1). `Event::Client` carries the
+  classic `Event`, `Event::Output` an output right's terminal, and
+  `TransportClosing` and `TransportClosed` say that the stream below is
+  closing or closed. Below, `LowerRequest` and `LowerEvent` carry the
+  same pair on the ciphertext, and `LowerEvent::Closed` says that the
+  owner closed the stream below.
+- **Four cells,** each with at most one obligation: the read above, the
+  output right above, the read below and the output right below. The
+  client makes the tokens of its rights below: checked, never reused and
+  never wrapped. When it needs a token and none is left, the connection
+  fails, `Other`; while it closes, it drops what it owes instead. It
+  keeps no history of rights settled.
+- **An output right above** is admitted only when its bytes are positive
+  and within `Limits::send`, no other right above is pending or granted,
+  and the client can still write; any other is a bug, asserted. It may be
+  asked for during the handshake, and waits: it is granted only after
+  `Ready`, and only once a right below for its records was granted,
+  backed by bytes and one `Send` slot. That right below stays reserved
+  for it until the side above's matching `Send`, empty or not, its
+  `Release`, a `Finish` that is allowed, or the connection's close or
+  failure spends it.
+- **Identity before size.** A `Cancel` that names no pending right, or a
+  `Send` or `Release` that names no granted right, does nothing; one that
+  names the granted right with more bytes than it was granted is a bug.
+- **Room below.** The right below for the side above's `n` bytes asks for
+  `room_for(n) + FLIGHT` (`native::room_for`): their records, and room
+  for everything TLS may owe in front of them. `native::largest_room` is
+  that for `Limits::send`. What TLS owes may grow while the side above
+  holds its grant (a key update, the refusal of a renegotiation): it goes
+  in front of the side above's records, within the grant held, never on a
+  right of its own that would wait behind that grant. A right below that
+  TLS asked for its own output sends as much of what it owes as fits, in
+  order, and asks for a new right for the rest.
+- **`LowerLimits`** are the stream below's configured caps: `read`, at
+  least `LARGEST_READ`; `output`, at least `native::largest_room`;
+  `sends`, its queued `Send` slots, at least one beside the one in flight
+  or stalled. `Client::new(config, name, limits, lower)` checks them
+  before it allocates or clones anything, and answers `None` when the
+  stream below cannot honour them. Credit short at a given moment is not
+  refused: the right waits for it. Bytes and slots are checked apart;
+  independence needs no second queued slot.
+- **Settling.** A `Cancel` from the side above settles its pending right
+  `Cancelled`, once. A right below that the client cancelled keeps its
+  token until the stream below's own terminal for it comes. A `Granted`
+  that went up stays the right's terminal, whatever follows. On a
+  failure, a pending right above settles `Failed` before the plaintext
+  stream's `Failed` and the client's `Failed`, and once, even when the
+  right below's `Failed` and the stream below's `Failed` both arrive. A
+  `Ready` that went up stays, even when running out of tokens fails the
+  connection later in the same step.
+- **The most an entry point emits:** `native::UP_MAX_OUT` is four events
+  and three requests, `native::DOWN_MAX_OUT` three and three. The classic
+  face's are section 3.5's.
+- **The owner closes the stream below.** The client keeps no timer and no
+  descriptor: its owner closes or aborts the stream below, says so with
+  `LowerEvent::Closed`, and checks that it is for this client's stream
+  below, not an earlier one.
+  - A `Cancelled` from below that the client did not ask for makes the
+    stream below unusable: no new demand or right goes below, a pending
+    right above settles `Cancelled`, once, and `TransportClosing` goes
+    up, unless a `Close` is pending. The owner then closes the stream
+    below, and asks the client to `Close`. A cancel the client asked for
+    spends only its own right.
+  - `LowerEvent::Closed` comes once every right below has settled; one
+    not settled then is the owner's bug. It first settles a pending right
+    above `Cancelled`, before `Ready` too, and for a right asked for after
+    the client cancelled its own. Without a `Close` pending,
+    `TransportClosed` goes up, and ends the handshake, the reads and the
+    connection. With a `Close` pending, `Closed` answers it, once, after
+    every right below settled. A `Close` that comes after
+    `TransportClosed`, such as one the owner sent on `TransportClosing`,
+    does nothing, and no `Closed` goes up; on the classic face, a `Close`
+    after `Closed` is a bug.
+  - The client never makes up what the stream below did not say: no
+    `Failed`, no `End`, no bytes and no error of the server's.
+- **`Finish`** comes only after `Ready`, with no read above but one that
+  crossed `End`, and no output right pending; it spends a grant held.
+  After it, the side above reads no more. This is narrower than the
+  classic face, which takes a `Finish` before `Ready` and reads after it.
+- **A read withdrawn after `Ready`,** by the side above or by its
+  `Finish`, may already be answered below. The client keeps the size of
+  the `Fill` withdrawn, and drops the `Bytes` that answer it, unread,
+  before it deciphers or seals anything; `Bytes` of another size is a
+  bug. The withdrawal needs no answer of its own, and the `Bytes` may
+  never come. No read is admitted after it, and `LowerEvent::Closed`
+  forgets the size. A read withdrawn above during the handshake leaves
+  the handshake's own reads below going, until `Ready`.
+- **What it waits for**, `waiting()`, is section 3.1's, with `Close` also
+  after `TransportClosing`, and once a close has sent all it owes and
+  waits for the owner's `Closed`.
+- **Memory.** `native::worst_case` is the classic `worst_case`, with its
+  delivery of `LARGEST_READ` replaced by the larger of `LARGEST_READ` and
+  `native::room_for(Limits::send)`, since the bytes read are dropped
+  before a record is deciphered or sealed, plus the client's own size,
+  its cells included. What TLS owes and what it sealed are counted
+  together, before they go below and on an error before they do;
+  allocations that overlap are counted as their sum. The plaintext the
+  side above sends stays the caller's, counted there. The buffers,
+  rustls's scratch, io's queues, the boxes in flight and the step's
+  queues are each counted once. The whole envelope reserved and
+  `FLIGHT`'s box stay counted even when less is sealed or owed.
 
 ## 4. The exception
 
@@ -441,6 +467,19 @@ a wall time each test chooses.
   update, a close in each wait the worlds reach, and each oddity of the
   neighbours. It draws no alert, no protocol error and no cookie too long
   to echo: the focused tests reach those.
+- **The native face** (section 3.6): step tests in
+  `crates/skein-tls/src/client/native/tests.rs`; a pair against a rustls
+  server in memory (`tests/tls/tests/native_output.rs`), the same over
+  io's sockets on the simulator, and memory against the worst case
+  (`native_memory.rs`); a fuzzy run of short and reordered reads and
+  writes (`fuzzy_native.rs`). rustls 0.23.41 folds the TLS 1.3 key
+  updates asked for while the side above holds its grant into one: the
+  tests ask for 32, and see one key update in front of the largest
+  plaintext `Send`. A TLS 1.2 `HelloRequest` while the grant is held is
+  refused in a sealed record, and that refusal and a later `close_notify`
+  go below in order, across an older, smaller grant of TLS's own. The
+  memory tests tell the client's bounds apart from the limits of what
+  rustls's server lets a peer send. Nothing is replayed (above).
 
 ## 6. Decisions
 
@@ -504,9 +543,17 @@ a wall time each test chooses.
 - **Session resumption,** which would save a round trip on each new
   connection to the same server, at the price of a cache shared between
   connections.
+- **Requests after a failure on the native face.** The classic face
+  drops a stream request that comes after `Failed`. The native face drops
+  a read then, but asserts on an output right asked for after a failure
+  or after `TransportClosing`, on a `Finish` after a failure, and on a
+  read after `TransportClosing`. Which is right waits for its first user.
 
 ## 8. Not built yet
 
+- **A user of the native face:** a framed connection over TLS
+  (channel.md, 7; io.md, 3.3). Until one is built, the native face is
+  tested only by its own tests (section 5).
 - **The server side,** when a service terminates TLS: temper's engine,
   for its webhooks and its workers on other hosts.
 - **Client certificates,** with it.
