@@ -233,7 +233,8 @@ documentation, with each operation's errors; the decisions behind it:
 - **The opens io makes, not `open`'s flags.** `OpenHow` is `Read` (an
   existing file or directory), `Directory` (an existing directory: a
   root, or one to list), `Create` (a new file, exclusively, to write) or
-  `Write` (an existing regular file, to read and write, never created).
+  `Write` (an existing regular file, to read and write, never created),
+  each with a form that refuses a symbolic link, as `Read`'s does.
   Each is one well-defined case for the simulator and the suite to hold,
   and more come when a user pulls them.
 - **Cutting a file** is `Truncate` on a descriptor opened to write

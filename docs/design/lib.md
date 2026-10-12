@@ -1,6 +1,6 @@
 # lib
 
-Provisional, 2026-10-03, revised 2026-10-10. The design of `skein-lib`:
+Provisional, 2026-10-03, revised 2026-10-12. The design of `skein-lib`:
 the building blocks every step crate shares, in skein and in every
 service built on it. The mechanics are those of programming-model.md;
 this document says what lib holds and what each part promises.
@@ -309,7 +309,10 @@ cannot manufacture independent room.
   ChaCha20 keyed by a 32-byte seed the shell draws from the kernel at
   start, or a world from its own seed: `fill` writes fresh bytes into a
   bounded buffer. Whatever must not be guessed is drawn from it: secrets,
-  OAuth states and PKCE verifiers, sign-ins' secrets.
+  OAuth states and PKCE verifiers, sign-ins' secrets. Each generator is
+  made from the seed and a stream number its owner gives (ChaCha20's
+  nonce), distinct for every generator of a process, so several drawn from
+  one seed never yield the same bytes.
 
 ## 9. The environment
 

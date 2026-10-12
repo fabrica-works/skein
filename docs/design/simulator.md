@@ -1,6 +1,6 @@
 # The simulator
 
-Provisional, 2026-10-03, revised 2026-10-09. The design of `skein-sim`:
+Provisional, 2026-10-03, revised 2026-10-12. The design of `skein-sim`:
 the simulated kernel that every world from io worlds up runs on
 (testing-strategy.md, 2). It is a backend of the kernel boundary
 (kernel.md), for every process of one world, with every choice drawn from
@@ -146,8 +146,9 @@ would: to show that what a service keeps durably survives (io.md, 5.2).
   a power loss, what a crash keeps: what was synced; unsynced writes
   landed or not, in any order, the last one torn at any byte; a
   directory's entries changed by a rename or a create only once the
-  directory was synced, and a rename whole or not at all (kv.md, 8). The
-  choices are drawn from the seed.
+  directory was synced, and a rename whole or not at all (kv.md, 8); a
+  file's length cut (kernel.md, 6.1) only once the file was synced, the
+  old length kept until then. The choices are drawn from the seed.
 - **After the cut** the world starts the process again over what the
   machine kept, with the roots it had, and the referee checks what it
   recovers: for a durable replace, the old content or the new, whole.
