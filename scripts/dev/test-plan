@@ -8,12 +8,14 @@
 #                      cents of each program's usage, and takes a few minutes
 #
 # It prints each failed expectation, and exits 1 if there was one.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "test-plan: failed at line $LINENO" >&2' ERR
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 live=0
 [[ ${1:-} == --live ]] && live=1
 
-t=$(mktemp -d)
+workspace=${DEV_ROOT:-$(dirname "$(dirname "$(git -C "$kit" rev-parse --path-format=absolute --git-common-dir)")")}
+t=$(mktemp -d "$workspace/tmp/test-plan.XXXXXX")
 if [[ ${PLAN_TEST_KEEP:-} == 1 ]]; then echo "test-plan: keeping $t"; else trap 'rm -rf "$t"' EXIT; fi
 export DEV_ROOT=$t/src DEV_TMP=$t/src/tmp DEV_REPOS=alpha
 export CODEX_HOME=$t/codex CLAUDE_CONFIG_DIR=$t/claude PLAN_NO_ROLES=1 PLAN_POLL=0.1
@@ -209,29 +211,29 @@ if ((live)); then
     export PLAN_COORDINATOR_RESUME="This is a test of plan resume. Reply RESUMED and end your turn."
     export PLAN_RETRO_PROMPT="This is a test of plan retro. Reply OK and end your turn."
     rm -f "$run/thread" "$run/claude.tsv"
-    started=$("$plan" start "$dir" 2>&1)
+    started=$("$plan" start "$dir" 2>&1 || true)
     expect start "$started" "supervisor: Claude Code session" "coordinator: Codex thread" "rang the coordinator: Doorbell test"
-    thread=$(cat "$run/thread")
-    supervisor=$(awk -F'\t' '$1 == "supervisor" { print $2 }' "$run/claude.tsv")
-    expect "attach running supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor)" "claude attach ${supervisor:0:8}"
+    thread=$(cat "$run/thread" || true)
+    supervisor=$(awk -F'\t' '$1 == "supervisor" { print $2 }' "$run/claude.tsv" || true)
+    expect "attach running supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor || true)" "claude attach ${supervisor:0:8}"
     for _ in $(seq 120); do
-        [[ $(PLAN_NO_ROLES='' "$plan" status) == *"- coordinator: $thread, idle"* ]] && break
+        [[ $(PLAN_NO_ROLES='' "$plan" status || true) == *"- coordinator: $thread, idle"* ]] && break
         sleep 2
     done
-    file=$(find "$HOME/.codex/sessions" "$HOME/.codex/archived_sessions" -name "rollout-*-$thread.jsonl" | head -n1)
-    expect "the coordinator heard the doorbell" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file")" "Doorbell test"
-    expect resume "$("$plan" resume)" "coordinator: resumed"
+    file=$(find "$HOME/.codex/sessions" "$HOME/.codex/archived_sessions" -name "rollout-*-$thread.jsonl" | head -n1 || true)
+    expect "the coordinator heard the doorbell" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "Doorbell test"
+    expect resume "$("$plan" resume || true)" "coordinator: resumed"
     for _ in $(seq 60); do
-        [[ $(PLAN_NO_ROLES='' "$plan" status) == *"- coordinator: $thread, idle"* ]] && break
+        [[ $(PLAN_NO_ROLES='' "$plan" status || true) == *"- coordinator: $thread, idle"* ]] && break
         sleep 2
     done
-    expect "the coordinator resumed" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file")" "RESUMED"
-    expect wake "$("$plan" wake supervisor "This is a test of plan wake. Reply WOKEN and end your turn.")" "supervisor: Claude Code session"
-    expect retro "$("$plan" retro "$dir")" "retrospective: Claude Code session"
+    expect "the coordinator resumed" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "RESUMED"
+    expect wake "$("$plan" wake supervisor "This is a test of plan wake. Reply WOKEN and end your turn." || true)" "supervisor: Claude Code session"
+    expect retro "$("$plan" retro "$dir" || true)" "retrospective: Claude Code session"
     # Clean up: the coordinator's thread archived, the Claude Code sessions removed.
     (
         source "$kit/codex.sh"
-        codex_open && codex_call thread/archive "$(jq -cn --arg t "$thread" '{threadId: $t}')" >/dev/null && codex_close
+        codex_open && codex_call thread/archive "$(jq -cn --arg t "$thread" '{threadId: $t}' || true)" >/dev/null && codex_close
     ) || echo "could not archive thread $thread"
     cut -f2 "$run/claude.tsv" | sort -u | while read -r session; do
         claude stop "${session:0:8}" >/dev/null 2>&1 || true
