@@ -229,6 +229,21 @@ check_plan() {
     esac
 }
 
+# Codex's daemon, and its updater, keep the environment of whoever starts
+# them, and give it to every command the coordinator runs. Started from an
+# agent's session, they would carry its variables (CODEX_CI, CODEX_THREAD_ID,
+# CLAUDECODE, ...). So start them from a clean login shell, whoever calls.
+codex_daemon_start() {
+    local var pass=()
+    for var in HOME USER LOGNAME LANG XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS \
+        CODEX_HOME DEV_ROOT DEV_TMP DEV_REPOS; do
+        [[ -z ${!var:-} ]] || pass+=("$var=${!var}")
+    done
+    # shellcheck disable=SC2016 # $1 expands in the login shell
+    env -i "${pass[@]}" SHELL=/bin/bash \
+        bash -lc 'cd "$1" && codex app-server daemon start' _ "$root" >/dev/null 2>&1
+}
+
 # The tools, the workspace's files, the queue and room to work.
 check_machine() {
     # Tools.
@@ -238,7 +253,7 @@ check_machine() {
     done
     cargo nextest --version >/dev/null 2>&1 && ok "has cargo-nextest" || fail "no cargo-nextest"
     local bin=$HOME/.local/bin
-    for tool in heavy land plan; do
+    for tool in heavy land plan test-plan; do
         if [[ $(readlink -f "$bin/$tool" 2>/dev/null) == "$kit/$tool" ]]; then
             ok "$tool is on PATH"
         elif ((fix)); then
@@ -368,7 +383,7 @@ check_machine() {
         fail "no claude"
     fi
     if command -v codex >/dev/null; then
-        codex app-server daemon version >/dev/null 2>&1 || { ((fix)) && codex app-server daemon start >/dev/null 2>&1; } || true
+        codex app-server daemon version >/dev/null 2>&1 || { ((fix)) && codex_daemon_start; } || true
         codex app-server daemon version 2>/dev/null | jq -e '.status == "running"' >/dev/null &&
             ok "Codex's app-server daemon is running" ||
             fail "Codex's app-server daemon is not running (--fix starts it)"
@@ -773,7 +788,7 @@ resume() {
     [[ ! -f $run/done.md ]] || die "the run is done"
     pueue status >/dev/null 2>&1 ||
         { systemctl --user start pueued 2>/dev/null || pueued --daemonize >/dev/null 2>&1 || true; }
-    codex app-server daemon start >/dev/null 2>&1 || true
+    codex app-server daemon version >/dev/null 2>&1 || codex_daemon_start || true
 
     local session state thread
     session=$(role_session supervisor)
