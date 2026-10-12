@@ -1,16 +1,105 @@
 //! Startup reads against real filesystem entries and bounded PEM bundles.
 
 use std::fs;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::Path;
 use std::process::Command;
 
 use skein_io::file::Unsafe;
 use skein_io::kernel::{Error, Kind};
 use skein_scratch::Scratch;
-use skein_shell::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_private_file, read_trust_roots};
+use skein_shell::{
+    DirectoryAccess, RootBounds, Roots, RootsRefusal, Trust, Unread, directory_access, read_file, read_private_file,
+    read_trust_roots,
+};
 
 const BOUNDS: RootBounds = RootBounds { bundle_bytes: 4_096, certificates: 8, certificate_bytes: 32 };
+
+#[test]
+fn directory_access_answers_writable_for_a_directory() {
+    let scratch = Scratch::new("access");
+    assert_eq!(directory_access(scratch.path()), DirectoryAccess::Writable);
+}
+
+#[test]
+fn directory_access_answers_absent_for_a_missing_path() {
+    let scratch = Scratch::new("access");
+    assert_eq!(directory_access(&scratch.path().join("missing")), DirectoryAccess::Absent);
+}
+
+#[test]
+fn directory_access_answers_not_a_directory_for_a_file() {
+    let scratch = Scratch::new("access");
+    let path = private_token(&scratch);
+    assert_eq!(directory_access(&path), DirectoryAccess::NotDirectory);
+}
+
+#[test]
+fn directory_access_answers_not_a_directory_for_a_file_in_the_path() {
+    let scratch = Scratch::new("access");
+    let path = private_token(&scratch);
+    assert_eq!(directory_access(&path.join("child")), DirectoryAccess::NotDirectory);
+}
+
+fn mode_checks_bypassed() -> bool {
+    let status = fs::read_to_string("/proc/self/status").expect("read effective capabilities");
+    let capabilities = status.lines().find_map(|line| line.strip_prefix("CapEff:")).expect("CapEff").trim();
+    u64::from_str_radix(capabilities, 16).expect("hex capabilities") & (1_u64 << 1_u32) != 0
+}
+
+#[test]
+fn directory_access_answers_denied_without_write_permission() {
+    if mode_checks_bypassed() {
+        eprintln!("CAP_DAC_OVERRIDE bypasses directory modes; skipping the denied-write case");
+        return;
+    }
+    let scratch = Scratch::new("access");
+    fs::set_permissions(scratch.path(), fs::Permissions::from_mode(0o500)).expect("deny directory writes");
+    assert_eq!(directory_access(scratch.path()), DirectoryAccess::Denied(libc::EACCES));
+}
+
+#[test]
+fn directory_access_answers_denied_without_search_permission() {
+    if mode_checks_bypassed() {
+        eprintln!("CAP_DAC_OVERRIDE bypasses directory modes; skipping the denied-search case");
+        return;
+    }
+    let scratch = Scratch::new("access");
+    fs::set_permissions(scratch.path(), fs::Permissions::from_mode(0o600)).expect("deny directory search");
+    assert_eq!(directory_access(scratch.path()), DirectoryAccess::Denied(libc::EACCES));
+}
+
+#[test]
+fn directory_access_answers_denied_for_a_nul_in_the_path() {
+    assert_eq!(directory_access(Path::new("nul\0inside")), DirectoryAccess::Denied(libc::EINVAL));
+}
+
+fn entry_metadata(path: &Path) -> (u32, u64, i64, i64, i64, i64) {
+    let entry = fs::metadata(path).expect("entry exists");
+    (entry.mode(), entry.len(), entry.mtime(), entry.mtime_nsec(), entry.ctime(), entry.ctime_nsec())
+}
+
+#[test]
+fn directory_access_creates_nothing_and_changes_no_entry() {
+    let scratch = Scratch::new("access");
+    let file = private_token(&scratch);
+    let denied = scratch.path().join("denied");
+    fs::create_dir(&denied).expect("plant a directory");
+    fs::set_permissions(&denied, fs::Permissions::from_mode(0o500)).expect("deny directory writes");
+    let paths = [scratch.path().to_path_buf(), file.clone(), denied];
+    let before = paths.each_ref().map(|path| entry_metadata(path));
+    let descriptors = fs::read_dir("/proc/self/fd").expect("descriptor observer").count();
+    for path in &paths {
+        let _answer = directory_access(path);
+    }
+    let absent = scratch.path().join("absent");
+    let _answer = directory_access(&absent);
+    assert!(!absent.exists(), "no missing entry created");
+    assert_eq!(fs::read_dir(scratch.path()).expect("scratch entries").count(), 2, "no check file created");
+    assert_eq!(paths.each_ref().map(|path| entry_metadata(path)), before, "modes, size and timestamps stay");
+    assert_eq!(fs::read(&file).expect("file contents"), b"secret", "file contents stay");
+    assert_eq!(fs::read_dir("/proc/self/fd").expect("descriptor observer").count(), descriptors, "no descriptor kept");
+}
 
 fn private_token(scratch: &Scratch) -> std::path::PathBuf {
     let path = scratch.path().join("token");

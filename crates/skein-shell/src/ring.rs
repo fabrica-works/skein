@@ -45,7 +45,7 @@
 //!   and at least as aligned as either.
 //! - **The synchronous calls** (`setsockopt`, `getsockname`, `close`,
 //!   `open`, `getdents64`, `lseek`, `fstatat`, `fstat`, `fcntl`,
-//!   `clock_gettime`, `getrandom`) are given pointers to locals, to strings
+//!   `faccessat2`, `clock_gettime`, `getrandom`) are given pointers to locals, to strings
 //!   or to the
 //!   table's listing buffer, each of which lives across the call, with their
 //!   true sizes. `getdents64` is not a ring operation, so a `List` runs at
@@ -1664,6 +1664,60 @@ pub(crate) fn random(bytes: &mut [u8]) -> Result<(), i32> {
 pub fn effective_user() -> u32 {
     // SAFETY: geteuid takes no pointers and has no preconditions.
     unsafe { libc::geteuid() }
+}
+
+/// The kernel's startup answer on whether the effective user may write and
+/// search a directory (shell.md, section 6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[must_use]
+pub enum DirectoryAccess {
+    /// The path names a directory the effective user may write and search.
+    Writable,
+    /// The path or a component of it is absent.
+    Absent,
+    /// The path or a parent component is not a directory.
+    NotDirectory,
+    /// The check failed with this kernel error number.
+    Denied(i32),
+}
+
+/// Checks startup's directory with `faccessat2(W_OK | X_OK, AT_EACCESS)`;
+/// creates nothing, opens nothing for writing and changes nothing (shell.md, 6.1).
+/// The answer describes this moment; a later write must find out for itself.
+pub fn directory_access(path: &Path) -> DirectoryAccess {
+    let Ok(path) = CString::new(path.as_os_str().as_bytes()) else {
+        return DirectoryAccess::Denied(libc::EINVAL);
+    };
+    // SAFETY: `libc::stat` is a plain C struct of integers, for which all
+    // zeroes is a valid value.
+    let mut raw: libc::stat = unsafe { mem::zeroed() };
+    // SAFETY: the NUL-terminated path and the exclusive stat buffer live
+    // across the call. Following links checks the directory the path names.
+    let stat = unsafe { libc::fstatat(libc::AT_FDCWD, path.as_ptr(), ptr::from_mut(&mut raw), 0) };
+    if stat == 0 {
+        if raw.st_mode & libc::S_IFMT != libc::S_IFDIR {
+            return DirectoryAccess::NotDirectory;
+        }
+        // SAFETY: the NUL-terminated path lives across the call; the other
+        // arguments are the syscall's directory, access mode and flags.
+        let access = unsafe {
+            libc::syscall(
+                libc::SYS_faccessat2,
+                libc::AT_FDCWD,
+                path.as_ptr(),
+                libc::W_OK | libc::X_OK,
+                libc::AT_EACCESS,
+            )
+        };
+        if access == 0 {
+            return DirectoryAccess::Writable;
+        }
+    }
+    match last_errno() {
+        libc::ENOENT => DirectoryAccess::Absent,
+        libc::ENOTDIR => DirectoryAccess::NotDirectory,
+        errno => DirectoryAccess::Denied(errno),
+    }
 }
 
 /// The process ID, read once by startup for the service's report (shell.md, section 6.1).

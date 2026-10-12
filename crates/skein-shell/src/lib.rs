@@ -7,6 +7,7 @@
 //! - [`open_append`]: a regular file opened beneath a root for output at startup.
 //! - [`open_root`]: a directory opened at startup as a root for io's files.
 //! - [`effective_user`]: the startup user ID for io's private-file configuration.
+//! - [`directory_access`]: the kernel's startup answer on writing and searching a directory.
 //! - [`process_id`]: the startup process ID for the service's report.
 //! - [`read_file`] and [`read_trust_roots`]: startup reads within configured bounds.
 //! - [`open_termination_signals`]: the blocked SIGINT/SIGTERM source io adopts.
@@ -32,9 +33,9 @@ mod tests;
 pub use clock::{Clock, Now};
 pub use drive::{Host, drive};
 pub use ring::{
-    Config, HostedPipes, Kernel, OpenError, OutputKind, Wait, abandon_binary, close_keeper_fd, effective_user,
-    hosted_pipes, make_subreaper, open_append, open_cgroup, open_pidfd, open_root, open_signal_pipe,
-    open_termination_signals, pidfd_exited, poll_child, prepare_output, process_id, set_subreaper,
+    Config, DirectoryAccess, HostedPipes, Kernel, OpenError, OutputKind, Wait, abandon_binary, close_keeper_fd,
+    directory_access, effective_user, hosted_pipes, make_subreaper, open_append, open_cgroup, open_pidfd, open_root,
+    open_signal_pipe, open_termination_signals, pidfd_exited, poll_child, prepare_output, process_id, set_subreaper,
     signal_current_thread, signal_kept_child, start_binary, start_binary_in_cgroup, subreaper, wait_cgroup_change,
     write_service_signal,
 };
