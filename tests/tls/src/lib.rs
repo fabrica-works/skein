@@ -24,12 +24,14 @@
 //! `tests/fuzzy_*.rs` (testing-strategy.md, 8).
 
 pub mod drive;
-/// Actual native IO/TLS ownership worlds (tls.md, 3.6; testing-strategy.md, 6).
+pub mod meter;
+/// Native TLS over io’s sockets on the simulator.
 pub mod native;
-/// Lowest-tier real-peer native controls (tls.md, 3.6; testing-strategy.md, 2.1).
+/// Native TLS against a peer in memory.
 pub mod native_pair;
-/// Authenticated extracted-key `TLS1.2` controls (tls.md, 3.6; testing-strategy.md, 2.4).
+/// A TLS 1.2 peer whose keys are taken out.
 pub mod native_peer;
 pub mod pki;
+pub mod records;
 pub mod server;
 pub mod world;

@@ -1,6 +1,6 @@
 //! The certificates the worlds use, kept in `fixtures/` and made by
 //! `fixtures/make.sh`, and the configurations made of them: the client's,
-//! which trusts the test root, and the server's, which presents a chain.
+//! which trusts the test root, and the server's, which presents a chain (tls.md, 5).
 //!
 //! Every certificate is valid from 2026-01-01 to 2036-01-01. A world checks
 //! them at the wall time it chooses: [`VALID`], [`EXPIRED`] or [`EARLY`].
@@ -18,6 +18,15 @@ use rustls::{
 };
 use skein_lib::Wall;
 use skein_tls::{Config, Name};
+
+/// A TLS 1.3 record's header, inner content type, and authentication tag.
+pub const TLS13_OVERHEAD: usize = 22;
+/// A TLS 1.2 AES-GCM record's header, explicit nonce, and authentication tag.
+pub const TLS12_OVERHEAD: usize = 29;
+/// A TLS 1.3 key update's sealed record.
+pub const KEY_UPDATE_RECORD: usize = 27;
+/// A TLS 1.2 alert's sealed record.
+pub const TLS12_ALERT_RECORD: usize = 31;
 
 /// The root the client trusts.
 pub const ROOT: &[u8] = include_bytes!("../fixtures/root.der");

@@ -2,10 +2,10 @@
 
 use super::{Client, Event, LowerEvent, LowerOutput, LowerRequest, Request, State, UpperOutput};
 use crate::Name;
-use crate::client::{self, Limits};
-use crate::tests::{LIMITS, config};
+use crate::client::{self, Limits, Waiting};
+use crate::tests::{LIMITS, VALID, WITHDRAW, config, native_peer};
 use alloc::boxed::Box;
-use skein_lib::stream::{Down, OutputDown, OutputOutcome, OutputUp, Read, Up};
+use skein_lib::stream::{Down, Fault, OutputDown, OutputOutcome, OutputUp, Read, Up};
 use skein_lib::{Env, Queue, Time, Token, Wall};
 
 fn lower(output: u32) -> super::LowerLimits {
@@ -72,9 +72,9 @@ impl Machine {
     fn sent_hello(&mut self, right: Token) {
         self.up(LowerEvent::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted }));
         assert!(self.above.is_empty(), "handshake still unanswered");
-        match self.below.pop().expect("actual hello Send") {
+        match self.below.pop().expect("hello Send") {
             LowerRequest::Output(OutputDown::Send { right: sent, bytes }) => {
-                assert_eq!(sent, right, "exact actual grant consumed");
+                assert_eq!(sent, right, "exact grant consumed");
                 assert!(!bytes.is_empty(), "real rustls ClientHello");
             }
             LowerRequest::Output(OutputDown::Room { .. } | OutputDown::Cancel { .. } | OutputDown::Release { .. })
@@ -90,47 +90,61 @@ fn wanted(machine: &mut Machine, right: Token) {
 }
 
 #[test]
-fn native_envelope_and_value_bound_are_checked_before_startup_allocation() {
-    for plaintext in [1, 16, 16_384, 16_385, 40_000] {
-        assert_eq!(
-            super::room_for(plaintext),
-            match client::room_for(plaintext) {
-                Some(bytes) => bytes.checked_add(client::FLIGHT),
-                None => None,
-            },
-            "whole owed prefix beside original envelope"
-        );
-    }
-    assert_eq!(super::room_for(u32::MAX), None, "checked overflow");
-    let cap = super::largest_room(&LIMITS).expect("checked configured cap");
-    assert!(
-        Client::new(
-            &config(),
-            Name::new("skein.test").expect("name"),
-            &LIMITS,
-            &lower(cap.checked_sub(1).expect("positive cap"))
-        )
-        .is_none(),
-        "one-short configured cap refuses"
-    );
-    assert!(
-        Client::new(&config(), Name::new("skein.test").expect("name"), &LIMITS, &lower(cap)).is_some(),
-        "exact cap admits"
-    );
-    for incompatible in [
-        super::LowerLimits { read: client::LARGEST_READ - 1, output: cap, sends: 1 },
-        super::LowerLimits { read: client::LARGEST_READ, output: cap, sends: 0 },
-    ] {
-        assert!(Client::new(&config(), Name::new("skein.test").expect("name"), &LIMITS, &incompatible).is_none());
-    }
-    assert!(
-        super::worst_case(&LIMITS).expect("native bound") >= client::worst_case(&LIMITS).expect("classic bound"),
-        "actual native value/work counted"
-    );
+fn a_fresh_native_client_waits_for_its_handshake() {
+    let machine = Machine::new();
+    assert_eq!(machine.client.waiting(), Waiting::Handshake);
 }
 
 #[test]
-fn upper_cancel_before_ready_settles_only_its_named_right_and_never_reads() {
+fn a_transport_closing_client_waits_for_its_close() {
+    let mut machine = Machine::new();
+    let right = machine.started();
+    machine.up(LowerEvent::Output(OutputUp::Settled { right, outcome: OutputOutcome::Cancelled }));
+    assert_eq!(machine.client.waiting(), Waiting::Close);
+}
+
+#[test]
+fn native_room_counts_records_and_the_owed_prefix() {
+    // 29 per record, 54 slack, and 2048 owed bytes (tls.md, 3.5, 3.6).
+    for (plaintext, room) in [(1, 2_132), (16, 2_147), (16_384, 18_515), (16_385, 18_545), (40_000, 42_189)] {
+        assert_eq!(super::room_for(plaintext), Some(room));
+    }
+}
+
+#[test]
+fn native_room_overflow_is_refused() {
+    assert_eq!(super::room_for(u32::MAX), None);
+}
+
+#[test]
+fn short_output_caps_are_refused() {
+    assert!(Client::new(&config(), Name::new("skein.test").unwrap(), &LIMITS, &lower(2_146)).is_none());
+}
+
+#[test]
+fn sufficient_output_caps_are_admitted() {
+    assert!(Client::new(&config(), Name::new("skein.test").unwrap(), &LIMITS, &lower(2_147)).is_some());
+}
+
+#[test]
+fn short_read_caps_are_refused() {
+    let caps = super::LowerLimits { read: 18_431, output: 2_147, sends: 1 };
+    assert!(Client::new(&config(), Name::new("skein.test").unwrap(), &LIMITS, &caps).is_none());
+}
+
+#[test]
+fn missing_send_slots_are_refused() {
+    let caps = super::LowerLimits { read: 18_432, output: 2_147, sends: 0 };
+    assert!(Client::new(&config(), Name::new("skein.test").unwrap(), &LIMITS, &caps).is_none());
+}
+
+#[test]
+fn native_worst_case_includes_the_classic_bound() {
+    assert!(super::worst_case(&LIMITS).expect("native bound") >= 440_441, "native value/work counted");
+}
+
+#[test]
+fn cancel_before_ready_settles_only_its_named_right() {
     let mut machine = Machine::new();
     let lower = machine.started();
     wanted(&mut machine, Token::new(70));
@@ -145,18 +159,14 @@ fn upper_cancel_before_ready_settles_only_its_named_right_and_never_reads() {
     assert!(machine.above.is_empty() && machine.below.is_empty(), "TLS flight/read are still unanswered");
     machine.sent_hello(lower);
     machine.down(Request::Client(client::Request::Close));
-    assert!(machine.above.is_empty(), "local close awaits actual physical Closed");
-    assert_eq!(
-        machine.below.pop(),
-        Some(LowerRequest::Stream(Down::Demand { read: Read::Nothing, room: 0 })),
-        "actual read withdrawn only on close"
-    );
+    assert!(machine.above.is_empty(), "local close awaits physical Closed");
+    assert_eq!(machine.below.pop(), Some(LowerRequest::Stream(WITHDRAW)), "read withdrawn only on close");
     machine.up(LowerEvent::Closed);
-    assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Closed)), "local terminal after actual closure");
+    assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Closed)), "local terminal after closure");
 }
 
 #[test]
-fn direct_actual_closed_cancels_pre_ready_upper_without_any_lower_output_notice() {
+fn owner_closure_cancels_output_before_ready() {
     let mut machine = Machine::new();
     let lower = machine.started();
     machine.sent_hello(lower);
@@ -167,7 +177,7 @@ fn direct_actual_closed_cancels_pre_ready_upper_without_any_lower_output_notice(
         Some(Event::Output(OutputUp::Settled { right: Token::new(8), outcome: OutputOutcome::Cancelled })),
         "own upper debt settles before lifecycle"
     );
-    assert_eq!(machine.above.pop(), Some(Event::TransportClosed), "actual physical close ends Handshake/read");
+    assert_eq!(machine.above.pop(), Some(Event::TransportClosed), "physical close ends Handshake/read");
     assert!(machine.below.is_empty(), "no fabricated lower Failed or cancellation");
     machine.down(Request::Client(client::Request::Close));
     assert!(
@@ -177,56 +187,55 @@ fn direct_actual_closed_cancels_pre_ready_upper_without_any_lower_output_notice(
 }
 
 #[test]
-fn unsolicited_lower_cancel_and_both_coordinated_close_orders_keep_one_lifecycle() {
-    for close_first in [false, true] {
-        let mut machine = Machine::new();
-        let lower = machine.started();
-        wanted(&mut machine, Token::new(8));
-        machine.up(LowerEvent::Output(OutputUp::Settled { right: lower, outcome: OutputOutcome::Cancelled }));
-        assert_eq!(
-            machine.above.pop(),
-            Some(Event::Output(OutputUp::Settled { right: Token::new(8), outcome: OutputOutcome::Cancelled })),
-            "upper debt cancellation"
-        );
-        assert_eq!(machine.above.pop(), Some(Event::TransportClosing), "real unsolicited cancellation lifecycle");
-        assert_eq!(
-            machine.below.pop(),
-            Some(LowerRequest::Stream(Down::Demand { read: Read::Nothing, room: 0 })),
-            "closing read withdrawal"
-        );
-        if close_first {
-            machine.down(Request::Client(client::Request::Close));
-            assert!(machine.above.is_empty(), "local Close awaits real physical closure");
-            machine.up(LowerEvent::Closed);
-            assert_eq!(
-                machine.above.pop(),
-                Some(Event::Client(client::Event::Closed)),
-                "local Close answers once after actual Closed"
-            );
-        } else {
-            machine.up(LowerEvent::Closed);
-            assert_eq!(
-                machine.above.pop(),
-                Some(Event::TransportClosed),
-                "physical lifecycle wins before queued Close"
-            );
-            machine.down(Request::Client(client::Request::Close));
-        }
-        assert!(machine.above.is_empty() && machine.below.is_empty(), "no invented second Closed");
-    }
+fn close_after_cancellation_waits_for_the_owner() {
+    let mut machine = Machine::new();
+    let lower = machine.started();
+    wanted(&mut machine, Token::new(8));
+    machine.up(LowerEvent::Output(OutputUp::Settled { right: lower, outcome: OutputOutcome::Cancelled }));
+    assert_eq!(
+        machine.above.pop(),
+        Some(Event::Output(OutputUp::Settled { right: Token::new(8), outcome: OutputOutcome::Cancelled })),
+        "upper debt cancellation"
+    );
+    assert_eq!(machine.above.pop(), Some(Event::TransportClosing), "real unsolicited cancellation lifecycle");
+    assert_eq!(machine.below.pop(), Some(LowerRequest::Stream(WITHDRAW)), "closing read withdrawal");
+    machine.down(Request::Client(client::Request::Close));
+    assert!(machine.above.is_empty(), "local Close awaits real physical closure");
+    machine.up(LowerEvent::Closed);
+    assert_eq!(
+        machine.above.pop(),
+        Some(Event::Client(client::Event::Closed)),
+        "local Close answers once after Closed"
+    );
+    assert!(machine.above.is_empty() && machine.below.is_empty(), "no invented second Closed");
 }
 
 #[test]
-fn actual_grant_queued_across_local_close_is_released_without_fabricated_cancelled() {
+fn owner_closure_makes_a_later_close_inert() {
+    let mut machine = Machine::new();
+    let lower = machine.started();
+    wanted(&mut machine, Token::new(8));
+    machine.up(LowerEvent::Output(OutputUp::Settled { right: lower, outcome: OutputOutcome::Cancelled }));
+    assert_eq!(
+        machine.above.pop(),
+        Some(Event::Output(OutputUp::Settled { right: Token::new(8), outcome: OutputOutcome::Cancelled })),
+        "upper debt cancellation"
+    );
+    assert_eq!(machine.above.pop(), Some(Event::TransportClosing), "real unsolicited cancellation lifecycle");
+    assert_eq!(machine.below.pop(), Some(LowerRequest::Stream(WITHDRAW)), "closing read withdrawal");
+    machine.up(LowerEvent::Closed);
+    assert_eq!(machine.above.pop(), Some(Event::TransportClosed), "physical lifecycle wins before queued Close");
+    machine.down(Request::Client(client::Request::Close));
+    assert!(machine.above.is_empty() && machine.below.is_empty(), "no invented second Closed");
+}
+
+#[test]
+fn a_grant_crossing_close_is_released() {
     let mut machine = Machine::new();
     let lower = machine.started();
     machine.down(Request::Client(client::Request::Close));
-    assert!(machine.above.is_empty(), "Close waits for actual admitted lower terminal");
-    assert_eq!(
-        machine.below.pop(),
-        Some(LowerRequest::Stream(Down::Demand { read: Read::Nothing, room: 0 })),
-        "close withdraws real read"
-    );
+    assert!(machine.above.is_empty(), "Close waits for admitted lower terminal");
+    assert_eq!(machine.below.pop(), Some(LowerRequest::Stream(WITHDRAW)), "close withdraws real read");
     assert_eq!(
         machine.below.pop(),
         Some(LowerRequest::Output(OutputDown::Cancel { right: lower })),
@@ -243,19 +252,15 @@ fn actual_grant_queued_across_local_close_is_released_without_fabricated_cancell
         "lower grant settles without inventing physical closure"
     );
     machine.up(LowerEvent::Closed);
-    assert_eq!(
-        machine.above.pop(),
-        Some(Event::Client(client::Event::Closed)),
-        "no abandoned lower debt at actual closure"
-    );
+    assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Closed)), "no abandoned lower debt at closure");
     assert!(machine.above.is_empty() && machine.below.is_empty(), "no cancellation terminal fabricated");
 }
 
 #[test]
-fn actual_self_cancel_drain_does_not_cancel_a_new_upper_right_until_physical_closed() {
+fn self_cancel_preserves_output_until_owner_closure() {
     let mut machine = Machine::new();
     let lower = machine.started();
-    // An actual cancellation of this TLS-owned flight is injected at the
+    // An cancellation of this TLS-owned flight is injected at the
     // lower cell tier, retaining precisely its issued identity and witness.
     super::cancel_lower(&mut machine.client, &mut machine.below);
     assert_eq!(
@@ -265,7 +270,7 @@ fn actual_self_cancel_drain_does_not_cancel_a_new_upper_right_until_physical_clo
     );
     wanted(&mut machine, Token::new(88));
     machine.up(LowerEvent::Output(OutputUp::Settled { right: lower, outcome: OutputOutcome::Granted }));
-    // Grant wins across the cancel: the actual owed ClientHello is sent,
+    // Grant wins across the cancel: the owed ClientHello is sent,
     // rather than falsely claiming cancellation. No new upper grant pre-Ready.
     match machine.below.pop().expect("flight consumes winning grant") {
         LowerRequest::Output(OutputDown::Send { right, .. }) => assert_eq!(right, lower, "same lower right"),
@@ -277,13 +282,13 @@ fn actual_self_cancel_drain_does_not_cancel_a_new_upper_right_until_physical_clo
     assert_eq!(
         machine.above.pop(),
         Some(Event::Output(OutputUp::Settled { right: Token::new(88), outcome: OutputOutcome::Cancelled })),
-        "new debt cancelled by actual Closed"
+        "new debt cancelled by Closed"
     );
     assert_eq!(machine.above.pop(), Some(Event::TransportClosed), "one physical lifecycle");
 }
 
 #[test]
-fn checked_lower_generator_emits_maximum_once_then_fails_before_new_room() {
+fn the_last_token_is_used_once_without_wrapping() {
     let mut machine = Machine::new();
     machine.client.next_lower = Some(u64::MAX);
     let lower = machine.started();
@@ -300,15 +305,12 @@ fn checked_lower_generator_emits_maximum_once_then_fails_before_new_room() {
     );
     assert_eq!(
         machine.above.pop(),
-        Some(Event::Output(OutputUp::Settled {
-            right: Token::new(4),
-            outcome: OutputOutcome::Failed(skein_lib::stream::Fault::Other)
-        })),
+        Some(Event::Output(OutputUp::Settled { right: Token::new(4), outcome: OutputOutcome::Failed(Fault::Other) })),
         "pending upper settles first"
     );
     assert_eq!(
         machine.above.pop(),
-        Some(Event::Client(client::Event::Stream(Up::Failed(skein_lib::stream::Fault::Other)))),
+        Some(Event::Client(client::Event::Stream(Up::Failed(Fault::Other)))),
         "stream failure next"
     );
     assert_eq!(
@@ -318,14 +320,14 @@ fn checked_lower_generator_emits_maximum_once_then_fails_before_new_room() {
     );
     assert_eq!(
         machine.below.pop(),
-        Some(LowerRequest::Stream(Down::Demand { read: Read::Nothing, room: 0 })),
-        "actual independent ciphertext read is withdrawn on local failure"
+        Some(LowerRequest::Stream(WITHDRAW)),
+        "independent ciphertext read is withdrawn on local failure"
     );
     assert!(machine.below.is_empty(), "no Room, encryption or transfer after exhaustion");
 }
 
 #[test]
-fn stale_oversized_send_and_release_cannot_touch_another_upper_grant() {
+fn stale_output_cannot_touch_another_grant() {
     let mut machine = Machine::new();
     let lower = machine.started();
     machine.sent_hello(lower);
@@ -339,13 +341,13 @@ fn stale_oversized_send_and_release_cannot_touch_another_upper_grant() {
     assert_eq!(
         machine.client.upper_output,
         UpperOutput::Granted { right: Token::new(5), bytes: 1 },
-        "actual upper right unchanged"
+        "upper right unchanged"
     );
 }
 
 #[test]
 #[should_panic(expected = "matching native Send within grant")]
-fn matching_oversized_send_asserts_before_encryption_or_lower_transfer() {
+fn matching_oversized_send_is_a_bug() {
     let mut machine = Machine::new();
     let lower = machine.started();
     machine.sent_hello(lower);
@@ -355,7 +357,7 @@ fn matching_oversized_send_asserts_before_encryption_or_lower_transfer() {
 
 #[test]
 #[should_panic(expected = "native Finish after Ready once")]
-fn native_finish_before_ready_is_a_receiving_violation() {
+fn finish_before_ready_is_a_bug() {
     let mut machine = Machine::new();
     machine.started();
     machine.down(Request::Client(client::Request::Stream(Down::Finish)));
@@ -363,27 +365,27 @@ fn native_finish_before_ready_is_a_receiving_violation() {
 
 #[test]
 #[should_panic(expected = "native plaintext Demand is read-only")]
-fn native_classic_room_is_rejected_before_effects() {
+fn classic_room_is_a_bug_on_the_native_face() {
     let mut machine = Machine::new();
     machine.started();
     machine.down(Request::Client(client::Request::Stream(Down::Demand { read: Read::Nothing, room: 1 })));
 }
 
 #[test]
-#[should_panic(expected = "actual lower terminal precedes physical Closed")]
-fn physical_closed_cannot_invent_a_missing_lower_output_terminal() {
+#[should_panic(expected = "lower terminal precedes physical Closed")]
+fn closure_requires_every_output_terminal_below() {
     let mut machine = Machine::new();
     machine.started();
     machine.up(LowerEvent::Closed);
 }
 
 #[test]
-fn duplicate_physical_closed_preserves_the_already_emitted_winner() {
+fn duplicate_closure_preserves_the_first_terminal() {
     let mut machine = Machine::new();
     let lower = machine.started();
     machine.sent_hello(lower);
     machine.up(LowerEvent::Closed);
-    assert_eq!(machine.above.pop(), Some(Event::TransportClosed), "actual lifecycle once");
+    assert_eq!(machine.above.pop(), Some(Event::TransportClosed), "lifecycle once");
     machine.up(LowerEvent::Closed);
     assert!(machine.above.is_empty() && machine.below.is_empty(), "duplicate lifecycle inert");
     match machine.client.state {
@@ -394,7 +396,7 @@ fn duplicate_physical_closed_preserves_the_already_emitted_winner() {
     }
 }
 
-/// Actual unbuffered rustls peer; no hand-written Ready or protocol records.
+/// A rustls peer that writes the handshake records.
 struct Peer {
     tls: rustls::server::UnbufferedServerConnection,
     input: crate::held::Held,
@@ -407,11 +409,10 @@ impl Peer {
         for _ in 0..64_u32 {
             let UnbufferedStatus { discard, state } = self.tls.process_tls_records(self.input.filled_mut());
             let state = state.expect("real valid client fixture handshake");
-            // rustls's foreign state is non-exhaustive. Narrow positive fixture
-            // variants explicitly, without a blanket lint waiver or own-enum
-            // catch-all; every other actual state is a fixture failure.
+            // rustls's states are non-exhaustive. The fixture reaches only
+            // the handshake and resting states of 0.23.
             let resting = if let ConnectionState::EncodeTlsData(mut encode) = state {
-                let written = encode.encode(self.output.spare_mut()).expect("actual bounded server flight");
+                let written = encode.encode(self.output.spare_mut()).expect("bounded server flight");
                 self.output.wrote(written);
                 false
             } else if let ConnectionState::TransmitTlsData(transmit) = state {
@@ -424,165 +425,120 @@ impl Peer {
             {
                 true
             } else {
-                unreachable!("actual rustls 0.23 positive handshake states; no peer application data")
+                unreachable!("rustls 0.23 positive handshake states; no peer application data")
             };
             self.input.discard(discard);
             if resting {
                 return;
             }
         }
-        unreachable!("bounded actual server processing rests");
+        unreachable!("bounded server processing rests");
     }
 }
 
-/// Every actual emitted lower handshake request updates the independent proxy.
-fn take_handshake(
-    machine: &mut Machine,
-    peer: &mut Peer,
-    read: &mut Option<Read>,
-    room: &mut Option<(Token, u32)>,
-    grant: &mut Option<(Token, u32)>,
-) {
-    for _ in 0..super::UP_MAX_OUT.below {
-        let Some(request) = machine.below.pop() else { break };
-        match request {
-            LowerRequest::Stream(Down::Demand { read: requested, room: 0 }) => *read = Some(requested),
-            LowerRequest::Output(OutputDown::Room { right, bytes }) => {
-                assert!(room.replace((right, bytes)).is_none(), "one actual lower fixture demand");
-            }
-            LowerRequest::Output(OutputDown::Send { right, bytes }) => {
-                // This output consumes the actual grant previously observed.
-                assert!(room.is_none(), "grant observed before its Send");
-                let (expected, cap) = grant.take().expect("one actual lower fixture grant");
-                assert_eq!(right, expected, "actual lower token");
-                assert!(bytes.len() <= usize::try_from(cap).expect("finite capacity"), "within real fixture grant");
-                peer.input.append(&bytes).expect("bounded actual peer input");
-                peer.process();
-            }
-            LowerRequest::Stream(Down::Demand { .. } | Down::Send(_) | Down::Finish)
-            | LowerRequest::Output(OutputDown::Cancel { .. } | OutputDown::Release { .. }) => {
-                unreachable!("positive handshake fixture requests")
-            }
-        }
-    }
-    assert!(machine.below.is_empty(), "all actual lower output observed");
+struct Handshake {
+    machine: Machine,
+    peer: Peer,
+    read: Option<Read>,
+    room: Option<(Token, u32)>,
+    grant: Option<(Token, u32)>,
 }
 
-/// Genuine Ready remains first; all three actual exhaustion faults follow.
-fn assert_four_events(machine: &mut Machine, upper: Token) {
-    assert_eq!(machine.above.len(), 4, "actual maximum upper co-emission, no suppressed Ready");
-    match machine.above.pop().expect("genuine Ready first") {
-        Event::Client(client::Event::Ready(agreed)) => {
-            assert_eq!(agreed.version, client::Version::Tls12, "real TLS1.2 peer");
-        }
-        Event::Client(client::Event::Stream(_) | client::Event::Failed(_) | client::Event::Closed)
-        | Event::Output(_)
-        | Event::TransportClosing
-        | Event::TransportClosed => unreachable!("genuine Ready precedes actual local exhaustion"),
+impl Handshake {
+    fn new() -> Handshake {
+        let (config, tls) = native_peer();
+        let mut machine = Machine::new();
+        machine.env.wall = VALID;
+        machine.client = Client::new(
+            &config,
+            Name::new("skein.test").expect("certificate name"),
+            &LIMITS,
+            &lower(super::largest_room(&LIMITS).expect("cap")),
+        )
+        .expect("compatible");
+        let capacity = client::MAX_HANDSHAKE.checked_add(client::MAX_RECORD).expect("maximum peer flight");
+        let peer = Peer {
+            tls,
+            input: crate::held::Held::with_capacity(capacity),
+            output: crate::held::Held::with_capacity(capacity),
+        };
+        machine.down(Request::Client(client::Request::Handshake));
+        Handshake { machine, peer, read: None, room: None, grant: None }
     }
-    assert_eq!(
-        machine.above.pop(),
-        Some(Event::Output(OutputUp::Settled {
-            right: upper,
-            outcome: OutputOutcome::Failed(skein_lib::stream::Fault::Other)
-        })),
-        "actual upper failure second"
-    );
-    assert_eq!(
-        machine.above.pop(),
-        Some(Event::Client(client::Event::Stream(Up::Failed(skein_lib::stream::Fault::Other)))),
-        "plaintext failure third"
-    );
-    assert_eq!(
-        machine.above.pop(),
-        Some(Event::Client(client::Event::Failed(client::Error::Other))),
-        "TLS failure fourth"
-    );
-    assert!(machine.above.is_empty() && machine.below.is_empty(), "no new lower right after exhaustion");
-}
 
-/// Real TLS1.2 handshake for both genuine Ready and exhaustion controls.
-fn actual_ready(exhaustion: bool) -> Machine {
-    let (config, tls) = crate::config::native_test_peer();
-    let mut machine = Machine::new();
-    machine.env.wall = Wall::from_nanos(1_893_456_000_u64.checked_mul(1_000_000_000).expect("fixture valid time"));
-    machine.client = Client::new(
-        &config,
-        Name::new("skein.test").expect("actual certificate name"),
-        &LIMITS,
-        &lower(super::largest_room(&LIMITS).expect("cap")),
-    )
-    .expect("compatible");
-    let capacity = client::MAX_HANDSHAKE.checked_add(client::MAX_RECORD).expect("actual maximum peer flight");
-    let mut peer = Peer {
-        tls,
-        input: crate::held::Held::with_capacity(capacity),
-        output: crate::held::Held::with_capacity(capacity),
-    };
-    machine.down(Request::Client(client::Request::Handshake));
-    let mut read = None;
-    let mut room = None;
-    let mut grant: Option<(Token, u32)> = None;
-    let mut admitted = false;
-    let upper = Token::new(900);
-    for _ in 0..512_u32 {
-        take_handshake(&mut machine, &mut peer, &mut read, &mut room, &mut grant);
-        assert!(machine.below.is_empty(), "all actual lower output observed");
-        if !admitted {
-            if exhaustion {
-                wanted(&mut machine, upper);
+    fn take(&mut self) {
+        for _ in 0..super::UP_MAX_OUT.below {
+            let Some(request) = self.machine.below.pop() else { break };
+            match request {
+                LowerRequest::Stream(Down::Demand { read, room: 0 }) => self.read = Some(read),
+                LowerRequest::Output(OutputDown::Room { right, bytes }) => {
+                    assert!(self.room.replace((right, bytes)).is_none(), "one fixture demand");
+                }
+                LowerRequest::Output(OutputDown::Send { right, bytes }) => {
+                    assert!(self.room.is_none(), "grant observed before its Send");
+                    let (expected, cap) = self.grant.take().expect("one fixture grant");
+                    assert_eq!(right, expected, "below's token");
+                    assert!(bytes.len() <= usize::try_from(cap).expect("finite capacity"), "within fixture grant");
+                    self.peer.input.append(&bytes).expect("bounded peer input");
+                    self.peer.process();
+                }
+                LowerRequest::Stream(Down::Demand { .. } | Down::Send(_) | Down::Finish)
+                | LowerRequest::Output(OutputDown::Cancel { .. } | OutputDown::Release { .. }) => {
+                    unreachable!("positive handshake fixture requests")
+                }
             }
-            admitted = true;
         }
-        if exhaustion && !peer.tls.is_handshaking() {
-            // TLS1.2 server has accepted actual client Finished and queued its
-            // own Finished; client still owes a genuine Ready from that input.
-            machine.client.next_lower = None;
-        }
-        if let Some((right, bytes)) = room.take() {
-            assert!(grant.replace((right, bytes)).is_none(), "one lower fixture grant");
-            machine.up(LowerEvent::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted }));
-        } else if let Some(requested) = read {
+        assert!(self.machine.below.is_empty(), "all output below observed");
+    }
+
+    fn receive(&mut self) {
+        if let Some((right, bytes)) = self.room.take() {
+            assert!(self.grant.replace((right, bytes)).is_none(), "one fixture grant");
+            self.machine.up(LowerEvent::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted }));
+        } else if let Some(requested) = self.read {
             let count = match requested {
                 Read::Fill(count) => count,
-                Read::Nothing | Read::Line { .. } | Read::Scan { .. } => unreachable!("exact native record Fill"),
+                Read::Nothing | Read::Line { .. } | Read::Scan { .. } => unreachable!("exact record Fill"),
             };
-            if peer.output.len() >= count {
-                read = None;
-                machine.up(LowerEvent::Stream(Up::Bytes(peer.output.take(count))));
-            } else {
-                unreachable!("actual server handshake supplies pending record");
-            }
+            assert!(self.peer.output.len() >= count, "server supplies pending record");
+            self.read = None;
+            self.machine.up(LowerEvent::Stream(Up::Bytes(self.peer.output.take(count))));
         } else {
-            unreachable!("actual handshake retains lower work");
-        }
-        if !machine.above.is_empty() {
-            if exhaustion {
-                assert_four_events(&mut machine, upper);
-            } else {
-                assert_eq!(machine.above.len(), 1, "one genuine Ready without exhaustion");
-                match machine.above.pop().expect("actual Ready") {
-                    Event::Client(client::Event::Ready(agreed)) => assert_eq!(agreed.version, client::Version::Tls12),
-                    Event::Client(client::Event::Stream(_) | client::Event::Failed(_) | client::Event::Closed)
-                    | Event::Output(_)
-                    | Event::TransportClosing
-                    | Event::TransportClosed => unreachable!("actual Ready"),
-                }
-                assert!(machine.above.is_empty() && machine.below.is_empty());
-            }
-            return machine;
+            unreachable!("handshake retains work below");
         }
     }
-    unreachable!("actual bounded handshake reaches Ready/exhaustion");
+}
+
+impl Machine {
+    fn ready() -> Machine {
+        let mut handshake = Handshake::new();
+        for _ in 0..512_u32 {
+            handshake.take();
+            handshake.receive();
+            if !handshake.machine.above.is_empty() {
+                assert_eq!(handshake.machine.above.len(), 1, "one Ready without exhaustion");
+                assert_eq!(
+                    handshake.machine.above.pop(),
+                    Some(Event::Client(client::Event::Ready(client::Agreed {
+                        version: client::Version::Tls12,
+                        alpn: None,
+                    })))
+                );
+                assert!(handshake.machine.above.is_empty() && handshake.machine.below.is_empty());
+                return handshake.machine;
+            }
+        }
+        unreachable!("bounded handshake reaches Ready");
+    }
 }
 
 #[test]
-fn actual_lower_failed_settles_upper_and_read_then_waits_for_genuine_physical_close() {
+fn output_failure_settles_before_owner_closure() {
     let mut machine = Machine::new();
     let right = machine.started();
     let upper = Token::new(100);
     wanted(&mut machine, upper);
-    let fault = skein_lib::stream::Fault::Reset;
+    let fault = Fault::Reset;
     machine.up(LowerEvent::Output(OutputUp::Settled { right, outcome: OutputOutcome::Failed(fault) }));
     assert_eq!(
         machine.above.pop(),
@@ -590,7 +546,7 @@ fn actual_lower_failed_settles_upper_and_read_then_waits_for_genuine_physical_cl
     );
     assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Stream(Up::Failed(fault)))));
     assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Failed(client::Error::Stream(fault)))));
-    assert_eq!(machine.below.pop(), Some(LowerRequest::Stream(Down::Demand { read: Read::Nothing, room: 0 })));
+    assert_eq!(machine.below.pop(), Some(LowerRequest::Stream(WITHDRAW)));
     assert!(machine.above.is_empty() && machine.below.is_empty());
     machine.up(LowerEvent::Stream(Up::Failed(fault)));
     assert!(
@@ -605,35 +561,55 @@ fn actual_lower_failed_settles_upper_and_read_then_waits_for_genuine_physical_cl
 }
 
 #[test]
-fn ready_wanted_and_checked_exhaustion_reach_three_down_upper_events() {
-    let mut machine = actual_ready(false);
+fn token_exhaustion_on_room_fails_three_events_down() {
+    let mut machine = Machine::ready();
     let upper = Token::new(101);
     machine.client.next_lower = None;
     machine.down(Request::Output(OutputDown::Room { right: upper, bytes: 1 }));
-    assert_eq!(machine.above.len(), 3, "actual maximum down upper co-emission");
+    assert_eq!(machine.above.len(), 3, "maximum down upper co-emission");
     assert_eq!(
         machine.above.pop(),
-        Some(Event::Output(OutputUp::Settled {
-            right: upper,
-            outcome: OutputOutcome::Failed(skein_lib::stream::Fault::Other)
-        }))
+        Some(Event::Output(OutputUp::Settled { right: upper, outcome: OutputOutcome::Failed(Fault::Other) }))
     );
-    assert_eq!(
-        machine.above.pop(),
-        Some(Event::Client(client::Event::Stream(Up::Failed(skein_lib::stream::Fault::Other))))
-    );
+    assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Stream(Up::Failed(Fault::Other)))));
     assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Failed(client::Error::Other))));
     assert!(machine.above.is_empty() && machine.below.is_empty(), "exhaustion before lower right or read effects");
 }
 
 #[test]
-fn genuine_ready_and_checked_exhaustion_emit_all_four_upper_events_in_order() {
-    actual_ready(true);
+fn ready_survives_token_exhaustion_in_the_same_step() {
+    let mut handshake = Handshake::new();
+    handshake.take();
+    let upper = Token::new(900);
+    wanted(&mut handshake.machine, upper);
+    for _ in 0..512_u32 {
+        handshake.take();
+        if !handshake.peer.tls.is_handshaking() {
+            handshake.machine.client.next_lower = None;
+        }
+        handshake.receive();
+        if !handshake.machine.above.is_empty() {
+            break;
+        }
+    }
+    let machine = &mut handshake.machine;
+    assert_eq!(machine.above.len(), 4, "Ready and all exhaustion events");
+    assert_eq!(
+        machine.above.pop(),
+        Some(Event::Client(client::Event::Ready(client::Agreed { version: client::Version::Tls12, alpn: None })))
+    );
+    assert_eq!(
+        machine.above.pop(),
+        Some(Event::Output(OutputUp::Settled { right: upper, outcome: OutputOutcome::Failed(Fault::Other) }))
+    );
+    assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Stream(Up::Failed(Fault::Other)))));
+    assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Failed(client::Error::Other))));
+    assert!(machine.above.is_empty() && machine.below.is_empty(), "no new right below after exhaustion");
 }
 
 #[test]
 #[should_panic(expected = "ciphertext Fill is answered exactly")]
-fn active_ciphertext_fill_still_rejects_wrong_size_before_processing() {
+fn ciphertext_must_answer_the_fill_exactly() {
     let mut machine = Machine::new();
     let right = machine.started();
     machine.sent_hello(right);

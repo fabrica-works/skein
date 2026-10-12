@@ -7,12 +7,8 @@ use alloc::vec::Vec;
 
 use skein_lib::stream::{Down, Fault, Read, Up};
 
-use super::{LIMITS, Machine};
+use super::{LIMITS, Machine, WITHDRAW, failed};
 use crate::client::{self, Error, Event, Limits, Request, Waiting};
-
-fn failed(error: Error) -> Vec<Event> {
-    Vec::from([Event::Stream(Up::Failed(error.fault())), Event::Failed(error)])
-}
 
 /// A client that started its handshake: its `ClientHello` sent within the
 /// room it demanded, with the first record's header, and that header
@@ -33,7 +29,7 @@ fn started(limits: Limits) -> (Machine, Box<[u8]>) {
 }
 
 #[test]
-fn a_fresh_client_waits_for_the_handshake_and_closes_at_once() {
+fn a_fresh_client_closes_at_once() {
     let mut machine = Machine::new(LIMITS);
     assert_eq!(machine.client.waiting(), Waiting::Handshake);
     assert_eq!(machine.down(Request::Close), (Vec::from([Event::Closed]), Vec::new()));
@@ -41,7 +37,7 @@ fn a_fresh_client_waits_for_the_handshake_and_closes_at_once() {
 }
 
 #[test]
-fn the_handshake_sends_a_client_hello_then_reads_a_record_at_a_time() {
+fn a_handshake_sends_hello_and_reads_one_record() {
     let (machine, hello) = started(LIMITS);
     // A handshake record (RFC 8446, 5.1) carrying a ClientHello (4).
     assert_eq!(hello[0], 22, "a handshake record");
@@ -52,24 +48,39 @@ fn the_handshake_sends_a_client_hello_then_reads_a_record_at_a_time() {
 }
 
 #[test]
-fn the_stream_ending_or_failing_before_the_handshake_fails_it_when_asked() {
-    for (ev, error) in [(Up::End, Error::Truncated), (Up::Failed(Fault::Reset), Error::Stream(Fault::Reset))] {
-        let mut machine = Machine::new(LIMITS);
-        assert_eq!(machine.up(ev), (Vec::new(), Vec::new()));
-        // A failure after the end fails it all the same.
-        assert_eq!(machine.up(Up::Failed(Fault::Other)), (Vec::new(), Vec::new()));
-        let expected = if error == Error::Truncated { Error::Stream(Fault::Other) } else { error };
-        assert_eq!(machine.down(Request::Handshake), (failed(expected), Vec::new()));
-        assert_eq!(machine.client.waiting(), Waiting::Close);
-        assert_eq!(machine.down(Request::Close), (Vec::from([Event::Closed]), Vec::new()));
-    }
-    let mut ended = Machine::new(LIMITS);
-    assert_eq!(ended.up(Up::End), (Vec::new(), Vec::new()));
-    assert_eq!(ended.down(Request::Handshake), (failed(Error::Truncated), Vec::new()));
+fn ending_before_handshake_is_truncated() {
+    let mut machine = Machine::new(LIMITS);
+    assert_eq!(machine.up(Up::End), (Vec::new(), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Handshake);
+    assert_eq!(machine.down(Request::Handshake), (failed(Error::Truncated), Vec::new()));
 }
 
 #[test]
-fn records_that_are_not_tls_fail_the_handshake_as_invalid() {
+fn failure_after_end_fails_the_unstarted_handshake() {
+    let mut machine = Machine::new(LIMITS);
+    assert_eq!(machine.up(Up::End), (Vec::new(), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Handshake);
+    assert_eq!(machine.up(Up::Failed(Fault::Other)), (Vec::new(), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Handshake);
+    assert_eq!(machine.down(Request::Handshake), (failed(Error::Stream(Fault::Other)), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Close);
+    assert_eq!(machine.down(Request::Close), (Vec::from([Event::Closed]), Vec::new()));
+}
+
+#[test]
+fn the_unstarted_handshake_keeps_its_first_failure() {
+    let mut machine = Machine::new(LIMITS);
+    assert_eq!(machine.up(Up::Failed(Fault::Reset)), (Vec::new(), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Handshake);
+    assert_eq!(machine.up(Up::Failed(Fault::Other)), (Vec::new(), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Handshake);
+    assert_eq!(machine.down(Request::Handshake), (failed(Error::Stream(Fault::Reset)), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Close);
+    assert_eq!(machine.down(Request::Close), (Vec::from([Event::Closed]), Vec::new()));
+}
+
+#[test]
+fn non_tls_records_fail_the_handshake_as_invalid() {
     for header in [
         &b"HTTP/"[..],               // no record type at all
         &[22, 3, 3, 0x48, 0x00][..], // a body past what TLS allows
@@ -94,7 +105,7 @@ fn a_fatal_alert_is_the_peer_giving_up() {
 }
 
 #[test]
-fn a_handshake_message_longer_than_the_records_held_is_too_long() {
+fn a_handshake_message_must_fit_the_records_held() {
     let (mut machine, _) = started(LIMITS);
     // A ServerHello announced at 64 KB, its first 16 KB in one record.
     let (_, requests) = machine.bytes(&[22, 3, 3, 0x40, 0x00]);
@@ -142,43 +153,50 @@ fn retry(hello: &[u8], cookie: usize) -> Vec<u8> {
 }
 
 #[test]
-fn a_retry_whose_cookie_the_flight_cannot_echo_fails_the_handshake_not_the_service() {
-    for cookie in [100, 2_000] {
-        let (mut machine, hello) = started(LIMITS);
-        let record = retry(&hello, cookie);
-        let length = u32::try_from(record.len() - 5).unwrap();
-        let (_, requests) = machine.bytes(&record[..5]);
-        assert_eq!(requests, [Down::Demand { read: Read::Fill(length), room: 0 }]);
-        let (events, requests) = machine.bytes(&record[5..]);
-        if cookie == 100 {
-            // The second hello, owed, its cookie echoed.
-            assert_eq!(events, []);
-            let [Down::Demand { read: Read::Fill(5), room }] = requests[..] else { panic!("{requests:?}") };
-            assert!(room > 100 && room <= client::FLIGHT, "{room}");
-        } else {
-            assert_eq!((events, requests), (failed(Error::FlightTooLong), Vec::new()));
-            assert_eq!(machine.client.waiting(), Waiting::Close);
-        }
-    }
+fn a_short_cookie_owes_a_second_hello() {
+    let (mut machine, hello) = started(LIMITS);
+    let record = retry(&hello, 100);
+    let length = u32::try_from(record.len() - 5).unwrap();
+    let (_, requests) = machine.bytes(&record[..5]);
+    assert_eq!(requests, [Down::Demand { read: Read::Fill(length), room: 0 }]);
+    let (events, requests) = machine.bytes(&record[5..]);
+    assert_eq!(events, []);
+    let [Down::Demand { read: Read::Fill(5), room }] = requests[..] else { panic!("{requests:?}") };
+    assert!(room > 100 && room <= client::FLIGHT, "{room}");
 }
 
 #[test]
-fn the_stream_ending_or_failing_during_the_handshake_fails_it() {
-    let (mut ended, _) = started(LIMITS);
-    let withdrawal = Down::Demand { read: Read::Nothing, room: 0 };
-    // The header read crosses the end: TLS reads no more, and withdraws it.
-    assert_eq!(ended.up(Up::End), (failed(Error::Truncated), Vec::from([withdrawal])));
-    let (mut broken, _) = started(LIMITS);
-    assert_eq!(broken.up(Up::Failed(Fault::Other)), (failed(Error::Stream(Fault::Other)), Vec::new()));
-    assert_eq!(broken.client.waiting(), Waiting::Close);
+fn a_cookie_no_flight_holds_fails_the_handshake() {
+    let (mut machine, hello) = started(LIMITS);
+    let record = retry(&hello, 2_000);
+    let length = u32::try_from(record.len() - 5).unwrap();
+    let (_, requests) = machine.bytes(&record[..5]);
+    assert_eq!(requests, [Down::Demand { read: Read::Fill(length), room: 0 }]);
+    assert_eq!(machine.bytes(&record[5..]), (failed(Error::FlightTooLong), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Close);
 }
 
 #[test]
-fn a_close_during_the_handshake_withdraws_what_it_demanded_and_drops_what_comes_late() {
+fn ending_during_handshake_is_truncated() {
+    let (mut machine, _) = started(LIMITS);
+    assert_eq!(machine.client.waiting(), Waiting::Handshaking);
+    assert_eq!(machine.up(Up::End), (failed(Error::Truncated), Vec::from([WITHDRAW])));
+    assert_eq!(machine.client.waiting(), Waiting::Close);
+}
+
+#[test]
+fn failure_during_handshake_keeps_the_fault() {
+    let (mut machine, _) = started(LIMITS);
+    assert_eq!(machine.client.waiting(), Waiting::Handshaking);
+    assert_eq!(machine.up(Up::Failed(Fault::Other)), (failed(Error::Stream(Fault::Other)), Vec::new()));
+    assert_eq!(machine.client.waiting(), Waiting::Close);
+}
+
+#[test]
+fn a_handshake_close_withdraws_and_drops_late_answers() {
     let mut machine = Machine::new(LIMITS);
     drop(machine.down(Request::Handshake));
-    let withdrawal = Down::Demand { read: Read::Nothing, room: 0 };
-    assert_eq!(machine.down(Request::Close), (Vec::from([Event::Closed]), Vec::from([withdrawal])));
+    assert_eq!(machine.down(Request::Close), (Vec::from([Event::Closed]), Vec::from([WITHDRAW])));
     for late in [Up::Room, Up::Bytes(Box::from(&b"late"[..])), Up::End, Up::Failed(Fault::Reset)] {
         assert_eq!(machine.up(late), (Vec::new(), Vec::new()));
     }
@@ -186,7 +204,7 @@ fn a_close_during_the_handshake_withdraws_what_it_demanded_and_drops_what_comes_
 }
 
 #[test]
-fn a_demand_during_the_handshake_waits_for_it_and_a_failed_client_drops_what_follows() {
+fn a_handshake_demand_waits_and_failure_drops_what_follows() {
     let (mut machine, _) = started(LIMITS);
     let demand = Request::Stream(Down::Demand { read: Read::Fill(4), room: 8 });
     assert_eq!(machine.down(demand), (Vec::new(), Vec::new()), "held until Ready");
@@ -213,7 +231,7 @@ fn a_second_handshake_is_a_bug() {
 
 #[test]
 #[should_panic(expected = "one demand at a time")]
-fn a_second_demand_before_the_first_is_answered_is_a_bug() {
+fn a_second_unanswered_demand_is_a_bug() {
     let (mut machine, _) = started(LIMITS);
     drop(machine.down(Request::Stream(Down::Demand { read: Read::Fill(1), room: 0 })));
     drop(machine.down(Request::Stream(Down::Demand { read: Read::Fill(1), room: 0 })));
@@ -273,7 +291,7 @@ fn an_answer_before_any_demand_is_a_bug() {
 
 #[test]
 #[should_panic(expected = "bytes answer a fill, exactly")]
-fn bytes_that_are_not_what_was_demanded_are_a_bug() {
+fn bytes_must_answer_the_fill_exactly() {
     let (mut machine, _) = started(LIMITS);
     drop(machine.bytes(&[22, 3, 3, 0]));
 }

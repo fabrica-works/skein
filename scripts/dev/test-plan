@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# Tests plan on a workspace of its own, in a temporary directory.
+#
+#   test-plan          the commands that need no agent: the ledger, status,
+#                      watch, pulse, metrics, attach (printed); about 30 s
+#   test-plan --live   also start, ring, resume, wake and retro, with cheap
+#                      models and prompts that end at once; it spends a few
+#                      cents of each program's usage, and takes a few minutes
+#
+# It prints each failed expectation, and exits 1 if there was one.
+set -Eeuo pipefail
+trap 'echo "test-plan: failed at line $LINENO" >&2' ERR
+kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+live=0
+[[ ${1:-} == --live ]] && live=1
+
+workspace=${DEV_ROOT:-$(dirname "$(dirname "$(git -C "$kit" rev-parse --path-format=absolute --git-common-dir)")")}
+t=$(mktemp -d "$workspace/tmp/test-plan.XXXXXX")
+if [[ ${PLAN_TEST_KEEP:-} == 1 ]]; then echo "test-plan: keeping $t"; else trap 'rm -rf "$t"' EXIT; fi
+export DEV_ROOT=$t/src DEV_TMP=$t/src/tmp DEV_REPOS=alpha
+export CODEX_HOME=$t/codex CLAUDE_CONFIG_DIR=$t/claude PLAN_NO_ROLES=1 PLAN_POLL=0.1
+plan=$kit/plan
+failed=0
+
+expect() {
+    local what=$1 output=$2 want
+    shift 2
+    for want in "$@"; do
+        if ! grep -qF -- "$want" <<<"$output"; then
+            echo "FAIL $what: no \"$want\" in:"
+            printf '    %s\n' "${output//$'\n'/$'\n'    }"
+            failed=1
+        fi
+    done
+}
+
+# A repository with a plan.
+repo=$DEV_ROOT/alpha
+dir=$repo/docs/development/plans/demo
+mkdir -p "$dir/alpha" "$repo/src" "$repo/tests"
+git -C "$repo" init -q -b main
+git -C "$repo" config user.email test@example.com
+git -C "$repo" config user.name test
+cat >"$dir/README.md" <<'EOF'
+# Demo
+
+## Pulse
+
+```
+words: actual|exact
+types: ^Owner[A-Z]
+file-lines: 50
+budgets: 15 60
+```
+EOF
+echo "# Code organization" >"$dir/code-organization.md"
+cat >"$dir/alpha/01-first.md" <<'EOF'
+# Session 01: first
+
+### 1.1 The first increment
+Proof: world, the story `first`, in the suite.
+
+### 1.2 The second increment
+Proof: joint, the joint story `second`.
+EOF
+git -C "$repo" add -A
+git -C "$repo" commit -q -m "Plan the demo"
+
+run=$("$plan" claim "$dir")
+expect claim "$run" "$DEV_TMP/alpha/demo"
+# The pulse counts what happened after a check's second: the fixture's
+# commits and queue statistics come a second after the claim.
+sleep 1
+
+# The ledger, with a ledger of the older shape upgraded on the way.
+printf 'step\trepo\tsession\tstate\tslot\tbranch\tcommit\tupdated\ttitle\tnote\n' >"$run/ledger.tsv"
+printf 'alpha-01.1\talpha\t01\tready\t\t\t\t\tfirst\t\n' >>"$run/ledger.tsv"
+"$plan" set alpha-01.1 state=landed thread=t-impl-1
+"$plan" set alpha-01.2 repo=alpha session=01 state=landed title=second
+"$plan" set alpha-01.s1 repo=alpha session=01 state=landed note="supplement: 2026-10-11T11:00:00Z"
+"$plan" set alpha-01.3 repo=alpha session=01 state=running slot=w1 branch=b3
+expect "ledger header" "$(head -n1 "$run/ledger.tsv")" $'slot\tthread\tbranch'
+expect "ledger thread" "$(grep alpha-01.1 "$run/ledger.tsv")" $'\tt-impl-1\t'
+expect status "$("$plan" status)" "3 of 4 steps landed; 1 running" "| alpha-01.3 | w1 | b3 |"
+
+# Commits with trailers, after the claim.
+commit() {
+    local step=$1 proof=$2 gate=$3 message
+    git -C "$repo" add -A
+    message="Step $step"$'\n\n'"Body."$'\n\n'
+    [[ -z $proof ]] || message+="Proof: $proof"$'\n'
+    message+="Plan: demo"$'\n'"Step: $step"$'\n'"Gate-Result: $gate"
+    git -C "$repo" commit -q -m "$message"
+}
+seq 1 60 | sed 's/^/\/\/ line /' >"$repo/src/big.rs"
+echo "pub struct OwnerThing; // the actual one" >>"$repo/src/big.rs"
+for i in 1 2 3 4; do echo "fn text() {}" >"$repo/tests/t$i.rs"; done
+commit alpha-01.1 "world, the story first, passed" "scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
+echo "fn text() {} // exact" >"$repo/tests/t5.rs"
+echo "#[expect(clippy::too_many_lines)]" >>"$repo/src/big.rs"
+commit alpha-01.2 "unit, the unit tests, passed" "scripts/check.sh passed: 12 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all"
+echo "fn more() {}" >"$repo/src/more.rs"
+commit alpha-01.s1 "" "scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all"
+
+# The run's log, the queue's statistics and gate logs.
+{
+    printf '## alpha 01, 2026-10-11T10:05:00Z\n\nline\nline\nline\n\n'
+    printf '## Blocked and unblocked, 2026-10-11T10:30:00Z\n\n# Blocked\n\n## alpha 01.2: a gap, 2026-10-11T10:00:00Z\n\n'
+    printf -- '- Kind: design gap\n- Since: 2026-10-11T10:00:00Z. Still running: none.\n\n# Unblock\n\nReverses: nothing\n\n'
+    printf '## Blocked and unblocked, 2026-10-11T12:00:00Z\n\n- Kind: plan defect\n- Since: 2026-10-11T11:00:00Z. Still running: none.\n\nReverses: 2026-10-11T10:30:00Z\n\n'
+    printf '## Steered, 2026-10-11T11:30:00Z\n\nSteer 2026-10-11T11:30:00Z, point 1: cannot, no room.\n\n'
+    printf '## Coordinator resumed, 2026-10-11T12:00:00Z: reboot\n\n'
+    printf '## alpha 01, 2026-10-11T12:05:00Z\n\nline\n\n'
+} >>"$run/log.md"
+mkdir -p "$run/logs/alpha-01"
+printf 'SLOW [ 1.2s] a\nSLOW [ 2.0s] b\n' >"$run/logs/gate-1.log"
+stamp=$(date -u +%FT%TZ)
+printf '1\tgate\t%s\t10\t100\t0\t5.0\t/x\t%s\tcheck\n2\tbuild\t%s\t5\t20\t0\t5.0\t/x\t/dev/null\tcargo\n3\tgate\t%s\t5\t80\t0\t5.0\t/x\t/dev/null\tcheck\n' \
+    "$stamp" "$run/logs/gate-1.log" "$stamp" "$stamp" >"$run/logs/heavy.tsv"
+echo "#!/bin/sh" >"$run/logs/alpha-01/proof.sh"
+
+# The agents' traces: the coordinator, one session under it, one Claude
+# Code session with a sub-agent.
+coordinator="t-coord-1"
+printf '%s\n' "$coordinator" >"$run/thread"
+mkdir -p "$CODEX_HOME/sessions/2026/10/11"
+base=$(date -u -d '-3 hours' +%s)
+{
+    printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"%s"}}\n' "$(date -u -d "@$base" +%FT%TZ)" "$coordinator"
+    for offset in 600 1200 1800 5400; do
+        printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":%d,"output_tokens":%d}}}}\n' \
+            "$(date -u -d "@$((base + offset))" +%FT%TZ)" "$((offset * 10))" "$offset"
+    done
+    printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call_output","output":"{\\"message\\":\\"Wait timed out.\\",\\"timed_out\\":true}"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
+    printf '{"timestamp":"%s","type":"compacted","payload":{"message":""}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
+} >"$CODEX_HOME/sessions/2026/10/11/rollout-x-$coordinator.jsonl"
+{
+    printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"t-impl-1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"%s"}}}}}\n' "$(date -u -d "@$base" +%FT%TZ)" "$coordinator"
+    printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
+} >"$CODEX_HOME/sessions/2026/10/11/rollout-x-t-impl-1.jsonl"
+session=11111111-2222-3333-4444-555555555555
+mkdir -p "$CLAUDE_CONFIG_DIR/projects/p/$session/subagents"
+assistant() { printf '{"type":"assistant","message":{"id":"%s","usage":{"input_tokens":%d,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":%d}}}\n' "$@"; }
+{
+    assistant m1 1 10 100 5; assistant m1 1 10 100 5; assistant m2 2 0 0 7
+    # Planning, before the claim: counted apart (development.md, section 15.2).
+    printf '{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"m0","usage":{"input_tokens":1000,"output_tokens":1}}}\n'
+} >"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
+assistant s1 3 0 0 3 >"$CLAUDE_CONFIG_DIR/projects/p/$session/subagents/agent-1.jsonl"
+printf 'supervisor\t%s\t%s\n' "$session" "$stamp" >"$run/claude.tsv"
+
+# The pulse.
+pulse=$("$plan" pulse)
+expect pulse "$pulse" \
+    "- Progress: 2 planned and 1 added steps landed since; in all 2 of 3 planned landed, 1 added (0 to go)" \
+    "- Running: alpha-01.3 (w1)" \
+    "below plan: alpha-01.2 (unit, planned joint)" \
+    "no Proof line: alpha-01.s1" \
+    "reports 1 lines median, 3 p90" "2 gates for 3 landings" "queue 20 s waiting, 200 s running" \
+    "last gate: scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all; within four fifths of the budgets" \
+    "SLOW lines in gate logs: 2" \
+    "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
+    "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
+    "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 116/15" \
+    "1 steers in all, 1 points refused" \
+    "- Rising words: line 0 to 60"
+expect "pulse mark" "$(cat "$run/.pulse")" " "
+sleep 1
+expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
+
+# The metrics.
+metrics=$("$plan" metrics)
+expect metrics "$metrics" \
+    $'running_h\t0.5\th' $'steps_planned\t2\t' $'steps_added\t1\t' \
+    $'escalations\tdesign gap 1, plan defect 1\t' $'escalation_wait_min\t30.0\t' $'blocked_h\t1.5\th' \
+    $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\treboot 1\t' \
+    $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1116 in (8% cached), 16 out; in: 1000 before the claim, 116 in the run, 0 after' \
+    $'coordinator_requests\t4, 1 after a wait ran out' $'compactions\t1\t' \
+    $'gates_per_step\t0.7\t' $'queue_wait_ratio\t0.10\t' \
+    $'suites\tfirst: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
+    $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90'
+"$plan" metrics --out "$dir/metrics.tsv" >/dev/null
+expect history "$("$plan" metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
+
+# The watch, each of its events.
+watch() { timeout 10 "$plan" watch "$@" || echo "watch exited $?"; }
+echo "# Blocked" >"$run/blocked.md"; echo "## alpha 01.3: a question, $stamp" >>"$run/blocked.md"
+expect "watch blocked" "$(watch)" "blocked: $run/blocked.md" "## alpha 01.3: a question"
+echo "# Answer" >"$run/answer.md"
+expect "watch answer" "$(watch)" "answer: $run/answer.md"
+rm "$run/blocked.md" "$run/answer.md"
+touch -d '-5 seconds' "$run/heartbeat"
+expect "watch quiet" "$(PLAN_QUIET=2 watch)" "quiet: no heartbeat"
+expect "watch quiet again" "$(PLAN_QUIET=2 watch)" "quiet again: no heartbeat"
+touch "$run/heartbeat"
+echo "# Paused" >"$run/paused.md"
+expect "watch paused" "$(watch)" "paused: $run/paused.md"
+rm "$run/paused.md"
+
+# The roles, offline.
+expect "attach coordinator" "$(PLAN_DRY_RUN=1 "$plan" attach coordinator)" "codex resume --remote unix:// $coordinator"
+expect "attach supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor)" "claude --resume $session"
+expect "join outside a session" "$(CLAUDE_CODE_SESSION_ID='' "$plan" join designer 2>&1 || true)" "run plan join from the Claude Code session itself"
+expect "join" "$(CLAUDE_CODE_SESSION_ID=fake-designer "$plan" join designer)" "designer: Claude Code session fake-designer" "End your turn now"
+expect "roles" "$(PLAN_NO_ROLES='' "$plan" status)" "## Roles" "- coordinator: $coordinator" "- supervisor: $session, gone"
+
+# After the run's release, metrics and retro find it as the last run.
+"$plan" release >/dev/null
+expect "metrics after release" "$("$plan" metrics)" $'steps_planned\t2\t'
+
+if ((live)); then
+    # Real agents, on cheap settings, with the real Codex and Claude Code homes.
+    unset CODEX_HOME CLAUDE_CONFIG_DIR
+    export PLAN_START_UNCHECKED=1 PLAN_CLAUDE_MODEL=${PLAN_TEST_CLAUDE_MODEL:-claude-haiku-5-5} PLAN_CLAUDE_EFFORT=low
+    export PLAN_CODEX_EFFORT=low PLAN_CODEX_SANDBOX=read-only
+    export PLAN_SUPERVISOR_PROMPT="This is a test of plan start. Reply OK and end your turn."
+    export PLAN_COORDINATOR_PROMPT="This is a test of plan start. Run the shell command \`sleep 40\`. Then reply with one line: every message you received after this one, quoted word for word, or none. End your turn."
+    export PLAN_COORDINATOR_RESUME="This is a test of plan resume. Reply RESUMED and end your turn."
+    export PLAN_RETRO_PROMPT="This is a test of plan retro. Reply OK and end your turn."
+    rm -f "$run/thread" "$run/claude.tsv"
+    started=$("$plan" start "$dir" 2>&1 || true)
+    expect start "$started" "supervisor: Claude Code session" "coordinator: Codex thread" "rang the coordinator: Doorbell test"
+    thread=$(cat "$run/thread" || true)
+    supervisor=$(awk -F'\t' '$1 == "supervisor" { print $2 }' "$run/claude.tsv" || true)
+    expect "attach running supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor || true)" "claude attach ${supervisor:0:8}"
+    for _ in $(seq 120); do
+        [[ $(PLAN_NO_ROLES='' "$plan" status || true) == *"- coordinator: $thread, idle"* ]] && break
+        sleep 2
+    done
+    file=$(find "$HOME/.codex/sessions" "$HOME/.codex/archived_sessions" -name "rollout-*-$thread.jsonl" | head -n1 || true)
+    expect "the coordinator heard the doorbell" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "Doorbell test"
+    expect resume "$("$plan" resume || true)" "coordinator: resumed"
+    for _ in $(seq 60); do
+        [[ $(PLAN_NO_ROLES='' "$plan" status || true) == *"- coordinator: $thread, idle"* ]] && break
+        sleep 2
+    done
+    expect "the coordinator resumed" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "RESUMED"
+    expect wake "$("$plan" wake supervisor "This is a test of plan wake. Reply WOKEN and end your turn." || true)" "supervisor: Claude Code session"
+    expect retro "$("$plan" retro "$dir" || true)" "retrospective: Claude Code session"
+    # Clean up: the coordinator's thread archived, the Claude Code sessions removed.
+    (
+        source "$kit/codex.sh"
+        codex_open && codex_call thread/archive "$(jq -cn --arg t "$thread" '{threadId: $t}' || true)" >/dev/null && codex_close
+    ) || echo "could not archive thread $thread"
+    cut -f2 "$run/claude.tsv" | sort -u | while read -r session; do
+        claude stop "${session:0:8}" >/dev/null 2>&1 || true
+        claude rm "${session:0:8}" >/dev/null 2>&1 || true
+    done
+fi
+
+if ((failed)); then
+    echo "test-plan: failed"
+    exit 1
+fi
+echo "test-plan: passed"

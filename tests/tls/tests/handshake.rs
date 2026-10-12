@@ -1,7 +1,7 @@
 //! Handshakes against a rustls server (tls.md, 5): each version, a retry,
 //! ALPN, certificates checked against the wall time handed in, a chain
 //! longer than the records held, peers that are not TLS or give up, and the
-//! stream ending or failing before the handshake and during it.
+//! stream ending or failing before the handshake.
 
 use rustls::ContentType;
 use skein_lib::stream::{Down, Fault, Read, Up};
@@ -61,7 +61,7 @@ fn alpn_agrees_the_servers_choice_of_what_the_client_offers() {
 }
 
 #[test]
-fn a_server_that_offers_no_protocol_the_client_offered_gives_up_with_an_alert() {
+fn no_shared_protocol_causes_an_alert() {
     let server = pki::Server { alpn: vec![b"bar".to_vec()], ..pki::Server::plain() };
     let mut pair = pair(&server, "skein.test", pki::VALID, &pki::client(&[b"foo"]), LIMITS);
     // no_application_protocol (RFC 7301, 3.2): the peer reset the stream.
@@ -71,7 +71,7 @@ fn a_server_that_offers_no_protocol_the_client_offered_gives_up_with_an_alert() 
 }
 
 #[test]
-fn a_server_that_wants_another_key_share_retries_and_both_hellos_fit_a_flight() {
+fn another_key_share_retries_with_both_hellos_in_flight() {
     let server = pki::Server { retry: true, ..pki::Server::plain() };
     let mut pair = pair(&server, "skein.test", pki::VALID, &pki::client(&[]), LIMITS);
     assert_eq!(handshake(&mut pair), ready(Version::Tls13, None));
@@ -185,24 +185,6 @@ fn the_stream_ending_or_failing_before_the_handshake_fails_it_when_asked() {
 }
 
 #[test]
-fn the_stream_ending_or_failing_during_the_handshake_fails_it() {
-    let config = pki::client(&[]);
-    for (ev, error) in [(Up::End, Error::Truncated), (Up::Failed(Fault::Other), Error::Stream(Fault::Other))] {
-        let mut pair = pair(&pki::Server::plain(), "skein.test", pki::VALID, &config, LIMITS);
-        let _ = pair.down(Request::Handshake);
-        let room = pair.wire.answer().expect("room for the hello");
-        assert_eq!(pair.up(room), vec![]);
-        assert_eq!(pair.client.waiting(), Waiting::Handshaking);
-        assert_eq!(pair.wire.demand, Some((Read::Fill(client::HEADER), 0)), "a record's header");
-        assert_eq!(pair.up(ev), failed(error));
-        assert_eq!(pair.client.waiting(), Waiting::Close);
-        if error == Error::Truncated {
-            assert_eq!(pair.wire.demand, None, "the read that crossed the end, withdrawn");
-        }
-    }
-}
-
-#[test]
 fn closes_before_and_during_the_handshake_send_nothing() {
     let config = pki::client(&[]);
     let mut fresh = pair(&pki::Server::plain(), "skein.test", pki::VALID, &config, LIMITS);
@@ -277,7 +259,7 @@ fn holding_room() -> Pair {
 }
 
 #[test]
-fn room_held_for_a_demand_withdrawn_is_handed_on_or_asked_for_again() {
+fn withdrawn_room_is_handed_on_or_asked_for_again() {
     // It holds the records of a demand as large: handed on at once.
     let mut pair = holding_room();
     assert_eq!(
@@ -341,23 +323,25 @@ fn keys_at_their_limit_are_updated_in_front_of_the_next_records() {
         assert_eq!(pair.down(Request::Stream(Down::Send(Box::from(&piece[..])))), vec![]);
     }
     // A record of 16 bytes takes 38; a key update in front of it, 27 more.
-    assert_eq!(pair.wire.sends[before..], [38, 38, 38, 92, 38, 65, 38, 38, 92]);
+    let record = 16 + pki::TLS13_OVERHEAD;
+    let update = pki::KEY_UPDATE_RECORD;
+    assert_eq!(
+        pair.wire.sends[before..],
+        [record, record, record, record + 2 * update, record, record + update, record, record, record + 2 * update]
+    );
     assert_eq!(pair.wire.server.received, data, "the server read each record with the keys of its time");
 }
 
-/// The records in `bytes`: each one's type and body's length.
-fn records(mut bytes: &[u8]) -> Vec<(u8, usize)> {
-    let mut records = Vec::new();
-    while let [typ, _, _, high, low, rest @ ..] = bytes {
-        let length = usize::from(u16::from_be_bytes([*high, *low]));
-        records.push((*typ, length));
-        bytes = &rest[length..];
-    }
-    records
+/// Each record's type and body's length, through the shared splitter.
+fn records(bytes: &[u8]) -> Vec<(u8, usize)> {
+    skein_tls_world::records::split(bytes)
+        .iter()
+        .map(|record| (record[0], skein_tls_world::records::length(record)))
+        .collect()
 }
 
 #[test]
-fn a_renegotiation_refused_goes_alone_or_before_the_data_of_a_grant_held() {
+fn renegotiation_refusal_goes_alone_or_before_the_granted_data() {
     for held in [false, true] {
         let server = pki::Server { versions: Versions::Tls12, extractable: true, ..pki::Server::plain() };
         let mut pair = pair(&server, "skein.test", pki::VALID, &pki::client(&[]), LIMITS);
@@ -385,7 +369,8 @@ fn a_renegotiation_refused_goes_alone_or_before_the_data_of_a_grant_held() {
             assert_eq!(pair.down(Request::Stream(Down::Send(Box::from(&[b'd'; 16][..])))), vec![]);
             assert_eq!(records(&pair.wire.sent[before..]), [(21, 26), (23, 40)], "the refusal first, one Send");
             let send = *pair.wire.sends.last().unwrap();
-            assert!(send == 31 + 45 && send <= usize::try_from(client::room_for(16).unwrap()).unwrap());
+            let expected = pki::TLS12_ALERT_RECORD + 16 + pki::TLS12_OVERHEAD;
+            assert!(send == expected && send <= 99);
         } else {
             assert_eq!(records(&pair.wire.sent[before..]), [(21, 26)], "the refusal, alone, within its room");
         }

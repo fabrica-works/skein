@@ -7,9 +7,11 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The counting allocator, shared by the memory worlds.
+skein-heap.workspace = true
 skein-lib.workspace = true
 skein-tls.workspace = true
-# Native ciphertext-output composition uses actual IO on the simulator.
+# Native ciphertext-output composition uses IO on the simulator.
 skein-io.workspace = true
 skein-sim.workspace = true
 # The server: rustls's buffered connection, over std's readers and writers.
@@ -22,8 +24,6 @@ skein-fake-llm-domain.workspace = true
 skein-fake-llm-protocol.workspace = true
 skein-llm.workspace = true
 skein-llm-world = { path = "../llm" }
-# The counting allocator, for classic and native heap test binaries.
-skein-heap.workspace = true
 # The HTTP client, stacked on the TLS client in tests/stack.rs.
 skein-http.workspace = true
 skein-shell.workspace = true

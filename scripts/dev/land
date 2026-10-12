@@ -6,11 +6,14 @@
 # From a clean worktree on the branch to land: rebase it on origin/main,
 # run the repository's gate through `heavy --gate`, record the gate's
 # evidence in the tip commit's trailers, and push the tip to origin's main.
+# A gate that passed before the rebase still holds when what moved main
+# changed only Markdown files under docs/, which no gate reads.
 # The push only fast-forwards, so it is the lock: a rejected push means
 # main moved, and land starts again from the rebase. Then the local main,
 # and the checkout that has it, follow.
 #
-# --docs   Markdown only: check that, and skip the gate.
+# --docs   Markdown only, and a plan's metrics.tsv: check that, and skip
+#          the gate.
 # --local  No remote: land on the local main under a lock (LAND_LOCK, or
 #          the repository's land.lock) instead of pushing.
 # --gate   The gate, a shell command, instead of scripts/check.sh.
@@ -29,7 +32,14 @@
 set -euo pipefail
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
-root=${DEV_ROOT:-$HOME/src/rust}
+# The workspace: DEV_ROOT, or the directory holding the skein checkout these
+# tools come from (development.md, section 3.6), or ~/src/rust.
+workspace() {
+    local skein
+    skein=$(cd "$kit/../.." && pwd)
+    if [[ $(basename "$skein") == skein ]]; then dirname "$skein"; else echo "$HOME/src/rust"; fi
+}
+root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
 start_dir=$PWD
 
@@ -90,6 +100,23 @@ follow() {
     fi
 }
 
+# The cache's key: a result holds for one tree, one gate and one compiler.
+gate_key() {
+    printf '%s\n%s\n%s\n' "$1" "$gate" "$(rustc -V 2>/dev/null || true)" | sha1sum | cut -c1-40
+}
+
+# The tree a gate passed on before this rebase, when this tree differs from
+# it only in Markdown files under docs/: the tip's Gate-Tree, from an
+# earlier try, with its result still in the cache.
+gated_before() {
+    local tree=$1 before others
+    before=$(git log -1 --format='%(trailers:key=Gate-Tree,valueonly,separator=)')
+    [[ -n $before && $before != "$tree" && -f $cache_dir/$(gate_key "$before") ]] || return 1
+    others=$(git diff --no-renames --name-only "$before" "$tree" | grep -vE '^docs/.*\.md$' || true)
+    [[ -z $others ]] || return 1
+    echo "$before"
+}
+
 # The gate's evidence, as one line: each nextest summary, in the order the
 # gate runs them, then the time the gate ran.
 evidence() {
@@ -121,19 +148,24 @@ Resolve them, run git rebase --continue, then land again."
 
     tree=$(git rev-parse 'HEAD^{tree}')
     if ((docs)); then
-        others=$(git diff --no-renames --name-only "$base" HEAD | grep -v '\.md$' || true)
+        others=$(git diff --no-renames --name-only "$base" HEAD |
+            grep -vE '\.md$|^docs/development/plans/[^/]+/metrics\.tsv$' || true)
         [[ -z $others ]] || die 2 "--docs, but these are not Markdown: $others"
         summary="none (Markdown only)"
+        gated=$tree
     else
         [[ $gate != scripts/check.sh || -x $gate ]] ||
             die 2 "no scripts/check.sh: give the gate with --gate (see the repository's workflow)"
-        # A result holds for one tree, one gate and one compiler.
-        key=$(printf '%s\n%s\n%s\n' "$tree" "$gate" "$(rustc -V 2>/dev/null || true)" |
-            sha1sum | cut -c1-40)
-        cache=$tmp/gates/$repo/$key
+        cache_dir=$tmp/gates/$repo
+        cache=$cache_dir/$(gate_key "$tree")
+        gated=$tree
         if [[ -f $cache ]]; then
             summary=$(cat "$cache")
+        elif gated=$(gated_before "$tree"); then
+            summary=$(cat "$cache_dir/$(gate_key "$gated")")
+            echo "land: the gate passed on $gated, which differs from this tree only in docs/ Markdown" >&2
         else
+            gated=$tree
             out=$(mktemp)
             if ! "$kit/heavy" --gate --tail 60 bash -c "$gate" >"$out" 2>&1; then
                 cat "$out"
@@ -155,7 +187,7 @@ Resolve them, run git rebase --continue, then land again."
     # the tree, so the evidence still holds for what lands.
     message=$(git log -1 --format=%B |
         git interpret-trailers --if-exists replace \
-            --trailer "Gate-Tree: $tree" --trailer "Gate-Result: $summary")
+            --trailer "Gate-Tree: $gated" --trailer "Gate-Result: $summary")
     git commit --quiet --amend --no-verify --message "$message"
     commit=$(git rev-parse HEAD)
 
@@ -200,6 +232,6 @@ cat <<EOF
 land: landed $repo $branch on $where
   commit  $commit
   parent  $base
-  tree    $tree
+  tree    $tree${gated:+$([[ $gated == "$tree" ]] || printf ', gated as %s' "$gated")}
   gate    $summary
 EOF

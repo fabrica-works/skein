@@ -1,41 +1,85 @@
-//! Lowest-tier native TLS peer harness, independent read/output ledgers beside
-//! real rustls records. Actual IO capacity/lifetime proof is native.rs, not this
-//! prompt bounded proxy (tls.md, 3.6; testing-strategy.md, 2.1 and 2.4).
-use crate::{native_peer::Tls12, pki, server::Server};
+//! Native TLS against a rustls server in memory (tls.md, 3.6).
+//! The proxy tracks independent reads and output rights. io's socket capacity
+//! and lifecycle are checked by native.rs.
+use crate::{native_peer::Tls12, pki, records, server::Server};
 use skein_lib::stream::{Down, OutputDown, OutputOutcome, OutputUp, Read, Up};
 use skein_lib::{Env, Queue, Time, Token};
 use skein_tls::client::{self, Limits, native};
 use skein_tls::{Config, Name};
 use std::collections::VecDeque;
 
-/// Independent lower output ownership in this bounded proxy (tls.md, 3.6).
+/// Independent output ownership below in this bounded proxy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Output {
+pub enum Output {
     Idle,
     Wanted { right: Token, bytes: u32 },
     Granted { right: Token, bytes: u32 },
     Cancelled(Token),
 }
 
-/// Actual native TLS and real rustls server, with one prompt backed proxy slot.
-/// It does not claim actual IO/kernel capacity or deterministic ciphertext.
-/// All public methods check native queue maxima (tls.md, 3.6; testing-strategy.md, 6).
+pub const LIMITS: Limits = Limits { read: 16, send: 16, records: client::MAX_RECORD };
+
+/// The side above's output right in most tests.
+pub const UPPER: Token = Token::new(1);
+
+#[must_use]
+pub fn granted(right: Token) -> native::Event {
+    native::Event::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted })
+}
+
+/// The server: rustls's own, or one whose keys were taken out.
+pub enum Peer {
+    Rustls(Box<Server>),
+    Extracted(Tls12),
+}
+
+impl Peer {
+    #[must_use]
+    pub fn rustls(&self) -> &Server {
+        match self {
+            Self::Rustls(server) => server,
+            Self::Extracted(_) => panic!("rustls peer required"),
+        }
+    }
+
+    pub fn rustls_mut(&mut self) -> &mut Server {
+        match self {
+            Self::Rustls(server) => server,
+            Self::Extracted(_) => panic!("rustls peer required"),
+        }
+    }
+
+    #[must_use]
+    pub fn extracted(&self) -> &Tls12 {
+        match self {
+            Self::Extracted(server) => server,
+            Self::Rustls(_) => panic!("extracted peer required"),
+        }
+    }
+
+    pub fn extracted_mut(&mut self) -> &mut Tls12 {
+        match self {
+            Self::Extracted(server) => server,
+            Self::Rustls(_) => panic!("extracted peer required"),
+        }
+    }
+}
+
+/// Native TLS and rustls server, with one prompt backed proxy slot.
+/// It does not claim IO/kernel capacity or deterministic ciphertext.
+/// All public methods check native queue maxima.
 pub struct Pair {
-    /// Native client with four distinct obligation cells (tls.md, 3.6).
+    /// Native client with four distinct obligation cells.
     pub client: native::Client,
-    /// Immutable native read/send/record bounds (tls.md, 3.6).
+    /// Immutable native read/send/record bounds.
     pub env: Env<Limits>,
-    /// Actual cryptographic peer and authenticated plaintext (tls.md, 3.6).
-    pub server: Option<Server>,
-    /// Actual authenticated extracted-key peer after a real `TLS1.2` handshake;
-    /// the original rustls Server is consumed, never replaced by a fake receiver
-    /// (tls.md, 3.6; testing-strategy.md, 2.4).
-    pub extracted: Option<Tls12>,
-    /// Ciphertext actually emitted by the server, waiting for exact Fill (tls.md, 3.6).
+    /// The cryptographic peer and its authenticated plaintext.
+    pub peer: Peer,
+    /// Ciphertext emitted by the server, waiting for exact Fill.
     pub wire: VecDeque<u8>,
-    /// The exact unanswered ciphertext read; Room never clears it (tls.md, 3.6).
+    /// The exact unanswered ciphertext read; Room never clears it.
     pub read: Option<Read>,
-    /// Actual lower Finish count for Finish controls (tls.md, 3.6).
+    /// Below Finish count for Finish controls.
     pub finished: u32,
     queued_read: Option<u32>,
     output: Output,
@@ -46,8 +90,8 @@ pub struct Pair {
 }
 
 impl Pair {
-    /// Make one real peer at fixture-valid wall time. The lower proxy has one
-    /// genuine local Send slot and the full checked native cap (tls.md, 3.6).
+    /// Make one peer at fixture-valid wall time. The proxy below has one
+    /// local Send slot and the full checked native cap.
     #[must_use]
     pub fn new(config: &Config, name: Name, limits: Limits, server: Server) -> Self {
         let cap = native::largest_room(&limits).expect("checked native envelope");
@@ -60,8 +104,7 @@ impl Pair {
             )
             .expect("compatible proxy"),
             env: Env { now: Time::ZERO, wall: pki::VALID, limits },
-            server: Some(server),
-            extracted: None,
+            peer: Peer::Rustls(Box::new(server)),
             wire: VecDeque::new(),
             read: None,
             finished: 0,
@@ -74,36 +117,177 @@ impl Pair {
         }
     }
 
-    /// Send one native upper request, retaining every real lower request and
-    /// returning all actual upper observations (tls.md, 3.6).
+    /// A pair past Ready, with the shared limits.
+    #[must_use]
+    pub fn ready(server: &pki::Server) -> Self {
+        let mut pair = Self::new(&pki::client(&[]), pki::name(), LIMITS, Server::new(server.config()));
+        let mut events = pair.down(native::Request::Client(client::Request::Handshake));
+        events.extend(pair.settle());
+        let version = match server.versions {
+            pki::Versions::Tls12 => Some(client::Version::Tls12),
+            pki::Versions::Tls13 => Some(client::Version::Tls13),
+            pki::Versions::Both => None,
+        };
+        assert!(matches!(&events[..], [native::Event::Client(client::Event::Ready(agreed))]
+            if version.is_none_or(|version| agreed.version == version)));
+        assert!(!pair.peer.rustls().handshaking());
+        pair
+    }
+
+    pub fn read(&mut self, bytes: u32) -> Vec<native::Event> {
+        self.down(native::Request::Client(client::Request::Stream(Down::Demand { read: Read::Fill(bytes), room: 0 })))
+    }
+
+    pub fn withdraw(&mut self) -> Vec<native::Event> {
+        self.down(native::Request::Client(client::Request::Stream(Down::Demand { read: Read::Nothing, room: 0 })))
+    }
+
+    pub fn finish(&mut self) -> Vec<native::Event> {
+        self.down(native::Request::Client(client::Request::Stream(Down::Finish)))
+    }
+
+    pub fn close(&mut self) -> Vec<native::Event> {
+        self.down(native::Request::Client(client::Request::Close))
+    }
+
+    /// Ask for an output right, then settle the pair.
+    pub fn room(&mut self, right: Token, bytes: u32) -> Vec<native::Event> {
+        let mut events = self.down(native::Request::Output(OutputDown::Room { right, bytes }));
+        events.extend(self.settle());
+        events
+    }
+
+    pub fn send(&mut self, right: Token, bytes: &[u8]) -> Vec<native::Event> {
+        self.down(native::Request::Output(OutputDown::Send { right, bytes: bytes.into() }))
+    }
+
+    #[must_use]
+    pub fn peer_closed(&self) -> bool {
+        match &self.peer {
+            Peer::Rustls(peer) => peer.closed,
+            Peer::Extracted(peer) => peer.alerts.contains(&[1, 0]),
+        }
+    }
+
+    #[must_use]
+    pub fn ready_tls12() -> Self {
+        let server = pki::Server { versions: pki::Versions::Tls12, extractable: true, ..pki::Server::plain() };
+        let mut pair = Self::ready(&server);
+        pair.extract_peer();
+        pair
+    }
+
+    #[must_use]
+    pub fn ready_version(version: client::Version) -> Self {
+        let versions = match version {
+            client::Version::Tls12 => pki::Versions::Tls12,
+            client::Version::Tls13 => pki::Versions::Tls13,
+        };
+        Self::ready(&pki::Server { versions, ..pki::Server::plain() })
+    }
+
+    /// Emit one exact Header or Body Fill winner, retaining its owning box
+    /// above TLS until the chosen withdrawal/Finish ordering.
+    pub fn queued_ciphertext(&mut self, body: bool) -> native::LowerEvent {
+        self.peer.rustls_mut().write(&[b'x'; 16]);
+        self.pull();
+        assert_eq!(self.read, Some(Read::Fill(client::HEADER)));
+        let header = self.answer().expect("real emitted Header winner");
+        let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("Header box") };
+        assert_eq!(bytes.len(), usize::try_from(client::HEADER).expect("Header"));
+        let length = u32::try_from(records::length(bytes)).expect("bounded record");
+        if body {
+            assert!(self.up(header).is_empty(), "Header alone invents no upper answer");
+            assert_eq!(self.read, Some(Read::Fill(length)));
+            let winner = self.answer().expect("real emitted Body winner");
+            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("Body box") };
+            assert_eq!(bytes.len(), usize::try_from(length).expect("bounded real Body"));
+            assert!(self.read.is_none(), "Fill ownership moved to queued box");
+            winner
+        } else {
+            assert!(self.read.is_none(), "Fill ownership moved to queued box");
+            header
+        }
+    }
+
+    /// Process every pre-data ticket record, then retain an maximal
+    /// body winner. The real configured ticket count bounds the prefix; neither
+    /// peer tickets nor TLS controls are suppressed.
+    pub fn queued_maximal_body(&mut self, versions: pki::Versions, ticket_records: usize) -> native::LowerEvent {
+        let records = ticket_records.checked_add(1).expect("configured ticket prefix plus first data record");
+        for prefix in 0..records {
+            let header = self.answer().expect("emitted Header before maximal Body");
+            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("Header Fill box") };
+            assert_eq!(bytes.len(), usize::try_from(client::HEADER).expect("Header"));
+            let length = u32::try_from(records::length(bytes)).expect("bounded record");
+            assert!(self.up(header).is_empty(), "Header cannot fabricate a plaintext or output answer");
+            assert_eq!(self.read, Some(Read::Fill(length)), "exact next Body Fill");
+            let winner = self.answer().expect("emitted Body Fill");
+            let native::LowerEvent::Stream(Up::Bytes(bytes)) = &winner else { panic!("Body Fill box") };
+            assert_eq!(bytes.len(), usize::try_from(length).expect("bounded Body"));
+            if length >= client::MAX_PLAINTEXT {
+                if versions == pki::Versions::Tls13 {
+                    assert!(prefix > 0, "post-handshake ticket flight preceded the full peer data");
+                }
+                return winner;
+            }
+            assert_eq!(versions, pki::Versions::Tls13, "only the TLS13 ticket flight precedes maximal data");
+            assert!(self.up(winner).is_empty(), "ticket record is processed, never discarded or a short Fill answer");
+        }
+        panic!("configured ticket flight followed by maximal40000 data must yield a maximum Body: {versions:?}");
+    }
+
+    #[must_use]
+    pub fn maximal_winner(versions: pki::Versions, body: bool) -> (Self, native::LowerEvent, Vec<u8>) {
+        let server = pki::Server { versions, ..pki::Server::plain() };
+        let config = server.config();
+        let tickets = config.send_tls13_tickets;
+        let mut pair = Self::new(&pki::client(&[]), pki::name(), crate::meter::LARGE, Server::new(config));
+        let mut events = pair.down(native::Request::Client(client::Request::Handshake));
+        events.extend(pair.settle());
+        assert!(matches!(&events[..], [native::Event::Client(client::Event::Ready(_))]));
+        assert!(pair.read(crate::meter::LARGE.read).is_empty());
+        let plaintext = vec![b'x'; 40_000];
+        pair.peer.rustls_mut().write(&plaintext);
+        pair.pull();
+        let winner = if body {
+            pair.queued_maximal_body(versions, tickets)
+        } else {
+            pair.answer().expect("emitted Header Fill")
+        };
+        (pair, winner, plaintext)
+    }
+
+    /// Send one native request from above, retaining every request below and
+    /// returning all observations above.
     pub fn down(&mut self, request: native::Request) -> Vec<native::Event> {
         native::down(&mut self.client, &self.env, request, &mut self.above, &mut self.below);
         self.route(native::DOWN_MAX_OUT)
     }
 
-    /// Forward one actual lower observation from the proxy. A queued Granted
-    /// can cross an upper cancellation; a queued Fill box must match the one
-    /// actually emitted by `answer`, even across withdrawal (tls.md, 3.6).
+    /// Forward one below observation from the proxy. A queued Granted
+    /// can cross an above cancellation; a queued Fill box must match the one
+    /// emitted by `answer`, even across withdrawal.
     pub fn up(&mut self, event: native::LowerEvent) -> Vec<native::Event> {
         if let native::LowerEvent::Stream(Up::Bytes(bytes)) = &event {
             assert_eq!(
-                Some(u32::try_from(bytes.len()).expect("bounded actual Fill winner")),
+                Some(u32::try_from(bytes.len()).expect("bounded Fill winner")),
                 self.queued_read.take(),
-                "only the proxy's actually emitted exact Fill box is delivered"
+                "only the proxy's  emitted exact Fill box is delivered"
             );
         }
         native::up(&mut self.client, &self.env, event, &mut self.above, &mut self.below);
         self.route(native::UP_MAX_OUT)
     }
 
-    /// Poll the independent actual read/output proxy. Emitting a grant commits
+    /// Poll the independent read/output proxy. Emitting a grant commits
     /// its one slot; emitting a Fill moves its box and retains one size witness
-    /// until `up`, including after withdrawal (tls.md, 3.6).
+    /// until `up`, including after withdrawal.
     pub fn answer(&mut self) -> Option<native::LowerEvent> {
         if let Some(Read::Fill(bytes)) = self.read
             && self.wire.len() >= usize::try_from(bytes).expect("bounded record")
         {
-            assert!(self.queued_read.replace(bytes).is_none(), "one actual queued Fill winner");
+            assert!(self.queued_read.replace(bytes).is_none(), "one queued Fill winner");
             self.read = None;
             let bytes: Vec<u8> = self.wire.drain(..usize::try_from(bytes).expect("bounded Fill")).collect();
             return Some(native::LowerEvent::Stream(Up::Bytes(bytes.into())));
@@ -121,8 +305,8 @@ impl Pair {
         }
     }
 
-    /// Drive only actual proxy answers, at most 10,000 transitions. It may rest
-    /// with a genuinely unanswered read (tls.md, 3.6; testing-strategy.md, 6).
+    /// Drive only proxy answers, at most 10,000 transitions. It may rest
+    /// with a unanswered read.
     pub fn settle(&mut self) -> Vec<native::Event> {
         let mut events = Vec::new();
         for _ in 0..10_000 {
@@ -132,24 +316,26 @@ impl Pair {
         panic!("bounded prompt native TLS peer rests");
     }
 
-    /// Actual peer records moved onto the wire; no synthetic plaintext answers
-    /// or Ready observations (tls.md, 3.6).
+    /// Peer records moved onto the wire; no synthetic plaintext answers
+    /// or Ready observations.
     pub fn pull(&mut self) {
-        match &mut self.server {
-            Some(server) => self.wire.extend(server.transmit()),
-            None => self.wire.extend(self.extracted.as_mut().expect("actual extracted peer").transmit()),
+        match &mut self.peer {
+            Peer::Rustls(server) => self.wire.extend(server.transmit()),
+            Peer::Extracted(server) => self.wire.extend(server.transmit()),
         }
     }
 
-    /// Consume the actual completed extractable peer; all future Sends are
-    /// authenticated using its unchanged directional keys (tls.md, 3.6).
+    /// Consume the completed extractable peer; all future Sends are
+    /// authenticated using its directional keys.
     pub fn extract_peer(&mut self) {
-        assert!(self.extracted.is_none(), "one actual extraction");
-        self.extracted = Some(Tls12::new(self.server.take().expect("actual rustls peer")));
+        let Peer::Rustls(server) = &mut self.peer else { panic!("one extraction") };
+        let placeholder = Server::new(pki::Server::plain().config());
+        let server = std::mem::replace(server, Box::new(placeholder));
+        self.peer = Peer::Extracted(Tls12::new(*server));
     }
 
-    /// Current actual proxy reservation size, independently of its read. Used
-    /// to compare growing owed output with the older full grant (tls.md, 3.6).
+    /// Current proxy reservation size, independently of its read. Used
+    /// to compare growing owed output with the older full grant.
     #[must_use]
     pub fn output_bytes(&self) -> Option<u32> {
         match self.output {
@@ -158,8 +344,8 @@ impl Pair {
         }
     }
 
-    /// Only the last actual consumed ciphertext Send's identity and length;
-    /// bounded observer state, not predicted or replayable bytes (tls.md, 3.6).
+    /// Only the last consumed ciphertext Send's identity and length;
+    /// bounded observer state, not predicted or replayable bytes.
     #[must_use]
     pub fn last_send(&self) -> Option<(Token, u32)> {
         self.last_send
@@ -172,7 +358,7 @@ impl Pair {
                 native::LowerRequest::Stream(Down::Demand { read: Read::Nothing, room: 0 }) => {
                     assert!(
                         self.read.take().is_some() || self.queued_read.is_some(),
-                        "withdraw only an actual live Fill or its already emitted winner"
+                        "withdraw only a live Fill or its already emitted winner"
                     );
                 }
                 native::LowerRequest::Stream(Down::Demand { read, room: 0 }) => {
@@ -193,20 +379,20 @@ impl Pair {
                 },
                 native::LowerRequest::Output(OutputDown::Send { right, bytes }) => {
                     let Output::Granted { right: granted, bytes: cap } = self.output else {
-                        panic!("actual backed native Send")
+                        panic!("backed native Send")
                     };
                     assert_eq!(right, granted);
                     assert!(bytes.len() <= usize::try_from(cap).expect("bounded ciphertext"));
                     self.output = Output::Idle;
-                    self.last_send = Some((right, u32::try_from(bytes.len()).expect("bounded actual ciphertext")));
-                    match &mut self.server {
-                        Some(server) => server.receive(&bytes),
-                        None => self.extracted.as_mut().expect("actual extracted peer").receive(&bytes),
+                    self.last_send = Some((right, u32::try_from(bytes.len()).expect("bounded ciphertext")));
+                    match &mut self.peer {
+                        Peer::Rustls(server) => server.receive(&bytes),
+                        Peer::Extracted(server) => server.receive(&bytes),
                     }
                     self.pull();
                 }
                 native::LowerRequest::Output(OutputDown::Release { right }) => {
-                    assert!(matches!(self.output, Output::Granted { right: actual, .. } if actual == right));
+                    assert!(matches!(self.output, Output::Granted { right: granted, .. } if granted == right));
                     self.output = Output::Idle;
                 }
             }
