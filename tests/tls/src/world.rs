@@ -1032,7 +1032,7 @@ fn corrupt(records: &mut [u8], rng: &mut Rng) {
     let mut bodies = Vec::new();
     let mut at = 0;
     while at + 5 <= records.len() {
-        let length = usize::from(u16::from_be_bytes([records[at + 3], records[at + 4]]));
+        let length = crate::records::length(&records[at..]);
         bodies.push((at + 5, length));
         at += 5 + length;
     }

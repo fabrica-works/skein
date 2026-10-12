@@ -79,20 +79,7 @@ fn genuine_io_cancel_and_closed_both_orders_preserve_one_native_close_terminal()
 }
 
 fn ready_pair() -> skein_tls_world::native_pair::Pair {
-    use skein_tls::client::{self, native};
-    use skein_tls_world::{pki, server::Server};
-    let limits = client::Limits { read: 16, send: 16, records: client::MAX_RECORD };
-    let mut pair = skein_tls_world::native_pair::Pair::new(
-        &pki::client(&[]),
-        pki::name(),
-        limits,
-        Server::new(pki::Server::plain().config()),
-    );
-    let mut events = pair.down(native::Request::Client(client::Request::Handshake));
-    events.extend(pair.settle());
-    assert!(matches!(&events[..], [native::Event::Client(client::Event::Ready(_))]));
-    assert!(!pair.server.as_ref().expect("actual peer").handshaking());
-    pair
+    skein_tls_world::native_pair::Pair::ready(&skein_tls_world::pki::Server::plain())
 }
 
 #[test]
@@ -126,7 +113,7 @@ fn actual_lower_grant_queued_across_cancel_releases_before_a_new_upper_right() {
         pair.down(native::Request::Output(OutputDown::Send { right: next, bytes: b"ping".as_slice().into() }))
             .is_empty()
     );
-    assert_eq!(pair.server.as_ref().expect("actual peer").received, b"ping");
+    assert_eq!(pair.peer.rustls().received, b"ping");
 }
 
 #[test]
@@ -142,7 +129,7 @@ fn native_finish_spends_a_real_held_grant_and_emits_actual_close_notify_and_one_
     assert_eq!(pair.settle(), [native::Event::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted })]);
     assert!(pair.down(native::Request::Client(client::Request::Stream(Down::Finish))).is_empty());
     assert!(pair.settle().is_empty());
-    assert!(pair.server.as_ref().expect("actual peer").closed, "real rustls peer authenticated close_notify");
+    assert!(pair.peer.rustls().closed, "real rustls peer authenticated close_notify");
     assert_eq!(pair.finished, 1);
 }
 
@@ -186,7 +173,7 @@ fn real_peer_key_updates_held_behind_upper_grant_precede_exact_maximum_plaintext
     assert!(pair.down(native::Request::Output(OutputDown::Room { right, bytes: 16 })).is_empty());
     assert_eq!(pair.settle(), [native::Event::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted })]);
     for _ in 0..3 {
-        pair.server.as_mut().expect("actual peer").key_update();
+        pair.peer.rustls_mut().key_update();
         pair.pull();
         assert!(
             pair.settle().is_empty(),
@@ -196,7 +183,7 @@ fn real_peer_key_updates_held_behind_upper_grant_precede_exact_maximum_plaintext
     let payload = vec![b'x'; 16];
     assert!(pair.down(native::Request::Output(OutputDown::Send { right, bytes: payload.clone().into() })).is_empty());
     assert_eq!(
-        pair.server.as_ref().expect("actual peer").received,
+        pair.peer.rustls().received,
         payload,
         "every actual owed key-update response precedes authenticated data"
     );
@@ -225,20 +212,13 @@ fn empty_native_send_and_explicit_release_each_spend_one_real_backed_grant() {
             if empty { OutputDown::Send { right, bytes: Box::from([]) } } else { OutputDown::Release { right } };
         assert!(pair.down(native::Request::Output(spent)).is_empty());
         assert!(pair.settle().is_empty());
-        assert!(
-            pair.server.as_ref().expect("actual peer").received.is_empty(),
-            "no invented application bytes from empty/release"
-        );
+        assert!(pair.peer.rustls().received.is_empty(), "no invented application bytes from empty/release");
     }
     let right = Token::new(82);
     assert!(pair.down(native::Request::Output(OutputDown::Room { right, bytes: 4 })).is_empty());
     assert_eq!(pair.settle(), [native::Event::Output(OutputUp::Settled { right, outcome: OutputOutcome::Granted })]);
     assert!(pair.down(native::Request::Output(OutputDown::Send { right, bytes: Box::from(*b"ping") })).is_empty());
-    assert_eq!(
-        pair.server.as_ref().expect("actual peer").received,
-        b"ping",
-        "both spent real slots admit the next actual Send"
-    );
+    assert_eq!(pair.peer.rustls().received, b"ping", "both spent real slots admit the next actual Send");
 }
 
 #[test]
@@ -257,20 +237,9 @@ fn native_finish_refuses_a_real_pending_output_before_consuming_lower_reservatio
 /// An actual completed extractable peer, with the original authenticated
 /// `TLS1.2` fixture suite (tls.md, 3.6; testing-strategy.md, 2.4).
 fn ready_tls12_pair() -> skein_tls_world::native_pair::Pair {
-    use skein_tls::client::{self, native};
-    use skein_tls_world::{pki, server::Server};
+    use skein_tls_world::{native_pair::Pair, pki};
     let server = pki::Server { versions: pki::Versions::Tls12, extractable: true, ..pki::Server::plain() };
-    let mut pair = skein_tls_world::native_pair::Pair::new(
-        &pki::client(&[]),
-        pki::name(),
-        client::Limits { read: 16, send: 16, records: client::MAX_RECORD },
-        Server::new(server.config()),
-    );
-    let mut events = pair.down(native::Request::Client(client::Request::Handshake));
-    events.extend(pair.settle());
-    assert!(
-        matches!(&events[..], [native::Event::Client(client::Event::Ready(agreed))] if agreed.version == Version::Tls12)
-    );
+    let mut pair = Pair::ready(&server);
     pair.extract_peer();
     pair
 }
@@ -285,7 +254,7 @@ fn actual_owed_growth_across_an_older_queued_grant_preserves_fifo_prefix_and_suf
         pair.down(native::Request::Client(client::Request::Stream(Down::Demand { read: Read::Fill(16), room: 0 })))
             .is_empty()
     );
-    pair.extracted.as_mut().expect("actual extracted peer").hello_request();
+    pair.peer.extracted_mut().hello_request();
     pair.pull();
     // An authentic HelloRequest produces one actual warning refusal in Held.
     // Rustls permits one such request, not a fictional repeated-control flood.
@@ -307,13 +276,13 @@ fn actual_owed_growth_across_an_older_queued_grant_preserves_fifo_prefix_and_suf
     assert!(pair.down(native::Request::Client(client::Request::Close)).is_empty());
     assert!(pair.up(winner).is_empty());
     assert_eq!(pair.last_send(), Some((first, original)), "fitting ordered prefix spends original full grant");
-    assert_eq!(pair.extracted.as_ref().expect("actual peer").alerts, [[1, 100]], "authenticated warning refusal first");
+    assert_eq!(pair.peer.extracted().alerts, [[1, 100]], "authenticated warning refusal first");
     assert_eq!(pair.output_bytes(), Some(original), "exact retained close suffix needs a distinct right");
     assert!(pair.settle().is_empty(), "draining ciphertext alone cannot impersonate physical Closed");
     let (second, suffix) = pair.last_send().expect("actual close suffix Send");
     assert_ne!(second, first, "checked distinct lower generation");
     assert_eq!(suffix, original, "whole ordered suffix, no lost control bytes");
-    let peer = pair.extracted.as_ref().expect("actual authenticated peer");
+    let peer = pair.peer.extracted();
     assert_eq!(peer.alerts, [[1, 100], [1, 0]], "actual warning then actual close_notify authenticate in order");
     assert_eq!(peer.records, [ContentType::Alert, ContentType::Alert]);
     assert!(peer.received.is_empty(), "no invented data from two actual control records");
@@ -344,7 +313,7 @@ fn authentic_tls12_refusal_held_with_upper_grant_precedes_exact_maximum_plaintex
         [native::Event::Output(OutputUp::Settled { right: upper, outcome: OutputOutcome::Granted })]
     );
     let before = pair.last_send();
-    pair.extracted.as_mut().expect("actual peer").hello_request();
+    pair.peer.extracted_mut().hello_request();
     pair.pull();
     assert!(pair.settle().is_empty(), "refusal neither answers the read nor consumes backed upper grant");
     assert_eq!(pair.last_send(), before, "owed warning stays held behind the actual upper grant");
@@ -352,7 +321,7 @@ fn authentic_tls12_refusal_held_with_upper_grant_precedes_exact_maximum_plaintex
         pair.down(native::Request::Output(OutputDown::Send { right: upper, bytes: Box::from([b'x'; 16]) })).is_empty()
     );
     assert_eq!(pair.last_send().expect("actual complete owed+data Send").1, 31 + 16 + 29);
-    let peer = pair.extracted.as_ref().expect("actual authenticated peer");
+    let peer = pair.peer.extracted();
     assert_eq!(peer.alerts, [[1, 100]]);
     assert_eq!(peer.records, [ContentType::Alert, ContentType::ApplicationData], "complete prefix precedes data");
     assert_eq!(peer.received, [b'x'; 16], "full plaintext authenticates after actual owed warning");
@@ -360,20 +329,9 @@ fn authentic_tls12_refusal_held_with_upper_grant_precedes_exact_maximum_plaintex
 
 /// Real negotiated peer of either version for queued-read controls (tls.md, 3.6).
 fn queued_pair(version: Version) -> skein_tls_world::native_pair::Pair {
-    use skein_tls::client::{self, native};
-    use skein_tls_world::{pki, server::Server};
+    use skein_tls_world::{native_pair::Pair, pki};
     let versions = if version == Version::Tls12 { pki::Versions::Tls12 } else { pki::Versions::Tls13 };
-    let server = pki::Server { versions, ..pki::Server::plain() };
-    let mut pair = skein_tls_world::native_pair::Pair::new(
-        &pki::client(&[]),
-        pki::name(),
-        client::Limits { read: 16, send: 16, records: client::MAX_RECORD },
-        Server::new(server.config()),
-    );
-    let mut events = pair.down(native::Request::Client(client::Request::Handshake));
-    events.extend(pair.settle());
-    assert!(matches!(&events[..], [native::Event::Client(client::Event::Ready(agreed))] if agreed.version == version));
-    pair
+    Pair::ready(&pki::Server { versions, ..pki::Server::plain() })
 }
 
 /// Emit one actual exact Header or Body Fill winner, retaining its owning box
@@ -384,13 +342,13 @@ fn queued_ciphertext(
 ) -> skein_tls::client::native::LowerEvent {
     use skein_lib::stream::{Read, Up};
     use skein_tls::client::{self, native};
-    pair.server.as_mut().expect("real completed peer").write(&[b'x'; 16]);
+    pair.peer.rustls_mut().write(&[b'x'; 16]);
     pair.pull();
     assert_eq!(pair.read, Some(Read::Fill(client::HEADER)));
     let header = pair.answer().expect("real emitted Header winner");
     let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("actual Header box") };
     assert_eq!(bytes.len(), usize::try_from(client::HEADER).expect("Header"));
-    let length = u32::from(u16::from_be_bytes([bytes[3], bytes[4]]));
+    let length = u32::try_from(skein_tls_world::records::length(bytes)).expect("bounded record");
     if body {
         assert!(pair.up(header).is_empty(), "Header alone invents no upper answer");
         assert_eq!(pair.read, Some(Read::Fill(length)));
@@ -453,7 +411,7 @@ fn genuine_queued_header_and_body_after_ready_withdrawal_preserve_pending_and_he
                     pair.down(native::Request::Output(OutputDown::Send { right, bytes: Box::from(*b"ping") }))
                         .is_empty()
                 );
-                assert_eq!(pair.server.as_ref().expect("real peer").received, b"ping");
+                assert_eq!(pair.peer.rustls().received, b"ping");
                 assert!(pair.read.is_none(), "independent output cannot restart withdrawn read");
             }
         }
@@ -505,7 +463,7 @@ fn genuine_queued_read_winners_cross_finish_before_during_and_after_close_notify
                 }
                 assert!(pair.settle().is_empty());
                 assert_eq!(pair.finished, 1, "one genuine lower Finish");
-                let peer = pair.server.as_ref().expect("real peer");
+                let peer = pair.peer.rustls();
                 assert!(peer.closed && peer.failed.is_none(), "real peer authenticates close_notify");
                 assert!(peer.received.is_empty(), "no invented plaintext from read disposal");
                 assert!(pair.read.is_none() && pair.output_bytes().is_none());
@@ -546,7 +504,7 @@ fn handshake_running_withdrawal_keeps_real_engine_reads_through_ready() {
             "upper withdrawal cannot withdraw engine handshake read"
         );
         assert!(matches!(&pair.settle()[..], [native::Event::Client(client::Event::Ready(_))]));
-        assert!(!pair.server.as_ref().expect("real peer").handshaking());
+        assert!(!pair.peer.rustls().handshaking());
         assert!(pair.read.is_none(), "Ready does not create an ordinary read after withdrawal");
     }
 }
@@ -566,7 +524,7 @@ fn authenticated_peer_end_leaves_partial_fill_unanswered_and_permits_finish() {
                     })))
                     .is_empty()
                 );
-                let peer = pair.server.as_mut().expect("real peer");
+                let peer = pair.peer.rustls_mut();
                 peer.write(b"x");
                 peer.close_notify();
                 pair.pull();
@@ -599,7 +557,7 @@ fn authenticated_peer_end_leaves_partial_fill_unanswered_and_permits_finish() {
                 assert!(pair.down(native::Request::Client(client::Request::Stream(Down::Finish))).is_empty());
                 assert!(pair.settle().is_empty());
                 assert_eq!(pair.finished, 1);
-                assert!(pair.server.as_ref().expect("real peer").closed, "opposite actual close_notify authenticates");
+                assert!(pair.peer.rustls().closed, "opposite actual close_notify authenticates");
             }
         }
     }

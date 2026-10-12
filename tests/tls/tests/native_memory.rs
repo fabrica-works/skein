@@ -7,29 +7,21 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use skein_heap::{Counting, Meter, Span};
+use skein_heap::{Counting, Span};
 use skein_lib::stream::{Down, OutputDown, OutputOutcome, OutputUp, Read, Up};
 use skein_lib::{Env, Queue, Time, Token};
 use skein_tls::client::{self, Error, Limits, native};
+use skein_tls_world::native_pair::{Output, Peer};
 use skein_tls_world::native_peer::Tls12;
 use skein_tls_world::pki::{self, Chain, Versions};
 use skein_tls_world::server::Server;
+use skein_tls_world::{
+    meter::{LARGE, SMALL, Steps},
+    records,
+};
 
 #[global_allocator]
 static HEAP: Counting = Counting;
-
-const SMALL: Limits = Limits { read: 1, send: 1, records: client::MAX_RECORD };
-const LARGE: Limits = Limits { read: 40_000, send: 40_000, records: 3 * client::MAX_RECORD };
-
-/// One independent prompt proxy output slot; the actual IO proof lives in
-/// `native_output.rs`. No meter step invents a TLS record or cryptographic event.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Output {
-    Idle,
-    Wanted { right: Token, bytes: u32 },
-    Granted { right: Token, bytes: u32 },
-    Cancelled(Token),
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Plain {
@@ -64,18 +56,14 @@ enum Control {
 /// The server's and harness's heap is independently measured between native
 /// steps; no peer allocation is silently counted as TLS memory (tls.md, 5).
 struct Harness {
-    meter: Meter,
-    outside: i64,
-    bound: u64,
-    most: u64,
+    metered: Steps,
     sealed: usize,
     client: Option<native::Client>,
     env: Env<Limits>,
     above: Queue<native::Event>,
     below: Queue<native::LowerRequest>,
-    peer: Option<Server>,
-    extracted: Option<Tls12>,
-    _config: Arc<rustls::server::ServerConfig>,
+    peer: Peer,
+    server_config: Arc<rustls::server::ServerConfig>,
     wire: VecDeque<u8>,
     outgoing: Vec<u8>,
     request: Vec<u8>,
@@ -101,26 +89,23 @@ impl Harness {
             native::Request::Output(OutputDown::Send { bytes, .. }) => bytes.len() as u64,
             native::Request::Client(_) | native::Request::Output(_) => 0,
         };
-        self.meter.start();
+        self.metered.start();
         native::down(self.client.as_mut().expect("made"), &self.env, request, &mut self.above, &mut self.below);
-        let step = self.meter.end();
+        let step = self.metered.end();
         self.take(native::DOWN_MAX_OUT);
         self.check(step, extra);
     }
 
     fn up(&mut self, event: native::LowerEvent) {
-        self.meter.start();
+        self.metered.start();
         native::up(self.client.as_mut().expect("made"), &self.env, event, &mut self.above, &mut self.below);
-        let step = self.meter.end();
+        let step = self.metered.end();
         self.take(native::UP_MAX_OUT);
         self.check(step, 0);
     }
 
     fn check(&mut self, step: skein_heap::Measured, extra: u64) {
-        let bound = i64::try_from(self.bound + extra).expect("finite") + self.outside;
-        let own = self.meter.check(step, u64::try_from(bound).expect("positive"), &self.phase);
-        let own = i64::try_from(own).expect("finite") - self.outside - i64::try_from(extra).expect("finite");
-        self.most = self.most.max(u64::try_from(own).expect("positive"));
+        self.metered.check(step, extra, &self.phase);
     }
 
     fn take(&mut self, maximum: skein_tls::MaxOut) {
@@ -191,15 +176,15 @@ impl Harness {
 
     fn peer_received(&self) -> &[u8] {
         match &self.peer {
-            Some(peer) => &peer.received,
-            None => &self.extracted.as_ref().expect("actual extracted peer").received,
+            Peer::Rustls(peer) => &peer.received,
+            Peer::Extracted(peer) => &peer.received,
         }
     }
 
     fn pull(&mut self) {
         match &mut self.peer {
-            Some(peer) => self.wire.extend(peer.transmit()),
-            None => self.wire.extend(self.extracted.as_mut().expect("actual extracted peer").transmit()),
+            Peer::Rustls(peer) => self.wire.extend(peer.transmit()),
+            Peer::Extracted(peer) => self.wire.extend(peer.transmit()),
         }
     }
 
@@ -211,7 +196,7 @@ impl Harness {
             Control::Idle => {}
             Control::Keys(count) => {
                 for _ in 0..count {
-                    let peer = self.peer.as_mut().expect("actual TLS1.3 peer");
+                    let peer = self.peer.rustls_mut();
                     peer.key_update();
                     let requesting_record = peer.transmit();
                     assert_eq!(requesting_record.len(), 27, "each of32 actual requesting KeyUpdate records is emitted");
@@ -219,9 +204,13 @@ impl Harness {
                 }
             }
             Control::HelloRequest => {
-                let mut peer = Tls12::new(self.peer.take().expect("actual completed extractable TLS1.2 server"));
+                let placeholder = Server::new(Arc::clone(&self.server_config));
+                let Peer::Rustls(peer) = std::mem::replace(&mut self.peer, Peer::Rustls(Box::new(placeholder))) else {
+                    panic!("one extraction")
+                };
+                let mut peer = Tls12::new(*peer);
                 peer.hello_request();
-                self.extracted = Some(peer);
+                self.peer = Peer::Extracted(peer);
                 self.pull();
             }
         }
@@ -231,8 +220,8 @@ impl Harness {
         let span = Span::start();
         if !self.outgoing.is_empty() {
             match &mut self.peer {
-                Some(peer) => peer.receive(&self.outgoing),
-                None => self.extracted.as_mut().expect("actual extracted peer").receive(&self.outgoing),
+                Peer::Rustls(peer) => peer.receive(&self.outgoing),
+                Peer::Extracted(peer) => peer.receive(&self.outgoing),
             }
             self.outgoing.clear();
         }
@@ -240,10 +229,10 @@ impl Harness {
         if !self.responded && self.peer_received().len() == self.request.len() {
             assert_eq!(self.peer_received(), self.request, "actual authenticated maximal caller payload");
             self.responded = true;
-            if let Some(peer) = &mut self.peer {
+            if let Peer::Rustls(peer) = &mut self.peer {
                 peer.write(&self.response);
             } else {
-                let peer = self.extracted.as_mut().expect("actual extracted peer");
+                let peer = self.peer.extracted_mut();
                 assert_eq!(peer.alerts, [[1, 100]], "one authenticated actual refusal before full plaintext");
                 assert_eq!(peer.records.first(), Some(&rustls::ContentType::Alert), "actual owed prefix first");
                 peer.write(&self.response);
@@ -251,12 +240,11 @@ impl Harness {
             let start = self.wire.len();
             self.pull();
             if self.corrupt {
-                let body = usize::from(u16::from_be_bytes([self.wire[start + 3], self.wire[start + 4]]));
-                self.wire[start + 4 + body] ^= 1;
+                records::corrupt_first(&mut self.wire.make_contiguous()[start..]);
             }
         }
         self.pull();
-        self.outside += span.end().net;
+        self.metered.outside(span.end().net);
     }
 
     fn answer(&mut self) -> bool {
@@ -337,13 +325,8 @@ impl Harness {
     }
 
     fn finish(mut self) -> Measured {
-        let held = i64::try_from(self.meter.held()).expect("finite") - self.outside;
-        let span = Span::start();
-        drop(self.client.take().expect("made"));
-        let freed = span.end().net;
-        let name = i64::try_from(self.name_bytes).expect("finite name");
-        assert_eq!(held + freed, -name, "all native owned heap, and only the moved caller Name, is released");
-        Measured { most: self.most, sealed: self.sealed, failed: self.failed }
+        let most = self.metered.finish(self.client.take().expect("made"), self.name_bytes, &self.phase);
+        Measured { most, sealed: self.sealed, failed: self.failed }
     }
 }
 
@@ -355,18 +338,14 @@ fn measure(limits: Limits, versions: Versions, chain: Chain, corrupt: bool) -> M
     let cap = native::largest_room(&limits).expect("checked envelope");
     let server_config = server.config();
     let mut harness = Harness {
-        meter: Meter::new(),
-        outside: 0,
-        bound: native::worst_case(&limits).expect("checked bound"),
-        most: 0,
+        metered: Steps::new(native::worst_case(&limits).expect("checked bound")),
         sealed: 0,
         client: None,
         env: Env { now: Time::ZERO, wall: pki::VALID, limits },
         above: Queue::with_capacity(native::UP_MAX_OUT.above),
         below: Queue::with_capacity(native::UP_MAX_OUT.below),
-        peer: Some(Server::new(Arc::clone(&server_config))),
-        extracted: None,
-        _config: server_config,
+        peer: Peer::Rustls(Box::new(Server::new(Arc::clone(&server_config)))),
+        server_config,
         wire: VecDeque::with_capacity(4 * 65_536),
         outgoing: Vec::with_capacity(1 << 20),
         request: vec![b'p'; if limits.send == 1 { 300 } else { 100_000 }],
@@ -391,8 +370,8 @@ fn measure(limits: Limits, versions: Versions, chain: Chain, corrupt: bool) -> M
         },
         failed: None,
     };
-    harness.meter = Meter::new();
-    harness.meter.start();
+    harness.metered.reset();
+    harness.metered.start();
     let client = native::Client::new(
         &config,
         name,
@@ -400,7 +379,7 @@ fn measure(limits: Limits, versions: Versions, chain: Chain, corrupt: bool) -> M
         &native::LowerLimits { read: client::LARGEST_READ, output: cap, sends: 1 },
     )
     .expect("compatible lower configuration");
-    let step = harness.meter.end();
+    let step = harness.metered.end();
     harness.check(step, 0);
     harness.client = Some(client);
     harness.down(native::Request::Client(client::Request::Handshake));
@@ -471,7 +450,7 @@ fn real_queued_fill_boxes_drop_exactly_after_withdrawal_or_finish_without_step_a
                 // Caller-owned full heap payload stays live outside the native
                 // delivery Span; no large stack array or uncharged step copy.
                 let plaintext = vec![b'x'; 40_000];
-                pair.server.as_mut().expect("actual peer").write(&plaintext);
+                pair.peer.rustls_mut().write(&plaintext);
                 pair.pull();
                 let winner = if body {
                     queued_maximal_body(&mut pair, versions, ticket_records)
@@ -526,7 +505,7 @@ fn queued_maximal_body(
         let header = pair.answer().expect("actual emitted Header before maximal Body");
         let native::LowerEvent::Stream(Up::Bytes(bytes)) = &header else { panic!("actual Header Fill box") };
         assert_eq!(bytes.len(), usize::try_from(client::HEADER).expect("Header"));
-        let length = u32::from(u16::from_be_bytes([bytes[3], bytes[4]]));
+        let length = u32::try_from(records::length(bytes)).expect("bounded record");
         assert!(pair.up(header).is_empty(), "Header cannot fabricate a plaintext or output answer");
         assert_eq!(pair.read, Some(Read::Fill(length)), "exact actual next Body Fill");
         let winner = pair.answer().expect("actual emitted Body Fill");

@@ -345,15 +345,12 @@ fn keys_at_their_limit_are_updated_in_front_of_the_next_records() {
     assert_eq!(pair.wire.server.received, data, "the server read each record with the keys of its time");
 }
 
-/// The records in `bytes`: each one's type and body's length.
-fn records(mut bytes: &[u8]) -> Vec<(u8, usize)> {
-    let mut records = Vec::new();
-    while let [typ, _, _, high, low, rest @ ..] = bytes {
-        let length = usize::from(u16::from_be_bytes([*high, *low]));
-        records.push((*typ, length));
-        bytes = &rest[length..];
-    }
-    records
+/// Each record's type and body's length, through the shared splitter.
+fn records(bytes: &[u8]) -> Vec<(u8, usize)> {
+    skein_tls_world::records::split(bytes)
+        .iter()
+        .map(|record| (record[0], skein_tls_world::records::length(record)))
+        .collect()
 }
 
 #[test]

@@ -65,8 +65,8 @@ impl Tls12 {
     /// All recorded bytes came from the native engine (tls.md, 3.6).
     pub fn receive(&mut self, mut bytes: &[u8]) {
         while !bytes.is_empty() {
-            let [typ, 3, 3, high, low, rest @ ..] = bytes else { panic!("actual complete TLS1.2 header") };
-            let count = usize::from(u16::from_be_bytes([*high, *low]));
+            let [typ, 3, 3, _, _, rest @ ..] = bytes else { panic!("actual complete TLS1.2 header") };
+            let count = crate::records::length(bytes);
             assert!(count <= usize::try_from(client::MAX_BODY).expect("finite record"));
             let (body, remaining) = rest.split_at(count);
             let mut body = body.to_vec();

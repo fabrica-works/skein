@@ -432,7 +432,11 @@ impl Driver {
             bytes.len(),
             usize::try_from(self.peer_read.take().expect("real server Fill")).expect("bounded read")
         );
-        let next = if self.peer_body { client::HEADER } else { u32::from(u16::from_be_bytes([bytes[3], bytes[4]])) };
+        let next = if self.peer_body {
+            client::HEADER
+        } else {
+            u32::try_from(crate::records::length(bytes)).expect("bounded record")
+        };
         self.peer_body = !self.peer_body;
         self.peer.receive(bytes);
         assert!(

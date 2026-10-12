@@ -28,22 +28,26 @@ use skein_tls::{Config, Name, Parsed, roots_worst_case};
 use skein_tls_world::pki::{self, Chain, Versions};
 use skein_tls_world::server::Server;
 use skein_tls_world::world;
+use skein_tls_world::{
+    meter::{LARGE, SMALL, Steps},
+    records,
+};
 
 #[global_allocator]
 static HEAP: Counting = Counting;
 
 #[test]
 fn shared_roots_at_their_bounds_fit_the_measured_factor() {
-    let root = std::fs::read("fixtures/root.der").expect("actual fixture root");
+    let root = pki::ROOT;
     // One-byte protocols maximize the ALPN vector's element count at its
     // 256-byte wire bound. Counts beside growth boundaries price slack.
     let alpn = [b"a".as_slice(); 128];
     for count in [1_u32, 3, 4, 5, 8, 9, 16, 17, 128, 129] {
-        let certificates: Vec<Box<[u8]>> = (0..count).map(|_| root.as_slice().into()).collect();
+        let certificates: Vec<Box<[u8]>> = (0..count).map(|_| root.into()).collect();
         let each = u32::try_from(root.len()).expect("fixture fits");
         let bound = roots_worst_case(count, each).expect("bounds fit");
         let span = Span::start();
-        let (config, parsed) = Config::from_der(&certificates, &alpn).expect("actual DER roots");
+        let (config, parsed) = Config::from_der(&certificates, &alpn).expect("DER roots");
         let grown = span.end();
         assert_eq!(parsed, Parsed { taken: count, skipped: 0 }, "all roots are retained");
         assert!(grown.peak <= i64::try_from(bound).expect("bound fits"), "{count} roots: {grown:?}, bound {bound}");
@@ -129,11 +133,7 @@ enum Face {
 #[expect(clippy::struct_excessive_bools, reason = "the case's state between steps, a flag each")]
 struct Harness {
     case: Case,
-    meter: Meter,
-    /// The heap made outside the client's steps since the meter's base.
-    outside: i64,
-    bound: u64,
-    most: u64,
+    metered: Steps,
     client: Option<Client>,
     env: Env<Limits>,
     events: Queue<Event>,
@@ -173,10 +173,7 @@ fn measure(case: &Case, seed: u64) -> Measured {
     let server_config = case.server.config();
     let mut harness = Harness {
         case: case.clone(),
-        meter: Meter::new(),
-        outside: 0,
-        bound,
-        most: 0,
+        metered: Steps::new(bound),
         client: None,
         env: Env { now: Time::ZERO, wall: pki::VALID, limits: case.limits },
         events: Queue::with_capacity(8),
@@ -201,11 +198,11 @@ fn measure(case: &Case, seed: u64) -> Measured {
         closed: false,
         steps: 0,
     };
-    harness.meter = Meter::new();
+    harness.metered.reset();
     // Making the client is a step of its own.
-    harness.meter.start();
+    harness.metered.start();
     let made = Client::new(&config, name, &case.limits);
-    let step = harness.meter.end();
+    let step = harness.metered.end();
     harness.check(step, 0);
     harness.client = Some(made);
     for _ in 0..1_000_000 {
@@ -233,22 +230,18 @@ impl Harness {
             Input::Up(_) | Input::Down(_) => 0,
         };
         let client = self.client.as_mut().expect("made");
-        self.meter.start();
+        self.metered.start();
         match input {
             Input::Up(ev) => client::up(client, &self.env, ev, &mut self.events, &mut self.requests),
             Input::Down(rq) => client::down(client, &self.env, rq, &mut self.events, &mut self.requests),
         }
-        let step = self.meter.end();
+        let step = self.metered.end();
         self.take();
         self.check(step, extra);
     }
 
     fn check(&mut self, step: skein_heap::Measured, extra: u64) {
-        let bound = i64::try_from(self.bound + extra).expect("fits") + self.outside;
-        let what = format!("{:?}, step {}", self.case, self.steps);
-        let own = self.meter.check(step, u64::try_from(bound).expect("positive"), &what);
-        let own = i64::try_from(own).expect("fits") - self.outside - i64::try_from(extra).expect("fits");
-        self.most = self.most.max(u64::try_from(own).expect("positive"));
+        self.metered.check(step, extra, &(&self.case, self.steps));
     }
 
     /// What a step emitted, taken: payloads copied into reserved buffers,
@@ -315,15 +308,14 @@ impl Harness {
                 Ending::Truncate => self.eof = true,
                 Ending::Corrupt => {
                     // The last byte of the response's first record.
-                    let length = usize::from(u16::from_be_bytes([self.wire[start + 3], self.wire[start + 4]]));
-                    self.wire[start + 4 + length] ^= 1;
+                    records::corrupt_first(&mut self.wire.make_contiguous()[start..]);
                     self.eof = true;
                 }
                 Ending::Close(_) | Ending::Fail(_) => {}
             }
         }
         self.wire.extend(self.server.transmit());
-        self.outside += span.end().net;
+        self.metered.outside(span.end().net);
     }
 
     /// The next input: an interruption, the side below's answer, or the side
@@ -394,21 +386,10 @@ impl Harness {
 
     /// The case is over: the client, dropped, frees all it held.
     fn finish(mut self) -> Measured {
-        let held = i64::try_from(self.meter.held()).expect("fits") - self.outside;
-        let span = Span::start();
-        let client = self.client.take().expect("made");
-        drop(client);
-        let freed = span.end().net;
-        // And the name moved into it, the caller's (testing.md, 5), freed
-        // with rustls's connection.
-        let name = i64::try_from(self.case.name.len()).expect("fits");
-        assert_eq!(held + freed, -name, "{:?}: the client frees what it held, and only that", self.case);
-        Measured { most: self.most, bound: self.bound, failed: self.failed, limits: self.case.limits }
+        let most = self.metered.finish(self.client.take().expect("made"), self.case.name.len(), &self.case);
+        Measured { most, bound: self.metered.bound(), failed: self.failed, limits: self.case.limits }
     }
 }
-
-const SMALL: Limits = Limits { read: 1, send: 1, records: client::MAX_RECORD };
-const LARGE: Limits = Limits { read: 40_000, send: 40_000, records: 3 * client::MAX_RECORD };
 
 #[test]
 fn handshakes_and_exchanges_at_their_limits() {

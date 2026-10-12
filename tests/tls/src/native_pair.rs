@@ -10,11 +10,51 @@ use std::collections::VecDeque;
 
 /// Independent lower output ownership in this bounded proxy (tls.md, 3.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Output {
+pub enum Output {
     Idle,
     Wanted { right: Token, bytes: u32 },
     Granted { right: Token, bytes: u32 },
     Cancelled(Token),
+}
+
+pub const LIMITS: Limits = Limits { read: 16, send: 16, records: client::MAX_RECORD };
+
+/// The server: rustls's own, or one whose keys were taken out.
+pub enum Peer {
+    Rustls(Box<Server>),
+    Extracted(Tls12),
+}
+
+impl Peer {
+    #[must_use]
+    pub fn rustls(&self) -> &Server {
+        match self {
+            Self::Rustls(server) => server,
+            Self::Extracted(_) => panic!("rustls peer required"),
+        }
+    }
+
+    pub fn rustls_mut(&mut self) -> &mut Server {
+        match self {
+            Self::Rustls(server) => server,
+            Self::Extracted(_) => panic!("rustls peer required"),
+        }
+    }
+
+    #[must_use]
+    pub fn extracted(&self) -> &Tls12 {
+        match self {
+            Self::Extracted(server) => server,
+            Self::Rustls(_) => panic!("extracted peer required"),
+        }
+    }
+
+    pub fn extracted_mut(&mut self) -> &mut Tls12 {
+        match self {
+            Self::Extracted(server) => server,
+            Self::Rustls(_) => panic!("extracted peer required"),
+        }
+    }
 }
 
 /// Actual native TLS and real rustls server, with one prompt backed proxy slot.
@@ -25,12 +65,8 @@ pub struct Pair {
     pub client: native::Client,
     /// Immutable native read/send/record bounds (tls.md, 3.6).
     pub env: Env<Limits>,
-    /// Actual cryptographic peer and authenticated plaintext (tls.md, 3.6).
-    pub server: Option<Server>,
-    /// Actual authenticated extracted-key peer after a real `TLS1.2` handshake;
-    /// the original rustls Server is consumed, never replaced by a fake receiver
-    /// (tls.md, 3.6; testing-strategy.md, 2.4).
-    pub extracted: Option<Tls12>,
+    /// The cryptographic peer and its authenticated plaintext.
+    pub peer: Peer,
     /// Ciphertext actually emitted by the server, waiting for exact Fill (tls.md, 3.6).
     pub wire: VecDeque<u8>,
     /// The exact unanswered ciphertext read; Room never clears it (tls.md, 3.6).
@@ -60,8 +96,7 @@ impl Pair {
             )
             .expect("compatible proxy"),
             env: Env { now: Time::ZERO, wall: pki::VALID, limits },
-            server: Some(server),
-            extracted: None,
+            peer: Peer::Rustls(Box::new(server)),
             wire: VecDeque::new(),
             read: None,
             finished: 0,
@@ -72,6 +107,23 @@ impl Pair {
             above: Queue::with_capacity(native::UP_MAX_OUT.above),
             below: Queue::with_capacity(native::UP_MAX_OUT.below),
         }
+    }
+
+    /// A pair past Ready, with the shared limits.
+    #[must_use]
+    pub fn ready(server: &pki::Server) -> Self {
+        let mut pair = Self::new(&pki::client(&[]), pki::name(), LIMITS, Server::new(server.config()));
+        let mut events = pair.down(native::Request::Client(client::Request::Handshake));
+        events.extend(pair.settle());
+        let version = match server.versions {
+            pki::Versions::Tls12 => Some(client::Version::Tls12),
+            pki::Versions::Tls13 => Some(client::Version::Tls13),
+            pki::Versions::Both => None,
+        };
+        assert!(matches!(&events[..], [native::Event::Client(client::Event::Ready(agreed))]
+            if version.is_none_or(|version| agreed.version == version)));
+        assert!(!pair.peer.rustls().handshaking());
+        pair
     }
 
     /// Send one native upper request, retaining every real lower request and
@@ -135,17 +187,19 @@ impl Pair {
     /// Actual peer records moved onto the wire; no synthetic plaintext answers
     /// or Ready observations (tls.md, 3.6).
     pub fn pull(&mut self) {
-        match &mut self.server {
-            Some(server) => self.wire.extend(server.transmit()),
-            None => self.wire.extend(self.extracted.as_mut().expect("actual extracted peer").transmit()),
+        match &mut self.peer {
+            Peer::Rustls(server) => self.wire.extend(server.transmit()),
+            Peer::Extracted(server) => self.wire.extend(server.transmit()),
         }
     }
 
     /// Consume the actual completed extractable peer; all future Sends are
     /// authenticated using its unchanged directional keys (tls.md, 3.6).
     pub fn extract_peer(&mut self) {
-        assert!(self.extracted.is_none(), "one actual extraction");
-        self.extracted = Some(Tls12::new(self.server.take().expect("actual rustls peer")));
+        let Peer::Rustls(server) = &mut self.peer else { panic!("one extraction") };
+        let placeholder = Server::new(pki::Server::plain().config());
+        let server = std::mem::replace(server, Box::new(placeholder));
+        self.peer = Peer::Extracted(Tls12::new(*server));
     }
 
     /// Current actual proxy reservation size, independently of its read. Used
@@ -199,9 +253,9 @@ impl Pair {
                     assert!(bytes.len() <= usize::try_from(cap).expect("bounded ciphertext"));
                     self.output = Output::Idle;
                     self.last_send = Some((right, u32::try_from(bytes.len()).expect("bounded actual ciphertext")));
-                    match &mut self.server {
-                        Some(server) => server.receive(&bytes),
-                        None => self.extracted.as_mut().expect("actual extracted peer").receive(&bytes),
+                    match &mut self.peer {
+                        Peer::Rustls(server) => server.receive(&bytes),
+                        Peer::Extracted(server) => server.receive(&bytes),
                     }
                     self.pull();
                 }
