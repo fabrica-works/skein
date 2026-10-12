@@ -91,37 +91,20 @@ a fresh Claude session that writes it beside the plan.
 
 ## Until the reliability plan ends
 
-The reliability plan, started before development.md, runs on
-`debian-16gb-hel1-1` from `~/src/rust/plans/reliability-plan/`, with its
-own `heavy` wrapper and queue group. Paused on 2026-10-12, it resumes
-under development.md's landing rules (the user's decision): every step
-meets the other machines' work when it lands, not at a later push.
+smith's reliability plan, started before development.md, was ported to it
+on 2026-10-12: it is `smith/docs/development/plans/reliability/`, and runs
+on `debian-16gb-hel1-1` like any plan (`plan start`). Its first run's
+record, `~/src/rust/plans/reliability-plan/` on that machine, and its
+worktrees `~/src/rust/{skein,smith}-rel-*`, stay until the run's
+retrospective has landed; their `target/` directories may go when disk
+is short.
 
-- **Before it resumes,** `debian-16gb-hel1-1` reconciles its local `main`
-  of skein and smith with GitHub's: it merges `origin/main` into each,
-  resolves the conflicts, gates the merge, and pushes it. In smith, expect
-  them in `Cargo.lock` and the `Host` impls: smith now names skein by its
-  GitHub URL, at GitHub's `main`, and its hosts state their policy
-  deadlines (`b794fd5`). Its sessions then rebase their branches on the
-  new `main`.
-- **Then every landing is a plain `land`:** it rebases on `origin/main`,
-  runs the gate, and pushes; the push only fast-forwards, and the local
-  `main` follows (development.md, sections 9.1 and 12). No `land
-  --local`, and no pushes saved up for later. Git notes the plan's
-  sessions write are pushed after the landing that carries them: `git -C
-  ~/src/rust/<repository> push origin refs/notes/commits`.
 - **Every machine may land in skein and smith,** designs, plans and the
   kit included: `land` rebases each landing on what the others pushed.
   temper and jig are free, as before.
-- **On `debian-16gb-hel1-1`:**
-  - no other run starts while smith's primary checkout stays on
-    `bench/smith-codex-2026-10-08` for the plan's sessions: `plan check`
-    fails there on purpose;
-  - a gate-lane task pauses the plan's queue group too while it runs: keep
-    them few.
-- **smith and temper have no `scripts/check.sh` yet.** A code change there
-  gives `land` its workflow's section 1 as the gate: `land --gate '<the
-  four commands, joined with &&>'`.
+- **temper has no `scripts/check.sh` yet.** A code change there gives
+  `land` its workflow's section 1 as the gate: `land --gate '<the four
+  commands, joined with &&>'`.
 - **jig's and temper's Cargo git URLs still name `git.ekanayaka.io`;**
   smith's name GitHub (2026-10-12). Cargo treats two URLs of one
   repository as two sources, so a repository moves its URLs when it takes
@@ -136,7 +119,7 @@ meets the other machines' work when it lands, not at a later push.
 When the plan ends:
 - jig's and temper's Cargo git URLs move to GitHub, if they have not
   already;
-- smith's primary checkout returns to `main` on `debian-16gb-hel1-1`;
-- smith and temper get `scripts/check.sh`;
-- the push rules in the repositories' `AGENTS.md` become "land pushes";
-- the plan moves to `smith/docs/development/plans/reliability/`.
+- temper gets `scripts/check.sh`, and its `AGENTS.md` says that `land`
+  pushes;
+- after the retrospective, the first run's directory and its worktrees
+  may go, and this section with them.
