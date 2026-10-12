@@ -239,6 +239,28 @@ rising_words() {
         END { if (!NR) printf "none" }'
 }
 
+# How far each repository's pins are behind the upstream mains, in
+# commits (development.md, section 5.7): "jig: skein 145, smith 338". A
+# repository that pins two revisions of one upstream counts the older.
+pin_lag() {
+    local repo up rev lag most out="" line
+    for repo in $all_repos; do
+        [[ -f $root/$repo/Cargo.lock ]] || continue
+        line=""
+        for up in $all_repos; do
+            [[ $up != "$repo" ]] || break
+            most=""
+            for rev in $(sed -nE "s|^source = \"git\+[^\"]*/$up\.git#([0-9a-f]+)\"$|\1|p" "$root/$repo/Cargo.lock" | sort -u); do
+                lag=$(git -C "$root/$up" rev-list --count "$rev..origin/main" 2>/dev/null) || lag="?"
+                if [[ $lag == "?" || -z $most ]] || { [[ $most != "?" ]] && ((lag > most)); }; then most=$lag; fi
+            done
+            [[ -z $most ]] || line+="${line:+, }$up $most"
+        done
+        [[ -z $line ]] || out+="${out:+; }$repo: $line"
+    done
+    echo "${out:-none}"
+}
+
 pulse() {
     load
     ledger_upgrade
@@ -394,6 +416,7 @@ pulse() {
     beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$now_s")
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
+    echo "- Pins behind upstream main, in commits: $(pin_lag)."
     echo "- Machine: heartbeat $((now_s - beat)) s ago; $mem GB memory and $disk GB disk free."
 
     printf '%s %s\n' "$now_s" "$((log_lines + 1))" >"$mark"
@@ -496,6 +519,7 @@ metrics_of() {
     local ca cr ta tr
     read -r ca cr ta tr <<<"$(cut -f1,2 <<<"$commits" | grep . | line_counts)"
     m lines "code +$ca -$cr, tests +$ta -$tr" lines
+    m pin_lag "$(pin_lag)" "commits behind upstream main"
 }
 
 metrics() {

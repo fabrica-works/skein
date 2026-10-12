@@ -41,6 +41,8 @@ card, stands on its own: it is what an implementing agent reads. Section
   - Each increment gives its shape (paths, names and signatures), its test
     shape, the things it must not do, and its proof: the check that it
     works for real, at the highest layer the code reached by then allows.
+  - It ends by repinning the repositories downstream of what it changed,
+    and repairing what that breaks (section 5.7).
 - **Plans are written for a literal reader** (section 4.5). The executor
   follows the words as written, so rules are marked, numbers replace
   adjectives, and every request names its cheapest way to comply.
@@ -261,9 +263,9 @@ development.md, section 3.3).
 ### 3.4 Plans
 
 A plan lives in `docs/development/plans/<plan>/` of the most downstream
-repository it changes. The reason for a plan, and the proof that it is
-done, live with its consumer, and an upstream repository's history stays
-its own. A plan that changes only skein lives in skein; one that changes
+repository it changes, its repins aside (section 5.7). The reason for a
+plan, and the proof that it is done, live with its consumer, and an
+upstream repository's history stays its own. A plan that changes only skein lives in skein; one that changes
 skein and smith lives in smith.
 
 | File | Holds |
@@ -348,6 +350,7 @@ and those upstream of it, or all four without a plan.
 | `plan status` | renders `status.md` |
 | `plan watch` | waits until the supervisor has something to do (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
+| `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane, and lands nothing (sections 5.7 and 14.1) |
 | `plan ring MESSAGE` | rings the coordinator's doorbell (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
 | `test-plan [--live]` | tests `plan` on a workspace of its own; `--live` also starts real roles, on cheap models. It compiles nothing: it runs in the build lane (`heavy test-plan`) |
@@ -504,10 +507,11 @@ user only what they and the design leave open, and asks before writing.
 - **Formats are pre-release.** Any format may change. Within a plan, each
   format's version changes once, at the first landing that changes it.
   Readers refuse other versions, and nothing is translated.
-- **APIs may break** where the design asks. Consumers in repositories the
-  plan does not change are fixed separately, in a plan of their own.
+- **APIs may break** where the design asks. The plan repairs its
+  consumers: it ends by repinning each repository downstream of what it
+  changed (section 5.7).
 - **Scope.** The plan names the repositories it changes; the others are
-  read only.
+  read only, but for its repins.
 - **Credentials and live services.** The plan names each one it uses, how
   it is borrowed (read only, from the user's existing login), that no
   agent signs in, and the budget of calls or tokens each may spend.
@@ -535,6 +539,8 @@ user only what they and the design leave open, and asks before writing.
   probes. A plan never restates this document;
 - **Live services:** each one the plan uses, with its budget of calls or
   tokens;
+- **Repin:** nothing, when the plan repins every repository downstream of
+  it (section 5.7); otherwise "none", with the reason;
 - **Pulse:** what `plan pulse` looks for in this plan's diffs (section
   14), as lines of their own, in a code block:
 
@@ -787,6 +793,51 @@ shows them precisely.
   Production bodies stay out of the plan (section 5.2): they go stale at
   once.
 
+### 5.7 Repinning downstream
+
+A landing upstream reaches no downstream repository until that repository
+repins: each pins its upstream revisions in `Cargo.lock` (section 9.5).
+Left alone, the distance grows unseen. On 2026-10-12, fifteen of smith's
+hosts lacked a method skein had required for three days, and jig was 338
+commits behind smith.
+
+- **A plan repins what it may have broken.** A plan that lands in a
+  repository others build on ends with one repin step for each repository
+  after its own in the workspace's order (section 3.1: skein, smith, jig,
+  temper) that pins one of them. The plan writes no session file for
+  them: this section is theirs.
+- **The step,** `<repository>-repin`, in a worktree of that repository at
+  `origin/main`:
+  1. moves each pin on a repository the plan changed, or that a repin
+     before it moved, to that repository's `origin/main`: `heavy cargo
+     update -p <one package of it>`, which moves its whole git source.
+     jig moves smith and skein together: it resolves one revision of each,
+     for itself and for smith's crates;
+  2. runs `heavy cargo check --workspace --all-targets`, and repairs what
+     breaks;
+  3. lands with the repository's gate. Its `Proof:` line is the gate's.
+- **What a repin may change:** the pins; items an upstream trait now
+  requires; names and paths that moved; the downstream tests that an
+  upstream change of behaviour breaks, adapted the way the upstream
+  commit adapted its own (its body names the rule). At most about 200
+  lines besides `Cargo.lock`, and no change of design. A break that needs
+  more, or a decision, is a question: the step lands nothing, and the gap
+  goes to the downstream repository's `STATUS.md`, under "Not planned",
+  and to the plan's `later.md`.
+- **When it starts.** A closing repin starts once every step of the plan
+  upstream of its repository has landed, and the repin before it in the
+  order. The supervisor may add one earlier, `<repository>-repin.s<k>`
+  (section 10.4), when `plan downstream` shows the repository broken
+  (section 14.1), most of all when sessions are about to change further
+  the API that broke it. The closing repin still runs.
+- **A conflict in `Cargo.lock`** is never merged by hand: take
+  `origin/main`'s, and run the step's `cargo update` again.
+- **Names.** A repin of a repository that the plan's own repository never
+  names (jig never names temper, section 3.1) appears only in the run's
+  files: the ledger, the log and the step's report.
+- **Another machine's run** in the downstream repository sees a repin as
+  `main` moving (section 12).
+
 ## 6. Starting a run
 
 1. **The plan is on `origin/main`,** with its row `ready` in `STATUS.md`.
@@ -852,7 +903,10 @@ itself with `plan join <role>`.
    writes `unknown`, say so in `log.md`.
 3. Fill the ledger: one `plan set <step> repo=… session=… title=…
    state=…` per increment. A step is named `<repository>-<NN>.<item>`, for
-   example `smith-05.3`.
+   example `smith-05.3`. Add the plan's repins (section 5.7), unless its
+   README says "Repin: none": one `<repository>-repin` step, `waiting`,
+   for each repository after the plan's own in section 3.1's order whose
+   `Cargo.lock` pins one of the plan's repositories.
 4. Write `context.md`.
 
 ### 7.2 Starting sessions
@@ -874,6 +928,17 @@ itself with `plan join <role>`.
   one increment at a time. Your checkpoint is
   <run>/sessions/<repository>-<NN>.md, and your logs and scripts go in
   <run>/logs/<repository>-<NN>/.
+  ```
+
+  A repin step (section 5.7) gets this prompt instead:
+
+  ```
+  You are an implementer. Read ~/src/rust/skein/docs/foundation/
+  development.md, sections 8 and 5.7, then ~/src/rust/<repository>/
+  AGENTS.md. Repin <repository> on <the repositories it moves> as
+  section 5.7 says, in <worktree>. Your checkpoint is
+  <run>/sessions/<repository>-repin.md, and your logs go in
+  <run>/logs/<repository>-repin/.
   ```
 
   A sub-agent starts in the coordinator's directory, so it does not load
@@ -1620,7 +1685,10 @@ tests that stay cheap and readable. It is a light check of about ten
 minutes. Problems are cheaper to fix the hour they appear.
 
 1. **Run `plan pulse`** (section 14.2). It prints the numbers since the
-   last check, and moves its mark.
+   last check, and moves its mark. Once the plan has landed in a
+   repository others build on, also run `plan downstream`, in the
+   background: a few minutes of `cargo check` in the build lane. A
+   repository it shows broken may get an early repin (section 5.7).
 2. **Read** the log's headings since the last check, the first five
    lines of each report, and the coordinator's acknowledgement of the
    last steer.
@@ -1673,6 +1741,8 @@ Since the last check:
   ("actual" became "observed", 9 to 119); the check reads this line;
 - **cost so far:** the time and token metrics of section 15.2, for the
   run so far;
+- **pins:** how many commits each repository's pins are behind the
+  upstream mains;
 - **the machine:** the heartbeat's age, memory and disk.
 
 The numbers come from the script, not from reading: a log read by eye is
@@ -1797,6 +1867,7 @@ counts them by hand.
 | `proofs` | landed steps by proof layer, and those below their increment's layer |
 | `report_lines` | the reports' median and 90th percentile length |
 | `lines` | lines added and removed, in code and in tests |
+| `pin_lag` | how many commits each repository's pins are behind the upstream mains, when `plan metrics` runs |
 
 - **`metrics.tsv`** holds one line per metric: its name, its value and its
   unit. `plan metrics --history` reads the `metrics.tsv` of every plan in

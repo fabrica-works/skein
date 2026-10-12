@@ -163,7 +163,7 @@ expect pulse "$pulse" \
     "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
     "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 116/15" \
     "1 steers in all, 1 points refused" \
-    "- Rising words: line 0 to 60"
+    "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none."
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 sleep 1
 expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
@@ -178,9 +178,13 @@ expect metrics "$metrics" \
     $'coordinator_requests\t4, 1 after a wait ran out' $'compactions\t1\t' \
     $'gates_per_step\t0.7\t' $'queue_wait_ratio\t0.10\t' \
     $'suites\tfirst: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
-    $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90'
+    $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90' \
+    $'pin_lag\tnone\t'
 "$plan" metrics --out "$dir/metrics.tsv" >/dev/null
 expect history "$("$plan" metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
+
+# Nothing in the workspace pins alpha.
+expect downstream "$("$plan" downstream)" "downstream: no repository pins alpha"
 
 # The watch, each of its events.
 watch() { timeout 10 "$plan" watch "$@" || echo "watch exited $?"; }
