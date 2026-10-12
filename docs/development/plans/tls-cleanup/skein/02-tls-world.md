@@ -75,7 +75,7 @@ Shape:
   // tests/tls/src/native_pair.rs
   pub const LIMITS: Limits = Limits { read: 16, send: 16, records: client::MAX_RECORD };
   /// The server: rustls's own, or one whose keys were taken out.
-  pub enum Peer { Rustls(Server), Extracted(Tls12) }
+  pub enum Peer { Rustls(Box<Server>), Extracted(Tls12) }  // Box: clippy's large_enum_variant (ruling 16)
   /// The lower side's output right, as the pair answers it.
   pub enum Output { Idle, Wanted { .. }, Granted { .. }, Cancelled { .. } }
   impl Pair {

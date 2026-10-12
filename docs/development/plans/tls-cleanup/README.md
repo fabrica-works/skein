@@ -76,6 +76,11 @@ are done.
   --gate 'sh -c "$(sed /profile.browser/d scripts/check.sh)"
   scripts/check.sh'`: `scripts/check.sh` without its last line. This
   rule lasts until a steer says that Chromium is installed.
+- **A boundary type, in this plan** (`decisions.md`, ruling 16), is one
+  used outside the session's own files. A type all of whose users are in
+  the session's files (README, "Files are owned by session") is not one:
+  changing its fields is an implementation choice (development.md,
+  8.2), said in the commit body, and never a question.
 
 ## Live services
 

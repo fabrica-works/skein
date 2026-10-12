@@ -92,6 +92,17 @@ supervisor's rulings during the run, appended below them.
     (`logs/20261012T003425-0.log`), the same 62 names. It reverses the
     unblock of 2026-10-12T00:36Z, instruction 5, whose "prints 99" was
     wrong.
+16. **`Peer::Rustls` holds a `Box<Server>`; what a boundary type is**
+    (the supervisor, 2026-10-12; plan defect, blocked report of
+    2026-10-12T00:39:56Z). 2.1's sketch, `Peer { Rustls(Server),
+    Extracted(Tls12) }`, fails `clippy::large_enum_variant` (at least
+    1,264 bytes against 144), and the "Don't" list forbids a lint
+    exception in tests. `Rustls(Box<Server>)`, with the accessors'
+    signatures as sketched, is the shape. `Peer`'s users are all in
+    `tests/tls/**`, session 02's, so changing its fields was an
+    implementation choice: the README's rules now say which types are
+    boundary types in this plan, so that the next such choice is made
+    and reported, not asked.
 
 ## For the user
 
