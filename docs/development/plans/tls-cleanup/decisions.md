@@ -83,6 +83,15 @@ supervisor's rulings during the run, appended below them.
     Chromium is installed, this run's code landings gate with
     `scripts/check.sh` less that line (README, "Rules"). The user is
     asked to run `sudo apt-get install chromium` ("For the user").
+15. **The world crate's test count** (the supervisor, 2026-10-12; plan
+    defect, blocked report of 2026-10-12T00:35:43Z). 2.1's and 2.4's
+    proofs counted `heavy cargo nextest list … | wc -l`, whose lines
+    include cargo's build output, which varies with what was built. The
+    count is now of the test lines, `grep -c '^skein-tls-world::'`: 62
+    at `73c900b` (`logs/20261012T002521-0.log`), and 62 after 2.1
+    (`logs/20261012T003425-0.log`), the same 62 names. It reverses the
+    unblock of 2026-10-12T00:36Z, instruction 5, whose "prints 99" was
+    wrong.
 
 ## For the user
 

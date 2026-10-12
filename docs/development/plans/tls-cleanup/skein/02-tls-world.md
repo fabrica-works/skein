@@ -109,9 +109,11 @@ Test shape: no assertion changes; tests call the shared pieces. The
   before and after.
 Proof: world, the suites `land`'s gate runs, `tests/tls` among them.
   Run nothing for it before `land`. Before committing, run `heavy cargo
-  nextest list -p skein-tls-world | wc -l` once, and compare with the same
-  at the increment's start: equal. The commit says `Proof: world, land's
-  gate (tls worlds), test count unchanged`.
+  nextest list -p skein-tls-world | grep -c '^skein-tls-world::'` once
+  (the test lines only: heavy's output also holds cargo's build lines),
+  and compare with 62, the count at `73c900b` (ruling 15): equal. The
+  commit says `Proof: world, land's gate (tls worlds), test count
+  unchanged`.
 Don't: change a test's name or what it asserts; change `drive::Wire`'s
   or `pki`'s public items, which other test crates use.
 Size: about 400 test lines touched, net about −150.
@@ -248,8 +250,9 @@ Shape:
 Test shape: the files above; no new test.
 Proof: world, the suites `land`'s gate runs, `tests/tls` among them.
   Run nothing for it before `land`. Before committing, run `heavy cargo
-  nextest list -p skein-tls-world | wc -l` once: fewer by the
-  count of world tests the commit body says it removed, at most two. The
+  nextest list -p skein-tls-world | grep -c '^skein-tls-world::'` once:
+  62 (ruling 15) less the count of world tests the commit body says it
+  removed, at most two. The
   commit says `Proof: world, land's gate (tls worlds), N tests fewer`.
 Don't: pin a length that rustls's randoms change.
 Size: about 150 test lines touched, net about −60.
