@@ -20,7 +20,7 @@ use crate::{Backend, Check, Item};
 const NOTHING: Result<Done, Error> = Ok(Done::Nothing);
 
 /// Fails, naming the rule and what was seen, unless `holds`.
-fn rule<T: Debug>(holds: bool, rule: &str, seen: &T) {
+pub(crate) fn rule<T: Debug>(holds: bool, rule: &str, seen: &T) {
     assert!(holds, "the contract: {rule}; saw {seen:?}");
 }
 
@@ -760,7 +760,7 @@ pub fn escapes<B: Backend>(backend: &mut B) -> Escapes {
     let mut outcomes = Vec::new();
     for (path, how, _) in escape_cases() {
         let outcome = match (run.open(process, root, &path, how), how) {
-            (Ok(fd), OpenHow::Read | OpenHow::ReadNoFollow) => {
+            (Ok(fd), OpenHow::Read | OpenHow::ReadNoFollow | OpenHow::Write | OpenHow::WriteNoFollow) => {
                 let (read, _) = run.read_all(process, fd);
                 run.close(process, fd);
                 match read {

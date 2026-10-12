@@ -5,6 +5,8 @@
 mod files;
 mod processes;
 
+mod access;
+
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::format;
 use alloc::string::String;
@@ -12,7 +14,7 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::net::SocketAddr;
 
-use skein_io::kernel::{Addr, Complete, Done, Error, Family, Fd, Op, OpenHow, ServiceSignal, Submit};
+use skein_io::kernel::{Addr, Complete, Done, Error, Family, Fd, Op, ServiceSignal, Submit};
 use skein_lib::{Duration, Queue, Rng, Time, Token, Wall};
 
 use crate::config::Config;
@@ -273,6 +275,7 @@ impl Sim {
                     | Op::Read { .. }
                     | Op::Write { .. }
                     | Op::Append { .. }
+                    | Op::Truncate { .. }
                     | Op::Sync { .. }
                     | Op::Stat { .. }
                     | Op::Rename { .. }
@@ -571,6 +574,7 @@ impl Sim {
             | Op::Read { .. }
             | Op::Write { .. }
             | Op::Append { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
@@ -690,6 +694,7 @@ impl Sim {
             | Summary::Read { .. }
             | Summary::Write { .. }
             | Summary::Append { .. }
+            | Summary::Truncate { .. }
             | Summary::Sync { .. }
             | Summary::Stat { .. }
             | Summary::Rename { .. }
@@ -710,109 +715,6 @@ impl Sim {
             self.fail(pid, &format!("{broken}: {kind:?}, with {on_fd:?} in flight on {fd:?}"));
         }
         On::Socket(id)
-    }
-
-    /// Fails the world on a broken invariant of an operation on files whose
-    /// descriptors are open, or of any other on a file's: each a file's, and
-    /// opened as the operation needs; only a `Close` beside an operation on
-    /// sockets, and nothing in flight beside it.
-    fn check_file(&self, pid: Pid, kind: Summary) {
-        let process = self.process(pid);
-        for fd in kind.fds().into_iter().flatten() {
-            if let Some(file) = process.files.get(&fd)
-                && file.access == files::Access::Record(OpenHow::PathNoFollow)
-                && !matches!(kind, Summary::Stat { .. } | Summary::Close { .. })
-            {
-                self.fail(pid, "only Stat and Close may use a path-only descriptor");
-            }
-        }
-        if let Summary::Close { fd } = kind {
-            for flight in process.flights.values() {
-                if flight.kind.fds().contains(&Some(fd)) {
-                    self.fail(pid, &format!("a Close while {:?} is in flight on {fd:?}", flight.kind));
-                }
-            }
-            return;
-        }
-        if !kind.is_file() {
-            self.fail(pid, &format!("an operation on sockets on a file's descriptor: {kind:?}"));
-        }
-        for fd in kind.fds().into_iter().flatten() {
-            if process.fds.contains_key(&fd) {
-                self.fail(pid, &format!("an operation on files on {fd:?}, a socket's descriptor: {kind:?}"));
-            }
-        }
-        let Some(fd) = kind.fd() else {
-            self.bug("an operation on files names a descriptor");
-        };
-        let how = process.files.get(&fd).expect("checked open, and not a socket's").access;
-        let broken = match kind {
-            Summary::Read { .. } if !matches!(how, files::Access::Record(OpenHow::Read | OpenHow::ReadNoFollow)) => {
-                Some("a Read on a descriptor not opened to read")
-            }
-            Summary::Write { .. }
-                if !matches!(how, files::Access::Record(OpenHow::Create { .. } | OpenHow::CreateNoFollow { .. })) =>
-            {
-                Some("a Write on a descriptor not opened to create")
-            }
-            Summary::Append { .. }
-                if !matches!(
-                    how,
-                    files::Access::Append
-                        | files::Access::Record(OpenHow::Create { .. } | OpenHow::CreateNoFollow { .. })
-                ) =>
-            {
-                Some("an Append on a descriptor not opened to write")
-            }
-            Summary::Append { fd, .. }
-                if process
-                    .flights
-                    .values()
-                    .any(|flight| matches!(flight.kind, Summary::Append { fd: other, .. } if other == fd)) =>
-            {
-                Some("a second Append in flight")
-            }
-            Summary::List { .. }
-                if matches!(
-                    how,
-                    files::Access::Append
-                        | files::Access::Record(OpenHow::Create { .. } | OpenHow::CreateNoFollow { .. })
-                ) =>
-            {
-                Some("a List on a descriptor opened to create")
-            }
-            Summary::Open { .. }
-            | Summary::Read { .. }
-            | Summary::Write { .. }
-            | Summary::Append { .. }
-            | Summary::Sync { .. }
-            | Summary::Stat { .. }
-            | Summary::Rename { .. }
-            | Summary::Remove { .. }
-            | Summary::MakeDirectory { .. }
-            | Summary::List { .. } => None,
-            Summary::Socket { .. }
-            | Summary::Bind { .. }
-            | Summary::Listen { .. }
-            | Summary::Accept { .. }
-            | Summary::Connect { .. }
-            | Summary::Recv { .. }
-            | Summary::Send { .. }
-            | Summary::Shutdown { .. }
-            | Summary::Close { .. }
-            | Summary::Cancel { .. } => self.bug("only an operation on files is checked as one"),
-            Summary::Spawn { .. }
-            | Summary::Wait { .. }
-            | Summary::Signal { .. }
-            | Summary::Window { .. }
-            | Summary::Usage
-            | Summary::ReadSignal { .. }
-            | Summary::PipeRead { .. }
-            | Summary::PipeWrite { .. } => self.bug("a process operation passed file checks"),
-        };
-        if let Some(broken) = broken {
-            self.fail(pid, &format!("{broken}, opened {how:?}: {kind:?}"));
-        }
     }
 }
 
@@ -1166,6 +1068,7 @@ impl Sim {
             | Op::Read { .. }
             | Op::Write { .. }
             | Op::Append { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }

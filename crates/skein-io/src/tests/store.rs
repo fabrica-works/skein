@@ -377,6 +377,7 @@ fn old_file_step(rig: &mut Rig, submit: Submit, opened: &mut alloc::collections:
         | Op::Recv { .. }
         | Op::Send { .. }
         | Op::Shutdown { .. }
+        | Op::Truncate { .. }
         | Op::Append { .. }
         | Op::Rename { .. }
         | Op::MakeDirectory { .. }

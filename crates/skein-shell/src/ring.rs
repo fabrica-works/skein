@@ -70,6 +70,9 @@ pub(crate) mod process;
 mod startup;
 pub(crate) mod terminal;
 
+mod opens;
+use opens::open;
+
 pub(crate) use startup::read_file;
 
 use std::cell::UnsafeCell;
@@ -92,6 +95,7 @@ use process::{signal_child, spawn};
 pub fn open_termination_signals() -> Result<Fd, i32> {
     process::open_termination_signals()
 }
+
 /// Pipe descriptors for a spawned service hosted in the real loop (examples.md, section 6).
 pub use process::HostedPipes;
 
@@ -380,7 +384,7 @@ enum Prepared {
 
 /// The operations the ring adapter submits, which the kernel's ring must
 /// have: all of them at the floor, 6.12.
-const OPERATIONS: [(u8, &str); 19] = [
+const OPERATIONS: [(u8, &str); 20] = [
     (opcode::Socket::CODE, "IORING_OP_SOCKET"),
     (opcode::Bind::CODE, "IORING_OP_BIND"),
     (opcode::Listen::CODE, "IORING_OP_LISTEN"),
@@ -393,6 +397,7 @@ const OPERATIONS: [(u8, &str); 19] = [
     (opcode::OpenAt2::CODE, "IORING_OP_OPENAT2"),
     (opcode::Read::CODE, "IORING_OP_READ"),
     (opcode::Write::CODE, "IORING_OP_WRITE"),
+    (opcode::Ftruncate::CODE, "IORING_OP_FTRUNCATE"),
     (opcode::Fsync::CODE, "IORING_OP_FSYNC"),
     (opcode::Statx::CODE, "IORING_OP_STATX"),
     (opcode::RenameAt::CODE, "IORING_OP_RENAMEAT"),
@@ -811,6 +816,7 @@ fn prepare(
             let len = u32::try_from(left.len()).expect("a valid Append counts bytes");
             opcode::Write::new(types::Fd(fd.raw()), left.as_ptr(), len).offset(u64::MAX).build()
         }
+        Op::Truncate { fd, length } => opcode::Ftruncate::new(types::Fd(fd.raw()), *length).build(),
         Op::Sync { fd } => opcode::Fsync::new(types::Fd(fd.raw())).build(),
         Op::Stat { fd } => opcode::Statx::new(types::Fd(fd.raw()), EMPTY.as_ptr(), statx.get().cast())
             .flags(libc::AT_EMPTY_PATH)
@@ -960,6 +966,7 @@ fn decode(flight: &mut Flight, res: i32, cancelled: bool) -> Result<Done, Error>
         | Op::Connect { .. }
         | Op::Shutdown { .. }
         | Op::Close { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -987,6 +994,7 @@ fn error(kind: &Op, errno: i32, cancelled: bool) -> Error {
         | Op::Read { .. }
         | Op::Write { .. }
         | Op::Append { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
@@ -1078,6 +1086,7 @@ fn operation_error(kind: &Op, errno: i32) -> Error {
         | Op::Read { .. }
         | Op::Write { .. }
         | Op::Append { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
@@ -1121,6 +1130,12 @@ fn file_error(kind: &Op, errno: i32) -> Error {
             _ => None,
         },
         Op::Write { .. } | Op::Append { .. } => match errno {
+            libc::ENOSPC | libc::EDQUOT => Some(Error::NoSpace),
+            libc::EROFS => Some(Error::ReadOnly),
+            _ => None,
+        },
+        Op::Truncate { .. } => match errno {
+            libc::EACCES | libc::EPERM => Some(Error::Permission),
             libc::ENOSPC | libc::EDQUOT => Some(Error::NoSpace),
             libc::EROFS => Some(Error::ReadOnly),
             _ => None,
@@ -1222,6 +1237,7 @@ fn check_path_access(operation: &Op) {
         | Op::Read { fd, .. }
         | Op::Write { fd, .. }
         | Op::Append { fd, .. }
+        | Op::Truncate { fd, .. }
         | Op::Sync { fd }
         | Op::List { fd, .. }
         | Op::ReadSignal { fd }
@@ -1287,40 +1303,6 @@ fn blocking(fd: i32) -> Result<(), Error> {
     // SAFETY: integers only.
     let set = unsafe { libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
     if set < 0 { Err(Error::Other(last_errno())) } else { Ok(()) }
-}
-
-/// What `openat2` is told for each way io opens: close-on-exec always,
-/// without blocking or taking a controlling terminal, and resolved beneath
-/// the root, without magic links (kernel.md, 6.1).
-fn open(how: OpenHow) -> types::OpenHow {
-    let no_follow = matches!(
-        how,
-        OpenHow::PathNoFollow | OpenHow::ReadNoFollow | OpenHow::DirectoryNoFollow | OpenHow::CreateNoFollow { .. }
-    );
-    let (flags, mode) = match how {
-        OpenHow::PathNoFollow => (libc::O_PATH | libc::O_NOFOLLOW, 0),
-        OpenHow::Read | OpenHow::ReadNoFollow => (libc::O_RDONLY, 0),
-        OpenHow::Directory | OpenHow::DirectoryNoFollow => (libc::O_RDONLY | libc::O_DIRECTORY, 0),
-        OpenHow::Create { mode } | OpenHow::CreateNoFollow { mode } => {
-            let mode = match mode {
-                Some(mode) => u64::from(mode),
-                None => FILE_MODE,
-            };
-            (libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL, mode)
-        }
-    };
-    let flags = if matches!(how, OpenHow::PathNoFollow) {
-        flags | libc::O_CLOEXEC
-    } else {
-        flags | libc::O_CLOEXEC | libc::O_NONBLOCK | libc::O_NOCTTY
-    };
-    let flags = u64::try_from(flags).expect("open's flags are positive");
-    let resolve = if no_follow {
-        libc::RESOLVE_BENEATH | libc::RESOLVE_NO_SYMLINKS
-    } else {
-        libc::RESOLVE_BENEATH | libc::RESOLVE_NO_MAGICLINKS
-    };
-    types::OpenHow::new().flags(flags).mode(mode).resolve(resolve)
 }
 
 /// What a `Stat`'s `statx` found.

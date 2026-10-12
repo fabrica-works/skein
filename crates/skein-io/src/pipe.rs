@@ -540,6 +540,7 @@ fn written(operation: Op) -> (Box<[u8]>, u32) {
         | Op::Open { .. }
         | Op::Read { .. }
         | Op::Write { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }

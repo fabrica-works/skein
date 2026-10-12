@@ -661,9 +661,7 @@ fn decode(landed: Landed) -> Happened {
                 | Done::Usage(_)
                 | Done::Signalled(_)
                 | Done::Window(_),
-            ) => {
-                unreachable!("a socket answers with its descriptor")
-            }
+            ) => unreachable!("a socket answers with its descriptor"),
             Err(error) => Err(error),
         }),
         Purpose::Connect => Happened::Connected { flight, result: nothing(result) },
@@ -681,6 +679,7 @@ fn decode(landed: Landed) -> Happened {
             | Op::Read { .. }
             | Op::Write { .. }
             | Op::Append { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
@@ -711,6 +710,7 @@ fn decode(landed: Landed) -> Happened {
             | Op::Read { .. }
             | Op::Write { .. }
             | Op::Append { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }

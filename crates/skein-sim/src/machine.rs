@@ -76,6 +76,8 @@ pub enum Ask {
     Write { file: Handle, at: u64, bytes: Box<[u8]> },
     /// `bytes` written whole at the file's end when this call is delivered: [`Reply::Done`].
     Append { file: Handle, bytes: Box<[u8]> },
+    /// Sets an existing writable file's length: [`Reply::Done`].
+    Truncate { file: Handle, length: u64 },
     /// [`Reply::Done`].
     Sync { file: Handle },
     /// [`Reply::Stat`].

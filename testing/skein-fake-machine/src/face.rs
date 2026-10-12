@@ -44,6 +44,7 @@ pub fn step(machine: &mut Machine, call: Call, answers: &mut Queue<Answer>) {
             Err(refusal) => Err(kernel_error(refusal)),
         },
         Ask::Append { file, bytes } => done(machine.append(opened(file), &bytes)),
+        Ask::Truncate { file, length } => done(machine.truncate(opened(file), length)),
         Ask::Sync { file } => {
             machine.sync(opened(file));
             Ok(Reply::Done)
@@ -137,6 +138,8 @@ fn done(result: Result<(), Refusal>) -> Result<Reply, Error> {
 const fn how_of(how: OpenHow) -> How {
     match how {
         OpenHow::PathNoFollow => How::PathNoFollow,
+        OpenHow::Write => How::Write,
+        OpenHow::WriteNoFollow => How::WriteNoFollow,
         OpenHow::Read => How::Read,
         OpenHow::ReadNoFollow => How::ReadNoFollow,
         OpenHow::Directory => How::Directory,

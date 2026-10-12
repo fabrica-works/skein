@@ -28,6 +28,7 @@
 
 extern crate alloc;
 
+mod cuts;
 mod files;
 mod processes;
 mod run;
@@ -38,6 +39,7 @@ use alloc::vec::Vec;
 use skein_io::kernel::{Complete, Error, Fd, Submit};
 use skein_lib::{Duration, Queue, Time};
 
+pub use cuts::{Cutting, cutting};
 pub use files::{
     Appending, Entries, Escapes, FileLifecycle, FileMetadata, Listing, MakeDirectories, Nested, OpenLimit,
     PathMetadata, Permissions, Removes, Renames, Shortness, appending, cancel_append, cancel_read, escapes,

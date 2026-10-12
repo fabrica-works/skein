@@ -114,6 +114,7 @@ impl<'b, B: Backend> Run<'b, B> {
             | Op::Read { .. }
             | Op::Write { .. }
             | Op::Append { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
@@ -562,6 +563,14 @@ impl<B: Backend> Run<'_, B> {
 
     /// Writes all of `bytes` at `at`, a short `Write` continued from where
     /// it stopped: how the `Write`s counted, or the first error.
+    pub(crate) fn truncate(&mut self, process: B::Process, fd: Fd, length: u64) -> Result<(), Error> {
+        match self.call(process, Op::Truncate { fd, length }).result {
+            Ok(Done::Nothing) => Ok(()),
+            Err(error) => Err(error),
+            other => unexpected("a Truncate answers nothing", &other),
+        }
+    }
+
     pub(crate) fn write_all(&mut self, process: B::Process, fd: Fd, at: u64, bytes: &[u8]) -> Result<Shortness, Error> {
         let mut from = 0_u32;
         let mut shortness = Shortness::default();
@@ -719,6 +728,7 @@ enum Summary {
     Read { fd: Fd, len: usize, at: u64 },
     Write { fd: Fd, len: usize, from: u32, at: u64 },
     Append { fd: Fd, len: usize, from: u32 },
+    Truncate { fd: Fd, length: u64 },
     Sync { fd: Fd },
     Stat { fd: Fd },
     Rename { from_dir: Fd, from: usize, to_dir: Fd, to: usize },
@@ -752,6 +762,7 @@ impl Summary {
             Op::Read { fd, buf, at } => Summary::Read { fd: *fd, len: buf.len(), at: *at },
             Op::Write { fd, bytes, from, at } => Summary::Write { fd: *fd, len: bytes.len(), from: *from, at: *at },
             Op::Append { fd, bytes, from } => Summary::Append { fd: *fd, len: bytes.len(), from: *from },
+            Op::Truncate { fd, length } => Summary::Truncate { fd: *fd, length: *length },
             Op::Sync { fd } => Summary::Sync { fd: *fd },
             Op::Stat { fd } => Summary::Stat { fd: *fd },
             Op::Rename { from_dir, from, to_dir, to } => {
@@ -817,6 +828,7 @@ fn boxes_of(op: &Op) -> Vec<&[u8]> {
         | Op::Connect { .. }
         | Op::Shutdown { .. }
         | Op::Close { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Stat { .. }
         | Op::Wait { .. }
@@ -845,6 +857,7 @@ fn entries_of(op: &Op) -> Option<&[Entry]> {
         | Op::Read { .. }
         | Op::Write { .. }
         | Op::Append { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }

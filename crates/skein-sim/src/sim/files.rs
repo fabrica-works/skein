@@ -115,7 +115,8 @@ impl Sim {
         }
         let hangs = match op {
             Op::Open { .. } | Op::Read { .. } | Op::Write { .. } | Op::Append { .. } | Op::Sync { .. } => true,
-            Op::Stat { .. }
+            Op::Truncate { .. }
+            | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
             | Op::MakeDirectory { .. }
@@ -153,6 +154,7 @@ impl Sim {
             | Ask::Read { .. }
             | Ask::Write { .. }
             | Ask::Append { .. }
+            | Ask::Truncate { .. }
             | Ask::Sync { .. }
             | Ask::Stat { .. }
             | Ask::Rename { .. }
@@ -170,7 +172,9 @@ impl Sim {
     /// 4), each for the operations that may answer it.
     fn failure(&mut self, pid: Pid, op: &Op) -> Option<Error> {
         let (space, read_only, io) = match op {
-            Op::Open { how: OpenHow::Create { .. } | OpenHow::CreateNoFollow { .. }, .. }
+            Op::Truncate { .. }
+            | Op::Open { how: OpenHow::Write | OpenHow::WriteNoFollow, .. }
+            | Op::Open { how: OpenHow::Create { .. } | OpenHow::CreateNoFollow { .. }, .. }
             | Op::Rename { .. }
             | Op::MakeDirectory { .. } => (true, true, false),
             Op::Open {
@@ -259,6 +263,7 @@ impl Sim {
                 };
                 (ask, u32::try_from(len).expect("a valid Append's length is a count"))
             }
+            Op::Truncate { fd, length } => (Ask::Truncate { file: self.handle(pid, *fd), length: *length }, 0),
             Op::Sync { fd } => (Ask::Sync { file: self.handle(pid, *fd) }, 0),
             Op::Stat { fd } => (Ask::Stat { file: self.handle(pid, *fd) }, 0),
             Op::Rename { from_dir, from, to_dir, to } => {
@@ -358,7 +363,12 @@ impl Sim {
                 Done::Count(n)
             }
             (
-                Op::Sync { .. } | Op::Rename { .. } | Op::Remove { .. } | Op::MakeDirectory { .. } | Op::Close { .. },
+                Op::Truncate { .. }
+                | Op::Sync { .. }
+                | Op::Rename { .. }
+                | Op::Remove { .. }
+                | Op::MakeDirectory { .. }
+                | Op::Close { .. },
                 Reply::Done,
             ) => Done::Nothing,
             (op, reply) => {

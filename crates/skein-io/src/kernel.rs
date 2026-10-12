@@ -116,7 +116,8 @@
 //!   is opened first, as a directory, beneath the root. The entry itself is
 //!   never followed: removing or renaming a symbolic link acts on the link.
 //! - **`Open`** as [`OpenHow`] says: `Read` an existing file or directory,
-//!   following a final symbolic link; `Directory` an existing directory;
+//!   following a final symbolic link; `Write` an existing regular file to
+//!   read and write, never created; `Directory` an existing directory;
 //!   `Create` a new, empty file, to write, which fails with `Exists` if the
 //!   name is taken by anything, a dangling symbolic link included. New files
 //!   are made with the mode `Create` asks for, or `0o666`, and directories
@@ -129,6 +130,8 @@
 //!   written from `bytes[from..]` to the file at `at`: at least one, and no
 //!   more than were left. io continues a short one from `from + n` at
 //!   `at + n`. Writing past the end leaves zeros in the gap.
+//! - **`Truncate` sets a file's length:** bytes past it are gone; an extension
+//!   reads as zeros. The cut becomes durable once the file is synced.
 //! - **`Append` writes at the descriptor's position**, selecting the current
 //!   end for a startup file opened with `O_APPEND`. On an ordinary writable
 //!   file it advances the position after each write. Counts are positive;
@@ -205,6 +208,7 @@
 //! | `Open` | `NotFound`, `Exists`, `NotADirectory`, `IsADirectory`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong`, `Escape`, `NotAFile`, `TooManyOpenFiles` |
 //! | `Read` | `IsADirectory` |
 //! | `Write`, `Append` | `NoSpace`, `ReadOnly` |
+//! | `Truncate` | `Permission`, `NoSpace`, `ReadOnly` |
 //! | `Sync` | `NoSpace` |
 //! | `Stat` | none |
 //! | `Rename` | `NotFound`, `NotADirectory`, `IsADirectory`, `NotEmpty`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong` |
@@ -220,14 +224,15 @@
 //!
 //! - a record that is not [`Op::is_valid`];
 //! - a token already in flight;
-//! - a `Cancel` whose target is a `Cancel`, a `Stat`, a `Rename`, a
+//! - a `Cancel` whose target is a `Cancel`, a `Truncate`, a `Stat`, a `Rename`, a
 //!   `Remove`, a `MakeDirectory`, a `List`, a `Spawn`, a `Signal`, a `Usage` or a `Window`;
 //! - a `Wait` beside another on its pidfd, or a reap before a reported exit;
 //! - any operation on a pidfd after its reap, except its `Close`;
 //! - an operation on files ([`Op::is_file`]) on a socket's descriptor, or
 //!   an operation on sockets on a file's;
-//! - a `Read` on a descriptor not opened with [`OpenHow::Read`], a `Write`
-//!   on one not opened with [`OpenHow::Create`], a `List` on one opened
+//! - a `Read` on a descriptor not opened with `Read` or `Write`, a `Write`
+//!   on one not opened with `Create` or `Write`, a `Truncate` on one not
+//!   opened with `Write`, a `List` on one opened
 //!   with `Create`;
 //! - a `Bind` or `Connect` address of another family than its socket's;
 //! - per descriptor, more than one `Recv`, one `Send` or one `Accept` in
@@ -257,6 +262,9 @@
 //! of an IPv4-mapped address fails with `InvalidArgument`, its `Connect`
 //! to one with `Unreachable`; connected and accepted sockets get
 //! `TCP_NODELAY`; a `Send` never raises `SIGPIPE` (`MSG_NOSIGNAL`).
+
+mod offsets;
+use offsets::within_offsets;
 
 use alloc::boxed::Box;
 use core::net::SocketAddr;
@@ -422,6 +430,11 @@ pub enum Op {
         fd: Fd,
         bytes: Box<[u8]>,
         from: u32,
+    },
+    /// Sets the length of a file opened with Write; durable once synced.
+    Truncate {
+        fd: Fd,
+        length: u64,
     },
     /// Flushes what was written to the file, or to the directory's entries.
     Sync {
@@ -612,6 +625,10 @@ pub enum OpenHow {
     Create { mode: Option<u32> },
     /// A new file, refusing a symbolic link in any parent path part.
     CreateNoFollow { mode: Option<u32> },
+    /// An existing regular file, to read and write (`O_RDWR`), never created.
+    Write,
+    /// An existing file to read and write, refusing a symbolic link in any path part.
+    WriteNoFollow,
 }
 
 /// What a name beneath a root names.
@@ -839,14 +856,14 @@ pub enum Error {
     /// or `Directory` opens may not be read, or the directory `Create` makes
     /// a file in may not be written. `Rename`, `Remove`, `MakeDirectory`: a
     /// directory an entry is made in, removed from or moved out of may not
-    /// be written, or searched (`EACCES`, `EPERM`).
+    /// be written, or searched; `Truncate`: no permission to cut (`EACCES`, `EPERM`).
     Permission,
-    /// `Open` with `Create`, `Write`, `Sync`, `Rename`, `MakeDirectory`: the
+    /// `Open` with `Create`, `Write`, `Truncate`, `Sync`, `Rename`, `MakeDirectory`: the
     /// filesystem, or the user's quota, is full (`ENOSPC`, `EDQUOT`). What
     /// failed did nothing; a `Write` that reached the limit counts what it
     /// wrote before it.
     NoSpace,
-    /// `Open` with `Create`, `Write`, `Rename`, `Remove`, `MakeDirectory`:
+    /// `Open` with `Create`, `Write`, `Truncate`, `Rename`, `Remove`, `MakeDirectory`:
     /// the filesystem is read-only (`EROFS`).
     ReadOnly,
     /// `Open`: a loop of symbolic links, more than 40 in one resolution, or
@@ -887,6 +904,7 @@ enum Files {
     Open,
     Read,
     Write,
+    Truncate,
     Sync,
     Stat,
     Rename,
@@ -949,7 +967,7 @@ impl Op {
     /// `Rename`, `Remove` or `MakeDirectory` of names that are each an
     /// [`is_name`]; a `List` with room for an entry, `names` of at least
     /// [`LONGEST_NAME`] bytes, and both no longer than a count can say.
-    /// Every other operation is valid as it stands.
+    /// A `Truncate` length fits `i64::MAX`; every other operation is valid as it stands.
     #[must_use]
     pub fn is_valid(&self) -> bool {
         match self {
@@ -967,11 +985,14 @@ impl Op {
                     | OpenHow::Read
                     | OpenHow::PathNoFollow
                     | OpenHow::ReadNoFollow
+                    | OpenHow::Write
+                    | OpenHow::WriteNoFollow
                     | OpenHow::Directory
                     | OpenHow::DirectoryNoFollow => true,
                 };
                 !path.contains(&0) && mode
             }
+            Op::Truncate { length, .. } => i64::try_from(*length).is_ok(),
             Op::Read { buf, at, .. } => reads(buf, *at),
             Op::Write { bytes, from, at, .. } => writes(bytes, *from, *at),
             Op::Rename { from, to, .. } => is_name(from) && is_name(to),
@@ -1034,6 +1055,7 @@ impl Op {
             | Op::Connect { .. }
             | Op::Shutdown { .. }
             | Op::Close { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
@@ -1049,6 +1071,7 @@ impl Op {
             Op::Open { .. } => Some(Files::Open),
             Op::Read { .. } => Some(Files::Read),
             Op::Write { .. } | Op::Append { .. } => Some(Files::Write),
+            Op::Truncate { .. } => Some(Files::Truncate),
             Op::Sync { .. } => Some(Files::Sync),
             Op::Stat { .. } => Some(Files::Stat),
             Op::Rename { .. } => Some(Files::Rename),
@@ -1270,9 +1293,15 @@ fn fails_on_files(op: Files, error: Error) -> bool {
         Error::Exists => among(op, &[Files::Open, Files::MakeDirectory]),
         Error::IsADirectory => among(op, &[Files::Open, Files::Read, Files::Rename, Files::Remove]),
         Error::NotEmpty => among(op, &[Files::Rename, Files::Remove]),
-        Error::Permission => among(op, &[Files::Open, Files::Rename, Files::Remove, Files::MakeDirectory]),
-        Error::NoSpace => among(op, &[Files::Open, Files::Write, Files::Sync, Files::Rename, Files::MakeDirectory]),
-        Error::ReadOnly => among(op, &[Files::Open, Files::Write, Files::Rename, Files::Remove, Files::MakeDirectory]),
+        Error::Permission => {
+            among(op, &[Files::Truncate, Files::Open, Files::Rename, Files::Remove, Files::MakeDirectory])
+        }
+        Error::NoSpace => {
+            among(op, &[Files::Truncate, Files::Open, Files::Write, Files::Sync, Files::Rename, Files::MakeDirectory])
+        }
+        Error::ReadOnly => {
+            among(op, &[Files::Truncate, Files::Open, Files::Write, Files::Rename, Files::Remove, Files::MakeDirectory])
+        }
         Error::TooManyLinks => among(op, &[Files::Open, Files::Rename, Files::MakeDirectory]),
         Error::Refused
         | Error::Reset
@@ -1297,19 +1326,6 @@ fn left(bytes: &[u8], from: u32) -> Option<usize> {
     match bytes.len().checked_sub(from) {
         Some(0) | None => None,
         Some(left) => Some(left),
-    }
-}
-
-/// Whether `len` bytes from offset `at` end within the largest offset a file
-/// has, `i64::MAX`: the kernel's offsets are signed, and the ring reads an
-/// offset of `u64::MAX` as the descriptor's position.
-fn within_offsets(at: u64, len: usize) -> bool {
-    let (Ok(len), Ok(largest)) = (u64::try_from(len), u64::try_from(i64::MAX)) else {
-        return false;
-    };
-    match at.checked_add(len) {
-        Some(end) => end <= largest,
-        None => false,
     }
 }
 
@@ -1359,6 +1375,7 @@ fn fits(op: &Op, done: &Done) -> bool {
             | Op::Read { .. }
             | Op::Write { .. }
             | Op::Append { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
@@ -1407,6 +1424,7 @@ fn binds(op: &Op, bound: &Addr) -> bool {
         | Op::Read { .. }
         | Op::Write { .. }
         | Op::Append { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
@@ -1449,6 +1467,7 @@ fn counts(op: &Op, n: usize) -> bool {
         | Op::Shutdown { .. }
         | Op::Close { .. }
         | Op::Open { .. }
+        | Op::Truncate { .. }
         | Op::Sync { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }

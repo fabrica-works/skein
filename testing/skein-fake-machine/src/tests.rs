@@ -326,3 +326,34 @@ fn directory_links_count_children_across_moves_and_removal() {
         machine.close(file);
     }
 }
+
+#[test]
+fn a_cut_not_synced_keeps_the_old_length_past_a_crash() {
+    for seed in 0..16 {
+        let (mut machine, root) = machine(&[Item::file(b"file", b"0123456789")]);
+        let file = machine.open(root, b"file", How::Write).unwrap();
+        machine.truncate(file, 4).unwrap();
+        machine.crash(seed);
+        let root = machine.reopen_root(0);
+        let file = machine.open(root, b"file", How::Read).unwrap();
+        assert_eq!(machine.read(file, 0, 16).unwrap(), b"0123456789");
+        machine.close(file);
+        machine.close(root);
+    }
+}
+
+#[test]
+fn a_cut_synced_keeps_the_new_length_past_a_crash() {
+    for seed in 0..16 {
+        let (mut machine, root) = machine(&[Item::file(b"file", b"0123456789")]);
+        let file = machine.open(root, b"file", How::Write).unwrap();
+        machine.truncate(file, 4).unwrap();
+        machine.sync(file);
+        machine.crash(seed);
+        let root = machine.reopen_root(0);
+        let file = machine.open(root, b"file", How::Read).unwrap();
+        assert_eq!(machine.read(file, 0, 16).unwrap(), b"0123");
+        machine.close(file);
+        machine.close(root);
+    }
+}

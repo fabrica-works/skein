@@ -107,6 +107,10 @@ pub enum Summary {
         len: usize,
         from: u32,
     },
+    Truncate {
+        fd: Fd,
+        length: u64,
+    },
     Sync {
         fd: Fd,
     },
@@ -220,6 +224,7 @@ impl Summary {
             Op::Read { fd, buf, at } => Summary::Read { fd: *fd, len: buf.len(), at: *at },
             Op::Write { fd, bytes, from, at } => Summary::Write { fd: *fd, len: bytes.len(), from: *from, at: *at },
             Op::Append { fd, bytes, from } => Summary::Append { fd: *fd, len: bytes.len(), from: *from },
+            Op::Truncate { fd, length } => Summary::Truncate { fd: *fd, length: *length },
             Op::Sync { fd } => Summary::Sync { fd: *fd },
             Op::Stat { fd } => Summary::Stat { fd: *fd },
             Op::Rename { from_dir, from, to_dir, to } => {
@@ -269,6 +274,7 @@ impl Summary {
             | Summary::Read { .. }
             | Summary::Write { .. }
             | Summary::Append { .. }
+            | Summary::Truncate { .. }
             | Summary::Sync { .. }
             | Summary::Stat { .. }
             | Summary::Rename { .. }
@@ -301,7 +307,8 @@ impl Summary {
     #[must_use]
     pub const fn cancellable(&self) -> bool {
         match self {
-            Summary::Cancel { .. }
+            Summary::Truncate { .. }
+            | Summary::Cancel { .. }
             | Summary::Spawn { .. }
             | Summary::Window { .. }
             | Summary::Usage
@@ -349,6 +356,7 @@ impl Summary {
             | Summary::Read { fd, .. }
             | Summary::Write { fd, .. }
             | Summary::Append { fd, .. }
+            | Summary::Truncate { fd, .. }
             | Summary::Sync { fd }
             | Summary::Stat { fd }
             | Summary::Remove { dir: fd, .. }

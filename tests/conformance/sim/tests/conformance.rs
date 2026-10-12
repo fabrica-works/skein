@@ -305,3 +305,8 @@ fn path_only_metadata_needs_no_permission_on_its_entry() {
 fn window_on_a_descriptor_that_is_not_a_terminal_answers_other() {
     calm_and_chaos(skein_conformance::window);
 }
+
+#[test]
+fn a_write_open_finds_what_exists_and_truncate_sets_its_length() {
+    calm_and_chaos(skein_conformance::cutting);
+}

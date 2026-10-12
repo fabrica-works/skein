@@ -283,3 +283,25 @@ fn a_shutdown_on_a_listener() {
 fn a_world_with_no_socket_buffer() {
     drop(skein_sim::Sim::new(1, skein_sim::Config { buffer: 0, ..skein_sim::Config::calm() }));
 }
+
+#[test]
+#[should_panic(expected = "a Truncate on a descriptor not opened to write")]
+fn a_truncate_on_a_descriptor_opened_to_read_fails_the_world() {
+    let mut world = World::calm();
+    let pid = world.spawn();
+    let root = world.root(pid, &[skein_fake_machine::Item::file(b"file", b"bytes")]);
+    let file = world.open(pid, root, b"file", skein_io::kernel::OpenHow::Read).unwrap();
+    world.submit(pid, Op::Truncate { fd: file, length: 2 });
+}
+
+#[test]
+#[should_panic(expected = "which io never cancels")]
+fn a_cancel_of_a_truncate_fails_the_world() {
+    let mut world = World::calm();
+    let pid = world.spawn();
+    let root = world.root(pid, &[skein_fake_machine::Item::file(b"file", b"bytes")]);
+    let file = world.open(pid, root, b"file", skein_io::kernel::OpenHow::Write).unwrap();
+    world.serving = false;
+    let target = world.submit(pid, Op::Truncate { fd: file, length: 2 });
+    world.submit(pid, Op::Cancel { target });
+}

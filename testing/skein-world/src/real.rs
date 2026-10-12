@@ -608,6 +608,7 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
             | Op::Read { .. }
             | Op::Write { .. }
             | Op::Append { .. }
+            | Op::Truncate { .. }
             | Op::Sync { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
