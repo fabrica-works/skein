@@ -1,8 +1,10 @@
 //! Named admission and connector ownership (io.md, 3.5).
 use super::{Rig, limits, name, owner};
 use crate::{Error, Event, Limits, Name, Request};
+use alloc::boxed::Box;
+use skein_lib::Token;
 
-fn listen(rig: &mut Rig, who: u64, bytes: &[u8]) -> skein_lib::Token {
+fn listen(rig: &mut Rig, who: u64, bytes: &[u8]) -> Token {
     rig.down(Request::Listen { owner: owner(who), addr: name(bytes) }).nothing();
     let out = rig.next();
     assert!(out.subs.is_empty(), "joined entities submit nothing");
@@ -144,4 +146,195 @@ fn a_name_past_the_bound_is_refused() {
 #[test]
 fn names_compare_as_bytes_including_trailing_zeroes() {
     assert!(Name::new(b"a").unwrap() < Name::new(b"a\0").unwrap(), "a byte prefix sorts before its extension");
+}
+
+fn pair() -> (Rig, Token, Token, Token) {
+    let mut rig = Rig::new(Limits { sockets: 5, ..limits() });
+    let listener = listen(&mut rig, 1, b"engine");
+    rig.down(Request::Connect { owner: owner(2), addr: name(b"engine") }).nothing();
+    let connecting = rig.next();
+    let connector = match connecting.events.as_slice() {
+        [Event::Connecting { socket, .. }] => *socket,
+        other => panic!("Connecting: {other:?}"),
+    };
+    let accepted = rig.next();
+    let socket = match accepted.events.as_slice() {
+        [Event::Accepted { socket, .. }, Event::Connected { .. }] => *socket,
+        other => panic!("Accepted then Connected: {other:?}"),
+    };
+    (rig, listener, connector, socket)
+}
+fn bound() -> (Rig, Token, Token) {
+    let (mut rig, _, connector, socket) = pair();
+    rig.down(Request::Bind { socket, owner: owner(3) }).nothing();
+    rig.next().nothing();
+    (rig, connector, socket)
+}
+fn stream(rig: &mut Rig, socket: Token, down: skein_lib::stream::Down) {
+    rig.down(Request::Stream { stream: socket, down }).nothing();
+}
+fn send(rig: &mut Rig, socket: Token, data: &[u8]) {
+    use skein_lib::stream::{Down, Read};
+    stream(rig, socket, Down::Demand { read: Read::Nothing, room: u32::try_from(data.len()).unwrap() });
+    assert!(rig.next().events.contains(&Event::Stream { owner: owner(2), up: skein_lib::stream::Up::Room }));
+    stream(rig, socket, Down::Send(Box::from(data)));
+}
+
+#[test]
+fn an_armed_listener_joins_the_first_waiting_connector() {
+    let mut rig = Rig::new(Limits { sockets: 5, ..limits() });
+    let _listener = listen(&mut rig, 1, b"engine");
+    for who in [2, 4] {
+        rig.down(Request::Connect { owner: owner(who), addr: name(b"engine") }).nothing();
+    }
+    assert_eq!(rig.next().events.len(), 2);
+    let accepted = rig.next();
+    assert_eq!(accepted.events.last(), Some(&Event::Connected { owner: owner(2) }));
+    rig.next().nothing();
+}
+
+#[test]
+fn the_accepted_end_is_announced_with_the_empty_name() {
+    let mut rig = Rig::new(Limits { sockets: 3, ..limits() });
+    let _listener = listen(&mut rig, 1, b"engine");
+    rig.down(Request::Connect { owner: owner(2), addr: name(b"engine") }).nothing();
+    let _connecting = rig.next();
+    let out = rig.next();
+    match out.events.as_slice() {
+        [Event::Accepted { peer, .. }, Event::Connected { .. }] => {
+            assert_eq!(*peer, crate::Addr::InProcess(Name::EMPTY));
+        }
+        other => panic!("accepted: {other:?}"),
+    }
+}
+
+#[test]
+fn a_rejected_end_fails_its_connector_with_reset() {
+    let (mut rig, _, _, socket) = pair();
+    rig.down(Request::Reject { socket }).nothing();
+    assert_eq!(
+        rig.next().events,
+        [Event::Stream { owner: owner(2), up: skein_lib::stream::Up::Failed(skein_lib::stream::Fault::Reset) }]
+    );
+}
+
+#[test]
+fn a_listener_without_room_leaves_its_connectors_waiting() {
+    let (mut rig, _, _, _) = pair();
+    rig.down(Request::Connect { owner: owner(4), addr: name(b"engine") }).nothing();
+    let _connecting = rig.next();
+    rig.next().nothing();
+}
+
+#[test]
+fn bytes_move_into_the_peer_only_as_far_as_its_intake_has_room() {
+    use skein_lib::stream::{Down, Read, Up};
+    let (mut rig, connector, socket) = bound();
+    send(&mut rig, connector, b"abcdefgh");
+    rig.next().nothing();
+    rig.next().nothing();
+    send(&mut rig, connector, b"ijkl");
+    rig.next().nothing();
+    stream(&mut rig, socket, Down::Demand { read: Read::Fill(8), room: 0 });
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(3), up: Up::Bytes(Box::from(&b"abcdefgh"[..])) }]);
+    rig.next().nothing();
+    stream(&mut rig, socket, Down::Demand { read: Read::Fill(4), room: 0 });
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(3), up: Up::Bytes(Box::from(&b"ijkl"[..])) }]);
+}
+
+#[test]
+fn a_finish_reaches_the_peer_as_end_after_the_last_byte() {
+    use skein_lib::stream::{Down, Read, Up};
+    let (mut rig, connector, socket) = bound();
+    send(&mut rig, connector, b"hello");
+    stream(&mut rig, connector, Down::Finish);
+    rig.next().nothing();
+    stream(&mut rig, socket, Down::Demand { read: Read::Fill(5), room: 0 });
+    assert_eq!(
+        rig.next().events,
+        [
+            Event::Stream { owner: owner(3), up: Up::Bytes(Box::from(&b"hello"[..])) },
+            Event::Stream { owner: owner(3), up: Up::End }
+        ]
+    );
+}
+
+#[test]
+fn an_abort_fails_the_peer_with_reset_at_once() {
+    let (mut rig, connector, _) = bound();
+    rig.down(Request::Abort { entity: connector }).nothing();
+    assert_eq!(
+        rig.next().events,
+        [
+            Event::Stream { owner: owner(3), up: skein_lib::stream::Up::Failed(skein_lib::stream::Fault::Reset) },
+            Event::Closed { owner: owner(2) }
+        ]
+    );
+}
+
+#[test]
+fn a_close_moves_what_is_queued_before_unjoining() {
+    use skein_lib::stream::{Down, Read, Up};
+    let (mut rig, connector, socket) = bound();
+    send(&mut rig, connector, b"hello");
+    rig.down(Request::Close { entity: connector }).nothing();
+    rig.next().nothing();
+    stream(&mut rig, socket, Down::Demand { read: Read::Fill(5), room: 0 });
+    assert_eq!(
+        rig.next().events,
+        [
+            Event::Stream { owner: owner(3), up: Up::Bytes(Box::from(&b"hello"[..])) },
+            Event::Stream { owner: owner(3), up: Up::End }
+        ]
+    );
+    stream(&mut rig, socket, Down::Finish);
+    rig.next().nothing();
+    assert_eq!(rig.next().events, [Event::Closed { owner: owner(2) }]);
+}
+
+#[test]
+fn a_closing_end_discards_what_its_peer_moves_until_end() {
+    use skein_lib::stream::Down;
+    let (mut rig, connector, socket) = bound();
+    rig.down(Request::Close { entity: socket }).nothing();
+    let _ended = rig.next();
+    send(&mut rig, connector, b"abcdefgh");
+    rig.next().nothing();
+    stream(&mut rig, connector, Down::Finish);
+    assert_eq!(rig.next().events, [Event::Closed { owner: owner(3) }]);
+}
+
+#[test]
+fn a_close_with_nothing_to_flush_is_closed_next_pass() {
+    use skein_lib::stream::Down;
+    let (mut rig, connector, socket) = bound();
+    stream(&mut rig, connector, Down::Finish);
+    rig.next().nothing();
+    let _ended = rig.next();
+    rig.down(Request::Close { entity: socket }).nothing();
+    assert_eq!(rig.next().events, [Event::Closed { owner: owner(3) }]);
+}
+
+#[test]
+fn a_joined_end_submits_nothing_at_any_entry_point() {
+    let (mut rig, connector, socket) = bound();
+    send(&mut rig, connector, b"hello");
+    assert!(rig.next().subs.is_empty());
+    rig.down(Request::Abort { entity: connector }).nothing();
+    assert!(rig.next().subs.is_empty());
+    assert!(rig.next().subs.is_empty());
+    rig.down(Request::Abort { entity: socket }).nothing();
+    assert!(rig.next().subs.is_empty());
+}
+
+#[test]
+fn an_abort_before_bind_fails_the_bound_end() {
+    let (mut rig, _, connector, socket) = pair();
+    rig.down(Request::Abort { entity: connector }).nothing();
+    assert_eq!(rig.next().events, [Event::Closed { owner: owner(2) }]);
+    rig.down(Request::Bind { socket, owner: owner(3) }).nothing();
+    assert_eq!(
+        rig.next().events,
+        [Event::Stream { owner: owner(3), up: skein_lib::stream::Up::Failed(skein_lib::stream::Fault::Reset) }]
+    );
 }

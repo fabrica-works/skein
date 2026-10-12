@@ -91,14 +91,14 @@ struct Open {
 /// What the owner's state needs (lib.md, 7): a read and output room, answered
 /// once, by the bytes or the room, which ends both.
 #[derive(Clone, Copy, Debug)]
-struct Demand {
-    read: Read,
-    room: u32,
+pub(crate) struct Demand {
+    pub(crate) read: Read,
+    pub(crate) room: u32,
 }
 
 /// The receiving side of an open stream.
 #[derive(Clone, Copy, Debug)]
-enum Reader {
+pub(crate) enum Reader {
     /// A `Recv` in flight.
     Receiving(Id<Flight>),
     /// No `Recv` in flight: the intake is full.
@@ -946,35 +946,9 @@ fn deliver(
     up: &mut Queue<Event>,
     subs: &mut Queue<Submit>,
 ) {
-    let owner = open.owner;
-    // After the end, a demand is never answered with bytes, crossing it or
-    // not; what the intake still holds is dropped with it.
-    let bytes = match open.reader {
-        Reader::Told => None,
-        Reader::Receiving(_) | Reader::Full | Reader::Stalled | Reader::Ended => open.intake.meet(open.demand.read),
-    };
-    if let Some(bytes) = bytes {
-        up.push(Event::Stream { owner, up: Up::Bytes(bytes) });
-        open.demand = Demand { read: Read::Nothing, room: 0 };
-    } else if open.demand.room > 0 && open.writer.takes_sends() && open.output.fits(open.demand.room, env.limits.output)
-    {
-        up.push(Event::Stream { owner, up: Up::Room });
-        open.granted = open.demand.room;
+    let available = open.writer.takes_sends() && open.output.fits(open.demand.room, env.limits.output);
+    if delivered(open.owner, &mut open.intake, &mut open.demand, &mut open.reader, available, &mut open.granted, up) {
         open.classic_grant = true;
-        open.demand = Demand { read: Read::Nothing, room: 0 };
-    }
-    // With a read outstanding, the end comes once it can never be met; with
-    // none, once nothing is held that a demand could take.
-    let end = match open.reader {
-        Reader::Ended => match open.demand.read {
-            Read::Nothing => open.intake.is_empty(),
-            Read::Fill(_) | Read::Scan { .. } | Read::Line { .. } => true,
-        },
-        Reader::Receiving(_) | Reader::Full | Reader::Stalled | Reader::Told => false,
-    };
-    if end {
-        up.push(Event::Stream { owner, up: Up::End });
-        open.reader = Reader::Told;
     }
     if let Some(terminal) = open.independent.take_terminal() {
         up.push(Event::Output { owner: open.owner, up: terminal });
@@ -992,6 +966,48 @@ fn deliver(
         }
         reader @ (Reader::Receiving(_) | Reader::Full | Reader::Stalled | Reader::Ended | Reader::Told) => reader,
     };
+}
+
+/// Demand delivery shared by kernel streams and joined ends (io.md, 3.5).
+pub(crate) fn delivered(
+    owner: Token,
+    intake: &mut Intake,
+    demand: &mut Demand,
+    reader: &mut Reader,
+    room_available: bool,
+    granted: &mut u32,
+    up: &mut Queue<Event>,
+) -> bool {
+    let mut answered_room = false;
+    // After the end, a demand is never answered with bytes, crossing it or
+    // not; what the intake still holds is dropped with it.
+    let bytes = match *reader {
+        Reader::Told => None,
+        Reader::Receiving(_) | Reader::Full | Reader::Stalled | Reader::Ended => intake.meet(demand.read),
+    };
+    if let Some(bytes) = bytes {
+        up.push(Event::Stream { owner, up: Up::Bytes(bytes) });
+        *demand = Demand { read: Read::Nothing, room: 0 };
+    } else if demand.room > 0 && room_available {
+        up.push(Event::Stream { owner, up: Up::Room });
+        *granted = demand.room;
+        answered_room = true;
+        *demand = Demand { read: Read::Nothing, room: 0 };
+    }
+    // With a read outstanding, the end comes once it can never be met; with
+    // none, once nothing is held that a demand could take.
+    let end = match *reader {
+        Reader::Ended => match demand.read {
+            Read::Nothing => intake.is_empty(),
+            Read::Fill(_) | Read::Scan { .. } | Read::Line { .. } => true,
+        },
+        Reader::Receiving(_) | Reader::Full | Reader::Stalled | Reader::Told => false,
+    };
+    if end {
+        up.push(Event::Stream { owner, up: Up::End });
+        *reader = Reader::Told;
+    }
+    answered_room
 }
 
 /// A `Demand`: stated once the last is answered, never in place of it, or

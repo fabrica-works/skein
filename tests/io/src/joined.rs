@@ -79,3 +79,116 @@ pub fn closing(seed: u64, config: Config) -> World {
     world.spawn(limits(2), Owner::new(seed, serves, dials));
     world
 }
+
+/// A pair in one io, receiving each byte through intakes of seven.
+#[must_use]
+pub fn exchange(seed: u64, config: Config) -> World {
+    use crate::owner::Total;
+    let one: Box<[u8]> = Box::from(&b"one sends a message longer than either intake"[..]);
+    let two: Box<[u8]> = Box::from(&b"two answers with another long message"[..]);
+    let expect = vec![
+        Expect::Receives { at: 0, conn: "served", bytes: one.clone(), by: END },
+        Expect::Receives { at: 0, conn: "dialer", bytes: two.clone(), by: END },
+        Expect::Ends { at: 0, conn: "served", by: END },
+        Expect::Ends { at: 0, conn: "dialer", by: END },
+    ];
+    let served =
+        crate::owner::Plan { total: Total::Known(one.len()), ..plan("served", two.clone(), 16, Reads::Mixed(7)) };
+    let dialer = crate::owner::Plan { total: Total::Known(two.len()), ..plan("dialer", one, 16, Reads::Mixed(7)) };
+    let mut world = World::new(seed, config, Referee::new(seed, expect));
+    world.spawn(
+        skein_io::Limits { intake: 7, ..limits(3) },
+        Owner::new(seed, vec![serve("engine", vec![Some(served)])], vec![dial("engine", dialer)]),
+    );
+    world
+}
+fn serve(label: &'static str, answers: Vec<Option<crate::owner::Plan>>) -> Serve {
+    Serve { name: label, addr: name(label.as_bytes()), answers, close: ServeClose::Answered(END) }
+}
+fn dial(label: &'static str, plan: crate::owner::Plan) -> Dial {
+    Dial { to: Target::Named(label), at: Time::ZERO, plan }
+}
+fn empty(label: &'static str) -> crate::owner::Plan {
+    plan(label, Box::new([]), 4, Reads::Fill(4))
+}
+/// Binding the first connector opens it; rejecting the next resets it.
+#[must_use]
+pub fn accept(seed: u64, config: Config) -> World {
+    let expect = vec![
+        Expect::Closed { at: 0, conn: "first", by: END, optional: false },
+        Expect::Ends { at: 0, conn: "first", by: END },
+        Expect::Closed { at: 0, conn: "second", by: END, optional: false },
+    ];
+    let mut world = World::new(seed, config, Referee::new(seed, expect));
+    world.spawn(
+        limits(5),
+        Owner::new(
+            seed,
+            vec![serve("engine", vec![Some(empty("served")), None])],
+            vec![dial("engine", empty("first")), dial("engine", empty("second"))],
+        ),
+    );
+    world
+}
+/// The two listeners take turns within the shared accept batch of one.
+#[must_use]
+pub fn batch(seed: u64, config: Config) -> World {
+    let expect = ["first", "second"].map(|conn| Expect::Closed { at: 0, conn, by: END, optional: false });
+    let mut world = World::new(seed, config, Referee::new(seed, expect.into()));
+    world.spawn(
+        limits(6),
+        Owner::new(
+            seed,
+            vec![serve("one", vec![Some(empty("served-one"))]), serve("two", vec![Some(empty("served-two"))])],
+            vec![dial("one", empty("first")), dial("two", empty("second"))],
+        ),
+    );
+    world
+}
+/// An abort frees the third slot, so the other waiting connector is accepted.
+#[must_use]
+pub fn waiting(seed: u64, config: Config) -> World {
+    use crate::owner::{Plan, When};
+    let abort = Plan { abort: true, close: When::At(Time::from_nanos(50_000_000)), ..empty("aborted") };
+    let expect = ["aborted", "waiting"].map(|conn| Expect::Closed { at: 0, conn, by: END, optional: false });
+    let mut world = World::new(seed, config, Referee::new(seed, expect.into()));
+    world.spawn(
+        limits(3),
+        Owner::new(
+            seed,
+            vec![serve("engine", vec![Some(empty("served"))])],
+            vec![dial("engine", abort), dial("engine", empty("waiting"))],
+        ),
+    );
+    world
+}
+/// The intake holds the upload until the reader starts to demand.
+#[must_use]
+pub fn backpressure(seed: u64, config: Config) -> World {
+    use crate::owner::{Plan, Total, When};
+    let upload = vec![b'a'; 2000].into_boxed_slice();
+    let start = Time::from_nanos(50_000_000);
+    let expect = vec![
+        Expect::Holds { at: 0, conn: "upload", most: 48, until: start },
+        Expect::Receives { at: 0, conn: "sink", bytes: upload.clone(), by: END },
+        Expect::Ends { at: 0, conn: "sink", by: END },
+    ];
+    let sink = Plan { total: Total::Known(upload.len()), ..plan("sink", Box::new([]), 16, Reads::From(start, 16)) };
+    let sender = Plan { close: When::Sent, ..plan("upload", upload, 16, Reads::Never) };
+    let mut world = World::new(seed, config, Referee::new(seed, expect));
+    world.spawn(limits(3), Owner::new(seed, vec![serve("engine", vec![Some(sink)])], vec![dial("engine", sender)]));
+    world
+}
+/// An abort breaks the joined peer, even with no demand outstanding.
+#[must_use]
+pub fn abort(seed: u64, config: Config) -> World {
+    use crate::owner::{Plan, When};
+    let at = Time::from_nanos(50_000_000);
+    let abort =
+        Plan { finish: false, abort: true, close: When::At(at), ..plan("abort", Box::new([]), 4, Reads::Never) };
+    let peer = Plan { finish: false, ..plan("peer", Box::new([]), 4, Reads::Never) };
+    let expect = vec![Expect::Closed { at: 0, conn: "peer", by: END, optional: false }];
+    let mut world = World::new(seed, config, Referee::new(seed, expect));
+    world.spawn(limits(3), Owner::new(seed, vec![serve("engine", vec![Some(peer)])], vec![dial("engine", abort)]));
+    world
+}

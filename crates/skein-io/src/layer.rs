@@ -381,7 +381,7 @@ pub fn resume(io: &mut Io, env: &Env<Limits>, up: &mut Queue<Event>, subs: &mut 
         return;
     };
     if let Some(Entity::Named(_) | Entity::Joined(_)) = io.entities.get(id) {
-        joined::resume(io, id, up);
+        joined::resume(io, id, env, up);
         conclude(io, id, subs);
         return;
     }
@@ -620,6 +620,10 @@ fn connect(io: &mut Io, owner: Token, addr: Addr, subs: &mut Queue<Submit>) {
 /// listener may accept again.
 fn answer(io: &mut Io, env: &Env<Limits>, socket: Token, owner: Option<Token>, subs: &mut Queue<Submit>) {
     let id = Id::<Entity>::from_token(socket);
+    if let Some(Entity::Joined(_)) = io.entities.get(id) {
+        joined::answer(io, id, owner, &env.limits);
+        return;
+    }
     let Some(entity) = io.entities.get_mut(id) else {
         return;
     };
@@ -663,7 +667,8 @@ fn stream_request(io: &mut Io, env: &Env<Limits>, token: Token, down: Down, subs
     match entity {
         Entity::Stream(stream) => stream::request(stream, id, down, env, &mut io.tables, subs),
         Entity::Pipe(pipe) => pipe::request(pipe, id, down, env, &mut io.tables, subs),
-        Entity::Listener(_) | Entity::Child(_) | Entity::Signals(_) | Entity::Named(_) | Entity::Joined(_) => {
+        Entity::Joined(end) => joined::request(end, id, down, &env.limits, &mut io.tables),
+        Entity::Listener(_) | Entity::Child(_) | Entity::Signals(_) | Entity::Named(_) => {
             unreachable!("a stream request names a stream")
         }
     }
@@ -695,7 +700,7 @@ fn close(io: &mut Io, env: &Env<Limits>, token: Token, abort: bool, subs: &mut Q
         Entity::Child(_) => unreachable!("handled above"),
         Entity::Signals(signals) => signals::close(signals, id, &mut io.tables, subs),
         Entity::Named(listener) => joined::close_listener(listener, id, &mut io.tables),
-        Entity::Joined(end) => joined::close_end(end, id, &mut io.tables),
+        Entity::Joined(end) => joined::close_end(end, id, abort, &mut io.tables),
     }
 }
 

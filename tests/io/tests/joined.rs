@@ -31,3 +31,47 @@ fn a_closing_listener_refuses_its_waiting_connectors() {
         assert!(closing(seed, Config::chaos()).run().trace.is_empty());
     }
 }
+
+#[test]
+fn a_named_listener_accepts_binds_and_rejects() {
+    for seed in SEEDS {
+        let outcome = skein_io_world::joined::accept(seed, Config::chaos()).run();
+        assert!(outcome.trace.is_empty());
+        assert!(
+            outcome.logs[0].iter().any(|line| line.contains("Failed(Reset)")),
+            "the rejected connector hears Reset"
+        );
+    }
+}
+#[test]
+fn two_named_listeners_share_one_accept_batch() {
+    for seed in SEEDS {
+        assert!(skein_io_world::joined::batch(seed, Config::chaos()).run().trace.is_empty());
+    }
+}
+#[test]
+fn connectors_wait_without_room_or_slot_and_one_aborts() {
+    for seed in SEEDS {
+        assert!(skein_io_world::joined::waiting(seed, Config::chaos()).run().trace.is_empty());
+    }
+}
+#[test]
+fn bytes_go_both_ways_over_a_joined_pair_under_small_intakes() {
+    for seed in SEEDS {
+        assert!(skein_io_world::joined::exchange(seed, Config::chaos()).run().trace.is_empty());
+    }
+}
+#[test]
+fn a_joined_reader_that_does_not_demand_stops_its_peer() {
+    for seed in SEEDS {
+        assert!(skein_io_world::joined::backpressure(seed, Config::chaos()).run().trace.is_empty());
+    }
+}
+#[test]
+fn an_abort_is_heard_as_reset_by_the_joined_peer() {
+    for seed in SEEDS {
+        let outcome = skein_io_world::joined::abort(seed, Config::chaos()).run();
+        assert!(outcome.trace.is_empty());
+        assert!(outcome.logs[0].iter().any(|line| line.contains("Failed(Reset)")), "the aborted peer hears Reset");
+    }
+}
