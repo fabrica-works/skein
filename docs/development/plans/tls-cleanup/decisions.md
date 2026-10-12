@@ -72,9 +72,23 @@ supervisor's rulings during the run, appended below them.
     accessors on `Peer` (`02-tls-world.md`, 2.1's Shape). No assertion's
     expected value and no test's name changes; an `expect` message on
     those lines goes with the `.expect` it belonged to.
+14. **The gate without its browser suite** (the supervisor, 2026-10-12;
+    infrastructure, blocked report of 2026-10-12T00:33:38Z). The gate's
+    last line, `cargo nextest run --workspace --profile browser`, runs
+    `tests/browser/tests/browser_real.rs`, which needs Chromium.
+    carbon-forge has none, nor the libraries a downloaded one needs
+    (nss, gbm, atk), and the run has no root. No change of this plan can
+    reach that suite: `cargo tree -p skein-browser-world -i skein-tls`
+    finds no path, and it reads neither `tests/tls` nor `scripts/`. Until
+    Chromium is installed, this run's code landings gate with
+    `scripts/check.sh` less that line (README, "Rules"). The user is
+    asked to run `sudo apt-get install chromium` ("For the user").
 
 ## For the user
 
+- **Chromium on carbon-forge** (ruling 14): `sudo apt-get install
+  chromium`, so that the gate runs its browser suite again. The run does
+  not wait for it.
 - **The native face's future** (decision 4): keep it for the channel over
   TLS, or remove it and its design until that channel is planned.
 - **The gate's word check, workspace-wide** (`later.md`): the words are

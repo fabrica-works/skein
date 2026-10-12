@@ -70,6 +70,12 @@ are done.
   (`decisions.md`, 6). It overrides the workspace `AGENTS.md`'s "Other
   machines do not land in skein" for this plan's steps only. `land`
   pushes, as development.md says.
+- **The gate on carbon-forge has no browser suite** (`decisions.md`,
+  ruling 14): carbon-forge has no Chromium, and no root to install it.
+  Every code landing of this run must use, word for word, `TZ=UTC0 land
+  --gate 'sh -c "$(sed /profile.browser/d scripts/check.sh)"
+  scripts/check.sh'`: `scripts/check.sh` without its last line. This
+  rule lasts until a steer says that Chromium is installed.
 
 ## Live services
 
