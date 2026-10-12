@@ -103,7 +103,8 @@ pueue wait --quiet "$id" >/dev/null 2>&1 || true
 
 # pueue reuses the ids of removed tasks, so a log is named by time and id.
 log=$logs/$(date -u +%Y%m%dT%H%M%S)-$id.log
-json=$(pueue log --json --full "$id")
+# pueue prints times in the client's zone; the jq below reads only UTC.
+json=$(TZ=UTC0 pueue log --json --full "$id")
 jq -r 'to_entries[0].value.output' <<<"$json" >"$log"
 info=$(jq -c 'to_entries[0].value.task' <<<"$json")
 result=$(jq -c '.status.Done.result // "Unfinished"' <<<"$info")
