@@ -245,7 +245,7 @@ impl Tree {
                     Ok(descriptor) => {
                         self.members.insert(pid, descriptor);
                     }
-                    Err(Error::Other(3_i32)) => continue,
+                    Err(Error::Other(3_i32 | 22_i32)) => continue,
                     Err(error) => crate::fail(&format!("opening supervised tree member {pid}: {error:?}")),
                 }
             }
