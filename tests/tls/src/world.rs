@@ -36,219 +36,18 @@
 use std::collections::VecDeque;
 
 use skein_lib::stream::{Delimiter, Down, Fault, Read, Up};
-use skein_lib::{Env, Intake, Queue, Rng, Time, Wall};
+use skein_lib::{Env, Intake, Queue, Rng, Time};
 use skein_tls::MaxOut;
-use skein_tls::client::{self, Agreed, Certificate, Client, Error, Event, Limits, Request, Version, Waiting};
+use skein_tls::client::{self, Agreed, Client, Error, Event, Limits, Request, Version, Waiting};
 
-use crate::pki::{self, Versions};
+use crate::pki;
 use crate::server::Server;
 
-/// What a run is about: the server, the client's view of it, and what the
-/// two say.
-#[derive(Clone, Debug)]
-pub struct Scenario {
-    pub server: pki::Server,
-    /// The name the client asks for.
-    pub name: String,
-    /// The wall time the client checks the certificate at.
-    pub wall: Wall,
-    /// The protocols the client offers by ALPN.
-    pub alpn: Vec<Vec<u8>>,
-    /// What the side above sends.
-    pub request: Vec<u8>,
-    /// What the server sends, once it has the whole request, or at once if
-    /// it is eager.
-    pub response: Vec<u8>,
-    pub eager: bool,
-    /// Whether the server asks for a key update in the middle of its
-    /// response, in TLS 1.3.
-    pub key_update: bool,
-    pub ending: Ending,
-}
-
-/// How the server ends, once its response is written.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Ending {
-    /// `close_notify`, then the stream's end.
-    CloseNotify,
-    /// The stream's end without `close_notify`: a truncation.
-    Truncate,
-    /// A byte of a record of the response changed on the way, then the
-    /// stream's end.
-    Corrupt,
-    /// Nothing: the server waits.
-    Silent,
-}
-
-impl Scenario {
-    /// A request and a response of these lengths, from `rng`, to the leaf
-    /// server, valid, ending with `close_notify`.
-    #[must_use]
-    pub fn exchange(rng: &mut Rng, request: usize, response: usize) -> Scenario {
-        Scenario {
-            server: pki::Server::plain(),
-            name: "skein.test".into(),
-            wall: pki::VALID,
-            alpn: Vec::new(),
-            request: text(rng, request),
-            response: text(rng, response),
-            eager: false,
-            key_update: false,
-            ending: Ending::CloseNotify,
-        }
-    }
-
-    /// What the handshake must come to, when it fails.
-    #[must_use]
-    pub fn refusal(&self) -> Option<Error> {
-        let named = match self.server.chain {
-            pki::Chain::Leaf
-            | pki::Chain::Untrusted
-            | pki::Chain::Padded(_)
-            | pki::Chain::SelfSigned
-            | pki::Chain::CaAsLeaf
-            | pki::Chain::ClientOnly => self.name == "skein.test" || self.name == "127.0.0.1",
-            pki::Chain::Big => self.name == "big.skein.test",
-        };
-        // The chain is judged before the time and the name.
-        let chain = match self.server.chain {
-            pki::Chain::Untrusted | pki::Chain::SelfSigned => Some(Certificate::Issuer),
-            pki::Chain::CaAsLeaf | pki::Chain::ClientOnly => Some(Certificate::Invalid),
-            pki::Chain::Leaf | pki::Chain::Big | pki::Chain::Padded(_) => None,
-        };
-        let certificate = if chain.is_some() {
-            chain
-        } else if self.wall >= pki::EXPIRED {
-            Some(Certificate::Expired)
-        } else if self.wall <= pki::EARLY {
-            Some(Certificate::NotYetValid)
-        } else if !named {
-            Some(Certificate::Name)
-        } else {
-            None
-        };
-        certificate.map(Error::Certificate)
-    }
-}
-
-/// Text from `rng`: printable bytes, with line ends and quotes among them,
-/// so that scans meet their delimiters.
-#[must_use]
-pub fn text(rng: &mut Rng, len: usize) -> Vec<u8> {
-    let mut text = Vec::with_capacity(len);
-    for _ in 0..len {
-        let byte = match rng.below(40) {
-            0 => b'\n',
-            1 => b'\r',
-            2 => b'"',
-            _ => b'a' + u8::try_from(rng.below(26)).expect("a letter"),
-        };
-        text.push(byte);
-    }
-    text
-}
-
-/// How a world runs: the client's limits, and how its neighbours behave.
-#[derive(Clone, Debug)]
-pub struct Settings {
-    pub limits: Limits,
-    /// The side below's intake cap: at least the client's largest read.
-    pub cap: u32,
-    /// The side below's output cap: at least the client's largest room.
-    pub output: u32,
-    /// The longest piece the server's bytes arrive in.
-    pub piece: u32,
-    /// Per mille: how likely a piece arrives in an iteration.
-    pub arrival: u32,
-    /// Per mille: how likely room demanded is granted in an iteration.
-    pub grant: u32,
-    /// Per mille: how likely the side above acts in an iteration where it
-    /// may.
-    pub eagerness: u32,
-    pub reads: Reads,
-    /// Whether the side above finishes once its request is sent.
-    pub finish: bool,
-    /// When the side above closes, whatever the client is doing.
-    pub close: Option<u64>,
-    /// When the side above stops acting, and for how many iterations.
-    pub stall: Option<(u64, u64)>,
-    /// When the stream fails, if it does, and with what.
-    pub failure: Option<(u64, Fault)>,
-}
-
-/// How the side above reads.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Reads {
-    /// Fills and scans of every size up to the limit, to LF, CRLF or a
-    /// quote, and line scans: it may not see the last bytes, which no
-    /// demand meets.
-    Any,
-    /// A byte at a time: it sees every byte.
-    Bytes,
-}
-
-impl Settings {
-    /// Neighbours that are slow and cut the bytes anywhere, under `limits`,
-    /// but never fail the stream or close before the end.
-    #[must_use]
-    pub fn calm(rng: &mut Rng, limits: Limits) -> Settings {
-        Settings {
-            limits,
-            cap: client::LARGEST_READ + draw(rng, 0, 4096),
-            output: client::largest_room(&limits) + draw(rng, 0, 64),
-            piece: draw(rng, 1, 4096),
-            arrival: draw(rng, 100, 1000),
-            grant: draw(rng, 100, 1000),
-            eagerness: draw(rng, 100, 1000),
-            reads: if rng.chance(200) { Reads::Bytes } else { Reads::Any },
-            finish: rng.chance(500),
-            close: None,
-            stall: None,
-            failure: None,
-        }
-    }
-
-    /// Neighbours as [`calm`](Settings::calm), and sometimes a stream that
-    /// fails, a close at any moment, or a side above that stops for a while.
-    #[must_use]
-    pub fn chaotic(rng: &mut Rng, limits: Limits) -> Settings {
-        let mut settings = Settings::calm(rng, limits);
-        if rng.chance(200) {
-            settings.failure = Some((rng.below(400), fault(rng)));
-        }
-        if rng.chance(300) {
-            settings.close = Some(rng.below(400));
-        }
-        if rng.chance(200) {
-            settings.stall = Some((rng.below(400), rng.between(16, 256)));
-        }
-        settings
-    }
-}
-
-/// Limits drawn at random: a read and room from a byte to a few records,
-/// and records from one to several.
-#[must_use]
-pub fn limits(rng: &mut Rng) -> Limits {
-    let most = if rng.chance(500) { 64 } else { 40_000 };
-    let read = draw(rng, 1, most);
-    let most = if rng.chance(500) { 64 } else { 40_000 };
-    let send = draw(rng, 1, most);
-    Limits { read, send, records: draw(rng, client::MAX_RECORD, 4 * client::MAX_RECORD) }
-}
-
-fn fault(rng: &mut Rng) -> Fault {
-    pick(rng, &[Fault::Reset, Fault::Invalid, Fault::Other])
-}
-
-/// One of `items`, drawn from `rng`.
-pub fn pick<T: Copy>(rng: &mut Rng, items: &[T]) -> T {
-    items[usize::try_from(rng.below(items.len() as u64)).expect("fits a usize")]
-}
-
-fn draw(rng: &mut Rng, low: u32, high: u32) -> u32 {
-    u32::try_from(rng.between(u64::from(low), u64::from(high))).expect("fits a u32")
-}
+mod check;
+mod scenario;
+pub use check::check;
+pub use scenario::{Ending, Reads, Scenario, Settings, limits, pick, text};
+use scenario::{draw, fault};
 
 /// What a run came to, as the neighbours saw it.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -395,55 +194,7 @@ enum Face {
 /// side above has closed the client.
 #[must_use]
 pub fn run(scenario: &Scenario, settings: &Settings, seed: u64) -> Run {
-    let limits = settings.limits;
-    assert!(settings.cap >= client::LARGEST_READ, "the side below's cap holds the largest read");
-    assert!(settings.output >= client::largest_room(&limits), "the side below's output holds the largest room");
-    let alpn: Vec<&[u8]> = scenario.alpn.iter().map(Vec::as_slice).collect();
-    let config = pki::client(&alpn);
-    let name = skein_tls::Name::new(&scenario.name).expect("a name");
-    let mut world = World {
-        rng: Rng::new(seed),
-        settings,
-        scenario,
-        env: Env { now: Time::ZERO, wall: scenario.wall, limits },
-        client: Client::new(&config, name, &limits),
-        events: Queue::with_capacity(8),
-        requests: Queue::with_capacity(8),
-        server: Side {
-            server: Server::new(scenario.server.config()),
-            responded: false,
-            ended: false,
-            updated_at: None,
-        },
-        below: Below {
-            wire: VecDeque::new(),
-            eof: false,
-            intake: Intake::with_capacity(settings.cap),
-            demand: None,
-            granted: None,
-            life: Life::Open,
-            failed: None,
-            withdrawn: None,
-            finished: false,
-        },
-        above: Above {
-            started: false,
-            face: Face::Idle,
-            sent: 0,
-            finished: false,
-            received: Vec::new(),
-            ended: None,
-            reading_over: false,
-            stream_failed: None,
-            failed: None,
-            agreed: None,
-            closing: None,
-            closed: false,
-        },
-        fell: Fell::default(),
-        iteration: 0,
-        moved: 0,
-    };
+    let mut world = World::new(scenario, settings, seed);
     let budget = 64 * (scenario.request.len() + scenario.response.len()) as u64 + 200_000;
     while world.iteration < budget {
         world.server_acts();
@@ -479,104 +230,6 @@ pub fn run(scenario: &Scenario, settings: &Settings, seed: u64) -> Run {
         }
     }
     panic!("seed {seed}: the world settles within {budget} iterations: {settings:?}");
-}
-
-/// Runs the world as [`run`], and holds the run to what the scenario
-/// implies: the handshake's outcome, the plaintext each side received, the
-/// end or the error the server's ending makes, and `close_notify` sent on a
-/// close or a finish once the handshake is done.
-#[must_use]
-pub fn check(scenario: &Scenario, settings: &Settings, seed: u64) -> Run {
-    let run = run(scenario, settings, seed);
-    let what = || format!("seed {seed}, {settings:?}, {:?} {:?}", scenario.server, scenario.ending);
-    assert!(scenario.response.starts_with(&run.received), "what the client read is the response, in order; {}", what());
-    assert!(scenario.request.starts_with(&run.served), "what the server read is the request, in order; {}", what());
-    // Nothing on the way to the server is changed: its records are TLS.
-    assert_eq!(run.server_failed, None, "the server reads what the client sends; {}", what());
-    // The failure the stream below was told of, and nothing else, ends a
-    // run whose stream failed before the outcome.
-    if let (Some(fault), Some(error)) = (run.below_failed, run.failed)
-        && error == Error::Stream(fault)
-    {
-        assert_eq!(run.stream_failed, Some(fault), "the stream told its own fault; {}", what());
-        return run;
-    }
-    // The big chain, about 40 KB, spans three records at least, which fewer
-    // than three records' room cannot hold whole: the handshake fails before
-    // the certificate is judged.
-    if run.failed == Some(Error::TooLong) {
-        assert!(
-            scenario.server.chain == pki::Chain::Big && settings.limits.records < 3 * client::MAX_RECORD,
-            "a handshake message longer than the records held; {}",
-            what()
-        );
-        assert!(run.agreed.is_none(), "{}", what());
-        assert_eq!(run.stream_failed, Some(Fault::Invalid), "{}", what());
-        return run;
-    }
-    if let Some(refusal) = scenario.refusal() {
-        assert!(run.agreed.is_none(), "no handshake with a refused certificate; {}", what());
-        if let Some(error) = run.failed {
-            assert_eq!(error, refusal, "the certificate refused, as it should be; {}", what());
-            assert_eq!(run.stream_failed, Some(Fault::Invalid), "{}", what());
-        }
-        assert!(run.received.is_empty() && run.served.is_empty(), "nothing exchanged; {}", what());
-        return run;
-    }
-    if let Some(agreed) = &run.agreed {
-        let version = match scenario.server.versions {
-            Versions::Tls12 => Version::Tls12,
-            Versions::Both | Versions::Tls13 => Version::Tls13,
-        };
-        assert_eq!(agreed.version, version, "the version the server allows; {}", what());
-        let alpn = scenario.server.alpn.iter().find(|protocol| scenario.alpn.contains(protocol));
-        assert_eq!(agreed.alpn.as_deref(), alpn.map(Vec::as_slice), "the protocol both name; {}", what());
-    }
-    if let Some(read) = run.ended {
-        assert_eq!(scenario.ending, Ending::CloseNotify, "End only after close_notify; {}", what());
-        let tail = &scenario.response[run.received.len()..];
-        assert!(!meets(read, tail), "the end comes once nothing left meets the demand: {read:?}; {}", what());
-    }
-    match run.failed {
-        None => {}
-        Some(Error::Truncated) => {
-            assert!(
-                scenario.ending == Ending::Truncate || run.agreed.is_none(),
-                "a truncation where the stream ended without close_notify; {}",
-                what()
-            );
-            assert_eq!(run.stream_failed, Some(Fault::Invalid), "a truncation is invalid, never the end; {}", what());
-            assert!(run.ended.is_none(), "{}", what());
-        }
-        Some(Error::Decrypt) => {
-            assert_eq!(scenario.ending, Ending::Corrupt, "a record fails to decrypt where one was changed; {}", what());
-            assert_eq!(run.stream_failed, Some(Fault::Invalid), "{}", what());
-        }
-        Some(error) => panic!("{error:?}: no failure but the scenario's; {}", what()),
-    }
-    // close_notify went to the server, on a finish or a close, once the
-    // handshake was done, unless the connection failed first.
-    if run.agreed.is_some() && run.failed.is_none() && run.below_failed.is_none() {
-        assert!(run.notified, "close_notify sent: {:?}; {}", run.closed_while, what());
-    }
-    if run.sent && run.notified {
-        assert_eq!(run.served, scenario.request, "a request sent and closed is all read; {}", what());
-    }
-    // Left alone, a run comes to the end its server makes: the side above
-    // reads to it, and no neighbour is held up for ever.
-    if settings.close.is_none() && settings.failure.is_none() {
-        match scenario.ending {
-            Ending::CloseNotify => assert!(run.ended.is_some(), "the end; {}", what()),
-            Ending::Truncate => assert_eq!(run.failed, Some(Error::Truncated), "{}", what()),
-            Ending::Corrupt => assert_eq!(run.failed, Some(Error::Decrypt), "{}", what()),
-            Ending::Silent => {}
-        }
-        // Unless the connection failed on what an eager server sent first.
-        if run.failed.is_none() || !scenario.eager {
-            assert!(run.sent, "the request is all sent; {}", what());
-        }
-    }
-    run
 }
 
 /// Whether `bytes` hold what `read` asks for, from their start.
@@ -615,7 +268,59 @@ fn delivers(read: Read, bytes: &[u8]) -> bool {
     }
 }
 
-impl World<'_> {
+impl<'a> World<'a> {
+    fn new(scenario: &'a Scenario, settings: &'a Settings, seed: u64) -> Self {
+        let limits = settings.limits;
+        assert!(settings.cap >= client::LARGEST_READ, "the side below's cap holds the largest read");
+        assert!(settings.output >= client::largest_room(&limits), "the side below's output holds the largest room");
+        let alpn: Vec<&[u8]> = scenario.alpn.iter().map(Vec::as_slice).collect();
+        let config = pki::client(&alpn);
+        let name = skein_tls::Name::new(&scenario.name).expect("a name");
+        Self {
+            rng: Rng::new(seed),
+            settings,
+            scenario,
+            env: Env { now: Time::ZERO, wall: scenario.wall, limits },
+            client: Client::new(&config, name, &limits),
+            events: Queue::with_capacity(8),
+            requests: Queue::with_capacity(8),
+            server: Side {
+                server: Server::new(scenario.server.config()),
+                responded: false,
+                ended: false,
+                updated_at: None,
+            },
+            below: Below {
+                wire: VecDeque::new(),
+                eof: false,
+                intake: Intake::with_capacity(settings.cap),
+                demand: None,
+                granted: None,
+                life: Life::Open,
+                failed: None,
+                withdrawn: None,
+                finished: false,
+            },
+            above: Above {
+                started: false,
+                face: Face::Idle,
+                sent: 0,
+                finished: false,
+                received: Vec::new(),
+                ended: None,
+                reading_over: false,
+                stream_failed: None,
+                failed: None,
+                agreed: None,
+                closing: None,
+                closed: false,
+            },
+            fell: Fell::default(),
+            iteration: 0,
+            moved: 0,
+        }
+    }
+
     /// What the side below may still deliver once the client is closed: an
     /// answer on its way for the demand the close withdrew, then the end or
     /// a failure.
@@ -788,35 +493,8 @@ impl World<'_> {
                 self.above.finished = true;
                 self.down(Request::Stream(Down::Finish));
             }
-            Face::Idle => {
-                let reads = !self.above.reading_over && (left == 0 || self.rng.chance(500));
-                let read = if reads { self.draw_read() } else { Read::Nothing };
-                // Now and then it reads before it writes on, from a server
-                // that answers at once and ends the stream: a patient one, or
-                // a silent one, would leave it waiting for ever.
-                let ends = self.scenario.eager && self.scenario.ending != Ending::Silent;
-                let writes = !reads || !ends || self.rng.chance(700);
-                let room = if left > 0 && !self.above.finished && writes {
-                    let most = self.settings.limits.send.min(u32::try_from(left).expect("fits a u32"));
-                    draw(&mut self.rng, 1, most)
-                } else {
-                    0
-                };
-                if read == Read::Nothing && room == 0 {
-                    return;
-                }
-                self.fell.early_demand |= self.above.agreed.is_none();
-                self.above.face = Face::Demanded(read, room);
-                self.down(Request::Stream(Down::Demand { read, room }));
-            }
-            Face::Granted(room) => {
-                let most = usize::try_from(room).expect("fits a usize").min(left);
-                let len = usize::try_from(self.rng.between(0, most as u64)).expect("fits a usize");
-                let piece = self.scenario.request[self.above.sent..self.above.sent + len].to_vec();
-                self.above.sent += len;
-                self.above.face = Face::Idle;
-                self.down(Request::Stream(Down::Send(piece.into())));
-            }
+            Face::Idle => self.demand_above(left),
+            Face::Granted(room) => self.send_above(room, left),
             // A read that crossed the end stays outstanding, never met: the
             // side above withdraws it to write on, or to finish.
             Face::Demanded(_, 0)
@@ -837,6 +515,37 @@ impl World<'_> {
             }
             Face::Demanded(..) | Face::Over => {}
         }
+    }
+
+    fn demand_above(&mut self, left: usize) {
+        let reads = !self.above.reading_over && (left == 0 || self.rng.chance(500));
+        let read = if reads { self.draw_read() } else { Read::Nothing };
+        // Now and then it reads before it writes on, from a server
+        // that answers at once and ends the stream: a patient one, or
+        // a silent one, would leave it waiting for ever.
+        let ends = self.scenario.eager && self.scenario.ending != Ending::Silent;
+        let writes = !reads || !ends || self.rng.chance(700);
+        let room = if left > 0 && !self.above.finished && writes {
+            let most = self.settings.limits.send.min(u32::try_from(left).expect("fits a u32"));
+            draw(&mut self.rng, 1, most)
+        } else {
+            0
+        };
+        if read == Read::Nothing && room == 0 {
+            return;
+        }
+        self.fell.early_demand |= self.above.agreed.is_none();
+        self.above.face = Face::Demanded(read, room);
+        self.down(Request::Stream(Down::Demand { read, room }));
+    }
+
+    fn send_above(&mut self, room: u32, left: usize) {
+        let most = usize::try_from(room).expect("fits a usize").min(left);
+        let len = usize::try_from(self.rng.between(0, most as u64)).expect("fits a usize");
+        let piece = self.scenario.request[self.above.sent..self.above.sent + len].to_vec();
+        self.above.sent += len;
+        self.above.face = Face::Idle;
+        self.down(Request::Stream(Down::Send(piece.into())));
     }
 
     /// The side above closes: now and then withdrawing its demand first, as
