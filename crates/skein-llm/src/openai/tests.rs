@@ -770,6 +770,42 @@ fn deltas_decode_roundtrip_and_forward_before_completed_blocks() {
 }
 
 #[test]
+fn reasoning_summary_and_message_parts_can_exceed_output_items() {
+    let limits = Limits { output_items: 2, ..LIMITS };
+    let reasoning = value(br#"{"id":"r","type":"reasoning","summary":[{"type":"summary_text","text":"a"},{"type":"summary_text","text":"b"},{"type":"summary_text","text":"c"}],"encrypted_content":"secret"}"#);
+    let message = decode_event(&value(br#"{"type":"response.output_item.done","output_index":1,"item":{"id":"m","type":"message","content":[{"type":"output_text","text":"a"},{"type":"output_text","text":"b"},{"type":"output_text","text":"c"}]}}"#), &limits).unwrap();
+    let events = [
+        Event::Added { index: 0, id: owned(b"r"), kind: owned(b"reasoning") },
+        Event::ReasoningDelta { index: 0, summary_index: 0, text: owned(b"a") },
+        Event::ReasoningDelta { index: 0, summary_index: 1, text: owned(b"b") },
+        Event::ReasoningDelta { index: 0, summary_index: 2, text: owned(b"c") },
+        Event::Done { index: 0, item: Item::Opaque { value: reasoning.clone() } },
+        Event::Added { index: 1, id: owned(b"m"), kind: owned(b"message") },
+        Event::TextDelta { index: 1, content_index: 0, text: owned(b"a") },
+        Event::TextDelta { index: 1, content_index: 1, text: owned(b"b") },
+        Event::TextDelta { index: 1, content_index: 2, text: owned(b"c") },
+        message,
+        Event::Completed { stop: Stop::EndTurn, usage: Usage::NONE },
+    ];
+    assert_eq!(
+        stream(&events, &limits),
+        [
+            Output::Progress,
+            Output::ReasoningDelta { index: 0, summary_index: 0, text: owned(b"a") },
+            Output::ReasoningDelta { index: 0, summary_index: 1, text: owned(b"b") },
+            Output::ReasoningDelta { index: 0, summary_index: 2, text: owned(b"c") },
+            Output::Part(Part::Opaque { bytes: reasoning.to_bytes(&limits.document()).unwrap() }),
+            Output::Progress,
+            Output::TextDelta { index: 1, content_index: 0, text: owned(b"a") },
+            Output::TextDelta { index: 1, content_index: 1, text: owned(b"b") },
+            Output::TextDelta { index: 1, content_index: 2, text: owned(b"c") },
+            Output::Part(Part::Text { id: owned(b"m"), phase: None, text: owned(b"abc"), refusal: false }),
+            Output::Completed { stop: Stop::EndTurn, usage: Usage::NONE },
+        ]
+    );
+}
+
+#[test]
 fn delta_references_and_cumulative_size_are_checked_and_failure_is_terminal() {
     for event in [
         Event::TextDelta { index: 1, content_index: 0, text: owned(b"a") },

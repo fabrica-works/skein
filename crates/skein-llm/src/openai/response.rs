@@ -353,11 +353,11 @@ impl StreamDecoder {
                 out.push(Output::Progress);
             }
             Event::TextDelta { index, content_index, text } => {
-                self.delta(index, b"message", Some(content_index), text.len(), limits)?;
+                self.delta(index, b"message", text.len(), limits)?;
                 out.push(Output::TextDelta { index, content_index, text });
             }
             Event::ArgumentsDelta { index, delta } => {
-                self.delta(index, b"function_call", None, delta.len(), limits)?;
+                self.delta(index, b"function_call", delta.len(), limits)?;
                 let length = received_length(long, delta.len());
                 match self.opened.get_mut(index) {
                     Some(Opened::Tool { input, bytes, too_large, .. }) => {
@@ -378,7 +378,7 @@ impl StreamDecoder {
                 out.push(Output::ArgumentsDelta { index, delta });
             }
             Event::ReasoningDelta { index, summary_index, text } => {
-                self.delta(index, b"reasoning", Some(summary_index), text.len(), limits)?;
+                self.delta(index, b"reasoning", text.len(), limits)?;
                 out.push(Output::ReasoningDelta { index, summary_index, text });
             }
             Event::Done { index, item } => {
@@ -455,25 +455,13 @@ impl StreamDecoder {
         self.ready(out);
         Ok(())
     }
-    fn delta(
-        &mut self,
-        index: u32,
-        expected_kind: &[u8],
-        sub_index: Option<u32>,
-        size: usize,
-        limits: &Limits,
-    ) -> Result<(), DecodeError> {
+    fn delta(&mut self, index: u32, expected_kind: &[u8], size: usize, limits: &Limits) -> Result<(), DecodeError> {
         match self.opened.get(index) {
             Some(Opened::Active { kind, .. }) if kind.as_ref() == expected_kind => {}
             Some(Opened::Tool { .. }) if expected_kind == b"function_call" => {}
             Some(Opened::Active { .. } | Opened::Tool { .. } | Opened::Ready(_) | Opened::Emitted) | None => {
                 return Err(DecodeError::Malformed);
             }
-        }
-        if let Some(sub_index) = sub_index
-            && sub_index >= limits.output_items
-        {
-            return Err(DecodeError::limit(crate::Cap::OutputItems, limits.output_items));
         }
         if expected_kind == b"function_call" {
             return Ok(());
@@ -744,11 +732,19 @@ fn read_item(tokens: (&Document, json::Span), limits: &Limits) -> Result<Item, D
         }
         b"message" => {
             let values = json::value_at(tokens, json::required(tokens, b"content")?)?;
+            if json::kind(values, 0) != Some(Kind::ArrayStart) {
+                return Err(DecodeError::WrongType);
+            }
             let mut text = List::with_capacity(limits.answer);
             let mut refusal = false;
             let mut content_kind: Option<bool> = None;
-            for &offset in &json::array(values, limits.output_items)? {
+            let mut offset = 1_u32;
+            for _step in 0..json::len(values) {
+                if json::kind(values, offset) == Some(Kind::ArrayEnd) {
+                    break;
+                }
                 let part = json::value_at(values, offset)?;
+                offset = json::span(values, offset)?;
                 let kind = json::text_ref(json::value_at(part, json::required(part, b"type")?)?)?;
                 let is_refusal = kind == b"refusal";
                 if let Some(previous) = content_kind
@@ -773,6 +769,9 @@ fn read_item(tokens: (&Document, json::Span), limits: &Limits) -> Result<Item, D
                     }
                     _ => return Err(DecodeError::WrongType),
                 }
+            }
+            if json::kind(values, offset) != Some(Kind::ArrayEnd) {
+                return Err(DecodeError::Malformed);
             }
             Ok(Item::Message {
                 id: json::text(json::value_at(tokens, json::required(tokens, b"id")?)?)?,
