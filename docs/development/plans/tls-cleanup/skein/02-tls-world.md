@@ -251,8 +251,9 @@ Test shape: the files above; no new test.
 Proof: world, the suites `land`'s gate runs, `tests/tls` among them.
   Run nothing for it before `land`. Before committing, run `heavy cargo
   nextest list -p skein-tls-world | grep -c '^skein-tls-world::'` once:
-  62 (ruling 15) less the count of world tests the commit body says it
-  removed, at most two. The
+  78 (62 at `73c900b`, plus the 16 that 2.2's splits added: ruling 20)
+  less the count of world tests the commit body says it removed, at most
+  two. The
   commit says `Proof: world, land's gate (tls worlds), N tests fewer`.
 Don't: pin a length that rustls's randoms change.
 Size: about 150 test lines touched, net about −60.

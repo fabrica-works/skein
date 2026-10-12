@@ -132,6 +132,11 @@ supervisor's rulings during the run, appended below them.
     fails only on a timeout, in tests outside the session's files
     (README, "Rules"). What loads the machine during a gate is for the
     hourly check.
+20. **2.4's count starts at 78** (the supervisor, 2026-10-12; plan
+    defect, blocked report of 2026-10-12T01:02:32Z). Ruling 15 gave 2.4
+    "62 less the removed", forgetting that 2.2 splits six tests into 22
+    (`c7834bc`'s body). `git grep -c '#\[test\]'` over `tests/tls` gives
+    64 at `73c900b` and 80 after 2.3, 16 more; the list count is 78.
 
 ## For the user
 
