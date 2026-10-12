@@ -52,6 +52,18 @@ supervisor's rulings during the run, appended below them.
 11. **The designer is the planner's session,** which joins the run as
     designer (development.md, section 6, step 5).
 
+## Rulings during the run
+
+12. **heavy reads pueue's times in UTC** (the supervisor, 2026-10-12;
+    infrastructure, blocked report of 2026-10-12T00:26:00Z). On
+    carbon-forge the local zone is +01:00 (`Etc/UTC`'s zoneinfo is
+    Lisbon's), so heavy failed after every task, before its summary,
+    and every gate through it failed. Step `skein-03.s1`
+    (`skein/03-s1-heavy-times.md`) runs `pueue log` with `TZ=UTC0`. Until
+    it lands, every `heavy` and `land` command runs with `TZ=UTC0`
+    before it, which gives the same times. The machine's zoneinfo is
+    root's, and stays as it is.
+
 ## For the user
 
 - **The native face's future** (decision 4): keep it for the channel over
