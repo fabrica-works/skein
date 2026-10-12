@@ -820,7 +820,9 @@ one place arms and re-arms it (5.4), not every handler.
   already fired is a stale handle, dropped silently.
 - **Randomness comes from injected state:** a `lib::Rng` in each layer's
   state, seeded by the shell from `getrandom`, or by the simulator, which
-  then owns both the clock and the random state.
+  then owns both the clock and the random state. What must not be guessed
+  is drawn from a `lib::CryptoRng`, keyed by a cryptographic seed the
+  shell draws apart (shell.md, section 5), or a world from its own seed.
 
 ## 10. The Rust subset
 

@@ -114,6 +114,11 @@ on the service's own `iterate`.
 - **The seed** comes from `getrandom`, once, at startup; everything random
   after it is drawn from the layers' state. It fails, and the service
   does not start, when the kernel refuses `getrandom`.
+- **The cryptographic seed,** for a service whose layers hold a
+  `CryptoRng` (lib.md, section 8): 32 bytes, drawn from `getrandom` once
+  at startup, beside the seed and never derived from it, and handed to
+  the service's startup as a `Secret`. The service keys each `CryptoRng`
+  from it; a world draws it from its own seed instead.
 
 ## 6. Startup
 
