@@ -7,8 +7,6 @@
 //! `world::check`; what is asserted here does not depend on what rustls
 //! draws from the kernel.
 
-use std::collections::BTreeSet;
-
 use skein_lib::Rng;
 use skein_lib::stream::Fault;
 use skein_tls::client::{Error, Limits, Waiting};
@@ -145,14 +143,14 @@ fn a_retry_and_alpn_in_an_exchange() {
 
 /// The waits the side above closed the client in, over runs closing at
 /// every few iterations.
-fn closes(scenario: &Scenario, seeds: std::ops::Range<u64>) -> (BTreeSet<String>, Vec<Run>) {
-    let mut waits = BTreeSet::new();
+fn closes(scenario: &Scenario, seeds: std::ops::Range<u64>) -> (Vec<Waiting>, Vec<Run>) {
+    let mut waits = Vec::new();
     let mut runs = Vec::new();
     for seed in seeds {
         let mut settings = calm(seed);
         settings.close = Some(seed * 9);
         let run = world::check(scenario, &settings, seed);
-        waits.insert(format!("{:?}", run.closed_while));
+        waits.push(run.closed_while);
         runs.push(run);
     }
     (waits, runs)
@@ -165,9 +163,9 @@ fn closes_in_every_state() {
     truncated.ending = Ending::Truncate;
     let (failed, _) = closes(&truncated, 0..10);
     for wait in [Waiting::Handshaking, Waiting::Room, Waiting::Bytes, Waiting::Above] {
-        assert!(waits.contains(&format!("{wait:?}")), "{wait:?}: {waits:?}");
+        assert!(waits.contains(&wait), "{wait:?}: {waits:?}");
     }
-    assert!(failed.contains(&format!("{:?}", Waiting::Close)), "{failed:?}");
+    assert!(failed.contains(&Waiting::Close), "{failed:?}");
     // A close once the handshake is done sends close_notify (checked by the
     // world): some went; one before it, none.
     assert!(runs.iter().any(|run| run.notified) && runs.iter().any(|run| run.agreed.is_none()));

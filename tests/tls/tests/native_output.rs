@@ -185,8 +185,8 @@ fn key_updates_precede_plaintext_under_the_grant_held() {
         "every observed owed key-update response precedes authenticated data"
     );
     assert_eq!(
-        pair.last_send().expect("observed deferred reply plus maximum16 Send").1,
-        27 + 16 + 22,
+        usize::try_from(pair.last_send().expect("deferred reply plus maximum16 Send").1).expect("record size"),
+        pki::KEY_UPDATE_RECORD + 16 + pki::TLS13_OVERHEAD,
         "pinned rustls coalesces the three valid requests to one authenticated deferred reply"
     );
 }
@@ -229,7 +229,7 @@ fn owed_output_drains_in_order_across_an_older_grant() {
         assert!(pair.up(observed).is_empty());
     }
     let original = pair.output_bytes().expect("observed TLS-owned refusal reservation");
-    assert_eq!(original, 31, "two-byte authenticated warning plus TLS1.2 record overhead");
+    assert_eq!(usize::try_from(original).expect("record size"), pki::TLS12_ALERT_RECORD);
     let winner = pair.answer().expect("observed older full output grant emitted by proxy");
     let native::LowerEvent::Output(OutputUp::Settled { right: first, outcome: OutputOutcome::Granted }) = &winner
     else {
@@ -274,7 +274,10 @@ fn tls12_refusal_precedes_plaintext_under_the_grant_held() {
     assert!(
         pair.down(native::Request::Output(OutputDown::Send { right: upper, bytes: Box::from([b'x'; 16]) })).is_empty()
     );
-    assert_eq!(pair.last_send().expect("observed complete owed+data Send").1, 31 + 16 + 29);
+    assert_eq!(
+        usize::try_from(pair.last_send().expect("complete owed+data Send").1).expect("record size"),
+        pki::TLS12_ALERT_RECORD + 16 + pki::TLS12_OVERHEAD
+    );
     let peer = pair.peer.extracted();
     assert_eq!(peer.alerts, [[1, 100]]);
     assert_eq!(peer.records, [ContentType::Alert, ContentType::ApplicationData], "complete prefix precedes data");

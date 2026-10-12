@@ -201,8 +201,8 @@ impl Harness {
                     let requesting_record = peer.transmit();
                     assert_eq!(
                         requesting_record.len(),
-                        27,
-                        "each of32 observed requesting KeyUpdate records is emitted"
+                        pki::KEY_UPDATE_RECORD,
+                        "each of 32 requesting key update records is emitted"
                     );
                     self.wire.extend(requesting_record);
                 }
@@ -403,14 +403,15 @@ fn payload_intake_and_ciphertext_fit_small_and_large_bounds() {
         for limits in [SMALL, LARGE] {
             let measured = measure(limits, versions, Chain::Leaf, false);
             assert_eq!(measured.failed, None, "{versions:?} {limits:?} {measured:?}");
-            assert!(measured.most > u64::from(limits.read + client::MAX_PLAINTEXT + limits.records + client::FLIGHT));
+            let buffers = if limits == SMALL { 36_870 } else { 113_743 };
+            assert!(measured.most > buffers);
             if limits == LARGE {
                 assert!(measured.sealed >= 40_000, "observed maximal encrypted caller payload: {measured:?}");
                 assert_eq!(
                     measured.sealed,
                     match versions {
-                        Versions::Tls13 => 40_000 + 3 * 22 + 27,
-                        Versions::Tls12 => 31 + 40_000 + 3 * 29,
+                        Versions::Tls13 => 40_000 + 3 * pki::TLS13_OVERHEAD + pki::KEY_UPDATE_RECORD,
+                        Versions::Tls12 => pki::TLS12_ALERT_RECORD + 40_000 + 3 * pki::TLS12_OVERHEAD,
                         Versions::Both => unreachable!("explicit version cases"),
                     },
                     "complete observed requesting-control response plus maximal plaintext: {measured:?}"
@@ -425,8 +426,7 @@ fn big_chain_and_decrypt_error_release_the_clients_heap() {
     for versions in [Versions::Tls12, Versions::Tls13] {
         let measured = measure(LARGE, versions, Chain::Big, false);
         assert_eq!(measured.failed, None, "{measured:?}");
-        let buffers = u64::from(LARGE.read + client::MAX_PLAINTEXT + LARGE.records + client::FLIGHT);
-        assert!(measured.most > buffers + 2 * 38_000, "observed double held decoded chain: {measured:?}");
+        assert!(measured.most > 189_743, "observed double held decoded chain: {measured:?}");
         assert_eq!(measure(LARGE, versions, Chain::Leaf, true).failed, Some(Error::Decrypt));
     }
 }

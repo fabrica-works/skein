@@ -24,7 +24,7 @@ fn certificate(bytes: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn fixture_roots_read_at_startup_share_tls_configuration_and_report_all_skip_counts() {
+fn startup_roots_share_configuration_and_report_skip_counts() {
     let scratch = Scratch::new("tls-startup");
     let path = scratch.path().join("roots.pem");
     let mut text = certificate(pki::ROOT);
@@ -39,9 +39,9 @@ fn fixture_roots_read_at_startup_share_tls_configuration_and_report_all_skip_cou
     };
     let roots = read_trust_roots(&Trust::Machine { ssl_cert_file: Some(path) }, &bounds).expect("bounded PEM roots");
     assert_eq!((roots.malformed, roots.other_blocks), (1, 1));
-    let (_, parsed) = Config::from_der(&roots.certificates, &[b"h2"]).expect("actual fixture root remains");
+    let (_, parsed) = Config::from_der(&roots.certificates, &[b"h2"]).expect("fixture root remains");
     assert_eq!(parsed, Parsed { taken: 1, skipped: 1 });
-    let roots = read_trust_roots(&Trust::Der("fixtures/root.der".into()), &bounds).expect("actual DER file");
+    let roots = read_trust_roots(&Trust::Der("fixtures/root.der".into()), &bounds).expect("DER file");
     let (_, parsed) = Config::from_der(&roots.certificates, &[]).expect("DER root remains");
     assert_eq!(parsed, Parsed { taken: 1, skipped: 0 });
     fs::write(scratch.path().join("empty.pem"), b"no certificate blocks").expect("empty roots bundle");

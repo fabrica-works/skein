@@ -326,7 +326,7 @@ fn until_end(body: &[u8]) -> (Vec<u8>, Call) {
 }
 
 #[test]
-fn a_body_read_to_the_end_is_whole_once_close_notify_ends_it() {
+fn close_notify_makes_a_body_read_to_end_whole() {
     let body = world::text(&mut Rng::new(2), 3_000);
     let (response, call) = until_end(&body);
     let mut connection = Connection::new(call, Vec::new());
@@ -340,7 +340,7 @@ fn a_body_read_to_the_end_is_whole_once_close_notify_ends_it() {
 }
 
 #[test]
-fn a_body_read_to_the_end_cut_without_close_notify_fails_as_invalid() {
+fn truncation_fails_a_body_read_to_end_as_invalid() {
     let body = world::text(&mut Rng::new(3), 3_000);
     let (response, call) = until_end(&body);
     let mut connection = Connection::new(call, Vec::new());
