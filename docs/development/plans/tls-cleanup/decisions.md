@@ -63,6 +63,15 @@ supervisor's rulings during the run, appended below them.
     it lands, every `heavy` and `land` command runs with `TZ=UTC0`
     before it, which gives the same times. The machine's zoneinfo is
     root's, and stays as it is.
+13. **2.1 updates the users of `Pair`'s peer** (the supervisor,
+    2026-10-12; plan defect, blocked report of 2026-10-12T00:27:12Z).
+    2.1's Shape replaces `Pair`'s two `Option`s with `Peer`, and its
+    Files allowed `native_output.rs`'s three builders only, while 18
+    lines there read `pair.server` or `pair.extracted`. 2.1 changes
+    those 18 lines to read the `Peer`, by default through four
+    accessors on `Peer` (`02-tls-world.md`, 2.1's Shape). No assertion's
+    expected value and no test's name changes; an `expect` message on
+    those lines goes with the `.expect` it belonged to.
 
 ## For the user
 

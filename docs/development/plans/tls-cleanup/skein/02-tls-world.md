@@ -52,7 +52,8 @@ Files: new `tests/tls/src/records.rs`, `tests/tls/src/meter.rs`;
   handshake.rs}`; `tests/tls/Cargo.toml` (`skein-heap` from
   `[dev-dependencies]` to `[dependencies]`; line 12's comment loses
   "actual"); `tests/tls/tests/native_output.rs` (its three ready-pair
-  builders only).
+  builders, and the 18 lines that read `pair.server` or
+  `pair.extracted`, which read `Pair`'s `Peer` instead: ruling 13).
 Shape:
 
   ```rust
@@ -80,6 +81,14 @@ Shape:
   impl Pair {
       /// A pair past `Ready`, with LIMITS.
       pub fn ready(server: &pki::Server) -> Pair;
+  }
+  impl Peer {
+      /// rustls's server; panics on `Extracted` (ruling 13's default).
+      pub fn rustls(&self) -> &Server;
+      pub fn rustls_mut(&mut self) -> &mut Server;
+      /// The TLS 1.2 peer; panics on `Rustls`.
+      pub fn extracted(&self) -> &Tls12;
+      pub fn extracted_mut(&mut self) -> &mut Tls12;
   }
   ```
 
