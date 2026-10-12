@@ -31,3 +31,18 @@ enum Shared {
 record OneByteItems {
     items: list 4 Shared
 }
+
+record OptionalPayload {
+    data: option bytes 4
+}
+
+enum BoxedChoice {
+    payload: boxed OptionalPayload
+    inline: OptionalPayload
+    empty
+}
+
+enum InlineChoice {
+    payload: OptionalPayload
+    empty
+}

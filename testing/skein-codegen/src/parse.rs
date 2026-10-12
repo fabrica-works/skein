@@ -156,13 +156,18 @@ impl Parser {
         while self.peek() != Some("}") {
             let variant_line = self.line();
             let variant = self.name()?;
+            let mut boxed = false;
             let record = if self.peek() == Some(":") {
                 self.take()?;
+                if self.peek() == Some("boxed") {
+                    self.take()?;
+                    boxed = true;
+                }
                 Some(self.name()?)
             } else {
                 None
             };
-            variants.push(Variant { line: variant_line, name: variant, record });
+            variants.push(Variant { line: variant_line, name: variant, record, boxed });
             if self.peek() == Some(",") {
                 self.take()?;
             }

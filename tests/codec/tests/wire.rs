@@ -152,6 +152,44 @@ mod tests {
         assert_eq!(&*writer.finish(), &[1]);
     }
 
+    fn optional_payload(data: Option<&[u8]>) -> skein_codec_tests::lints::OptionalPayload {
+        use skein_codec_tests::lints::{OptionalPayload, OptionalPayloadParts};
+        OptionalPayload::new(&LINT_CEILINGS, OptionalPayloadParts { data: data.map(Box::from) }).expect("within limits")
+    }
+
+    #[test]
+    fn a_boxed_variant_encodes_as_its_unboxed_twin() {
+        use skein_codec_tests::lints::{BoxedChoice, InlineChoice};
+        let boxed = BoxedChoice::new(&LINT_CEILINGS, BoxedChoice::Payload(Box::new(optional_payload(Some(b"x")))))
+            .expect("within limits");
+        let wire = [0, 1, 0, 0, 0, 1, b'x'];
+        let mut writer = Writer::new(7);
+        boxed.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), wire);
+        assert_eq!(BoxedChoice::decode(&LINT_CEILINGS, &mut Reader::new(&wire)), Ok(boxed));
+        assert_eq!(
+            InlineChoice::decode(&LINT_CEILINGS, &mut Reader::new(&wire)),
+            Ok(InlineChoice::Payload(optional_payload(Some(b"x"))))
+        );
+    }
+
+    #[test]
+    fn a_boxed_variants_heap_counts_its_records_size() {
+        use skein_codec_tests::lints::{BoxedChoice, InlineChoice, OptionalPayload};
+        let record_size = u64::try_from(size_of::<OptionalPayload>()).expect("size fits u64");
+        assert_eq!(InlineChoice::worst_case_heap(&LINT_CEILINGS), Some(4));
+        assert_eq!(BoxedChoice::worst_case_heap(&LINT_CEILINGS), Some(record_size.checked_add(4).expect("heap size")));
+    }
+
+    #[test]
+    fn an_optional_bytes_field_refuses_values_past_its_bound() {
+        use skein_codec_tests::lints::{OptionalPayload, OptionalPayloadParts, Path};
+        let problem =
+            OptionalPayload::new(&LINT_CEILINGS, OptionalPayloadParts { data: Some(Box::from(&b"12345"[..])) })
+                .expect_err("beyond its bound");
+        assert_eq!((problem.path, problem.reason), (Path::OptionalPayloadData, Reason::Bound));
+    }
+
     #[test]
     fn grouped_boolean_fields_keep_their_wire_order() {
         let parts =

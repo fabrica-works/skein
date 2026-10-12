@@ -312,14 +312,14 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
                 .variants
                 .iter()
                 .take_while(|earlier| *earlier != variant)
-                .any(|earlier| earlier.record.as_ref() == Some(record))
+                .any(|earlier| earlier.record.as_ref() == Some(record) && earlier.boxed == variant.boxed)
             {
                 continue;
             }
             let patterns = enumeration
                 .variants
                 .iter()
-                .filter(|candidate| candidate.record.as_ref() == Some(record))
+                .filter(|candidate| candidate.record.as_ref() == Some(record) && candidate.boxed == variant.boxed)
                 .map(|candidate| format!("Self::{}(record)", emit_limits::pascal(&candidate.name)))
                 .collect::<Vec<_>>()
                 .join(" | ");
@@ -354,9 +354,9 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
                 } else {
                     "?"
                 };
-                out.push_str(&format!(
-                    "            {tag} => Self::{name}({record}::decode_from(limits, reader){suffix}),\n"
-                ));
+                let payload = format!("{record}::decode_from(limits, reader){suffix}");
+                let payload = if variant.boxed { format!("Box::new({payload})") } else { payload };
+                out.push_str(&format!("            {tag} => Self::{name}({payload}),\n"));
             }
             None => out.push_str(&format!("            {tag} => Self::{name},\n")),
         }

@@ -2,7 +2,10 @@
 
 //! Fixed-rule golden values and generated round trips (codec.md, section 6).
 
-use crate::{Declaration, Enumeration, Golden, Record, Schema, Type, Variant, emit_limits, emit_types, uses_box};
+use crate::{
+    Declaration, Enumeration, Golden, Record, Schema, Type, Variant, emit_limits, emit_types, has_boxed_variants,
+    uses_box,
+};
 
 fn declaration<'a>(schema: &'a Schema, name: &str) -> &'a Declaration {
     schema
@@ -159,7 +162,9 @@ fn variant_expr(enumeration: &Enumeration, variant: &Variant, full: bool, schema
     match &variant.record {
         Some(record) => match declaration(schema, record) {
             Declaration::Record(record) => {
-                format!("{}::{name}({})", enumeration.name, record_expr(record, full, schema))
+                let value = record_expr(record, full, schema);
+                let value = if variant.boxed { format!("Box::new({value})") } else { value };
+                format!("{}::{name}({value})", enumeration.name)
             }
             Declaration::Enum(_) => unreachable!("a variant only holds a record"),
         },
@@ -256,6 +261,7 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) -> Vec<Golden> {
         Declaration::Record(record) => record.fields.iter().any(|field| uses_box(&field.ty)),
         Declaration::Enum(_) => false,
     }) || has_bound_tests
+        || has_boxed_variants(schema)
     {
         out.push_str("    use alloc::boxed::Box;\n");
     }

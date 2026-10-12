@@ -9,6 +9,7 @@ pub struct Limits {
     pub host_tool_payload: u32,
     pub payload_data: u32,
     pub one_byte_items_items: u32,
+    pub optional_payload_data_some: u32,
 }
 
 /// The schema's maximum limits.
@@ -16,6 +17,7 @@ pub const CEILINGS: Limits = Limits {
     host_tool_payload: 10_000,
     payload_data: 4,
     one_byte_items_items: 4,
+    optional_payload_data_some: 4,
 };
 
 /// A field or tag that caused a codec problem.
@@ -53,6 +55,14 @@ pub enum Path {
     OneByteItemsItems,
     /// Bytes after `OneByteItems`.
     OneByteItemsTail,
+    /// The `data` field of `OptionalPayload`.
+    OptionalPayloadData,
+    /// Bytes after `OptionalPayload`.
+    OptionalPayloadTail,
+    /// The tag of `BoxedChoice`.
+    BoxedChoiceTag,
+    /// The tag of `InlineChoice`.
+    InlineChoiceTag,
 }
 
 /// A decoding or bound failure at a schema path.
@@ -122,6 +132,7 @@ impl HostTool {
         if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         if self.payload.len() > usize::try_from(limits.host_tool_payload.min(CEILINGS.host_tool_payload)).expect("u32 fits usize") { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
@@ -162,6 +173,7 @@ impl Boundless {
         if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -200,6 +212,7 @@ impl Payload {
         if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         if self.data.len() > usize::try_from(limits.payload_data.min(CEILINGS.payload_data)).expect("u32 fits usize") { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
@@ -240,6 +253,7 @@ impl OtherPayload {
         if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -273,6 +287,7 @@ impl Shared {
         if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -311,10 +326,112 @@ impl OneByteItems {
         if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         if self.items.capacity() > limits.one_byte_items_items.min(CEILINGS.one_byte_items_items) { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         for item_0 in self.items.as_slice() {
         item_0.check(limits)?;
         }
+        Ok(())
+    }
+}
+
+/// Movable fields of `OptionalPayload`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OptionalPayloadParts {
+    /// The `data` field.
+    pub data: Option<Box<[u8]>>,
+}
+
+/// `OptionalPayload` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OptionalPayload {
+    data: Option<Box<[u8]>>,
+}
+
+impl OptionalPayload {
+    /// Makes a value within the given limits.
+    pub fn new(limits: &Limits, parts: OptionalPayloadParts) -> Result<Self, Problem> {
+        let OptionalPayloadParts { data } = parts;
+        let value = Self { data };
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    /// Reads the `data` field.
+    #[must_use]
+    pub fn data(&self) -> &Option<Box<[u8]>> { &self.data }
+
+    /// Moves the fields out without copying.
+    #[must_use]
+    pub fn into_parts(self) -> OptionalPayloadParts { OptionalPayloadParts { data: self.data } }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
+        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        if let Some(some_0) = self.data.as_ref() && some_0.len() > usize::try_from(limits.optional_payload_data_some.min(CEILINGS.optional_payload_data_some)).expect("u32 fits usize") { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
+/// `BoxedChoice` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum BoxedChoice {
+    /// `payload` carrying `Box<OptionalPayload>`.
+    Payload(Box<OptionalPayload>),
+    /// `inline` carrying `OptionalPayload`.
+    Inline(OptionalPayload),
+    /// `empty` without a payload.
+    Empty,
+}
+
+impl BoxedChoice {
+    /// Checks the payload against the given limits.
+    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        match self {
+            Self::Payload(record) => OptionalPayload::check(record, limits),
+            Self::Inline(record) => OptionalPayload::check(record, limits),
+            Self::Empty => Ok(()),
+        }?;
+        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
+        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
+/// `InlineChoice` in this codec family.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum InlineChoice {
+    /// `payload` carrying `OptionalPayload`.
+    Payload(OptionalPayload),
+    /// `empty` without a payload.
+    Empty,
+}
+
+impl InlineChoice {
+    /// Checks the payload against the given limits.
+    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
+        value.check(limits)?;
+        Ok(value)
+    }
+
+    fn check(&self, limits: &Limits) -> Result<(), Problem> {
+        match self {
+            Self::Payload(record) => OptionalPayload::check(record, limits),
+            Self::Empty => Ok(()),
+        }?;
+        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
+        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
+        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
@@ -539,8 +656,126 @@ impl OneByteItems {
     }
 }
 
+impl OptionalPayload {
+    /// Measures this record's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        let mut size = 0_u32;
+        let field_data = &self.data;
+        size = size.checked_add(1).expect("schema ceilings fit u32");
+        if let Some(some_0) = field_data {
+        size = size.checked_add(4).expect("schema ceilings fit u32");
+        size = size.checked_add(u32::try_from(some_0.len()).expect("field ceiling fits u32")).expect("schema ceilings fit u32");
+        }
+        size
+    }
+
+    /// Writes into a writer with room for the measured bytes.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        let field_data = &self.data;
+        match field_data {
+            Some(some_0) => {
+                writer.put(&[1_u8])?;
+        writer.put(&u32::try_from(some_0.len()).expect("field ceiling fits u32").to_be_bytes())?;
+        writer.put(some_0.as_ref())?;
+            }
+            None => writer.put(&[0_u8])?,
+        }
+        Ok(())
+    }
+
+    /// Reads a whole record and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::OptionalPayloadTail, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let decoded_data = match reader.u8().ok_or(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some({ let length = match skein_codec::read_len(reader, limits.optional_payload_data_some.min(CEILINGS.optional_payload_data_some)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::OptionalPayloadData, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Short })?) }), _ => return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Tag }) };
+        Self::new(limits, OptionalPayloadParts { data: decoded_data })
+    }
+}
+
+impl BoxedChoice {
+    /// Measures this variant's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        match self {
+            Self::Payload(record) => 1_u32.checked_add(OptionalPayload::measure(record)).expect("schema ceilings fit u32"),
+            Self::Inline(record) => 1_u32.checked_add(OptionalPayload::measure(record)).expect("schema ceilings fit u32"),
+            Self::Empty => 1,
+        }
+    }
+
+    /// Writes this variant's tag and payload.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        match self {
+            Self::Payload(record) => { writer.put(&[0_u8])?; record.encode(writer)?; }
+            Self::Inline(record) => { writer.put(&[1_u8])?; record.encode(writer)?; }
+            Self::Empty => writer.put(&[2_u8])?,
+        }
+        Ok(())
+    }
+
+    /// Reads a whole variant and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::BoxedChoiceTag, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let tag = reader.u8().ok_or(Problem { path: Path::BoxedChoiceTag, reason: skein_codec::Reason::Short })?;
+        let value = match tag {
+            0 => Self::Payload(Box::new(OptionalPayload::decode_from(limits, reader)?)),
+            1 => Self::Inline(OptionalPayload::decode_from(limits, reader)?),
+            2 => Self::Empty,
+            _ => return Err(Problem { path: Path::BoxedChoiceTag, reason: skein_codec::Reason::Tag }),
+        };
+        Self::new(limits, value)
+    }
+}
+
+impl InlineChoice {
+    /// Measures this variant's wire encoding.
+    #[must_use]
+    pub fn measure(&self) -> u32 {
+        match self {
+            Self::Payload(record) => 1_u32.checked_add(OptionalPayload::measure(record)).expect("schema ceilings fit u32"),
+            Self::Empty => 1,
+        }
+    }
+
+    /// Writes this variant's tag and payload.
+    pub fn encode(&self, writer: &mut skein_lib::Writer) -> Result<(), skein_lib::Overflow> {
+        match self {
+            Self::Payload(record) => { writer.put(&[0_u8])?; record.encode(writer)?; }
+            Self::Empty => writer.put(&[1_u8])?,
+        }
+        Ok(())
+    }
+
+    /// Reads a whole variant and refuses trailing bytes.
+    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let value = Self::decode_from(limits, reader)?;
+        if !reader.is_empty() { return Err(Problem { path: Path::InlineChoiceTag, reason: skein_codec::Reason::Trailing }); }
+        Ok(value)
+    }
+
+    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        let tag = reader.u8().ok_or(Problem { path: Path::InlineChoiceTag, reason: skein_codec::Reason::Short })?;
+        let value = match tag {
+            0 => Self::Payload(OptionalPayload::decode_from(limits, reader)?),
+            1 => Self::Empty,
+            _ => return Err(Problem { path: Path::InlineChoiceTag, reason: skein_codec::Reason::Tag }),
+        };
+        Self::new(limits, value)
+    }
+}
+
 fn limits_valid(limits: &Limits) -> bool {
-    limits.host_tool_payload <= CEILINGS.host_tool_payload && limits.payload_data <= CEILINGS.payload_data && limits.one_byte_items_items <= CEILINGS.one_byte_items_items
+    limits.host_tool_payload <= CEILINGS.host_tool_payload && limits.payload_data <= CEILINGS.payload_data && limits.one_byte_items_items <= CEILINGS.one_byte_items_items && limits.optional_payload_data_some <= CEILINGS.optional_payload_data_some
 }
 
 impl HostTool {
@@ -677,6 +912,68 @@ impl OneByteItems {
     }
 }
 
+impl OptionalPayload {
+    /// Maximum encoded bytes under these limits.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut size = 0_u64;
+        size = size.checked_add(1_u64.checked_add(4_u64.checked_add(u64::from(limits.optional_payload_data_some))?)?)?;
+        Some(size)
+    }
+
+    /// Maximum heap held by one decoded value under these limits.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut heap = 0_u64;
+        heap = heap.checked_add(u64::from(limits.optional_payload_data_some))?;
+        Some(heap)
+    }
+}
+
+impl BoxedChoice {
+    /// Maximum encoded bytes among variants.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut biggest = 0_u64;
+        biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
+        biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
+        1_u64.checked_add(biggest)
+    }
+
+    /// Maximum heap held by any decoded variant.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut biggest = 0_u64;
+        biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?.checked_add(u64::try_from(size_of::<OptionalPayload>()).ok()?)?);
+        biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
+        Some(biggest)
+    }
+}
+
+impl InlineChoice {
+    /// Maximum encoded bytes among variants.
+    #[must_use]
+    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut biggest = 0_u64;
+        biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
+        1_u64.checked_add(biggest)
+    }
+
+    /// Maximum heap held by any decoded variant.
+    #[must_use]
+    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
+        if !limits_valid(limits) { return None; }
+        let mut biggest = 0_u64;
+        biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
+        Some(biggest)
+    }
+}
+
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
@@ -688,6 +985,9 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(OtherPayload::worst_case_bytes(limits)?);
     biggest = biggest.max(Shared::worst_case_bytes(limits)?);
     biggest = biggest.max(OneByteItems::worst_case_bytes(limits)?);
+    biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
+    biggest = biggest.max(BoxedChoice::worst_case_bytes(limits)?);
+    biggest = biggest.max(InlineChoice::worst_case_bytes(limits)?);
     Some(biggest)
 }
 
@@ -702,12 +1002,15 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     biggest = biggest.max(OtherPayload::worst_case_heap(limits)?);
     biggest = biggest.max(Shared::worst_case_heap(limits)?);
     biggest = biggest.max(OneByteItems::worst_case_heap(limits)?);
+    biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
+    biggest = biggest.max(BoxedChoice::worst_case_heap(limits)?);
+    biggest = biggest.max(InlineChoice::worst_case_heap(limits)?);
     Some(biggest)
 }
 
 #[cfg(test)]
 mod golden_tests {
-    use super::{CEILINGS, Path, HostTool, HostToolParts, Boundless, BoundlessParts, Payload, PayloadParts, OtherPayload, OtherPayloadParts, Shared, OneByteItems, OneByteItemsParts};
+    use super::{CEILINGS, Path, HostTool, HostToolParts, Boundless, BoundlessParts, Payload, PayloadParts, OtherPayload, OtherPayloadParts, Shared, OneByteItems, OneByteItemsParts, OptionalPayload, OptionalPayloadParts, BoxedChoice, InlineChoice};
     use alloc::boxed::Box;
 
     #[test]
@@ -888,6 +1191,126 @@ mod golden_tests {
         value.encode(&mut writer).expect("measured room");
         assert_eq!(writer.finish().as_ref(), golden);
         assert_eq!(OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_optional_payload_smallest() {
+        let value = OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings");
+        let golden: &[u8] = &[0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(OptionalPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn record_optional_payload_full() {
+        let value = OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings");
+        let golden: &[u8] = &[1, 0, 0, 0, 3, 0, 127, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(OptionalPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_boxed_choice_payload_smallest() {
+        let value = BoxedChoice::Payload(Box::new(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings")));
+        let golden: &[u8] = &[0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_boxed_choice_payload_full() {
+        let value = BoxedChoice::Payload(Box::new(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings")));
+        let golden: &[u8] = &[0, 1, 0, 0, 0, 3, 0, 127, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_boxed_choice_inline_smallest() {
+        let value = BoxedChoice::Inline(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings"));
+        let golden: &[u8] = &[1, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_boxed_choice_inline_full() {
+        let value = BoxedChoice::Inline(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"));
+        let golden: &[u8] = &[1, 1, 0, 0, 0, 3, 0, 127, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_boxed_choice_empty_smallest() {
+        let value = BoxedChoice::Empty;
+        let golden: &[u8] = &[2];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_boxed_choice_empty_full() {
+        let value = BoxedChoice::Empty;
+        let golden: &[u8] = &[2];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_inline_choice_payload_smallest() {
+        let value = InlineChoice::Payload(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings"));
+        let golden: &[u8] = &[0, 0];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_inline_choice_payload_full() {
+        let value = InlineChoice::Payload(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"));
+        let golden: &[u8] = &[0, 1, 0, 0, 0, 3, 0, 127, 255];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_inline_choice_empty_smallest() {
+        let value = InlineChoice::Empty;
+        let golden: &[u8] = &[1];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
+    }
+
+    #[test]
+    fn enum_inline_choice_empty_full() {
+        let value = InlineChoice::Empty;
+        let golden: &[u8] = &[1];
+        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
+        value.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), golden);
+        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
     }
 
     #[test]

@@ -84,7 +84,13 @@ fn emit_enum(enumeration: &Enumeration, out: &mut String) {
     out.push_str(&format!("        1_u64.checked_add(biggest)\n    }}\n\n    /// Maximum heap held by any decoded variant.\n    #[must_use]\n    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {{\n        if !limits_valid(limits) {{ return None; }}\n        let {biggest_mut}biggest = 0_u64;\n"));
     for variant in &enumeration.variants {
         if let Some(record) = &variant.record {
-            out.push_str(&format!("        biggest = biggest.max({record}::worst_case_heap(limits)?);\n"));
+            let heap = format!("{record}::worst_case_heap(limits)?");
+            let heap = if variant.boxed {
+                format!("{heap}.checked_add(u64::try_from(size_of::<{record}>()).ok()?)?")
+            } else {
+                heap
+            };
+            out.push_str(&format!("        biggest = biggest.max({heap});\n"));
         }
     }
     out.push_str("        Some(biggest)\n    }\n}\n\n");

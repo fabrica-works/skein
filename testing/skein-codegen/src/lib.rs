@@ -7,6 +7,7 @@ extern crate alloc;
 
 mod check;
 mod emit_codec;
+mod emit_functions;
 mod emit_limits;
 mod emit_tests;
 mod emit_types;
@@ -61,6 +62,8 @@ pub struct Variant {
     pub line: usize,
     pub name: String,
     pub record: Option<String>,
+    /// Whether the record is held in a box without changing its wire bytes.
+    pub boxed: bool,
 }
 
 /// A field's bounded wire type.
@@ -141,7 +144,7 @@ pub fn generate(schema: &Schema) -> Output {
         })
         .flatten();
     let types = fields.map(|field| &field.ty).collect::<Vec<_>>();
-    if types.iter().any(|ty| uses_box(ty)) {
+    if types.iter().any(|ty| uses_box(ty)) || has_boxed_variants(schema) {
         rust.push_str("use alloc::boxed::Box;\n");
     }
     if types.iter().any(|ty| uses_list(ty)) {
@@ -152,6 +155,17 @@ pub fn generate(schema: &Schema) -> Output {
     emit_types::emit(schema, &mut rust);
     emit_codec::emit(schema, &mut rust);
     emit_worst::emit(schema, &mut rust);
+    emit_functions::split_worst_functions(&mut rust);
     let goldens = emit_tests::emit(schema, &mut rust);
     Output { rust, goldens }
 }
+
+fn has_boxed_variants(schema: &Schema) -> bool {
+    schema.declarations.iter().any(|declaration| match declaration {
+        Declaration::Enum(enumeration) => enumeration.variants.iter().any(|variant| variant.boxed),
+        Declaration::Record(_) => false,
+    })
+}
+
+#[cfg(test)]
+mod tests;

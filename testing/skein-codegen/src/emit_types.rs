@@ -102,16 +102,23 @@ fn emit_check(ty: &Type, value: &str, bound_name: &str, path: &str, depth: usize
             ) {
                 return;
             }
-            out.push_str(&format!("        if let Some({item_name}) = {value}.as_ref() {{\n"));
+            let mut inner = String::new();
             emit_check(
                 item,
                 &item_name,
                 &format!("{bound_name}_some"),
                 path,
                 depth.checked_add(1).expect("schema nesting fits usize"),
-                out,
+                &mut inner,
             );
-            out.push_str("        }\n");
+            if inner.lines().count() == 1 && inner.starts_with("        if ") {
+                out.push_str(&format!(
+                    "        if let Some({item_name}) = {value}.as_ref() && {}",
+                    inner.trim_start().strip_prefix("if ").expect("one condition")
+                ));
+            } else {
+                out.push_str(&format!("        if let Some({item_name}) = {value}.as_ref() {{\n{inner}        }}\n"));
+            }
         }
         Type::Named(_) => out.push_str(&format!("        {value}.check(limits)?;\n")),
         Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration | Type::Fixed(_) => {}
@@ -212,6 +219,7 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
         let name = emit_limits::pascal(&variant.name);
         match &variant.record {
             Some(record) => {
+                let record = if variant.boxed { format!("Box<{record}>") } else { record.clone() };
                 out.push_str(&format!("    /// `{}` carrying `{}`.\n    {name}({record}),\n", variant.name, record));
             }
             None => out.push_str(&format!("    /// `{}` without a payload.\n    {name},\n", variant.name)),
@@ -237,14 +245,14 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
                 .variants
                 .iter()
                 .take_while(|earlier| *earlier != variant)
-                .any(|earlier| earlier.record.as_ref() == Some(record))
+                .any(|earlier| earlier.record.as_ref() == Some(record) && earlier.boxed == variant.boxed)
             {
                 continue;
             }
             let patterns = enumeration
                 .variants
                 .iter()
-                .filter(|candidate| candidate.record.as_ref() == Some(record))
+                .filter(|candidate| candidate.record.as_ref() == Some(record) && candidate.boxed == variant.boxed)
                 .map(|candidate| format!("Self::{}(record)", emit_limits::pascal(&candidate.name)))
                 .collect::<Vec<_>>()
                 .join(" | ");
