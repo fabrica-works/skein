@@ -10,7 +10,7 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_io::{Error, Limits};
 use skein_lib::stream::Delimiter;
 use skein_lib::{Duration, Rng, Time};
@@ -34,12 +34,13 @@ pub const fn limits(sockets: u32) -> Limits {
         accepts: 1,
         backlog: 2,
         close_timeout: Duration::from_secs(1),
+        names: 2,
         retry: Duration::from_millis(10),
     }
 }
 
 /// When every scenario must be over, in simulated time.
-const END: Time = Time::from_nanos(60_000_000_000);
+pub const END: Time = Time::from_nanos(60_000_000_000);
 
 const fn ms(n: u64) -> Time {
     Time::from_nanos(n * 1_000_000)
@@ -48,7 +49,7 @@ const fn ms(n: u64) -> Time {
 /// `127.0.0.1:port`.
 #[must_use]
 pub fn local(port: u16) -> Addr {
-    SocketAddr::from((Ipv4Addr::LOCALHOST, port))
+    Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
 }
 
 /// Whether the configuration injects no fault, so that every stream holds.

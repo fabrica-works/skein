@@ -16,6 +16,8 @@ use crate::owner::{Conn, Owner};
 /// plan's name.
 #[derive(Clone)]
 pub enum Expect {
+    /// A listener fails with one of the named errors.
+    ListenFails { at: usize, serve: &'static str, errors: &'static [Error], by: Time },
     /// Safety: what it received is a prefix of `bytes`, at every
     /// observation. Liveness: all of them by `by`, unless its stream broke.
     Receives { at: usize, conn: &'static str, bytes: Box<[u8]>, by: Time },
@@ -86,6 +88,17 @@ impl Referee {
                 whole || closed
             }
             Expect::Closed { conn: name, .. } => conn(name).is_some_and(|conn| conn.closed_at.is_some()),
+            Expect::ListenFails { serve, errors, .. } => {
+                let Some(listener) = owner.listeners.values().find(|listener| listener.serve.name == *serve) else {
+                    return false;
+                };
+                if let Some(error) = listener.error {
+                    assert!(errors.contains(&error), "seed {seed}: {serve} failed with {error:?}, not {errors:?}");
+                    true
+                } else {
+                    false
+                }
+            }
             Expect::Fails { conn: name, errors, .. } => {
                 let Some(conn) = conn(name) else { return false };
                 if let Some(error) = conn.error {
@@ -128,7 +141,8 @@ impl Referee {
                 | Expect::Receives { .. }
                 | Expect::Fails { .. }
                 | Expect::Holds { .. }
-                | Expect::Ends { .. } => false,
+                | Expect::Ends { .. }
+                | Expect::ListenFails { .. } => false,
             };
             let reached = due.is_none_or(|now| expect.deadline() <= now);
             if optional && reached && owners[expect.at()].conn(expect.conn()).is_none() {
@@ -178,7 +192,8 @@ impl Expect {
             | Expect::Closed { at, .. }
             | Expect::Fails { at, .. }
             | Expect::Holds { at, .. }
-            | Expect::Ends { at, .. } => *at,
+            | Expect::Ends { at, .. }
+            | Expect::ListenFails { at, .. } => *at,
         }
     }
 
@@ -190,6 +205,7 @@ impl Expect {
             | Expect::Fails { conn, .. }
             | Expect::Holds { conn, .. }
             | Expect::Ends { conn, .. } => conn,
+            Expect::ListenFails { serve, .. } => serve,
         }
     }
 
@@ -199,7 +215,8 @@ impl Expect {
             | Expect::Prefix { by, .. }
             | Expect::Closed { by, .. }
             | Expect::Fails { by, .. }
-            | Expect::Ends { by, .. } => *by,
+            | Expect::Ends { by, .. }
+            | Expect::ListenFails { by, .. } => *by,
             Expect::Holds { until, .. } => *until,
         }
     }
@@ -215,7 +232,9 @@ impl fmt::Debug for Expect {
                 write!(f, "{conn}@{at} receives a prefix of {} bytes, closed by {when} ns", bytes.len())
             }
             Expect::Closed { optional, .. } => write!(f, "{conn}@{at} closed by {when} ns (optional: {optional})"),
-            Expect::Fails { errors, .. } => write!(f, "{conn}@{at} fails with one of {errors:?} by {when} ns"),
+            Expect::ListenFails { errors, .. } | Expect::Fails { errors, .. } => {
+                write!(f, "{conn}@{at} fails with one of {errors:?} by {when} ns")
+            }
             Expect::Holds { most, .. } => write!(f, "{conn}@{at} hands io no more than {most} bytes until {when} ns"),
             Expect::Ends { .. } => write!(f, "{conn}@{at} hears End, never Failed, by {when} ns"),
         }

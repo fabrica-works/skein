@@ -7,7 +7,7 @@ use alloc::boxed::Box;
 
 use skein_lib::{Time, Token};
 
-use super::{Kind, Rig, limits, listening, local, owner};
+use super::{Kind, Rig, addr, limits, listening, local, owner};
 use crate::kernel::{Done, Error as Kernel, Fd, Op};
 use crate::{Error, Event, Limits, Request};
 
@@ -17,7 +17,7 @@ const ACCEPTED: Fd = Fd::new(4);
 #[test]
 fn a_listener_is_made_bound_and_listening_then_told_its_address() {
     let mut rig = Rig::new(limits());
-    let mut out = rig.down(Request::Listen { owner: owner(1), addr: local(0) });
+    let mut out = rig.down(Request::Listen { owner: owner(1), addr: addr(0) });
     let socket = out.take(Kind::Socket);
     out.nothing();
     let mut out = rig.complete(socket, Ok(Done::Fd(LISTENER)));
@@ -32,7 +32,7 @@ fn a_listener_is_made_bound_and_listening_then_told_its_address() {
     assert_eq!(accept.kind, Op::Accept { fd: LISTENER }, "the first accept is armed at once");
     match out.events.as_slice() {
         [Event::Listening { owner: told, addr, .. }] => {
-            assert_eq!((*told, *addr), (owner(1), local(40001)), "port 0 is told resolved");
+            assert_eq!((*told, *addr), (owner(1), crate::Addr::Ip(local(40001))), "port 0 is told resolved");
         }
         other => panic!("Listening: {other:?}"),
     }
@@ -42,7 +42,7 @@ fn a_listener_is_made_bound_and_listening_then_told_its_address() {
 fn a_listener_that_cannot_be_made_is_told_why_and_closed_without_a_close() {
     for (error, told) in [(Kernel::TooManyOpenFiles, Error::Busy), (Kernel::NoBufferSpace, Error::Busy)] {
         let mut rig = Rig::new(limits());
-        let socket = rig.down(Request::Listen { owner: owner(1), addr: local(0) }).take(Kind::Socket);
+        let socket = rig.down(Request::Listen { owner: owner(1), addr: addr(0) }).take(Kind::Socket);
         let out = rig.complete(socket, Err(error));
         assert_eq!(out.events, [Event::Failed { owner: owner(1), error: told }, Event::Closed { owner: owner(1) }]);
         assert!(out.subs.is_empty(), "no descriptor was made, so none is closed");
@@ -54,7 +54,7 @@ fn a_listener_that_cannot_be_made_is_told_why_and_closed_without_a_close() {
 fn a_listener_that_cannot_bind_or_listen_is_told_then_closed() {
     for at in [Kind::Bind, Kind::Listen] {
         let mut rig = Rig::new(limits());
-        let socket = rig.down(Request::Listen { owner: owner(1), addr: local(0) }).take(Kind::Socket);
+        let socket = rig.down(Request::Listen { owner: owner(1), addr: addr(0) }).take(Kind::Socket);
         let mut pending = rig.complete(socket, Ok(Done::Fd(LISTENER))).take(Kind::Bind);
         if at == Kind::Listen {
             pending = rig.complete(pending, Ok(Done::Bound(local(40001)))).take(Kind::Listen);
@@ -74,7 +74,7 @@ fn announced(rig: &mut Rig, accept: crate::kernel::Submit, fd: Fd) -> Token {
     assert!(out.subs.is_empty(), "no accept is armed until the owner answers");
     match out.events.as_slice() {
         [Event::Accepted { owner: told, socket, peer }] => {
-            assert_eq!((*told, *peer), (owner(1), local(50000)), "announced to the listener's owner");
+            assert_eq!((*told, *peer), (owner(1), crate::Addr::Ip(local(50000))), "announced to the listener's owner");
             *socket
         }
         other => panic!("Accepted: {other:?}"),
@@ -205,7 +205,7 @@ fn an_accept_error_io_cannot_retry_stops_the_listener() {
 fn the_accept_batch_is_shared_by_every_listener_in_an_iteration() {
     let mut rig = Rig::new(Limits { sockets: 4, accepts: 1, ..limits() });
     let (_first, _addr, _accept) = listening(&mut rig, owner(1), LISTENER);
-    let socket = rig.down(Request::Listen { owner: owner(2), addr: local(0) }).take(Kind::Socket);
+    let socket = rig.down(Request::Listen { owner: owner(2), addr: addr(0) }).take(Kind::Socket);
     let bind = rig.complete(socket, Ok(Done::Fd(Fd::new(5)))).take(Kind::Bind);
     let listen = rig.complete(bind, Ok(Done::Bound(local(40002)))).take(Kind::Listen);
     let out = rig.complete(listen, Ok(Done::Nothing));
@@ -236,7 +236,7 @@ fn a_socket_accepted_with_no_slot_left_is_discarded() {
     let mut rig = Rig::new(Limits { sockets: 2, ..limits() });
     let (_listener, _addr, accept) = listening(&mut rig, owner(1), LISTENER);
     // A connect takes the last slot while the accept is in flight.
-    let _socket = rig.down(Request::Connect { owner: owner(2), addr: local(80) }).take(Kind::Socket);
+    let _socket = rig.down(Request::Connect { owner: owner(2), addr: addr(80) }).take(Kind::Socket);
     let mut out = rig.complete(accept, Ok(Done::Accepted { fd: ACCEPTED, peer: local(50000) }));
     assert!(out.events.is_empty(), "nothing announced");
     let discard = out.take(Kind::Close);

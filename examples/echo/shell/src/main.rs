@@ -90,7 +90,7 @@ fn run(configuration: &Configuration) -> Result<(), String> {
     let operations = service::operations(limits).ok_or("the ring's size is past a u32")?;
     let mut kernel = Kernel::open(Config { operations }).map_err(|error| error.to_string())?;
     let clock = Clock::new();
-    let mut host = Echo::new(*limits, configuration.addr, seed);
+    let mut host = Echo::new(*limits, skein_io::Addr::Ip(configuration.addr), seed);
     host.svc.adopt_signals(signals).map_err(|_| "the configured io has no slot for termination signals")?;
     eprintln!("skein-echo: at most {worst} bytes of {} configured", configuration.memory);
     drive(&mut kernel, &clock, &mut host);

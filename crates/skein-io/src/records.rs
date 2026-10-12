@@ -2,11 +2,12 @@
 //! takes, the events it tells, and its errors, which are what the layer above
 //! can act on, not the kernel's.
 
+use crate::Addr;
 use alloc::boxed::Box;
 use skein_lib::Token;
 use skein_lib::stream::{self, Fault};
 
-use crate::kernel::{self, Addr, Exit, ServiceSignal, Signal, Spawn, Target};
+use crate::kernel::{self, Exit, ServiceSignal, Signal, Spawn, Target};
 
 /// What the layer above asks of io. Each names an entity by a token: its
 /// owner's, for an entity it asks io to make, and io's (from `Listening`,

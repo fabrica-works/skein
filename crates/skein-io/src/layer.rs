@@ -4,10 +4,14 @@
 //! `resume`, `up`, `fire` and `down` run in that order within an iteration,
 //! and `Io::reclaim` runs at its end. The layer never interprets CPU use.
 
-use skein_lib::stream::{Down, OutputDown};
-use skein_lib::{Deadlines, Duration, Env, Id, Queue, Set, Slab, Time, Token};
+mod results;
+pub(crate) use results::unsubmitted;
 
-use crate::kernel::{self, Addr, Complete, Done, Family, Fd, Op, Submit, Way};
+use skein_lib::stream::{Down, OutputDown};
+use skein_lib::{Deadlines, Duration, Env, Id, Map, Queue, Set, Slab, Time, Token};
+
+use crate::joined;
+use crate::kernel::{self, Complete, Done, Family, Fd, Op, Submit, Way};
 use crate::limits::{self, Limits};
 use crate::listener::{self, Listener};
 use crate::pipe::{self, Pipe};
@@ -15,6 +19,7 @@ use crate::process::{self, Child};
 use crate::records::{Error, Event, Measured, Request};
 use crate::signals::{self, Signals};
 use crate::stream::{self, Stream};
+use crate::{Addr, Name};
 
 /// io's state: every socket and every operation in flight.
 #[derive(Debug)]
@@ -27,6 +32,8 @@ pub struct Io {
 #[derive(Debug)]
 pub(crate) enum Entity {
     Listener(Listener),
+    Named(joined::Listener),
+    Joined(joined::End),
     Stream(Stream),
     Pipe(Pipe),
     Child(Child),
@@ -50,6 +57,9 @@ pub(crate) struct Tables {
     /// The process resource read, independently of entity admission.
     usage: Option<Id<Flight>>,
     window: Option<Id<Flight>>,
+    pub(crate) names: Map<Name, Id<Entity>>,
+    pub(crate) waiting: Map<(Id<Entity>, u64), Id<Entity>>,
+    pub(crate) sequence: u64,
 }
 
 /// An operation in flight: its purpose and its entity, absent for process usage.
@@ -134,6 +144,9 @@ impl Io {
                 armed: 0,
                 usage: None,
                 window: None,
+                names: Map::with_capacity(limits.names),
+                waiting: Map::with_capacity(limits.sockets),
+                sequence: 0,
             },
         }
     }
@@ -257,6 +270,8 @@ impl Io {
             && self.tables.deadlines.is_empty()
             && self.tables.refused.is_empty()
             && self.tables.ready.is_empty()
+            && self.tables.names.is_empty()
+            && self.tables.waiting.is_empty()
     }
 
     /// The reclaim point: frees what closed in this iteration, and renews the
@@ -365,6 +380,11 @@ pub fn resume(io: &mut Io, env: &Env<Limits>, up: &mut Queue<Event>, subs: &mut 
     let Some(id) = io.tables.ready.pop() else {
         return;
     };
+    if let Some(Entity::Named(_) | Entity::Joined(_)) = io.entities.get(id) {
+        joined::resume(io, id, up);
+        conclude(io, id, subs);
+        return;
+    }
     let room = !io.entities.is_full();
     match io.entities.get_mut(id).expect("retiring an entity takes it off the ready list") {
         Entity::Listener(listener) => listener::resume(listener, id, room, env, &mut io.tables, subs),
@@ -372,52 +392,7 @@ pub fn resume(io: &mut Io, env: &Env<Limits>, up: &mut Queue<Event>, subs: &mut 
         Entity::Pipe(pipe) => pipe::resume(pipe, id, env, &mut io.tables, up, subs),
         Entity::Child(_) => {}
         Entity::Signals(signals) => signals::resume(signals, id, &mut io.tables, subs),
-    }
-}
-
-fn window(result: Result<Done, kernel::Error>) -> crate::Window {
-    match result {
-        Ok(Done::Window(size)) => crate::Window::Size(size),
-        Err(kernel::Error::Other(_)) => crate::Window::Gone,
-        Ok(
-            Done::Nothing
-            | Done::Count(_)
-            | Done::Fd(_)
-            | Done::Accepted { .. }
-            | Done::Bound(_)
-            | Done::Stat(_)
-            | Done::Spawned { .. }
-            | Done::Exit(_)
-            | Done::Signalled(_)
-            | Done::Usage(_),
-        ) => unreachable!("Window answers its size"),
-        Err(
-            kernel::Error::Refused
-            | kernel::Error::Reset
-            | kernel::Error::BrokenPipe
-            | kernel::Error::NotConnected
-            | kernel::Error::AddressInUse
-            | kernel::Error::AddressNotAvailable
-            | kernel::Error::Unreachable
-            | kernel::Error::TimedOut
-            | kernel::Error::TooManyOpenFiles
-            | kernel::Error::NoBufferSpace
-            | kernel::Error::InvalidArgument
-            | kernel::Error::Cancelled
-            | kernel::Error::TooLate
-            | kernel::Error::NotFound
-            | kernel::Error::Exists
-            | kernel::Error::NotADirectory
-            | kernel::Error::IsADirectory
-            | kernel::Error::NotEmpty
-            | kernel::Error::Permission
-            | kernel::Error::NoSpace
-            | kernel::Error::ReadOnly
-            | kernel::Error::TooManyLinks
-            | kernel::Error::NameTooLong
-            | kernel::Error::Escape
-            | kernel::Error::NotAFile,
-        ) => unreachable!("Window fails only Other (kernel.md, section 6.3)"),
+        Entity::Named(_) | Entity::Joined(_) => unreachable!("handled above"),
     }
 }
 
@@ -434,7 +409,7 @@ pub fn up(io: &mut Io, env: &Env<Limits>, complete: Complete, up: &mut Queue<Eve
     match purpose {
         Purpose::Window { owner } => {
             assert_eq!(io.tables.window.take(), Some(flight), "one terminal size operation");
-            let window = window(result);
+            let window = results::window(result);
             up.push(Event::Window { owner, window });
             return;
         }
@@ -512,6 +487,7 @@ pub fn up(io: &mut Io, env: &Env<Limits>, complete: Complete, up: &mut Queue<Eve
             stream::landed(stream, landed, env, &mut io.tables, up, subs);
         }
         Entity::Listener(_) => listener::landed(io, env, landed, up, subs),
+        Entity::Named(_) | Entity::Joined(_) => unreachable!("joined entities submit nothing"),
         Entity::Pipe(_) => {
             let Entity::Pipe(pipe) = io.entities.get_mut(entity).expect("live") else { unreachable!() };
             pipe::landed(pipe, landed, env, &mut io.tables, up, subs);
@@ -546,7 +522,7 @@ pub fn fire(io: &mut Io, env: &Env<Limits>, up: &mut Queue<Event>, subs: &mut Qu
             Timer::Close => pipe::expired(pipe, id, env, &mut io.tables, up, subs),
             Timer::Retry => unreachable!("append writes have no retry timer"),
         },
-        Entity::Child(_) | Entity::Signals(_) => {
+        Entity::Child(_) | Entity::Signals(_) | Entity::Named(_) | Entity::Joined(_) => {
             unreachable!("processes and signals have no io deadline")
         }
     }
@@ -574,7 +550,14 @@ pub fn down(io: &mut Io, env: &Env<Limits>, request: Request, subs: &mut Queue<S
             let fd = match io.entities.get(Id::from_token(stream)) {
                 Some(Entity::Pipe(pipe)) => pipe.window_fd().unwrap_or(Fd::new(-1)),
                 None => Fd::new(-1),
-                Some(Entity::Listener(_) | Entity::Stream(_) | Entity::Child(_) | Entity::Signals(_)) => {
+                Some(
+                    Entity::Listener(_)
+                    | Entity::Stream(_)
+                    | Entity::Child(_)
+                    | Entity::Signals(_)
+                    | Entity::Named(_)
+                    | Entity::Joined(_),
+                ) => {
                     unreachable!("Window names the input terminal stream")
                 }
             };
@@ -602,6 +585,13 @@ pub fn down(io: &mut Io, env: &Env<Limits>, request: Request, subs: &mut Queue<S
 }
 
 fn listen(io: &mut Io, owner: Token, addr: Addr, subs: &mut Queue<Submit>) {
+    let addr = match addr {
+        Addr::Ip(addr) => addr,
+        Addr::InProcess(name) => {
+            joined::listen(io, owner, name);
+            return;
+        }
+    };
     let Ok(id) = io.entities.insert(Entity::Listener(listener::opened(owner, addr))) else {
         io.tables.refused.push(owner);
         return;
@@ -610,6 +600,13 @@ fn listen(io: &mut Io, owner: Token, addr: Addr, subs: &mut Queue<Submit>) {
 }
 
 fn connect(io: &mut Io, owner: Token, addr: Addr, subs: &mut Queue<Submit>) {
+    let addr = match addr {
+        Addr::Ip(addr) => addr,
+        Addr::InProcess(name) => {
+            joined::connect(io, owner, name);
+            return;
+        }
+    };
     let Ok(id) = io.entities.insert(Entity::Stream(stream::opened(owner, addr))) else {
         io.tables.refused.push(owner);
         return;
@@ -628,7 +625,12 @@ fn answer(io: &mut Io, env: &Env<Limits>, socket: Token, owner: Option<Token>, s
     };
     let stream = match entity {
         Entity::Stream(stream) => stream,
-        Entity::Listener(_) | Entity::Pipe(_) | Entity::Child(_) | Entity::Signals(_) => {
+        Entity::Listener(_)
+        | Entity::Pipe(_)
+        | Entity::Child(_)
+        | Entity::Signals(_)
+        | Entity::Named(_)
+        | Entity::Joined(_) => {
             unreachable!("an answer names a socket announced to its owner")
         }
     };
@@ -638,7 +640,14 @@ fn answer(io: &mut Io, env: &Env<Limits>, socket: Token, owner: Option<Token>, s
         Some(Entity::Listener(listening)) => {
             listener::answered(listening, listener, id, room, env, &mut io.tables, subs);
         }
-        Some(Entity::Stream(_) | Entity::Pipe(_) | Entity::Child(_) | Entity::Signals(_)) => {
+        Some(
+            Entity::Stream(_)
+            | Entity::Pipe(_)
+            | Entity::Child(_)
+            | Entity::Signals(_)
+            | Entity::Named(_)
+            | Entity::Joined(_),
+        ) => {
             unreachable!("a handle names the kind of entity it was made for")
         }
         // Closed and reclaimed since it announced the socket.
@@ -654,7 +663,9 @@ fn stream_request(io: &mut Io, env: &Env<Limits>, token: Token, down: Down, subs
     match entity {
         Entity::Stream(stream) => stream::request(stream, id, down, env, &mut io.tables, subs),
         Entity::Pipe(pipe) => pipe::request(pipe, id, down, env, &mut io.tables, subs),
-        Entity::Listener(_) | Entity::Child(_) | Entity::Signals(_) => unreachable!("a stream request names a stream"),
+        Entity::Listener(_) | Entity::Child(_) | Entity::Signals(_) | Entity::Named(_) | Entity::Joined(_) => {
+            unreachable!("a stream request names a stream")
+        }
     }
 }
 
@@ -664,7 +675,7 @@ fn output_request(io: &mut Io, env: &Env<Limits>, token: Token, down: OutputDown
     match entity {
         Entity::Stream(stream) => stream::output_request(stream, id, down, env, &mut io.tables, subs),
         Entity::Pipe(pipe) => pipe::output_request(pipe, id, down, env, &mut io.tables, subs),
-        Entity::Listener(_) | Entity::Child(_) | Entity::Signals(_) => {}
+        Entity::Listener(_) | Entity::Child(_) | Entity::Signals(_) | Entity::Named(_) | Entity::Joined(_) => {}
     }
 }
 
@@ -683,6 +694,8 @@ fn close(io: &mut Io, env: &Env<Limits>, token: Token, abort: bool, subs: &mut Q
         Entity::Pipe(pipe) => pipe::close(pipe, id, abort, env, &mut io.tables, subs),
         Entity::Child(_) => unreachable!("handled above"),
         Entity::Signals(signals) => signals::close(signals, id, &mut io.tables, subs),
+        Entity::Named(listener) => joined::close_listener(listener, id, &mut io.tables),
+        Entity::Joined(end) => joined::close_end(end, id, &mut io.tables),
     }
 }
 
@@ -695,6 +708,8 @@ pub(crate) fn conclude(io: &mut Io, id: Id<Entity>, subs: &mut Queue<Submit>) {
         Some(Entity::Pipe(pipe)) => pipe.is_closed(),
         Some(Entity::Child(child)) => child.is_closed(),
         Some(Entity::Signals(signals)) => signals.is_closed(),
+        Some(Entity::Named(listener)) => listener.is_closed(),
+        Some(Entity::Joined(end)) => end.is_closed(),
         None => false,
     };
     if !closed {
@@ -711,53 +726,5 @@ pub(crate) fn conclude(io: &mut Io, id: Id<Entity>, subs: &mut Queue<Submit>) {
     io.tables.ready.wake();
     if let Some(child) = child {
         process::release(io, child, subs);
-    }
-}
-
-/// Whether a cancel's answer says the backend did not submit it, so that its
-/// target runs on. Stopped (`Ok`) or too late, its target completes by itself.
-pub(crate) fn unsubmitted(result: Result<Done, kernel::Error>) -> bool {
-    match result {
-        Ok(Done::Nothing) | Err(kernel::Error::TooLate) => false,
-        Err(kernel::Error::InvalidArgument | kernel::Error::Other(_)) => true,
-        Ok(
-            Done::Count(_)
-            | Done::Fd(_)
-            | Done::Accepted { .. }
-            | Done::Bound(_)
-            | Done::Stat(_)
-            | Done::Spawned { .. }
-            | Done::Exit(_)
-            | Done::Usage(_)
-            | Done::Signalled(_)
-            | Done::Window(_),
-        ) => {
-            unreachable!("a cancel answers with nothing")
-        }
-        Err(
-            kernel::Error::Refused
-            | kernel::Error::Reset
-            | kernel::Error::BrokenPipe
-            | kernel::Error::NotConnected
-            | kernel::Error::AddressInUse
-            | kernel::Error::AddressNotAvailable
-            | kernel::Error::Unreachable
-            | kernel::Error::TimedOut
-            | kernel::Error::TooManyOpenFiles
-            | kernel::Error::NoBufferSpace
-            | kernel::Error::Cancelled
-            | kernel::Error::NotFound
-            | kernel::Error::Exists
-            | kernel::Error::NotADirectory
-            | kernel::Error::IsADirectory
-            | kernel::Error::NotEmpty
-            | kernel::Error::Permission
-            | kernel::Error::NoSpace
-            | kernel::Error::ReadOnly
-            | kernel::Error::TooManyLinks
-            | kernel::Error::NameTooLong
-            | kernel::Error::Escape
-            | kernel::Error::NotAFile,
-        ) => unreachable!("a cancel fails only too late or unsubmitted (kernel.md, 5)"),
     }
 }

@@ -15,7 +15,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use skein_echo_client::{self as client, HalfClose, Plan, Then};
 use skein_echo_service as service;
 use skein_echo_service::{domain, protocol};
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_lib::{Duration, Rng, Time};
 use skein_sim::{Config, Faults};
 use skein_world::{Memory, World};
@@ -61,6 +61,7 @@ pub const fn server() -> service::Limits {
             accepts: 1,
             backlog: 2,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         protocol: protocol::Limits {
@@ -89,6 +90,7 @@ pub const fn client_limits(conns: u32) -> client::Limits {
             accepts: 1,
             backlog: 1,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         line: LINE,
@@ -99,7 +101,7 @@ pub const fn client_limits(conns: u32) -> client::Limits {
 /// Where the echo listens: a port the simulator picks.
 #[must_use]
 pub fn listen() -> Addr {
-    SocketAddr::from((Ipv4Addr::LOCALHOST, 0))
+    Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
 }
 
 #[must_use]

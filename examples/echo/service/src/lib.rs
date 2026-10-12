@@ -43,7 +43,8 @@ use protocol::Protocol;
 // though both name io's and lib's, which every role may.
 pub use skein_echo_domain as domain;
 pub use skein_echo_protocol as protocol;
-use skein_io::kernel::{Addr, Complete, Fd, Submit};
+use skein_io::Addr;
+use skein_io::kernel::{Complete, Fd, Submit};
 use skein_io::{self as io, Io};
 use skein_lib::{Env, Queue, Time, Token, Wall};
 

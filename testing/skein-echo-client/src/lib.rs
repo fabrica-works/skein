@@ -27,7 +27,8 @@ mod conn;
 #[cfg(test)]
 mod tests;
 
-use skein_io::kernel::{Addr, Complete, Submit};
+use skein_io::Addr;
+use skein_io::kernel::{Complete, Submit};
 use skein_io::{self as io, Io};
 use skein_lib::{Deadlines, Duration, Env, List, Queue, Time, Token, Wall};
 

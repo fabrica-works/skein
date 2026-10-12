@@ -46,7 +46,7 @@ impl Face {
             return Err(Error::Limits);
         }
         let mut requests = Queue::with_capacity(limits.queue);
-        requests.push(io::Request::Listen { owner: LISTENER, addr: address });
+        requests.push(io::Request::Listen { owner: LISTENER, addr: io::Addr::Ip(address) });
         Ok(Self {
             io: io::Io::new(&limits.io),
             limits,

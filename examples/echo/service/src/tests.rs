@@ -27,6 +27,7 @@ const fn limits() -> Limits {
             accepts: 1,
             backlog: 2,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         protocol: protocol::Limits {
@@ -65,7 +66,7 @@ impl Rig {
     fn new() -> Rig {
         let limits = limits();
         Rig {
-            svc: Service::new(&limits, local(0), 7),
+            svc: Service::new(&limits, skein_io::Addr::Ip(local(0)), 7),
             now: Time::ZERO,
             done: Vec::new(),
             held: Vec::new(),
@@ -215,7 +216,7 @@ impl Rig {
 fn the_service_listens_and_echoes_a_line_through_every_stage() {
     let mut rig = Rig::new();
     rig.settle();
-    assert_eq!(rig.svc.listening(), Some(local(4000)), "listening, at the port the kernel chose");
+    assert_eq!(rig.svc.listening(), Some(skein_io::Addr::Ip(local(4000))), "listening, at the port the kernel chose");
     let peer = rig.connect();
     rig.settle();
     rig.deliver(peer, b"hel");

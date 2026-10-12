@@ -23,6 +23,7 @@ pub(crate) fn limits() -> Limits {
             accepts: 1,
             backlog: 1,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         tls: skein_tls::client::Limits { read: 4096, send: 4096, records: skein_tls::client::MAX_RECORD },

@@ -161,6 +161,7 @@ impl Peer {
             io::Event::Listening { owner, listener, addr } => {
                 assert_eq!(owner, LISTENER, "one issuer listener");
                 self.face.listener = Some(listener);
+                let addr = addr.socket().expect("fake peers listen on socket addresses");
                 self.face.address = Some(addr);
             }
             io::Event::Accepted { owner, socket, .. } => {

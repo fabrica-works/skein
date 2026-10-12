@@ -7,7 +7,7 @@
 
 use std::fmt;
 
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_lib::{Duration, Time};
 use skein_world::{Controls, Expectation, Expectations, Referee};
 

@@ -288,7 +288,7 @@ fn fill_and_drain(limits: Limits) -> (u64, u64) {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 80));
     // Every socket connects, and the refusals past them are held.
     for owner in 0..u64::from(limits.sockets + limits.refusals) {
-        driver.down(Request::Connect { owner: Token::new(owner), addr });
+        driver.down(Request::Connect { owner: Token::new(owner), addr: skein_io::Addr::Ip(addr) });
     }
     driver.next();
     driver.complete_all(is_socket, succeed);
@@ -359,7 +359,7 @@ fn listen_accept_and_discard(limits: Limits) -> (u64, u64) {
     assert!(limits.sockets >= 2, "a listener and the connect that takes the last slot");
     let mut driver = Driver::new(limits);
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 80));
-    driver.down(Request::Listen { owner: Token::new(0), addr });
+    driver.down(Request::Listen { owner: Token::new(0), addr: skein_io::Addr::Ip(addr) });
     driver.complete_all(is_socket, succeed);
     driver.complete_all(is_bind, succeed);
     driver.complete_all(is_listen, succeed);
@@ -378,7 +378,7 @@ fn listen_accept_and_discard(limits: Limits) -> (u64, u64) {
     }
     // A connect takes the last slot while an accept is in flight: the socket
     // it accepts has no slot, and is discarded.
-    driver.down(Request::Connect { owner: Token::new(1000), addr });
+    driver.down(Request::Connect { owner: Token::new(1000), addr: skein_io::Addr::Ip(addr) });
     let announced = driver.accepted.len();
     driver.complete_all(is_accept, succeed);
     assert_eq!(driver.accepted.len(), announced, "no slot, so the socket is not announced");
@@ -423,6 +423,7 @@ fn workloads() -> [Limits; 4] {
             accepts: 1,
             backlog: 2,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         Limits {
@@ -435,6 +436,7 @@ fn workloads() -> [Limits; 4] {
             accepts: 2,
             backlog: 16,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         Limits {
@@ -447,6 +449,7 @@ fn workloads() -> [Limits; 4] {
             accepts: 1,
             backlog: 8,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         // Receive buffers that dwarf the rest: a receive's buffer is freed
@@ -461,6 +464,7 @@ fn workloads() -> [Limits; 4] {
             accepts: 1,
             backlog: 2,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
     ]
@@ -472,7 +476,7 @@ fn native_output_fills_the_same_actual_payload_and_slot_maxima_with_pending_and_
         let mut driver = Driver::new(limits);
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 80));
         for owner in 0..u64::from(limits.sockets) {
-            driver.down(Request::Connect { owner: Token::new(owner), addr });
+            driver.down(Request::Connect { owner: Token::new(owner), addr: skein_io::Addr::Ip(addr) });
         }
         driver.next();
         driver.complete_all(is_socket, succeed);

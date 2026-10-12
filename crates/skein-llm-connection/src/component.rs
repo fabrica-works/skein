@@ -938,7 +938,7 @@ impl Component {
         if !stored {
             self.slots.push(Some(id)).expect("one slot per connection");
         }
-        io.push(IoRequest::Connect { owner: id.token(), addr: destination.address });
+        io.push(IoRequest::Connect { owner: id.token(), addr: skein_io::Addr::Ip(destination.address) });
         if waiting.asked {
             self.connections.get_mut(id).expect("new connection").next(env, id.token(), up, io);
         }

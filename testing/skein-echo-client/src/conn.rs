@@ -6,7 +6,7 @@
 
 use core::mem;
 
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_io::{Event as Told, Request as Io};
 use skein_lib::stream::{Delimiter, Down, Read, Up};
 use skein_lib::{Queue, Rng, Time, Token, Writer};

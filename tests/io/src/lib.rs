@@ -30,3 +30,5 @@ pub mod referee;
 pub mod scenarios;
 pub mod usage;
 pub mod world;
+
+pub mod joined;

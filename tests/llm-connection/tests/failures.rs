@@ -30,6 +30,7 @@ fn limits() -> Limits {
             accepts: 1,
             backlog: 1,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(10),
         },
         // HTTP may demand one whole head line; TLS must admit that derived read.

@@ -164,7 +164,7 @@ impl Browser {
     fn open(&mut self, url: &[u8]) {
         assert!(self.exchange.is_none());
         self.exchange = Some(Exchange::new(url, Box::new([]), None, None));
-        self.requests.push(io::Request::Connect { owner: WEB, addr: url_parts(url).0 });
+        self.requests.push(io::Request::Connect { owner: WEB, addr: skein_io::Addr::Ip(url_parts(url).0) });
     }
     fn progress(&mut self, now: Time, wall: Wall) {
         if let Some(exchange) = &mut self.exchange {

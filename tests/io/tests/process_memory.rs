@@ -178,6 +178,7 @@ fn a_child_with_pipes_stays_within_ios_memory_bound() {
         accepts: 1,
         backlog: 1,
         close_timeout: Duration::from_secs(1),
+        names: 0,
         retry: Duration::from_millis(10),
     };
     let pipes: Box<[Pipe]> = (0..PIPES)
@@ -214,6 +215,7 @@ fn native_pipe_output_and_staged_close_terminals_fit_the_same_checked_bound_unti
         accepts: 1,
         backlog: 1,
         close_timeout: Duration::from_secs(1),
+        names: 0,
         retry: Duration::from_millis(10),
     };
     let pipes: Box<[Pipe]> = (0..PIPES)

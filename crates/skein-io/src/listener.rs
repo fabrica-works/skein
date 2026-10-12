@@ -314,7 +314,12 @@ pub(crate) fn close(listener: &mut Listener, id: Id<Entity>, tables: &mut Tables
 fn borrow(entities: &mut Slab<Entity>, id: Id<Entity>) -> &mut Listener {
     match entities.get_mut(id).expect("an entity outlives its operations") {
         Entity::Listener(listener) => listener,
-        Entity::Stream(_) | Entity::Pipe(_) | Entity::Child(_) | Entity::Signals(_) => {
+        Entity::Stream(_)
+        | Entity::Pipe(_)
+        | Entity::Child(_)
+        | Entity::Signals(_)
+        | Entity::Named(_)
+        | Entity::Joined(_) => {
             unreachable!("a listener's operation is for a listener")
         }
     }
@@ -407,7 +412,12 @@ fn decode(io: &mut Io, landed: Landed) -> Happened {
 fn outcome(io: &mut Io, listener: Id<Entity>, result: Result<Done, kernel::Error>) -> Outcome {
     let listening = match io.entities.get(listener).expect("an entity outlives its operations") {
         Entity::Listener(listener) => listener.is_listening(),
-        Entity::Stream(_) | Entity::Pipe(_) | Entity::Child(_) | Entity::Signals(_) => {
+        Entity::Stream(_)
+        | Entity::Pipe(_)
+        | Entity::Child(_)
+        | Entity::Signals(_)
+        | Entity::Named(_)
+        | Entity::Joined(_) => {
             unreachable!("an accept is a listener's")
         }
     };
@@ -579,7 +589,7 @@ fn listening(
     up: &mut Queue<Event>,
     subs: &mut Queue<Submit>,
 ) -> State {
-    up.push(Event::Listening { owner: me.owner, listener: me.id.token(), addr });
+    up.push(Event::Listening { owner: me.owner, listener: me.id.token(), addr: crate::Addr::Ip(addr) });
     let accept = arm(fd, 0, me, env, tables, subs);
     State::Listening(Listening { fd, accept, discards: 0 })
 }
@@ -601,7 +611,7 @@ fn accept_done(
     }
     let accept = match accepted.outcome {
         Outcome::Announced { socket, peer } => {
-            up.push(Event::Accepted { owner: me.owner, socket: socket.token(), peer });
+            up.push(Event::Accepted { owner: me.owner, socket: socket.token(), peer: crate::Addr::Ip(peer) });
             Accept::Answering(socket)
         }
         // A connect took the slot it was armed for: io refuses the socket,

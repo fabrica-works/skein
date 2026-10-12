@@ -158,6 +158,7 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
         Purpose::Wait => {
             let reaping = match io.entities.get(id) {
                 Some(Entity::Child(child)) => child.phase == Phase::Reaping,
+                Some(Entity::Named(_) | Entity::Joined(_)) => unreachable!("a child owns wait"),
                 Some(Entity::Pipe(_) | Entity::Listener(_) | Entity::Stream(_) | Entity::Signals(_)) | None => {
                     unreachable!("a child owns wait")
                 }
@@ -169,6 +170,7 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
                         child.phase = Phase::Releasing;
                         child.pidfd.expect("a child has its pidfd until close")
                     }
+                    Some(Entity::Named(_) | Entity::Joined(_)) => unreachable!("a child owns wait"),
                     Some(Entity::Pipe(_) | Entity::Listener(_) | Entity::Stream(_) | Entity::Signals(_)) | None => {
                         unreachable!("a child owns wait")
                     }
@@ -249,10 +251,7 @@ pub(crate) fn signal(io: &mut Io, token: Token, signal: Signal, to: Target, subs
 }
 
 pub(crate) fn close(io: &mut Io, id: Id<Entity>, subs: &mut Queue<Submit>) {
-    let child = match io.entities.get_mut(id) {
-        Some(Entity::Child(child)) => child,
-        Some(Entity::Pipe(_) | Entity::Listener(_) | Entity::Stream(_) | Entity::Signals(_)) | None => return,
-    };
+    let Some(Entity::Child(child)) = io.entities.get_mut(id) else { return };
     match child.phase {
         Phase::Running | Phase::Exited => child.closing = true,
         Phase::Spawning | Phase::Reaping | Phase::Releasing | Phase::Closed => return,
@@ -262,10 +261,7 @@ pub(crate) fn close(io: &mut Io, id: Id<Entity>, subs: &mut Queue<Submit>) {
 }
 
 fn begin_close(io: &mut Io, id: Id<Entity>, subs: &mut Queue<Submit>) {
-    let child = match io.entities.get_mut(id) {
-        Some(Entity::Child(child)) => child,
-        Some(Entity::Pipe(_) | Entity::Listener(_) | Entity::Stream(_) | Entity::Signals(_)) | None => return,
-    };
+    let Some(Entity::Child(child)) = io.entities.get_mut(id) else { return };
     if !child.closing || child.killed || child.signalling != Signalling::Idle {
         return;
     }
@@ -282,6 +278,7 @@ pub(crate) fn release(io: &mut Io, id: Id<Entity>, subs: &mut Queue<Submit>) {
     for pipe in &child.pipes {
         match io.entities.get(*pipe) {
             Some(Entity::Pipe(pipe)) if !pipe.is_closed() => return,
+            Some(Entity::Named(_) | Entity::Joined(_)) => unreachable!("a child owns pipes"),
             Some(Entity::Pipe(_) | Entity::Listener(_) | Entity::Stream(_) | Entity::Child(_) | Entity::Signals(_))
             | None => {}
         }
@@ -289,6 +286,7 @@ pub(crate) fn release(io: &mut Io, id: Id<Entity>, subs: &mut Queue<Submit>) {
     if !child.killed {
         let child = match io.entities.get_mut(id) {
             Some(Entity::Child(child)) => child,
+            Some(Entity::Named(_) | Entity::Joined(_)) => unreachable!("a releasing child remains"),
             Some(Entity::Pipe(_) | Entity::Listener(_) | Entity::Stream(_) | Entity::Signals(_)) | None => {
                 unreachable!("a releasing child remains")
             }

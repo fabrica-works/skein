@@ -57,7 +57,10 @@ pub struct Pages {
 impl Pages {
     pub fn new(now: skein_lib::Time, wall: skein_lib::Wall) -> Pages {
         let mut requests = VecDeque::new();
-        requests.push_back(Request::Listen { owner: OWNER, addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)) });
+        requests.push_back(Request::Listen {
+            owner: OWNER,
+            addr: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        });
         Pages {
             addr: None,
             listener: None,
@@ -109,6 +112,7 @@ impl Pages {
         match event {
             io::Event::Listening { owner: OWNER, listener, addr } => {
                 self.listener = Some(listener);
+                let addr = addr.socket().expect("browser pages listen on loopback");
                 self.addr = Some(addr);
             }
             io::Event::Accepted { owner: OWNER, socket, .. } => {

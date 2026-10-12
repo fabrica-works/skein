@@ -116,7 +116,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     io::Event::Accepted {
                         owner: identity,
                         socket: Token::new(11),
-                        peer: (Ipv4Addr::LOCALHOST, 31235).into(),
+                        peer: io::Addr::Ip((Ipv4Addr::LOCALHOST, 31235).into()),
                     },
                     &mut client.above,
                     &mut client.requests,
@@ -179,7 +179,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     server_requests.push(http::Request::Next);
                 }
                 io::Request::Listen { owner: identity, addr } => {
-                    assert_eq!(addr, (Ipv4Addr::LOCALHOST, 31234).into());
+                    assert_eq!(addr, io::Addr::Ip((Ipv4Addr::LOCALHOST, 31234).into()));
                     assert!(listener.replace(identity).is_none());
                     client.component.as_mut().expect("component").up(
                         &env,

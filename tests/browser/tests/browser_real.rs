@@ -104,6 +104,7 @@ fn io_limits(browser: &browser::Limits) -> io::Limits {
         accepts: 1,
         backlog: 1,
         close_timeout: Duration::from_secs(2),
+        names: 0,
         retry: Duration::from_millis(10),
     }
 }

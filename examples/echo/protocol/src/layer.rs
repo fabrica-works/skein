@@ -6,7 +6,7 @@
 use core::mem;
 
 use skein_echo_domain::{Event as Call, Reply, Request as Domain};
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_io::{Error, Event as Told, Request as Io};
 use skein_lib::{Deadlines, Duration, Env, Id, Queue, Rng, Set, Slab, Time, Token};
 

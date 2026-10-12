@@ -164,6 +164,7 @@ impl Driver {
             accepts: 1,
             backlog: 1,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(1),
         };
         let server = pki::Server {
@@ -174,7 +175,10 @@ impl Driver {
             ..pki::Server::plain()
         };
         let mut requests = Queue::with_capacity(64);
-        requests.push(IoRequest::Listen { owner: LISTENER, addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)) });
+        requests.push(IoRequest::Listen {
+            owner: LISTENER,
+            addr: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        });
         Self {
             evidence: Evidence { blocked: false, behind_both_reads: false },
             close: Close { queued: false, issued: false, native_close_queued: false },

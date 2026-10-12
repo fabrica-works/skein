@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 use skein_lib::stream::{Delimiter, Down, Fault, Read, Up};
 use skein_lib::{Duration, Time, Token};
 
-use super::{Kind, Out, Rig, buffer, connected, filled, kind, limits, local, owner};
+use super::{Kind, Out, Rig, addr, buffer, connected, filled, kind, limits, owner};
 use crate::kernel::{Done, Error as Kernel, Fd, Op, Submit};
 use crate::{Error, Event, Request};
 
@@ -78,7 +78,7 @@ fn a_connect_that_fails_is_told_why_then_closed() {
         (Kernel::InvalidArgument, Error::Other),
     ] {
         let mut rig = Rig::new(limits());
-        let socket = rig.down(Request::Connect { owner: owner(1), addr: local(80) }).take(Kind::Socket);
+        let socket = rig.down(Request::Connect { owner: owner(1), addr: addr(80) }).take(Kind::Socket);
         let _connecting = rig.next();
         let connect = rig.complete(socket, Ok(Done::Fd(FD))).take(Kind::Connect);
         let mut out = rig.complete(connect, Err(error));
@@ -92,7 +92,7 @@ fn a_connect_that_fails_is_told_why_then_closed() {
 #[test]
 fn a_connect_whose_socket_cannot_be_made_is_told_busy_and_closed_at_once() {
     let mut rig = Rig::new(limits());
-    let socket = rig.down(Request::Connect { owner: owner(1), addr: local(80) }).take(Kind::Socket);
+    let socket = rig.down(Request::Connect { owner: owner(1), addr: addr(80) }).take(Kind::Socket);
     let _connecting = rig.next();
     let out = rig.complete(socket, Err(Kernel::TooManyOpenFiles));
     assert_eq!(out.events, [Event::Failed { owner: owner(1), error: Error::Busy }, Event::Closed { owner: owner(1) }]);
@@ -355,7 +355,7 @@ fn room_past_the_output_is_the_owner_s_bug() {
 #[should_panic(expected = "a stream request comes once the stream is connected")]
 fn a_stream_request_before_connected_is_the_owner_s_bug() {
     let mut rig = Rig::new(limits());
-    let _socket = rig.down(Request::Connect { owner: owner(1), addr: local(80) });
+    let _socket = rig.down(Request::Connect { owner: owner(1), addr: addr(80) });
     let socket = match rig.next().events.as_slice() {
         [Event::Connecting { socket, .. }] => *socket,
         other => panic!("Connecting: {other:?}"),
@@ -605,7 +605,7 @@ fn a_cancel_not_submitted_is_asked_again_while_its_target_waits() {
 fn a_close_while_connecting_cancels_the_connect_and_closes_what_it_made() {
     for connect_result in [Err(Kernel::Cancelled), Ok(Done::Nothing), Err(Kernel::Refused)] {
         let mut rig = Rig::new(limits());
-        let socket_op = rig.down(Request::Connect { owner: owner(1), addr: local(80) }).take(Kind::Socket);
+        let socket_op = rig.down(Request::Connect { owner: owner(1), addr: addr(80) }).take(Kind::Socket);
         let socket = match rig.next().events.as_slice() {
             [Event::Connecting { socket, .. }] => *socket,
             other => panic!("Connecting: {other:?}"),
@@ -625,7 +625,7 @@ fn a_close_while_connecting_cancels_the_connect_and_closes_what_it_made() {
 fn a_close_while_the_socket_is_made_closes_it_once_it_is() {
     for made in [true, false] {
         let mut rig = Rig::new(limits());
-        let socket_op = rig.down(Request::Connect { owner: owner(1), addr: local(80) }).take(Kind::Socket);
+        let socket_op = rig.down(Request::Connect { owner: owner(1), addr: addr(80) }).take(Kind::Socket);
         let socket = match rig.next().events.as_slice() {
             [Event::Connecting { socket, .. }] => *socket,
             other => panic!("Connecting: {other:?}"),

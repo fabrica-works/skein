@@ -4,7 +4,8 @@
 
 use skein_echo_world::proc::Proc;
 use skein_echo_world::scenarios::{client_limits, plan};
-use skein_io::kernel::{Addr, Complete, Exit, Signal, Submit};
+use skein_io::Addr;
+use skein_io::kernel::{Complete, Exit, Signal, Submit};
 use skein_lib::{Duration, Queue, Time, Wall};
 use skein_shell::Clock;
 use skein_world::end_to_end::{Binary, Command, Mode, StartError};
@@ -116,9 +117,9 @@ impl Referee<Process> for Judge {
             if line.ends_with(b"\n")
                 && let Some(address) = line.strip_prefix(b"skein-echo: listening at ")
             {
-                self.listening = Some(
+                self.listening = Some(Addr::Ip(
                     std::str::from_utf8(address).expect("printed address").trim().parse().expect("socket address"),
-                );
+                ));
             }
         }
         if let Some(exit) = binary.exit_status() {

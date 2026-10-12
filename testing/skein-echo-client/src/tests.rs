@@ -10,7 +10,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::net::{Ipv4Addr, SocketAddr};
 
-use skein_io::kernel::{Addr, Complete, Done, Error, Fd, Op, Submit};
+use skein_io::Addr;
+use skein_io::kernel::{Complete, Done, Error, Fd, Op, Submit};
 use skein_lib::{Duration, Time, Wall};
 
 use crate::{Client, HalfClose, Limits, Plan, Then, iterate, worst_case};
@@ -26,6 +27,7 @@ const LIMITS: Limits = Limits {
         accepts: 1,
         backlog: 1,
         close_timeout: Duration::from_secs(1),
+        names: 0,
         retry: Duration::from_millis(10),
     },
     line: 16,
@@ -51,7 +53,7 @@ const PLAN: Plan = Plan {
 };
 
 fn server() -> Addr {
-    SocketAddr::from((Ipv4Addr::LOCALHOST, 7))
+    Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 7)))
 }
 
 /// The client, over a kernel played by hand: what can complete at once

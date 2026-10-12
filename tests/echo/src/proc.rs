@@ -4,7 +4,8 @@
 use skein_echo_client::{self as client, Client, Plan};
 use skein_echo_service::{self as service, Service};
 use skein_echo_shell::Echo;
-use skein_io::kernel::{Addr, Complete, Submit};
+use skein_io::Addr;
+use skein_io::kernel::{Complete, Submit};
 use skein_lib::{Queue, Time, Wall};
 use skein_world::Host;
 

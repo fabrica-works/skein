@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use core::net::{Ipv4Addr, SocketAddr};
 
 use skein_echo_domain::{Event as Call, Reply, Request as Domain};
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_io::{Event as Told, Request as Io};
 use skein_lib::stream::{Delimiter, Down, Fault, Read, Up};
 use skein_lib::{Duration, Env, Queue, ReplyTo, Time, Token, Wall};
@@ -34,7 +34,7 @@ const LIMITS: Limits = Limits {
 const SEED: u64 = 7;
 
 fn addr() -> Addr {
-    SocketAddr::from((Ipv4Addr::LOCALHOST, 7))
+    Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 7)))
 }
 
 /// io's token for socket `n`.
@@ -155,7 +155,7 @@ impl Rig {
         };
         assert_eq!(*asked, addr(), "at the address it was made with");
         self.owner = Some(*owner);
-        let listening = SocketAddr::from((Ipv4Addr::LOCALHOST, 4000));
+        let listening = Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 4000)));
         self.up(Told::Listening { owner: *owner, listener: LISTENER, addr: listening }).nothing();
         assert_eq!(self.proto.listening(), Some(listening), "the address io bound, port resolved");
     }

@@ -22,6 +22,7 @@ fn limits() -> Limits {
             accepts: 1,
             backlog: 1,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(1),
         },
         connections: 2,

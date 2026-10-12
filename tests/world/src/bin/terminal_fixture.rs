@@ -149,6 +149,7 @@ fn run() -> ExitCode {
         accepts: 1,
         backlog: 1,
         close_timeout: Duration::from_secs(1),
+        names: 0,
         retry: Duration::from_millis(10),
     };
     let mut io = Io::new(&limits);

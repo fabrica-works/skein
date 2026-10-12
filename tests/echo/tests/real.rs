@@ -13,7 +13,7 @@ use skein_echo_client::{Plan, Then};
 use skein_echo_world::proc::Proc;
 use skein_echo_world::referee::{EchoReferee, Expect, Shutdown};
 use skein_echo_world::scenarios::{LINE, client_limits, plan, server};
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_lib::{Duration, Rng};
 use skein_shell::Clock;
 use skein_world::real;
@@ -30,7 +30,7 @@ fn the_echo_serves_refuses_and_idles_out_its_clients_on_the_real_ring() {
     let mut limits = server();
     limits.protocol.idle = IDLE;
     limits.protocol.spread = Duration::from_millis(20);
-    let listen: Addr = "127.0.0.1:0".parse().expect("an address");
+    let listen = Addr::Ip("127.0.0.1:0".parse().expect("an address"));
 
     // Three connections at once against two sessions, each of eight lines
     // ahead of their answers in pieces cut short, retried when refused.
@@ -103,7 +103,7 @@ fn the_shipped_idle_time_does_not_delay_the_real_echo_shutdown() {
     let mut world =
         real::World::new_controlled(|controls| EchoReferee::new(19, expect, Shutdown::At(at(100)), controls));
     world.spawn_signals(|signal| {
-        let mut proc = Proc::echo(limits, "127.0.0.1:0".parse().expect("loopback"), 19);
+        let mut proc = Proc::echo(limits, Addr::Ip("127.0.0.1:0".parse().expect("loopback")), 19);
         match &mut proc {
             Proc::Echo { svc, .. } => svc.svc.adopt_signals(signal).expect("signal slot"),
             Proc::Client { .. } => unreachable!("echo"),

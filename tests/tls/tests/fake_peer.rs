@@ -26,6 +26,7 @@ const IO: io::Limits = io::Limits {
     accepts: 1,
     backlog: 1,
     close_timeout: Duration::from_secs(1),
+    names: 0,
     retry: Duration::from_millis(1),
 };
 
@@ -94,7 +95,7 @@ impl Host for Sender {
     fn iterate(&mut self, now: Time, wall: Wall) {
         let env = Env { now, wall, limits: IO };
         if let Some(address) = self.address.take() {
-            self.requests.push(io::Request::Connect { owner: OWNER, addr: address });
+            self.requests.push(io::Request::Connect { owner: OWNER, addr: io::Addr::Ip(address) });
         }
         for _ in 0..ROOM {
             if self.io.is_ready() {

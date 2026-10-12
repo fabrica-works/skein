@@ -43,6 +43,7 @@ fn every_account_holds_a_maximal_record_within_the_heap_bound() {
             accepts: 1,
             backlog: 2,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(1),
         },
         refresh_lead: Duration::from_secs(10),

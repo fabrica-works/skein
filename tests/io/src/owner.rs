@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use skein_io::kernel::Addr;
+use skein_io::Addr;
 use skein_io::{Error, Event, Request};
 use skein_lib::stream::{Delimiter, Down, Fault, Read, Up};
 use skein_lib::{Rng, Time, Token};
@@ -570,7 +570,10 @@ impl Owner {
 
 /// An address of `addr`'s host where nothing listens: port 1.
 fn nowhere(addr: Addr) -> Addr {
-    Addr::new(addr.ip(), 1)
+    match addr {
+        Addr::Ip(socket) => Addr::Ip(core::net::SocketAddr::new(socket.ip(), 1)),
+        Addr::InProcess(_) => Addr::InProcess(skein_io::Name::new(b"unbound").expect("short name")),
+    }
 }
 
 fn close(conn: &mut Conn, socket: Token, requests: &mut VecDeque<Request>) {

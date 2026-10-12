@@ -2,7 +2,8 @@
 //! It keeps the service, limits and which diagnostics were said, and knows
 //! no peer state beyond the service's public observations.
 use skein_echo_service::{self as service, Limits, Service};
-use skein_io::kernel::{Addr, Complete, Exit, Submit};
+use skein_io::Addr;
+use skein_io::kernel::{Complete, Exit, Submit};
 use skein_lib::{Duration, Queue, Time, Wall};
 use skein_shell::Host;
 
@@ -62,6 +63,7 @@ impl Host for Echo {
         if !self.told
             && let Some(addr) = self.svc.listening()
         {
+            let addr = addr.socket().expect("the echo shell listens on a socket address");
             eprintln!("skein-echo: listening at {addr}");
             self.told = true;
         }
@@ -96,6 +98,7 @@ pub const fn limits() -> Limits {
             accepts: 64,
             backlog: 1024,
             close_timeout: Duration::from_secs(5),
+            names: 0,
             retry: Duration::from_millis(50),
         },
         protocol: service::protocol::Limits {

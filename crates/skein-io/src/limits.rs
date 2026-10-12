@@ -3,7 +3,7 @@
 
 use alloc::boxed::Box;
 
-use skein_lib::{Deadlines, Duration, Id, Intake, Queue, Set, Slab, Token};
+use skein_lib::{Deadlines, Duration, Id, Intake, Map, Queue, Set, Slab, Token};
 
 use crate::layer::{Entity, Flight, Timer};
 
@@ -15,6 +15,8 @@ pub struct Limits {
     /// A `Listen`, `Connect` or `Spawn` without enough slots is refused
     /// (`Error::Busy`), and a listener accepts only while one is free.
     pub sockets: u32,
+    /// In-process names held by listeners (io.md, 3.5).
+    pub names: u32,
     /// Refused `Listen`s, `Connect`s and `Spawn`s held until the next up pass tells
     /// them (io.md, 2). The loop hands io a request only while it can hold one
     /// more (`Io::takes`).
@@ -112,11 +114,19 @@ pub(crate) fn flights(limits: &Limits) -> Option<u32> {
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     let sockets = limits.sockets;
+    // Without named listeners neither tree can allocate a node (io.md, 3.5).
+    let joined = if limits.names == 0 {
+        0
+    } else {
+        Map::<crate::Name, Id<Entity>>::worst_case(limits.names)?
+            .checked_add(Map::<(Id<Entity>, u64), Id<Entity>>::worst_case(sockets)?)?
+    };
     let tables = Slab::<Entity>::worst_case(sockets)?
         .checked_add(Slab::<Flight>::worst_case(flights(limits)?)?)?
         .checked_add(Deadlines::<(Id<Entity>, Timer)>::worst_case(timers(limits)?)?)?
         .checked_add(Set::<Id<Entity>>::worst_case(sockets)?.checked_mul(3)?)?
-        .checked_add(Queue::<Token>::worst_case(limits.refusals)?)?;
+        .checked_add(Queue::<Token>::worst_case(limits.refusals)?)?
+        .checked_add(joined)?;
     let stream = Intake::worst_case(limits.intake)?
         .checked_add(u64::from(limits.receive))?
         .checked_add(u64::from(limits.output))?

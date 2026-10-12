@@ -120,7 +120,9 @@ impl Component {
             exchange.listener = Some(Listener::new());
             io.push(Lower::Listen {
                 owner: route::owner(id, Socket::Listener),
-                addr: oauth::redirect_address(&registration.redirect_uri).expect("validated public redirect"),
+                addr: skein_io::Addr::Ip(
+                    oauth::redirect_address(&registration.redirect_uri).expect("validated public redirect"),
+                ),
             });
         }
         exchange.client.step(

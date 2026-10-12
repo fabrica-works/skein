@@ -119,6 +119,7 @@ impl Driver {
             accepts: 1,
             backlog: 1,
             close_timeout: Duration::from_secs(1),
+            names: 0,
             retry: Duration::from_millis(1),
         };
         let mut driver = Driver {
@@ -134,7 +135,10 @@ impl Driver {
             listener_closed: false,
             log: Vec::new(),
         };
-        driver.requests.push(Request::Listen { owner: LISTENER, addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)) });
+        driver.requests.push(Request::Listen {
+            owner: LISTENER,
+            addr: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
+        });
         driver
     }
 

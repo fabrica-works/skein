@@ -5,16 +5,16 @@
 use skein_lib::stream::{Down, Read};
 use skein_lib::{Duration, Token};
 
-use super::{Kind, Rig, connected, limits, listening, local, owner};
+use super::{Kind, Rig, addr, connected, limits, listening, owner};
 use crate::kernel::{Complete, Done, Fd, Op};
 use crate::{Error, Event, Io, Limits, Request, operations, worst_case};
 
 #[test]
 fn a_connect_past_the_socket_slab_is_refused_and_told_in_the_next_up_pass() {
     let mut rig = Rig::new(Limits { sockets: 1, refusals: 2, ..limits() });
-    let _socket = rig.down(Request::Connect { owner: owner(1), addr: local(80) }).take(Kind::Socket);
-    rig.down(Request::Connect { owner: owner(2), addr: local(80) }).nothing();
-    rig.down(Request::Listen { owner: owner(3), addr: local(0) }).nothing();
+    let _socket = rig.down(Request::Connect { owner: owner(1), addr: addr(80) }).take(Kind::Socket);
+    rig.down(Request::Connect { owner: owner(2), addr: addr(80) }).nothing();
+    rig.down(Request::Listen { owner: owner(3), addr: addr(0) }).nothing();
     assert!(!rig.io.takes(), "both refusals held: io takes no more requests");
     let mut told = rig.next();
     match told.events.pop() {
@@ -156,4 +156,13 @@ fn usage_can_repeat_in_the_same_iteration_before_flights_reclaim() {
         assert_eq!(rig.complete(read, Ok(Done::Usage(crate::kernel::Usage::ZERO))).events.len(), 1);
     }
     rig.empty();
+}
+
+#[test]
+fn worst_case_grows_with_the_names_table() {
+    let base = Limits { names: 0, ..limits() };
+    assert!(
+        worst_case(&Limits { names: 5, ..base }).unwrap() > worst_case(&base).unwrap(),
+        "more names need a larger names table"
+    );
 }

@@ -8,6 +8,7 @@
 
 mod append;
 mod file;
+mod joined;
 mod kernel;
 mod layer;
 mod listener;
@@ -38,6 +39,7 @@ pub(crate) const fn limits() -> Limits {
         accepts: 1,
         backlog: 4,
         close_timeout: Duration::from_secs(1),
+        names: 2,
         retry: Duration::from_millis(10),
     }
 }
@@ -45,6 +47,16 @@ pub(crate) const fn limits() -> Limits {
 /// `127.0.0.1:port`.
 pub(crate) fn local(port: u16) -> Addr {
     SocketAddr::from((Ipv4Addr::LOCALHOST, port))
+}
+
+/// The loopback socket address in io records.
+pub(crate) fn addr(port: u16) -> crate::Addr {
+    crate::Addr::Ip(local(port))
+}
+
+/// A bounded in-process address.
+pub(crate) fn name(bytes: &[u8]) -> crate::Addr {
+    crate::Addr::InProcess(crate::Name::new(bytes).expect("short name"))
 }
 
 /// The token an owner above names its entity `n` by.
@@ -264,8 +276,8 @@ impl Rig {
 
 /// A listener of `owner` listening at a port of the kernel's choice on the
 /// descriptor `fd`: its token, its address and its accept, armed.
-pub(crate) fn listening(rig: &mut Rig, owner: Token, fd: Fd) -> (Token, Addr, Submit) {
-    let socket = rig.down(Request::Listen { owner, addr: local(0) }).take(Kind::Socket);
+pub(crate) fn listening(rig: &mut Rig, owner: Token, fd: Fd) -> (Token, crate::Addr, Submit) {
+    let socket = rig.down(Request::Listen { owner, addr: addr(0) }).take(Kind::Socket);
     let bind = rig.complete(socket, Ok(Done::Fd(fd))).take(Kind::Bind);
     let addr = local(40000);
     let listen = rig.complete(bind, Ok(Done::Bound(addr))).take(Kind::Listen);
@@ -273,18 +285,18 @@ pub(crate) fn listening(rig: &mut Rig, owner: Token, fd: Fd) -> (Token, Addr, Su
     let accept = out.take(Kind::Accept);
     let listener = match out.events.as_slice() {
         [Event::Listening { owner: told, listener, addr: bound }] => {
-            assert_eq!((*told, *bound), (owner, addr), "told its owner, with the address bound");
+            assert_eq!((*told, *bound), (owner, crate::Addr::Ip(addr)), "told its owner, with the address bound");
             *listener
         }
         other => panic!("a listener is told Listening: {other:?}"),
     };
-    (listener, addr, accept)
+    (listener, crate::Addr::Ip(addr), accept)
 }
 
 /// A connection of `owner`, made on the descriptor `fd`: its token and its
 /// first receive, in flight.
 pub(crate) fn connected(rig: &mut Rig, owner: Token, fd: Fd) -> (Token, Submit) {
-    let socket = rig.down(Request::Connect { owner, addr: local(80) }).take(Kind::Socket);
+    let socket = rig.down(Request::Connect { owner, addr: addr(80) }).take(Kind::Socket);
     let told = rig.next();
     let token = match told.events.as_slice() {
         [Event::Connecting { owner: told, socket }] if *told == owner => *socket,

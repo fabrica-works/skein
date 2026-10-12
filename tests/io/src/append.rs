@@ -67,6 +67,7 @@ impl Writer {
             accepts: 1,
             backlog: 1,
             close_timeout: Duration::from_millis(100),
+            names: 0,
             retry: Duration::from_millis(1),
         };
         let mut io = Io::new(&limits);

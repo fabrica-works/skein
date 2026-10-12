@@ -705,7 +705,10 @@ impl Component {
                 };
                 assert!(exchange.web.is_none(), "previous socket settled before retry");
                 exchange.web = Some(web);
-                io.push(Lower::Connect { owner: route::owner(id, Socket::Web), addr: endpoint.address });
+                io.push(Lower::Connect {
+                    owner: route::owner(id, Socket::Web),
+                    addr: skein_io::Addr::Ip(endpoint.address),
+                });
             }
             oauth::Request::Tokens { record } => {
                 let kept = record.clone();
