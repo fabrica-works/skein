@@ -199,6 +199,7 @@ impl Component {
                 | file::Event::Stated { .. }
                 | file::Event::Written { .. }
                 | file::Event::Read { .. }
+                | file::Event::Cut { .. }
                 | file::Event::Synced { .. }
                 | file::Event::Closed { .. }
                 | file::Event::Renamed { .. }
@@ -240,6 +241,7 @@ impl Component {
                     | file::Event::Stated { .. }
                     | file::Event::Written { .. }
                     | file::Event::Read { .. }
+                    | file::Event::Cut { .. }
                     | file::Event::Synced { .. }
                     | file::Event::Closed { .. }
                     | file::Event::Renamed { .. }
@@ -289,6 +291,7 @@ impl Component {
             | file::Event::Stated { .. }
             | file::Event::Written { .. }
             | file::Event::Read { .. }
+            | file::Event::Cut { .. }
             | file::Event::Synced { .. }
             | file::Event::Closed { .. }
             | file::Event::Renamed { .. }
@@ -380,6 +383,7 @@ fn unloaded(event: file::Event) -> Unloaded {
         | file::Event::Stated { .. }
         | file::Event::Written { .. }
         | file::Event::Read { .. }
+        | file::Event::Cut { .. }
         | file::Event::Synced { .. }
         | file::Event::Closed { .. }
         | file::Event::Renamed { .. }

@@ -210,6 +210,9 @@ fn owner_of(request: &Request) -> Token {
         | Request::OpenPrivate { owner, .. }
         | Request::Create { owner, .. }
         | Request::CreateNoFollow { owner, .. }
+        | Request::OpenWrite { owner, .. }
+        | Request::OpenWriteNoFollow { owner, .. }
+        | Request::Cut { owner, .. }
         | Request::OpenRead { owner, .. }
         | Request::OpenReadNoFollow { owner, .. }
         | Request::OpenDirectory { owner, .. }

@@ -22,6 +22,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use skein_lib::{Duration, Map, Queue, Time, Token};
 
+mod opens;
 mod private;
 mod store;
 
@@ -56,6 +57,9 @@ enum Pending {
         offset: u64,
         max: u32,
         bytes: Vec<u8>,
+    },
+    Cut {
+        owner: Token,
     },
     Sync {
         owner: Token,
@@ -145,6 +149,7 @@ impl Pending {
             | Pending::Cleanup { owner, .. }
             | Pending::Write { owner }
             | Pending::Read { owner, .. }
+            | Pending::Cut { owner }
             | Pending::Sync { owner }
             | Pending::Close { owner }
             | Pending::Rename { owner }
@@ -177,7 +182,8 @@ impl Pending {
             | Pending::LoadOpening { .. }
             | Pending::LoadReading { .. }
             | Pending::ScanOpening { .. } => true,
-            Pending::Stat { .. }
+            Pending::Cut { .. }
+            | Pending::Stat { .. }
             | Pending::Stating { .. }
             | Pending::Cleanup { .. }
             | Pending::Close { .. }
@@ -450,10 +456,17 @@ fn down_inner(io: &mut FileIo, request: Request, events: &mut Queue<Event>, subs
         Request::CreateNoFollow { owner, root, name, mode } => {
             create(io, owner, root, name, mode, true, events, subs);
         }
-        Request::OpenRead { owner, root, name } => open_read(io, owner, root, name, false, events, subs),
+        Request::OpenRead { owner, root, name } => opens::open_read(io, owner, root, name, OpenHow::Read, events, subs),
         Request::OpenReadNoFollow { owner, root, name } => {
-            open_read(io, owner, root, name, true, events, subs);
+            opens::open_read(io, owner, root, name, OpenHow::ReadNoFollow, events, subs);
         }
+        Request::OpenWrite { owner, root, name } => {
+            opens::open_read(io, owner, root, name, OpenHow::Write, events, subs);
+        }
+        Request::OpenWriteNoFollow { owner, root, name } => {
+            opens::open_read(io, owner, root, name, OpenHow::WriteNoFollow, events, subs);
+        }
+        Request::Cut { owner, file, length } => opens::cut(io, owner, file, length, events, subs),
         Request::OpenDirectory { owner, root, name, no_follow } => {
             if name.contains(&0) {
                 events.push(Event::Failed { owner, error: Error::InvalidArgument, committed: false, residue: None });
@@ -608,28 +621,6 @@ fn create(
     io.issue(Op::Open { root, path: name, how }, subs);
 }
 
-fn open_read(
-    io: &mut FileIo,
-    owner: Token,
-    root: Fd,
-    name: Box<[u8]>,
-    no_follow: bool,
-    events: &mut Queue<Event>,
-    subs: &mut Queue<Submit>,
-) {
-    if name.contains(&0) {
-        events.push(Event::Failed { owner, error: Error::InvalidArgument, committed: false, residue: None });
-        return;
-    }
-    if io.files.len() == io.files.capacity() {
-        events.push(Event::Failed { owner, error: Error::TooManyOpenFiles, committed: false, residue: None });
-        return;
-    }
-    io.pending = Some(Pending::OpenRead { owner });
-    let how = if no_follow { OpenHow::ReadNoFollow } else { OpenHow::Read };
-    io.issue(Op::Open { root, path: name, how }, subs);
-}
-
 fn read_whole(io: &mut FileIo, owner: Token, fd: Fd, max: u32, bytes: Vec<u8>, subs: &mut Queue<Submit>) {
     let used = u32::try_from(bytes.len()).expect("whole load stays within its u32 bound");
     let left = max.checked_sub(used).expect("whole load stays within its bound");
@@ -680,6 +671,7 @@ pub fn cancel(io: &mut FileIo, owner: Token, subs: &mut Queue<Submit>) {
         | Pending::Stating { .. }
         | Pending::Write { .. }
         | Pending::Read { .. }
+        | Pending::Cut { .. }
         | Pending::Sync { .. }
         | Pending::Close { .. }
         | Pending::Rename { .. }
@@ -759,6 +751,7 @@ fn cancelled(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, sub
         | Pending::OpenDirectory { .. }
         | Pending::Stating { .. }
         | Pending::Cleanup { .. }
+        | Pending::Cut { .. }
         | Pending::Sync { .. }
         | Pending::Close { .. }
         | Pending::Rename { .. }
@@ -779,6 +772,7 @@ fn cancelled(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, sub
             | Pending::Cleanup { .. }
             | Pending::Write { .. }
             | Pending::Read { .. }
+            | Pending::Cut { .. }
             | Pending::Sync { .. }
             | Pending::Close { .. }
             | Pending::Rename { .. }
@@ -873,6 +867,7 @@ fn stopped(io: &mut FileIo, complete: Complete, reason: Error, events: &mut Queu
         | Pending::Cleanup { .. }
         | Pending::Write { .. }
         | Pending::Read { .. }
+        | Pending::Cut { .. }
         | Pending::Sync { .. }
         | Pending::Close { .. }
         | Pending::Rename { .. }
@@ -898,6 +893,7 @@ fn stopped(io: &mut FileIo, complete: Complete, reason: Error, events: &mut Queu
         | Pending::Cleanup { owner, .. }
         | Pending::Write { owner }
         | Pending::Read { owner, .. }
+        | Pending::Cut { owner }
         | Pending::Sync { owner }
         | Pending::Close { owner }
         | Pending::Rename { owner }
@@ -1013,6 +1009,7 @@ fn up_inner(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, subs
         | Pending::Cleanup { .. }
         | Pending::Write { .. }
         | Pending::Read { .. }
+        | Pending::Cut { .. }
         | Pending::Sync { .. }
         | Pending::Close { .. }
         | Pending::Rename { .. }
@@ -1063,6 +1060,7 @@ fn up_inner(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, subs
             | Pending::Stating { owner }
             | Pending::Write { owner }
             | Pending::Read { owner, .. }
+            | Pending::Cut { owner }
             | Pending::Sync { owner }
             | Pending::Close { owner }
             | Pending::Rename { owner }
@@ -1244,6 +1242,7 @@ fn up_inner(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, subs
                 io.issue(op, subs);
             }
         }
+        (Pending::Cut { owner }, Op::Truncate { .. }, Done::Nothing) => events.push(Event::Cut { owner }),
         (Pending::Sync { owner }, Op::Sync { .. }, Done::Nothing) => events.push(Event::Synced { owner }),
         (Pending::Close { owner }, Op::Close { .. }, Done::Nothing) => events.push(Event::Closed { owner }),
         (Pending::Rename { owner }, Op::Rename { .. }, Done::Nothing) => events.push(Event::Renamed { owner }),

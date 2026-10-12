@@ -477,3 +477,118 @@ fn a_short_write_can_be_cancelled_before_its_remaining_bytes() {
     complete(&mut io, cancel, Err(crate::kernel::Error::TooLate), &mut events, &mut subs);
     assert!(io.takes());
 }
+
+fn write_opened() -> (FileIo, Token, u64) {
+    let mut io = io();
+    let mut events = Queue::with_capacity(2);
+    let mut subs = Queue::with_capacity(2);
+    file_layer::down(
+        &mut io,
+        Time::ZERO,
+        Request::OpenWrite { owner: OWNER, root: ROOT, name: Box::from(&b"log"[..]) },
+        &mut events,
+        &mut subs,
+    );
+    complete(&mut io, subs.pop().expect("open"), Ok(Done::Fd(CHILD)), &mut events, &mut subs);
+    let stat = Stat { kind: Kind::File, size: 10, mode: 0o644, owner: 1000, links: 1 };
+    complete(&mut io, subs.pop().expect("stat"), Ok(Done::Stat(stat)), &mut events, &mut subs);
+    let Some(Event::Opened { owner: OWNER, file, len }) = events.pop() else { panic!("opened with its length") };
+    (io, file, len)
+}
+
+#[test]
+fn open_write_asks_the_write_open_and_tells_not_found_as_failed() {
+    let mut io = io();
+    let mut events = Queue::with_capacity(2);
+    let mut subs = Queue::with_capacity(2);
+    let request = Request::OpenWrite { owner: OWNER, root: ROOT, name: Box::from(&b"log"[..]) };
+    file_layer::down(&mut io, Time::ZERO, request, &mut events, &mut subs);
+    let submit = subs.pop().expect("one open");
+    let Op::Open { how, .. } = &submit.kind else { panic!("an open") };
+    assert_eq!(*how, OpenHow::Write, "an existing file, to read and write, never made");
+    complete(&mut io, submit, Err(crate::kernel::Error::NotFound), &mut events, &mut subs);
+    assert_eq!(
+        events.pop(),
+        Some(Event::Failed { owner: OWNER, error: crate::kernel::Error::NotFound, committed: false, residue: None })
+    );
+    assert!(io.takes(), "the driver takes the next request");
+}
+
+#[test]
+fn open_write_tells_the_opened_files_length() {
+    let (io, _, len) = write_opened();
+    assert_eq!(len, 10, "the opened file's stat supplies its length");
+    assert!(io.takes(), "the writer can send the next request");
+}
+
+#[test]
+fn open_write_no_follow_asks_the_no_follow_write_open() {
+    let mut io = io();
+    let mut events = Queue::with_capacity(2);
+    let mut subs = Queue::with_capacity(2);
+    file_layer::down(
+        &mut io,
+        Time::ZERO,
+        Request::OpenWriteNoFollow { owner: OWNER, root: ROOT, name: Box::from(&b"log"[..]) },
+        &mut events,
+        &mut subs,
+    );
+    let submit = subs.pop().expect("one open");
+    let Op::Open { how, .. } = &submit.kind else { panic!("an open") };
+    assert_eq!(*how, OpenHow::WriteNoFollow, "every symbolic link is refused");
+    complete(&mut io, submit, Err(crate::kernel::Error::TooManyLinks), &mut events, &mut subs);
+    assert!(io.takes(), "the refused open settles");
+}
+
+#[test]
+fn a_cut_submits_a_truncate_and_tells_cut() {
+    let (mut io, file, _) = write_opened();
+    let mut events = Queue::with_capacity(2);
+    let mut subs = Queue::with_capacity(2);
+    file_layer::down(&mut io, Time::ZERO, Request::Cut { owner: OWNER, file, length: 4 }, &mut events, &mut subs);
+    let submit = subs.pop().expect("one truncate");
+    assert_eq!(submit.kind, Op::Truncate { fd: CHILD, length: 4 });
+    complete(&mut io, submit, Ok(Done::Nothing), &mut events, &mut subs);
+    assert_eq!(events.pop(), Some(Event::Cut { owner: OWNER }));
+    assert_eq!(io.open_files(), 1, "cut keeps the file open");
+    assert!(io.takes(), "the cut ends in one terminal");
+}
+
+#[test]
+fn a_cut_of_a_file_io_does_not_hold_fails_not_found() {
+    let mut io = io();
+    let mut events = Queue::with_capacity(2);
+    let mut subs = Queue::with_capacity(2);
+    file_layer::down(
+        &mut io,
+        Time::ZERO,
+        Request::Cut { owner: OWNER, file: Token::new(99), length: 4 },
+        &mut events,
+        &mut subs,
+    );
+    assert!(subs.is_empty(), "no descriptor is known to submit");
+    assert_eq!(
+        events.pop(),
+        Some(Event::Failed { owner: OWNER, error: crate::kernel::Error::NotFound, committed: false, residue: None })
+    );
+    assert!(io.takes(), "the refused cut is terminal");
+}
+
+#[test]
+fn a_cut_past_its_deadline_waits_for_its_truncate_then_times_out() {
+    let (mut io, file, _) = write_opened();
+    let mut events = Queue::with_capacity(2);
+    let mut subs = Queue::with_capacity(2);
+    file_layer::down(&mut io, Time::ZERO, Request::Cut { owner: OWNER, file, length: 4 }, &mut events, &mut subs);
+    let submit = subs.pop().expect("truncate in flight");
+    file_layer::expire(&mut io, Time::ZERO.saturating_add(Duration::from_secs(1)), &mut subs);
+    assert!(subs.is_empty(), "Truncate is never cancelled");
+    assert!(events.is_empty() && !io.takes(), "the deadline waits for the record to return");
+    complete(&mut io, submit, Ok(Done::Nothing), &mut events, &mut subs);
+    assert_eq!(
+        events.pop(),
+        Some(Event::Failed { owner: OWNER, error: crate::kernel::Error::TimedOut, committed: false, residue: None })
+    );
+    assert!(io.takes(), "the expired cut settles after its truncate");
+    assert!(events.is_empty(), "exactly one terminal");
+}

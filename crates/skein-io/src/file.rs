@@ -66,6 +66,18 @@ pub enum Request {
         root: Fd,
         name: Box<[u8]>,
     },
+    /// Opens an existing regular file to read and write, never creating it.
+    OpenWrite {
+        owner: Token,
+        root: Fd,
+        name: Box<[u8]>,
+    },
+    /// As `OpenWrite`, refusing a symbolic link in any path part.
+    OpenWriteNoFollow {
+        owner: Token,
+        root: Fd,
+        name: Box<[u8]>,
+    },
     /// Opens a directory beneath a root and gives back a file token for it.
     OpenDirectory {
         owner: Token,
@@ -116,6 +128,12 @@ pub enum Request {
         file: Token,
         offset: u64,
         max: u32,
+    },
+    /// Sets the open file's length, durable once synced: Cut or Failed.
+    Cut {
+        owner: Token,
+        file: Token,
+        length: u64,
     },
     Sync {
         owner: Token,
@@ -221,6 +239,10 @@ pub enum Event {
         owner: Token,
         bytes: Box<[u8]>,
     },
+    /// The file's length is the one asked for.
+    Cut {
+        owner: Token,
+    },
     Synced {
         owner: Token,
     },
@@ -268,6 +290,7 @@ impl Event {
             | Event::Stated { owner, .. }
             | Event::Written { owner }
             | Event::Read { owner, .. }
+            | Event::Cut { owner }
             | Event::Synced { owner }
             | Event::Closed { owner }
             | Event::Renamed { owner }

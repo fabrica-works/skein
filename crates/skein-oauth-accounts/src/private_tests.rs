@@ -101,6 +101,9 @@ fn owner_of(request: &file::Request) -> Token {
         | file::Request::OpenPrivate { owner, .. }
         | file::Request::Create { owner, .. }
         | file::Request::CreateNoFollow { owner, .. }
+        | file::Request::OpenWrite { owner, .. }
+        | file::Request::OpenWriteNoFollow { owner, .. }
+        | file::Request::Cut { owner, .. }
         | file::Request::OpenRead { owner, .. }
         | file::Request::OpenReadNoFollow { owner, .. }
         | file::Request::OpenDirectory { owner, .. }
@@ -327,6 +330,9 @@ fn check_file(request: &file::Request, shape: u32) {
         file::Request::MakeDirectory { .. }
         | file::Request::Create { .. }
         | file::Request::CreateNoFollow { .. }
+        | file::Request::OpenWrite { .. }
+        | file::Request::OpenWriteNoFollow { .. }
+        | file::Request::Cut { .. }
         | file::Request::OpenRead { .. }
         | file::Request::OpenReadNoFollow { .. }
         | file::Request::OpenDirectory { .. }
