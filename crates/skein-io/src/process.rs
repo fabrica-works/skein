@@ -148,7 +148,8 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
                     | Done::Stat(_)
                     | Done::Exit(_)
                     | Done::Usage(_)
-                    | Done::ServiceSignal(_),
+                    | Done::Signalled(_)
+                    | Done::Window(_),
                 ) => {
                     unreachable!("a spawn answers with a pidfd and pipes")
                 }
@@ -188,7 +189,8 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
                     | Done::Stat(_)
                     | Done::Spawned { .. }
                     | Done::Usage(_)
-                    | Done::ServiceSignal(_),
+                    | Done::Signalled(_)
+                    | Done::Window(_),
                 ) => {
                     unreachable!("a wait answers with an exit")
                 }
@@ -220,6 +222,7 @@ pub(crate) fn landed(io: &mut Io, landed: Landed, up: &mut Queue<Event>, subs: &
         | Purpose::Shutdown
         | Purpose::Discard
         | Purpose::ReadSignal
+        | Purpose::Window { .. }
         | Purpose::Usage { .. }
         | Purpose::PipeRead
         | Purpose::PipeWrite

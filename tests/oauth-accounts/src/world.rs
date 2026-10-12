@@ -1046,6 +1046,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 | io::Request::Output { .. }
                 | io::Request::Spawn { .. }
                 | io::Request::Signal { .. }
+                | io::Request::Window { .. }
                 | io::Request::Usage { .. }) => panic!("token exchange emits only socket requests: {other:?}"),
             }
         }

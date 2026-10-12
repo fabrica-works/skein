@@ -25,6 +25,7 @@ mod drive;
 mod ring;
 mod seed;
 mod startup;
+mod terminal;
 #[cfg(test)]
 mod tests;
 
@@ -39,3 +40,5 @@ pub use ring::{
 };
 pub use seed::seed;
 pub use startup::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_trust_roots};
+
+pub use terminal::{Input, Kept, Keys, Modes, Watch, open_signals, raw_input, resize_terminal, terminal_modes};

@@ -37,7 +37,7 @@ fn complete(kind: Op, result: Result<Done, Error>) -> Complete {
 
 /// One of every operation, valid. A new operation makes the match in
 /// `documented` fail to build until it is added there, and here.
-fn every_op() -> [Op; 26] {
+fn every_op() -> [Op; 27] {
     [
         Op::Socket { family: Family::Ipv4 },
         Op::Bind { fd: FD, addr: v4() },
@@ -63,6 +63,7 @@ fn every_op() -> [Op; 26] {
         Op::Signal { pidfd: FD, signal: crate::kernel::Signal::Kill, to: crate::kernel::Target::Child },
         Op::Signal { pidfd: FD, signal: crate::kernel::Signal::Kill, to: crate::kernel::Target::Group },
         Op::Usage,
+        Op::Window { fd: FD },
         Op::ReadSignal { fd: FD },
         Op::Cancel { target: Token::new(2) },
     ]
@@ -86,8 +87,11 @@ fn documented(op: &Op) -> Done {
         Op::Stat { .. } => Done::Stat(STAT),
         Op::Spawn { .. } => Done::Spawned { pidfd: NEW },
         Op::Wait { .. } => Done::Exit(crate::kernel::Exit::Code(0)),
+        Op::Window { .. } => Done::Window(crate::kernel::Size { rows: 24, columns: 80 }),
         Op::Usage => Done::Usage(crate::kernel::Usage::ZERO),
-        Op::ReadSignal { .. } => Done::ServiceSignal(crate::kernel::ServiceSignal::Terminate),
+        Op::ReadSignal { .. } => {
+            Done::Signalled(crate::kernel::Signalled::Termination(crate::kernel::ServiceSignal::Terminate))
+        }
         Op::Listen { .. }
         | Op::Connect { .. }
         | Op::Shutdown { .. }
@@ -111,8 +115,9 @@ fn every_operation_succeeds_with_its_documented_shape_and_no_other() {
         Done::Bound(v4()),
         Done::Stat(STAT),
         Done::Usage(crate::kernel::Usage::ZERO),
+        Done::Window(crate::kernel::Size { rows: 24, columns: 80 }),
         Done::Exit(crate::kernel::Exit::Code(0)),
-        Done::ServiceSignal(crate::kernel::ServiceSignal::Terminate),
+        Done::Signalled(crate::kernel::Signalled::Termination(crate::kernel::ServiceSignal::Terminate)),
     ];
     for op in every_op() {
         assert!(op.is_valid(), "the examples are valid: {op:?}");
@@ -158,6 +163,7 @@ fn the_shapes_are_as_the_table_on_op_says() {
         child_signal,
         group_signal,
         usage,
+        window,
         read_signal,
         cancel,
     ] = every_op();
@@ -165,7 +171,8 @@ fn the_shapes_are_as_the_table_on_op_says() {
     assert_eq!(accept.shape(), Shape::Accepted);
     assert_eq!(bind.shape(), Shape::Bound);
     assert_eq!(stat.shape(), Shape::Stat);
-    assert_eq!(read_signal.shape(), Shape::ServiceSignal);
+    assert_eq!(read_signal.shape(), Shape::Signalled);
+    assert_eq!(window.shape(), Shape::Window);
     assert_eq!(observing.shape(), Shape::Exit);
     assert_eq!(reaping.shape(), Shape::Exit);
     assert_eq!(usage.shape(), Shape::Usage);
@@ -341,6 +348,7 @@ fn named(op: &Op) -> &'static [Error] {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }
@@ -370,6 +378,7 @@ fn cancellable(op: &Op) -> bool {
         | Op::Spawn { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::Cancel { .. } => false,
         Op::Open { .. }
@@ -455,7 +464,7 @@ fn an_operation_on_sockets_never_answers_a_files_error() {
 fn the_operations_on_files_are_those_on_names_beneath_a_root() {
     let files = [
         false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true,
-        true, true, false, false, false, false, false, false, false,
+        true, true, false, false, false, false, false, false, false, false,
     ];
     assert_eq!(every_op().len(), files.len(), "the classification table covers every fixture");
     for (op, file) in every_op().into_iter().zip(files) {

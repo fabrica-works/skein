@@ -337,7 +337,8 @@ fn decode(io: &mut Io, landed: Landed) -> Happened {
                 | Done::Spawned { .. }
                 | Done::Exit(_)
                 | Done::Usage(_)
-                | Done::ServiceSignal(_),
+                | Done::Signalled(_)
+                | Done::Window(_),
             ) => {
                 unreachable!("a socket answers with its descriptor")
             }
@@ -354,7 +355,8 @@ fn decode(io: &mut Io, landed: Landed) -> Happened {
                 | Done::Spawned { .. }
                 | Done::Exit(_)
                 | Done::Usage(_)
-                | Done::ServiceSignal(_),
+                | Done::Signalled(_)
+                | Done::Window(_),
             ) => {
                 unreachable!("a bind answers with the address bound")
             }
@@ -371,7 +373,8 @@ fn decode(io: &mut Io, landed: Landed) -> Happened {
                 | Done::Spawned { .. }
                 | Done::Exit(_)
                 | Done::Usage(_)
-                | Done::ServiceSignal(_),
+                | Done::Signalled(_)
+                | Done::Window(_),
             ) => {
                 unreachable!("a listen answers with nothing")
             }
@@ -389,6 +392,7 @@ fn decode(io: &mut Io, landed: Landed) -> Happened {
         | Purpose::Spawn
         | Purpose::Wait
         | Purpose::Signal
+        | Purpose::Window { .. }
         | Purpose::Usage { .. }
         | Purpose::ReadSignal
         | Purpose::PipeRead
@@ -426,7 +430,8 @@ fn outcome(io: &mut Io, listener: Id<Entity>, result: Result<Done, kernel::Error
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_),
+            | Done::Signalled(_)
+            | Done::Window(_),
         ) => {
             unreachable!("an accept answers with a socket and its peer")
         }

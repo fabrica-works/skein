@@ -105,6 +105,8 @@ impl Driver {
                 | Event::Connecting { .. }
                 | Event::Connected { .. }
                 | Event::Usage { .. }
+                | Event::Resized
+                | Event::Window { .. }
                 | Event::Shutdown { .. } => panic!("unexpected event in {what}: {event:?}"),
             }
         }

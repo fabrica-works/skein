@@ -44,6 +44,8 @@ pub enum Request {
     Signal { child: Token, signal: Signal, to: Target },
     /// Reads this process and its reaped children at submit: exactly one `Usage` terminal.
     Usage { owner: Token },
+    /// Reads the terminal stream size: exactly one Window terminal.
+    Window { owner: Token, stream: Token },
     // Files, processes and signals (io.md, 5 to 7) go here when a user pulls
     // them: File { owner, root, op }, Spawn { owner, spawn },
     // Signal { child, signal, to }.
@@ -114,9 +116,14 @@ pub enum Event {
         owner: Token,
         usage: Measured,
     },
-    /// A blocked termination signal delivered through the service's signalfd
-    /// (io.md, section 7). It names no entity owner: the service itself
-    /// handles the shutdown request.
+    /// The terminal window changed; the owner asks Window for its size.
+    Resized,
+    /// The one terminal of a Window request.
+    Window {
+        owner: Token,
+        window: Window,
+    },
+    /// A blocked termination signal to the service itself (io.md, section 7).
     Shutdown {
         signal: ServiceSignal,
     },
@@ -156,6 +163,15 @@ pub enum Error {
     /// Anything else the kernel answered, which the layer above cannot act on:
     /// an address in use, or not this host's, among others.
     Other,
+}
+
+/// What a terminal size read returned (io.md, section 7).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Window {
+    /// The terminal's current size.
+    Size(kernel::Size),
+    /// The terminal hung up, or its descriptor is no longer available.
+    Gone,
 }
 
 /// What a process resource read returned (io.md, section 6.1).

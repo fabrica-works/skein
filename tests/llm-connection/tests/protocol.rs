@@ -137,6 +137,7 @@ fn run(seed: u64) -> (Vec<String>, (u32, u32, bool)) {
                 | IoRequest::Reject { .. }
                 | IoRequest::Output { .. }
                 | IoRequest::Spawn { .. }
+                | IoRequest::Window { .. }
                 | IoRequest::Usage { .. }
                 | IoRequest::Signal { .. }) => panic!("unexpected io request: {other:?}"),
             }
@@ -206,6 +207,7 @@ fn run(seed: u64) -> (Vec<String>, (u32, u32, bool)) {
                 | IoRequest::Reject { .. }
                 | IoRequest::Output { .. }
                 | IoRequest::Spawn { .. }
+                | IoRequest::Window { .. }
                 | IoRequest::Usage { .. }
                 | IoRequest::Signal { .. }
                 | IoRequest::Abort { .. }) => panic!("unexpected idle close request: {other:?}"),
@@ -331,6 +333,7 @@ fn per_call_reasoning_policy(endpoint_default: bool) {
                 | IoRequest::Reject { .. }
                 | IoRequest::Output { .. }
                 | IoRequest::Spawn { .. }
+                | IoRequest::Window { .. }
                 | IoRequest::Usage { .. }
                 | IoRequest::Signal { .. } => panic!("unexpected IO"),
             }

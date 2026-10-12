@@ -154,6 +154,8 @@ impl Process {
             | Event::Connecting { .. }
             | Event::Connected { .. }
             | Event::Usage { .. }
+            | Event::Resized
+            | Event::Window { .. }
             | Event::Shutdown { .. } => panic!("unexpected process event: {event:?}"),
         }
     }

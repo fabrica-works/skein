@@ -73,6 +73,13 @@ struct Judge {
 
 impl Referee<Process> for Judge {
     fn act(&mut self, _now: Time, procs: &mut [Process]) {
+        let (child, person) = procs.split_at_mut(1);
+        let Process::Child(child) = &child[0] else { panic!("binary observer") };
+        if let Some(Process::Person(person)) = person.first_mut()
+            && person.awaiting.is_some_and(|bytes| child.stderr().windows(bytes.len()).any(|line| line == bytes))
+        {
+            person.awaiting = None;
+        }
         if self.signal && !self.sent {
             let Process::Child(child) = &mut procs[0] else { panic!("binary observer") };
             if child.stderr().ends_with(b"ready\n") {
@@ -83,7 +90,13 @@ impl Referee<Process> for Judge {
     }
     fn observe(&mut self, now: Time, procs: &[Process]) {
         let Process::Child(child) = &procs[0] else { panic!("binary observer") };
-        self.act_at = (self.signal && !self.sent && child.stderr().ends_with(b"ready\n")).then_some(now);
+        let awaiting = match procs.get(1) {
+            Some(Process::Person(person)) => {
+                person.awaiting.is_some_and(|bytes| child.stderr().windows(bytes.len()).any(|line| line == bytes))
+            }
+            Some(Process::Child(_)) | None => false,
+        };
+        self.act_at = (awaiting || (self.signal && !self.sent && child.stderr().ends_with(b"ready\n"))).then_some(now);
     }
     fn next_deadline(&self) -> Option<Time> {
         self.act_at
@@ -846,4 +859,65 @@ fn legacy_stderr_capture_still_fails_the_scenario_at_overflow() {
     world.spawn_with_fds(binary.descriptors(), || Process::Child(binary));
     let outcome = world.run(&Clock::new(), Duration::from_secs(1));
     assert!(outcome.procs.iter().all(Host::is_empty));
+}
+
+fn terminal_fixture() -> Command {
+    Command {
+        program: env!("CARGO_BIN_EXE_world_terminal_fixture").into(),
+        arguments: vec![],
+        environment: vec![],
+        directory: "/tmp".into(),
+    }
+}
+
+#[test]
+fn input_is_read_a_key_at_a_time() {
+    let outcome = run(
+        terminal_fixture(),
+        Mode::Terminal,
+        &[Act::AwaitStderr(b"ready\n"), Act::Write(0, b"aq"), Act::Read(0), Act::Read(0)],
+        false,
+    );
+    let (child, _) = observations(&outcome);
+    assert_eq!(child.stderr(), b"ready\nkey a\nkey q\n");
+    assert_eq!(child.exit_status(), Some(Exit::Code(0)));
+}
+
+#[test]
+fn the_modes_are_found_again_once_the_binary_exits() {
+    let outcome = run(
+        terminal_fixture(),
+        Mode::Terminal,
+        &[Act::AwaitStderr(b"ready\n"), Act::Modes(0), Act::Write(0, b"q"), Act::Read(0), Act::Read(0), Act::Modes(0)],
+        false,
+    );
+    let (child, person) = observations(&outcome);
+    assert_eq!(child.exit_status(), Some(Exit::Code(0)));
+    assert_eq!(
+        person.modes,
+        [
+            skein_shell::Modes { echo: false, lines: false, signals: false },
+            skein_shell::Modes { echo: true, lines: true, signals: true }
+        ]
+    );
+}
+
+#[test]
+fn a_size_change_is_heard() {
+    let outcome = run(
+        terminal_fixture(),
+        Mode::Terminal,
+        &[
+            Act::AwaitStderr(b"ready\n"),
+            Act::Resize(0, skein_io::kernel::Size { rows: 30, columns: 100 }),
+            Act::AwaitStderr(b"size 30x100\n"),
+            Act::Write(0, b"q"),
+            Act::Read(0),
+            Act::Read(0),
+        ],
+        false,
+    );
+    let (child, _) = observations(&outcome);
+    assert!(child.stderr().windows(b"size 30x100\n".len()).any(|line| line == b"size 30x100\n"));
+    assert_eq!(child.exit_status(), Some(Exit::Code(0)));
 }

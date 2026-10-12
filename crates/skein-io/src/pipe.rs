@@ -82,6 +82,11 @@ impl Pipe {
         pipe
     }
 
+    pub(crate) fn window_fd(&self) -> Option<Fd> {
+        assert_eq!(self.way, Way::Out, "Window names a readable terminal stream");
+        if self.closing || self.closed { None } else { self.fd }
+    }
+
     pub(crate) const fn is_closed(&self) -> bool {
         self.closed
     }
@@ -206,7 +211,8 @@ pub(crate) fn landed(
                         | Done::Spawned { .. }
                         | Done::Exit(_)
                         | Done::Usage(_)
-                        | Done::ServiceSignal(_),
+                        | Done::Signalled(_)
+                        | Done::Window(_),
                     ) => unreachable!("a pipe read answers with a count"),
                 }
             }
@@ -238,6 +244,7 @@ pub(crate) fn landed(
         | Purpose::Spawn
         | Purpose::Wait
         | Purpose::Signal
+        | Purpose::Window { .. }
         | Purpose::Usage { .. }
         | Purpose::ReadSignal => unreachable!("a pipe only reads, writes, cancels and closes"),
     }
@@ -543,6 +550,7 @@ fn written(operation: Op) -> (Box<[u8]>, u32) {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::Cancel { .. } => unreachable!("a stream write returns its bytes"),
@@ -600,7 +608,8 @@ fn landed_write(
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_)
+            | Done::Signalled(_)
+            | Done::Window(_)
             | Done::Count(_),
         ) => unreachable!("a pipe write counts positive bytes"),
     }

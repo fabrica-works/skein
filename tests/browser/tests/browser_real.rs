@@ -383,6 +383,8 @@ impl Rig {
             | io::Event::Connected { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Shutdown { .. }
             | io::Event::Failed { .. } => panic!("unexpected io event: {event:?}"),
         }

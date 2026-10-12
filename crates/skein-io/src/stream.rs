@@ -659,7 +659,8 @@ fn decode(landed: Landed) -> Happened {
                 | Done::Spawned { .. }
                 | Done::Exit(_)
                 | Done::Usage(_)
-                | Done::ServiceSignal(_),
+                | Done::Signalled(_)
+                | Done::Window(_),
             ) => {
                 unreachable!("a socket answers with its descriptor")
             }
@@ -690,6 +691,7 @@ fn decode(landed: Landed) -> Happened {
             | Op::Wait { .. }
             | Op::Signal { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. }
@@ -719,6 +721,7 @@ fn decode(landed: Landed) -> Happened {
             | Op::Wait { .. }
             | Op::Signal { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. }
@@ -735,6 +738,7 @@ fn decode(landed: Landed) -> Happened {
         | Purpose::Spawn
         | Purpose::Wait
         | Purpose::Signal
+        | Purpose::Window { .. }
         | Purpose::Usage { .. }
         | Purpose::ReadSignal
         | Purpose::PipeRead
@@ -757,7 +761,8 @@ fn nothing(result: Result<Done, kernel::Error>) -> Result<(), kernel::Error> {
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_),
+            | Done::Signalled(_)
+            | Done::Window(_),
         ) => {
             unreachable!("a connect or a shutdown answers with nothing")
         }
@@ -778,7 +783,8 @@ fn counted(result: Result<Done, kernel::Error>) -> Result<u32, kernel::Error> {
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_),
+            | Done::Signalled(_)
+            | Done::Window(_),
         ) => {
             unreachable!("a receive or a send answers with a count")
         }

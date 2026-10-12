@@ -124,6 +124,8 @@ impl Host for Sender {
                 | io::Event::Spawned { .. }
                 | io::Event::Exited { .. }
                 | io::Event::Usage { .. }
+                | io::Event::Resized
+                | io::Event::Window { .. }
                 | io::Event::Shutdown { .. }
                 | io::Event::Failed { .. }) => panic!("unexpected client io event: {other:?}"),
             }

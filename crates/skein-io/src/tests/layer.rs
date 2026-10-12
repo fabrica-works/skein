@@ -78,7 +78,7 @@ fn a_completion_of_an_operation_completed_and_reclaimed_is_a_bug() {
 #[test]
 fn the_ring_has_four_operations_per_entity_and_one_usage_slot() {
     let base = limits();
-    assert_eq!(operations(&base), Some(9));
+    assert_eq!(operations(&base), Some(10), "four operations an entity, plus process usage and terminal size");
     let at = worst_case(&base).expect("tiny limits fit a u64");
     for bigger in [
         Limits { sockets: 3, ..base },

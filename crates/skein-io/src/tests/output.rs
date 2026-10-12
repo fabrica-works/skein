@@ -337,6 +337,7 @@ fn native_pipe_close_settles_waiting_output_and_actual_reap_waits_for_both_close
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::Cancel { .. }) => panic!("actual continued PipeWrite: {other:?}"),

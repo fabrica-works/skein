@@ -288,6 +288,8 @@ impl Host for Browser {
                 | io::Event::Spawned { .. }
                 | io::Event::Exited { .. }
                 | io::Event::Usage { .. }
+                | io::Event::Resized
+                | io::Event::Window { .. }
                 | io::Event::Shutdown { .. }
                 | io::Event::Failed { .. }) => panic!("browser event {other:?}"),
             }

@@ -150,6 +150,9 @@ pub enum Summary {
     },
     /// Process and reaped children usage.
     Usage,
+    Window {
+        fd: Fd,
+    },
     ReadSignal {
         fd: Fd,
     },
@@ -245,6 +248,7 @@ impl Summary {
             Op::PipeRead { fd, buf } => Summary::PipeRead { fd: *fd, len: buf.len() },
             Op::PipeWrite { fd, bytes, from } => Summary::PipeWrite { fd: *fd, len: bytes.len(), from: *from },
             Op::Usage => Summary::Usage,
+            Op::Window { fd } => Summary::Window { fd: *fd },
             Op::Cancel { target } => Summary::Cancel { target: *target },
         }
     }
@@ -273,6 +277,7 @@ impl Summary {
             | Summary::List { .. } => true,
             Summary::Spawn { .. }
             | Summary::Wait { .. }
+            | Summary::Window { .. }
             | Summary::Usage
             | Summary::Signal { .. }
             | Summary::ReadSignal { .. }
@@ -298,6 +303,7 @@ impl Summary {
         match self {
             Summary::Cancel { .. }
             | Summary::Spawn { .. }
+            | Summary::Window { .. }
             | Summary::Usage
             | Summary::Signal { .. }
             | Summary::Stat { .. }
@@ -351,6 +357,7 @@ impl Summary {
             | Summary::Spawn { root: fd, .. }
             | Summary::Wait { pidfd: fd, .. }
             | Summary::Signal { pidfd: fd, .. }
+            | Summary::Window { fd }
             | Summary::ReadSignal { fd }
             | Summary::PipeRead { fd, .. }
             | Summary::PipeWrite { fd, .. } => [Some(*fd), None],

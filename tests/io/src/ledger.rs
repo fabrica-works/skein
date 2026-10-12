@@ -80,7 +80,11 @@ impl Ledger {
         match request {
             Request::Listen { owner, .. } => self.made(*owner, Made::Listen),
             Request::Connect { owner, .. } => self.made(*owner, Made::Connect),
-            Request::Output { .. } | Request::Spawn { .. } | Request::Usage { .. } | Request::Signal { .. } => {
+            Request::Output { .. }
+            | Request::Spawn { .. }
+            | Request::Window { .. }
+            | Request::Usage { .. }
+            | Request::Signal { .. } => {
                 unreachable!("the socket world spawns no child")
             }
             Request::Bind { socket, owner } => {
@@ -146,6 +150,8 @@ impl Ledger {
             | Event::Spawned { .. }
             | Event::Exited { .. }
             | Event::Usage { .. }
+            | Event::Resized
+            | Event::Window { .. }
             | Event::Shutdown { .. } => {
                 unreachable!("the socket world spawns no child")
             }
@@ -212,6 +218,8 @@ impl Ledger {
             | Event::Spawned { .. }
             | Event::Exited { .. }
             | Event::Usage { .. }
+            | Event::Resized
+            | Event::Window { .. }
             | Event::Shutdown { .. } => {
                 unreachable!("the socket world spawns no child")
             }

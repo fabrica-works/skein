@@ -58,7 +58,10 @@ impl Host for Closing {
     fn iterate(&mut self, _now: Time, _wall: Wall) {
         while let Some(complete) = self.completions.pop() {
             self.pending -= 1;
-            if matches!(complete.result, Ok(Done::ServiceSignal(ServiceSignal::Terminate))) {
+            if matches!(
+                complete.result,
+                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
+            ) {
                 self.heard = true;
                 self.submissions.push(Submit { op: Token::new(3), kind: Op::Cancel { target: Token::new(1) } });
                 self.pending += 1;

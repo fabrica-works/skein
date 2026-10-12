@@ -560,7 +560,8 @@ pub(super) fn stopped(
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_),
+            | Done::Signalled(_)
+            | Done::Window(_),
         )
         | Err(_) => {}
     }
@@ -605,7 +606,8 @@ pub(super) fn done_fd(done: Done) -> Fd {
         | Done::Spawned { .. }
         | Done::Exit(_)
         | Done::Usage(_)
-        | Done::ServiceSignal(_) => unreachable!("an open returns a descriptor"),
+        | Done::Signalled(_)
+        | Done::Window(_) => unreachable!("an open returns a descriptor"),
     }
 }
 
@@ -620,7 +622,8 @@ pub(super) fn done_stat(done: Done) -> crate::kernel::Stat {
         | Done::Spawned { .. }
         | Done::Exit(_)
         | Done::Usage(_)
-        | Done::ServiceSignal(_) => unreachable!("a stat returns metadata"),
+        | Done::Signalled(_)
+        | Done::Window(_) => unreachable!("a stat returns metadata"),
     }
 }
 
@@ -635,7 +638,8 @@ fn done_count(done: Done) -> u32 {
         | Done::Spawned { .. }
         | Done::Exit(_)
         | Done::Usage(_)
-        | Done::ServiceSignal(_) => unreachable!("a transfer returns a count"),
+        | Done::Signalled(_)
+        | Done::Window(_) => unreachable!("a transfer returns a count"),
     }
 }
 
@@ -650,7 +654,8 @@ pub(super) fn done_nothing(done: Done) {
         | Done::Spawned { .. }
         | Done::Exit(_)
         | Done::Usage(_)
-        | Done::ServiceSignal(_) => unreachable!("this operation returns nothing"),
+        | Done::Signalled(_)
+        | Done::Window(_) => unreachable!("this operation returns nothing"),
     }
 }
 
@@ -679,6 +684,7 @@ fn write_parts(kind: Op) -> (Fd, Box<[u8]>, u32, u64) {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }
@@ -711,6 +717,7 @@ fn read_buffer(kind: Op) -> Box<[u8]> {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }

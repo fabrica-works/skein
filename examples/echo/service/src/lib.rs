@@ -425,6 +425,8 @@ fn protocol_up(svc: &mut Service, now: Time) {
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Shutdown { .. }
             | io::Event::Failed { .. }
             | io::Event::Closed { .. } => {

@@ -385,6 +385,7 @@ fn old_file_step(rig: &mut Rig, submit: Submit, opened: &mut alloc::collections:
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }

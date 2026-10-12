@@ -180,6 +180,7 @@ impl World {
             | Op::Wait { .. }
             | Op::Signal { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. }

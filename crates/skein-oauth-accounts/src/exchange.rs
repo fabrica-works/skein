@@ -255,6 +255,8 @@ impl Web {
             | IoEvent::Spawned { .. }
             | IoEvent::Exited { .. }
             | IoEvent::Usage { .. }
+            | IoEvent::Resized
+            | IoEvent::Window { .. }
             | IoEvent::Shutdown { .. } => {}
         }
     }

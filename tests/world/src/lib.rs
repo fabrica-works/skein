@@ -139,7 +139,8 @@ impl Script {
                 | Done::Spawned { .. }
                 | Done::Exit(_)
                 | Done::Usage(_)
-                | Done::ServiceSignal(_),
+                | Done::Signalled(_)
+                | Done::Window(_),
             ) => {}
             Err(_) => self.closing = true,
         }

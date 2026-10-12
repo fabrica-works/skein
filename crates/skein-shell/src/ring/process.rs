@@ -60,6 +60,10 @@ pub(super) fn block_sigpipe() -> Result<(), i32> {
 /// the returned descriptor until io adopts it. Call before opening the ring
 /// and before starting other threads.
 pub(super) fn open_termination_signals() -> Result<Fd, i32> {
+    open_signals(crate::Watch::Termination)
+}
+
+pub(crate) fn open_signals(watch: crate::Watch) -> Result<Fd, i32> {
     // SAFETY: sigemptyset initializes this plain C signal set.
     let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
     // SAFETY: each call writes only within the live signal set.
@@ -69,6 +73,12 @@ pub(super) fn open_termination_signals() -> Result<Fd, i32> {
     for signal in [libc::SIGINT, libc::SIGTERM] {
         // SAFETY: set is initialized and writable.
         if unsafe { libc::sigaddset(ptr::from_mut(&mut set), signal) } != 0 {
+            return Err(super::last_errno());
+        }
+    }
+    if let crate::Watch::TerminationAndWindow = watch {
+        // SAFETY: set remains initialized and writable.
+        if unsafe { libc::sigaddset(ptr::from_mut(&mut set), libc::SIGWINCH) } != 0 {
             return Err(super::last_errno());
         }
     }

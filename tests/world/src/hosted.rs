@@ -11,6 +11,12 @@ use skein_world::{Host, Inherited, Machine};
 pub enum Act {
     /// The parent asks to start the hosted program.
     Spawn,
+    /// Sets a terminal window size through its master.
+    Resize(usize, skein_io::kernel::Size),
+    /// Reads the terminal modes through its master.
+    Modes(usize),
+    /// Waits until the binary reports these bytes on stderr.
+    AwaitStderr(&'static [u8]),
     /// The parent starts a hosted program with a separate stderr pipe too.
     SpawnStderr,
     /// The script writes these bytes to one inherited pipe.
@@ -43,6 +49,7 @@ pub enum Act {
 #[derive(Debug)]
 pub struct Script {
     acts: VecDeque<Act>,
+    pub awaiting: Option<&'static [u8]>,
     fds: Vec<Fd>,
     signal: Option<Fd>,
     pidfd: Option<Fd>,
@@ -56,6 +63,7 @@ pub struct Script {
     completions: Queue<Complete>,
     submissions: Queue<Submit>,
     pub received: Vec<u8>,
+    pub modes: Vec<skein_shell::Modes>,
     pub results: Vec<Result<Done, skein_io::kernel::Error>>,
     pub signals: Vec<skein_io::kernel::ServiceSignal>,
     pub child_exit: Option<Exit>,
@@ -72,6 +80,7 @@ impl Script {
     pub fn new(acts: &[Act]) -> Self {
         Self {
             acts: acts.iter().copied().collect(),
+            awaiting: None,
             fds: Vec::new(),
             signal: None,
             pidfd: None,
@@ -85,6 +94,7 @@ impl Script {
             completions: Queue::with_capacity(8),
             submissions: Queue::with_capacity(8),
             received: Vec::new(),
+            modes: Vec::new(),
             results: Vec::new(),
             signals: Vec::new(),
             child_exit: None,
@@ -161,6 +171,18 @@ impl Script {
             Act::Signal(signal) => {
                 Op::Signal { pidfd: self.pidfd.expect("spawned child"), signal, to: skein_io::kernel::Target::Child }
             }
+            Act::AwaitStderr(bytes) => {
+                self.awaiting = Some(bytes);
+                return;
+            }
+            Act::Resize(at, size) => {
+                skein_shell::resize_terminal(self.fds[at], size).expect("terminal resize");
+                return;
+            }
+            Act::Modes(at) => {
+                self.modes.push(skein_shell::terminal_modes(self.fds[at]).expect("terminal modes"));
+                return;
+            }
             Act::ReadSignal => Op::ReadSignal { fd: self.signal.expect("child signal source") },
             Act::Pause(until) => {
                 self.pause = Some(until);
@@ -197,15 +219,23 @@ impl Host for Script {
                         self.received.extend_from_slice(&buf[..usize::try_from(count).expect("small count")]);
                     }
                 }
-                Ok(Done::ServiceSignal(signal)) => self.signals.push(signal),
+                Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(signal))) => self.signals.push(signal),
                 Ok(Done::Exit(exit)) => self.child_exit = Some(exit),
                 Ok(Done::Fd(fd)) => self.fds.push(fd),
-                Ok(Done::Usage(_) | Done::Nothing | Done::Bound(_) | Done::Accepted { .. } | Done::Stat(_))
+                Ok(
+                    Done::Signalled(skein_io::kernel::Signalled::WindowChanged)
+                    | Done::Window(_)
+                    | Done::Usage(_)
+                    | Done::Nothing
+                    | Done::Bound(_)
+                    | Done::Accepted { .. }
+                    | Done::Stat(_),
+                )
                 | Err(_) => {}
             }
             self.results.push(complete.result);
         }
-        if self.waiting || self.done || self.pause.is_some_and(|at| now < at) {
+        if self.waiting || self.done || self.awaiting.is_some() || self.pause.is_some_and(|at| now < at) {
             return;
         }
         self.pause = None;
@@ -238,7 +268,8 @@ impl Host for Script {
         &mut self.submissions
     }
     fn work_pending(&self, now: Time) -> bool {
-        !self.completions.is_empty() || (!self.waiting && !self.done && self.pause.is_none_or(|at| now >= at))
+        !self.completions.is_empty()
+            || (!self.waiting && !self.done && self.awaiting.is_none() && self.pause.is_none_or(|at| now >= at))
     }
     fn next_deadline(&self) -> Option<Time> {
         self.pause

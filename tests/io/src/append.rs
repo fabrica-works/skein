@@ -118,6 +118,8 @@ impl Writer {
                 | Event::Spawned { .. }
                 | Event::Exited { .. }
                 | Event::Usage { .. }
+                | Event::Resized
+                | Event::Window { .. }
                 | Event::Shutdown { .. } => panic!("append stream event"),
             };
             if self.events.iter().any(|event| matches!(event, Evidence::Failed(_))) {

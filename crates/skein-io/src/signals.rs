@@ -61,8 +61,12 @@ pub(crate) fn landed(
             assert!(signals.read.take() == Some(landed.flight), "the signal read flight matches");
             if !signals.closing {
                 match landed.result {
-                    Ok(Done::ServiceSignal(signal)) => {
+                    Ok(Done::Signalled(crate::kernel::Signalled::Termination(signal))) => {
                         up.push(Event::Shutdown { signal });
+                        resume(signals, id, tables, subs);
+                    }
+                    Ok(Done::Signalled(crate::kernel::Signalled::WindowChanged)) => {
+                        up.push(Event::Resized);
                         resume(signals, id, tables, subs);
                     }
                     Err(_) => {
@@ -99,6 +103,7 @@ pub(crate) fn landed(
         | Purpose::Spawn
         | Purpose::Wait
         | Purpose::Signal
+        | Purpose::Window { .. }
         | Purpose::Usage { .. }
         | Purpose::PipeRead
         | Purpose::PipeWrite => unreachable!("a signal source only reads, cancels and closes"),

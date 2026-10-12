@@ -300,3 +300,8 @@ fn stat_keeps_the_owner_and_counts_hard_links_through_removal() {
 fn path_only_metadata_needs_no_permission_on_its_entry() {
     each_seed(Config::calm(), CALM, |world| skein_conformance::path_metadata(world, true));
 }
+
+#[test]
+fn window_on_a_descriptor_that_is_not_a_terminal_answers_other() {
+    calm_and_chaos(skein_conformance::window);
+}

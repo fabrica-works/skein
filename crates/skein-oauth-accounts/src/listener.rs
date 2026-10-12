@@ -115,6 +115,8 @@ impl Listener {
                 | Event::Spawned { .. }
                 | Event::Exited { .. }
                 | Event::Usage { .. }
+                | Event::Resized
+                | Event::Window { .. }
                 | Event::Shutdown { .. } => {}
             },
             Socket::Callback => match event {
@@ -141,6 +143,8 @@ impl Listener {
                 | Event::Spawned { .. }
                 | Event::Exited { .. }
                 | Event::Usage { .. }
+                | Event::Resized
+                | Event::Window { .. }
                 | Event::Shutdown { .. } => {}
             },
             Socket::Web => {}

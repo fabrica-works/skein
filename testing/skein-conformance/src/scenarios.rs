@@ -95,7 +95,8 @@ fn sent(answer: Result<Done, Error>) -> bool {
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_),
+            | Done::Signalled(_)
+            | Done::Window(_),
         )
         | Err(_) => false,
     }
@@ -1213,4 +1214,26 @@ impl Check for DescriptorLimit {
         assert_eq!(self.accept, Err(Error::TooManyOpenFiles), "the contract: an Accept past the descriptor limit");
         assert!(self.then_accepted, "the contract: a failed Accept consumed no waiting connection");
     }
+}
+
+/// A size read on a non-terminal descriptor (kernel.md, section 6.3).
+#[derive(Debug)]
+pub struct Window {
+    result: Result<Done, Error>,
+}
+impl Check for Window {
+    fn check(&self) {
+        assert!(matches!(self.result, Err(Error::Other(_))), "a non-terminal answers Other");
+    }
+}
+/// Checks Window on a socket, shared by both backends.
+pub fn window<B: Backend>(backend: &mut B) -> Window {
+    let mut run = Run::new(backend);
+    let process = run.process();
+    let fd = run.socket(process, Family::Ipv4);
+    let token = run.start(process, Op::Window { fd });
+    let result = run.wait(process, token).result;
+    run.close(process, fd);
+    run.finish();
+    Window { result }
 }

@@ -105,6 +105,8 @@ impl Driver {
                 | Event::Spawned { .. }
                 | Event::Exited { .. }
                 | Event::Usage { .. }
+                | Event::Resized
+                | Event::Window { .. }
                 | Event::Shutdown { .. }
                 | Event::Failed { .. }
                 | Event::Closed { .. }) => {
@@ -238,6 +240,7 @@ fn succeed(op: &mut Op, fd: &mut i32) -> Result<Done, Error> {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. } => panic!("this memory world exercises only socket operations"),
@@ -268,6 +271,7 @@ fn stopped(op: &mut Op, fd: &mut i32) -> Result<Done, Error> {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }

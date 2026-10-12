@@ -319,6 +319,8 @@ pub fn up(proto: &mut Protocol, env: &Env<Limits>, event: Told, up: &mut Queue<C
         | Told::Connected { .. }
         | Told::Spawned { .. }
         | Told::Exited { .. }
+        | Told::Window { .. }
+        | Told::Resized
         | Told::Usage { .. } => {
             unreachable!("the echo connects to no one and spawns no child")
         }

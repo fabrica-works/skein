@@ -482,7 +482,7 @@ impl Component {
             | LowerEvent::Spawned { owner, .. }
             | LowerEvent::Exited { owner, .. }
             | LowerEvent::Usage { owner, .. } => *owner,
-            LowerEvent::Shutdown { .. } => return,
+            LowerEvent::Resized | LowerEvent::Window { .. } | LowerEvent::Shutdown { .. } => return,
         };
         let (id, socket) = route::exchange(owner);
         match self.exchanges.get_mut(id) {

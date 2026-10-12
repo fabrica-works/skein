@@ -168,3 +168,5 @@ pub trait Check {
     /// Panics, naming the rule, on what the contract does not allow.
     fn check(&self);
 }
+
+pub use scenarios::{Window, window};

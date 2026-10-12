@@ -282,6 +282,7 @@ impl Sim {
                     | Op::Spawn { .. }
                     | Op::Signal { .. }
                     | Op::Usage
+                    | Op::Window { .. }
                     | Op::Cancel { .. } => {}
                 }
                 discard(op);
@@ -328,7 +329,7 @@ impl Sim {
                 .pending
                 .pop_front()
                 .expect("one signal queued");
-            self.complete(pid, token, op, Ok(Done::ServiceSignal(signal)));
+            self.complete(pid, token, op, Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(signal))));
         }
     }
 
@@ -551,6 +552,7 @@ impl Sim {
             On::Nothing => None,
         };
         match kind {
+            Op::Window { .. } => self.complete(pid, token, kind, Err(Error::Other(25))),
             Op::Usage => {
                 let usage = self.process(pid).usage;
                 self.complete(pid, token, kind, Ok(Done::Usage(usage)));
@@ -589,6 +591,9 @@ impl Sim {
     #[expect(clippy::too_many_lines, reason = "descriptor and socket checks share one ordered set of invariants")]
     fn check(&self, pid: Pid, kind: Summary) -> On {
         let process = self.process(pid);
+        if let Summary::Window { .. } = kind {
+            return On::Nothing;
+        }
         if let Summary::Cancel { target } = kind {
             if let Some(flight) = process.flights.get(&target) {
                 if let Summary::Cancel { .. } = flight.kind {
@@ -695,6 +700,7 @@ impl Sim {
             Summary::Spawn { .. }
             | Summary::Wait { .. }
             | Summary::Signal { .. }
+            | Summary::Window { .. }
             | Summary::Usage
             | Summary::ReadSignal { .. }
             | Summary::PipeRead { .. }
@@ -798,6 +804,7 @@ impl Sim {
             Summary::Spawn { .. }
             | Summary::Wait { .. }
             | Summary::Signal { .. }
+            | Summary::Window { .. }
             | Summary::Usage
             | Summary::ReadSignal { .. }
             | Summary::PipeRead { .. }
@@ -1169,6 +1176,7 @@ impl Sim {
             | Op::Wait { .. }
             | Op::Signal { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. }

@@ -565,7 +565,12 @@ impl Sim {
             Op::ReadSignal { fd } => {
                 let source = self.process_mut(pid).signal_fds.get_mut(&fd).expect("checked signalfd");
                 if let Some(signal) = source.pending.pop_front() {
-                    self.complete(pid, token, Op::ReadSignal { fd }, Ok(Done::ServiceSignal(signal)));
+                    self.complete(
+                        pid,
+                        token,
+                        Op::ReadSignal { fd },
+                        Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(signal))),
+                    );
                 } else {
                     source.read = Some(token);
                     self.park(pid, token, Op::ReadSignal { fd });
@@ -1095,7 +1100,7 @@ mod tests {
         sim.reap(child, &mut child_completes);
         assert_eq!(
             child_completes.pop().expect("service signal").result,
-            Ok(Done::ServiceSignal(ServiceSignal::Terminate))
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
         );
         for (index, (_, fd)) in inherited.iter().enumerate() {
             child_submits.push(Submit {
@@ -1128,7 +1133,10 @@ mod tests {
         sim.deliver_service_signal(pid, fd, ServiceSignal::Interrupt);
         let mut completes = Queue::with_capacity(3);
         sim.reap(pid, &mut completes);
-        assert_eq!(completes.pop().expect("signal read").result, Ok(Done::ServiceSignal(ServiceSignal::Interrupt)));
+        assert_eq!(
+            completes.pop().expect("signal read").result,
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Interrupt)))
+        );
 
         submits.push(Submit { op: Token::new(2), kind: Op::ReadSignal { fd } });
         sim.submit(pid, &mut submits);

@@ -211,7 +211,7 @@
 //! | `Remove` | `NotFound`, `NotADirectory`, `IsADirectory`, `NotEmpty`, `Permission`, `ReadOnly`, `NameTooLong` |
 //! | `MakeDirectory` | `NotFound`, `Exists`, `NotADirectory`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong` |
 //! | `List` | `NotFound`, `NotADirectory`, `NameTooLong` |
-//! | `Usage` | only `Other` |
+//! | `Usage`, `Window` | only `Other` |
 //! | `Cancel` | only `TooLate`, `InvalidArgument` or `Other` |
 //!
 //! Broken invariants, which io never commits and backends may assume never
@@ -221,7 +221,7 @@
 //! - a record that is not [`Op::is_valid`];
 //! - a token already in flight;
 //! - a `Cancel` whose target is a `Cancel`, a `Stat`, a `Rename`, a
-//!   `Remove`, a `MakeDirectory`, a `List`, a `Spawn`, a `Signal` or a `Usage`;
+//!   `Remove`, a `MakeDirectory`, a `List`, a `Spawn`, a `Signal`, a `Usage` or a `Window`;
 //! - a `Wait` beside another on its pidfd, or a reap before a reported exit;
 //! - any operation on a pidfd after its reap, except its `Close`;
 //! - an operation on files ([`Op::is_file`]) on a socket's descriptor, or
@@ -345,7 +345,8 @@ pub struct Complete {
 /// | `Wait` | `Done::Exit`, exit code or signal |
 /// | `Signal` | `Done::Nothing`, child or group through its pidfd |
 /// | `Usage` | `Done::Usage`, own and reaped children resources |
-/// | `ReadSignal` | `Done::ServiceSignal`, one blocked termination signal |
+/// | `ReadSignal` | `Done::Signalled`, one blocked signal |
+/// | `Window` | `Done::Window`, terminal rows and columns |
 /// | `PipeRead`, `PipeWrite` | `Done::Count`, bytes read or written |
 /// | `Cancel` | `Done::Nothing`, the target was found in flight |
 #[derive(PartialEq, Eq, Hash, Debug)]
@@ -477,7 +478,11 @@ pub enum Op {
     },
     /// Reads the process and reaped children resource usage (kernel.md, section 6.3).
     Usage,
-    /// Reads one termination signal from the signalfd opened at startup
+    /// Reads the terminal size synchronously (kernel.md, section 6.3).
+    Window {
+        fd: Fd,
+    },
+    /// Reads one blocked signal from the signalfd opened at startup
     /// (io.md, section 7; shell.md, section 6).
     ReadSignal {
         fd: Fd,
@@ -682,6 +687,22 @@ pub fn is_name(name: &[u8]) -> bool {
     true
 }
 
+/// A terminal's size in character cells (kernel.md, section 6.3).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Size {
+    pub rows: u16,
+    pub columns: u16,
+}
+
+/// One signal read from the service's signalfd (io.md, section 7).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Signalled {
+    /// A termination delivered as io's Shutdown.
+    Termination(ServiceSignal),
+    /// A window change delivered as io's Resized.
+    WindowChanged,
+}
+
 /// The success values, one [`Shape`] per operation (see [`Op`]).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Done {
@@ -707,8 +728,10 @@ pub enum Done {
         pidfd: Fd,
     },
     Exit(Exit),
-    /// One service termination signal read from a signalfd.
-    ServiceSignal(ServiceSignal),
+    /// One blocked signal read from a signalfd.
+    Signalled(Signalled),
+    /// The terminal size read at submission.
+    Window(Size),
     /// The process and its reaped children, at submission.
     Usage(Usage),
 }
@@ -725,7 +748,10 @@ pub enum Shape {
     Stat,
     Spawned,
     Exit,
-    ServiceSignal,
+    /// A blocked signal.
+    Signalled,
+    /// Terminal size.
+    Window,
     /// Resource usage.
     Usage,
 }
@@ -970,6 +996,7 @@ impl Op {
             | Op::Wait { .. }
             | Op::Signal { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::Cancel { .. } => true,
         }
@@ -1000,8 +1027,9 @@ impl Op {
             Op::Stat { .. } => Shape::Stat,
             Op::Spawn { .. } => Shape::Spawned,
             Op::Wait { .. } => Shape::Exit,
-            Op::ReadSignal { .. } => Shape::ServiceSignal,
+            Op::ReadSignal { .. } => Shape::Signalled,
             Op::Usage => Shape::Usage,
+            Op::Window { .. } => Shape::Window,
             Op::Listen { .. }
             | Op::Connect { .. }
             | Op::Shutdown { .. }
@@ -1040,6 +1068,7 @@ impl Op {
             | Op::Wait { .. }
             | Op::Signal { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. }
@@ -1090,8 +1119,9 @@ impl Done {
             Done::Stat(_) => Shape::Stat,
             Done::Spawned { .. } => Shape::Spawned,
             Done::Exit(_) => Shape::Exit,
-            Done::ServiceSignal(_) => Shape::ServiceSignal,
+            Done::Signalled(_) => Shape::Signalled,
             Done::Usage(_) => Shape::Usage,
+            Done::Window(_) => Shape::Window,
         }
     }
 }
@@ -1114,7 +1144,7 @@ impl Complete {
 
 /// Whether `error` may answer `op`.
 fn may_fail(op: &Op, error: Error) -> bool {
-    if op.shape() == Shape::Usage {
+    if op.shape() == Shape::Usage || op.shape() == Shape::Window {
         return only_other(error);
     }
     if let Op::Cancel { .. } = op {
@@ -1340,6 +1370,7 @@ fn fits(op: &Op, done: &Done) -> bool {
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::Cancel { .. } => false,
         },
@@ -1347,8 +1378,9 @@ fn fits(op: &Op, done: &Done) -> bool {
         | Done::Fd(_)
         | Done::Accepted { .. }
         | Done::Exit(_)
-        | Done::ServiceSignal(_)
-        | Done::Usage(_) => true,
+        | Done::Signalled(_)
+        | Done::Usage(_)
+        | Done::Window(_) => true,
     }
 }
 
@@ -1385,6 +1417,7 @@ fn binds(op: &Op, bound: &Addr) -> bool {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }
@@ -1425,6 +1458,7 @@ fn counts(op: &Op, n: usize) -> bool {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::Cancel { .. } => false,
     }

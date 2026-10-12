@@ -390,6 +390,8 @@ impl Owner {
             | Event::Spawned { .. }
             | Event::Exited { .. }
             | Event::Usage { .. }
+            | Event::Resized
+            | Event::Window { .. }
             | Event::Shutdown { .. } => {
                 unreachable!("the socket world spawns no child")
             }

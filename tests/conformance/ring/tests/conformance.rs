@@ -259,3 +259,8 @@ fn path_only_metadata_needs_no_permission_on_its_entry() {
     }
     skein_conformance::path_metadata(&mut Ring::new(), denial_expected).check();
 }
+
+#[test]
+fn window_on_a_descriptor_that_is_not_a_terminal_answers_other() {
+    skein_conformance::window(&mut Ring::new()).check();
+}

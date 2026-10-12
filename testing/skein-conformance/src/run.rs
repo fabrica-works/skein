@@ -123,6 +123,7 @@ impl<'b, B: Backend> Run<'b, B> {
             | Op::Wait { .. }
             | Op::Signal { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. }
@@ -310,7 +311,8 @@ impl<'b, B: Backend> Run<'b, B> {
                     | Done::Stat(_)
                     | Done::Exit(_)
                     | Done::Usage(_)
-                    | Done::ServiceSignal(_)
+                    | Done::Signalled(_)
+                    | Done::Window(_)
                     | Done::Spawned { .. },
                 )
                 | Err(_),
@@ -727,6 +729,7 @@ enum Summary {
     Wait { pidfd: Fd, reap: bool },
     Signal { pidfd: Fd, signal: skein_io::kernel::Signal, to: skein_io::kernel::Target },
     Usage,
+    Window { fd: Fd },
     ReadSignal { fd: Fd },
     PipeRead { fd: Fd, len: usize },
     PipeWrite { fd: Fd, len: usize, from: u32 },
@@ -773,6 +776,7 @@ impl Summary {
             Op::PipeRead { fd, buf } => Summary::PipeRead { fd: *fd, len: buf.len() },
             Op::PipeWrite { fd, bytes, from } => Summary::PipeWrite { fd: *fd, len: bytes.len(), from: *from },
             Op::Usage => Summary::Usage,
+            Op::Window { fd } => Summary::Window { fd: *fd },
             Op::Cancel { target } => Summary::Cancel { target: *target },
         }
     }
@@ -818,6 +822,7 @@ fn boxes_of(op: &Op) -> Vec<&[u8]> {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::Cancel { .. } => Vec::new(),
     }
@@ -849,6 +854,7 @@ fn entries_of(op: &Op) -> Option<&[Entry]> {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::PipeRead { .. }
         | Op::PipeWrite { .. }
@@ -872,7 +878,8 @@ fn handed_back<P>(flight: &Flight<P>, complete: &Complete) {
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_),
+            | Done::Signalled(_)
+            | Done::Window(_),
         )
         | Err(_) => None,
     };

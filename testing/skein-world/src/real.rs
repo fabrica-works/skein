@@ -308,7 +308,8 @@ impl Process {
                 | Done::Stat(_)
                 | Done::Exit(_)
                 | Done::Usage(_)
-                | Done::ServiceSignal(_),
+                | Done::Signalled(_)
+                | Done::Window(_),
             )
             | Err(_) => {}
         }
@@ -614,6 +615,7 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
             | Op::MakeDirectory { .. }
             | Op::List { .. }
             | Op::Usage
+            | Op::Window { .. }
             | Op::ReadSignal { .. }
             | Op::PipeRead { .. }
             | Op::PipeWrite { .. } => {}

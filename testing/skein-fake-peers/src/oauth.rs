@@ -226,6 +226,8 @@ impl Peer {
             | io::Event::Spawned { .. }
             | io::Event::Exited { .. }
             | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
             | io::Event::Shutdown { .. } => {
                 panic!("issuer only listens and serves classic byte streams");
             }

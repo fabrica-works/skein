@@ -111,7 +111,7 @@ fn a_hosted_service_in_the_group_hears_a_termination_signal() {
     world.call(parent, Op::Signal { pidfd: leader, signal: Signal::Terminate, to: Target::Group });
     assert_eq!(
         world.call(service, Op::ReadSignal { fd: source }).result,
-        Ok(Done::ServiceSignal(ServiceSignal::Terminate))
+        Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
     );
     assert!(world.sim.service_running(service), "termination is delivered to the service's signal source");
     world.close(service, source);

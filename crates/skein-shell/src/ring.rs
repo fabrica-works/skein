@@ -66,8 +66,9 @@
     reason = "the ring adapter is the one place in skein that hands memory to the kernel (shell.md, 3; programming-model.md, 2.1)"
 )]
 
-mod process;
+pub(crate) mod process;
 mod startup;
+pub(crate) mod terminal;
 
 pub(crate) use startup::read_file;
 
@@ -839,6 +840,7 @@ fn prepare(
         }
         Op::Spawn { spawn: command } => return Prepared::Done(spawn(command)),
         Op::Signal { pidfd, signal, to } => return Prepared::Done(signal_child(*pidfd, *signal, *to)),
+        Op::Window { fd } => return Prepared::Done(terminal::size(*fd).map(Done::Window)),
         Op::Usage => return Prepared::Done(process::usage().map(Done::Usage)),
         Op::ReadSignal { fd } => opcode::Read::new(
             types::Fd(fd.raw()),
@@ -941,11 +943,18 @@ fn decode(flight: &mut Flight, res: i32, cancelled: bool) -> Result<Done, Error>
                 return Err(Error::Other(libc::EIO));
             }
             let signal = match signal_info.get_mut().ssi_signo {
-                value if value == u32::try_from(libc::SIGINT).expect("positive signal") => ServiceSignal::Interrupt,
-                value if value == u32::try_from(libc::SIGTERM).expect("positive signal") => ServiceSignal::Terminate,
+                value if value == u32::try_from(libc::SIGINT).expect("positive signal") => {
+                    skein_io::kernel::Signalled::Termination(ServiceSignal::Interrupt)
+                }
+                value if value == u32::try_from(libc::SIGTERM).expect("positive signal") => {
+                    skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)
+                }
+                value if value == u32::try_from(libc::SIGWINCH).expect("positive signal") => {
+                    skein_io::kernel::Signalled::WindowChanged
+                }
                 _ => return Err(Error::Other(libc::EINVAL)),
             };
-            Ok(Done::ServiceSignal(signal))
+            Ok(Done::Signalled(signal))
         }
         Op::Listen { .. }
         | Op::Connect { .. }
@@ -956,7 +965,7 @@ fn decode(flight: &mut Flight, res: i32, cancelled: bool) -> Result<Done, Error>
         | Op::Remove { .. }
         | Op::MakeDirectory { .. }
         | Op::Cancel { .. } => Ok(Done::Nothing),
-        Op::Usage | Op::List { .. } | Op::Spawn { .. } | Op::Signal { .. } => {
+        Op::Window { .. } | Op::Usage | Op::List { .. } | Op::Spawn { .. } | Op::Signal { .. } => {
             unreachable!("a synchronous operation completes at its submit")
         }
     }
@@ -989,7 +998,7 @@ fn error(kind: &Op, errno: i32, cancelled: bool) -> Error {
             libc::EINVAL => Error::InvalidArgument,
             other => file_error(kind, other),
         },
-        Op::Usage | Op::Spawn { .. } | Op::Signal { .. } => Error::Other(errno),
+        Op::Window { .. } | Op::Usage | Op::Spawn { .. } | Op::Signal { .. } => Error::Other(errno),
         Op::ReadSignal { .. } => match errno {
             libc::ECANCELED => Error::Cancelled,
             libc::EINTR if cancelled => Error::Cancelled,
@@ -1079,6 +1088,7 @@ fn operation_error(kind: &Op, errno: i32) -> Error {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::Cancel { .. } => unreachable!("an operation on files' errors, and a Cancel's, are mapped apart"),
     };
@@ -1175,6 +1185,7 @@ fn file_error(kind: &Op, errno: i32) -> Error {
         | Op::Wait { .. }
         | Op::Signal { .. }
         | Op::Usage
+        | Op::Window { .. }
         | Op::ReadSignal { .. }
         | Op::Cancel { .. } => unreachable!("only an operation on files' errors are mapped here"),
     };
@@ -1198,7 +1209,9 @@ fn c_path(bytes: &[u8]) -> Box<[u8]> {
 /// Path-only descriptors never enter an operation other than Stat or Close (kernel.md, 6.1).
 fn check_path_access(operation: &Op) {
     let descriptors = match operation {
-        Op::Stat { .. } | Op::Close { .. } | Op::Socket { .. } | Op::Usage | Op::Cancel { .. } => return,
+        Op::Stat { .. } | Op::Close { .. } | Op::Socket { .. } | Op::Usage | Op::Window { .. } | Op::Cancel { .. } => {
+            return;
+        }
         Op::Bind { fd, .. }
         | Op::Listen { fd, .. }
         | Op::Accept { fd }
@@ -1712,7 +1725,10 @@ mod tests {
         }
         let answer = answers.pop().expect("the signal read completed");
         assert_eq!(answer.kind, Op::ReadSignal { fd });
-        assert_eq!(answer.result, Ok(Done::ServiceSignal(ServiceSignal::Terminate)));
+        assert_eq!(
+            answer.result,
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
+        );
 
         submits.push(Submit { op: Token::new(2), kind: Op::Close { fd } });
         kernel.submit(&mut submits, Wait::No);

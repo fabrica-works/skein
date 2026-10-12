@@ -39,3 +39,7 @@ disallowed_methods = "deny"
 [[bin]]
 name = "world_process_fixture"
 path = "../conformance/ring/src/bin/process_fixture.rs"
+
+[[bin]]
+name = "world_terminal_fixture"
+path = "src/bin/terminal_fixture.rs"

@@ -255,6 +255,7 @@ fn every_listener_slot_keeps_a_bounded_partial_head_within_the_heap_bound() {
                 | IoRequest::Output { .. }
                 | IoRequest::Spawn { .. }
                 | IoRequest::Signal { .. }
+                | IoRequest::Window { .. }
                 | IoRequest::Usage { .. }
                 | IoRequest::Close { .. }
                 | IoRequest::Abort { .. }) => panic!("partial head remains live: {other:?}"),

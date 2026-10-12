@@ -116,6 +116,8 @@ impl Process {
             | Event::Connected { .. }
             | Event::Stream { .. }
             | Event::Output { .. }
+            | Event::Resized
+            | Event::Window { .. }
             | Event::Shutdown { .. }
             | Event::Failed { .. } => panic!("unexpected usage-story event: {event:?}"),
         }

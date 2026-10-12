@@ -49,6 +49,7 @@ pub(crate) struct Tables {
     pub(crate) armed: u32,
     /// The process resource read, independently of entity admission.
     usage: Option<Id<Flight>>,
+    window: Option<Id<Flight>>,
 }
 
 /// An operation in flight: its purpose and its entity, absent for process usage.
@@ -76,6 +77,7 @@ pub(crate) enum Purpose {
     Wait,
     Signal,
     Usage { owner: Token },
+    Window { owner: Token },
     ReadSignal,
     PipeRead,
     PipeWrite,
@@ -131,6 +133,7 @@ impl Io {
                 refused: Queue::with_capacity(limits.refusals),
                 armed: 0,
                 usage: None,
+                window: None,
             },
         }
     }
@@ -173,7 +176,7 @@ impl Io {
     }
 
     /// Takes the signalfd opened after blocking termination signals at
-    /// startup (shell.md, section 6). Each read becomes `Event::Shutdown`;
+    /// startup (shell.md, section 6). Each read becomes `Event::Shutdown` or `Event::Resized`;
     /// `Close` or `Abort` on the returned token settles the read and closes
     /// the descriptor. On a full slab the caller retains the descriptor.
     pub fn adopt_signals(&mut self, fd: Fd) -> Result<Token, Fd> {
@@ -372,6 +375,52 @@ pub fn resume(io: &mut Io, env: &Env<Limits>, up: &mut Queue<Event>, subs: &mut 
     }
 }
 
+fn window(result: Result<Done, kernel::Error>) -> crate::Window {
+    match result {
+        Ok(Done::Window(size)) => crate::Window::Size(size),
+        Err(kernel::Error::Other(_)) => crate::Window::Gone,
+        Ok(
+            Done::Nothing
+            | Done::Count(_)
+            | Done::Fd(_)
+            | Done::Accepted { .. }
+            | Done::Bound(_)
+            | Done::Stat(_)
+            | Done::Spawned { .. }
+            | Done::Exit(_)
+            | Done::Signalled(_)
+            | Done::Usage(_),
+        ) => unreachable!("Window answers its size"),
+        Err(
+            kernel::Error::Refused
+            | kernel::Error::Reset
+            | kernel::Error::BrokenPipe
+            | kernel::Error::NotConnected
+            | kernel::Error::AddressInUse
+            | kernel::Error::AddressNotAvailable
+            | kernel::Error::Unreachable
+            | kernel::Error::TimedOut
+            | kernel::Error::TooManyOpenFiles
+            | kernel::Error::NoBufferSpace
+            | kernel::Error::InvalidArgument
+            | kernel::Error::Cancelled
+            | kernel::Error::TooLate
+            | kernel::Error::NotFound
+            | kernel::Error::Exists
+            | kernel::Error::NotADirectory
+            | kernel::Error::IsADirectory
+            | kernel::Error::NotEmpty
+            | kernel::Error::Permission
+            | kernel::Error::NoSpace
+            | kernel::Error::ReadOnly
+            | kernel::Error::TooManyLinks
+            | kernel::Error::NameTooLong
+            | kernel::Error::Escape
+            | kernel::Error::NotAFile,
+        ) => unreachable!("Window fails only Other (kernel.md, section 6.3)"),
+    }
+}
+
 /// Takes one completion, emitting at most [`MAX_OUT_UP`](crate::MAX_OUT_UP).
 /// The loop hands io completions only once its ready list is empty.
 ///
@@ -383,6 +432,12 @@ pub fn up(io: &mut Io, env: &Env<Limits>, complete: Complete, up: &mut Queue<Eve
     let Flight { entity, purpose } = *io.tables.flights.get(flight).expect("a completion names an operation in flight");
     io.tables.flights.retire(flight);
     match purpose {
+        Purpose::Window { owner } => {
+            assert_eq!(io.tables.window.take(), Some(flight), "one terminal size operation");
+            let window = window(result);
+            up.push(Event::Window { owner, window });
+            return;
+        }
         Purpose::Usage { owner } => {
             assert_eq!(io.tables.usage.take(), Some(flight), "one process usage operation");
             let usage = match result {
@@ -397,7 +452,8 @@ pub fn up(io: &mut Io, env: &Env<Limits>, complete: Complete, up: &mut Queue<Eve
                     | Done::Stat(_)
                     | Done::Spawned { .. }
                     | Done::Exit(_)
-                    | Done::ServiceSignal(_),
+                    | Done::Signalled(_)
+                    | Done::Window(_),
                 ) => unreachable!("Usage answers its record (kernel.md, section 6.3)"),
                 Err(
                     kernel::Error::Refused
@@ -513,6 +569,23 @@ pub fn down(io: &mut Io, env: &Env<Limits>, request: Request, subs: &mut Queue<S
         Request::Output { stream, down } => output_request(io, env, stream, down, subs),
         Request::Spawn { owner, spawn } => process::spawn(io, owner, spawn, subs),
         Request::Signal { child, signal, to } => process::signal(io, child, signal, to, subs),
+        Request::Window { owner, stream } => {
+            assert!(io.tables.window.is_none(), "one Window request in flight");
+            let fd = match io.entities.get(Id::from_token(stream)) {
+                Some(Entity::Pipe(pipe)) => pipe.window_fd().unwrap_or(Fd::new(-1)),
+                None => Fd::new(-1),
+                Some(Entity::Listener(_) | Entity::Stream(_) | Entity::Child(_) | Entity::Signals(_)) => {
+                    unreachable!("Window names the input terminal stream")
+                }
+            };
+            let flight = io
+                .tables
+                .flights
+                .insert(Flight { entity: None, purpose: Purpose::Window { owner } })
+                .expect("one operation slot reserved for terminal size");
+            io.tables.window = Some(flight);
+            subs.push(Submit { op: flight.token(), kind: Op::Window { fd } });
+        }
         Request::Usage { owner } => {
             assert!(io.tables.usage.is_none(), "one Usage request in flight (io.md, section 6.1)");
             let flight = io
@@ -656,7 +729,8 @@ pub(crate) fn unsubmitted(result: Result<Done, kernel::Error>) -> bool {
             | Done::Spawned { .. }
             | Done::Exit(_)
             | Done::Usage(_)
-            | Done::ServiceSignal(_),
+            | Done::Signalled(_)
+            | Done::Window(_),
         ) => {
             unreachable!("a cancel answers with nothing")
         }
