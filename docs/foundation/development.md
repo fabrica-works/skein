@@ -955,17 +955,16 @@ itself with `plan join <role>`.
   (`context.md`). When restarting a session, add what you found: its last
   landed step, its branch, and whether its worktree has uncommitted
   changes.
-- **Slots.** At most eight sessions run at once. Codex counts finished
-  sub-agent threads against `max_threads` (64 in the coordinator's
-  profile) and has no tool to close one, and a reused thread keeps its
-  old session's whole context. So spawn a fresh thread for each session
-  and for each handover. Give each thread a slot name (`w1`, `w2`, …) and
-  record it in the ledger's `slot` column, with the thread's id, as
-  `spawn_agent` returned it, in the `thread` column. If `plan set` refuses
-  `thread=`, put `thread=<id>` in the step's `note` instead. Only when a
-  spawn is refused, reuse the finished slot whose context `plan contexts`
-  shows smallest, with `followup_task`: say that its previous session is
-  over, and give the new session's prompt.
+- **Threads.** Spawn a fresh thread for each session and for each
+  handover (section 7.3); never give a finished thread another session's
+  work, since it would carry that session's whole context. At most eight
+  run at once: Codex refuses a ninth spawn while eight are running
+  (`max_threads` in the coordinator's profile), and a finished thread
+  frees its place. A refused spawn waits for a session to finish. Give
+  each thread a name (`w1`, `w2`, …) and record it in the ledger's `slot`
+  column, with the thread's id, as `spawn_agent` returned it, in the
+  `thread` column. If `plan set` refuses `thread=`, put `thread=<id>` in
+  the step's `note` instead.
 
 ### 7.3 Reports
 
@@ -1700,10 +1699,6 @@ that machine.
 - **A coordinator after a reboot.** `plan resume` loads its thread again
   with `thread/resume` before starting a turn. That path is untested
   after a real reboot.
-- **Closing finished Codex threads,** instead of raising `max_threads`.
-  A plan of about 25 sessions with two handovers each would reach 64.
-  Codex 0.160's coordinator has no `close_agent` (checked 2026-10-12),
-  though its binary has the handler.
 - **Credentials under load.** Does a run's work that borrows the Codex
   login (benchmarks, probes) put the coordinator's own session at risk?
   A `CODEX_HOME` of their own for such work is a candidate answer.
