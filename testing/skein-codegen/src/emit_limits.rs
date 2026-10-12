@@ -2,7 +2,7 @@
 
 //! Limits and typed field paths for codec.md, section 4.
 
-use crate::{Declaration, Schema, Type};
+use crate::{Declaration, analysis::Context};
 
 pub(crate) fn snake(name: &str) -> String {
     let mut out = String::new();
@@ -47,58 +47,8 @@ pub(crate) fn literal(value: impl ToString) -> String {
     grouped
 }
 
-pub(crate) fn bound_names(schema: &Schema) -> Vec<(String, u32)> {
-    let mut result = Vec::new();
-    for declaration in &schema.declarations {
-        if let Declaration::Record(record) = declaration {
-            for field in &record.fields {
-                let prefix = format!("{}_{}", snake(&record.name), field.name);
-                collect_bound_names(&field.ty, &prefix, &mut result);
-            }
-        }
-    }
-    result
-}
-
-pub(crate) fn bound_paths(schema: &Schema) -> Vec<(String, String)> {
-    let mut result = Vec::new();
-    for declaration in &schema.declarations {
-        if let Declaration::Record(record) = declaration {
-            for field in &record.fields {
-                let prefix = format!("{}_{}", snake(&record.name), field.name);
-                let path = format!("{}{}", record.name, pascal(&field.name));
-                let mut bounds = Vec::new();
-                collect_bound_names(&field.ty, &prefix, &mut bounds);
-                for (name, _) in bounds {
-                    result.push((name, path.clone()));
-                }
-            }
-        }
-    }
-    result
-}
-
-fn collect_bound_names(ty: &Type, name: &str, result: &mut Vec<(String, u32)>) {
-    match ty {
-        Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) => result.push((name.into(), *bound)),
-        Type::List(bound, item) => {
-            result.push((name.into(), *bound));
-            collect_bound_names(item, &format!("{name}_item"), result);
-        }
-        Type::Option(item) => collect_bound_names(item, &format!("{name}_some"), result),
-        Type::U8
-        | Type::U16
-        | Type::U32
-        | Type::U64
-        | Type::Bool
-        | Type::Duration
-        | Type::Fixed(_)
-        | Type::Named(_) => {}
-    }
-}
-
-pub(crate) fn emit(schema: &Schema, out: &mut String) {
-    let bounds = bound_names(schema);
+pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
+    let bounds = &schema.bounds;
     if bounds.is_empty() {
         out.push_str("/// The family has no adjustable bounds.\n#[derive(Clone, Debug, PartialEq, Eq, Hash)]\npub struct Limits {\n");
     } else if bounds.len() <= 2 {
@@ -106,15 +56,15 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) {
     } else {
         out.push_str("/// The family's adjustable limits, each no larger than its ceiling.\n#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\npub struct Limits {\n");
     }
-    for (name, _) in &bounds {
+    for (name, _, _) in bounds {
         out.push_str(&format!("    pub {name}: u32,\n"));
     }
     out.push_str("}\n\n/// The schema's maximum limits.\npub const CEILINGS: Limits = Limits {\n");
-    for (name, bound) in &bounds {
+    for (name, bound, _) in bounds {
         out.push_str(&format!("    {name}: {},\n", literal(*bound)));
     }
     out.push_str("};\n\n/// A field or tag that caused a codec problem.\n#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\npub enum Path {\n");
-    for declaration in &schema.declarations {
+    for declaration in schema.declarations {
         match declaration {
             Declaration::Record(record) => {
                 for field in &record.fields {
@@ -135,4 +85,24 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) {
         }
     }
     out.push_str("}\n\n/// A decoding or bound failure at a schema path.\n#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\npub struct Problem {\n    pub path: Path,\n    pub reason: skein_codec::Reason,\n}\n\n");
+    emit_check(schema, out);
+}
+
+/// One family check at each public constructor and decoder entrance.
+pub(crate) fn emit_check(schema: &Context<'_>, out: &mut String) {
+    if schema.bounds.is_empty() {
+        return;
+    }
+    out.push_str("fn check_limits(limits: &Limits) -> Result<(), Problem> {\n");
+    for (index, _) in schema.bounds.chunks(90).enumerate() {
+        out.push_str(&format!("    check_limits_{index}(limits)?;\n"));
+    }
+    out.push_str("    Ok(())\n}\n\n");
+    for (index, chunk) in schema.bounds.chunks(90).enumerate() {
+        out.push_str(&format!("fn check_limits_{index}(limits: &Limits) -> Result<(), Problem> {{\n"));
+        for (name, _, path) in chunk {
+            out.push_str(&format!("    if limits.{name} > CEILINGS.{name} {{ return Err(Problem {{ path: Path::{path}, reason: skein_codec::Reason::Bound }}); }}\n"));
+        }
+        out.push_str("    Ok(())\n}\n\n");
+    }
 }

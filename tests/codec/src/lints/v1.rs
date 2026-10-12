@@ -484,6 +484,126 @@ pub struct Problem {
     pub reason: skein_codec::Reason,
 }
 
+fn check_limits(limits: &Limits) -> Result<(), Problem> {
+    check_limits_0(limits)?;
+    check_limits_1(limits)?;
+    Ok(())
+}
+
+fn check_limits_0(limits: &Limits) -> Result<(), Problem> {
+    if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
+    if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
+    if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
+    if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
+    if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
+    if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
+    Ok(())
+}
+
+fn check_limits_1(limits: &Limits) -> Result<(), Problem> {
+    if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
+    if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
+    Ok(())
+}
+
 /// Movable fields of `HostTool`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HostToolParts {
@@ -507,6 +627,7 @@ impl HostTool {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: HostToolParts) -> Result<Self, Problem> {
         let HostToolParts { skein_bools, max_tokens, payload } = parts;
+        check_limits(limits)?;
         let value = Self { skein_bools, max_tokens, payload };
         value.check(limits)?;
         Ok(value)
@@ -541,131 +662,11 @@ impl HostTool {
     pub fn into_parts(self) -> HostToolParts { HostToolParts { skein_bools: self.skein_bools, max_tokens: self.max_tokens, payload: self.payload } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(limits)?;
-        Self::check_1(self, limits)?;
-        Ok(())
-    }
-}
-
-
-impl HostTool {
-    fn check_0(limits: &Limits) -> Result<(), Problem> {
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl HostTool {
-    fn check_1(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
         if self.payload.len() > usize::try_from(limits.host_tool_payload.min(CEILINGS.host_tool_payload)).expect("u32 fits usize") { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
+
 /// Movable fields of `Boundless`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BoundlessParts {
@@ -683,8 +684,8 @@ impl Boundless {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: BoundlessParts) -> Result<Self, Problem> {
         let BoundlessParts { count } = parts;
+        check_limits(limits)?;
         let value = Self { count };
-        value.check(limits)?;
         Ok(value)
     }
 
@@ -696,132 +697,8 @@ impl Boundless {
     #[must_use]
     pub fn into_parts(self) -> BoundlessParts { BoundlessParts { count: self.count } }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(self, limits)?;
-        Self::check_1(limits)?;
-        Ok(())
-    }
 }
 
-
-impl Boundless {
-    fn check_0(&self, limits: &Limits) -> Result<(), Problem> {
-        let Self { .. } = self;
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl Boundless {
-    fn check_1(limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
 /// Movable fields of `Payload`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PayloadParts {
@@ -839,6 +716,7 @@ impl Payload {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: PayloadParts) -> Result<Self, Problem> {
         let PayloadParts { data } = parts;
+        check_limits(limits)?;
         let value = Self { data };
         value.check(limits)?;
         Ok(value)
@@ -853,131 +731,11 @@ impl Payload {
     pub fn into_parts(self) -> PayloadParts { PayloadParts { data: self.data } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(limits)?;
-        Self::check_1(self, limits)?;
-        Ok(())
-    }
-}
-
-
-impl Payload {
-    fn check_0(limits: &Limits) -> Result<(), Problem> {
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl Payload {
-    fn check_1(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
         if self.data.len() > usize::try_from(limits.payload_data.min(CEILINGS.payload_data)).expect("u32 fits usize") { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
+
 /// Movable fields of `OtherPayload`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OtherPayloadParts {
@@ -995,8 +753,8 @@ impl OtherPayload {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: OtherPayloadParts) -> Result<Self, Problem> {
         let OtherPayloadParts { value } = parts;
+        check_limits(limits)?;
         let value = Self { value };
-        value.check(limits)?;
         Ok(value)
     }
 
@@ -1008,132 +766,8 @@ impl OtherPayload {
     #[must_use]
     pub fn into_parts(self) -> OtherPayloadParts { OtherPayloadParts { value: self.value } }
 
-    fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(self, limits)?;
-        Self::check_1(limits)?;
-        Ok(())
-    }
 }
 
-
-impl OtherPayload {
-    fn check_0(&self, limits: &Limits) -> Result<(), Problem> {
-        let Self { .. } = self;
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl OtherPayload {
-    fn check_1(limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
 /// `Shared` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Shared {
@@ -1150,6 +784,7 @@ pub enum Shared {
 impl Shared {
     /// Checks the payload against the given limits.
     pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
+        check_limits(limits)?;
         value.check(limits)?;
         Ok(value)
     }
@@ -1157,11 +792,8 @@ impl Shared {
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
         match self {
             Self::First(record) | Self::Second(record) => Payload::check(record, limits),
-            Self::Other(record) => OtherPayload::check(record, limits),
-            Self::Empty => Ok(()),
+            Self::Other(_) | Self::Empty => Ok(()),
         }?;
-        check_limits_0(limits)?;
-        check_limits_1(limits)?;
         Ok(())
     }
 }
@@ -1183,6 +815,7 @@ impl OneByteItems {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: OneByteItemsParts) -> Result<Self, Problem> {
         let OneByteItemsParts { items } = parts;
+        check_limits(limits)?;
         let value = Self { items };
         value.check(limits)?;
         Ok(value)
@@ -1197,127 +830,6 @@ impl OneByteItems {
     pub fn into_parts(self) -> OneByteItemsParts { OneByteItemsParts { items: self.items } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(limits)?;
-        Self::check_1(self, limits)?;
-        Ok(())
-    }
-}
-
-
-impl OneByteItems {
-    fn check_0(limits: &Limits) -> Result<(), Problem> {
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl OneByteItems {
-    fn check_1(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
         if self.items.capacity() > limits.one_byte_items_items.min(CEILINGS.one_byte_items_items) { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
         for item_0 in self.items.as_slice() {
         item_0.check(limits)?;
@@ -1325,6 +837,7 @@ impl OneByteItems {
         Ok(())
     }
 }
+
 /// Movable fields of `OptionalPayload`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OptionalPayloadParts {
@@ -1342,6 +855,7 @@ impl OptionalPayload {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: OptionalPayloadParts) -> Result<Self, Problem> {
         let OptionalPayloadParts { data } = parts;
+        check_limits(limits)?;
         let value = Self { data };
         value.check(limits)?;
         Ok(value)
@@ -1356,131 +870,11 @@ impl OptionalPayload {
     pub fn into_parts(self) -> OptionalPayloadParts { OptionalPayloadParts { data: self.data } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(limits)?;
-        Self::check_1(self, limits)?;
-        Ok(())
-    }
-}
-
-
-impl OptionalPayload {
-    fn check_0(limits: &Limits) -> Result<(), Problem> {
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl OptionalPayload {
-    fn check_1(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
         if let Some(some_0) = self.data.as_ref() && some_0.len() > usize::try_from(limits.optional_payload_data_some.min(CEILINGS.optional_payload_data_some)).expect("u32 fits usize") { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
+
 /// `BoxedChoice` in this codec family.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BoxedChoice {
@@ -1495,6 +889,7 @@ pub enum BoxedChoice {
 impl BoxedChoice {
     /// Checks the payload against the given limits.
     pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
+        check_limits(limits)?;
         value.check(limits)?;
         Ok(value)
     }
@@ -1505,8 +900,6 @@ impl BoxedChoice {
             Self::Inline(record) => OptionalPayload::check(record, limits),
             Self::Empty => Ok(()),
         }?;
-        check_limits_0(limits)?;
-        check_limits_1(limits)?;
         Ok(())
     }
 }
@@ -1523,6 +916,7 @@ pub enum InlineChoice {
 impl InlineChoice {
     /// Checks the payload against the given limits.
     pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
+        check_limits(limits)?;
         value.check(limits)?;
         Ok(value)
     }
@@ -1532,8 +926,6 @@ impl InlineChoice {
             Self::Payload(record) => OptionalPayload::check(record, limits),
             Self::Empty => Ok(()),
         }?;
-        check_limits_0(limits)?;
-        check_limits_1(limits)?;
         Ok(())
     }
 }
@@ -1558,6 +950,7 @@ impl FixedWidthItems {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: FixedWidthItemsParts) -> Result<Self, Problem> {
         let FixedWidthItemsParts { wide, narrow } = parts;
+        check_limits(limits)?;
         let value = Self { wide, narrow };
         value.check(limits)?;
         Ok(value)
@@ -1576,132 +969,12 @@ impl FixedWidthItems {
     pub fn into_parts(self) -> FixedWidthItemsParts { FixedWidthItemsParts { wide: self.wide, narrow: self.narrow } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(limits)?;
-        Self::check_1(self, limits)?;
-        Ok(())
-    }
-}
-
-
-impl FixedWidthItems {
-    fn check_0(limits: &Limits) -> Result<(), Problem> {
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl FixedWidthItems {
-    fn check_1(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
         if self.wide.capacity() > limits.fixed_width_items_wide.min(CEILINGS.fixed_width_items_wide) { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
         if self.narrow.capacity() > limits.fixed_width_items_narrow.min(CEILINGS.fixed_width_items_narrow) { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
         Ok(())
     }
 }
+
 /// Movable fields of `LongRecord`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LongRecordParts {
@@ -2016,6 +1289,7 @@ impl LongRecord {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: LongRecordParts) -> Result<Self, Problem> {
         let LongRecordParts { alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel, india, juliet, kilo, lima, mike, november, oscar, papa, quebec, romeo, sierra, tango, uniform, victor, whiskey, xray, yankee, zulu, amber, birch, cedar, dune, acorn, anchor, apron, atlas, autumn, avocado, walnut, badge, bamboo, barrel, beacon, beetle, bronze, cactus, camera, canyon, cello, cobalt, comet, compass, coral, cotton, coyote, cricket, crystal, dragon, engine, falcon, feather, fern, flute, fossil, galaxy, garden, glacier, granite, harbor, hazel, helmet, honey, igloo, island, ivory, jasmine, kettle, lantern, leopard, lobster, magnet, marble, meadow, mermaid, meteor, mosaic, napkin, nectar, ocean, olive, orchid, panda, pencil, planet, pollen, quartz, rainbow, raven, rocket, saffron, salmon, satin } = parts;
+        check_limits(limits)?;
         let value = Self { alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel, india, juliet, kilo, lima, mike, november, oscar, papa, quebec, romeo, sierra, tango, uniform, victor, whiskey, xray, yankee, zulu, amber, birch, cedar, dune, acorn, anchor, apron, atlas, autumn, avocado, walnut, badge, bamboo, barrel, beacon, beetle, bronze, cactus, camera, canyon, cello, cobalt, comet, compass, coral, cotton, coyote, cricket, crystal, dragon, engine, falcon, feather, fern, flute, fossil, galaxy, garden, glacier, granite, harbor, hazel, helmet, honey, igloo, island, ivory, jasmine, kettle, lantern, leopard, lobster, magnet, marble, meadow, mermaid, meteor, mosaic, napkin, nectar, ocean, olive, orchid, panda, pencil, planet, pollen, quartz, rainbow, raven, rocket, saffron, salmon, satin };
         value.check(limits)?;
         Ok(value)
@@ -2426,128 +1700,15 @@ impl LongRecord {
     pub fn into_parts(self) -> LongRecordParts { LongRecordParts { alpha: self.alpha, bravo: self.bravo, charlie: self.charlie, delta: self.delta, echo: self.echo, foxtrot: self.foxtrot, golf: self.golf, hotel: self.hotel, india: self.india, juliet: self.juliet, kilo: self.kilo, lima: self.lima, mike: self.mike, november: self.november, oscar: self.oscar, papa: self.papa, quebec: self.quebec, romeo: self.romeo, sierra: self.sierra, tango: self.tango, uniform: self.uniform, victor: self.victor, whiskey: self.whiskey, xray: self.xray, yankee: self.yankee, zulu: self.zulu, amber: self.amber, birch: self.birch, cedar: self.cedar, dune: self.dune, acorn: self.acorn, anchor: self.anchor, apron: self.apron, atlas: self.atlas, autumn: self.autumn, avocado: self.avocado, walnut: self.walnut, badge: self.badge, bamboo: self.bamboo, barrel: self.barrel, beacon: self.beacon, beetle: self.beetle, bronze: self.bronze, cactus: self.cactus, camera: self.camera, canyon: self.canyon, cello: self.cello, cobalt: self.cobalt, comet: self.comet, compass: self.compass, coral: self.coral, cotton: self.cotton, coyote: self.coyote, cricket: self.cricket, crystal: self.crystal, dragon: self.dragon, engine: self.engine, falcon: self.falcon, feather: self.feather, fern: self.fern, flute: self.flute, fossil: self.fossil, galaxy: self.galaxy, garden: self.garden, glacier: self.glacier, granite: self.granite, harbor: self.harbor, hazel: self.hazel, helmet: self.helmet, honey: self.honey, igloo: self.igloo, island: self.island, ivory: self.ivory, jasmine: self.jasmine, kettle: self.kettle, lantern: self.lantern, leopard: self.leopard, lobster: self.lobster, magnet: self.magnet, marble: self.marble, meadow: self.meadow, mermaid: self.mermaid, meteor: self.meteor, mosaic: self.mosaic, napkin: self.napkin, nectar: self.nectar, ocean: self.ocean, olive: self.olive, orchid: self.orchid, panda: self.panda, pencil: self.pencil, planet: self.planet, pollen: self.pollen, quartz: self.quartz, rainbow: self.rainbow, raven: self.raven, rocket: self.rocket, saffron: self.saffron, salmon: self.salmon, satin: self.satin } }
 
     fn check(&self, limits: &Limits) -> Result<(), Problem> {
-        Self::check_0(limits)?;
+        Self::check_0(self, limits)?;
         Self::check_1(self, limits)?;
-        Self::check_2(self, limits)?;
         Ok(())
     }
 }
 
 
 impl LongRecord {
-    fn check_0(limits: &Limits) -> Result<(), Problem> {
-        if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-        if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-        if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-        if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl LongRecord {
-    fn check_1(&self, limits: &Limits) -> Result<(), Problem> {
-        if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-        if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
+    fn check_0(&self, limits: &Limits) -> Result<(), Problem> {
         if self.alpha.len() > usize::try_from(limits.long_record_alpha.min(CEILINGS.long_record_alpha)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
         if self.bravo.len() > usize::try_from(limits.long_record_bravo.min(CEILINGS.long_record_bravo)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
         if self.charlie.len() > usize::try_from(limits.long_record_charlie.min(CEILINGS.long_record_charlie)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
@@ -2582,12 +1743,6 @@ impl LongRecord {
         if self.anchor.len() > usize::try_from(limits.long_record_anchor.min(CEILINGS.long_record_anchor)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
         if self.apron.len() > usize::try_from(limits.long_record_apron.min(CEILINGS.long_record_apron)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
         if self.atlas.len() > usize::try_from(limits.long_record_atlas.min(CEILINGS.long_record_atlas)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-        Ok(())
-    }
-}
-
-impl LongRecord {
-    fn check_2(&self, limits: &Limits) -> Result<(), Problem> {
         if self.autumn.len() > usize::try_from(limits.long_record_autumn.min(CEILINGS.long_record_autumn)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
         if self.avocado.len() > usize::try_from(limits.long_record_avocado.min(CEILINGS.long_record_avocado)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
         if self.walnut.len() > usize::try_from(limits.long_record_walnut.min(CEILINGS.long_record_walnut)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
@@ -2624,6 +1779,12 @@ impl LongRecord {
         if self.hazel.len() > usize::try_from(limits.long_record_hazel.min(CEILINGS.long_record_hazel)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
         if self.helmet.len() > usize::try_from(limits.long_record_helmet.min(CEILINGS.long_record_helmet)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
         if self.honey.len() > usize::try_from(limits.long_record_honey.min(CEILINGS.long_record_honey)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
+        Ok(())
+    }
+}
+
+impl LongRecord {
+    fn check_1(&self, limits: &Limits) -> Result<(), Problem> {
         if self.igloo.len() > usize::try_from(limits.long_record_igloo.min(CEILINGS.long_record_igloo)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
         if self.island.len() > usize::try_from(limits.long_record_island.min(CEILINGS.long_record_island)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
         if self.ivory.len() > usize::try_from(limits.long_record_ivory.min(CEILINGS.long_record_ivory)).expect("u32 fits usize") { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
@@ -2693,6 +1854,7 @@ impl HostTool {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::HostToolTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2705,7 +1867,7 @@ impl HostTool {
         let decoded_agents = match reader.u8().ok_or(Problem { path: Path::HostToolAgents, reason: skein_codec::Reason::Short })? { 0 => false, 1 => true, _ => return Err(Problem { path: Path::HostToolAgents, reason: skein_codec::Reason::Bool }) };
         let decoded_max_tokens = reader.u32().ok_or(Problem { path: Path::HostToolMaxTokens, reason: skein_codec::Reason::Short })?;
         let decoded_payload = { let length = match skein_codec::read_len(reader, limits.host_tool_payload.min(CEILINGS.host_tool_payload)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::HostToolPayload, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Short })?) };
-        Self::new(limits, HostToolParts { skein_bools: [decoded_inspect, decoded_modify, decoded_shell, decoded_agents], max_tokens: decoded_max_tokens, payload: decoded_payload })
+        Ok(Self { skein_bools: [decoded_inspect, decoded_modify, decoded_shell, decoded_agents], max_tokens: decoded_max_tokens, payload: decoded_payload })
     }
 }
 
@@ -2727,14 +1889,15 @@ impl Boundless {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::BoundlessTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
     }
 
-    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_count = reader.u32().ok_or(Problem { path: Path::BoundlessCount, reason: skein_codec::Reason::Short })?;
-        Self::new(limits, BoundlessParts { count: decoded_count })
+        Ok(Self { count: decoded_count })
     }
 }
 
@@ -2759,6 +1922,7 @@ impl Payload {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::PayloadTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2766,7 +1930,7 @@ impl Payload {
 
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_data = { let length = match skein_codec::read_len(reader, limits.payload_data.min(CEILINGS.payload_data)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::PayloadData, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Short })?) };
-        Self::new(limits, PayloadParts { data: decoded_data })
+        Ok(Self { data: decoded_data })
     }
 }
 
@@ -2788,14 +1952,15 @@ impl OtherPayload {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::OtherPayloadTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
     }
 
-    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+    fn decode_from(_limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_value = reader.u8().ok_or(Problem { path: Path::OtherPayloadValue, reason: skein_codec::Reason::Short })?;
-        Self::new(limits, OtherPayloadParts { value: decoded_value })
+        Ok(Self { value: decoded_value })
     }
 }
 
@@ -2823,6 +1988,7 @@ impl Shared {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::SharedTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2837,7 +2003,7 @@ impl Shared {
             3 => Self::Empty,
             _ => return Err(Problem { path: Path::SharedTag, reason: skein_codec::Reason::Tag }),
         };
-        Self::new(limits, value)
+        Ok(value)
     }
 }
 
@@ -2866,6 +2032,7 @@ impl OneByteItems {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::OneByteItemsTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2873,7 +2040,7 @@ impl OneByteItems {
 
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_items = { let count = match skein_codec::read_count(reader, limits.one_byte_items_items.min(CEILINGS.one_byte_items_items)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::OneByteItemsItems, reason }), }; if count > reader.remaining() { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = Shared::decode_from(limits, reader)?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, OneByteItemsParts { items: decoded_items })
+        Ok(Self { items: decoded_items })
     }
 }
 
@@ -2907,6 +2074,7 @@ impl OptionalPayload {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::OptionalPayloadTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2914,7 +2082,7 @@ impl OptionalPayload {
 
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_data = match reader.u8().ok_or(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Short })? { 0 => None, 1 => Some({ let length = match skein_codec::read_len(reader, limits.optional_payload_data_some.min(CEILINGS.optional_payload_data_some)) { Ok(length) => length, Err(reason) => return Err(Problem { path: Path::OptionalPayloadData, reason }), }; Box::from(reader.bytes(length).ok_or(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Short })?) }), _ => return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Tag }) };
-        Self::new(limits, OptionalPayloadParts { data: decoded_data })
+        Ok(Self { data: decoded_data })
     }
 }
 
@@ -2941,6 +2109,7 @@ impl BoxedChoice {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::BoxedChoiceTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2954,7 +2123,7 @@ impl BoxedChoice {
             2 => Self::Empty,
             _ => return Err(Problem { path: Path::BoxedChoiceTag, reason: skein_codec::Reason::Tag }),
         };
-        Self::new(limits, value)
+        Ok(value)
     }
 }
 
@@ -2979,6 +2148,7 @@ impl InlineChoice {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::InlineChoiceTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2991,7 +2161,7 @@ impl InlineChoice {
             1 => Self::Empty,
             _ => return Err(Problem { path: Path::InlineChoiceTag, reason: skein_codec::Reason::Tag }),
         };
-        Self::new(limits, value)
+        Ok(value)
     }
 }
 
@@ -3026,6 +2196,7 @@ impl FixedWidthItems {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::FixedWidthItemsTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -3034,7 +2205,7 @@ impl FixedWidthItems {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_wide = { let count = match skein_codec::read_count(reader, limits.fixed_width_items_wide.min(CEILINGS.fixed_width_items_wide)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::FixedWidthItemsWide, reason }), }; if count > reader.remaining() / 8 { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = reader.u64().ok_or(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Short })?; items_0.push(item).expect("count within capacity"); } items_0 };
         let decoded_narrow = { let count = match skein_codec::read_count(reader, limits.fixed_width_items_narrow.min(CEILINGS.fixed_width_items_narrow)) { Ok(count) => count, Err(reason) => return Err(Problem { path: Path::FixedWidthItemsNarrow, reason }), }; if count > reader.remaining() / 4 { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Short }); } let mut items_0 = List::with_capacity(count); for _index in 0_u32..count { let item = reader.u32().ok_or(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Short })?; items_0.push(item).expect("count within capacity"); } items_0 };
-        Self::new(limits, FixedWidthItemsParts { wide: decoded_wide, narrow: decoded_narrow })
+        Ok(Self { wide: decoded_wide, narrow: decoded_narrow })
     }
 }
 
@@ -3063,6 +2234,7 @@ impl LongRecord {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
+        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::LongRecordTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -3071,7 +2243,7 @@ impl LongRecord {
     fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
         let decoded_0 = Self::decode_from_0(limits, reader)?;
         let decoded_1 = Self::decode_from_1(limits, reader)?;
-        Self::new(limits, LongRecordParts { alpha: decoded_0.alpha, bravo: decoded_0.bravo, charlie: decoded_0.charlie, delta: decoded_0.delta, echo: decoded_0.echo, foxtrot: decoded_0.foxtrot, golf: decoded_0.golf, hotel: decoded_0.hotel, india: decoded_0.india, juliet: decoded_0.juliet, kilo: decoded_0.kilo, lima: decoded_0.lima, mike: decoded_0.mike, november: decoded_0.november, oscar: decoded_0.oscar, papa: decoded_0.papa, quebec: decoded_0.quebec, romeo: decoded_0.romeo, sierra: decoded_0.sierra, tango: decoded_0.tango, uniform: decoded_0.uniform, victor: decoded_0.victor, whiskey: decoded_0.whiskey, xray: decoded_0.xray, yankee: decoded_0.yankee, zulu: decoded_0.zulu, amber: decoded_0.amber, birch: decoded_0.birch, cedar: decoded_0.cedar, dune: decoded_0.dune, acorn: decoded_0.acorn, anchor: decoded_0.anchor, apron: decoded_0.apron, atlas: decoded_0.atlas, autumn: decoded_0.autumn, avocado: decoded_0.avocado, walnut: decoded_0.walnut, badge: decoded_0.badge, bamboo: decoded_0.bamboo, barrel: decoded_0.barrel, beacon: decoded_0.beacon, beetle: decoded_0.beetle, bronze: decoded_0.bronze, cactus: decoded_0.cactus, camera: decoded_0.camera, canyon: decoded_0.canyon, cello: decoded_0.cello, cobalt: decoded_0.cobalt, comet: decoded_0.comet, compass: decoded_0.compass, coral: decoded_0.coral, cotton: decoded_0.cotton, coyote: decoded_0.coyote, cricket: decoded_0.cricket, crystal: decoded_0.crystal, dragon: decoded_0.dragon, engine: decoded_0.engine, falcon: decoded_0.falcon, feather: decoded_0.feather, fern: decoded_0.fern, flute: decoded_0.flute, fossil: decoded_0.fossil, galaxy: decoded_0.galaxy, garden: decoded_0.garden, glacier: decoded_0.glacier, granite: decoded_0.granite, harbor: decoded_0.harbor, hazel: decoded_0.hazel, helmet: decoded_0.helmet, honey: decoded_0.honey, igloo: decoded_1.igloo, island: decoded_1.island, ivory: decoded_1.ivory, jasmine: decoded_1.jasmine, kettle: decoded_1.kettle, lantern: decoded_1.lantern, leopard: decoded_1.leopard, lobster: decoded_1.lobster, magnet: decoded_1.magnet, marble: decoded_1.marble, meadow: decoded_1.meadow, mermaid: decoded_1.mermaid, meteor: decoded_1.meteor, mosaic: decoded_1.mosaic, napkin: decoded_1.napkin, nectar: decoded_1.nectar, ocean: decoded_1.ocean, olive: decoded_1.olive, orchid: decoded_1.orchid, panda: decoded_1.panda, pencil: decoded_1.pencil, planet: decoded_1.planet, pollen: decoded_1.pollen, quartz: decoded_1.quartz, rainbow: decoded_1.rainbow, raven: decoded_1.raven, rocket: decoded_1.rocket, saffron: decoded_1.saffron, salmon: decoded_1.salmon, satin: decoded_1.satin })
+        Ok(Self { alpha: decoded_0.alpha, bravo: decoded_0.bravo, charlie: decoded_0.charlie, delta: decoded_0.delta, echo: decoded_0.echo, foxtrot: decoded_0.foxtrot, golf: decoded_0.golf, hotel: decoded_0.hotel, india: decoded_0.india, juliet: decoded_0.juliet, kilo: decoded_0.kilo, lima: decoded_0.lima, mike: decoded_0.mike, november: decoded_0.november, oscar: decoded_0.oscar, papa: decoded_0.papa, quebec: decoded_0.quebec, romeo: decoded_0.romeo, sierra: decoded_0.sierra, tango: decoded_0.tango, uniform: decoded_0.uniform, victor: decoded_0.victor, whiskey: decoded_0.whiskey, xray: decoded_0.xray, yankee: decoded_0.yankee, zulu: decoded_0.zulu, amber: decoded_0.amber, birch: decoded_0.birch, cedar: decoded_0.cedar, dune: decoded_0.dune, acorn: decoded_0.acorn, anchor: decoded_0.anchor, apron: decoded_0.apron, atlas: decoded_0.atlas, autumn: decoded_0.autumn, avocado: decoded_0.avocado, walnut: decoded_0.walnut, badge: decoded_0.badge, bamboo: decoded_0.bamboo, barrel: decoded_0.barrel, beacon: decoded_0.beacon, beetle: decoded_0.beetle, bronze: decoded_0.bronze, cactus: decoded_0.cactus, camera: decoded_0.camera, canyon: decoded_0.canyon, cello: decoded_0.cello, cobalt: decoded_0.cobalt, comet: decoded_0.comet, compass: decoded_0.compass, coral: decoded_0.coral, cotton: decoded_0.cotton, coyote: decoded_0.coyote, cricket: decoded_0.cricket, crystal: decoded_0.crystal, dragon: decoded_0.dragon, engine: decoded_0.engine, falcon: decoded_0.falcon, feather: decoded_0.feather, fern: decoded_0.fern, flute: decoded_0.flute, fossil: decoded_0.fossil, galaxy: decoded_0.galaxy, garden: decoded_0.garden, glacier: decoded_0.glacier, granite: decoded_0.granite, harbor: decoded_0.harbor, hazel: decoded_0.hazel, helmet: decoded_0.helmet, honey: decoded_0.honey, igloo: decoded_1.igloo, island: decoded_1.island, ivory: decoded_1.ivory, jasmine: decoded_1.jasmine, kettle: decoded_1.kettle, lantern: decoded_1.lantern, leopard: decoded_1.leopard, lobster: decoded_1.lobster, magnet: decoded_1.magnet, marble: decoded_1.marble, meadow: decoded_1.meadow, mermaid: decoded_1.mermaid, meteor: decoded_1.meteor, mosaic: decoded_1.mosaic, napkin: decoded_1.napkin, nectar: decoded_1.nectar, ocean: decoded_1.ocean, olive: decoded_1.olive, orchid: decoded_1.orchid, panda: decoded_1.panda, pencil: decoded_1.pencil, planet: decoded_1.planet, pollen: decoded_1.pollen, quartz: decoded_1.quartz, rainbow: decoded_1.rainbow, raven: decoded_1.raven, rocket: decoded_1.rocket, saffron: decoded_1.saffron, salmon: decoded_1.salmon, satin: decoded_1.satin })
     }
 }
 
@@ -4453,2563 +3625,218 @@ pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     Some(biggest)
 }
 
-fn check_limits_0(limits: &Limits) -> Result<(), Problem> {
-    if limits.host_tool_payload > CEILINGS.host_tool_payload { return Err(Problem { path: Path::HostToolPayload, reason: skein_codec::Reason::Bound }); }
-    if limits.payload_data > CEILINGS.payload_data { return Err(Problem { path: Path::PayloadData, reason: skein_codec::Reason::Bound }); }
-    if limits.one_byte_items_items > CEILINGS.one_byte_items_items { return Err(Problem { path: Path::OneByteItemsItems, reason: skein_codec::Reason::Bound }); }
-    if limits.optional_payload_data_some > CEILINGS.optional_payload_data_some { return Err(Problem { path: Path::OptionalPayloadData, reason: skein_codec::Reason::Bound }); }
-    if limits.fixed_width_items_wide > CEILINGS.fixed_width_items_wide { return Err(Problem { path: Path::FixedWidthItemsWide, reason: skein_codec::Reason::Bound }); }
-    if limits.fixed_width_items_narrow > CEILINGS.fixed_width_items_narrow { return Err(Problem { path: Path::FixedWidthItemsNarrow, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_alpha > CEILINGS.long_record_alpha { return Err(Problem { path: Path::LongRecordAlpha, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_bravo > CEILINGS.long_record_bravo { return Err(Problem { path: Path::LongRecordBravo, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_charlie > CEILINGS.long_record_charlie { return Err(Problem { path: Path::LongRecordCharlie, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_delta > CEILINGS.long_record_delta { return Err(Problem { path: Path::LongRecordDelta, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_echo > CEILINGS.long_record_echo { return Err(Problem { path: Path::LongRecordEcho, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_foxtrot > CEILINGS.long_record_foxtrot { return Err(Problem { path: Path::LongRecordFoxtrot, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_golf > CEILINGS.long_record_golf { return Err(Problem { path: Path::LongRecordGolf, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_hotel > CEILINGS.long_record_hotel { return Err(Problem { path: Path::LongRecordHotel, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_india > CEILINGS.long_record_india { return Err(Problem { path: Path::LongRecordIndia, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_juliet > CEILINGS.long_record_juliet { return Err(Problem { path: Path::LongRecordJuliet, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_kilo > CEILINGS.long_record_kilo { return Err(Problem { path: Path::LongRecordKilo, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_lima > CEILINGS.long_record_lima { return Err(Problem { path: Path::LongRecordLima, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_mike > CEILINGS.long_record_mike { return Err(Problem { path: Path::LongRecordMike, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_november > CEILINGS.long_record_november { return Err(Problem { path: Path::LongRecordNovember, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_oscar > CEILINGS.long_record_oscar { return Err(Problem { path: Path::LongRecordOscar, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_papa > CEILINGS.long_record_papa { return Err(Problem { path: Path::LongRecordPapa, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_quebec > CEILINGS.long_record_quebec { return Err(Problem { path: Path::LongRecordQuebec, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_romeo > CEILINGS.long_record_romeo { return Err(Problem { path: Path::LongRecordRomeo, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_sierra > CEILINGS.long_record_sierra { return Err(Problem { path: Path::LongRecordSierra, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_tango > CEILINGS.long_record_tango { return Err(Problem { path: Path::LongRecordTango, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_uniform > CEILINGS.long_record_uniform { return Err(Problem { path: Path::LongRecordUniform, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_victor > CEILINGS.long_record_victor { return Err(Problem { path: Path::LongRecordVictor, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_whiskey > CEILINGS.long_record_whiskey { return Err(Problem { path: Path::LongRecordWhiskey, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_xray > CEILINGS.long_record_xray { return Err(Problem { path: Path::LongRecordXray, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_yankee > CEILINGS.long_record_yankee { return Err(Problem { path: Path::LongRecordYankee, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_zulu > CEILINGS.long_record_zulu { return Err(Problem { path: Path::LongRecordZulu, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_amber > CEILINGS.long_record_amber { return Err(Problem { path: Path::LongRecordAmber, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_birch > CEILINGS.long_record_birch { return Err(Problem { path: Path::LongRecordBirch, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_cedar > CEILINGS.long_record_cedar { return Err(Problem { path: Path::LongRecordCedar, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_dune > CEILINGS.long_record_dune { return Err(Problem { path: Path::LongRecordDune, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_acorn > CEILINGS.long_record_acorn { return Err(Problem { path: Path::LongRecordAcorn, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_anchor > CEILINGS.long_record_anchor { return Err(Problem { path: Path::LongRecordAnchor, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_apron > CEILINGS.long_record_apron { return Err(Problem { path: Path::LongRecordApron, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_atlas > CEILINGS.long_record_atlas { return Err(Problem { path: Path::LongRecordAtlas, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_autumn > CEILINGS.long_record_autumn { return Err(Problem { path: Path::LongRecordAutumn, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_avocado > CEILINGS.long_record_avocado { return Err(Problem { path: Path::LongRecordAvocado, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_walnut > CEILINGS.long_record_walnut { return Err(Problem { path: Path::LongRecordWalnut, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_badge > CEILINGS.long_record_badge { return Err(Problem { path: Path::LongRecordBadge, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_bamboo > CEILINGS.long_record_bamboo { return Err(Problem { path: Path::LongRecordBamboo, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_barrel > CEILINGS.long_record_barrel { return Err(Problem { path: Path::LongRecordBarrel, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_beacon > CEILINGS.long_record_beacon { return Err(Problem { path: Path::LongRecordBeacon, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_beetle > CEILINGS.long_record_beetle { return Err(Problem { path: Path::LongRecordBeetle, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_bronze > CEILINGS.long_record_bronze { return Err(Problem { path: Path::LongRecordBronze, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_cactus > CEILINGS.long_record_cactus { return Err(Problem { path: Path::LongRecordCactus, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_camera > CEILINGS.long_record_camera { return Err(Problem { path: Path::LongRecordCamera, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_canyon > CEILINGS.long_record_canyon { return Err(Problem { path: Path::LongRecordCanyon, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_cello > CEILINGS.long_record_cello { return Err(Problem { path: Path::LongRecordCello, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_cobalt > CEILINGS.long_record_cobalt { return Err(Problem { path: Path::LongRecordCobalt, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_comet > CEILINGS.long_record_comet { return Err(Problem { path: Path::LongRecordComet, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_compass > CEILINGS.long_record_compass { return Err(Problem { path: Path::LongRecordCompass, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_coral > CEILINGS.long_record_coral { return Err(Problem { path: Path::LongRecordCoral, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_cotton > CEILINGS.long_record_cotton { return Err(Problem { path: Path::LongRecordCotton, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_coyote > CEILINGS.long_record_coyote { return Err(Problem { path: Path::LongRecordCoyote, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_cricket > CEILINGS.long_record_cricket { return Err(Problem { path: Path::LongRecordCricket, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_crystal > CEILINGS.long_record_crystal { return Err(Problem { path: Path::LongRecordCrystal, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_dragon > CEILINGS.long_record_dragon { return Err(Problem { path: Path::LongRecordDragon, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_engine > CEILINGS.long_record_engine { return Err(Problem { path: Path::LongRecordEngine, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_falcon > CEILINGS.long_record_falcon { return Err(Problem { path: Path::LongRecordFalcon, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_feather > CEILINGS.long_record_feather { return Err(Problem { path: Path::LongRecordFeather, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_fern > CEILINGS.long_record_fern { return Err(Problem { path: Path::LongRecordFern, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_flute > CEILINGS.long_record_flute { return Err(Problem { path: Path::LongRecordFlute, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_fossil > CEILINGS.long_record_fossil { return Err(Problem { path: Path::LongRecordFossil, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_galaxy > CEILINGS.long_record_galaxy { return Err(Problem { path: Path::LongRecordGalaxy, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_garden > CEILINGS.long_record_garden { return Err(Problem { path: Path::LongRecordGarden, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_glacier > CEILINGS.long_record_glacier { return Err(Problem { path: Path::LongRecordGlacier, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_granite > CEILINGS.long_record_granite { return Err(Problem { path: Path::LongRecordGranite, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_harbor > CEILINGS.long_record_harbor { return Err(Problem { path: Path::LongRecordHarbor, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_hazel > CEILINGS.long_record_hazel { return Err(Problem { path: Path::LongRecordHazel, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_helmet > CEILINGS.long_record_helmet { return Err(Problem { path: Path::LongRecordHelmet, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_honey > CEILINGS.long_record_honey { return Err(Problem { path: Path::LongRecordHoney, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_igloo > CEILINGS.long_record_igloo { return Err(Problem { path: Path::LongRecordIgloo, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_island > CEILINGS.long_record_island { return Err(Problem { path: Path::LongRecordIsland, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_ivory > CEILINGS.long_record_ivory { return Err(Problem { path: Path::LongRecordIvory, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_jasmine > CEILINGS.long_record_jasmine { return Err(Problem { path: Path::LongRecordJasmine, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_kettle > CEILINGS.long_record_kettle { return Err(Problem { path: Path::LongRecordKettle, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_lantern > CEILINGS.long_record_lantern { return Err(Problem { path: Path::LongRecordLantern, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_leopard > CEILINGS.long_record_leopard { return Err(Problem { path: Path::LongRecordLeopard, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_lobster > CEILINGS.long_record_lobster { return Err(Problem { path: Path::LongRecordLobster, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_magnet > CEILINGS.long_record_magnet { return Err(Problem { path: Path::LongRecordMagnet, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_marble > CEILINGS.long_record_marble { return Err(Problem { path: Path::LongRecordMarble, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_meadow > CEILINGS.long_record_meadow { return Err(Problem { path: Path::LongRecordMeadow, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_mermaid > CEILINGS.long_record_mermaid { return Err(Problem { path: Path::LongRecordMermaid, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_meteor > CEILINGS.long_record_meteor { return Err(Problem { path: Path::LongRecordMeteor, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_mosaic > CEILINGS.long_record_mosaic { return Err(Problem { path: Path::LongRecordMosaic, reason: skein_codec::Reason::Bound }); }
-    Ok(())
-}
-
-fn check_limits_1(limits: &Limits) -> Result<(), Problem> {
-    if limits.long_record_napkin > CEILINGS.long_record_napkin { return Err(Problem { path: Path::LongRecordNapkin, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_nectar > CEILINGS.long_record_nectar { return Err(Problem { path: Path::LongRecordNectar, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_ocean > CEILINGS.long_record_ocean { return Err(Problem { path: Path::LongRecordOcean, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_olive > CEILINGS.long_record_olive { return Err(Problem { path: Path::LongRecordOlive, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_orchid > CEILINGS.long_record_orchid { return Err(Problem { path: Path::LongRecordOrchid, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_panda > CEILINGS.long_record_panda { return Err(Problem { path: Path::LongRecordPanda, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_pencil > CEILINGS.long_record_pencil { return Err(Problem { path: Path::LongRecordPencil, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_planet > CEILINGS.long_record_planet { return Err(Problem { path: Path::LongRecordPlanet, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_pollen > CEILINGS.long_record_pollen { return Err(Problem { path: Path::LongRecordPollen, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_quartz > CEILINGS.long_record_quartz { return Err(Problem { path: Path::LongRecordQuartz, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_rainbow > CEILINGS.long_record_rainbow { return Err(Problem { path: Path::LongRecordRainbow, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_raven > CEILINGS.long_record_raven { return Err(Problem { path: Path::LongRecordRaven, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_rocket > CEILINGS.long_record_rocket { return Err(Problem { path: Path::LongRecordRocket, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_saffron > CEILINGS.long_record_saffron { return Err(Problem { path: Path::LongRecordSaffron, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_salmon > CEILINGS.long_record_salmon { return Err(Problem { path: Path::LongRecordSalmon, reason: skein_codec::Reason::Bound }); }
-    if limits.long_record_satin > CEILINGS.long_record_satin { return Err(Problem { path: Path::LongRecordSatin, reason: skein_codec::Reason::Bound }); }
-    Ok(())
-}
-
 #[cfg(test)]
 mod golden_tests {
     use super::{CEILINGS, Path, HostTool, HostToolParts, Boundless, BoundlessParts, Payload, PayloadParts, OtherPayload, OtherPayloadParts, Shared, OneByteItems, OneByteItemsParts, OptionalPayload, OptionalPayloadParts, BoxedChoice, InlineChoice, FixedWidthItems, FixedWidthItemsParts, LongRecord, LongRecordParts};
-    use alloc::boxed::Box;
-
-    #[test]
-    fn record_host_tool_smallest() {
-        let value = HostTool::new(&CEILINGS, HostToolParts { skein_bools: [false, false, false, false], max_tokens: 0_u32, payload: Box::from([].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_host_tool_full() {
-        let value = HostTool::new(&CEILINGS, HostToolParts { skein_bools: [true, true, true, true], max_tokens: u32::MAX, payload: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[1, 1, 1, 1, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_boundless_smallest() {
-        let value = Boundless::new(&CEILINGS, BoundlessParts { count: 0_u32 }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Boundless::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_boundless_full() {
-        let value = Boundless::new(&CEILINGS, BoundlessParts { count: u32::MAX }).expect("golden within ceilings");
-        let golden: &[u8] = &[255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Boundless::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_payload_smallest() {
-        let value = Payload::new(&CEILINGS, PayloadParts { data: Box::from([].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Payload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_payload_full() {
-        let value = Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Payload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_other_payload_smallest() {
-        let value = OtherPayload::new(&CEILINGS, OtherPayloadParts { value: 0_u8 }).expect("golden within ceilings");
-        let golden: &[u8] = &[0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(OtherPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_other_payload_full() {
-        let value = OtherPayload::new(&CEILINGS, OtherPayloadParts { value: u8::MAX }).expect("golden within ceilings");
-        let golden: &[u8] = &[255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(OtherPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_first_smallest() {
-        let value = Shared::First(Payload::new(&CEILINGS, PayloadParts { data: Box::from([].as_slice()) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_first_full() {
-        let value = Shared::First(Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[0, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_second_smallest() {
-        let value = Shared::Second(Payload::new(&CEILINGS, PayloadParts { data: Box::from([].as_slice()) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[1, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_second_full() {
-        let value = Shared::Second(Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[1, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_other_smallest() {
-        let value = Shared::Other(OtherPayload::new(&CEILINGS, OtherPayloadParts { value: 0_u8 }).expect("golden within ceilings"));
-        let golden: &[u8] = &[2, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_other_full() {
-        let value = Shared::Other(OtherPayload::new(&CEILINGS, OtherPayloadParts { value: u8::MAX }).expect("golden within ceilings"));
-        let golden: &[u8] = &[2, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_empty_smallest() {
-        let value = Shared::Empty;
-        let golden: &[u8] = &[3];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_shared_empty_full() {
-        let value = Shared::Empty;
-        let golden: &[u8] = &[3];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_one_byte_items_smallest() {
-        let value = OneByteItems::new(&CEILINGS, OneByteItemsParts { items: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_one_byte_items_full() {
-        let value = OneByteItems::new(&CEILINGS, OneByteItemsParts { items: { let mut items = skein_lib::List::with_capacity(1); items.push(Shared::First(Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"))).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 1, 0, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_optional_payload_smallest() {
-        let value = OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings");
-        let golden: &[u8] = &[0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(OptionalPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_optional_payload_full() {
-        let value = OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings");
-        let golden: &[u8] = &[1, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(OptionalPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_boxed_choice_payload_smallest() {
-        let value = BoxedChoice::Payload(Box::new(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings")));
-        let golden: &[u8] = &[0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_boxed_choice_payload_full() {
-        let value = BoxedChoice::Payload(Box::new(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings")));
-        let golden: &[u8] = &[0, 1, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_boxed_choice_inline_smallest() {
-        let value = BoxedChoice::Inline(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings"));
-        let golden: &[u8] = &[1, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_boxed_choice_inline_full() {
-        let value = BoxedChoice::Inline(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[1, 1, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_boxed_choice_empty_smallest() {
-        let value = BoxedChoice::Empty;
-        let golden: &[u8] = &[2];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_boxed_choice_empty_full() {
-        let value = BoxedChoice::Empty;
-        let golden: &[u8] = &[2];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_inline_choice_payload_smallest() {
-        let value = InlineChoice::Payload(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings"));
-        let golden: &[u8] = &[0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_inline_choice_payload_full() {
-        let value = InlineChoice::Payload(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"));
-        let golden: &[u8] = &[0, 1, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_inline_choice_empty_smallest() {
-        let value = InlineChoice::Empty;
-        let golden: &[u8] = &[1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn enum_inline_choice_empty_full() {
-        let value = InlineChoice::Empty;
-        let golden: &[u8] = &[1];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_fixed_width_items_smallest() {
-        let value = FixedWidthItems::new(&CEILINGS, FixedWidthItemsParts { wide: skein_lib::List::with_capacity(0), narrow: skein_lib::List::with_capacity(0) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_fixed_width_items_full() {
-        let value = FixedWidthItems::new(&CEILINGS, FixedWidthItemsParts { wide: { let mut items = skein_lib::List::with_capacity(1); items.push(u64::MAX).expect("one slot"); items }, narrow: { let mut items = skein_lib::List::with_capacity(1); items.push(u32::MAX).expect("one slot"); items } }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_long_record_smallest() {
-        let value = LongRecord::new(&CEILINGS, LongRecordParts { alpha: Box::from([].as_slice()), bravo: Box::from([].as_slice()), charlie: Box::from([].as_slice()), delta: Box::from([].as_slice()), echo: Box::from([].as_slice()), foxtrot: Box::from([].as_slice()), golf: Box::from([].as_slice()), hotel: Box::from([].as_slice()), india: Box::from([].as_slice()), juliet: Box::from([].as_slice()), kilo: Box::from([].as_slice()), lima: Box::from([].as_slice()), mike: Box::from([].as_slice()), november: Box::from([].as_slice()), oscar: Box::from([].as_slice()), papa: Box::from([].as_slice()), quebec: Box::from([].as_slice()), romeo: Box::from([].as_slice()), sierra: Box::from([].as_slice()), tango: Box::from([].as_slice()), uniform: Box::from([].as_slice()), victor: Box::from([].as_slice()), whiskey: Box::from([].as_slice()), xray: Box::from([].as_slice()), yankee: Box::from([].as_slice()), zulu: Box::from([].as_slice()), amber: Box::from([].as_slice()), birch: Box::from([].as_slice()), cedar: Box::from([].as_slice()), dune: Box::from([].as_slice()), acorn: Box::from([].as_slice()), anchor: Box::from([].as_slice()), apron: Box::from([].as_slice()), atlas: Box::from([].as_slice()), autumn: Box::from([].as_slice()), avocado: Box::from([].as_slice()), walnut: Box::from([].as_slice()), badge: Box::from([].as_slice()), bamboo: Box::from([].as_slice()), barrel: Box::from([].as_slice()), beacon: Box::from([].as_slice()), beetle: Box::from([].as_slice()), bronze: Box::from([].as_slice()), cactus: Box::from([].as_slice()), camera: Box::from([].as_slice()), canyon: Box::from([].as_slice()), cello: Box::from([].as_slice()), cobalt: Box::from([].as_slice()), comet: Box::from([].as_slice()), compass: Box::from([].as_slice()), coral: Box::from([].as_slice()), cotton: Box::from([].as_slice()), coyote: Box::from([].as_slice()), cricket: Box::from([].as_slice()), crystal: Box::from([].as_slice()), dragon: Box::from([].as_slice()), engine: Box::from([].as_slice()), falcon: Box::from([].as_slice()), feather: Box::from([].as_slice()), fern: Box::from([].as_slice()), flute: Box::from([].as_slice()), fossil: Box::from([].as_slice()), galaxy: Box::from([].as_slice()), garden: Box::from([].as_slice()), glacier: Box::from([].as_slice()), granite: Box::from([].as_slice()), harbor: Box::from([].as_slice()), hazel: Box::from([].as_slice()), helmet: Box::from([].as_slice()), honey: Box::from([].as_slice()), igloo: Box::from([].as_slice()), island: Box::from([].as_slice()), ivory: Box::from([].as_slice()), jasmine: Box::from([].as_slice()), kettle: Box::from([].as_slice()), lantern: Box::from([].as_slice()), leopard: Box::from([].as_slice()), lobster: Box::from([].as_slice()), magnet: Box::from([].as_slice()), marble: Box::from([].as_slice()), meadow: Box::from([].as_slice()), mermaid: Box::from([].as_slice()), meteor: Box::from([].as_slice()), mosaic: Box::from([].as_slice()), napkin: Box::from([].as_slice()), nectar: Box::from([].as_slice()), ocean: Box::from([].as_slice()), olive: Box::from([].as_slice()), orchid: Box::from([].as_slice()), panda: Box::from([].as_slice()), pencil: Box::from([].as_slice()), planet: Box::from([].as_slice()), pollen: Box::from([].as_slice()), quartz: Box::from([].as_slice()), rainbow: Box::from([].as_slice()), raven: Box::from([].as_slice()), rocket: Box::from([].as_slice()), saffron: Box::from([].as_slice()), salmon: Box::from([].as_slice()), satin: Box::from([].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn record_long_record_full() {
-        let value = LongRecord::new(&CEILINGS, LongRecordParts { alpha: Box::from([0_u8, 127_u8, 255_u8].as_slice()), bravo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), charlie: Box::from([0_u8, 127_u8, 255_u8].as_slice()), delta: Box::from([0_u8, 127_u8, 255_u8].as_slice()), echo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), foxtrot: Box::from([0_u8, 127_u8, 255_u8].as_slice()), golf: Box::from([0_u8, 127_u8, 255_u8].as_slice()), hotel: Box::from([0_u8, 127_u8, 255_u8].as_slice()), india: Box::from([0_u8, 127_u8, 255_u8].as_slice()), juliet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), kilo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), lima: Box::from([0_u8, 127_u8, 255_u8].as_slice()), mike: Box::from([0_u8, 127_u8, 255_u8].as_slice()), november: Box::from([0_u8, 127_u8, 255_u8].as_slice()), oscar: Box::from([0_u8, 127_u8, 255_u8].as_slice()), papa: Box::from([0_u8, 127_u8, 255_u8].as_slice()), quebec: Box::from([0_u8, 127_u8, 255_u8].as_slice()), romeo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), sierra: Box::from([0_u8, 127_u8, 255_u8].as_slice()), tango: Box::from([0_u8, 127_u8, 255_u8].as_slice()), uniform: Box::from([0_u8, 127_u8, 255_u8].as_slice()), victor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), whiskey: Box::from([0_u8, 127_u8, 255_u8].as_slice()), xray: Box::from([0_u8, 127_u8, 255_u8].as_slice()), yankee: Box::from([0_u8, 127_u8, 255_u8].as_slice()), zulu: Box::from([0_u8, 127_u8, 255_u8].as_slice()), amber: Box::from([0_u8, 127_u8, 255_u8].as_slice()), birch: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cedar: Box::from([0_u8, 127_u8, 255_u8].as_slice()), dune: Box::from([0_u8, 127_u8, 255_u8].as_slice()), acorn: Box::from([0_u8, 127_u8, 255_u8].as_slice()), anchor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), apron: Box::from([0_u8, 127_u8, 255_u8].as_slice()), atlas: Box::from([0_u8, 127_u8, 255_u8].as_slice()), autumn: Box::from([0_u8, 127_u8, 255_u8].as_slice()), avocado: Box::from([0_u8, 127_u8, 255_u8].as_slice()), walnut: Box::from([0_u8, 127_u8, 255_u8].as_slice()), badge: Box::from([0_u8, 127_u8, 255_u8].as_slice()), bamboo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), barrel: Box::from([0_u8, 127_u8, 255_u8].as_slice()), beacon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), beetle: Box::from([0_u8, 127_u8, 255_u8].as_slice()), bronze: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cactus: Box::from([0_u8, 127_u8, 255_u8].as_slice()), camera: Box::from([0_u8, 127_u8, 255_u8].as_slice()), canyon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cello: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cobalt: Box::from([0_u8, 127_u8, 255_u8].as_slice()), comet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), compass: Box::from([0_u8, 127_u8, 255_u8].as_slice()), coral: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cotton: Box::from([0_u8, 127_u8, 255_u8].as_slice()), coyote: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cricket: Box::from([0_u8, 127_u8, 255_u8].as_slice()), crystal: Box::from([0_u8, 127_u8, 255_u8].as_slice()), dragon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), engine: Box::from([0_u8, 127_u8, 255_u8].as_slice()), falcon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), feather: Box::from([0_u8, 127_u8, 255_u8].as_slice()), fern: Box::from([0_u8, 127_u8, 255_u8].as_slice()), flute: Box::from([0_u8, 127_u8, 255_u8].as_slice()), fossil: Box::from([0_u8, 127_u8, 255_u8].as_slice()), galaxy: Box::from([0_u8, 127_u8, 255_u8].as_slice()), garden: Box::from([0_u8, 127_u8, 255_u8].as_slice()), glacier: Box::from([0_u8, 127_u8, 255_u8].as_slice()), granite: Box::from([0_u8, 127_u8, 255_u8].as_slice()), harbor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), hazel: Box::from([0_u8, 127_u8, 255_u8].as_slice()), helmet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), honey: Box::from([0_u8, 127_u8, 255_u8].as_slice()), igloo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), island: Box::from([0_u8, 127_u8, 255_u8].as_slice()), ivory: Box::from([0_u8, 127_u8, 255_u8].as_slice()), jasmine: Box::from([0_u8, 127_u8, 255_u8].as_slice()), kettle: Box::from([0_u8, 127_u8, 255_u8].as_slice()), lantern: Box::from([0_u8, 127_u8, 255_u8].as_slice()), leopard: Box::from([0_u8, 127_u8, 255_u8].as_slice()), lobster: Box::from([0_u8, 127_u8, 255_u8].as_slice()), magnet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), marble: Box::from([0_u8, 127_u8, 255_u8].as_slice()), meadow: Box::from([0_u8, 127_u8, 255_u8].as_slice()), mermaid: Box::from([0_u8, 127_u8, 255_u8].as_slice()), meteor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), mosaic: Box::from([0_u8, 127_u8, 255_u8].as_slice()), napkin: Box::from([0_u8, 127_u8, 255_u8].as_slice()), nectar: Box::from([0_u8, 127_u8, 255_u8].as_slice()), ocean: Box::from([0_u8, 127_u8, 255_u8].as_slice()), olive: Box::from([0_u8, 127_u8, 255_u8].as_slice()), orchid: Box::from([0_u8, 127_u8, 255_u8].as_slice()), panda: Box::from([0_u8, 127_u8, 255_u8].as_slice()), pencil: Box::from([0_u8, 127_u8, 255_u8].as_slice()), planet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), pollen: Box::from([0_u8, 127_u8, 255_u8].as_slice()), quartz: Box::from([0_u8, 127_u8, 255_u8].as_slice()), rainbow: Box::from([0_u8, 127_u8, 255_u8].as_slice()), raven: Box::from([0_u8, 127_u8, 255_u8].as_slice()), rocket: Box::from([0_u8, 127_u8, 255_u8].as_slice()), saffron: Box::from([0_u8, 127_u8, 255_u8].as_slice()), salmon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), satin: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings");
-        let golden: &[u8] = &[0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255];
-        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize"));
-        value.encode(&mut writer).expect("measured room");
-        assert_eq!(writer.finish().as_ref(), golden);
-        assert_eq!(LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));
-    }
-
-    #[test]
-    fn bound_host_tool_payload() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 8_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(10_000, true))).expect("field at ceiling");
-        let problem = HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(10_001, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::HostToolPayload, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_payload_data() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        Payload::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = Payload::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::PayloadData, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_one_byte_items_items() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(5).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::OneByteItemsItems, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_fixed_width_items_wide() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(8).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::FixedWidthItemsWide, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_fixed_width_items_narrow() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(4).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                for _item in 0_u32..count { writer.put(&[0, 0, 0, 0]).expect("item room"); }
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::FixedWidthItemsNarrow, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_alpha() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 0_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(396_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordAlpha, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_bravo() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 4_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(392_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBravo, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_charlie() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 8_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(388_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCharlie, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_delta() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 12_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(384_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordDelta, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_echo() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 16_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(380_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordEcho, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_foxtrot() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 20_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(376_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordFoxtrot, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_golf() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 24_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(372_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordGolf, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_hotel() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 28_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(368_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordHotel, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_india() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 32_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(364_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordIndia, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_juliet() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 36_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(360_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordJuliet, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_kilo() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 40_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(356_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordKilo, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_lima() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 44_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(352_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordLima, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_mike() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 48_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(348_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordMike, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_november() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 52_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(344_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordNovember, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_oscar() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 56_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(340_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordOscar, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_papa() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 60_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(336_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordPapa, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_quebec() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 64_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(332_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordQuebec, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_romeo() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 68_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(328_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordRomeo, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_sierra() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 72_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(324_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordSierra, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_tango() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 76_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(320_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordTango, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_uniform() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 80_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(316_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordUniform, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_victor() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 84_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(312_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordVictor, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_whiskey() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 88_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(308_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordWhiskey, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_xray() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 92_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(304_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordXray, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_yankee() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 96_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(300_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordYankee, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_zulu() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 100_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(296_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordZulu, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_amber() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 104_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(292_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordAmber, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_birch() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 108_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(288_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBirch, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_cedar() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 112_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(284_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCedar, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_dune() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 116_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(280_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordDune, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_acorn() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 120_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(276_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordAcorn, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_anchor() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 124_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(272_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordAnchor, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_apron() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 128_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(268_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordApron, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_atlas() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 132_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(264_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordAtlas, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_autumn() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 136_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(260_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordAutumn, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_avocado() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 140_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(256_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordAvocado, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_walnut() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 144_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(252_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordWalnut, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_badge() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 148_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(248_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBadge, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_bamboo() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 152_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(244_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBamboo, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_barrel() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 156_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(240_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBarrel, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_beacon() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 160_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(236_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBeacon, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_beetle() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 164_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(232_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBeetle, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_bronze() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 168_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(228_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordBronze, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_cactus() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 172_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(224_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCactus, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_camera() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 176_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(220_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCamera, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_canyon() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 180_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(216_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCanyon, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_cello() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 184_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(212_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCello, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_cobalt() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 188_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(208_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCobalt, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_comet() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 192_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(204_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordComet, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_compass() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 196_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(200_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCompass, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_coral() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 200_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(196_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCoral, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_cotton() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 204_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(192_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCotton, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_coyote() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 208_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(188_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCoyote, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_cricket() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 212_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(184_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCricket, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_crystal() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 216_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(180_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordCrystal, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_dragon() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 220_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(176_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordDragon, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_engine() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 224_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(172_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordEngine, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_falcon() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 228_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(168_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordFalcon, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_feather() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 232_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(164_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordFeather, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_fern() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 236_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(160_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordFern, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_flute() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 240_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(156_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordFlute, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_fossil() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 244_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(152_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordFossil, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_galaxy() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 248_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(148_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordGalaxy, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_garden() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 252_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(144_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordGarden, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_glacier() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 256_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(140_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordGlacier, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_granite() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 260_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(136_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordGranite, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_harbor() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 264_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(132_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordHarbor, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_hazel() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 268_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(128_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordHazel, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_helmet() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 272_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(124_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordHelmet, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_honey() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 276_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(120_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordHoney, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_igloo() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 280_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(116_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordIgloo, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_island() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 284_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(112_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordIsland, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_ivory() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 288_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(108_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordIvory, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_jasmine() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 292_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(104_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordJasmine, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_kettle() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 296_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(100_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordKettle, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_lantern() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 300_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(96_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordLantern, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_leopard() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 304_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(92_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordLeopard, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_lobster() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 308_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(88_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordLobster, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_magnet() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 312_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(84_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordMagnet, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_marble() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 316_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(80_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordMarble, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_meadow() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 320_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(76_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordMeadow, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_mermaid() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 324_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(72_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordMermaid, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_meteor() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 328_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(68_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordMeteor, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_mosaic() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 332_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(64_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordMosaic, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_napkin() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 336_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(60_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordNapkin, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_nectar() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 340_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(56_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordNectar, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_ocean() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 344_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(52_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordOcean, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_olive() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 348_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(48_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordOlive, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_orchid() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 352_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(44_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordOrchid, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_panda() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 356_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(40_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordPanda, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_pencil() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 360_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(36_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordPencil, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_planet() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 364_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(32_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordPlanet, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_pollen() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 368_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(28_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordPollen, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_quartz() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 372_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(24_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordQuartz, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_rainbow() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 376_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(20_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordRainbow, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_raven() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 380_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(16_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordRaven, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_rocket() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 384_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(12_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordRocket, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_saffron() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 388_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(8_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0, 0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordSaffron, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_salmon() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 392_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(4_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[0, 0, 0, 0]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordSalmon, skein_codec::Reason::Bound));
-    }
-
-    #[test]
-    fn bound_long_record_satin() {
-        fn wire(count: u32, payload: bool) -> Box<[u8]> {
-            let body = usize::try_from(count).expect("u32 fits usize").checked_mul(1).expect("schema ceiling");
-            let header = 396_usize.checked_add(4).expect("header size");
-            let total = if payload { let with_body = header.checked_add(body).expect("body size"); with_body.checked_add(0_usize).expect("wire size") } else { header };
-            let mut writer = skein_lib::Writer::new(total);
-            writer.put(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).expect("prefix room");
-            writer.put(&count.to_be_bytes()).expect("length room");
-            if payload {
-                writer.put(&skein_lib::bytes::zeroed(body)).expect("body room");
-                writer.put(&[]).expect("suffix room");
-            }
-            writer.finish()
-        }
-        LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(4, true))).expect("field at ceiling");
-        let problem = LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire(5, false))).expect_err("field past ceiling");
-        assert_eq!((problem.path, problem.reason), (Path::LongRecordSatin, skein_codec::Reason::Bound));
+    use super::Limits;
+
+    use alloc::{boxed::Box, string::String, vec::Vec};
+    use core::fmt::Debug;
+
+    pub(super) fn golden<T: Debug + PartialEq, P: Debug, E: Debug, D: Debug>(
+        name: &str,
+        path: P,
+        value: T,
+        bytes: &[u8],
+        encoded: Result<Box<[u8]>, E>,
+        decoded: Result<T, D>,
+        failures: &mut Vec<String>,
+    ) {
+        match encoded {
+            Ok(encoded) if encoded.as_ref() == bytes => {}
+            other => failures.push(format!("{name} ({path:?}): encoding {other:?}, expected {bytes:?}")),
+        }
+        match decoded {
+            Ok(decoded) if decoded == value => {}
+            other => failures.push(format!("{name} ({path:?}): decoding {other:?}, expected {value:?}")),
+        }
+    }
+
+    type BoundDecode<T, L, P, R> = fn(&L, &[u8]) -> Result<T, (P, R)>;
+
+    pub(super) fn bound<T, L, P: Debug + PartialEq, R: Debug + PartialEq>(
+        label: (&str, P, R),
+        limits: &L,
+        at: &[u8],
+        past: &[u8],
+        decode: BoundDecode<T, L, P, R>,
+        failures: &mut Vec<String>,
+    ) {
+        let (name, path, reason) = label;
+        if let Err(problem) = decode(limits, at) {
+            failures.push(format!("{name} ({path:?}): at limit refused as {problem:?}"));
+        }
+        match decode(limits, past) {
+            Err((found_path, found_reason)) if found_path == path && found_reason == reason => {}
+            Err(problem) => failures.push(format!("{name} ({path:?}): past limit refused as {problem:?}")),
+            Ok(_) => failures.push(format!("{name} ({path:?}): past limit accepted")),
+        }
+    }
+    #[test]
+    fn golden_0() {
+        let cases: [fn(&mut Vec<String>); 34] = [
+        |failures| { let value = HostTool::new(&CEILINGS, HostToolParts { skein_bools: [false, false, false, false], max_tokens: 0_u32, payload: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_host_tool_smallest", Path::HostToolTail, value, bytes, encoded, HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = HostTool::new(&CEILINGS, HostToolParts { skein_bools: [true, true, true, true], max_tokens: u32::MAX, payload: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[1, 1, 1, 1, 255, 255, 255, 255, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_host_tool_full", Path::HostToolTail, value, bytes, encoded, HostTool::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Boundless::new(&CEILINGS, BoundlessParts { count: 0_u32 }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_boundless_smallest", Path::BoundlessTail, value, bytes, encoded, Boundless::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Boundless::new(&CEILINGS, BoundlessParts { count: u32::MAX }).expect("golden within ceilings"); let bytes: &[u8] = &[255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_boundless_full", Path::BoundlessTail, value, bytes, encoded, Boundless::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Payload::new(&CEILINGS, PayloadParts { data: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_payload_smallest", Path::PayloadTail, value, bytes, encoded, Payload::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_payload_full", Path::PayloadTail, value, bytes, encoded, Payload::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = OtherPayload::new(&CEILINGS, OtherPayloadParts { value: 0_u8 }).expect("golden within ceilings"); let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_other_payload_smallest", Path::OtherPayloadTail, value, bytes, encoded, OtherPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = OtherPayload::new(&CEILINGS, OtherPayloadParts { value: u8::MAX }).expect("golden within ceilings"); let bytes: &[u8] = &[255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_other_payload_full", Path::OtherPayloadTail, value, bytes, encoded, OtherPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::First(Payload::new(&CEILINGS, PayloadParts { data: Box::from([].as_slice()) }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_first_smallest", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::First(Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_first_full", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::Second(Payload::new(&CEILINGS, PayloadParts { data: Box::from([].as_slice()) }).expect("golden within ceilings")); let bytes: &[u8] = &[1, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_second_smallest", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::Second(Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings")); let bytes: &[u8] = &[1, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_second_full", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::Other(OtherPayload::new(&CEILINGS, OtherPayloadParts { value: 0_u8 }).expect("golden within ceilings")); let bytes: &[u8] = &[2, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_other_smallest", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::Other(OtherPayload::new(&CEILINGS, OtherPayloadParts { value: u8::MAX }).expect("golden within ceilings")); let bytes: &[u8] = &[2, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_other_full", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::Empty; let bytes: &[u8] = &[3]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_empty_smallest", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = Shared::Empty; let bytes: &[u8] = &[3]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_shared_empty_full", Path::SharedTag, value, bytes, encoded, Shared::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = OneByteItems::new(&CEILINGS, OneByteItemsParts { items: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_one_byte_items_smallest", Path::OneByteItemsTail, value, bytes, encoded, OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = OneByteItems::new(&CEILINGS, OneByteItemsParts { items: { let mut items = skein_lib::List::with_capacity(1); items.push(Shared::First(Payload::new(&CEILINGS, PayloadParts { data: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"))).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 1, 0, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_one_byte_items_full", Path::OneByteItemsTail, value, bytes, encoded, OneByteItems::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings"); let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_optional_payload_smallest", Path::OptionalPayloadTail, value, bytes, encoded, OptionalPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"); let bytes: &[u8] = &[1, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_optional_payload_full", Path::OptionalPayloadTail, value, bytes, encoded, OptionalPayload::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = BoxedChoice::Payload(Box::new(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings"))); let bytes: &[u8] = &[0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_boxed_choice_payload_smallest", Path::BoxedChoiceTag, value, bytes, encoded, BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = BoxedChoice::Payload(Box::new(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings"))); let bytes: &[u8] = &[0, 1, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_boxed_choice_payload_full", Path::BoxedChoiceTag, value, bytes, encoded, BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = BoxedChoice::Inline(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings")); let bytes: &[u8] = &[1, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_boxed_choice_inline_smallest", Path::BoxedChoiceTag, value, bytes, encoded, BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = BoxedChoice::Inline(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings")); let bytes: &[u8] = &[1, 1, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_boxed_choice_inline_full", Path::BoxedChoiceTag, value, bytes, encoded, BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = BoxedChoice::Empty; let bytes: &[u8] = &[2]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_boxed_choice_empty_smallest", Path::BoxedChoiceTag, value, bytes, encoded, BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = BoxedChoice::Empty; let bytes: &[u8] = &[2]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_boxed_choice_empty_full", Path::BoxedChoiceTag, value, bytes, encoded, BoxedChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = InlineChoice::Payload(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: None }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_inline_choice_payload_smallest", Path::InlineChoiceTag, value, bytes, encoded, InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = InlineChoice::Payload(OptionalPayload::new(&CEILINGS, OptionalPayloadParts { data: Some(Box::from([0_u8, 127_u8, 255_u8].as_slice())) }).expect("golden within ceilings")); let bytes: &[u8] = &[0, 1, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_inline_choice_payload_full", Path::InlineChoiceTag, value, bytes, encoded, InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = InlineChoice::Empty; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_inline_choice_empty_smallest", Path::InlineChoiceTag, value, bytes, encoded, InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = InlineChoice::Empty; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("enum_inline_choice_empty_full", Path::InlineChoiceTag, value, bytes, encoded, InlineChoice::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = FixedWidthItems::new(&CEILINGS, FixedWidthItemsParts { wide: skein_lib::List::with_capacity(0), narrow: skein_lib::List::with_capacity(0) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_fixed_width_items_smallest", Path::FixedWidthItemsTail, value, bytes, encoded, FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = FixedWidthItems::new(&CEILINGS, FixedWidthItemsParts { wide: { let mut items = skein_lib::List::with_capacity(1); items.push(u64::MAX).expect("one slot"); items }, narrow: { let mut items = skein_lib::List::with_capacity(1); items.push(u32::MAX).expect("one slot"); items } }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 1, 255, 255, 255, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_fixed_width_items_full", Path::FixedWidthItemsTail, value, bytes, encoded, FixedWidthItems::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = LongRecord::new(&CEILINGS, LongRecordParts { alpha: Box::from([].as_slice()), bravo: Box::from([].as_slice()), charlie: Box::from([].as_slice()), delta: Box::from([].as_slice()), echo: Box::from([].as_slice()), foxtrot: Box::from([].as_slice()), golf: Box::from([].as_slice()), hotel: Box::from([].as_slice()), india: Box::from([].as_slice()), juliet: Box::from([].as_slice()), kilo: Box::from([].as_slice()), lima: Box::from([].as_slice()), mike: Box::from([].as_slice()), november: Box::from([].as_slice()), oscar: Box::from([].as_slice()), papa: Box::from([].as_slice()), quebec: Box::from([].as_slice()), romeo: Box::from([].as_slice()), sierra: Box::from([].as_slice()), tango: Box::from([].as_slice()), uniform: Box::from([].as_slice()), victor: Box::from([].as_slice()), whiskey: Box::from([].as_slice()), xray: Box::from([].as_slice()), yankee: Box::from([].as_slice()), zulu: Box::from([].as_slice()), amber: Box::from([].as_slice()), birch: Box::from([].as_slice()), cedar: Box::from([].as_slice()), dune: Box::from([].as_slice()), acorn: Box::from([].as_slice()), anchor: Box::from([].as_slice()), apron: Box::from([].as_slice()), atlas: Box::from([].as_slice()), autumn: Box::from([].as_slice()), avocado: Box::from([].as_slice()), walnut: Box::from([].as_slice()), badge: Box::from([].as_slice()), bamboo: Box::from([].as_slice()), barrel: Box::from([].as_slice()), beacon: Box::from([].as_slice()), beetle: Box::from([].as_slice()), bronze: Box::from([].as_slice()), cactus: Box::from([].as_slice()), camera: Box::from([].as_slice()), canyon: Box::from([].as_slice()), cello: Box::from([].as_slice()), cobalt: Box::from([].as_slice()), comet: Box::from([].as_slice()), compass: Box::from([].as_slice()), coral: Box::from([].as_slice()), cotton: Box::from([].as_slice()), coyote: Box::from([].as_slice()), cricket: Box::from([].as_slice()), crystal: Box::from([].as_slice()), dragon: Box::from([].as_slice()), engine: Box::from([].as_slice()), falcon: Box::from([].as_slice()), feather: Box::from([].as_slice()), fern: Box::from([].as_slice()), flute: Box::from([].as_slice()), fossil: Box::from([].as_slice()), galaxy: Box::from([].as_slice()), garden: Box::from([].as_slice()), glacier: Box::from([].as_slice()), granite: Box::from([].as_slice()), harbor: Box::from([].as_slice()), hazel: Box::from([].as_slice()), helmet: Box::from([].as_slice()), honey: Box::from([].as_slice()), igloo: Box::from([].as_slice()), island: Box::from([].as_slice()), ivory: Box::from([].as_slice()), jasmine: Box::from([].as_slice()), kettle: Box::from([].as_slice()), lantern: Box::from([].as_slice()), leopard: Box::from([].as_slice()), lobster: Box::from([].as_slice()), magnet: Box::from([].as_slice()), marble: Box::from([].as_slice()), meadow: Box::from([].as_slice()), mermaid: Box::from([].as_slice()), meteor: Box::from([].as_slice()), mosaic: Box::from([].as_slice()), napkin: Box::from([].as_slice()), nectar: Box::from([].as_slice()), ocean: Box::from([].as_slice()), olive: Box::from([].as_slice()), orchid: Box::from([].as_slice()), panda: Box::from([].as_slice()), pencil: Box::from([].as_slice()), planet: Box::from([].as_slice()), pollen: Box::from([].as_slice()), quartz: Box::from([].as_slice()), rainbow: Box::from([].as_slice()), raven: Box::from([].as_slice()), rocket: Box::from([].as_slice()), saffron: Box::from([].as_slice()), salmon: Box::from([].as_slice()), satin: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_long_record_smallest", Path::LongRecordTail, value, bytes, encoded, LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        |failures| { let value = LongRecord::new(&CEILINGS, LongRecordParts { alpha: Box::from([0_u8, 127_u8, 255_u8].as_slice()), bravo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), charlie: Box::from([0_u8, 127_u8, 255_u8].as_slice()), delta: Box::from([0_u8, 127_u8, 255_u8].as_slice()), echo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), foxtrot: Box::from([0_u8, 127_u8, 255_u8].as_slice()), golf: Box::from([0_u8, 127_u8, 255_u8].as_slice()), hotel: Box::from([0_u8, 127_u8, 255_u8].as_slice()), india: Box::from([0_u8, 127_u8, 255_u8].as_slice()), juliet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), kilo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), lima: Box::from([0_u8, 127_u8, 255_u8].as_slice()), mike: Box::from([0_u8, 127_u8, 255_u8].as_slice()), november: Box::from([0_u8, 127_u8, 255_u8].as_slice()), oscar: Box::from([0_u8, 127_u8, 255_u8].as_slice()), papa: Box::from([0_u8, 127_u8, 255_u8].as_slice()), quebec: Box::from([0_u8, 127_u8, 255_u8].as_slice()), romeo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), sierra: Box::from([0_u8, 127_u8, 255_u8].as_slice()), tango: Box::from([0_u8, 127_u8, 255_u8].as_slice()), uniform: Box::from([0_u8, 127_u8, 255_u8].as_slice()), victor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), whiskey: Box::from([0_u8, 127_u8, 255_u8].as_slice()), xray: Box::from([0_u8, 127_u8, 255_u8].as_slice()), yankee: Box::from([0_u8, 127_u8, 255_u8].as_slice()), zulu: Box::from([0_u8, 127_u8, 255_u8].as_slice()), amber: Box::from([0_u8, 127_u8, 255_u8].as_slice()), birch: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cedar: Box::from([0_u8, 127_u8, 255_u8].as_slice()), dune: Box::from([0_u8, 127_u8, 255_u8].as_slice()), acorn: Box::from([0_u8, 127_u8, 255_u8].as_slice()), anchor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), apron: Box::from([0_u8, 127_u8, 255_u8].as_slice()), atlas: Box::from([0_u8, 127_u8, 255_u8].as_slice()), autumn: Box::from([0_u8, 127_u8, 255_u8].as_slice()), avocado: Box::from([0_u8, 127_u8, 255_u8].as_slice()), walnut: Box::from([0_u8, 127_u8, 255_u8].as_slice()), badge: Box::from([0_u8, 127_u8, 255_u8].as_slice()), bamboo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), barrel: Box::from([0_u8, 127_u8, 255_u8].as_slice()), beacon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), beetle: Box::from([0_u8, 127_u8, 255_u8].as_slice()), bronze: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cactus: Box::from([0_u8, 127_u8, 255_u8].as_slice()), camera: Box::from([0_u8, 127_u8, 255_u8].as_slice()), canyon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cello: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cobalt: Box::from([0_u8, 127_u8, 255_u8].as_slice()), comet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), compass: Box::from([0_u8, 127_u8, 255_u8].as_slice()), coral: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cotton: Box::from([0_u8, 127_u8, 255_u8].as_slice()), coyote: Box::from([0_u8, 127_u8, 255_u8].as_slice()), cricket: Box::from([0_u8, 127_u8, 255_u8].as_slice()), crystal: Box::from([0_u8, 127_u8, 255_u8].as_slice()), dragon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), engine: Box::from([0_u8, 127_u8, 255_u8].as_slice()), falcon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), feather: Box::from([0_u8, 127_u8, 255_u8].as_slice()), fern: Box::from([0_u8, 127_u8, 255_u8].as_slice()), flute: Box::from([0_u8, 127_u8, 255_u8].as_slice()), fossil: Box::from([0_u8, 127_u8, 255_u8].as_slice()), galaxy: Box::from([0_u8, 127_u8, 255_u8].as_slice()), garden: Box::from([0_u8, 127_u8, 255_u8].as_slice()), glacier: Box::from([0_u8, 127_u8, 255_u8].as_slice()), granite: Box::from([0_u8, 127_u8, 255_u8].as_slice()), harbor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), hazel: Box::from([0_u8, 127_u8, 255_u8].as_slice()), helmet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), honey: Box::from([0_u8, 127_u8, 255_u8].as_slice()), igloo: Box::from([0_u8, 127_u8, 255_u8].as_slice()), island: Box::from([0_u8, 127_u8, 255_u8].as_slice()), ivory: Box::from([0_u8, 127_u8, 255_u8].as_slice()), jasmine: Box::from([0_u8, 127_u8, 255_u8].as_slice()), kettle: Box::from([0_u8, 127_u8, 255_u8].as_slice()), lantern: Box::from([0_u8, 127_u8, 255_u8].as_slice()), leopard: Box::from([0_u8, 127_u8, 255_u8].as_slice()), lobster: Box::from([0_u8, 127_u8, 255_u8].as_slice()), magnet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), marble: Box::from([0_u8, 127_u8, 255_u8].as_slice()), meadow: Box::from([0_u8, 127_u8, 255_u8].as_slice()), mermaid: Box::from([0_u8, 127_u8, 255_u8].as_slice()), meteor: Box::from([0_u8, 127_u8, 255_u8].as_slice()), mosaic: Box::from([0_u8, 127_u8, 255_u8].as_slice()), napkin: Box::from([0_u8, 127_u8, 255_u8].as_slice()), nectar: Box::from([0_u8, 127_u8, 255_u8].as_slice()), ocean: Box::from([0_u8, 127_u8, 255_u8].as_slice()), olive: Box::from([0_u8, 127_u8, 255_u8].as_slice()), orchid: Box::from([0_u8, 127_u8, 255_u8].as_slice()), panda: Box::from([0_u8, 127_u8, 255_u8].as_slice()), pencil: Box::from([0_u8, 127_u8, 255_u8].as_slice()), planet: Box::from([0_u8, 127_u8, 255_u8].as_slice()), pollen: Box::from([0_u8, 127_u8, 255_u8].as_slice()), quartz: Box::from([0_u8, 127_u8, 255_u8].as_slice()), rainbow: Box::from([0_u8, 127_u8, 255_u8].as_slice()), raven: Box::from([0_u8, 127_u8, 255_u8].as_slice()), rocket: Box::from([0_u8, 127_u8, 255_u8].as_slice()), saffron: Box::from([0_u8, 127_u8, 255_u8].as_slice()), salmon: Box::from([0_u8, 127_u8, 255_u8].as_slice()), satin: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden("record_long_record_full", Path::LongRecordTail, value, bytes, encoded, LongRecord::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); },
+        ];
+        let mut failures = Vec::new();
+        for case in cases { case(&mut failures); }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn bounds_0() {
+        let cases: [fn(&mut Vec<String>); 64] = [
+        |failures| bound(("bound_host_tool_payload", Path::HostToolPayload, skein_codec::Reason::Bound), &Limits { host_tool_payload: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| HostTool::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_payload_data", Path::PayloadData, skein_codec::Reason::Bound), &Limits { payload_data: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| Payload::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_one_byte_items_items", Path::OneByteItemsItems, skein_codec::Reason::Bound), &Limits { one_byte_items_items: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| OneByteItems::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_optional_payload_data_some", Path::OptionalPayloadData, skein_codec::Reason::Bound), &Limits { optional_payload_data_some: 3, ..CEILINGS }, &[1, 0, 0, 0, 3, 0, 0, 0], &[1, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| OptionalPayload::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_fixed_width_items_wide", Path::FixedWidthItemsWide, skein_codec::Reason::Bound), &Limits { fixed_width_items_wide: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| FixedWidthItems::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_fixed_width_items_narrow", Path::FixedWidthItemsNarrow, skein_codec::Reason::Bound), &Limits { fixed_width_items_narrow: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| FixedWidthItems::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_alpha", Path::LongRecordAlpha, skein_codec::Reason::Bound), &Limits { long_record_alpha: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_bravo", Path::LongRecordBravo, skein_codec::Reason::Bound), &Limits { long_record_bravo: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_charlie", Path::LongRecordCharlie, skein_codec::Reason::Bound), &Limits { long_record_charlie: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_delta", Path::LongRecordDelta, skein_codec::Reason::Bound), &Limits { long_record_delta: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_echo", Path::LongRecordEcho, skein_codec::Reason::Bound), &Limits { long_record_echo: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_foxtrot", Path::LongRecordFoxtrot, skein_codec::Reason::Bound), &Limits { long_record_foxtrot: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_golf", Path::LongRecordGolf, skein_codec::Reason::Bound), &Limits { long_record_golf: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_hotel", Path::LongRecordHotel, skein_codec::Reason::Bound), &Limits { long_record_hotel: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_india", Path::LongRecordIndia, skein_codec::Reason::Bound), &Limits { long_record_india: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_juliet", Path::LongRecordJuliet, skein_codec::Reason::Bound), &Limits { long_record_juliet: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_kilo", Path::LongRecordKilo, skein_codec::Reason::Bound), &Limits { long_record_kilo: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_lima", Path::LongRecordLima, skein_codec::Reason::Bound), &Limits { long_record_lima: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_mike", Path::LongRecordMike, skein_codec::Reason::Bound), &Limits { long_record_mike: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_november", Path::LongRecordNovember, skein_codec::Reason::Bound), &Limits { long_record_november: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_oscar", Path::LongRecordOscar, skein_codec::Reason::Bound), &Limits { long_record_oscar: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_papa", Path::LongRecordPapa, skein_codec::Reason::Bound), &Limits { long_record_papa: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_quebec", Path::LongRecordQuebec, skein_codec::Reason::Bound), &Limits { long_record_quebec: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_romeo", Path::LongRecordRomeo, skein_codec::Reason::Bound), &Limits { long_record_romeo: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_sierra", Path::LongRecordSierra, skein_codec::Reason::Bound), &Limits { long_record_sierra: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_tango", Path::LongRecordTango, skein_codec::Reason::Bound), &Limits { long_record_tango: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_uniform", Path::LongRecordUniform, skein_codec::Reason::Bound), &Limits { long_record_uniform: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_victor", Path::LongRecordVictor, skein_codec::Reason::Bound), &Limits { long_record_victor: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_whiskey", Path::LongRecordWhiskey, skein_codec::Reason::Bound), &Limits { long_record_whiskey: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_xray", Path::LongRecordXray, skein_codec::Reason::Bound), &Limits { long_record_xray: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_yankee", Path::LongRecordYankee, skein_codec::Reason::Bound), &Limits { long_record_yankee: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_zulu", Path::LongRecordZulu, skein_codec::Reason::Bound), &Limits { long_record_zulu: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_amber", Path::LongRecordAmber, skein_codec::Reason::Bound), &Limits { long_record_amber: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_birch", Path::LongRecordBirch, skein_codec::Reason::Bound), &Limits { long_record_birch: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_cedar", Path::LongRecordCedar, skein_codec::Reason::Bound), &Limits { long_record_cedar: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_dune", Path::LongRecordDune, skein_codec::Reason::Bound), &Limits { long_record_dune: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_acorn", Path::LongRecordAcorn, skein_codec::Reason::Bound), &Limits { long_record_acorn: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_anchor", Path::LongRecordAnchor, skein_codec::Reason::Bound), &Limits { long_record_anchor: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_apron", Path::LongRecordApron, skein_codec::Reason::Bound), &Limits { long_record_apron: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_atlas", Path::LongRecordAtlas, skein_codec::Reason::Bound), &Limits { long_record_atlas: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_autumn", Path::LongRecordAutumn, skein_codec::Reason::Bound), &Limits { long_record_autumn: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_avocado", Path::LongRecordAvocado, skein_codec::Reason::Bound), &Limits { long_record_avocado: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_walnut", Path::LongRecordWalnut, skein_codec::Reason::Bound), &Limits { long_record_walnut: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_badge", Path::LongRecordBadge, skein_codec::Reason::Bound), &Limits { long_record_badge: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_bamboo", Path::LongRecordBamboo, skein_codec::Reason::Bound), &Limits { long_record_bamboo: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_barrel", Path::LongRecordBarrel, skein_codec::Reason::Bound), &Limits { long_record_barrel: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_beacon", Path::LongRecordBeacon, skein_codec::Reason::Bound), &Limits { long_record_beacon: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_beetle", Path::LongRecordBeetle, skein_codec::Reason::Bound), &Limits { long_record_beetle: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_bronze", Path::LongRecordBronze, skein_codec::Reason::Bound), &Limits { long_record_bronze: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_cactus", Path::LongRecordCactus, skein_codec::Reason::Bound), &Limits { long_record_cactus: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_camera", Path::LongRecordCamera, skein_codec::Reason::Bound), &Limits { long_record_camera: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_canyon", Path::LongRecordCanyon, skein_codec::Reason::Bound), &Limits { long_record_canyon: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_cello", Path::LongRecordCello, skein_codec::Reason::Bound), &Limits { long_record_cello: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_cobalt", Path::LongRecordCobalt, skein_codec::Reason::Bound), &Limits { long_record_cobalt: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_comet", Path::LongRecordComet, skein_codec::Reason::Bound), &Limits { long_record_comet: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_compass", Path::LongRecordCompass, skein_codec::Reason::Bound), &Limits { long_record_compass: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_coral", Path::LongRecordCoral, skein_codec::Reason::Bound), &Limits { long_record_coral: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_cotton", Path::LongRecordCotton, skein_codec::Reason::Bound), &Limits { long_record_cotton: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_coyote", Path::LongRecordCoyote, skein_codec::Reason::Bound), &Limits { long_record_coyote: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_cricket", Path::LongRecordCricket, skein_codec::Reason::Bound), &Limits { long_record_cricket: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_crystal", Path::LongRecordCrystal, skein_codec::Reason::Bound), &Limits { long_record_crystal: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_dragon", Path::LongRecordDragon, skein_codec::Reason::Bound), &Limits { long_record_dragon: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_engine", Path::LongRecordEngine, skein_codec::Reason::Bound), &Limits { long_record_engine: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_falcon", Path::LongRecordFalcon, skein_codec::Reason::Bound), &Limits { long_record_falcon: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        ];
+        let mut failures = Vec::new();
+        for case in cases { case(&mut failures); }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn bounds_1() {
+        let cases: [fn(&mut Vec<String>); 42] = [
+        |failures| bound(("bound_long_record_feather", Path::LongRecordFeather, skein_codec::Reason::Bound), &Limits { long_record_feather: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_fern", Path::LongRecordFern, skein_codec::Reason::Bound), &Limits { long_record_fern: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_flute", Path::LongRecordFlute, skein_codec::Reason::Bound), &Limits { long_record_flute: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_fossil", Path::LongRecordFossil, skein_codec::Reason::Bound), &Limits { long_record_fossil: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_galaxy", Path::LongRecordGalaxy, skein_codec::Reason::Bound), &Limits { long_record_galaxy: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_garden", Path::LongRecordGarden, skein_codec::Reason::Bound), &Limits { long_record_garden: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_glacier", Path::LongRecordGlacier, skein_codec::Reason::Bound), &Limits { long_record_glacier: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_granite", Path::LongRecordGranite, skein_codec::Reason::Bound), &Limits { long_record_granite: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_harbor", Path::LongRecordHarbor, skein_codec::Reason::Bound), &Limits { long_record_harbor: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_hazel", Path::LongRecordHazel, skein_codec::Reason::Bound), &Limits { long_record_hazel: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_helmet", Path::LongRecordHelmet, skein_codec::Reason::Bound), &Limits { long_record_helmet: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_honey", Path::LongRecordHoney, skein_codec::Reason::Bound), &Limits { long_record_honey: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_igloo", Path::LongRecordIgloo, skein_codec::Reason::Bound), &Limits { long_record_igloo: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_island", Path::LongRecordIsland, skein_codec::Reason::Bound), &Limits { long_record_island: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_ivory", Path::LongRecordIvory, skein_codec::Reason::Bound), &Limits { long_record_ivory: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_jasmine", Path::LongRecordJasmine, skein_codec::Reason::Bound), &Limits { long_record_jasmine: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_kettle", Path::LongRecordKettle, skein_codec::Reason::Bound), &Limits { long_record_kettle: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_lantern", Path::LongRecordLantern, skein_codec::Reason::Bound), &Limits { long_record_lantern: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_leopard", Path::LongRecordLeopard, skein_codec::Reason::Bound), &Limits { long_record_leopard: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_lobster", Path::LongRecordLobster, skein_codec::Reason::Bound), &Limits { long_record_lobster: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_magnet", Path::LongRecordMagnet, skein_codec::Reason::Bound), &Limits { long_record_magnet: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_marble", Path::LongRecordMarble, skein_codec::Reason::Bound), &Limits { long_record_marble: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_meadow", Path::LongRecordMeadow, skein_codec::Reason::Bound), &Limits { long_record_meadow: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_mermaid", Path::LongRecordMermaid, skein_codec::Reason::Bound), &Limits { long_record_mermaid: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_meteor", Path::LongRecordMeteor, skein_codec::Reason::Bound), &Limits { long_record_meteor: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_mosaic", Path::LongRecordMosaic, skein_codec::Reason::Bound), &Limits { long_record_mosaic: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_napkin", Path::LongRecordNapkin, skein_codec::Reason::Bound), &Limits { long_record_napkin: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_nectar", Path::LongRecordNectar, skein_codec::Reason::Bound), &Limits { long_record_nectar: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_ocean", Path::LongRecordOcean, skein_codec::Reason::Bound), &Limits { long_record_ocean: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_olive", Path::LongRecordOlive, skein_codec::Reason::Bound), &Limits { long_record_olive: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_orchid", Path::LongRecordOrchid, skein_codec::Reason::Bound), &Limits { long_record_orchid: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_panda", Path::LongRecordPanda, skein_codec::Reason::Bound), &Limits { long_record_panda: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_pencil", Path::LongRecordPencil, skein_codec::Reason::Bound), &Limits { long_record_pencil: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_planet", Path::LongRecordPlanet, skein_codec::Reason::Bound), &Limits { long_record_planet: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_pollen", Path::LongRecordPollen, skein_codec::Reason::Bound), &Limits { long_record_pollen: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_quartz", Path::LongRecordQuartz, skein_codec::Reason::Bound), &Limits { long_record_quartz: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_rainbow", Path::LongRecordRainbow, skein_codec::Reason::Bound), &Limits { long_record_rainbow: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_raven", Path::LongRecordRaven, skein_codec::Reason::Bound), &Limits { long_record_raven: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_rocket", Path::LongRecordRocket, skein_codec::Reason::Bound), &Limits { long_record_rocket: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_saffron", Path::LongRecordSaffron, skein_codec::Reason::Bound), &Limits { long_record_saffron: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_salmon", Path::LongRecordSalmon, skein_codec::Reason::Bound), &Limits { long_record_salmon: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        |failures| bound(("bound_long_record_satin", Path::LongRecordSatin, skein_codec::Reason::Bound), &Limits { long_record_satin: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| LongRecord::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),
+        ];
+        let mut failures = Vec::new();
+        for case in cases { case(&mut failures); }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
 }

@@ -2,7 +2,7 @@
 
 //! Measured, canonical wire operations for codec.md, section 4.
 
-use crate::{Declaration, Enumeration, Record, Schema, Type, emit_limits, emit_types};
+use crate::{Declaration, Enumeration, Record, Type, analysis::Context, emit_limits, emit_types};
 
 fn member(record: &Record, name: &str) -> String {
     match emit_types::bool_index(record, name) {
@@ -115,54 +115,14 @@ fn short(path: &str) -> String {
     format!("Problem {{ path: Path::{path}, reason: skein_codec::Reason::Short }}")
 }
 
-fn min_bytes(ty: &Type, schema: &Schema) -> u32 {
-    match ty {
-        Type::U8 | Type::Bool | Type::Option(_) => 1,
-        Type::U16 => 2,
-        Type::U32 | Type::Bytes(_) | Type::Secret(_) | Type::Text(_) | Type::List(_, _) => 4,
-        Type::U64 | Type::Duration => 8,
-        Type::Fixed(bound) => *bound,
-        Type::Named(name) => {
-            let declaration = schema
-                .declarations
-                .iter()
-                .find(|declaration| match declaration {
-                    Declaration::Record(record) => record.name == *name,
-                    Declaration::Enum(enumeration) => enumeration.name == *name,
-                })
-                .expect("named type declared earlier");
-            match declaration {
-                Declaration::Record(record) => {
-                    let mut size = if record.versioned { 2_u32 } else { 0_u32 };
-                    for field in &record.fields {
-                        size = size.checked_add(min_bytes(&field.ty, schema)).expect("minimum fits checked ceiling");
-                    }
-                    size
-                }
-                Declaration::Enum(enumeration) => {
-                    let mut size = u32::MAX;
-                    for variant in &enumeration.variants {
-                        let payload_size = match &variant.record {
-                            Some(record) => min_bytes(&Type::Named(record.clone()), schema),
-                            None => 0,
-                        };
-                        size = size.min(payload_size);
-                    }
-                    size.checked_add(1).expect("minimum fits checked ceiling")
-                }
-            }
-        }
+fn empty_unversioned_record(schema: &Context<'_>, name: &str) -> bool {
+    match schema.declaration(name) {
+        Declaration::Record(record) => record.fields.is_empty() && !record.versioned,
+        Declaration::Enum(_) => false,
     }
 }
 
-fn empty_unversioned_record(schema: &Schema, name: &str) -> bool {
-    schema.declarations.iter().any(|declaration| match declaration {
-        Declaration::Record(record) => record.name == name && record.fields.is_empty() && !record.versioned,
-        Declaration::Enum(_) => false,
-    })
-}
-
-fn decode_type(ty: &Type, schema: &Schema, bound_name: &str, path: &str, depth: usize) -> String {
+fn decode_type(ty: &Type, schema: &Context<'_>, bound_name: &str, path: &str, depth: usize) -> String {
     let short = short(path);
     match ty {
         Type::U8 => format!("reader.u8().ok_or({short})?"),
@@ -195,7 +155,7 @@ fn decode_type(ty: &Type, schema: &Schema, bound_name: &str, path: &str, depth: 
                 depth.checked_add(1).expect("schema depth"),
             );
             let list_name = format!("items_{depth}");
-            let minimum = min_bytes(item, schema);
+            let minimum = schema.min_bytes(item);
             let precheck = match minimum {
                 0 => String::new(),
                 1 => format!("if count > reader.remaining() {{ return Err({short}); }} "),
@@ -221,7 +181,7 @@ fn decode_type(ty: &Type, schema: &Schema, bound_name: &str, path: &str, depth: 
             )
         }
         Type::Named(name) => {
-            if empty_unversioned_record(schema, name) && emit_limits::bound_names(schema).is_empty() {
+            if empty_unversioned_record(schema, name) {
                 format!("{name}::decode_from(limits, reader)")
             } else {
                 format!("{name}::decode_from(limits, reader)?")
@@ -230,7 +190,7 @@ fn decode_type(ty: &Type, schema: &Schema, bound_name: &str, path: &str, depth: 
     }
 }
 
-fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
+fn emit_record(schema: &Context<'_>, record: &Record, out: &mut String) {
     let start = out.len();
     if record.fields.is_empty() && !record.versioned {
         out.push_str(&format!("impl {} {{\n    /// Measures this empty record's wire encoding.\n    #[must_use]\n    pub fn measure(&self) -> u32 {{ 0_u32 }}\n\n", record.name));
@@ -260,18 +220,17 @@ fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
     } else {
         out.push_str("        Ok(())\n    }\n\n    /// Reads a whole record and refuses trailing bytes.\n    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {\n");
     }
-    if record.fields.is_empty() && !record.versioned && emit_limits::bound_names(schema).is_empty() {
+    if !schema.bounds.is_empty() {
+        out.push_str("        check_limits(limits)?;\n");
+    }
+    if record.fields.is_empty() && !record.versioned {
         out.push_str("        let value = Self::decode_from(limits, reader);\n");
     } else {
         out.push_str("        let value = Self::decode_from(limits, reader)?;\n");
     }
     out.push_str(&format!("        if !reader.is_empty() {{ return Err(Problem {{ path: Path::{}Tail, reason: skein_codec::Reason::Trailing }}); }}\n        Ok(value)\n    }}\n\n", record.name));
     if record.fields.is_empty() && !record.versioned {
-        if emit_limits::bound_names(schema).is_empty() {
-            out.push_str(&format!("    fn decode_from(limits: &Limits, _reader: &mut skein_lib::Reader<'_>) -> Self {{\n        Self::new(limits, {}Parts {{}})\n    }}\n}}\n\n", record.name));
-        } else {
-            out.push_str(&format!("    fn decode_from(limits: &Limits, _reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {{\n        Self::new(limits, {}Parts {{}})\n    }}\n}}\n\n", record.name));
-        }
+        out.push_str("    fn decode_from(_limits: &Limits, _reader: &mut skein_lib::Reader<'_>) -> Self {\n        Self {}\n    }\n}\n\n");
         return;
     }
     out.push_str(
@@ -303,17 +262,30 @@ fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
         members.insert(0, format!("skein_bools: [{bools}]"));
     }
     let members = members.join(", ");
-    if emit_limits::bound_names(schema).is_empty() {
-        out.push_str(&format!("        Ok(Self::new(limits, {}Parts {{ {members} }}))\n    }}\n}}\n\n", record.name));
-    } else {
-        out.push_str(&format!("        Self::new(limits, {}Parts {{ {members} }})\n    }}\n}}\n\n", record.name));
+    out.push_str("        Ok(Self { ");
+    out.push_str(&members);
+    out.push_str(" })\n    }\n}\n\n");
+    if !record.fields.iter().any(|field| uses_limits(&field.ty)) {
+        let source =
+            out.get(start..).expect("record source").replace("fn decode_from(limits:", "fn decode_from(_limits:");
+        out.truncate(start);
+        out.push_str(&source);
     }
     let split = crate::emit_functions::split_record_functions(record, out.get(start..).expect("record source"));
     out.truncate(start);
     out.push_str(&split);
 }
 
-fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
+fn uses_limits(ty: &Type) -> bool {
+    match ty {
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) | Type::List(_, _) | Type::Named(_) => true,
+        Type::Option(item) => uses_limits(item),
+        Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration | Type::Fixed(_) => false,
+    }
+}
+
+fn emit_enum(schema: &Context<'_>, enumeration: &Enumeration, out: &mut String) {
+    let limits = if enumeration.variants.iter().any(|variant| variant.record.is_some()) { "limits" } else { "_limits" };
     out.push_str(&format!("impl {} {{\n    /// Measures this variant's wire encoding.\n    #[must_use]\n    pub fn measure(&self) -> u32 {{\n        match self {{\n", enumeration.name));
     let unit_variants = enumeration
         .variants
@@ -355,20 +327,19 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
             None => out.push_str(&format!("            Self::{name} => writer.put(&[{tag}_u8])?,\n")),
         }
     }
-    out.push_str("        }\n        Ok(())\n    }\n\n    /// Reads a whole variant and refuses trailing bytes.\n    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {\n        let value = Self::decode_from(limits, reader)?;\n");
+    out.push_str("        }\n        Ok(())\n    }\n\n    /// Reads a whole variant and refuses trailing bytes.\n    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {\n");
+    if !schema.bounds.is_empty() {
+        out.push_str("        check_limits(limits)?;\n");
+    }
+    out.push_str("        let value = Self::decode_from(limits, reader)?;\n");
     out.push_str(&format!("        if !reader.is_empty() {{ return Err(Problem {{ path: Path::{}Tag, reason: skein_codec::Reason::Trailing }}); }}\n        Ok(value)\n    }}\n\n", enumeration.name));
-    out.push_str(&format!("    fn decode_from(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {{\n        let tag = reader.u8().ok_or({})?;\n        let value = match tag {{\n", short(&format!("{}Tag", enumeration.name))));
+    out.push_str(&format!("    fn decode_from({limits}: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {{\n        let tag = reader.u8().ok_or({})?;\n        let value = match tag {{\n", short(&format!("{}Tag", enumeration.name))));
     for (index, variant) in enumeration.variants.iter().enumerate() {
         let name = emit_limits::pascal(&variant.name);
         let tag = u8::try_from(index).expect("at most 256 variants");
         match &variant.record {
             Some(record) => {
-                let suffix = if empty_unversioned_record(schema, record) && emit_limits::bound_names(schema).is_empty()
-                {
-                    ""
-                } else {
-                    "?"
-                };
+                let suffix = if empty_unversioned_record(schema, record) { "" } else { "?" };
                 let payload = format!("{record}::decode_from(limits, reader){suffix}");
                 let payload = if variant.boxed { format!("Box::new({payload})") } else { payload };
                 out.push_str(&format!("            {tag} => Self::{name}({payload}),\n"));
@@ -376,15 +347,11 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
             None => out.push_str(&format!("            {tag} => Self::{name},\n")),
         }
     }
-    if emit_limits::bound_names(schema).is_empty() {
-        out.push_str(&format!("            _ => return Err(Problem {{ path: Path::{}Tag, reason: skein_codec::Reason::Tag }}),\n        }};\n        Ok(Self::new(limits, value))\n    }}\n}}\n\n", enumeration.name));
-    } else {
-        out.push_str(&format!("            _ => return Err(Problem {{ path: Path::{}Tag, reason: skein_codec::Reason::Tag }}),\n        }};\n        Self::new(limits, value)\n    }}\n}}\n\n", enumeration.name));
-    }
+    out.push_str(&format!("            _ => return Err(Problem {{ path: Path::{}Tag, reason: skein_codec::Reason::Tag }}),\n        }};\n        Ok(value)\n    }}\n}}\n\n", enumeration.name));
 }
 
-pub(crate) fn emit(schema: &Schema, out: &mut String) {
-    for declaration in &schema.declarations {
+pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
+    for declaration in schema.declarations {
         match declaration {
             Declaration::Record(record) => emit_record(schema, record, out),
             Declaration::Enum(enumeration) => emit_enum(schema, enumeration, out),

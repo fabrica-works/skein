@@ -250,7 +250,7 @@ pub(crate) fn check(schema: &Schema) -> Result<(), Error> {
         prior.insert(name.clone(), (is_record, size));
     }
     let mut bound_names = BTreeSet::new();
-    for (name, path) in emit_limits::bound_paths(schema) {
+    for (name, _, path) in crate::analysis::Context::new(schema).bounds {
         if !bound_names.insert(name.clone()) {
             return Err(error(
                 field_line_for_path(schema, &path),

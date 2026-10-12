@@ -2,28 +2,14 @@
 
 //! Fixed-rule golden values and generated round trips (codec.md, section 6).
 
-use crate::{
-    Declaration, Enumeration, Golden, Record, Schema, Type, Variant, emit_limits, emit_types, has_boxed_variants,
-    uses_box,
-};
-
-fn declaration<'a>(schema: &'a Schema, name: &str) -> &'a Declaration {
-    schema
-        .declarations
-        .iter()
-        .find(|declaration| match declaration {
-            Declaration::Record(record) => record.name == name,
-            Declaration::Enum(enumeration) => enumeration.name == name,
-        })
-        .expect("named type declared earlier")
-}
+use crate::{Declaration, Enumeration, Golden, Record, Type, Variant, analysis::Context, emit_limits, emit_types};
 
 fn pattern(bound: u32, text: bool) -> Vec<u8> {
     let source: &[u8] = if text { b"abc" } else { &[0, 0x7f, 0xff] };
     source.iter().copied().take(usize::try_from(bound).expect("u32 fits usize")).collect()
 }
 
-fn write_record(record: &Record, full: bool, schema: &Schema, out: &mut Vec<u8>) {
+fn write_record(record: &Record, full: bool, schema: &Context<'_>, out: &mut Vec<u8>) {
     if record.versioned {
         out.extend_from_slice(&schema.version.to_be_bytes());
     }
@@ -32,19 +18,19 @@ fn write_record(record: &Record, full: bool, schema: &Schema, out: &mut Vec<u8>)
     }
 }
 
-fn write_variant(enumeration: &Enumeration, variant: &Variant, full: bool, schema: &Schema, out: &mut Vec<u8>) {
+fn write_variant(enumeration: &Enumeration, variant: &Variant, full: bool, schema: &Context<'_>, out: &mut Vec<u8>) {
     let index =
         enumeration.variants.iter().position(|candidate| candidate.name == variant.name).expect("variant in enum");
     out.push(u8::try_from(index).expect("at most 256 variants"));
     if let Some(record) = &variant.record {
-        match declaration(schema, record) {
+        match schema.declaration(record) {
             Declaration::Record(record) => write_record(record, full, schema, out),
             Declaration::Enum(_) => unreachable!("a variant only holds a record"),
         }
     }
 }
 
-fn write_type(ty: &Type, full: bool, schema: &Schema, out: &mut Vec<u8>) {
+fn write_type(ty: &Type, full: bool, schema: &Context<'_>, out: &mut Vec<u8>) {
     match ty {
         Type::U8 => out.push(if full { u8::MAX } else { 0 }),
         Type::U16 => out.extend_from_slice(&(if full { u16::MAX } else { 0 }).to_be_bytes()),
@@ -74,7 +60,7 @@ fn write_type(ty: &Type, full: bool, schema: &Schema, out: &mut Vec<u8>) {
                 write_type(item, true, schema, out);
             }
         }
-        Type::Named(name) => match declaration(schema, name) {
+        Type::Named(name) => match schema.declaration(name) {
             Declaration::Record(record) => write_record(record, full, schema, out),
             Declaration::Enum(enumeration) => {
                 let variant = enumeration.variants.first().expect("enum nonempty");
@@ -89,7 +75,7 @@ fn bytes_literal(bytes: &[u8]) -> String {
     format!("&[{elements}]")
 }
 
-fn value_expr(ty: &Type, full: bool, schema: &Schema) -> String {
+fn value_expr(ty: &Type, full: bool, schema: &Context<'_>) -> String {
     match ty {
         Type::U8 => if full { "u8::MAX" } else { "0_u8" }.into(),
         Type::U16 => if full { "u16::MAX" } else { "0_u16" }.into(),
@@ -121,7 +107,7 @@ fn value_expr(ty: &Type, full: bool, schema: &Schema) -> String {
                 "None".into()
             }
         }
-        Type::Named(name) => match declaration(schema, name) {
+        Type::Named(name) => match schema.declaration(name) {
             Declaration::Record(record) => record_expr(record, full, schema),
             Declaration::Enum(enumeration) => {
                 let variant = enumeration.variants.first().expect("enum nonempty");
@@ -131,7 +117,7 @@ fn value_expr(ty: &Type, full: bool, schema: &Schema) -> String {
     }
 }
 
-fn record_expr(record: &Record, full: bool, schema: &Schema) -> String {
+fn record_expr(record: &Record, full: bool, schema: &Context<'_>) -> String {
     let mut fields = record
         .fields
         .iter()
@@ -150,17 +136,13 @@ fn record_expr(record: &Record, full: bool, schema: &Schema) -> String {
     }
     let fields = fields.join(", ");
     let call = format!("{}::new(&CEILINGS, {}Parts {{ {fields} }})", record.name, record.name);
-    if emit_limits::bound_names(schema).is_empty() {
-        call
-    } else {
-        format!("{call}.expect(\"golden within ceilings\")")
-    }
+    if schema.bounds.is_empty() { call } else { format!("{call}.expect(\"golden within ceilings\")") }
 }
 
-fn variant_expr(enumeration: &Enumeration, variant: &Variant, full: bool, schema: &Schema) -> String {
+fn variant_expr(enumeration: &Enumeration, variant: &Variant, full: bool, schema: &Context<'_>) -> String {
     let name = emit_limits::pascal(&variant.name);
     match &variant.record {
-        Some(record) => match declaration(schema, record) {
+        Some(record) => match schema.declaration(record) {
             Declaration::Record(record) => {
                 let value = record_expr(record, full, schema);
                 let value = if variant.boxed { format!("Box::new({value})") } else { value };
@@ -172,65 +154,41 @@ fn variant_expr(enumeration: &Enumeration, variant: &Variant, full: bool, schema
     }
 }
 
-fn test_case(name: &str, ty: &str, value: &str, bytes: &[u8], out: &mut String) {
-    let literal = bytes_literal(bytes);
-    out.push_str(&format!("    #[test]\n    fn {name}() {{\n        let value = {value};\n        let golden: &[u8] = {literal};\n        let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect(\"size fits usize\"));\n        value.encode(&mut writer).expect(\"measured room\");\n        assert_eq!(writer.finish().as_ref(), golden);\n        assert_eq!({ty}::decode(&CEILINGS, &mut skein_lib::Reader::new(golden)), Ok(value));\n    }}\n\n"));
+fn golden_case(name: &str, ty: &str, path: &str, value: &str, bytes: &[u8]) -> String {
+    let bytes = bytes_literal(bytes);
+    format!(
+        "        |failures| {{ let value = {value}; let bytes: &[u8] = {bytes}; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect(\"size fits usize\")); let encoded = value.encode(&mut writer).map(|()| writer.finish()); golden(\"{name}\", Path::{path}, value, bytes, encoded, {ty}::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes)), failures); }},\n"
+    )
 }
 
-fn bound_test(record: &Record, field_index: usize, schema: &Schema, out: &mut String) {
-    let field = record.fields.get(field_index).expect("field index");
-    let (bound, item, is_list) = match &field.ty {
-        Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) => (*bound, Vec::new(), false),
-        Type::List(bound, item) => {
-            let mut bytes = Vec::new();
-            write_type(item, false, schema, &mut bytes);
-            (*bound, bytes, true)
+fn write_bound_type(ty: &Type, name: &str, target: &str, count: u32, schema: &Context<'_>, out: &mut Vec<u8>) {
+    if name == target {
+        out.extend_from_slice(&count.to_be_bytes());
+        for _ in 0_u32..count {
+            match ty {
+                Type::List(_, item) => write_type(item, false, schema, out),
+                Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => out.push(0),
+                Type::U8
+                | Type::U16
+                | Type::U32
+                | Type::U64
+                | Type::Bool
+                | Type::Duration
+                | Type::Fixed(_)
+                | Type::Option(_)
+                | Type::Named(_) => unreachable!("adjustable bound"),
+            }
         }
-        Type::U8
-        | Type::U16
-        | Type::U32
-        | Type::U64
-        | Type::Bool
-        | Type::Duration
-        | Type::Fixed(_)
-        | Type::Option(_)
-        | Type::Named(_) => return,
-    };
-    let Some(over) = bound.checked_add(1) else {
-        return;
-    };
-    let mut prefix = Vec::new();
-    if record.versioned {
-        prefix.extend_from_slice(&schema.version.to_be_bytes());
-    }
-    let mut suffix = Vec::new();
-    for (index, other) in record.fields.iter().enumerate() {
-        if index < field_index {
-            write_type(&other.ty, false, schema, &mut prefix);
-        } else if index > field_index {
-            write_type(&other.ty, false, schema, &mut suffix);
-        }
-    }
-    let name = format!("bound_{}_{}", emit_limits::snake(&record.name), field.name);
-    let path = format!("{}{}", record.name, emit_limits::pascal(&field.name));
-    let item_length = if is_list { item.len() } else { 1 };
-    out.push_str(&format!("    #[test]\n    fn {name}() {{\n        fn wire(count: u32, payload: bool) -> Box<[u8]> {{\n            let body = usize::try_from(count).expect(\"u32 fits usize\").checked_mul({}).expect(\"schema ceiling\");\n            let header = {}_usize.checked_add(4).expect(\"header size\");\n            let total = if payload {{ let with_body = header.checked_add(body).expect(\"body size\"); with_body.checked_add({}_usize).expect(\"wire size\") }} else {{ header }};\n            let mut writer = skein_lib::Writer::new(total);\n            writer.put({}).expect(\"prefix room\");\n            writer.put(&count.to_be_bytes()).expect(\"length room\");\n            if payload {{\n", emit_limits::literal(item_length), emit_limits::literal(prefix.len()), emit_limits::literal(suffix.len()), bytes_literal(&prefix)));
-    if is_list {
-        out.push_str(&format!(
-            "                for _item in 0_u32..count {{ writer.put({}).expect(\"item room\"); }}\n",
-            bytes_literal(&item)
-        ));
     } else {
-        out.push_str("                writer.put(&skein_lib::bytes::zeroed(body)).expect(\"body room\");\n");
-    }
-    out.push_str(&format!("                writer.put({}).expect(\"suffix room\");\n            }}\n            writer.finish()\n        }}\n        {record}::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire({}, true))).expect(\"field at ceiling\");\n        let problem = {record}::decode(&CEILINGS, &mut skein_lib::Reader::new(&wire({}, false))).expect_err(\"field past ceiling\");\n        assert_eq!((problem.path, problem.reason), (Path::{path}, skein_codec::Reason::Bound));\n    }}\n\n", bytes_literal(&suffix), emit_limits::literal(bound), emit_limits::literal(over), record = record.name));
-}
-
-pub(crate) fn emit(schema: &Schema, out: &mut String) -> Vec<Golden> {
-    let mut goldens = Vec::new();
-    let has_bound_tests = schema.declarations.iter().any(|declaration| match declaration {
-        Declaration::Record(record) => record.fields.iter().any(|field| match field.ty {
-            Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) | Type::List(bound, _) => bound < u32::MAX,
+        match ty {
+            Type::Option(item) => {
+                out.push(1);
+                write_bound_type(item, &format!("{name}_some"), target, count, schema, out);
+            }
+            Type::List(_, item) => {
+                out.extend_from_slice(&1_u32.to_be_bytes());
+                write_bound_type(item, &format!("{name}_item"), target, count, schema, out);
+            }
             Type::U8
             | Type::U16
             | Type::U32
@@ -238,42 +196,96 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) -> Vec<Golden> {
             | Type::Bool
             | Type::Duration
             | Type::Fixed(_)
-            | Type::Option(_)
-            | Type::Named(_) => false,
-        }),
-        Declaration::Enum(_) => false,
-    });
-    let mut imports = vec!["CEILINGS".to_string()];
-    if has_bound_tests {
-        imports.push("Path".to_string());
-    }
-    for declaration in &schema.declarations {
-        match declaration {
-            Declaration::Record(record) => {
-                imports.push(record.name.clone());
-                imports.push(format!("{}Parts", record.name));
-            }
-            Declaration::Enum(enumeration) => imports.push(enumeration.name.clone()),
+            | Type::Bytes(_)
+            | Type::Secret(_)
+            | Type::Text(_)
+            | Type::Named(_) => unreachable!("ancestor of bound"),
         }
     }
-    out.push_str(&format!("\n#[cfg(test)]\nmod golden_tests {{\n    use super::{{{}}};\n", imports.join(", ")));
-    if schema.declarations.iter().any(|declaration| match declaration {
-        Declaration::Record(record) => record.fields.iter().any(|field| uses_box(&field.ty)),
-        Declaration::Enum(_) => false,
-    }) || has_bound_tests
-        || has_boxed_variants(schema)
-    {
-        out.push_str("    use alloc::boxed::Box;\n");
+}
+
+fn bound_wire(record: &Record, field_index: usize, target: &str, count: u32, schema: &Context<'_>) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    if record.versioned {
+        bytes.extend_from_slice(&schema.version.to_be_bytes());
     }
-    out.push('\n');
-    for declaration in &schema.declarations {
+    for (index, field) in record.fields.iter().enumerate() {
+        if index == field_index {
+            let name = format!("{}_{}", emit_limits::snake(&record.name), field.name);
+            write_bound_type(&field.ty, &name, target, count, schema, &mut bytes);
+        } else {
+            write_type(&field.ty, false, schema, &mut bytes);
+        }
+    }
+    bytes
+}
+
+fn field_bounds(ty: &Type, name: &str, bounds: &mut Vec<(String, u32)>) {
+    match ty {
+        Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) => bounds.push((name.into(), *bound)),
+        Type::List(bound, item) => {
+            bounds.push((name.into(), *bound));
+            if *bound > 0 {
+                field_bounds(item, &format!("{name}_item"), bounds);
+            }
+        }
+        Type::Option(item) => field_bounds(item, &format!("{name}_some"), bounds),
+        Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::Bool
+        | Type::Duration
+        | Type::Fixed(_)
+        | Type::Named(_) => {}
+    }
+}
+
+fn bound_cases(record: &Record, schema: &Context<'_>, cases: &mut Vec<String>) {
+    for (index, field) in record.fields.iter().enumerate() {
+        let name = format!("{}_{}", emit_limits::snake(&record.name), field.name);
+        let path = format!("{}{}", record.name, emit_limits::pascal(&field.name));
+        let mut bounds = Vec::new();
+        field_bounds(&field.ty, &name, &mut bounds);
+        for (target, ceiling) in bounds {
+            let limit = ceiling.min(3);
+            let at = bytes_literal(&bound_wire(record, index, &target, limit, schema));
+            let past =
+                bytes_literal(&bound_wire(record, index, &target, limit.checked_add(1).expect("small limit"), schema));
+            cases.push(format!("        |failures| bound((\"bound_{target}\", Path::{path}, skein_codec::Reason::Bound), &Limits {{ {target}: {limit}, ..CEILINGS }}, {at}, {past}, |limits, bytes| {record}::decode(limits, &mut skein_lib::Reader::new(bytes)).map_err(|problem| (problem.path, problem.reason)), failures),\n", record = record.name));
+        }
+    }
+}
+
+fn tables(name: &str, cases: &[String], out: &mut String) {
+    for (index, chunk) in cases.chunks(64).enumerate() {
+        out.push_str(&format!(
+            "    #[test]\n    fn {name}_{index}() {{\n        let cases: [fn(&mut Vec<String>); {}] = [\n",
+            chunk.len()
+        ));
+        for case in chunk {
+            out.push_str(case);
+        }
+        out.push_str("        ];\n        let mut failures = Vec::new();\n        for case in cases { case(&mut failures); }\n        assert!(failures.is_empty(), \"{}\", failures.join(\"\\n\"));\n    }\n\n");
+    }
+}
+
+fn golden_cases(schema: &Context<'_>, cases: &mut Vec<String>) -> Vec<Golden> {
+    let mut goldens = Vec::new();
+    for declaration in schema.declarations {
         match declaration {
             Declaration::Record(record) => {
                 for (label, full) in [("smallest", false), ("full", true)] {
                     let mut bytes = Vec::new();
                     write_record(record, full, schema, &mut bytes);
                     let name = format!("record_{}_{}", emit_limits::snake(&record.name), label);
-                    test_case(&name, &record.name, &record_expr(record, full, schema), &bytes, out);
+                    cases.push(golden_case(
+                        &name,
+                        &record.name,
+                        &format!("{}Tail", record.name),
+                        &record_expr(record, full, schema),
+                        &bytes,
+                    ));
                     goldens.push(Golden { name: format!("{name}.bin"), bytes });
                 }
             }
@@ -283,26 +295,56 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) -> Vec<Golden> {
                         let mut bytes = Vec::new();
                         write_variant(enumeration, variant, full, schema, &mut bytes);
                         let name = format!("enum_{}_{}_{}", emit_limits::snake(&enumeration.name), variant.name, label);
-                        test_case(
+                        cases.push(golden_case(
                             &name,
                             &enumeration.name,
+                            &format!("{}Tag", enumeration.name),
                             &variant_expr(enumeration, variant, full, schema),
                             &bytes,
-                            out,
-                        );
+                        ));
                         goldens.push(Golden { name: format!("{name}.bin"), bytes });
                     }
                 }
             }
         }
     }
-    for declaration in &schema.declarations {
-        if let Declaration::Record(record) = declaration {
-            for field_index in 0..record.fields.len() {
-                bound_test(record, field_index, schema, out);
+    goldens
+}
+
+pub(crate) fn emit(schema: &Context<'_>, out: &mut String) -> Vec<Golden> {
+    let mut imports = vec!["CEILINGS".to_string(), "Path".to_string()];
+    let mut bounds = Vec::new();
+    for declaration in schema.declarations {
+        match declaration {
+            Declaration::Record(record) => {
+                imports.push(record.name.clone());
+                imports.push(format!("{}Parts", record.name));
+                bound_cases(record, schema, &mut bounds);
+            }
+            Declaration::Enum(enumeration) => imports.push(enumeration.name.clone()),
+        }
+    }
+    let mut cases = Vec::new();
+    let goldens = golden_cases(schema, &mut cases);
+    out.push_str("\n#[cfg(test)]\nmod golden_tests {\n");
+    if !cases.is_empty() {
+        out.push_str(&format!("    use super::{{{}}};\n", imports.join(", ")));
+        if !bounds.is_empty() {
+            out.push_str("    use super::Limits;\n");
+        }
+        let helpers = include_str!("test_helpers.rs");
+        let helpers =
+            if bounds.is_empty() { helpers.split("type BoundDecode").next().expect("golden helper") } else { helpers };
+        for line in helpers.lines().skip(1) {
+            if line.is_empty() {
+                out.push('\n');
+            } else {
+                out.push_str(&format!("    {line}\n"));
             }
         }
     }
+    tables("golden", &cases, out);
+    tables("bounds", &bounds, out);
     out.push_str("}\n");
     goldens
 }

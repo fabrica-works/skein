@@ -2,7 +2,7 @@
 
 //! Sealed record and enum values for codec.md, section 4.
 
-use crate::{Declaration, Enumeration, Field, Record, Schema, Type, emit_limits};
+use crate::{Declaration, Enumeration, Field, Record, Type, analysis::Context, emit_limits};
 
 pub(crate) fn rust_type(ty: &Type) -> String {
     match ty {
@@ -63,15 +63,15 @@ pub(crate) fn bool_index(record: &Record, name: &str) -> Option<usize> {
     record.fields.iter().filter(|field| matches!(field.ty, Type::Bool)).position(|field| field.name == name)
 }
 
-fn needs_value_check(ty: &Type) -> bool {
-    match ty {
-        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) | Type::List(_, _) | Type::Named(_) => true,
-        Type::Option(item) => needs_value_check(item),
-        Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration | Type::Fixed(_) => false,
-    }
-}
-
-fn emit_check(ty: &Type, value: &str, bound_name: &str, path: &str, depth: usize, out: &mut String) {
+fn emit_check(
+    schema: &Context<'_>,
+    ty: &Type,
+    value: &str,
+    bound_name: &str,
+    path: &str,
+    depth: usize,
+    out: &mut String,
+) {
     let problem = format!("Problem {{ path: Path::{path}, reason: skein_codec::Reason::Bound }}");
     match ty {
         Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => {
@@ -82,10 +82,11 @@ fn emit_check(ty: &Type, value: &str, bound_name: &str, path: &str, depth: usize
         }
         Type::List(_, item) => {
             out.push_str(&format!("        if {value}.capacity() > limits.{bound_name}.min(CEILINGS.{bound_name}) {{ return Err({problem}); }}\n"));
-            if needs_value_check(item) {
+            if schema.has_bounds(item) {
                 let item_name = format!("item_{depth}");
                 out.push_str(&format!("        for {item_name} in {value}.as_slice() {{\n"));
                 emit_check(
+                    schema,
                     item,
                     &item_name,
                     &format!("{bound_name}_item"),
@@ -106,6 +107,7 @@ fn emit_check(ty: &Type, value: &str, bound_name: &str, path: &str, depth: usize
             }
             let mut inner = String::new();
             emit_check(
+                schema,
                 item,
                 &item_name,
                 &format!("{bound_name}_some"),
@@ -122,18 +124,16 @@ fn emit_check(ty: &Type, value: &str, bound_name: &str, path: &str, depth: usize
                 out.push_str(&format!("        if let Some({item_name}) = {value}.as_ref() {{\n{inner}        }}\n"));
             }
         }
-        Type::Named(_) => out.push_str(&format!("        {value}.check(limits)?;\n")),
+        Type::Named(_) => {
+            if schema.has_bounds(ty) {
+                out.push_str(&format!("        {value}.check(limits)?;\n"));
+            }
+        }
         Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration | Type::Fixed(_) => {}
     }
 }
 
-fn emit_limit_checks(schema: &Schema, out: &mut String) {
-    for (name, path) in emit_limits::bound_paths(schema) {
-        out.push_str(&format!("        if limits.{name} > CEILINGS.{name} {{ return Err(Problem {{ path: Path::{path}, reason: skein_codec::Reason::Bound }}); }}\n"));
-    }
-}
-
-fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
+fn emit_record(schema: &Context<'_>, record: &Record, out: &mut String) {
     let start = out.len();
     let grouped = grouped_bools(record);
     let bool_count = record.fields.iter().filter(|field| matches!(field.ty, Type::Bool)).count();
@@ -181,10 +181,12 @@ fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
         names.insert(0, "skein_bools");
     }
     let members = names.join(", ");
-    if emit_limits::bound_names(schema).is_empty() {
+    let has_bounds = schema.has_bounds(&Type::Named(record.name.clone()));
+    let check = if has_bounds { "        value.check(limits)?;\n" } else { "" };
+    if schema.bounds.is_empty() {
         out.push_str(&format!("    /// Makes a value; this family has no adjustable bounds.\n    #[must_use]\n    pub fn new(_limits: &Limits, parts: {}Parts) -> Self {{\n        let {}Parts {{ {members} }} = parts;\n        Self {{ {members} }}\n    }}\n\n", record.name, record.name));
     } else {
-        out.push_str(&format!("    /// Makes a value within the given limits.\n    pub fn new(limits: &Limits, parts: {}Parts) -> Result<Self, Problem> {{\n        let {}Parts {{ {members} }} = parts;\n        let value = Self {{ {members} }};\n        value.check(limits)?;\n        Ok(value)\n    }}\n\n", record.name, record.name));
+        out.push_str(&format!("    /// Makes a value within the given limits.\n    pub fn new(limits: &Limits, parts: {}Parts) -> Result<Self, Problem> {{\n        let {}Parts {{ {members} }} = parts;\n        check_limits(limits)?;\n        let value = Self {{ {members} }};\n{check}        Ok(value)\n    }}\n\n", record.name, record.name));
     }
     for field in &record.fields {
         out.push_str(&format!(
@@ -197,16 +199,12 @@ fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
     }
     let moved = names.iter().map(|name| format!("{name}: self.{name}")).collect::<Vec<_>>().join(", ");
     out.push_str(&format!("    /// Moves the fields out without copying.\n    #[must_use]\n    pub fn into_parts(self) -> {}Parts {{ {}Parts {{ {moved} }} }}\n\n", record.name, record.name));
-    if !emit_limits::bound_names(schema).is_empty() {
+    if has_bounds {
         out.push_str("    fn check(&self, limits: &Limits) -> Result<(), Problem> {\n");
-        if !record.fields.iter().any(|field| needs_value_check(&field.ty)) {
-            out.push_str("        let Self { .. } = self;\n");
-        }
-        emit_limit_checks(schema, out);
         for field in &record.fields {
             let bound_name = format!("{}_{}", emit_limits::snake(&record.name), field.name);
             let path = format!("{}{}", record.name, emit_limits::pascal(&field.name));
-            emit_check(&field.ty, &format!("self.{}", field.name), &bound_name, &path, 0, out);
+            emit_check(schema, &field.ty, &format!("self.{}", field.name), &bound_name, &path, 0, out);
         }
         out.push_str("        Ok(())\n    }\n");
     }
@@ -216,7 +214,7 @@ fn emit_record(schema: &Schema, record: &Record, out: &mut String) {
     out.push_str(&split);
 }
 
-fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
+fn emit_enum(schema: &Context<'_>, enumeration: &Enumeration, out: &mut String) {
     out.push_str(&format!(
         "/// `{}` in this codec family.\n#[derive(Clone, Debug, PartialEq, Eq, Hash)]\npub enum {} {{\n",
         enumeration.name, enumeration.name
@@ -232,26 +230,36 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
         }
     }
     out.push_str("}\n\n");
-    if emit_limits::bound_names(schema).is_empty() {
+    if schema.bounds.is_empty() {
         out.push_str(&format!("impl {} {{\n    /// Accepts a variant; this family has no adjustable bounds.\n    #[must_use]\n    pub fn new(_limits: &Limits, value: Self) -> Self {{ value }}\n}}\n\n", enumeration.name));
         return;
     }
-    out.push_str(&format!("impl {} {{\n    /// Checks the payload against the given limits.\n    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {{\n        value.check(limits)?;\n        Ok(value)\n    }}\n\n", enumeration.name));
+    let has_bounds = schema.has_bounds(&Type::Named(enumeration.name.clone()));
+    let check = if has_bounds { "        value.check(limits)?;\n" } else { "" };
+    out.push_str(&format!("impl {} {{\n    /// Checks the payload against the given limits.\n    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {{\n        check_limits(limits)?;\n{check}        Ok(value)\n    }}\n\n", enumeration.name));
+    if !has_bounds {
+        out.push_str("}\n\n");
+        return;
+    }
     out.push_str("    fn check(&self, limits: &Limits) -> Result<(), Problem> {\n        match self {\n");
-    // Variants with the same record type share a binding and one arm.
-    let unit_variants = enumeration
+    // Payloads without bounds share the unit variants' arm.
+    let unbounded_variants = enumeration
         .variants
         .iter()
-        .filter(|variant| variant.record.is_none())
-        .map(|variant| format!("Self::{}", emit_limits::pascal(&variant.name)))
+        .filter(|variant| variant.record.as_ref().is_none_or(|name| !schema.has_bounds(&Type::Named(name.clone()))))
+        .map(|variant| {
+            let name = emit_limits::pascal(&variant.name);
+            if variant.record.is_some() { format!("Self::{name}(_)") } else { format!("Self::{name}") }
+        })
         .collect::<Vec<_>>();
     for variant in &enumeration.variants {
         if let Some(record) = &variant.record {
-            if enumeration
-                .variants
-                .iter()
-                .take_while(|earlier| *earlier != variant)
-                .any(|earlier| earlier.record.as_ref() == Some(record) && earlier.boxed == variant.boxed)
+            if !schema.has_bounds(&Type::Named(record.clone()))
+                || enumeration
+                    .variants
+                    .iter()
+                    .take_while(|earlier| *earlier != variant)
+                    .any(|earlier| earlier.record.as_ref() == Some(record) && earlier.boxed == variant.boxed)
             {
                 continue;
             }
@@ -265,16 +273,15 @@ fn emit_enum(schema: &Schema, enumeration: &Enumeration, out: &mut String) {
             out.push_str(&format!("            {patterns} => {record}::check(record, limits),\n"));
         }
     }
-    if !unit_variants.is_empty() {
-        out.push_str(&format!("            {} => Ok(()),\n", unit_variants.join(" | ")));
+    if !unbounded_variants.is_empty() {
+        out.push_str(&format!("            {} => Ok(()),\n", unbounded_variants.join(" | ")));
     }
     out.push_str("        }?;\n");
-    emit_limit_checks(schema, out);
     out.push_str("        Ok(())\n    }\n}\n\n");
 }
 
-pub(crate) fn emit(schema: &Schema, out: &mut String) {
-    for declaration in &schema.declarations {
+pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
+    for declaration in schema.declarations {
         match declaration {
             Declaration::Record(record) => emit_record(schema, record, out),
             Declaration::Enum(enumeration) => emit_enum(schema, enumeration, out),

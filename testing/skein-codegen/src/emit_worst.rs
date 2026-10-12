@@ -2,7 +2,7 @@
 
 //! Checked wire and heap ceilings for codec.md, section 4.
 
-use crate::{Declaration, Enumeration, Record, Schema, Type, emit_limits};
+use crate::{Declaration, Enumeration, Record, Type, analysis::Context, emit_limits};
 
 fn rust_type(ty: &Type) -> String {
     match ty {
@@ -96,16 +96,16 @@ fn emit_enum(enumeration: &Enumeration, out: &mut String) {
     out.push_str("        Some(biggest)\n    }\n}\n\n");
 }
 
-pub(crate) fn emit(schema: &Schema, out: &mut String) {
-    let bounds = emit_limits::bound_names(schema);
+pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
+    let bounds = &schema.bounds;
     if bounds.is_empty() {
         out.push_str("fn limits_valid(_limits: &Limits) -> bool { true }\n\n");
     } else {
         out.push_str("fn limits_valid(limits: &Limits) -> bool {\n");
-        let checks = bounds.iter().map(|(name, _)| format!("limits.{name} <= CEILINGS.{name}")).collect::<Vec<_>>();
+        let checks = bounds.iter().map(|(name, _, _)| format!("limits.{name} <= CEILINGS.{name}")).collect::<Vec<_>>();
         out.push_str(&format!("    {}\n}}\n\n", checks.join(" && ")));
     }
-    for declaration in &schema.declarations {
+    for declaration in schema.declarations {
         match declaration {
             Declaration::Record(record) => emit_record(record, out),
             Declaration::Enum(enumeration) => emit_enum(enumeration, out),
@@ -113,7 +113,7 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) {
     }
     let biggest_mut = if schema.declarations.is_empty() { "" } else { "mut " };
     out.push_str(&format!("/// Maximum wire bytes among this family's top-level types.\n#[must_use]\npub fn worst_case_bytes(limits: &Limits) -> Option<u64> {{\n    if !limits_valid(limits) {{ return None; }}\n    let {biggest_mut}biggest = 0_u64;\n"));
-    for declaration in &schema.declarations {
+    for declaration in schema.declarations {
         let name = match declaration {
             Declaration::Record(record) => &record.name,
             Declaration::Enum(enumeration) => &enumeration.name,
@@ -121,7 +121,7 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) {
         out.push_str(&format!("    biggest = biggest.max({name}::worst_case_bytes(limits)?);\n"));
     }
     out.push_str(&format!("    Some(biggest)\n}}\n\n/// Maximum heap held by one decoded top-level value.\n#[must_use]\npub fn worst_case_heap(limits: &Limits) -> Option<u64> {{\n    if !limits_valid(limits) {{ return None; }}\n    let {biggest_mut}biggest = 0_u64;\n"));
-    for declaration in &schema.declarations {
+    for declaration in schema.declarations {
         let name = match declaration {
             Declaration::Record(record) => &record.name,
             Declaration::Enum(enumeration) => &enumeration.name,

@@ -6,11 +6,9 @@ pub(crate) fn split_worst_functions(out: &mut String) {
     let source = core::mem::take(out);
     let lines = source.lines().collect::<Vec<_>>();
     let mut offset = 0;
-    let mut limit_checks = Vec::new();
     while let Some(line) = lines.get(offset) {
         let worst = line.trim_start().starts_with("pub fn worst_case_");
-        let check = line.trim_start().starts_with("fn check(");
-        if !worst && !check {
+        if !worst {
             out.push_str(line);
             out.push('\n');
             offset = offset.checked_add(1).expect("source offset");
@@ -21,10 +19,8 @@ pub(crate) fn split_worst_functions(out: &mut String) {
         let count = lines.iter().skip(offset).position(|candidate| *candidate == closing).expect("function closes");
         let end = offset.checked_add(count).expect("function end");
         let function = lines.get(offset..=end).expect("function range");
-        if function.len() > 100 && worst {
+        if function.len() > 100 {
             split(function, indent, out);
-        } else if function.len() > 100 && check {
-            split_checks(function, &mut limit_checks, out);
         } else {
             for line in function {
                 out.push_str(line);
@@ -32,14 +28,6 @@ pub(crate) fn split_worst_functions(out: &mut String) {
             }
         }
         offset = end.checked_add(1).expect("source offset");
-    }
-    for (index, chunk) in limit_checks.chunks(90).enumerate() {
-        out.push_str(&format!("\nfn check_limits_{index}(limits: &Limits) -> Result<(), Problem> {{\n"));
-        for line in chunk {
-            out.push_str(line);
-            out.push('\n');
-        }
-        out.push_str("    Ok(())\n}\n");
     }
 }
 
@@ -77,31 +65,6 @@ fn split(function: &[&str], indent: usize, out: &mut String) {
     out.push_str(&format!("{}\n", function.get(tail_start..).expect("tail").join("\n")));
     for (index, chunk) in statements.chunks(90).enumerate() {
         out.push_str(&format!("\n{padding}fn {name}_{index}(limits: &Limits, mut {variable}: u64) -> Option<u64> {{\n{}\n{padding}    Some({variable})\n{padding}}}\n", chunk.join("\n")));
-    }
-}
-
-fn split_checks(function: &[&str], checks: &mut Vec<String>, out: &mut String) {
-    let mut emitted = false;
-    for line in function {
-        if line.trim_start().starts_with("if limits.") {
-            if checks.is_empty() {
-                checks.extend(
-                    function
-                        .iter()
-                        .filter(|line| line.trim_start().starts_with("if limits."))
-                        .map(|line| format!("    {}", line.trim_start())),
-                );
-            }
-            if !emitted {
-                for (index, _) in checks.chunks(90).enumerate() {
-                    out.push_str(&format!("        check_limits_{index}(limits)?;\n"));
-                }
-                emitted = true;
-            }
-        } else {
-            out.push_str(line);
-            out.push('\n');
-        }
     }
 }
 
