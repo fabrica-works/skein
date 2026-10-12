@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
+scripts/taste.sh crates/skein-tls tests/tls
 # The TLS machine on its own: the workspace's build unifies rustls's std,
 # which tests/tls turns on, and would hide a use of it.
 cargo check -p skein-tls
