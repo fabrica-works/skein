@@ -114,6 +114,15 @@ supervisor's rulings during the run, appended below them.
     now let a session make such an edit, within its own files, at most
     20 lines, changing no test's expected value or name, and name it in
     the commit body.
+18. **One retry for the real loop's timeouts** (the supervisor,
+    2026-10-12; infrastructure, blocked report of 2026-10-12T00:47:44Z).
+    1.2's gate (docs and messages only) failed in two tests of
+    `testing/skein-world`'s `end_to_end`, "the real loop settles within
+    1000 ms" (`real.rs:358`), with the machine's load at 8.7 on 8 cores
+    under the gate's own suites; both passed 1.1's gate, and nothing in
+    this plan reaches them. The gate may be run once more; a second
+    failure on the same tree is a question. A wall-clock bound in the
+    gate is for the retrospective.
 
 ## For the user
 
