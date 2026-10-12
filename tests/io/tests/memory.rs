@@ -49,6 +49,7 @@ struct Driver {
     /// The most io held of its own in a step.
     most: u64,
     output_events: Vec<(Token, Token, OutputOutcome)>,
+    failures: Vec<skein_io::Error>,
 }
 
 /// Room for every operation in flight, and every socket.
@@ -74,6 +75,7 @@ impl Driver {
             next_fd: 3,
             most: 0,
             output_events: Vec::with_capacity(ROOM),
+            failures: Vec::with_capacity(ROOM),
         };
         driver.meter = Meter::new();
         driver.meter.start();
@@ -100,6 +102,7 @@ impl Driver {
                     assert!(self.output_events.len() < ROOM, "preallocated native terminal observations");
                     self.output_events.push((owner, right, outcome));
                 }
+                Event::Failed { error, .. } => self.failures.push(error),
                 other @ (Event::Connected { .. }
                 | Event::Stream { .. }
                 | Event::Spawned { .. }
@@ -108,7 +111,6 @@ impl Driver {
                 | Event::Resized
                 | Event::Window { .. }
                 | Event::Shutdown { .. }
-                | Event::Failed { .. }
                 | Event::Closed { .. }) => {
                     drop(other);
                 }
@@ -575,4 +577,99 @@ fn a_full_append_output_and_armed_deadline_stay_within_ios_worst_case() {
     driver.end("append write deadline");
     drain(&mut driver);
     assert!(driver.most <= driver.bound);
+}
+
+/// Names fill first; their listeners then give their slots to joined ends.
+fn joined_fill_and_drain(limits: Limits) {
+    let mut listeners = Vec::with_capacity(ROOM);
+    let mut ends = Vec::with_capacity(ROOM);
+    let mut driver = Driver::new(limits);
+    for index in 0..limits.names {
+        let addr = skein_io_world::joined::name(&index.to_le_bytes());
+        driver.down(Request::Listen { owner: Token::new(u64::from(index)), addr });
+        joined_passes(&mut driver);
+        listeners.push(driver.listener.expect("each name is held by its listener"));
+    }
+    driver.down(Request::Listen { owner: Token::new(100), addr: skein_io_world::joined::name(b"past names") });
+    joined_passes(&mut driver);
+    assert_eq!(driver.failures.last(), Some(&skein_io::Error::Busy), "every name held");
+    for listener in &listeners[1..] {
+        driver.down(Request::Close { entity: *listener });
+    }
+    joined_passes(&mut driver);
+    for index in 0..limits.sockets / 2 {
+        driver.down(Request::Connect {
+            owner: Token::new(200 + u64::from(index)),
+            addr: skein_io_world::joined::name(&0_u32.to_le_bytes()),
+        });
+        joined_passes(&mut driver);
+        let socket = *driver.accepted.last().expect("a joined end accepted");
+        driver.down(Request::Bind { socket, owner: Token::new(400 + u64::from(index)) });
+        joined_passes(&mut driver);
+    }
+    ends.extend_from_slice(&driver.sockets);
+    ends.extend_from_slice(&driver.accepted);
+    assert_eq!(ends.len(), usize::try_from(limits.sockets - 1).expect("small odd slab"));
+    driver.down(Request::Close { entity: listeners[0] });
+    joined_passes(&mut driver);
+    // The final slot is a joined connector whose unbound name is checked
+    // only in its up pass: all entity slots are ends at this step's peak.
+    driver.failures.clear();
+    driver.down(Request::Connect { owner: Token::new(600), addr: skein_io_world::joined::name(b"unbound") });
+    driver.down(Request::Connect { owner: Token::new(601), addr: skein_io_world::joined::name(b"past slots") });
+    joined_passes(&mut driver);
+    assert!(driver.failures.contains(&skein_io::Error::Busy), "the joined ends fill the slab");
+    for socket in &ends {
+        fill_joined_end(&mut driver, *socket);
+    }
+    for socket in &ends {
+        driver.down(Request::Close { entity: *socket });
+    }
+    joined_passes(&mut driver);
+    for socket in &ends {
+        driver.down(Request::Abort { entity: *socket });
+    }
+    joined_passes(&mut driver);
+    assert!(driver.flights.is_empty(), "joined names and ends submit no operations");
+    assert!(driver.io().is_empty(), "every name and joined slot reclaimed");
+}
+
+fn fill_joined_end(driver: &mut Driver, socket: Token) {
+    let limits = driver.limits;
+    let mut left = limits.intake;
+    while left > 0 {
+        let size = left.min(limits.output);
+        driver.down(Request::Stream { stream: socket, down: Down::Demand { read: Read::Nothing, room: size } });
+        joined_passes(driver);
+        let bytes = vec![1; usize::try_from(size).expect("small output")].into_boxed_slice();
+        driver.down(Request::Stream { stream: socket, down: Down::Send(bytes) });
+        joined_passes(driver);
+        left -= size;
+    }
+    driver.down(Request::Stream { stream: socket, down: Down::Demand { read: Read::Nothing, room: limits.output } });
+    joined_passes(driver);
+    let boxes = limits.sends + 1;
+    let mut left = limits.output;
+    for index in 0..boxes {
+        let size = left / (boxes - index);
+        let bytes = vec![1; usize::try_from(size).expect("small output")].into_boxed_slice();
+        driver.down(Request::Stream { stream: socket, down: Down::Send(bytes) });
+        left -= size;
+    }
+    driver.down(Request::Stream { stream: socket, down: Down::Demand { read: Read::Nothing, room: limits.output } });
+}
+
+#[test]
+fn every_name_held_and_every_slot_a_joined_end_fit_worst_case() {
+    for limits in workloads() {
+        let sockets = limits.sockets.max(5) | 1;
+        joined_fill_and_drain(Limits { sockets, names: 2, ..limits });
+    }
+}
+
+/// Joined readiness moves to the next up pass at each reclaim point.
+fn joined_passes(driver: &mut Driver) {
+    for _ in 0..4 {
+        driver.next();
+    }
 }

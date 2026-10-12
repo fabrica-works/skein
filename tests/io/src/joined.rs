@@ -274,3 +274,59 @@ pub fn random(seed: u64, config: Config) -> World {
     );
     world
 }
+
+/// The two owners' stream observations after a calm exchange.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Seen {
+    pub received: [Vec<u8>; 2],
+    pub ended: [bool; 2],
+    pub failed: [Option<skein_lib::stream::Fault>; 2],
+}
+
+/// Run the same owners over loopback and over a name (io.md, section 8).
+#[must_use]
+pub fn either(seed: u64, plans: [crate::owner::Plan; 2]) -> [Seen; 2] {
+    let pairs = [(crate::scenarios::local(0), plans.clone()), (name(b"either"), plans)];
+    pairs.map(|(addr, [served, dialer])| {
+        let labels = [served.name, dialer.name];
+        let listener = Serve { name: "either", addr, answers: vec![Some(served)], close: ServeClose::Answered(END) };
+        let owner = Owner::new(seed, vec![listener], vec![dial("either", dialer)]);
+        let mut proc = crate::world::Proc::new(skein_io::Limits { intake: 7, ..limits(3) }, owner);
+        let mut sim = skein_sim::Sim::new(seed, Config::calm());
+        let pid = sim.spawn_process();
+        let mut directory = crate::owner::Directory::new();
+        for step in 0..200_000 {
+            assert!(step < 199_999, "either pair settles: {:?}", proc.log);
+            let now = sim.now();
+            assert!(now < END, "either pair ends within its deadline");
+            sim.reap(pid, &mut proc.completions);
+            proc.iterate(now, sim.wall(), &mut directory);
+            sim.submit(pid, &mut proc.subs);
+            if proc.owner.done() && proc.io.is_empty() && sim.in_flight(pid) == 0 {
+                break;
+            }
+            if proc.busy(now) || sim.deferred(pid) || sim.ready(pid) > 0 {
+                continue;
+            }
+            let next = [sim.next_due(), proc.io.next_deadline(), proc.owner.next_deadline(now)]
+                .into_iter()
+                .flatten()
+                .min()
+                .expect("the unsettled pair has work due");
+            sim.advance_to(next);
+        }
+        proc.ledger.settled();
+        sim.assert_quiescent(pid);
+        sim.assert_no_open_fds(pid);
+        if addr == name(b"either") {
+            assert!(sim.trace().is_empty(), "joined pairs submit no kernel records");
+        }
+        let conns = labels.map(|label| proc.owner.conn(label).expect("both ends connected"));
+        assert!(conns.iter().all(|conn| conn.error.is_none()), "both connects succeeded");
+        Seen {
+            received: conns.map(|conn| conn.received.clone()),
+            ended: conns.map(|conn| conn.ended),
+            failed: conns.map(|conn| conn.failed),
+        }
+    })
+}

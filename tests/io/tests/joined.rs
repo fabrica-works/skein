@@ -94,3 +94,26 @@ fn joined_closes_and_aborts_at_random_moments_settle() {
         assert!(skein_io_world::joined::random(seed, Config::chaos()).run().trace.is_empty());
     }
 }
+
+#[test]
+fn the_same_owners_read_the_same_over_either_pair() {
+    use skein_io_world::owner::{Reads, Total};
+    use skein_io_world::scenarios::plan;
+    for seed in SEEDS {
+        let first: Box<[u8]> = Box::from(&b"one sends a message longer than either intake"[..]);
+        let second: Box<[u8]> = Box::from(&b"two answers with another long message"[..]);
+        let served = skein_io_world::owner::Plan {
+            total: Total::Known(first.len()),
+            ..plan("served", second.clone(), 16, Reads::Mixed(7))
+        };
+        let dialer = skein_io_world::owner::Plan {
+            total: Total::Known(second.len()),
+            ..plan("dialer", first.clone(), 16, Reads::Mixed(7))
+        };
+        let [loopback, joined] = skein_io_world::joined::either(seed, [served, dialer]);
+        assert_eq!(loopback, joined, "seed {seed}");
+        assert_eq!(joined.received, [first.into_vec(), second.into_vec()]);
+        assert_eq!(joined.ended, [true, true]);
+        assert_eq!(joined.failed, [None, None]);
+    }
+}

@@ -39,12 +39,62 @@ fn an_exchange_through_io_over_the_ring() {
     let mut proc = Proc::new(limits, Owner::new(7, vec![serve], vec![dial]));
     let mut directory = Directory::new();
 
-    let deadline = at(10_000);
+    run_exchange(&mut proc, &mut kernel, &clock, &mut directory, at(10_000));
+    let client = proc.owner.conn("client").expect("the client connected");
+    assert!(
+        client.received == *sent,
+        "the echo returned every byte, in order: {} of {}",
+        client.received.len(),
+        sent.len()
+    );
+    assert!(!client.broken(), "nothing broke on loopback");
+    proc.ledger.settled();
+}
+
+#[test]
+fn a_loopback_and_a_named_listener_exchange_in_one_drive() {
+    let limits = limits(6);
+    let mut kernel = Kernel::open(Config { operations: operations(&limits).expect("a small ring") })
+        .expect("io_uring usable for the mixed-address exchange");
+    let clock = Clock::new();
+    let start = clock.now().now;
+    let deadline = start.saturating_add(Duration::from_secs(1));
+    let sent = framed(&message(&mut Rng::new(7), 300));
+    let serves = [("loopback", local(0), "ip-echo"), ("joined", skein_io_world::joined::name(b"ring"), "named-echo")]
+        .map(|(name, addr, label)| Serve {
+            name,
+            addr,
+            answers: vec![Some(echo(label, limits.largest_room(), Reads::Mixed(16)))],
+            close: ServeClose::Answered(deadline),
+        });
+    let dials = [("loopback", "ip-client"), ("joined", "named-client")].map(|(label, conn)| Dial {
+        to: Target::Named(label),
+        at: start,
+        plan: expecting(plan(conn, sent.clone(), 32, Reads::Mixed(16)), &sent),
+    });
+    let mut proc = Proc::new(limits, Owner::new(7, serves.into(), dials.into()));
+    run_exchange(&mut proc, &mut kernel, &clock, &mut Directory::new(), deadline);
+    for label in ["ip-client", "named-client"] {
+        let client = proc.owner.conn(label).expect("each client connected");
+        assert_eq!(client.received, *sent, "{label} received every byte");
+        assert!(client.ended, "{label} heard the peer's End");
+        assert!(!client.broken(), "{label} completed without failure");
+    }
+    proc.ledger.settled();
+}
+
+fn run_exchange(
+    proc: &mut Proc,
+    kernel: &mut Kernel,
+    clock: &Clock,
+    directory: &mut Directory,
+    deadline: skein_lib::Time,
+) {
     loop {
         let now = clock.now();
-        assert!(now.now < deadline, "the exchange ends within ten seconds");
+        assert!(now.now < deadline, "the exchange ends within its deadline");
         kernel.reap(&mut proc.completions);
-        proc.iterate(now.now, now.wall, &mut directory);
+        proc.iterate(now.now, now.wall, directory);
         if proc.owner.done() && proc.io.is_empty() && proc.subs.is_empty() && kernel.in_flight() == 0 {
             break;
         }
@@ -59,15 +109,7 @@ fn an_exchange_through_io_over_the_ring() {
         };
         kernel.submit(&mut proc.subs, wait);
     }
-    let client = proc.owner.conn("client").expect("the client connected");
-    assert!(
-        client.received == *sent,
-        "the echo returned every byte, in order: {} of {}",
-        client.received.len(),
-        sent.len()
-    );
-    assert!(!client.broken(), "nothing broke on loopback");
-    proc.ledger.settled();
+    assert!(proc.io.is_empty() && kernel.in_flight() == 0, "io and the ring hold nothing");
 }
 
 fn group_story(story: skein_io_world::processes::Story) {

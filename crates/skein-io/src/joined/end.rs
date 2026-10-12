@@ -105,6 +105,9 @@ pub(crate) fn request(current: &mut End, id: Id<Entity>, down: Down, limits: &Li
 }
 
 pub(crate) fn close(current: &mut End, id: Id<Entity>, abort: bool, env: &Env<Limits>, tables: &mut Tables) {
+    if current.is_closed() {
+        return;
+    }
     let was_closing = match current.state {
         EndState::Closing(_) => true,
         EndState::Starting { .. }
