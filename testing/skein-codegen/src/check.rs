@@ -120,7 +120,7 @@ fn size_of_type(ty: &Type, prior: &BTreeMap<String, (bool, u64)>, line: usize) -
         Type::U32 => Ok(4),
         Type::U64 | Type::Duration => Ok(8),
         Type::Fixed(bound) => Ok(u64::from(*bound)),
-        Type::Bytes(bound) | Type::Text(bound) => checked_add(4, u64::from(*bound), line),
+        Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) => checked_add(4, u64::from(*bound), line),
         Type::List(count, item) => {
             let item_size = size_of_type(item, prior, line)?;
             let contents = u64::from(*count)

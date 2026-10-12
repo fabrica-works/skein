@@ -38,6 +38,11 @@ mod tests {
     }
 
     #[test]
+    fn secret_schema_code_and_goldens_have_no_drift() {
+        check("schema/secrets-v1.schema", "src/secrets/v1.rs");
+    }
+
+    #[test]
     fn sample_schema_code_and_goldens_have_no_drift() {
         check("schema/sample-v1.schema", "src/generated/v1.rs");
     }

@@ -9,6 +9,32 @@ mod tests {
     use skein_codec_tests::v1::{CEILINGS, Choice, Effect, Field, FieldParts, Path, Report, ReportParts};
     use skein_lib::{Duration, List, Reader, Writer};
 
+    #[test]
+    fn a_credentials_debug_shows_its_secrets_length_and_not_its_bytes() {
+        use skein_codec_tests::secrets::{CEILINGS, Credential, CredentialParts};
+        let parts =
+            CredentialParts { name: Box::from(&b"llm"[..]), value: skein_lib::Secret::new(Box::from(&b"hunter2"[..])) };
+        let credential = Credential::new(&CEILINGS, parts).expect("within its limits");
+        let shown = format!("{credential:?}");
+        assert!(!shown.contains("hunter2"), "the secret's bytes are not shown: {shown}");
+        assert!(shown.contains("len: 7"), "its length is: {shown}");
+    }
+
+    #[test]
+    fn a_credential_encodes_its_secret_as_bytes_and_decodes_back() {
+        use skein_codec_tests::secrets::{CEILINGS, Credential, CredentialParts};
+        let credential = Credential::new(
+            &CEILINGS,
+            CredentialParts { name: Box::from(&b"llm"[..]), value: skein_lib::Secret::new(Box::from(&b"hunter2"[..])) },
+        )
+        .expect("within ceilings");
+        let wire = [0, 0, 0, 3, b'l', b'l', b'm', 0, 0, 0, 7, b'h', b'u', b'n', b't', b'e', b'r', b'2'];
+        let mut writer = Writer::new(18);
+        credential.encode(&mut writer).expect("measured room");
+        assert_eq!(writer.finish().as_ref(), &wire);
+        assert_eq!(Credential::decode(&CEILINGS, &mut Reader::new(&wire)), Ok(credential));
+    }
+
     fn report() -> Report {
         let field = Field::new(&CEILINGS, FieldParts { name: Box::from(&b"A"[..]), value: Box::from(&[0x7f][..]) })
             .expect("within ceilings");

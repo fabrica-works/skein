@@ -53,7 +53,7 @@ fn write_type(ty: &Type, full: bool, schema: &Schema, out: &mut Vec<u8>) {
                 out.push(if full { 0xa5 } else { 0 });
             }
         }
-        Type::Bytes(bound) | Type::Text(bound) => {
+        Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) => {
             let bytes = if full { pattern(*bound, matches!(ty, Type::Text(_))) } else { Vec::new() };
             out.extend_from_slice(&u32::try_from(bytes.len()).expect("pattern fits u32").to_be_bytes());
             out.extend_from_slice(&bytes);
@@ -95,6 +95,7 @@ fn value_expr(ty: &Type, full: bool, schema: &Schema) -> String {
         Type::Bool => full.to_string(),
         Type::Duration => format!("skein_lib::Duration::from_nanos({})", if full { "u64::MAX" } else { "0_u64" }),
         Type::Fixed(bound) => format!("[{}_u8; {}]", if full { 0xa5_u8 } else { 0_u8 }, emit_limits::literal(*bound)),
+        Type::Secret(bound) => format!("skein_lib::Secret::new({})", value_expr(&Type::Bytes(*bound), full, schema)),
         Type::Bytes(bound) | Type::Text(bound) => {
             let bytes = if full { pattern(*bound, matches!(ty, Type::Text(_))) } else { Vec::new() };
             let elements = bytes.iter().map(|byte| format!("{byte}_u8")).collect::<Vec<_>>().join(", ");
@@ -174,7 +175,7 @@ fn test_case(name: &str, ty: &str, value: &str, bytes: &[u8], out: &mut String) 
 fn bound_test(record: &Record, field_index: usize, schema: &Schema, out: &mut String) {
     let field = record.fields.get(field_index).expect("field index");
     let (bound, item, is_list) = match &field.ty {
-        Type::Bytes(bound) | Type::Text(bound) => (*bound, Vec::new(), false),
+        Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) => (*bound, Vec::new(), false),
         Type::List(bound, item) => {
             let mut bytes = Vec::new();
             write_type(item, false, schema, &mut bytes);
@@ -224,7 +225,7 @@ pub(crate) fn emit(schema: &Schema, out: &mut String) -> Vec<Golden> {
     let mut goldens = Vec::new();
     let has_bound_tests = schema.declarations.iter().any(|declaration| match declaration {
         Declaration::Record(record) => record.fields.iter().any(|field| match field.ty {
-            Type::Bytes(bound) | Type::Text(bound) | Type::List(bound, _) => bound < u32::MAX,
+            Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) | Type::List(bound, _) => bound < u32::MAX,
             Type::U8
             | Type::U16
             | Type::U32

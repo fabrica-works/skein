@@ -13,6 +13,7 @@ fn rust_type(ty: &Type) -> String {
         Type::Bool => "bool".into(),
         Type::Duration => "skein_lib::Duration".into(),
         Type::Fixed(bound) => format!("[u8; {}]", emit_limits::literal(*bound)),
+        Type::Secret(_) => "skein_lib::Secret".into(),
         Type::Bytes(_) | Type::Text(_) => "Box<[u8]>".into(),
         Type::List(_, item) => format!("List<{}>", rust_type(item)),
         Type::Option(item) => format!("Option<{}>", rust_type(item)),
@@ -23,6 +24,7 @@ fn rust_type(ty: &Type) -> String {
 fn accessor_type(ty: &Type) -> String {
     match ty {
         Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration => rust_type(ty),
+        Type::Secret(_) => "&skein_lib::Secret".into(),
         Type::Bytes(_) | Type::Text(_) => "&[u8]".into(),
         Type::Fixed(_) | Type::List(_, _) | Type::Option(_) | Type::Named(_) => format!("&{}", rust_type(ty)),
     }
@@ -38,7 +40,13 @@ fn accessor_expr(field: &Field, bool_index: Option<usize>, bool_count: usize) ->
     }
     match field.ty {
         Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration => format!("self.{}", field.name),
-        Type::Fixed(_) | Type::List(_, _) | Type::Option(_) | Type::Named(_) | Type::Bytes(_) | Type::Text(_) => {
+        Type::Fixed(_)
+        | Type::List(_, _)
+        | Type::Option(_)
+        | Type::Named(_)
+        | Type::Bytes(_)
+        | Type::Secret(_)
+        | Type::Text(_) => {
             format!("&self.{}", field.name)
         }
     }
@@ -57,7 +65,7 @@ pub(crate) fn bool_index(record: &Record, name: &str) -> Option<usize> {
 
 fn needs_value_check(ty: &Type) -> bool {
     match ty {
-        Type::Bytes(_) | Type::Text(_) | Type::List(_, _) | Type::Named(_) => true,
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) | Type::List(_, _) | Type::Named(_) => true,
         Type::Option(item) => needs_value_check(item),
         Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration | Type::Fixed(_) => false,
     }
@@ -66,7 +74,7 @@ fn needs_value_check(ty: &Type) -> bool {
 fn emit_check(ty: &Type, value: &str, bound_name: &str, path: &str, depth: usize, out: &mut String) {
     let problem = format!("Problem {{ path: Path::{path}, reason: skein_codec::Reason::Bound }}");
     match ty {
-        Type::Bytes(_) | Type::Text(_) => {
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => {
             out.push_str(&format!("        if {value}.len() > usize::try_from(limits.{bound_name}.min(CEILINGS.{bound_name})).expect(\"u32 fits usize\") {{ return Err({problem}); }}\n"));
             if let Type::Text(_) = ty {
                 out.push_str(&format!("        if !skein_codec::text_is_valid({value}.as_ref()) {{ return Err(Problem {{ path: Path::{path}, reason: skein_codec::Reason::Utf8 }}); }}\n"));

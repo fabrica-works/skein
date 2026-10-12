@@ -80,7 +80,7 @@ pub(crate) fn bound_paths(schema: &Schema) -> Vec<(String, String)> {
 
 fn collect_bound_names(ty: &Type, name: &str, result: &mut Vec<(String, u32)>) {
     match ty {
-        Type::Bytes(bound) | Type::Text(bound) => result.push((name.into(), *bound)),
+        Type::Bytes(bound) | Type::Secret(bound) | Type::Text(bound) => result.push((name.into(), *bound)),
         Type::List(bound, item) => {
             result.push((name.into(), *bound));
             collect_bound_names(item, &format!("{name}_item"), result);

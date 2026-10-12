@@ -13,6 +13,7 @@ fn rust_type(ty: &Type) -> String {
         Type::Bool => "bool".into(),
         Type::Duration => "skein_lib::Duration".into(),
         Type::Fixed(bound) => format!("[u8; {}]", emit_limits::literal(*bound)),
+        Type::Secret(_) => "skein_lib::Secret".into(),
         Type::Bytes(_) | Type::Text(_) => "Box<[u8]>".into(),
         Type::List(_, item) => format!("List<{}>", rust_type(item)),
         Type::Option(item) => format!("Option<{}>", rust_type(item)),
@@ -27,7 +28,7 @@ fn bytes_expr(ty: &Type, bound: &str) -> String {
         Type::U32 => "4_u64".into(),
         Type::U64 | Type::Duration => "8_u64".into(),
         Type::Fixed(length) => format!("u64::from({length}_u32)"),
-        Type::Bytes(_) | Type::Text(_) => format!("4_u64.checked_add(u64::from(limits.{bound}))?"),
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => format!("4_u64.checked_add(u64::from(limits.{bound}))?"),
         Type::List(_, item) => {
             let item_expr = bytes_expr(item, &format!("{bound}_item"));
             format!("4_u64.checked_add(u64::from(limits.{bound}).checked_mul({item_expr})?)?")
@@ -43,7 +44,7 @@ fn bytes_expr(ty: &Type, bound: &str) -> String {
 fn heap_expr(ty: &Type, bound: &str) -> String {
     match ty {
         Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Bool | Type::Duration | Type::Fixed(_) => "0_u64".into(),
-        Type::Bytes(_) | Type::Text(_) => format!("u64::from(limits.{bound})"),
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => format!("u64::from(limits.{bound})"),
         Type::List(_, item) => {
             let item_expr = heap_expr(item, &format!("{bound}_item"));
             format!(

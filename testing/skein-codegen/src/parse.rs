@@ -116,6 +116,7 @@ impl Parser {
             "duration" => Ok(Type::Duration),
             "fixed" => Ok(Type::Fixed(self.bound()?)),
             "bytes" => Ok(Type::Bytes(self.bound()?)),
+            "secret" => Ok(Type::Secret(self.bound()?)),
             "text" => Ok(Type::Text(self.bound()?)),
             "list" => {
                 let count = self.bound()?;

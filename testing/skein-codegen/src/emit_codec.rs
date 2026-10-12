@@ -22,7 +22,7 @@ fn fixed_size(ty: &Type) -> Option<u32> {
         Type::U32 => Some(4),
         Type::U64 | Type::Duration => Some(8),
         Type::Fixed(bound) => Some(*bound),
-        Type::Bytes(_) | Type::Text(_) | Type::List(_, _) | Type::Option(_) | Type::Named(_) => None,
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) | Type::List(_, _) | Type::Option(_) | Type::Named(_) => None,
     }
 }
 
@@ -33,7 +33,7 @@ fn measure_type(ty: &Type, value: &str, depth: usize, out: &mut String) {
         Type::U32 => add_size("4", out),
         Type::U64 | Type::Duration => add_size("8", out),
         Type::Fixed(bound) => add_size(&emit_limits::literal(*bound), out),
-        Type::Bytes(_) | Type::Text(_) => {
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => {
             add_size("4", out);
             add_size(&format!("u32::try_from({value}.len()).expect(\"field ceiling fits u32\")"), out);
         }
@@ -73,11 +73,13 @@ fn encode_type(ty: &Type, value: &str, depth: usize, out: &mut String) {
         Type::Bool => out.push_str(&format!("        writer.put(&[u8::from(*{value})])?;\n")),
         Type::Duration => out.push_str(&format!("        writer.put(&{value}.as_nanos().to_be_bytes())?;\n")),
         Type::Fixed(_) => out.push_str(&format!("        writer.put({value})?;\n")),
-        Type::Bytes(_) | Type::Text(_) => {
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => {
             out.push_str(&format!(
                 "        writer.put(&u32::try_from({value}.len()).expect(\"field ceiling fits u32\").to_be_bytes())?;\n"
             ));
-            out.push_str(&format!("        writer.put({value}.as_ref())?;\n"));
+            let bytes =
+                if matches!(ty, Type::Secret(_)) { format!("{value}.expose()") } else { format!("{value}.as_ref()") };
+            out.push_str(&format!("        writer.put({bytes})?;\n"));
         }
         Type::List(_, item) => {
             out.push_str(&format!("        writer.put(&{value}.len().to_be_bytes())?;\n"));
@@ -106,7 +108,7 @@ fn min_bytes(ty: &Type, schema: &Schema) -> u32 {
     match ty {
         Type::U8 | Type::Bool | Type::Option(_) => 1,
         Type::U16 => 2,
-        Type::U32 | Type::Bytes(_) | Type::Text(_) | Type::List(_, _) => 4,
+        Type::U32 | Type::Bytes(_) | Type::Secret(_) | Type::Text(_) | Type::List(_, _) => 4,
         Type::U64 | Type::Duration => 8,
         Type::Fixed(bound) => *bound,
         Type::Named(name) => {
@@ -164,6 +166,9 @@ fn decode_type(ty: &Type, schema: &Schema, bound_name: &str, path: &str, depth: 
             "{{ let bytes = reader.bytes({}).ok_or({short})?; bytes.try_into().expect(\"fixed length checked\") }}",
             emit_limits::literal(*bound)
         ),
+        Type::Secret(_) => {
+            format!("skein_lib::Secret::new({})", decode_type(&Type::Bytes(0), schema, bound_name, path, depth))
+        }
         Type::Bytes(_) => format!(
             "{{ let length = match skein_codec::read_len(reader, limits.{bound_name}.min(CEILINGS.{bound_name})) {{ Ok(length) => length, Err(reason) => return Err(Problem {{ path: Path::{path}, reason }}), }}; Box::from(reader.bytes(length).ok_or({short})?) }}"
         ),

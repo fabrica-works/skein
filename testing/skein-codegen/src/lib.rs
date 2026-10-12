@@ -74,6 +74,7 @@ pub enum Type {
     Duration,
     Fixed(u32),
     Bytes(u32),
+    Secret(u32),
     Text(u32),
     List(u32, Box<Type>),
     Option(Box<Type>),
@@ -96,7 +97,7 @@ pub struct Golden {
 
 fn uses_box(ty: &Type) -> bool {
     match ty {
-        Type::Bytes(_) | Type::Text(_) => true,
+        Type::Bytes(_) | Type::Secret(_) | Type::Text(_) => true,
         Type::List(_, item) | Type::Option(item) => uses_box(item),
         Type::U8
         | Type::U16
@@ -121,6 +122,7 @@ fn uses_list(ty: &Type) -> bool {
         | Type::Duration
         | Type::Fixed(_)
         | Type::Bytes(_)
+        | Type::Secret(_)
         | Type::Text(_)
         | Type::Named(_) => false,
     }
