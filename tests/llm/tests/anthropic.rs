@@ -210,9 +210,9 @@ fn signed_and_redacted_thinking_replay_preserves_bytes_and_order() {
     world.assert_once();
     assert!(world.seen.iter().any(|event| matches!(event, client::Event::Delta { delta: Delta::Reasoning { index: 0, text, .. }, .. } if text.as_ref() == b"Plan carefully")));
     let answer = completion(&world);
-    assert_eq!(answer.content.len(), 3);
+    assert_eq!(answer.content.len(), 2);
     assert!(matches!(&answer.content[0], Block::Reasoning { replay } if replay.provider == Provider::Anthropic));
-    assert!(matches!(&answer.content[1], Block::Reasoning { replay } if replay.provider == Provider::Anthropic));
+    assert!(matches!(&answer.content[1], Block::Text { text, .. } if text.as_ref() == b"Answer"));
     let mut followup = anthropic_call(2);
     followup.prompt.messages = Box::new([Message { role: Role::Assistant, content: answer.content.clone() }]);
     let mut next = World::new(followup, limits(), text_response(false), 4);

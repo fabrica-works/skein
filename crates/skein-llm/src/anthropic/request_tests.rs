@@ -594,3 +594,22 @@ fn check_argument_spelling_admission(name: &str, arguments: Box<[u8]>, expected_
     let wire = encode_request(&input, 4096, &LIMITS).expect("parent's admitted request encodes");
     assert_eq!(wire.len(), usize::try_from(expected_compact).expect("compact length"));
 }
+
+#[test]
+fn a_reasoning_run_replays_as_consecutive_native_content_items() {
+    let run = br#"[{"type":"thinking","thinking":"a","signature":"s0"},{"type":"redacted_thinking","data":"b"},{"type":"thinking","extension":{"signed":true},"thinking":"c","signature":"s2"}]"#;
+    let body = encode_request(&prompt(Role::Assistant, reasoning(run)), 4096, &LIMITS).expect("ordered replay");
+    let offset = bytes::find(&body, run).expect("native content");
+    assert_eq!(body.get(offset..offset + run.len()), Some(run.as_slice()));
+}
+
+#[test]
+fn a_reasoning_run_validates_each_native_items_signature_and_limit() {
+    let run = br#"[{"type":"thinking","thinking":"a","signature":"s0"},{"type":"thinking","thinking":"c"}]"#;
+    assert_eq!(encode_request(&prompt(Role::Assistant, reasoning(run)), 4096, &LIMITS), Err(Error::Invalid));
+    let valid = br#"[{"type":"thinking","thinking":"a","signature":"s0"},{"type":"redacted_thinking","data":"b"}]"#;
+    assert_eq!(
+        encode_request(&prompt(Role::Assistant, reasoning(valid)), 4096, &openai::Limits { reasoning: 32, ..LIMITS }),
+        Err(Error::Limit { which: crate::Cap::Reasoning, bound: 32 })
+    );
+}

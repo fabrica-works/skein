@@ -189,22 +189,25 @@ fn write_block(out: &mut writer::Encoder, block: &Block, role: Role) -> Result<(
 }
 
 fn write_reasoning(out: &mut writer::Encoder, replay: &Replay) -> Result<(), Error> {
-    let view = replay.value.view();
-    let kind = match openai::json::required(view, b"type") {
-        Ok(value) => value,
-        Err(error) => return Err(decode(error)),
-    };
-    let kind = match openai::json::value_at(view, kind) {
-        Ok(value) => value,
-        Err(error) => return Err(decode(error)),
-    };
-    let text = match openai::json::text_ref(kind) {
-        Ok(value) => value,
-        Err(error) => return Err(decode(error)),
-    };
-    match text {
-        b"" | b"message" | b"function_call" | b"function_call_output" => return Err(Error::Invalid),
-        _ => replay.value.write(out),
+    let mut next = 0;
+    for _token in 0..openai::json::len(replay.value.view()) {
+        let view = match openai::response::reasoning::replay_item(&replay.value, &mut next) {
+            Ok(Some(view)) => view,
+            Ok(None) => break,
+            Err(error) => return Err(decode(error)),
+        };
+        let kind = match openai::json::required(view, b"type") {
+            Ok(at) => match openai::json::value_at(view, at) {
+                Ok(kind) => kind,
+                Err(error) => return Err(decode(error)),
+            },
+            Err(error) => return Err(decode(error)),
+        };
+        match openai::json::text_ref(kind) {
+            Ok(b"" | b"message" | b"function_call" | b"function_call_output") => return Err(Error::Invalid),
+            Ok(_) => openai::json::write_view(out, view),
+            Err(error) => return Err(decode(error)),
+        }
     }
     Ok(())
 }
@@ -481,53 +484,14 @@ fn charge_replay(
         if replay.provider != provider {
             return Err(Error::Unsupported);
         }
-        if openai::json::kind(replay.value.view(), 0) != Some(Kind::ObjectStart) {
-            return Err(Error::Invalid);
-        }
-        let known_reasoning = if cap == crate::Cap::Reasoning && provider == Provider::OpenAiCodex {
-            let view = replay.value.view();
-            let kind = match openai::json::field(view, b"type") {
-                Ok(kind) => kind,
+        let mut next = 0;
+        for _token in 0..openai::json::len(replay.value.view()) {
+            let view = match openai::response::reasoning::replay_item(&replay.value, &mut next) {
+                Ok(Some(view)) => view,
+                Ok(None) => break,
                 Err(error) => return Err(decode(error)),
             };
-            match openai::json::optional_at(view, kind) {
-                Ok(Some(kind)) => match openai::json::text_ref(kind) {
-                    Ok(kind) => kind == b"reasoning",
-                    Err(error) => return Err(decode(error)),
-                },
-                Ok(None) => false,
-                Err(error) => return Err(decode(error)),
-            }
-        } else {
-            false
-        };
-        if known_reasoning {
-            let view = replay.value.view();
-            let encrypted = match openai::json::field(view, b"encrypted_content") {
-                Ok(encrypted) => encrypted,
-                Err(error) => return Err(decode(error)),
-            };
-            match openai::json::optional_at(view, encrypted) {
-                Ok(Some(encrypted)) => match openai::json::text_ref(encrypted) {
-                    Ok(text) if text.len() > usize::try_from(maximum).expect("bounded reasoning") => {
-                        return Err(Error::limit(cap, maximum));
-                    }
-                    Ok(_) => {}
-                    Err(error) => return Err(decode(error)),
-                },
-                Ok(None) => {}
-                Err(error) => return Err(decode(error)),
-            }
-        } else {
-            let bounded = writer::Limits { depth: limits.depth, length: maximum };
-            let mut measure = writer::Encoder::measure(&bounded);
-            replay.value.write(&mut measure);
-            match measure.measured() {
-                Ok(_) => {}
-                Err(writer::Refusal::TooLong) => return Err(Error::limit(cap, maximum)),
-                Err(writer::Refusal::TooDeep) => return Err(Error::limit(crate::Cap::Depth, limits.depth)),
-                Err(writer::Refusal::Text | writer::Refusal::Number) => return Err(Error::Invalid),
-            }
+            charge_replay_item(view, provider, maximum, cap, limits)?;
         }
         charge_json(&replay.value, budget, limits)?;
     }
@@ -643,22 +607,71 @@ fn input_block(block: &Block, role: Role) -> Result<openai::Input, Error> {
             Ok(openai::Input::FunctionOutput { call_id: id.clone(), output })
         }
         Block::Reasoning { replay } => {
-            let tokens = replay.value.view();
-            let kind = match openai::json::required(tokens, b"type") {
-                Ok(at) => match openai::json::value_at(tokens, at) {
-                    Ok(value) => value,
-                    Err(error) => return Err(decode(error)),
-                },
-                Err(error) => return Err(decode(error)),
-            };
-            match openai::json::text_ref(kind) {
-                Ok(b"" | b"message" | b"function_call" | b"function_call_output") => Err(Error::Invalid),
-                Ok(_) => Ok(openai::Input::Opaque { value: replay.value.clone() }),
-                Err(error) => Err(decode(error)),
-            }
+            let bounded = writer::Limits { depth: u32::MAX, length: u32::MAX };
+            let mut measure = writer::Encoder::measure(&bounded);
+            measure.array_start();
+            write_reasoning(&mut measure, replay)?;
+            measure.array_end();
+            Ok(openai::Input::Opaque { value: replay.value.clone() })
         }
     }
 }
+fn charge_replay_item(
+    view: (&skein_json::Document, openai::json::Span),
+    provider: Provider,
+    maximum: u32,
+    cap: crate::Cap,
+    limits: &openai::Limits,
+) -> Result<(), Error> {
+    if openai::json::kind(view, 0) != Some(Kind::ObjectStart) {
+        return Err(Error::Invalid);
+    }
+    let known_reasoning = if cap == crate::Cap::Reasoning && provider == Provider::OpenAiCodex {
+        let kind = match openai::json::field(view, b"type") {
+            Ok(kind) => kind,
+            Err(error) => return Err(decode(error)),
+        };
+        match openai::json::optional_at(view, kind) {
+            Ok(Some(kind)) => match openai::json::text_ref(kind) {
+                Ok(kind) => kind == b"reasoning",
+                Err(error) => return Err(decode(error)),
+            },
+            Ok(None) => false,
+            Err(error) => return Err(decode(error)),
+        }
+    } else {
+        false
+    };
+    if known_reasoning {
+        let encrypted = match openai::json::field(view, b"encrypted_content") {
+            Ok(encrypted) => encrypted,
+            Err(error) => return Err(decode(error)),
+        };
+        match openai::json::optional_at(view, encrypted) {
+            Ok(Some(encrypted)) => match openai::json::text_ref(encrypted) {
+                Ok(text) if text.len() > usize::try_from(maximum).expect("bounded reasoning") => {
+                    return Err(Error::limit(cap, maximum));
+                }
+                Ok(_) => {}
+                Err(error) => return Err(decode(error)),
+            },
+            Ok(None) => {}
+            Err(error) => return Err(decode(error)),
+        }
+    } else {
+        let bounded = writer::Limits { depth: limits.depth, length: maximum };
+        let mut measure = writer::Encoder::measure(&bounded);
+        openai::json::write_view(&mut measure, view);
+        match measure.measured() {
+            Ok(_) => {}
+            Err(writer::Refusal::TooLong) => return Err(Error::limit(cap, maximum)),
+            Err(writer::Refusal::TooDeep) => return Err(Error::limit(crate::Cap::Depth, limits.depth)),
+            Err(writer::Refusal::Text | writer::Refusal::Number) => return Err(Error::Invalid),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 fn replay_text(replay: Option<&Replay>, name: &[u8]) -> Result<Option<Box<[u8]>>, Error> {
     let Some(replay) = replay else {
@@ -1080,6 +1093,29 @@ mod tests {
             [openai::Input::FunctionCall { arguments, .. }] => assert_eq!(arguments.as_ref(), b"broken"),
             _ => panic!("one actual native function call"),
         }
+    }
+
+    #[test]
+    fn reasoning_runs_replay_each_native_item_in_order() {
+        let run = br#"[{"id":"r0","type":"reasoning","encrypted_content":"a","summary":[]},{"id":"r1","type":"reasoning","encrypted_content":"b","summary":[]},{"id":"r2","type":"reasoning","encrypted_content":"c","summary":[]}]"#;
+        let block = part(openai::Part::Opaque { bytes: bytes::copy_of(run) }, &LIMITS).expect("bounded run");
+        let prompt = prompt(Role::Assistant, block);
+        let native = request(&prompt, Provider::OpenAiCodex, &LIMITS).expect("native replay");
+        let body = super::encode_request(&prompt, &LIMITS).expect("borrowed replay");
+        let offset = bytes::find(&body, run).expect("ordered input");
+        assert_eq!(body.get(offset..offset + run.len()), Some(run.as_slice()));
+        let native_body = openai::encode_request(&native, &LIMITS).expect("native encoder");
+        assert!(bytes::find(&native_body, run).is_some());
+    }
+
+    #[test]
+    fn a_reasoning_run_checks_each_items_reasoning_limit() {
+        let run = br#"[{"id":"r0","type":"reasoning","encrypted_content":"a"},{"id":"r1","type":"reasoning","encrypted_content":"bc"}]"#;
+        let block = part(openai::Part::Opaque { bytes: bytes::copy_of(run) }, &LIMITS).expect("bounded run");
+        assert_eq!(
+            super::encode_request(&prompt(Role::Assistant, block), &openai::Limits { reasoning: 1, ..LIMITS }),
+            Err(Error::Limit { which: crate::Cap::Reasoning, bound: 1 })
+        );
     }
     #[test]
     fn encrypted_reasoning_is_exactly_replayed() {

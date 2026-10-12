@@ -97,6 +97,9 @@ pub struct StreamDecoder {
     active: Option<Active>,
     pending: Option<Part>,
     next: u32,
+    blocks: u32,
+    reasoning: Option<Box<[u8]>>,
+    reasoning_bytes: u64,
     started: bool,
     ending: bool,
     over: bool,
@@ -113,6 +116,9 @@ impl StreamDecoder {
             active: None,
             pending: None,
             next: 0,
+            blocks: 0,
+            reasoning: None,
+            reasoning_bytes: 0,
             started: false,
             ending: false,
             over: false,
@@ -199,7 +205,17 @@ impl StreamDecoder {
                 if !self.started || self.ending || self.active.is_some() || index != self.next {
                     return Err(DecodeError::Malformed);
                 }
-                if index >= limits.output_items {
+                let thinking = match &block {
+                    BlockStart::Thinking { .. } | BlockStart::Redacted { .. } => true,
+                    BlockStart::Text { .. } | BlockStart::ToolCall { .. } | BlockStart::Opaque { .. } => false,
+                };
+                if !thinking {
+                    self.emit_reasoning(out);
+                }
+                if !thinking || self.reasoning.is_none() {
+                    self.blocks = self.blocks.checked_add(1).ok_or(DecodeError::Malformed)?;
+                }
+                if self.blocks > limits.output_items {
                     return Err(DecodeError::limit(crate::Cap::OutputItems, limits.output_items));
                 }
                 self.active = Some(self.start(block, limits)?);
@@ -213,24 +229,14 @@ impl StreamDecoder {
                     | Delta::Signature { text } => text.len(),
                 };
                 match &delta {
-                    Delta::Arguments { .. } => {}
-                    Delta::Text { .. } | Delta::Thinking { .. } | Delta::Signature { .. } => {
+                    Delta::Arguments { .. } | Delta::Thinking { .. } | Delta::Signature { .. } => {}
+                    Delta::Text { .. } => {
                         self.reserve_received(len, limits)?;
                     }
                 }
                 self.delta(index, delta, long, out)?;
             }
-            Event::Done { index } => {
-                self.check_active(index)?;
-                let active = self.active.take().ok_or(DecodeError::Malformed)?;
-                let part = finish(active, limits)?;
-                self.next =
-                    self.next.checked_add(1).ok_or(DecodeError::limit(crate::Cap::OutputItems, limits.output_items))?;
-                match part {
-                    part @ Part::ToolCall { .. } => self.pending = Some(part),
-                    part @ (Part::Text { .. } | Part::Opaque { .. }) => self.emit(part, limits, out)?,
-                }
-            }
+            Event::Done { index } => self.done(index, limits, out)?,
             Event::MessageDelta { stop, usage } => {
                 if !self.started {
                     return Err(DecodeError::Malformed);
@@ -256,6 +262,7 @@ impl StreamDecoder {
                     }
                     self.emit(part, limits, out)?;
                 }
+                self.emit_reasoning(out);
                 self.ending = true;
                 if let Some(stop) = stop {
                     if let Some(previous) = self.stop
@@ -282,6 +289,41 @@ impl StreamDecoder {
             Event::Progress | Event::Unknown => {}
         }
         Ok(())
+    }
+    fn done(&mut self, index: u32, limits: &Limits, out: &mut Queue<Output>) -> Result<(), DecodeError> {
+        self.check_active(index)?;
+        let active = self.active.take().ok_or(DecodeError::Malformed)?;
+        let thinking = match &active {
+            Active::Thinking { .. } => true,
+            Active::Opaque { bytes } => {
+                let value = Json::from_bytes(bytes, &limits.document())?;
+                json::text_ref(json::value_at(value.view(), json::required(value.view(), b"type")?)?)?
+                    == b"redacted_thinking"
+            }
+            Active::Text { .. } | Active::ToolCall { .. } => false,
+        };
+        let part = finish(active, limits)?;
+        if thinking {
+            let Part::Opaque { bytes } = part else { unreachable!("native reasoning") };
+            crate::openai::response::reasoning::charge(&mut self.reasoning_bytes, bytes.len(), limits)?;
+            self.reasoning = Some(match self.reasoning.take() {
+                Some(previous) => crate::openai::response::reasoning::append(&previous, &bytes, limits)?,
+                None => bytes,
+            });
+            self.next = self.next.checked_add(1).ok_or(DecodeError::Malformed)?;
+            return Ok(());
+        }
+        self.next = self.next.checked_add(1).ok_or(DecodeError::limit(crate::Cap::OutputItems, limits.output_items))?;
+        match part {
+            part @ Part::ToolCall { .. } => self.pending = Some(part),
+            part @ (Part::Text { .. } | Part::Opaque { .. }) => self.emit(part, limits, out)?,
+        }
+        Ok(())
+    }
+    fn emit_reasoning(&mut self, out: &mut Queue<Output>) {
+        if let Some(bytes) = self.reasoning.take() {
+            out.push(Output::Part(Part::Opaque { bytes }));
+        }
     }
     fn emit(&mut self, part: Part, limits: &Limits, out: &mut Queue<Output>) -> Result<(), DecodeError> {
         let len = match &part {
@@ -339,7 +381,6 @@ impl StreamDecoder {
                 if serialized.len() > usize::try_from(limits.reasoning).expect("u32 fits usize") {
                     return Err(DecodeError::limit(crate::Cap::Reasoning, limits.reasoning));
                 }
-                self.reserve_received(serialized.len(), limits)?;
                 let mut value = List::with_capacity(limits.reasoning);
                 let mut signed = List::with_capacity(limits.reasoning);
                 append(&mut value, &text, crate::Cap::Reasoning)?;
@@ -352,7 +393,6 @@ impl StreamDecoder {
                 if data.len() > usize::try_from(limits.reasoning).expect("u32 fits usize") {
                     return Err(DecodeError::limit(crate::Cap::Reasoning, limits.reasoning));
                 }
-                self.reserve_received(data.len(), limits)?;
                 Ok(Active::Opaque { bytes: data })
             }
             BlockStart::Opaque { value } => {
@@ -452,6 +492,7 @@ impl StreamDecoder {
     fn fail(&mut self, failure: Failure, detail: Box<[u8]>, out: &mut Queue<Output>) {
         self.active = None;
         self.pending = None;
+        self.reasoning = None;
         self.over = true;
         let detail = match failure {
             Failure::Limit { which, bound } => crate::openai::limit_detail(which, bound),

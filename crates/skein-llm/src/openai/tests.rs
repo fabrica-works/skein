@@ -794,8 +794,8 @@ fn reasoning_summary_and_message_parts_can_exceed_output_items() {
             Output::ReasoningDelta { index: 0, summary_index: 0, text: owned(b"a") },
             Output::ReasoningDelta { index: 0, summary_index: 1, text: owned(b"b") },
             Output::ReasoningDelta { index: 0, summary_index: 2, text: owned(b"c") },
-            Output::Part(Part::Opaque { bytes: reasoning.to_bytes(&limits.document()).unwrap() }),
             Output::Progress,
+            Output::Part(Part::Opaque { bytes: reasoning.to_bytes(&limits.document()).unwrap() }),
             Output::TextDelta { index: 1, content_index: 0, text: owned(b"a") },
             Output::TextDelta { index: 1, content_index: 1, text: owned(b"b") },
             Output::TextDelta { index: 1, content_index: 2, text: owned(b"c") },
@@ -1430,4 +1430,140 @@ fn an_http_error_body_refines_class_without_changing_status_retryability() {
         let rate = RateLimit { retry_after: Some(Duration::from_secs(7)), ..RateLimit::NONE };
         assert_eq!(classify(status, Some(&error), rate, Wall::EPOCH), expected);
     }
+}
+
+fn reasoning_run_events(final_call: bool) -> Vec<Event> {
+    let mut events = Vec::new();
+    for (index, id, encrypted) in [(0, b"r0".as_slice(), "a"), (1, b"r1", "b"), (2, b"r2", "c")] {
+        events.push(Event::Added { index, id: owned(id), kind: owned(b"reasoning") });
+        events.push(Event::Done {
+            index,
+            item: Item::Opaque {
+                value: value(
+                    format!(r#"{{"type":"reasoning","id":"r{index}","encrypted_content":"{encrypted}","summary":[]}}"#)
+                        .as_bytes(),
+                ),
+            },
+        });
+    }
+    if final_call {
+        events.push(Event::Added { index: 3, id: owned(b"f"), kind: owned(b"function_call") });
+        events.push(Event::Done {
+            index: 3,
+            item: Item::FunctionCall {
+                id: owned(b"f"),
+                call_id: owned(b"call"),
+                name: owned(b"read"),
+                arguments: owned(b"{}"),
+            },
+        });
+    } else {
+        events.push(Event::Added { index: 3, id: owned(b"m"), kind: owned(b"message") });
+        events.push(Event::Done {
+            index: 3,
+            item: Item::Message { id: owned(b"m"), phase: None, text: owned(b"done"), refusal: false },
+        });
+    }
+    events.push(Event::Completed { stop: Stop::EndTurn, usage: Usage::NONE });
+    events
+}
+
+#[test]
+fn consecutive_reasoning_items_before_text_form_one_replay_block() {
+    assert_reasoning_run(false);
+}
+
+#[test]
+fn consecutive_reasoning_items_before_a_call_form_one_replay_block() {
+    assert_reasoning_run(true);
+}
+
+fn assert_reasoning_run(final_call: bool) {
+    let limits = Limits { output_items: 2, ..LIMITS };
+    let trace = stream(&reasoning_run_events(final_call), &limits);
+    let parts: Vec<_> =
+        trace.iter().filter_map(|output| if let Output::Part(part) = output { Some(part) } else { None }).collect();
+    assert_eq!(parts.len(), 2);
+    let expected = br#"[{"type":"reasoning","id":"r0","encrypted_content":"a","summary":[]},{"type":"reasoning","id":"r1","encrypted_content":"b","summary":[]},{"type":"reasoning","id":"r2","encrypted_content":"c","summary":[]}]"#;
+    assert_eq!(parts[0], &Part::Opaque { bytes: owned(expected) });
+    let mut replay = request();
+    replay.input = Box::new([Input::Opaque { value: value(expected) }]);
+    let body = encode_request(&replay, &limits).unwrap();
+    let position = bytes::find(&body, expected).unwrap();
+    assert_eq!(body.get(position..position + expected.len()), Some(expected.as_slice()));
+    assert_eq!(
+        trace.last(),
+        Some(&Output::Completed { stop: if final_call { Stop::ToolUse } else { Stop::EndTurn }, usage: Usage::NONE })
+    );
+}
+
+#[test]
+fn reasoning_run_past_the_completion_share_names_its_limit() {
+    let limits = Limits { output_items: 2, reasoning: 80, ..LIMITS };
+    let trace = stream(&reasoning_run_events(false), &limits);
+    assert_eq!(
+        trace.last(),
+        Some(&Output::Failed {
+            failure: Failure::Limit { which: crate::Cap::Reasoning, bound: 160 },
+            detail: owned(b"reasoning item exceeds bound 160"),
+        })
+    );
+}
+
+#[test]
+fn reasoning_run_past_one_blocks_retained_tokens_names_its_limit() {
+    let limits = Limits { output_items: 2, tokens: 24, ..LIMITS };
+    let trace = stream(&reasoning_run_events(false), &limits);
+    assert_eq!(
+        trace.last(),
+        Some(&Output::Failed {
+            failure: Failure::Limit { which: crate::Cap::Tokens, bound: 24 },
+            detail: owned(b"retained JSON tokens exceeds bound 24"),
+        })
+    );
+}
+
+#[test]
+fn an_output_cut_keeps_the_completed_items_of_a_reasoning_run() {
+    let mut events = reasoning_run_events(false);
+    events.truncate(3);
+    events.push(Event::Completed { stop: Stop::MaxTokens, usage: Usage::NONE });
+    let trace = stream(&events, &Limits { output_items: 2, ..LIMITS });
+    assert!(trace.contains(&Output::Part(Part::Opaque {
+        bytes: owned(br#"{"type":"reasoning","id":"r0","encrypted_content":"a","summary":[]}"#)
+    })));
+    assert_eq!(trace.last(), Some(&Output::Completed { stop: Stop::MaxTokens, usage: Usage::NONE }));
+}
+
+#[test]
+fn an_opted_in_drop_interrupts_a_retained_reasoning_run_without_losing_it() {
+    let limits = Limits { output_items: 3, reasoning: 80, ..LIMITS };
+    let mut events = reasoning_run_events(false);
+    events.truncate(4);
+    events[3] = Event::Done {
+        index: 1,
+        item: Item::Opaque {
+            value: value(
+                format!(r#"{{"type":"reasoning","id":"r1","encrypted_content":"{}","summary":[]}}"#, "a".repeat(81))
+                    .as_bytes(),
+            ),
+        },
+    };
+    events.push(Event::Completed { stop: Stop::EndTurn, usage: Usage::NONE });
+    let mut decoder = StreamDecoder::with_reasoning_drop(&limits, true);
+    let mut out = Queue::with_capacity(crate::openai::MAX_OUT);
+    let mut trace = Vec::new();
+    for event in events {
+        decoder.event(event, &limits, Wall::EPOCH, &mut out);
+        drain(&mut out, &mut trace);
+        while decoder.has_ready() {
+            decoder.ready(&mut out);
+            drain(&mut out, &mut trace);
+        }
+    }
+    assert!(trace.contains(&Output::Part(Part::Opaque {
+        bytes: owned(br#"{"type":"reasoning","id":"r0","encrypted_content":"a","summary":[]}"#)
+    })));
+    assert!(trace.contains(&Output::Part(Part::Dropped { bytes: 81 })));
+    assert_eq!(trace.last(), Some(&Output::Completed { stop: Stop::EndTurn, usage: Usage::NONE }));
 }

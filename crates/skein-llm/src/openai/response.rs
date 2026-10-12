@@ -1,3 +1,5 @@
+pub(crate) mod reasoning;
+
 use crate::openai::{
     DecodeError, Failure, Json, Limits, ProviderError, RateLimit, Request, Stop, Usage, classify, common, json, request,
 };
@@ -129,11 +131,12 @@ pub enum Output {
 pub const MAX_OUT: u32 = 3;
 #[derive(Debug)]
 pub struct StreamDecoder {
-    opened: List<Opened>,
+    opened: List<(u32, Opened)>,
     next: u32,
     parts: u32,
     bytes: u64,
     delta_bytes: u64,
+    reasoning_bytes: u64,
     detail_bytes: u32,
     tools: bool,
     refusal: bool,
@@ -149,7 +152,7 @@ enum ReasoningPolicy {
 }
 #[derive(Debug)]
 enum Opened {
-    Active { id: Box<[u8]>, kind: Box<[u8]> },
+    Active { id: Box<[u8]>, kind: Box<[u8]>, items: Option<Box<[u8]>> },
     Tool { id: Box<[u8]>, call_id: Box<[u8]>, name: Box<[u8]>, input: List<u8>, bytes: u64, too_large: bool },
     Ready(Prepared),
     Emitted,
@@ -159,6 +162,7 @@ struct Prepared {
     part: Part,
     tool: bool,
     refusal: bool,
+    reasoning: bool,
 }
 #[derive(Clone, Copy, Debug)]
 struct Terminal {
@@ -180,6 +184,7 @@ impl StreamDecoder {
             parts: 0,
             bytes: 0,
             delta_bytes: 0,
+            reasoning_bytes: 0,
             detail_bytes: limits.detail_bytes,
             tools: false,
             refusal: false,
@@ -240,10 +245,13 @@ impl StreamDecoder {
             return false;
         }
         match self.opened.get(self.next) {
-            Some(Opened::Ready(_)) => true,
-            Some(Opened::Active { .. } | Opened::Tool { .. }) => false,
-            Some(Opened::Emitted) | None => self.terminal.is_some(),
+            Some((_, Opened::Ready(prepared))) => !self.waiting_for_run(prepared),
+            Some((_, Opened::Active { .. } | Opened::Tool { .. })) => false,
+            Some((_, Opened::Emitted)) | None => self.terminal.is_some(),
         }
+    }
+    fn waiting_for_run(&self, prepared: &Prepared) -> bool {
+        prepared.reasoning && self.next.checked_add(1) == Some(self.opened.len()) && self.terminal.is_none()
     }
     /// Emits at most one ordered completed item and its final terminal.
     pub fn ready(&mut self, out: &mut Queue<Output>) {
@@ -251,7 +259,12 @@ impl StreamDecoder {
             return;
         }
         for _slot in 0..self.opened.len() {
-            let Some(slot) = self.opened.get_mut(self.next) else {
+            if let Some((_, Opened::Ready(prepared))) = self.opened.get(self.next)
+                && self.waiting_for_run(prepared)
+            {
+                break;
+            }
+            let Some((_, slot)) = self.opened.get_mut(self.next) else {
                 break;
             };
             match slot {
@@ -317,21 +330,9 @@ impl StreamDecoder {
             Event::Created { .. } | Event::InProgress { .. } | Event::Progress | Event::Unknown => {
                 out.push(Output::Progress);
             }
-            Event::Added { index, id, kind } => {
-                let limit = usize::try_from(limits.strings).expect("u32 fits usize");
-                if id.len() > limit || kind.len() > limit {
-                    return Err(DecodeError::limit(crate::Cap::Strings, limits.strings));
-                }
-                if index != self.opened.len() {
-                    return Err(DecodeError::Malformed);
-                }
-                if self.opened.push(Opened::Active { id, kind }).is_err() {
-                    return Err(DecodeError::limit(crate::Cap::OutputItems, limits.output_items));
-                }
-                out.push(Output::Progress);
-            }
+            Event::Added { index, id, kind } => self.add(index, id, kind, limits, out)?,
             Event::ToolAdded { index, id, call_id, name, arguments } => {
-                if index != self.opened.len() {
+                if index != reasoning::following_index(&self.opened)? {
                     return Err(DecodeError::Malformed);
                 }
                 for text in [&id, &call_id, &name] {
@@ -348,9 +349,9 @@ impl StreamDecoder {
                     }
                 }
                 self.opened
-                    .push(Opened::Tool { id, call_id, name, input, bytes, too_large })
+                    .push((index, Opened::Tool { id, call_id, name, input, bytes, too_large }))
                     .or(Err(DecodeError::limit(crate::Cap::OutputItems, limits.output_items)))?;
-                out.push(Output::Progress);
+                self.ready(out);
             }
             Event::TextDelta { index, content_index, text } => {
                 self.delta(index, b"message", text.len(), limits)?;
@@ -359,8 +360,8 @@ impl StreamDecoder {
             Event::ArgumentsDelta { index, delta } => {
                 self.delta(index, b"function_call", delta.len(), limits)?;
                 let length = received_length(long, delta.len());
-                match self.opened.get_mut(index) {
-                    Some(Opened::Tool { input, bytes, too_large, .. }) => {
+                match self.opened.get_mut(reasoning::slot(&self.opened, index)?) {
+                    Some((_, Opened::Tool { input, bytes, too_large, .. })) => {
                         *bytes = bytes.checked_add(length).ok_or(DecodeError::Malformed)?;
                         if !*too_large {
                             if long.is_some() || delta.len() > usize::try_from(input.room()).expect("u32 fits usize") {
@@ -373,7 +374,7 @@ impl StreamDecoder {
                             }
                         }
                     }
-                    Some(Opened::Active { .. } | Opened::Ready(_) | Opened::Emitted) | None => {}
+                    Some((_, Opened::Active { .. } | Opened::Ready(_) | Opened::Emitted)) | None => {}
                 }
                 out.push(Output::ArgumentsDelta { index, delta });
             }
@@ -381,33 +382,104 @@ impl StreamDecoder {
                 self.delta(index, b"reasoning", text.len(), limits)?;
                 out.push(Output::ReasoningDelta { index, summary_index, text });
             }
-            Event::Done { index, item } => {
-                let slot = self.opened.get_mut(index).ok_or(DecodeError::Malformed)?;
-                let state = mem::replace(slot, Opened::Emitted);
-                let prepared = match state {
-                    Opened::Active { id, kind } => prepare(item, &id, &kind, long, limits, self.reasoning)?,
-                    Opened::Tool { id, .. } => prepare(item, &id, b"function_call", long, limits, self.reasoning)?,
-                    Opened::Ready(_) | Opened::Emitted => return Err(DecodeError::Malformed),
-                };
-                self.reserve(1, part_size(&prepared.part), limits)?;
-                match &prepared.part {
-                    Part::ToolCall { cut: true, .. } => self.required_stop = Some(Stop::MaxTokens),
-                    Part::ToolCall { cut: false, .. }
-                    | Part::Text { .. }
-                    | Part::Opaque { .. }
-                    | Part::Dropped { .. } => {}
-                }
-                self.tools = self.tools || prepared.tool;
-                self.refusal = self.refusal || prepared.refusal;
-                *self.opened.get_mut(index).expect("the slot exists") = Opened::Ready(prepared);
-                self.ready(out);
-            }
+            Event::Done { index, item } => self.done(index, item, long, limits, out)?,
             Event::Completed { stop, usage } => self.complete(stop, usage, limits, out)?,
             Event::Failed { error } => {
                 let failure = classify(0, Some(&error), RateLimit::NONE, wall);
                 self.fail(failure, common::clipped(&error.message, limits.detail_bytes), out);
             }
         }
+        Ok(())
+    }
+    fn add(
+        &mut self,
+        index: u32,
+        id: Box<[u8]>,
+        kind: Box<[u8]>,
+        limits: &Limits,
+        out: &mut Queue<Output>,
+    ) -> Result<(), DecodeError> {
+        let limit = usize::try_from(limits.strings).expect("u32 fits usize");
+        if id.len() > limit || kind.len() > limit {
+            return Err(DecodeError::limit(crate::Cap::Strings, limits.strings));
+        }
+        if index != reasoning::following_index(&self.opened)? {
+            return Err(DecodeError::Malformed);
+        }
+        let items = if kind.as_ref() == b"reasoning" {
+            match self.opened.last() {
+                Some((_, Opened::Ready(prepared))) if prepared.reasoning => {
+                    let (_, slot) =
+                        self.opened.get_mut(self.opened.len().checked_sub(1).expect("last slot")).expect("last slot");
+                    let previous = mem::replace(slot, Opened::Emitted);
+                    let Opened::Ready(Prepared { part: Part::Opaque { bytes }, .. }) = previous else {
+                        unreachable!("retained reasoning")
+                    };
+                    self.opened.truncate(self.opened.len().checked_sub(1).expect("last slot"));
+                    Some(bytes)
+                }
+                Some((_, Opened::Active { .. } | Opened::Tool { .. } | Opened::Ready(_) | Opened::Emitted)) | None => {
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        self.opened
+            .push((index, Opened::Active { id, kind, items }))
+            .or(Err(DecodeError::limit(crate::Cap::OutputItems, limits.output_items)))?;
+        self.ready(out);
+        Ok(())
+    }
+    fn done(
+        &mut self,
+        index: u32,
+        item: Item,
+        long: Option<u64>,
+        limits: &Limits,
+        out: &mut Queue<Output>,
+    ) -> Result<(), DecodeError> {
+        let mut position = reasoning::slot(&self.opened, index)?;
+        let (_, slot) = self.opened.get_mut(position).ok_or(DecodeError::Malformed)?;
+        let state = mem::replace(slot, Opened::Emitted);
+        let (mut prepared, items) = match state {
+            Opened::Active { id, kind, items } => (prepare(item, &id, &kind, long, limits, self.reasoning)?, items),
+            Opened::Tool { id, .. } => (prepare(item, &id, b"function_call", long, limits, self.reasoning)?, None),
+            Opened::Ready(_) | Opened::Emitted => return Err(DecodeError::Malformed),
+        };
+        if prepared.reasoning {
+            reasoning::charge(&mut self.reasoning_bytes, part_size(&prepared.part), limits)?;
+        }
+        let mut continuing = items.is_some();
+        if let Some(previous) = items {
+            match &mut prepared.part {
+                Part::Opaque { bytes } => *bytes = reasoning::append(&previous, bytes, limits)?,
+                Part::Dropped { .. } => {
+                    self.opened.get_mut(position).expect("run slot").1 = Opened::Ready(Prepared {
+                        part: Part::Opaque { bytes: previous },
+                        tool: false,
+                        refusal: false,
+                        reasoning: false,
+                    });
+                    self.ready(out);
+                    position = self.opened.len();
+                    self.opened
+                        .push((index, Opened::Emitted))
+                        .or(Err(DecodeError::limit(crate::Cap::OutputItems, limits.output_items)))?;
+                    continuing = false;
+                }
+                Part::Text { .. } | Part::ToolCall { .. } => unreachable!("a reasoning run"),
+            }
+        }
+        self.reserve(u32::from(!continuing), if prepared.reasoning { 0 } else { part_size(&prepared.part) }, limits)?;
+        match &prepared.part {
+            Part::ToolCall { cut: true, .. } => self.required_stop = Some(Stop::MaxTokens),
+            Part::ToolCall { cut: false, .. } | Part::Text { .. } | Part::Opaque { .. } | Part::Dropped { .. } => {}
+        }
+        self.tools = self.tools || prepared.tool;
+        self.refusal = self.refusal || prepared.refusal;
+        self.opened.get_mut(position).expect("the slot exists").1 = Opened::Ready(prepared);
+        self.ready(out);
         Ok(())
     }
     fn complete(
@@ -423,12 +495,20 @@ impl StreamDecoder {
             return Err(DecodeError::Malformed);
         }
         for index in 0..self.opened.len() {
-            let slot = self.opened.get_mut(index).expect("within the slots");
+            let (_, slot) = self.opened.get_mut(index).expect("within the slots");
             let state = mem::replace(slot, Opened::Emitted);
             let state = match state {
-                Opened::Active { .. } => match stop {
+                Opened::Active { items, .. } => match stop {
                     Stop::EndTurn | Stop::ToolUse => return Err(DecodeError::Malformed),
-                    Stop::MaxTokens | Stop::Refusal => Opened::Emitted,
+                    Stop::MaxTokens | Stop::Refusal => match items {
+                        Some(bytes) => Opened::Ready(Prepared {
+                            part: Part::Opaque { bytes },
+                            tool: false,
+                            refusal: false,
+                            reasoning: true,
+                        }),
+                        None => Opened::Emitted,
+                    },
                 },
                 Opened::Tool { id, call_id, name, input, bytes, too_large } => match stop {
                     Stop::EndTurn | Stop::ToolUse => return Err(DecodeError::Malformed),
@@ -444,22 +524,22 @@ impl StreamDecoder {
                             cut: true,
                         };
                         self.reserve(1, part_size(&part), limits)?;
-                        Opened::Ready(Prepared { part, tool: false, refusal: false })
+                        Opened::Ready(Prepared { part, tool: false, refusal: false, reasoning: false })
                     }
                 },
                 state @ (Opened::Ready(_) | Opened::Emitted) => state,
             };
-            *self.opened.get_mut(index).expect("within the slots") = state;
+            self.opened.get_mut(index).expect("within the slots").1 = state;
         }
         self.terminal = Some(Terminal { stop, usage });
         self.ready(out);
         Ok(())
     }
     fn delta(&mut self, index: u32, expected_kind: &[u8], size: usize, limits: &Limits) -> Result<(), DecodeError> {
-        match self.opened.get(index) {
-            Some(Opened::Active { kind, .. }) if kind.as_ref() == expected_kind => {}
-            Some(Opened::Tool { .. }) if expected_kind == b"function_call" => {}
-            Some(Opened::Active { .. } | Opened::Tool { .. } | Opened::Ready(_) | Opened::Emitted) | None => {
+        match self.opened.get(reasoning::slot(&self.opened, index)?) {
+            Some((_, Opened::Active { kind, .. })) if kind.as_ref() == expected_kind => {}
+            Some((_, Opened::Tool { .. })) if expected_kind == b"function_call" => {}
+            Some((_, Opened::Active { .. } | Opened::Tool { .. } | Opened::Ready(_) | Opened::Emitted)) | None => {
                 return Err(DecodeError::Malformed);
             }
         }
@@ -549,7 +629,7 @@ fn prepare(
             if expected_id != id.as_ref() || expected_kind != b"message" {
                 return Err(DecodeError::Malformed);
             }
-            Ok(Prepared { part: Part::Text { id, phase, text, refusal }, tool: false, refusal })
+            Ok(Prepared { part: Part::Text { id, phase, text, refusal }, tool: false, refusal, reasoning: false })
         }
         item @ (Item::FunctionCall { .. } | Item::CutCall { .. }) => {
             let (id, call_id, name, arguments, cut) = match item {
@@ -571,6 +651,7 @@ fn prepare(
                 part: Part::ToolCall { call_id, item_id: id, name, input, too_large, bytes, cut },
                 tool: !cut,
                 refusal: false,
+                reasoning: false,
             })
         }
         Item::Opaque { value } => {
@@ -588,7 +669,12 @@ fn prepare(
                 }
                 match reasoning {
                     ReasoningPolicy::Drop => {
-                        return Ok(Prepared { part: Part::Dropped { bytes: length }, tool: false, refusal: false });
+                        return Ok(Prepared {
+                            part: Part::Dropped { bytes: length },
+                            tool: false,
+                            refusal: false,
+                            reasoning: false,
+                        });
                     }
                     ReasoningPolicy::Keep => return Err(DecodeError::limit(crate::Cap::Reasoning, limits.reasoning)),
                 }
@@ -605,14 +691,24 @@ fn prepare(
             if counted > u64::from(limits.reasoning) {
                 match reasoning {
                     ReasoningPolicy::Drop if expected_kind == b"reasoning" => {
-                        return Ok(Prepared { part: Part::Dropped { bytes: counted }, tool: false, refusal: false });
+                        return Ok(Prepared {
+                            part: Part::Dropped { bytes: counted },
+                            tool: false,
+                            refusal: false,
+                            reasoning: false,
+                        });
                     }
                     ReasoningPolicy::Keep | ReasoningPolicy::Drop => {
                         return Err(DecodeError::limit(crate::Cap::Reasoning, limits.reasoning));
                     }
                 }
             }
-            Ok(Prepared { part: Part::Opaque { bytes }, tool: false, refusal: false })
+            Ok(Prepared {
+                part: Part::Opaque { bytes },
+                tool: false,
+                refusal: false,
+                reasoning: expected_kind == b"reasoning",
+            })
         }
     }
 }
@@ -1087,7 +1183,7 @@ fn write_item(out: &mut Encoder, item: &Item) {
 
 /// Fixed slot and argument-buffer capacities, excluding admitted answer bytes.
 pub(crate) fn decoder_fixed_worst_case(limits: &Limits) -> Option<u64> {
-    let slots = List::<Opened>::worst_case(limits.output_items)?;
+    let slots = List::<(u32, Opened)>::worst_case(limits.output_items)?;
     let identifiers =
         u64::from(limits.output_items).checked_mul(u64::from(limits.strings.min(limits.retained)))?.checked_mul(3)?;
     let inputs = u64::from(limits.output_items).checked_mul(u64::from(limits.input))?;

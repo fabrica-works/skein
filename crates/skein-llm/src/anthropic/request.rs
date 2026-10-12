@@ -132,11 +132,20 @@ fn validate_block(block: &Block, role: Role, budget: &mut u64, limits: &openai::
                 return Err(Error::Unsupported);
             }
             json(&replay.value, budget, limits)?;
-            let bounded = writer::Limits { depth: limits.depth, length: limits.reasoning };
-            let mut measure = writer::Encoder::measure(&bounded);
-            replay.value.write(&mut measure);
-            let _length = measured(measure, bounded, crate::Cap::Reasoning)?;
-            validate_reasoning(&replay.value)
+            let mut next = 0;
+            for _token in 0..openai::json::len(replay.value.view()) {
+                let item = match openai::response::reasoning::replay_item(&replay.value, &mut next) {
+                    Ok(Some(item)) => item,
+                    Ok(None) => break,
+                    Err(error) => return Err(crate::translate::decode(error)),
+                };
+                let bounded = writer::Limits { depth: limits.depth, length: limits.reasoning };
+                let mut measure = writer::Encoder::measure(&bounded);
+                openai::json::write_view(&mut measure, item);
+                let _length = measured(measure, bounded, crate::Cap::Reasoning)?;
+                validate_reasoning(item)?;
+            }
+            Ok(())
         }
     }
 }
@@ -157,8 +166,7 @@ fn identifier(value: &[u8], maximum: usize) -> Result<(), Error> {
     Ok(())
 }
 
-fn validate_reasoning(value: &Json) -> Result<(), Error> {
-    let tokens = value.view();
+fn validate_reasoning(tokens: (&Document, openai::json::Span)) -> Result<(), Error> {
     let kind = field_text(tokens, b"type")?;
     match kind {
         b"thinking" => {
@@ -407,7 +415,7 @@ fn write_block(out: &mut writer::Encoder, block: &Block, marked: bool, limits: &
     match block {
         Block::Oversize { .. } | Block::Cut { .. } => return Err(Error::Invalid),
         Block::Dropped { .. } => {}
-        Block::Reasoning { replay } => replay.value.write(out),
+        Block::Reasoning { replay } => openai::response::reasoning::write_replay(out, &replay.value),
         Block::Text { text, replay: _ } | Block::Refusal { text, replay: _ } => {
             out.object_start();
             out.key(b"type");

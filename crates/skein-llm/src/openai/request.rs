@@ -61,8 +61,11 @@ fn validate(request: &Request, limits: &Limits) -> Result<(), DecodeError> {
     for input in &request.input {
         match input {
             Input::Opaque { value } => {
-                if json::kind(value.view(), 0) != Some(Kind::ObjectStart) {
-                    return Err(DecodeError::WrongType);
+                let mut next = 0;
+                for _token in 0..json::len(value.view()) {
+                    if super::response::reasoning::replay_item(value, &mut next)?.is_none() {
+                        break;
+                    }
                 }
             }
             Input::Message { role, refusal, .. } => match role {
@@ -141,7 +144,7 @@ fn write_request(out: &mut Encoder, request: &Request) {
 }
 fn write_input(out: &mut Encoder, input: &Input) {
     match input {
-        Input::Opaque { value } => value.write(out),
+        Input::Opaque { value } => super::response::reasoning::write_replay(out, value),
         Input::Message { role, text, id, phase, refusal } => {
             out.object_start();
             out.key(b"type");

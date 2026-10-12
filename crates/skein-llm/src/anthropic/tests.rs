@@ -132,18 +132,16 @@ fn signed_and_redacted_thinking_preserve_replay_material() {
     ] {
         progress(&mut decoder, wire, &LIMITS, &mut out);
     }
-    feed(&mut decoder, TEXT_STOP, &LIMITS, &mut out);
-    let signed = br#"{"type":"thinking","thinking":"first then","signature":"signed-opaque"}"#;
-    assert_eq!(out.pop(), Some(Output::Part(Part::Opaque { bytes: bytes::copy_of(signed) })));
+    progress(&mut decoder, TEXT_STOP, &LIMITS, &mut out);
     progress(
         &mut decoder,
         br#"{"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"opaque encrypted"}}"#,
         &LIMITS,
         &mut out,
     );
-    feed(&mut decoder, br#"{"type":"content_block_stop","index":1}"#, &LIMITS, &mut out);
-    let redacted = br#"{"type":"redacted_thinking","data":"opaque encrypted"}"#;
-    assert_eq!(out.pop(), Some(Output::Part(Part::Opaque { bytes: bytes::copy_of(redacted) })));
+    progress(&mut decoder, br#"{"type":"content_block_stop","index":1}"#, &LIMITS, &mut out);
+    feed(&mut decoder, END, &LIMITS, &mut out);
+    assert_eq!(out.pop(), Some(Output::Part(Part::Opaque { bytes: bytes::copy_of(br#"[{"type":"thinking","thinking":"first then","signature":"signed-opaque"},{"type":"redacted_thinking","data":"opaque encrypted"}]"#) })));
 }
 
 #[test]
@@ -368,7 +366,8 @@ fn signed_thinking_extension_head_survives_fragments_and_terminal() {
         &LIMITS,
         &mut out,
     );
-    feed(&mut decoder, TEXT_STOP, &LIMITS, &mut out);
+    progress(&mut decoder, TEXT_STOP, &LIMITS, &mut out);
+    feed(&mut decoder, END, &LIMITS, &mut out);
     assert_eq!(
         out.pop(),
         Some(Output::Part(Part::Opaque {
@@ -377,7 +376,6 @@ fn signed_thinking_extension_head_survives_fragments_and_terminal() {
             )
         }))
     );
-    progress(&mut decoder, END, &LIMITS, &mut out);
     feed(&mut decoder, STOP, &LIMITS, &mut out);
     match out.pop() {
         Some(Output::Completed { .. }) => {}
@@ -621,4 +619,75 @@ fn anthropic_usage_preserves_omission_zero_and_cumulative_reports() {
         feed(&mut decoder, STOP, &LIMITS, &mut out);
         assert_eq!(out.pop(), Some(Output::Completed { stop: Stop::EndTurn, usage: Usage::NONE }));
     }
+}
+
+#[test]
+fn consecutive_thinking_items_form_one_replay_block_before_text() {
+    let limits = Limits { output_items: 2, ..LIMITS };
+    let mut decoder = StreamDecoder::new(&limits);
+    let mut out = Queue::with_capacity(MAX_OUT);
+    progress(&mut decoder, START, &limits, &mut out);
+    for index in 0..3 {
+        thinking_item(&mut decoder, index, &limits, &mut out);
+        assert_eq!(out.pop(), Some(Output::Progress));
+    }
+    feed(
+        &mut decoder,
+        br#"{"type":"content_block_start","index":3,"content_block":{"type":"text","text":"done"}}"#,
+        &limits,
+        &mut out,
+    );
+    assert_eq!(out.pop(), Some(Output::Part(Part::Opaque { bytes: bytes::copy_of(br#"[{"type":"thinking","thinking":"t0","signature":"s0"},{"type":"thinking","thinking":"t1","signature":"s1"},{"type":"thinking","thinking":"t2","signature":"s2"}]"#) })));
+    feed(&mut decoder, br#"{"type":"content_block_stop","index":3}"#, &limits, &mut out);
+    assert_eq!(out.pop(), Some(Output::Part(Part::Text { text: bytes::copy_of(b"done") })));
+    progress(&mut decoder, END, &limits, &mut out);
+    feed(&mut decoder, STOP, &limits, &mut out);
+    assert_eq!(
+        out.pop(),
+        Some(Output::Completed {
+            stop: Stop::EndTurn,
+            usage: Usage {
+                input: Some(10),
+                output: Some(9),
+                cache_read: Some(5),
+                cache_write: Some(7),
+                reasoning: None
+            }
+        })
+    );
+}
+
+fn thinking_item(decoder: &mut StreamDecoder, index: u32, limits: &Limits, out: &mut Queue<Output>) {
+    progress(decoder, format!(r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"thinking","thinking":"t{index}","signature":"s{index}"}}}}"#).as_bytes(), limits, out);
+    feed(decoder, format!(r#"{{"type":"content_block_stop","index":{index}}}"#).as_bytes(), limits, out);
+}
+
+#[test]
+fn thinking_run_past_the_completion_share_names_its_limit() {
+    let limits = Limits { output_items: 2, reasoning: 64, ..LIMITS };
+    let mut decoder = StreamDecoder::new(&limits);
+    let mut out = Queue::with_capacity(MAX_OUT);
+    progress(&mut decoder, START, &limits, &mut out);
+    for index in 0..2 {
+        thinking_item(&mut decoder, index, &limits, &mut out);
+        assert_eq!(out.pop(), Some(Output::Progress));
+    }
+    thinking_item(&mut decoder, 2, &limits, &mut out);
+    failure(&mut out, Failure::Limit { which: crate::Cap::Reasoning, bound: 128 });
+}
+
+#[test]
+fn thinking_run_past_one_blocks_retained_tokens_names_its_limit() {
+    let limits = Limits { output_items: 2, tokens: 32, ..LIMITS };
+    let mut decoder = StreamDecoder::new(&limits);
+    let mut out = Queue::with_capacity(MAX_OUT);
+    progress(&mut decoder, START, &limits, &mut out);
+    thinking_item(&mut decoder, 0, &limits, &mut out);
+    assert_eq!(out.pop(), Some(Output::Progress));
+    thinking_item(&mut decoder, 1, &limits, &mut out);
+    assert_eq!(out.pop(), Some(Output::Progress));
+    thinking_item(&mut decoder, 2, &limits, &mut out);
+    assert_eq!(out.pop(), Some(Output::Progress));
+    thinking_item(&mut decoder, 3, &limits, &mut out);
+    failure(&mut out, Failure::Limit { which: crate::Cap::Tokens, bound: 32 });
 }
