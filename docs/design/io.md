@@ -674,6 +674,13 @@ file beside the loop (programming-model.md, 2.1).
   owner decides what an abandoned stream means: a trace's sink records
   it where it still can. As for a whole-file operation (section 5), the
   deadline is the owner's policy and io's mechanism.
+- **An inherited write pipe takes the same deadline when its owner
+  states one.** A standard output that is a pipe or a terminal, adopted
+  to carry such a stream, as an event stream's, stalls when its reader
+  stops reading, as a file stalls on its filesystem. Its owner states
+  the write deadline when it adopts the pipe, and io arms, cancels and
+  tells it the same way. Without one, a write pipe waits on its reader,
+  as a child's pipe does.
 - **Close flushes.** `Close` writes what is queued, then closes the
   descriptor: there is no half-close, and nothing to drain. While the
   stream closes, its close deadline (section 3) replaces the write
