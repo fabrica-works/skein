@@ -1,6 +1,6 @@
 # io
 
-Provisional, 2026-10-03, revised 2026-10-10. The design of `skein-io`'s
+Provisional, 2026-10-03, revised 2026-10-12. The design of `skein-io`'s
 step layer: the lowest step layer of every service. It owns sockets,
 pipes, files and child processes, the operations in flight on them, and
 the receive and send queues, and it is the only layer that sees a
@@ -550,9 +550,11 @@ pub enum Request {
     // open files, at offsets
     Create, CreateNoFollow { owner, root: Fd, name, mode },                        // Opened
     OpenRead, OpenReadNoFollow { owner, root: Fd, name },                          // Opened
+    OpenWrite, OpenWriteNoFollow { owner, root: Fd, name },                        // Opened
     OpenDirectory { owner, root: Fd, name, no_follow },                            // Opened: a root
     ReadAt  { owner, file: Token, offset: u64, max: u32 },                         // Read
     WriteAt { owner, file: Token, offset: u64, bytes },                            // Written
+    Cut { owner, file: Token, length: u64 },                                       // Cut
     Stat { owner, file }, Sync { owner, file }, Close { owner, file },
     // the entries of a directory
     SyncDirectory { owner, root: Fd }, List { owner, root: Fd },
@@ -585,6 +587,14 @@ pub enum Request {
   a read reaches the end. `Sync` makes a file's writes durable,
   `SyncDirectory` a directory's entries. These are what kv.md's log
   segments need (kv.md, section 8).
+- **Writing a file that exists:** `OpenWrite` opens an existing regular
+  file to read and write, never creating it (`Missing` if it is absent),
+  so a writer that resumes a file after a restart writes at the offsets
+  it chooses; `Cut` sets an open file's length, dropping what lies past
+  it, durable once the file is synced. They are what a file of records
+  appended at a known committed length needs after a crash: open it, cut
+  it to that length, sync it, and write on from there (kv.md, section 6's
+  payload logs; a transcript's file in an application's store).
 - **What the records allow** (kernel.md, 6.1). Only an `Open` resolves a
   path beneath a root, so io opens the directory a name lies in, beneath
   the root, before it renames or removes that name or makes a directory
@@ -980,9 +990,8 @@ built. What remains:
   descriptor, which the owner reads from `FileIo::descriptor`, though io
   is the only layer that should see one. They are to take its token, as
   `Load`, `Scan` and `Store` do.
-- **Opening an existing file to write,** and cutting a file to a
-  length, for kv.md's payload logs (section 6) and temper's transcript
-  files.
+- **`OpenWrite` and `Cut`** (section 5), for kv.md's payload logs
+  (section 6) and an application's transcript files.
 - **io worlds for files,** beyond the step tests and kv's.
 - **File streams and datagram sockets,** when a user needs them.
 - **Transition coverage** of the handlers (testing-strategy.md, 6), which

@@ -1,6 +1,6 @@
 # The kernel boundary
 
-Provisional, 2026-10-03, revised 2026-10-09. The design of the boundary
+Provisional, 2026-10-03, revised 2026-10-12. The design of the boundary
 below io: the records io submits to a backend, the completions the
 backend hands back, and what every backend promises. The records live in
 `skein-io`'s `kernel` module, whose module documentation states each rule
@@ -232,9 +232,15 @@ documentation, with each operation's errors; the decisions behind it:
   entry it names: removing a link removes the link.
 - **The opens io makes, not `open`'s flags.** `OpenHow` is `Read` (an
   existing file or directory), `Directory` (an existing directory: a
-  root, or one to list) or `Create` (a new file, exclusively, to write).
+  root, or one to list), `Create` (a new file, exclusively, to write) or
+  `Write` (an existing regular file, to read and write, never created).
   Each is one well-defined case for the simulator and the suite to hold,
   and more come when a user pulls them.
+- **Cutting a file** is `Truncate` on a descriptor opened to write
+  (`ftruncate`): the file's length becomes the one given, and what lay
+  past it is gone. Like a write, it is durable once the file is synced;
+  the simulator's crashing disk keeps the old length past a crash until
+  then (simulator.md, 3.1).
 - **A path-only open, to stat what cannot be read.** `PathNoFollow` is
   `O_PATH | O_NOFOLLOW`, beneath the root with links refused in every
   parent, as the other no-follow cases. It answers a descriptor for the

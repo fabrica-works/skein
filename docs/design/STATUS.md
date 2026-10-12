@@ -26,8 +26,8 @@ Section 2 names an increment of smith's reliability plan as
 | `foundation/programming-model.md` | yes | 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 6: state digests, transition coverage, `cargo fuzz`: not planned |
 | `lib.md` | partly | 2: the build for `wasm32-unknown-unknown`, 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it: not built; 13: `Slab::get2_mut`, the state digest: not planned |
-| `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 9: fixed files, 10: the ring's descriptor limit: not planned |
-| `io.md` | partly | 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
+| `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate`, 9: fixed files, 10: the ring's descriptor limit: not planned |
+| `io.md` | partly | 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut`, DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 5: the state digest: not planned |
 | `shell.md` | partly | 6.1: `read_private_file`: not built; 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
