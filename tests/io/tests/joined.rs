@@ -75,3 +75,22 @@ fn an_abort_is_heard_as_reset_by_the_joined_peer() {
         assert!(outcome.logs[0].iter().any(|line| line.contains("Failed(Reset)")), "the aborted peer hears Reset");
     }
 }
+
+#[test]
+fn a_response_in_the_middle_of_an_upload_reaches_the_joined_peer() {
+    for seed in SEEDS {
+        assert!(skein_io_world::joined::refusal_mid_upload(seed, Config::chaos()).run().trace.is_empty());
+    }
+}
+#[test]
+fn a_joined_close_the_peer_never_ends_meets_its_deadline() {
+    for seed in SEEDS {
+        assert!(skein_io_world::joined::close_deadline(seed, Config::chaos()).run().trace.is_empty());
+    }
+}
+#[test]
+fn joined_closes_and_aborts_at_random_moments_settle() {
+    for seed in SEEDS {
+        assert!(skein_io_world::joined::random(seed, Config::chaos()).run().trace.is_empty());
+    }
+}

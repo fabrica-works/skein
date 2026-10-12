@@ -159,9 +159,10 @@ fn pair() -> (Rig, Token, Token, Token) {
     };
     let accepted = rig.next();
     let socket = match accepted.events.as_slice() {
-        [Event::Accepted { socket, .. }, Event::Connected { .. }] => *socket,
-        other => panic!("Accepted then Connected: {other:?}"),
+        [Event::Accepted { socket, .. }] => *socket,
+        other => panic!("Accepted: {other:?}"),
     };
+    assert_eq!(rig.next().events, [Event::Connected { owner: owner(2) }]);
     (rig, listener, connector, socket)
 }
 fn bound() -> (Rig, Token, Token) {
@@ -188,9 +189,8 @@ fn an_armed_listener_joins_the_first_waiting_connector() {
         rig.down(Request::Connect { owner: owner(who), addr: name(b"engine") }).nothing();
     }
     assert_eq!(rig.next().events.len(), 2);
-    let accepted = rig.next();
-    assert_eq!(accepted.events.last(), Some(&Event::Connected { owner: owner(2) }));
-    rig.next().nothing();
+    assert_eq!(rig.next().events.len(), 1);
+    assert_eq!(rig.next().events, [Event::Connected { owner: owner(2) }]);
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn the_accepted_end_is_announced_with_the_empty_name() {
     let _connecting = rig.next();
     let out = rig.next();
     match out.events.as_slice() {
-        [Event::Accepted { peer, .. }, Event::Connected { .. }] => {
+        [Event::Accepted { peer, .. }] => {
             assert_eq!(*peer, crate::Addr::InProcess(Name::EMPTY));
         }
         other => panic!("accepted: {other:?}"),
@@ -212,6 +212,7 @@ fn the_accepted_end_is_announced_with_the_empty_name() {
 fn a_rejected_end_fails_its_connector_with_reset() {
     let (mut rig, _, _, socket) = pair();
     rig.down(Request::Reject { socket }).nothing();
+    rig.next().nothing();
     assert_eq!(
         rig.next().events,
         [Event::Stream { owner: owner(2), up: skein_lib::stream::Up::Failed(skein_lib::stream::Fault::Reset) }]
@@ -263,12 +264,10 @@ fn a_finish_reaches_the_peer_as_end_after_the_last_byte() {
 fn an_abort_fails_the_peer_with_reset_at_once() {
     let (mut rig, connector, _) = bound();
     rig.down(Request::Abort { entity: connector }).nothing();
+    assert_eq!(rig.next().events, [Event::Closed { owner: owner(2) }]);
     assert_eq!(
         rig.next().events,
-        [
-            Event::Stream { owner: owner(3), up: skein_lib::stream::Up::Failed(skein_lib::stream::Fault::Reset) },
-            Event::Closed { owner: owner(2) }
-        ]
+        [Event::Stream { owner: owner(3), up: skein_lib::stream::Up::Failed(skein_lib::stream::Fault::Reset) }]
     );
 }
 
@@ -336,5 +335,112 @@ fn an_abort_before_bind_fails_the_bound_end() {
     assert_eq!(
         rig.next().events,
         [Event::Stream { owner: owner(3), up: skein_lib::stream::Up::Failed(skein_lib::stream::Fault::Reset) }]
+    );
+}
+
+fn output(rig: &mut Rig, socket: Token, down: skein_lib::stream::OutputDown) {
+    rig.down(Request::Output { stream: socket, down }).nothing();
+}
+fn terminal(who: u64, right: u64, outcome: skein_lib::stream::OutputOutcome) -> Event {
+    Event::Output { owner: owner(who), up: skein_lib::stream::OutputUp::Settled { right: Token::new(right), outcome } }
+}
+#[test]
+fn the_close_deadline_ends_a_close_the_peer_never_ends() {
+    use skein_lib::{Duration, Time};
+    let (mut rig, connector, socket) = bound();
+    rig.down(Request::Close { entity: socket }).nothing();
+    let _ended = rig.next();
+    assert_eq!(rig.io.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(1))));
+    assert_eq!(rig.at(Time::from_nanos(1_000_000_000)).events, [Event::Closed { owner: owner(3) }]);
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(2), up: skein_lib::stream::Up::End }]);
+    rig.down(Request::Close { entity: connector }).nothing();
+    assert_eq!(rig.next().events, [Event::Closed { owner: owner(2) }]);
+}
+#[test]
+fn an_end_whose_peer_closed_fails_reset_at_its_next_move() {
+    use skein_lib::stream::{Fault, Up};
+    let (mut rig, connector, socket) = bound();
+    rig.down(Request::Close { entity: socket }).nothing();
+    let _ended = rig.next();
+    assert_eq!(rig.at(skein_lib::Time::from_nanos(1_000_000_000)).events, [Event::Closed { owner: owner(3) }]);
+    send(&mut rig, connector, b"late");
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(2), up: Up::Failed(Fault::Reset) }]);
+}
+#[test]
+fn a_peer_past_its_close_deadline_fails_the_end_with_reset() {
+    use skein_lib::stream::{Fault, Up};
+    let (mut rig, connector, socket) = bound();
+    send(&mut rig, connector, b"queued");
+    rig.down(Request::Close { entity: socket }).nothing();
+    assert_eq!(rig.at(skein_lib::Time::from_nanos(1_000_000_000)).events, [Event::Closed { owner: owner(3) }]);
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(2), up: Up::Failed(Fault::Reset) }]);
+}
+
+#[test]
+fn an_output_reservation_on_a_joined_end_is_granted_then_spent() {
+    use skein_lib::stream::{Down, OutputDown, OutputOutcome, Read, Up};
+    let (mut rig, connector, socket) = bound();
+    stream(&mut rig, connector, Down::Demand { read: Read::Fill(2), room: 0 });
+    output(&mut rig, connector, OutputDown::Room { right: Token::new(10), bytes: 2 });
+    assert_eq!(rig.next().events, [terminal(2, 10, OutputOutcome::Granted)]);
+    output(&mut rig, connector, OutputDown::Send { right: Token::new(10), bytes: Box::from(&b"hi"[..]) });
+    rig.next().nothing();
+    stream(&mut rig, socket, Down::Demand { read: Read::Fill(2), room: 0 });
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(3), up: Up::Bytes(Box::from(&b"hi"[..])) }]);
+    output(&mut rig, socket, OutputDown::Room { right: Token::new(11), bytes: 2 });
+    assert_eq!(rig.next().events, [terminal(3, 11, OutputOutcome::Granted)]);
+    output(&mut rig, socket, OutputDown::Send { right: Token::new(11), bytes: Box::from(&b"ok"[..]) });
+    rig.next().nothing();
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(2), up: Up::Bytes(Box::from(&b"ok"[..])) }]);
+}
+#[test]
+fn a_close_cancels_a_pending_output_reservation_before_closed() {
+    use skein_lib::stream::{OutputDown, OutputOutcome};
+    let (mut rig, connector, socket) = bound();
+    output(&mut rig, connector, OutputDown::Room { right: Token::new(10), bytes: 8 });
+    rig.down(Request::Close { entity: connector }).nothing();
+    let out = rig.next();
+    assert_eq!(out.events.first(), Some(&terminal(2, 10, OutputOutcome::Cancelled)));
+    rig.down(Request::Close { entity: socket }).nothing();
+    let out = rig.next();
+    assert!(out.events.contains(&Event::Closed { owner: owner(3) }));
+    assert_eq!(rig.next().events, [Event::Closed { owner: owner(2) }]);
+}
+#[test]
+fn an_abort_settles_both_pending_outputs_from_their_own_ends() {
+    use skein_lib::stream::{Fault, OutputDown, OutputOutcome, Up};
+    let (mut rig, connector, socket) = bound();
+    output(&mut rig, connector, OutputDown::Room { right: Token::new(10), bytes: 8 });
+    output(&mut rig, socket, OutputDown::Room { right: Token::new(11), bytes: 8 });
+    rig.down(Request::Abort { entity: connector }).nothing();
+    assert_eq!(
+        rig.next().events,
+        [
+            terminal(2, 10, OutputOutcome::Cancelled),
+            Event::Closed { owner: owner(2) },
+            terminal(3, 11, OutputOutcome::Failed(Fault::Reset)),
+            Event::Stream { owner: owner(3), up: Up::Failed(Fault::Reset) }
+        ]
+    );
+}
+
+#[test]
+fn a_joined_deadline_settles_both_pending_outputs_from_their_own_ends() {
+    use skein_lib::stream::{Fault, OutputDown, OutputOutcome, Up};
+    let (mut rig, connector, socket) = bound();
+    send(&mut rig, connector, b"queued");
+    output(&mut rig, connector, OutputDown::Room { right: Token::new(10), bytes: 8 });
+    output(&mut rig, socket, OutputDown::Room { right: Token::new(11), bytes: 8 });
+    rig.down(Request::Close { entity: socket }).nothing();
+    assert_eq!(
+        rig.at(skein_lib::Time::from_nanos(1_000_000_000)).events,
+        [terminal(3, 11, OutputOutcome::Cancelled), Event::Closed { owner: owner(3) }]
+    );
+    assert_eq!(
+        rig.next().events,
+        [
+            terminal(2, 10, OutputOutcome::Failed(Fault::Reset)),
+            Event::Stream { owner: owner(2), up: Up::Failed(Fault::Reset) }
+        ]
     );
 }

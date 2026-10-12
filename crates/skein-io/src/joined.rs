@@ -5,8 +5,9 @@ use crate::layer::{Entity, Io, Tables};
 use crate::{Addr, Error, Event, Name};
 use core::mem;
 use end::{Closing, Open};
-pub(crate) use end::{close as close_end, request};
+pub(crate) use end::{close as close_end, expired, output_request, request};
 use skein_lib::Env;
+use skein_lib::stream::OutputUp;
 use skein_lib::{Id, Queue, Token};
 
 /// A name held until its listener's Closed.
@@ -28,6 +29,7 @@ enum ListenerState {
 #[derive(Debug)]
 pub(crate) struct End {
     owner: Option<Token>,
+    owed: Option<OutputUp>,
     state: EndState,
 }
 #[derive(Debug)]
@@ -35,6 +37,7 @@ enum EndState {
     Starting { name: Name, order: u64 },
     Waiting { listener: Id<Entity>, order: u64 },
     Announced { listener: Id<Entity>, peer: Id<Entity>, reset: bool },
+    Established { open: Open, reset: bool },
     Open(Open),
     Closing(Closing),
     Broken { told: bool },
@@ -55,16 +58,18 @@ impl Listener {
 }
 impl End {
     pub(crate) fn is_closed(&self) -> bool {
-        match self.state {
-            EndState::Closed => true,
-            EndState::Starting { .. }
-            | EndState::Waiting { .. }
-            | EndState::Announced { .. }
-            | EndState::Open(_)
-            | EndState::Closing(_)
-            | EndState::Broken { .. }
-            | EndState::Terminating { .. } => false,
-        }
+        self.owed.is_none()
+            && match self.state {
+                EndState::Closed => true,
+                EndState::Starting { .. }
+                | EndState::Waiting { .. }
+                | EndState::Announced { .. }
+                | EndState::Established { .. }
+                | EndState::Open(_)
+                | EndState::Closing(_)
+                | EndState::Broken { .. }
+                | EndState::Terminating { .. } => false,
+            }
     }
 }
 fn listener(io: &mut Io, id: Id<Entity>) -> &mut Listener {
@@ -113,8 +118,10 @@ pub(crate) fn connect(io: &mut Io, owner: Token, name: Name) {
     let order = io.tables.sequence;
     io.tables.sequence = order.checked_add(1).expect("connector order fits a u64");
     let state = EndState::Starting { name, order };
-    let id =
-        io.entities.insert(Entity::Joined(End { owner: Some(owner), state })).expect("a connector has a free slot");
+    let id = io
+        .entities
+        .insert(Entity::Joined(End { owner: Some(owner), owed: None, state }))
+        .expect("a connector has a free slot");
     io.tables.ready.mark(id);
 }
 
@@ -176,6 +183,7 @@ fn refuse_waiting(io: &mut Io, id: Id<Entity>, owner: Token, name: Name, up: &mu
             EndState::Terminating { error, peer, .. } => EndState::Terminating { waiting: None, error, peer },
             EndState::Starting { .. }
             | EndState::Announced { .. }
+            | EndState::Established { .. }
             | EndState::Open(_)
             | EndState::Closing(_)
             | EndState::Broken { .. }
@@ -194,10 +202,16 @@ fn refuse_waiting(io: &mut Io, id: Id<Entity>, owner: Token, name: Name, up: &mu
 fn resume_end(io: &mut Io, id: Id<Entity>, limits: &Limits, up: &mut Queue<Event>) {
     let current = end(io, id);
     let owner = current.owner;
+    if let Some(terminal) = current.owed.take() {
+        up.push(Event::Output { owner: owner.expect("bound output owner"), up: terminal });
+    }
     let state = mem::replace(&mut current.state, EndState::Closed);
     let state = match state {
         EndState::Starting { name, order } => start(io, id, owner.expect("connector owner"), name, order, up),
         EndState::Waiting { listener, order } => EndState::Waiting { listener, order },
+        EndState::Established { open, reset } => {
+            end::resume_established(io, id, owner.expect("connector owner"), open, reset, limits, up)
+        }
         EndState::Open(open) => end::resume_open(io, id, owner.expect("bound owner"), open, limits, up),
         EndState::Closing(open) => end::resume_closing(io, id, owner.expect("bound owner"), open, up),
         EndState::Announced { listener, peer, reset } => EndState::Announced { listener, peer, reset },
@@ -216,7 +230,7 @@ fn resume_end(io: &mut Io, id: Id<Entity>, limits: &Limits, up: &mut Queue<Event
                 assert!(removed.is_some(), "a closing connector leaves the waiting table");
             }
             if let Some(peer) = peer {
-                end::reset(io, peer, up);
+                end::reset(io, peer);
             }
             if let Some(owner) = owner {
                 if let Some(error) = error {
@@ -289,6 +303,7 @@ fn accept(
         EndState::Waiting { .. } => {}
         EndState::Starting { .. }
         | EndState::Announced { .. }
+        | EndState::Established { .. }
         | EndState::Open(_)
         | EndState::Closing(_)
         | EndState::Broken { .. }
@@ -296,13 +311,17 @@ fn accept(
     }
     let socket = io
         .entities
-        .insert(Entity::Joined(End { owner: None, state: EndState::Announced { listener: id, peer, reset: false } }))
+        .insert(Entity::Joined(End {
+            owner: None,
+            owed: None,
+            state: EndState::Announced { listener: id, peer, reset: false },
+        }))
         .expect("a free accept slot");
     let _removed = io.tables.waiting.remove(&key);
     let connector = end(io, peer);
-    connector.state = EndState::Open(Open::new(socket, limits));
+    connector.state = EndState::Established { open: Open::new(socket, limits), reset: false };
     up.push(Event::Accepted { owner, socket: socket.token(), peer: Addr::InProcess(Name::EMPTY) });
-    up.push(Event::Connected { owner: connector.owner.expect("connector owner") });
+    io.tables.ready.mark(peer);
     ListenerState::Listening { name, answering: Some(socket), armed: false }
 }
 
@@ -315,7 +334,11 @@ pub(crate) fn answer(io: &mut Io, id: Id<Entity>, owner: Option<Token>, limits: 
             current.state = state;
             return;
         }
-        EndState::Starting { .. } | EndState::Waiting { .. } | EndState::Open(_) | EndState::Broken { .. } => {
+        EndState::Starting { .. }
+        | EndState::Waiting { .. }
+        | EndState::Established { .. }
+        | EndState::Open(_)
+        | EndState::Broken { .. } => {
             unreachable!("answer an announced end")
         }
     };

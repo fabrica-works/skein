@@ -192,3 +192,85 @@ pub fn abort(seed: u64, config: Config) -> World {
     world.spawn(limits(3), Owner::new(seed, vec![serve("engine", vec![Some(peer)])], vec![dial("engine", abort)]));
     world
 }
+
+/// A response mid-upload is flushed while the rest of the upload is drained.
+#[must_use]
+pub fn refusal_mid_upload(seed: u64, config: Config) -> World {
+    use crate::owner::{Plan, Total, When};
+    use skein_lib::stream::Delimiter;
+    let mut upload = b"PUT\n".to_vec();
+    upload.extend(vec![b'x'; 3000]);
+    let response = Box::from(&b"no\n"[..]);
+    let expect = vec![
+        Expect::Receives { at: 0, conn: "uploader", bytes: response, by: END },
+        Expect::Ends { at: 0, conn: "uploader", by: END },
+        Expect::Closed { at: 0, conn: "refuser", by: END, optional: false },
+        Expect::Closed { at: 0, conn: "uploader", by: END, optional: false },
+    ];
+    let refuser = Plan {
+        wait: 4,
+        finish: false,
+        close: When::Sent,
+        ..plan("refuser", Box::from(&b"no\n"[..]), 4, Reads::Scan(Delimiter::LF, 16))
+    };
+    let uploader = Plan {
+        total: Total::Known(3),
+        ..plan("uploader", upload.into_boxed_slice(), 16, Reads::Scan(Delimiter::LF, 16))
+    };
+    let mut world = World::new(seed, config, Referee::new(seed, expect));
+    world
+        .spawn(limits(3), Owner::new(seed, vec![serve("engine", vec![Some(refuser)])], vec![dial("engine", uploader)]));
+    world
+}
+/// A peer which never finishes cannot hold the other end past its deadline.
+#[must_use]
+pub fn close_deadline(seed: u64, config: Config) -> World {
+    use crate::owner::{Plan, When};
+    let expect = vec![
+        Expect::Closed { at: 0, conn: "leaver", by: Time::from_nanos(1_500_000_000), optional: false },
+        Expect::Closed { at: 0, conn: "stayer", by: END, optional: false },
+    ];
+    let leaver = Plan { finish: false, close: When::Sent, ..plan("leaver", Box::from(&b"bye"[..]), 4, Reads::Never) };
+    let stayer = Plan {
+        finish: false,
+        close: When::At(Time::from_nanos(5_000_000_000)),
+        ..plan("stayer", Box::new([]), 4, Reads::Never)
+    };
+    let mut world = World::new(seed, config, Referee::new(seed, expect));
+    world.spawn(limits(3), Owner::new(seed, vec![serve("engine", vec![Some(leaver)])], vec![dial("engine", stayer)]));
+    world
+}
+/// Closes and aborts cross moves stalled on the small intakes, from a seed.
+#[must_use]
+pub fn random(seed: u64, config: Config) -> World {
+    use crate::owner::{Plan, When};
+    use skein_lib::Rng;
+    let mut rng = Rng::new(seed ^ 0xc105e);
+    let starts = Time::from_nanos(20_000_000);
+    let one = crate::scenarios::message(&mut rng, 128);
+    let two = crate::scenarios::message(&mut rng, 128);
+    let expect = vec![
+        Expect::Prefix { at: 0, conn: "one", bytes: two.clone(), by: END },
+        Expect::Prefix { at: 0, conn: "two", bytes: one.clone(), by: END },
+        Expect::Closed { at: 0, conn: "one", by: END, optional: false },
+        Expect::Closed { at: 0, conn: "two", by: END, optional: false },
+    ];
+    let first = Plan {
+        finish: false,
+        abort: rng.below(2) == 0,
+        close: When::At(Time::from_nanos(rng.between(1, 50) * 1_000_000)),
+        ..plan("one", one, 16, Reads::From(starts, 7))
+    };
+    let second = Plan {
+        finish: false,
+        abort: rng.below(2) == 0,
+        close: When::At(Time::from_nanos(rng.between(1, 50) * 1_000_000)),
+        ..plan("two", two, 16, Reads::From(starts, 7))
+    };
+    let mut world = World::new(seed, config, Referee::new(seed, expect));
+    world.spawn(
+        skein_io::Limits { intake: 7, ..limits(3) },
+        Owner::new(seed, vec![serve("engine", vec![Some(first)])], vec![dial("engine", second)]),
+    );
+    world
+}
