@@ -8,6 +8,7 @@ section 3.3).
 
 | Plan | State | Takes the design to | Where |
 |---|---|---|---|
+| jig's jig-protocol | ready | io.md 3.5 (joined sockets), section 4 (in-process addresses), 5 (`OpenWrite`, `Cut`); kernel.md 6.1 (the `Write` open, `Truncate`); simulator.md 3.1 (a cut kept until synced); shell.md 5 (the cryptographic seed), 6.1 (`read_private_file`); lib.md 6 (`Secret`), 6.1 (`base64`), 8 (`CryptoRng`); codec.md 3–4 (`secret N`); oauth.md 6.4 (a record dropped on sign in again) | jig's `docs/development/plans/jig-protocol/` |
 | tls-cleanup | done 2026-10-12 | tls.md 3.6 (the code in its words, one engine for both faces); the crate's and its world's tests, one behaviour each | `docs/development/plans/tls-cleanup/` |
 | smith's reliability | active on debian-16gb-hel1-1 since 2026-10-12 | kernel.md 6.3, io.md 7 and shell.md 6.3: terminal modes (skein 02.6). Its first run (2026-10-09 to 2026-10-12) built io.md 5–7; kernel.md 6; simulator.md 3; shell.md 6, 12–13; tls.md 3.4; json.md 3, 5; http.md 4; llm.md 2, 4; llm-connection.md 4–7; fake-llm.md 2–3; oauth.md 1, 6; examples.md 3.3, 6; testing-strategy.md 6 | smith's `docs/development/plans/reliability/` |
 | smith-testing | done 2026-10-08 | simulator.md 3 (hosted spawns); llm-connection.md and oauth.md, plaintext to loopback; fake-llm.md 3 (peers on loopback); examples.md 6, 8; testing-strategy.md 2.8–2.9 | `~/src/rust/plans/smith-testing/` (not versioned) |
@@ -25,23 +26,23 @@ Section 2 names an increment of smith's reliability plan as
 |---|---|---|
 | `foundation/programming-model.md` | yes | 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 6: state digests, transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 2: the build for `wasm32-unknown-unknown`, 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it: not built; 13: `Slab::get2_mut`, the state digest: not planned |
-| `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate`, 9: fixed files, 10: the ring's descriptor limit: not planned |
-| `io.md` | partly | 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut`, DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
-| `simulator.md` | partly | 5: the state digest: not planned |
-| `shell.md` | partly | 6.1: `read_private_file`: not built; 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
+| `lib.md` | partly | 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 13: `Slab::get2_mut`, the state digest: not planned |
+| `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 9: fixed files, 10: the ring's descriptor limit: not planned |
+| `io.md` | partly | 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut` (jig's jig-protocol); 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
+| `simulator.md` | partly | 3.1: a cut kept until synced (jig's jig-protocol); 5: the state digest: not planned |
+| `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
 | `testing.md` | partly | 6: the gate's build for `wasm32-unknown-unknown`: not built; 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
 | `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
 | `http.md` | partly | 2: the build for `wasm32-unknown-unknown`: not built; 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
 | `tls.md` | partly | 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
-| `codec.md` | partly | 2: the build for `wasm32-unknown-unknown`, 3–4: `secret N`: not built; 7: maps and sets, smaller integers, other languages: not planned |
+| `codec.md` | partly | 3–4: `secret N` (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 6: Codex routing state, WebSocket: not planned |
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
 | `fake-llm.md` | partly | 7: providers' cache granularity: not planned |
-| `oauth.md` | partly | 7: IPv6 loopback, device authorization, a credential helper: not planned |
+| `oauth.md` | partly | 6.4: a record dropped when its refresh fails as sign in again (jig's jig-protocol); 7: IPv6 loopback, device authorization, a credential helper: not planned |
 | `browser.md` | yes | 11: open questions only: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
 
