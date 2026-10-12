@@ -61,8 +61,8 @@ pub use limits::{
     room_for, worst_case,
 };
 
-use above::{Above, Reading, Wanted, answer, stream};
-use below::{Below, Demand, Record, Room, failed_up, fill, length, open_up, wanted};
+use above::{Above, Answer, Reading, Wanted, answer, stream};
+use below::{Below, Demand, Record, Room, failed_up, open_up, wanted};
 use close::{Closing, close, closing_up, fail};
 use core::mem;
 use limits::intake_cap;
@@ -70,7 +70,7 @@ use limits::intake_cap;
 use alloc::boxed::Box;
 
 use skein_lib::stream::{Down, Fault, Up};
-use skein_lib::{Env, Intake, Queue};
+use skein_lib::{Env, Intake, Queue, Wall};
 
 use crate::held::Held;
 use crate::session::{self, Connection};
@@ -167,6 +167,36 @@ struct Buffers {
     owed: Held,
 }
 
+impl Buffers {
+    /// The intake, the records held and what TLS owes, for `limits`.
+    pub(in crate::client) fn new(limits: &Limits) -> Option<Buffers> {
+        Some(Buffers {
+            intake: Intake::with_capacity(intake_cap(limits)?),
+            records: Held::with_capacity(limits.records),
+            owed: Held::with_capacity(FLIGHT),
+        })
+    }
+}
+
+/// rustls's connection, or why the stream below already failed it.
+pub(in crate::client) fn connect(fresh: Fresh, wall: Wall) -> Result<Connection, Error> {
+    match fresh.line {
+        Line::Open => session::connect(&fresh.config, fresh.name, wall),
+        Line::Ended => Err(Error::Truncated),
+        Line::Failed(fault) => Err(Error::Stream(fault)),
+    }
+}
+
+/// `Some` once: when the step just finished the handshake.
+pub(in crate::client) fn ready(tls: &Connection, handshake: &mut Handshake) -> Option<Agreed> {
+    if *handshake == Handshake::Running && !session::handshaking(tls) {
+        *handshake = Handshake::Done;
+        Some(session::agreed(tls))
+    } else {
+        None
+    }
+}
+
 impl Client {
     /// A client of the server `name`, with `config`, under `limits`, the
     /// limits its steps will be given. It demands nothing until the
@@ -174,12 +204,7 @@ impl Client {
     #[must_use]
     pub fn new(config: &Config, name: Name, limits: &Limits) -> Client {
         assert!(worst_case(limits).is_some(), "the limits are honoured: a read and room of a byte, a record held");
-        let cap = intake_cap(limits).expect("checked by worst_case");
-        let buffers = Buffers {
-            intake: Intake::with_capacity(cap),
-            records: Held::with_capacity(limits.records),
-            owed: Held::with_capacity(FLIGHT),
-        };
+        let buffers = Buffers::new(limits).expect("checked by worst_case");
         Client { state: State::Fresh(Fresh { config: config.clone(), name, line: Line::Open }), buffers }
     }
 
@@ -330,11 +355,7 @@ fn start(
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) -> State {
-    let connected = match fresh.line {
-        Line::Open => session::connect(&fresh.config, fresh.name, env.wall),
-        Line::Ended => Err(Error::Truncated),
-        Line::Failed(fault) => Err(Error::Stream(fault)),
-    };
+    let connected = connect(fresh, env.wall);
     let tls = match connected {
         Ok(tls) => tls,
         Err(error) => {
@@ -380,9 +401,8 @@ fn processed(mut open: Open, buffers: &mut Buffers, above: &mut Queue<Event>, be
         Ok(false) => {}
         Err(error) => return fail(open, error, above),
     }
-    if open.handshake == Handshake::Running && !session::handshaking(&open.tls) {
-        open.handshake = Handshake::Done;
-        above.push(Event::Ready(session::agreed(&open.tls)));
+    if let Some(agreed) = ready(&open.tls, &mut open.handshake) {
+        above.push(Event::Ready(agreed));
     }
     settle(open, buffers, above, below)
 }
@@ -400,8 +420,20 @@ fn settle(mut open: Open, buffers: &mut Buffers, above: &mut Queue<Event>, below
         }
         open.writing = Writing::Flushing;
     }
-    if open.handshake == Handshake::Done && !answer(&mut open, &mut buffers.intake, above) {
-        return fail(open, Error::Truncated, above);
+    if open.handshake == Handshake::Done {
+        let read = match open.above.demand {
+            Some(wanted) => wanted.read,
+            None => skein_lib::stream::Read::Nothing,
+        };
+        match answer(read, &mut open.above.reading, open.peer, &mut buffers.intake) {
+            Answer::Wait => {}
+            Answer::Bytes(bytes) => {
+                open.above.demand = None;
+                above.push(Event::Stream(Up::Bytes(bytes)));
+            }
+            Answer::End => above.push(Event::Stream(Up::End)),
+            Answer::Truncated => return fail(open, Error::Truncated, above),
+        }
     }
     // Room the side above gave up, or held when it withdrew: what TLS owes
     // goes within it. While the side above holds it, what TLS owes goes

@@ -22,13 +22,11 @@ use alloc::boxed::Box;
 use core::mem;
 
 use skein_lib::stream::{Down, OutputDown, OutputOutcome, OutputUp, Read, Up};
-use skein_lib::{Env, Intake, Queue, Token};
+use skein_lib::{Env, Queue, Token};
 
 use super::{
-    Buffers, Error, FLIGHT, Fresh, HEADER, Handshake, LARGEST_READ, Limits, Line, MAX_PLAINTEXT, Peer, Reading, Record,
-    Waiting, Writing,
+    Buffers, Error, FLIGHT, Fresh, Handshake, LARGEST_READ, Limits, Line, Peer, Reading, Record, Waiting, Writing,
 };
-use crate::held::Held;
 use crate::session::{self, Connection};
 use crate::{Config, MaxOut, Name};
 
@@ -216,11 +214,7 @@ impl Client {
         }
         Some(Client {
             state: State::Fresh(Fresh { config: config.clone(), name, line: Line::Open }),
-            buffers: Buffers {
-                intake: Intake::with_capacity(super::intake_cap(limits)?),
-                records: Held::with_capacity(limits.records),
-                owed: Held::with_capacity(FLIGHT),
-            },
+            buffers: Buffers::new(limits)?,
             upper_read: Read::Nothing,
             reading: Reading::Open,
             lower_read: None,
@@ -307,11 +301,7 @@ fn start(client: &mut Client, env: &Env<Limits>, above: &mut Queue<Event>, below
         | State::Closed
         | State::TransportClosed => unreachable!("one native Handshake before closing"),
     };
-    let connected = match fresh.line {
-        Line::Open => session::connect(&fresh.config, fresh.name, env.wall),
-        Line::Ended => Err(Error::Truncated),
-        Line::Failed(fault) => Err(Error::Stream(fault)),
-    };
+    let connected = super::connect(fresh, env.wall);
     match connected {
         Ok(tls) => {
             client.state =
@@ -345,9 +335,8 @@ fn process(client: &mut Client, above: &mut Queue<Event>, below: &mut Queue<Lowe
             return;
         }
     }
-    if open.handshake == Handshake::Running && !session::handshaking(&open.tls) {
-        open.handshake = Handshake::Done;
-        above.push(Event::Client(super::Event::Ready(session::agreed(&open.tls))));
+    if let Some(agreed) = super::ready(&open.tls, &mut open.handshake) {
+        above.push(Event::Client(super::Event::Ready(agreed)));
     }
 }
 
@@ -391,7 +380,7 @@ fn received(client: &mut Client, bytes: Box<[u8]>, above: &mut Queue<Event>, bel
         State::Open(open) if open.handshake == Handshake::Done && client.reading == Reading::Withdrawn => {
             assert!(client.lower_read.is_none(), "ready withdrawal leaves no active ciphertext Fill");
             let read = client.withdrawn_read.take().expect("queued Bytes answers an withdrawn Fill");
-            assert!(read == Read::Fill(super::fill(&bytes)), "withdrawn ciphertext Fill is answered exactly");
+            assert!(super::below::answers(read, &bytes), "withdrawn ciphertext Fill is answered exactly");
             return;
         }
         State::Open(_) => {}
@@ -402,21 +391,8 @@ fn received(client: &mut Client, bytes: Box<[u8]>, above: &mut Queue<Event>, bel
         }
     }
     let read = client.lower_read.take().expect("Bytes answers native ciphertext Fill");
-    assert!(read == Read::Fill(super::fill(&bytes)), "ciphertext Fill is answered exactly");
-    client.buffers.records.append(&bytes).expect("native read fits retained records");
-    client.record = match client.record {
-        Record::Header => match super::length(&bytes) {
-            0 => Record::Header,
-            length => Record::Body(length),
-        },
-        Record::Body(length) => {
-            assert!(
-                client.buffers.intake.room() >= length.min(MAX_PLAINTEXT),
-                "plaintext room before native record read"
-            );
-            Record::Header
-        }
-    };
+    assert!(super::below::answers(read, &bytes), "ciphertext Fill is answered exactly");
+    client.record = super::below::received(client.record, &bytes, &mut client.buffers);
     drop(bytes);
     process(client, above, below);
 }
@@ -441,7 +417,7 @@ fn stream_down(
                     unreachable!("native read in live admitted Handshake only")
                 }
             }
-            assert!(read_maximum(read) <= limits.read, "native plaintext read within cap");
+            assert!(super::above::largest(read) <= limits.read, "native plaintext read within cap");
             if read == Read::Nothing {
                 assert!(client.upper_read != Read::Nothing, "only outstanding plaintext read is withdrawn");
                 client.upper_read = Read::Nothing;
@@ -741,26 +717,18 @@ fn answer(client: &mut Client, above: &mut Queue<Event>) -> bool {
         | State::Closed
         | State::TransportClosed => return true,
     };
-    if client.reading != Reading::Open {
-        return true;
-    }
-    if client.upper_read != Read::Nothing {
-        if let Some(bytes) = client.buffers.intake.meet(client.upper_read) {
+    match super::above::answer(client.upper_read, &mut client.reading, peer, &mut client.buffers.intake) {
+        super::above::Answer::Wait => true,
+        super::above::Answer::Bytes(bytes) => {
             client.upper_read = Read::Nothing;
             above.push(Event::Client(super::Event::Stream(Up::Bytes(bytes))));
-            return true;
+            true
         }
-    } else if !client.buffers.intake.is_empty() {
-        return true;
-    }
-    match peer {
-        Peer::Open => true,
-        Peer::Cut => false,
-        Peer::Closed => {
-            client.reading = Reading::Ended;
+        super::above::Answer::End => {
             above.push(Event::Client(super::Event::Stream(Up::End)));
             true
         }
+        super::above::Answer::Truncated => false,
     }
 }
 
@@ -901,15 +869,13 @@ fn next_read(client: &mut Client, above: &mut Queue<Event>, below: &mut Queue<Lo
     if !reads {
         return;
     }
-    let piece = match client.record {
-        Record::Header => HEADER,
-        Record::Body(bytes) => bytes,
+    let read = match super::below::next_fill(client.record, &client.buffers.records) {
+        Ok(piece) => Read::Fill(piece),
+        Err(error) => {
+            fail(client, error, above, below);
+            return;
+        }
     };
-    if client.buffers.records.room() < piece {
-        fail(client, Error::TooLong, above, below);
-        return;
-    }
-    let read = Read::Fill(piece);
     client.lower_read = Some(read);
     below.push(LowerRequest::Stream(Down::Demand { read, room: 0 }));
 }
@@ -939,13 +905,6 @@ fn lower_granted(output: LowerOutput) -> bool {
     match output {
         LowerOutput::Granted { .. } => true,
         LowerOutput::Idle | LowerOutput::Wanted { .. } => false,
-    }
-}
-
-fn read_maximum(read: Read) -> u32 {
-    match read {
-        Read::Nothing => 0,
-        Read::Fill(bytes) | Read::Scan { max: bytes, .. } | Read::Line { max: bytes } => bytes,
     }
 }
 

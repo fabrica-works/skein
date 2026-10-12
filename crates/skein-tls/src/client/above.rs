@@ -2,6 +2,7 @@
 use super::close::fail;
 use super::{Buffers, Event, Limits, Open, Peer, State, Writing, room_for, settle};
 use crate::session;
+use alloc::boxed::Box;
 use core::mem;
 use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Intake, Queue};
@@ -56,11 +57,7 @@ pub(super) fn stream(
                 open.above.demand.is_none(),
                 "one demand at a time, stated after the last was answered (lib.md, 7)"
             );
-            let wanted = match read {
-                Read::Nothing => 0,
-                Read::Fill(n) => n,
-                Read::Scan { max, .. } | Read::Line { max } => max,
-            };
+            let wanted = largest(read);
             assert!(wanted <= limits.read, "no read past Limits::read");
             assert!(
                 read == Read::Nothing || open.above.reading != Reading::Withdrawn,
@@ -133,37 +130,42 @@ pub(super) fn sent(
     settle(open, buffers, above, below)
 }
 
-/// The side above's demand met from the intake, or the end of what the
-/// server sent told: `End` once its `close_notify` was read, and nothing held
-/// meets a demand; with none outstanding, once nothing is held (lib.md, 7).
-/// `false` where a truncation is due instead.
-pub(super) fn answer(open: &mut Open, intake: &mut Intake, above: &mut Queue<Event>) -> bool {
-    if open.above.reading != Reading::Open {
-        return true;
+/// What the intake answers a read with, as lib.md, 7 says.
+#[derive(Debug)]
+pub(in crate::client) enum Answer {
+    Wait,
+    Bytes(Box<[u8]>),
+    End,
+    Truncated,
+}
+
+pub(in crate::client) fn answer(read: Read, reading: &mut Reading, peer: Peer, intake: &mut Intake) -> Answer {
+    if *reading != Reading::Open {
+        return Answer::Wait;
     }
-    let reads = match open.above.demand {
-        Some(wanted) => wanted.read,
-        None => Read::Nothing,
-    };
-    if reads != Read::Nothing {
-        if let Some(bytes) = intake.meet(reads) {
-            open.above.demand = None;
-            above.push(Event::Stream(Up::Bytes(bytes)));
-            return true;
+    if read != Read::Nothing {
+        if let Some(bytes) = intake.meet(read) {
+            return Answer::Bytes(bytes);
         }
     } else if !intake.is_empty() {
-        return true;
+        return Answer::Wait;
     }
-    match open.peer {
-        Peer::Open => true,
-        Peer::Cut => false,
+    match peer {
+        Peer::Open => Answer::Wait,
+        Peer::Cut => Answer::Truncated,
         Peer::Closed => {
             // The end answers nothing: a read outstanding stays so, never
-            // met, until the side above withdraws it, as io keeps it
-            // (lib.md, 7); room may still be granted.
-            open.above.reading = Reading::Ended;
-            above.push(Event::Stream(Up::End));
-            true
+            // met, until the side above withdraws it (lib.md, 7).
+            *reading = Reading::Ended;
+            Answer::End
         }
+    }
+}
+
+/// The most a read takes.
+pub(in crate::client) fn largest(read: Read) -> u32 {
+    match read {
+        Read::Nothing => 0,
+        Read::Fill(bytes) | Read::Scan { max: bytes, .. } | Read::Line { max: bytes } => bytes,
     }
 }

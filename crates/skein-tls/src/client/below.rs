@@ -69,20 +69,8 @@ pub(super) fn open_up(
     match ev {
         Up::Bytes(bytes) => {
             let demand = open.below.demand.take().expect("bytes answer a demand");
-            assert!(demand.read == Read::Fill(fill(&bytes)), "bytes answer a fill, exactly");
-            buffers.records.append(&bytes).expect("a piece of a record is read only when the records have room");
-            open.below.record = match open.below.record {
-                Record::Header => match length(&bytes) {
-                    0 => Record::Header,
-                    length => Record::Body(length),
-                },
-                Record::Body(length) => {
-                    // A record's plaintext is no longer than its body.
-                    let plaintext = length.min(MAX_PLAINTEXT);
-                    assert!(buffers.intake.room() >= plaintext, "a record is read with room for its plaintext");
-                    Record::Header
-                }
-            };
+            assert!(answers(demand.read, &bytes), "bytes answer a fill, exactly");
+            open.below.record = received(open.below.record, &bytes, buffers);
             // Copied into the records, it is dropped before rustls deciphers
             // them and copies the plaintext out.
             drop(bytes);
@@ -146,19 +134,7 @@ pub(super) fn wanted(open: &Open, buffers: &Buffers) -> Result<Option<Demand>, E
                     }
             }
         };
-    let read = if reads {
-        let piece = match open.below.record {
-            Record::Header => HEADER,
-            Record::Body(length) => length,
-        };
-        // A handshake message the records cannot hold whole.
-        if buffers.records.room() < piece {
-            return Err(Error::TooLong);
-        }
-        Read::Fill(piece)
-    } else {
-        Read::Nothing
-    };
+    let read = if reads { Read::Fill(next_fill(open.below.record, &buffers.records)?) } else { Read::Nothing };
     let room = if open.below.granted > 0 || open.above.grant.is_some() || open.writing == Writing::Finished {
         Room::None
     } else if !buffers.owed.is_empty() {
@@ -214,4 +190,36 @@ pub(super) fn length(header: &[u8]) -> u32 {
 /// The fill `bytes` answer.
 pub(super) fn fill(bytes: &[u8]) -> u32 {
     u32::try_from(bytes.len()).expect("a delivery within LARGEST_READ")
+}
+
+/// A piece of a record read: kept for rustls; the part to read next.
+pub(in crate::client) fn received(record: Record, bytes: &[u8], buffers: &mut Buffers) -> Record {
+    buffers.records.append(bytes).expect("a piece of a record is read only when the records have room");
+    match record {
+        Record::Header => match length(bytes) {
+            0 => Record::Header,
+            length => Record::Body(length),
+        },
+        Record::Body(length) => {
+            assert!(buffers.intake.room() >= length.min(MAX_PLAINTEXT), "a record is read with room for its plaintext");
+            Record::Header
+        }
+    }
+}
+
+/// The fill of the next piece, or `TooLong`.
+pub(in crate::client) fn next_fill(record: Record, records: &crate::held::Held) -> Result<u32, Error> {
+    let piece = match record {
+        Record::Header => HEADER,
+        Record::Body(length) => length,
+    };
+    if records.room() < piece {
+        return Err(Error::TooLong);
+    }
+    Ok(piece)
+}
+
+/// Whether `bytes` answer `read`, a fill of their length.
+pub(in crate::client) fn answers(read: Read, bytes: &[u8]) -> bool {
+    read == Read::Fill(fill(bytes))
 }
