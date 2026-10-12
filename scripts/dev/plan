@@ -11,14 +11,14 @@
 #   plan worktree REPO NAME       a session's worktree, at origin/main
 #   plan worktree --remove REPO NAME
 #   plan set STEP KEY=VALUE...    add or change a step in the ledger
-#   plan watch [--designer]       wait for something the supervisor (or the designer) must see
+#   plan watch                    wait for something the supervisor must see
 #   plan ring MESSAGE             ring the coordinator's doorbell
 #   plan join ROLE                record this Claude Code session as the run's ROLE
 #   plan wake ROLE MESSAGE        resume a Claude Code role's session with MESSAGE
 #   plan pulse                    the run's numbers since the last check
-#   plan metrics [--out FILE] [PLAN_DIR]  the run's metrics, as TSV
+#   plan metrics [--out FILE] [PLAN_DIR]  the run's metrics, as TSV (the last run's, by default)
 #   plan metrics --history        every plan's metrics, side by side
-#   plan retro [PLAN_DIR]         start the run's retrospective
+#   plan retro [PLAN_DIR]         start the run's retrospective (the last run's, by default)
 #
 # PLAN_DIR is the plan's directory in its repository's primary checkout,
 # for example ~/src/rust/smith/docs/development/plans/reliability. The
@@ -39,7 +39,9 @@ workspace() {
 }
 root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
-repos=${DEV_REPOS:-skein smith jig temper}
+# The workspace's repositories, upstream first (development.md, section 3.1).
+all_repos="skein smith jig temper"
+repos=${DEV_REPOS:-$all_repos}
 active=$tmp/active-plan
 columns='step	repo	session	state	slot	thread	branch	commit	updated	title	note'
 
@@ -90,6 +92,30 @@ locate() {
     top_dir=$top
 }
 
+# A repository and those upstream of it: what a plan in it builds on.
+upstream() {
+    local repo out=""
+    for repo in $all_repos; do
+        out+="$repo "
+        [[ $repo == "$1" ]] && { echo "${out% }"; return; }
+    done
+    echo "$all_repos"
+}
+
+# The last run on this machine: the active one, or the latest released.
+last_run() {
+    if [[ -f $active ]]; then
+        load
+        return
+    fi
+    local log
+    log=$(ls -t "$tmp"/*/*/log.md 2>/dev/null | head -n1 || true)
+    [[ -n $log ]] || die "no run on this machine"
+    plan_dir=$(sed -nE 's/^The run of (.*) started on .*\.$/\1/p' "$log" | head -n1)
+    [[ -n $plan_dir ]] || die "cannot find the plan of $(dirname "$log")"
+    locate "$plan_dir"
+}
+
 check() {
     local fix=0 failed=0
     [[ ${1:-} == --fix ]] && { fix=1; shift; }
@@ -98,9 +124,12 @@ check() {
     fail() { echo "FAIL  $*"; failed=1; }
     (($#)) && check_plan "$1"
 
-    # Every primary checkout: on main, clean, and equal to origin's main.
-    local repo dir ahead behind
-    for repo in $repos; do
+    # Every primary checkout a plan builds on: on main, clean, equal to
+    # origin's main, and origin takes a push. Without DEV_REPOS, the plan's
+    # repository and those upstream of it; without a plan, all of them.
+    local repo dir ahead behind checked=$repos
+    [[ -n ${DEV_REPOS:-} || -z ${project:-} ]] || checked=$(upstream "$project")
+    for repo in $checked; do
         dir=$root/$repo
         [[ -d $dir/.git ]] || { warn "$repo: no checkout at $dir"; continue; }
         if [[ $(git -C "$dir" symbolic-ref --quiet --short HEAD || true) != main ]]; then
@@ -116,6 +145,11 @@ check() {
         else
             ok "$repo: main is origin/main"
         fi
+        if GIT_TERMINAL_PROMPT=0 git -C "$dir" push --dry-run --quiet origin main >/dev/null 2>&1; then
+            ok "$repo: origin takes a push"
+        else
+            fail "$repo: origin refuses a push from here: git -C $dir push --dry-run origin main"
+        fi
     done
 
     # One run per machine.
@@ -130,7 +164,39 @@ check() {
     fi
 
     check_machine
+    [[ -z ${project:-} ]] || check_gate
     return "$failed"
+}
+
+# The queue and the plan's gate, run once on main (development.md, section
+# 6): a machine that cannot run them blocks every session at its first
+# landing. A gate that passed on main's tree is not run again.
+check_gate() {
+    [[ ${PLAN_NO_GATE:-} != 1 ]] || { warn "PLAN_NO_GATE: the queue and the gate are not checked"; return 0; }
+    local out
+    if out=$("$kit/heavy" --tail 0 true 2>&1); then
+        ok "heavy runs a task through the queue"
+    else
+        fail "heavy cannot run a task: $(tail -n1 <<<"$out")"
+        return 0
+    fi
+    local dir=$root/$project gate=scripts/check.sh tree key cache
+    if [[ ! -x $dir/$gate ]]; then
+        warn "$project has no $gate: its gate is not checked"
+        return 0
+    fi
+    tree=$(git -C "$dir" rev-parse 'main^{tree}')
+    key=$(printf '%s\n%s\n%s\n' "$tree" "$gate" "$(rustc -V 2>/dev/null || true)" | sha1sum | cut -c1-40)
+    cache=$tmp/gates/$project/$key
+    if [[ -f $cache ]]; then
+        ok "$project's gate passed on main's tree: $(cat "$cache")"
+    elif out=$(cd "$dir" && HEAVY_LABEL="$project gate" "$kit/heavy" --gate --tail 20 bash -c "$gate" 2>&1); then
+        mkdir -p "$(dirname "$cache")"
+        echo "plan check passed on main" >"$cache"
+        ok "$project's gate passes on main"
+    else
+        fail "$project's gate fails on main: $(grep '^heavy: task ' <<<"$out" | tail -n1)"
+    fi
 }
 
 # The plan: complete, committed, on origin, and ready in STATUS.md.
@@ -479,29 +545,13 @@ status() {
 
 # Wait until the supervisor has something to do (development.md, section
 # 10.5): a new blocked report, the designer's answer, the coordinator gone
-# quiet (once, and again after as long), a pause or the end. With
-# --designer, wait for a new design question instead. Prints what, and exits.
+# quiet (once, and again after as long), a pause or the end. Prints what,
+# and exits. The designer has no watch: plan wake resumes it.
 watch() {
     load
-    local designer=0
-    [[ ${1:-} == --designer ]] && designer=1
     local seen=$run/.watch quiet=${PLAN_QUIET:-600} sig beat age
-    ((designer)) && seen=$run/.watch-designer
     touch "$seen"
     while :; do
-        if ((designer)); then
-            if [[ -f $run/question.md && ! -f $run/answer.md ]]; then
-                sig=question:$(grep '^## ' "$run/question.md" | sha1sum | cut -c1-12)
-                if ! grep -qxF "$sig" "$seen"; then
-                    echo "$sig" >>"$seen"
-                    echo "question: $run/question.md"
-                    grep '^## ' "$run/question.md" || true
-                    return
-                fi
-            fi
-            sleep "${PLAN_POLL:-30}"
-            continue
-        fi
         if [[ -f $run/done.md ]] && ! grep -qx "done" "$seen"; then
             echo "done" >>"$seen"
             echo "done: $run/done.md"
@@ -766,6 +816,8 @@ join() {
     [[ -n ${CLAUDE_CODE_SESSION_ID:-} ]] || die "run plan join from the Claude Code session itself"
     record_role "$role" "$CLAUDE_CODE_SESSION_ID"
     echo "$role: Claude Code session $CLAUDE_CODE_SESSION_ID"
+    [[ $role != designer ]] ||
+        echo "End your turn now, and start no watch: plan wake brings you back with each question (development.md, section 10.4)."
 }
 
 # Resumes a role's Claude Code session in the background with a message. A
@@ -782,7 +834,7 @@ retro() {
     if (($#)); then
         locate "$1"
     else
-        load
+        last_run
     fi
     [[ -d $run ]] || die "no run directory at $run"
     claude_role retrospective "$(retro_prompt)"

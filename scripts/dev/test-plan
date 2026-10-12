@@ -141,7 +141,11 @@ base=$(date -u -d '-3 hours' +%s)
 session=11111111-2222-3333-4444-555555555555
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p/$session/subagents"
 assistant() { printf '{"type":"assistant","message":{"id":"%s","usage":{"input_tokens":%d,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":%d}}}\n' "$@"; }
-{ assistant m1 1 10 100 5; assistant m1 1 10 100 5; assistant m2 2 0 0 7; } >"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
+{
+    assistant m1 1 10 100 5; assistant m1 1 10 100 5; assistant m2 2 0 0 7
+    # Planning, before the claim: counted apart (development.md, section 15.2).
+    printf '{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"m0","usage":{"input_tokens":1000,"output_tokens":1}}}\n'
+} >"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
 assistant s1 3 0 0 3 >"$CLAUDE_CONFIG_DIR/projects/p/$session/subagents/agent-1.jsonl"
 printf 'supervisor\t%s\t%s\n' "$session" "$stamp" >"$run/claude.tsv"
 
@@ -158,7 +162,8 @@ expect pulse "$pulse" \
     "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
     "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
     "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 116/15" \
-    "1 steers in all, 1 points refused"
+    "1 steers in all, 1 points refused" \
+    "- Rising words: line 0 to 60"
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 sleep 1
 expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
@@ -169,7 +174,7 @@ expect metrics "$metrics" \
     $'running_h\t0.5\th' $'steps_planned\t2\t' $'steps_added\t1\t' \
     $'escalations\tdesign gap 1, plan defect 1\t' $'escalation_wait_min\t30.0\t' $'blocked_h\t1.5\th' \
     $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\treboot 1\t' \
-    $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t116 in (86% cached), 15 out' \
+    $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1116 in (8% cached), 16 out; in: 1000 before the claim, 116 in the run, 0 after' \
     $'coordinator_requests\t4, 1 after a wait ran out' $'compactions\t1\t' \
     $'gates_per_step\t0.7\t' $'queue_wait_ratio\t0.10\t' \
     $'suites\tfirst: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
@@ -188,18 +193,20 @@ touch -d '-5 seconds' "$run/heartbeat"
 expect "watch quiet" "$(PLAN_QUIET=2 watch)" "quiet: no heartbeat"
 expect "watch quiet again" "$(PLAN_QUIET=2 watch)" "quiet again: no heartbeat"
 touch "$run/heartbeat"
-echo "## alpha 01.3: what the design says, $stamp" >"$run/question.md"
-expect "watch designer" "$(watch --designer)" "question: $run/question.md"
 echo "# Paused" >"$run/paused.md"
 expect "watch paused" "$(watch)" "paused: $run/paused.md"
-rm "$run/paused.md" "$run/question.md"
+rm "$run/paused.md"
 
 # The roles, offline.
 expect "attach coordinator" "$(PLAN_DRY_RUN=1 "$plan" attach coordinator)" "codex resume --remote unix:// $coordinator"
 expect "attach supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor)" "claude --resume $session"
 expect "join outside a session" "$(CLAUDE_CODE_SESSION_ID='' "$plan" join designer 2>&1 || true)" "run plan join from the Claude Code session itself"
-expect "join" "$(CLAUDE_CODE_SESSION_ID=fake-designer "$plan" join designer)" "designer: Claude Code session fake-designer"
+expect "join" "$(CLAUDE_CODE_SESSION_ID=fake-designer "$plan" join designer)" "designer: Claude Code session fake-designer" "End your turn now"
 expect "roles" "$(PLAN_NO_ROLES='' "$plan" status)" "## Roles" "- coordinator: $coordinator" "- supervisor: $session, gone"
+
+# After the run's release, metrics and retro find it as the last run.
+"$plan" release >/dev/null
+expect "metrics after release" "$("$plan" metrics)" $'steps_planned\t2\t'
 
 if ((live)); then
     # Real agents, on cheap settings, with the real Codex and Claude Code homes.

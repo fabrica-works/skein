@@ -681,3 +681,30 @@ for the next plan that touches skein-tls. Paths and lines are at
   seeds and bytes, `fake_peer.rs`'s home, `fuzzy_native.rs`, smith's
   root store, lib.md and io.md's words, the word check workspace-wide,
   and `plan check`'s `DEV_REPOS` and push checks.
+
+## 10. What was adopted
+
+2026-10-12, after the retrospective landed. The user delegated the choice
+("take reasonable decisions"); the designer applied it to development.md
+and the kit, in one landing.
+
+- **All eighteen proposals,** with three changes:
+  - 2: the planner's runs go through `heavy`, like every role's (11.1).
+    The planner's baseline timings for this plan, three `cargo nextest
+    run` before the claim, ran beside the queue. In the run, every build,
+    test and gate of the four Codex sessions and the three Claude Code
+    sessions went through `heavy` or `land`, and no two gates overlapped.
+  - 3 and 4 are one rule in 8.2: what crosses a boundary, and the edits
+    beyond Files that need no question.
+  - 16: a gate's log records the load and the three busiest processes as
+    the gate starts alone. No flag yet: on eight cores a load above 1
+    says little, and a threshold waits for data.
+- **`later.md`'s two `plan check` rows,** with proposal 1: `plan check`
+  checks the plan's repository and those upstream of it, and that
+  `origin` takes a push.
+- **Ruling 14 is over.** Chromium was installed on carbon-forge at
+  07:24Z, and the browser suite passes there (6 of 6, through `heavy
+  --gate`).
+
+Still with the user: the native face's future (decision 4), and the word
+check workspace-wide (`later.md`).

@@ -110,16 +110,27 @@ codex_tokens() {
 
 # A Claude Code session's tokens, its sub-agents' included: input (fresh,
 # cache writes and cache reads), output, and the cache reads, each message
-# counted once.
+# counted once. In three parts (development.md, section 15.2): before the
+# claim, from the claim to done.md, and after; a message without a time
+# counts in the run. Nine numbers: three for each part.
 claude_tokens() {
     local files
     files=$(find "$claude_home/projects" \( -name "$1.jsonl" -o -path "*/$1/subagents/*.jsonl" \) 2>/dev/null || true)
-    [[ -n $files ]] || { echo "0 0 0"; return; }
+    [[ -n $files ]] || { echo "0 0 0 0 0 0 0 0 0"; return; }
     # shellcheck disable=SC2086 # one path per line, none with spaces
     jq -r 'select(.type == "assistant" and .message.usage != null) | .message as $m | $m.usage as $u
-        | [$m.id, (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0) + ($u.cache_read_input_tokens // 0)), ($u.output_tokens // 0), ($u.cache_read_input_tokens // 0)]
+        | [$m.id, (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0) + ($u.cache_read_input_tokens // 0)), ($u.output_tokens // 0), ($u.cache_read_input_tokens // 0),
+           ((.timestamp // "") | if . == "" then "" else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 | tostring) end)]
         | @tsv' $files 2>/dev/null |
-        awk -F'\t' '{ i[$1] = $2; o[$1] = $3; c[$1] = $4 } END { for (k in i) { a += i[k]; b += o[k]; d += c[k] } printf "%d %d %d\n", a, b, d }' || true
+        awk -F'\t' -v start="$(run_started)" -v end="$(run_ended)" '
+            { i[$1] = $2; o[$1] = $3; c[$1] = $4; t[$1] = $5 }
+            END {
+                for (k in i) {
+                    part = (t[k] == "") ? 2 : (t[k] < start) ? 1 : (t[k] <= end) ? 2 : 3
+                    a[part] += i[k]; b[part] += o[k]; d[part] += c[k]
+                }
+                printf "%d %d %d %d %d %d %d %d %d\n", a[1], b[1], d[1], a[2], b[2], d[2], a[3], b[3], d[3]
+            }' || true
 }
 
 # When the run started: its claim, from log.md.
@@ -195,6 +206,37 @@ line_counts() {
         done < <(git -C "$root/$repo" show --format= --numstat "$hash")
     done
     echo "$ca $cr $ta $tr"
+}
+
+# The words of a set of files at a revision, one per line, lower case:
+# identifiers split at underscores, digits and case changes; words of four
+# letters or more. Reads repository, revision, then paths on stdin.
+words_at() {
+    local repo=$1 rev=$2 path
+    while read -r path; do
+        git -C "$root/$repo" show "$rev:$path" 2>/dev/null || true
+    done | sed -E 's/([a-z])([A-Z])/\1 \2/g' | grep -oE '[A-Za-z]{4,}' | tr '[:upper:]' '[:lower:]'
+}
+
+# The words that rose most in the files the plan's commits changed, from
+# before its first commit to main (development.md, section 14.2): a word
+# the plan forbids can move to a synonym the list does not name. At most
+# eight, each up by ten or more and by half or more.
+rising_words() {
+    local commits repo first
+    commits=$(plan_commits 0)
+    for repo in $(cut -f1 <<<"$commits" | sort -u); do
+        [[ -n $repo ]] || continue
+        first=$(awk -F'\t' -v r="$repo" '$1 == r { print $2; exit }' <<<"$commits")
+        local paths
+        paths=$(awk -F'\t' -v r="$repo" '$1 == r { print $2 }' <<<"$commits" |
+            while read -r hash; do git -C "$root/$repo" show --format= --name-only "$hash"; done | sort -u)
+        { words_at "$repo" "$first^" <<<"$paths" | sed 's/^/0 /'; words_at "$repo" main <<<"$paths" | sed 's/^/1 /'; }
+    done | awk '{ n[$2, $1]++; w[$2] = 1 }
+        END {
+            for (k in w) { b = n[k, 0] + 0; a = n[k, 1] + 0; if (a - b >= 10 && a >= 1.5 * b) print a - b, k, b, a }
+        }' | sort -k1,1nr -k2,2 | head -n 8 | awk '{ printf "%s%s %d to %d", (NR > 1 ? ", " : ""), $2, $3, $4 }
+        END { if (!NR) printf "none" }'
 }
 
 pulse() {
@@ -330,6 +372,7 @@ pulse() {
         if ((n > 3)); then echo "$fn ($n files)"; fi
     done | paste -sd ' ' -)
     echo "- Code: over $limit lines: ${big:-none}; new lint exceptions: $exceptions; forbidden words: ${word_hits:-none}; types like a parallel one: ${type_hits:-none}; test helpers in more than three files: ${helpers:-none}."
+    echo "- Rising words: $(rising_words)."
 
     # Cost so far, and the machine.
     local coordinator_in=0 coordinator_out=0 sessions_in=0 sessions_out=0 claude_in=0 claude_out=0 kind thread a b session
@@ -343,7 +386,7 @@ pulse() {
         fi
     done < <(run_threads)
     while read -r session; do
-        read -r a b _ <<<"$(claude_tokens "$session")"
+        read -r _ _ _ a b _ <<<"$(claude_tokens "$session")"
         claude_in=$((claude_in + a)); claude_out=$((claude_out + b))
     done < <(cut -f2 "$run/claude.tsv" 2>/dev/null | sort -u)
     echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out."
@@ -399,6 +442,7 @@ metrics_of() {
 
     # Tokens.
     local kind thread a b c session ci=0 co=0 cc=0 si=0 so=0 sc=0 li=0 lo=0 lc=0 requests=0 idle=0 compactions=0 file
+    local pa pb pc ra rb rc xa xb xc bi=0 ri=0 ro=0 xi=0
     while IFS=$'\t' read -r kind thread; do
         [[ -n $thread ]] || continue
         read -r a b c <<<"$(codex_tokens "$thread")"
@@ -414,14 +458,15 @@ metrics_of() {
         fi
     done < <(run_threads)
     while read -r session; do
-        read -r a b c <<<"$(claude_tokens "$session")"
-        li=$((li + a)); lo=$((lo + b)); lc=$((lc + c))
+        read -r pa pb pc ra rb rc xa xb xc <<<"$(claude_tokens "$session")"
+        li=$((li + pa + ra + xa)); lo=$((lo + pb + rb + xb)); lc=$((lc + pc + rc + xc))
+        bi=$((bi + pa)); ri=$((ri + ra)); ro=$((ro + rb)); xi=$((xi + xa))
     done < <(cut -f2 "$run/claude.tsv" 2>/dev/null | sort -u)
     share() { awk -v c="$1" -v a="$2" 'BEGIN { printf "%d%%", a ? 100 * c / a : 0 }'; }
     m tokens_coordinator "$ci in ($(share "$cc" "$ci") cached), $co out" tokens
     m tokens_implementers "$si in ($(share "$sc" "$si") cached), $so out" tokens
-    m tokens_claude "$li in ($(share "$lc" "$li") cached), $lo out" tokens
-    m tokens_per_step "$(((ci + co + si + so + li + lo) / (landed ? landed : 1)))" "tokens per step"
+    m tokens_claude "$li in ($(share "$lc" "$li") cached), $lo out; in: $bi before the claim, $ri in the run, $xi after" tokens
+    m tokens_per_step "$(((ci + co + si + so + ri + ro) / (landed ? landed : 1)))" "tokens per step, the run's"
     m coordinator_requests "$requests, $idle after a wait ran out" requests
     m compactions "$compactions" compactions
 
@@ -474,7 +519,7 @@ metrics() {
     if (($#)); then
         locate "$1"
     else
-        load
+        last_run
     fi
     [[ -d $run ]] || die "no run directory at $run"
     if [[ -n $out ]]; then
