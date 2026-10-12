@@ -7,6 +7,9 @@ repository's `AGENTS.md` before touching its code.
 This file is skein's `scripts/dev/workspace/AGENTS.md`, linked into
 `~/src/rust/`: change it there, and land it in skein.
 
+**The code graph.** Use the codebase-memory-mcp tools to inspect the
+code: they index each repository's primary checkout, `main`.
+
 ## The projects
 
 | Repository | What it is | Builds on | Its gate |
@@ -97,7 +100,10 @@ ends:
 
 - **Other machines do not land in skein or smith,** designs and plans
   included: a landing there would split GitHub's `main` from that
-  machine's. temper and jig are free.
+  machine's. temper and jig are free. The exception is skein's
+  `tls-cleanup` plan, which lands in skein from `carbon-forge` (the
+  user's decision, 2026-10-11); `debian-16gb-hel1-1` merges GitHub's
+  `main` when it next pushes.
 - **On `debian-16gb-hel1-1`:**
   - no other run starts: `plan check` fails on purpose, since smith's
     primary checkout stays on `bench/smith-codex-2026-10-08`, as the
