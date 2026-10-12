@@ -328,7 +328,12 @@ impl Client {
                 })
                 .is_ok()
         );
-        let mut component = accounts::Component::new(configured, &self.limits, 17).expect("configured accounts");
+        let mut component = accounts::Component::new(
+            configured,
+            &self.limits,
+            skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed"),
+        )
+        .expect("configured accounts");
         component.down(
             env,
             accounts::Request::Grant { account: 0 },

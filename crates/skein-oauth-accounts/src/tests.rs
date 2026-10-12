@@ -67,7 +67,7 @@ fn setup() -> (Component, Env<Limits>, Queue<Event>) {
         Ok(()) => {}
         Err(_) => unreachable!("account slot"),
     }
-    let component = Component::new(accounts, &limits, 1).expect("component");
+    let component = Component::new(accounts, &limits, crypto(1)).expect("component");
     (component, Env { now: Time::ZERO, wall: Wall::EPOCH, limits }, Queue::with_capacity(MAX_OUT_DOWN.above))
 }
 fn tests_record(generation: u64) -> SavedToken {
@@ -412,7 +412,7 @@ fn an_exchange_bound_refuses_a_second_account_before_admitting_its_grant() {
         configured.push(refresh_account(1, core::net::SocketAddr::from(([127, 0, 0, 1], 31000)))).is_ok(),
         "second account"
     );
-    let mut component = Component::new(configured, &limits, 1).expect("configured component");
+    let mut component = Component::new(configured, &limits, crypto(1)).expect("configured component");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut above = Queue::with_capacity(MAX_OUT_DOWN.above);
     let mut io = Queue::with_capacity(MAX_OUT_DOWN.io);
@@ -446,7 +446,7 @@ fn a_plaintext_endpoint_off_loopback_is_refused_at_startup() {
         configured.push(refresh_account(0, core::net::SocketAddr::from(([192, 0, 2, 1], 31000)))).is_ok(),
         "account"
     );
-    assert_eq!(Component::new(configured, &limits(), 1).err(), Some(Unusable::Plaintext { account: 0 }));
+    assert_eq!(Component::new(configured, &limits(), crypto(1)).err(), Some(Unusable::Plaintext { account: 0 }));
 }
 
 #[test]
@@ -494,7 +494,7 @@ fn public_sign_in_admission_respects_listener_and_account_bounds() {
     let mut configured = List::with_capacity(2);
     assert!(configured.push(refresh_account(0, address)).is_ok());
     assert!(configured.push(refresh_account(1, address)).is_ok());
-    let mut component = Component::new(configured, &profile, 17).expect("component");
+    let mut component = Component::new(configured, &profile, crypto(17)).expect("component");
     let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: profile };
     let mut above = Queue::with_capacity(MAX_OUT_DOWN.above);
     let mut below = Queue::with_capacity(MAX_OUT_DOWN.io);
@@ -505,7 +505,7 @@ fn public_sign_in_admission_respects_listener_and_account_bounds() {
     let mut configured = List::with_capacity(2);
     assert!(configured.push(refresh_account(0, address)).is_ok());
     assert!(configured.push(refresh_account(1, address)).is_ok());
-    component = Component::new(configured, &env.limits, 17).expect("one listener component");
+    component = Component::new(configured, &env.limits, crypto(17)).expect("one listener component");
     component.down(&env, Request::SignIn { account: 0 }, &mut above, &mut below, &mut Queue::with_capacity(1));
     assert!(above.is_empty());
     assert!(below.pop().is_some());
@@ -518,3 +518,26 @@ fn public_sign_in_admission_respects_listener_and_account_bounds() {
 
 #[path = "private_tests.rs"]
 mod private;
+
+fn crypto(n: u8) -> skein_lib::CryptoRng {
+    let seed = skein_lib::Secret::new(bytes::copy_of(&[n; 32]));
+    skein_lib::CryptoRng::new(&seed, 0).expect("a 32-byte fixture seed")
+}
+
+#[test]
+fn two_sign_ins_draw_different_states_and_verifiers() {
+    let mut random = crypto(0);
+    let state = component::draw(&mut random, 24);
+    let verifier = component::draw(&mut random, 32);
+    assert_ne!(state, component::draw(&mut random, 24));
+    assert_ne!(verifier, component::draw(&mut random, 32));
+}
+
+#[test]
+fn a_verifier_is_43_url_safe_characters() {
+    let verifier = component::draw(&mut crypto(0), 32);
+    assert_eq!(verifier.len(), 43);
+    for byte in verifier.as_ref() {
+        assert!(byte.is_ascii_alphanumeric() || b"-_".contains(byte));
+    }
+}

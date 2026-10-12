@@ -14,11 +14,13 @@ use crate::exchange::{Exchange, Stage, Web};
 use crate::keeper::{Private, Store};
 use crate::route::{self, Socket};
 use crate::{Account, Asked, Ends, Event, Failure, Keeper, Keeping, Limits, Refusal, Request, Transport, worst_case};
-use skein_lib::{Duration, Env, Id, List, Queue, Rng, Slab, Time};
+use skein_lib::{CryptoRng, Duration, Env, Id, List, Queue, Slab, Time};
 use skein_oauth::{self as oauth, SavedToken};
 
 mod private;
 mod sign_in;
+#[cfg(test)]
+pub(crate) use sign_in::draw;
 
 /// An io request the owner sends on, translating component tokens to io tokens.
 pub type Lower = skein_io::Request;
@@ -114,14 +116,14 @@ pub struct Component {
     bindings: List<Option<Id<Exchange>>>,
     exchanges: Slab<Exchange>,
     lifecycle: Lifecycle,
-    random: Rng,
+    crypto: CryptoRng,
     keepers: List<Store>,
     file_owner: u64,
 }
 
 impl Component {
-    /// Validates configuration before the loop; seed belongs to this component.
-    pub fn new(accounts: List<Account>, limits: &Limits, seed: u64) -> Result<Component, Unusable> {
+    /// Validates configuration before the loop; the owner keys its generator on a process-distinct stream.
+    pub fn new(accounts: List<Account>, limits: &Limits, crypto: CryptoRng) -> Result<Component, Unusable> {
         if accounts.len() > limits.accounts {
             return Err(Unusable::Accounts { bound: limits.accounts });
         }
@@ -196,7 +198,7 @@ impl Component {
             bindings,
             exchanges: Slab::with_capacity(limits.exchanges),
             lifecycle: Lifecycle::Live,
-            random: Rng::new(seed),
+            crypto,
             keepers,
             file_owner: 0,
         })

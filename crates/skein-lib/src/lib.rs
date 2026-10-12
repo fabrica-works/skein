@@ -18,6 +18,7 @@ extern crate alloc;
 pub mod base64;
 mod btree;
 pub mod bytes;
+mod crypto_rng;
 mod deadlines;
 mod decimal;
 mod env;
@@ -41,6 +42,7 @@ mod time;
 mod token;
 mod writer;
 
+pub use crypto_rng::CryptoRng;
 pub use deadlines::Deadlines;
 pub use decimal::Decimal;
 pub use env::Env;

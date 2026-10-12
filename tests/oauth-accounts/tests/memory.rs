@@ -68,7 +68,8 @@ fn every_account_holds_a_maximal_record_within_the_heap_bound() {
     for _ in 0..limits.accounts {
         assert!(configured.push(Account::HandedIn).is_ok(), "account slot");
     }
-    let mut component = Component::new(configured, &limits, 17).expect("component");
+    let crypto = skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed");
+    let mut component = Component::new(configured, &limits, crypto).expect("component");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(MAX_OUT_DOWN.above);
     for account in 0..limits.accounts {
@@ -148,7 +149,8 @@ fn every_refresh_slot_holds_its_maximal_records_and_tls_connection() {
                 .is_ok()
         );
     }
-    let mut component = Component::new(configured, &limits, 17).expect("configured slots");
+    let crypto = skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed");
+    let mut component = Component::new(configured, &limits, crypto).expect("configured slots");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut above = Queue::with_capacity(MAX_OUT_DOWN.above.max(MAX_OUT_FIRE.above));
     let mut io = Queue::with_capacity(MAX_OUT_DOWN.io.max(MAX_OUT_FIRE.io));
@@ -203,7 +205,8 @@ fn every_listener_slot_keeps_a_bounded_partial_head_within_the_heap_bound() {
                 .is_ok()
         );
     }
-    let mut component = Component::new(configured, &limits, 17).expect("component");
+    let crypto = skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed");
+    let mut component = Component::new(configured, &limits, crypto).expect("component");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut above = Queue::with_capacity(64);
     let mut below = Queue::with_capacity(64);
@@ -309,7 +312,8 @@ fn every_private_keeper_retains_its_maximal_paths_and_pending_load() {
                 .is_ok()
         );
     }
-    let mut component = Component::new(configured, &limits, 17).expect("maximal private keepers");
+    let crypto = skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed");
+    let mut component = Component::new(configured, &limits, crypto).expect("maximal private keepers");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut above = Queue::with_capacity(32);
     let mut io = Queue::with_capacity(32);

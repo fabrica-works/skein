@@ -43,7 +43,7 @@ impl Owner {
             Err(_) => unreachable!("account slot"),
         }
         Owner {
-            component: Component::new(configured, &limits, 7).expect("private account"),
+            component: Component::new(configured, &limits, crypto(7)).expect("private account"),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             above: Queue::with_capacity(32),
             io: Queue::with_capacity(32),

@@ -62,3 +62,16 @@ pub use writer_pipe::{PipeCapture, PipeHost, PipeWriter};
 pub(crate) fn fail(what: &str) -> ! {
     panic!("{what}")
 }
+
+/// The world's deterministic 32-byte cryptographic seed (shell.md, 5).
+#[must_use]
+pub fn crypto_seed(seed: u64) -> skein_lib::Secret {
+    let mut random = skein_lib::Rng::new(seed);
+    let mut bytes = [0_u8; 32];
+    for chunk in bytes.chunks_exact_mut(8) {
+        for (slot, byte) in chunk.iter_mut().zip(random.next_u64().to_le_bytes()) {
+            *slot = byte;
+        }
+    }
+    skein_lib::Secret::new(skein_lib::bytes::copy_of(&bytes))
+}

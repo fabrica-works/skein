@@ -11,7 +11,7 @@ use crate::redirect::{self, Redirect};
 use crate::route::{self, Socket};
 use crate::{Asked, Event, Limits, Lower, Refusal};
 use alloc::boxed::Box;
-use skein_lib::{Env, Queue, Rng, Time, Writer};
+use skein_lib::{CryptoRng, Env, Queue, Time, Writer};
 use skein_oauth as oauth;
 
 impl Component {
@@ -106,9 +106,12 @@ impl Component {
             State::Record { record, .. } | State::Loaded { record } => record.generation,
             State::Empty => 0,
         };
-        let state = draw(&mut self.random, env.limits.client.state_bytes.min(32));
+        let state = draw(
+            &mut self.crypto,
+            env.limits.client.state_bytes.min(32).checked_mul(3).expect("bounded state").div_euclid(4),
+        );
         let verifier =
-            if public || registration.pkce_for_confidential { Some(draw(&mut self.random, 43)) } else { None };
+            if public || registration.pkce_for_confidential { Some(draw(&mut self.crypto, 32)) } else { None };
         let id = self.bindings.get(account).expect("account binding").expect("admitted exchange");
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         exchange.stage = Stage::Running;
@@ -184,12 +187,13 @@ pub(super) fn deliver(client: &mut oauth::Client, above: &mut Queue<oauth::Reque
     );
 }
 
-fn draw(random: &mut Rng, length: u32) -> Box<[u8]> {
-    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut writer = Writer::new(usize::try_from(length).expect("u32 fits"));
-    for _ in 0..length {
-        let index = usize::try_from(random.below(64)).expect("alphabet index");
-        writer.put(&[*ALPHABET.get(index).expect("alphabet index")]).expect("fixed random string cap");
-    }
+pub(crate) fn draw(crypto: &mut CryptoRng, length: u32) -> Box<[u8]> {
+    let mut bytes = [0_u8; 32];
+    let bytes = bytes.get_mut(..usize::try_from(length).expect("at most 32")).expect("bounded random bytes");
+    crypto.fill(bytes);
+    let alphabet = skein_lib::base64::Alphabet::Url;
+    let size = skein_lib::base64::encoded_len(alphabet, length).expect("at most 43 characters");
+    let mut writer = Writer::new(usize::try_from(size).expect("at most 43 characters"));
+    skein_lib::base64::encode(alphabet, bytes, &mut writer).expect("measured room");
     writer.finish()
 }

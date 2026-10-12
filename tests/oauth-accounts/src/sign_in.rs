@@ -199,7 +199,14 @@ impl Client {
                 })
                 .is_ok()
         );
-        self.component = Some(accounts::Component::new(configured, &self.limits, 17).expect("accounts"));
+        self.component = Some(
+            accounts::Component::new(
+                configured,
+                &self.limits,
+                skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed"),
+            )
+            .expect("accounts"),
+        );
         self.ask(env, accounts::Request::SignIn { account: 0 });
     }
     fn ask(&mut self, env: &Env<accounts::Limits>, request: accounts::Request) {
