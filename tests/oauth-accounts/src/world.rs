@@ -225,7 +225,7 @@ pub struct Client {
     events: Queue<io::Event>,
     requests: Queue<io::Request>,
     pub(crate) files: Queue<accounts::FileLower>,
-    file_driver: Option<skein_world::files::Driver>,
+    pub(crate) file_driver: Option<skein_world::files::Driver>,
     file_keep: Option<(skein_lib::Token, oauth::SavedToken)>,
     pub(crate) stop_at_store: Option<bool>,
     pub(crate) stop_at_load: Option<bool>,
@@ -248,22 +248,24 @@ pub struct Client {
 
 impl Client {
     pub(crate) fn new(story: Story, transport: Transport) -> Client {
-        let limits = limits();
+        Self::with_limits(story, transport, limits(), ROOM)
+    }
+    pub(crate) fn with_limits(story: Story, transport: Transport, limits: accounts::Limits, room: u32) -> Client {
         Client {
             io: io::Io::new(&limits.io),
             component: None,
             limits,
-            events: Queue::with_capacity(ROOM),
-            requests: Queue::with_capacity(ROOM),
-            files: Queue::with_capacity(ROOM),
+            events: Queue::with_capacity(room),
+            requests: Queue::with_capacity(room),
+            files: Queue::with_capacity(room),
             file_driver: None,
             file_keep: None,
             stop_at_store: None,
             stop_at_load: None,
             retry_load: None,
-            above: Queue::with_capacity(ROOM),
-            completions: Queue::with_capacity(ROOM),
-            submissions: Queue::with_capacity(ROOM),
+            above: Queue::with_capacity(room),
+            completions: Queue::with_capacity(room),
+            submissions: Queue::with_capacity(room),
             address: None,
             transport,
             story,

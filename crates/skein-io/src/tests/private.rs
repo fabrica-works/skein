@@ -51,12 +51,39 @@ impl Rig {
         assert_eq!(*how, OpenHow::ReadNoFollow);
         self.done(Ok(Done::Fd(PRIVATE)));
     }
+    fn absent(&mut self) {
+        self.down(Request::OpenPrivate { owner: OWNER, root: self.root, path: Box::from(&b"secret"[..]) });
+        self.done(Ok(Done::Fd(PARENT)));
+        self.done(Err(Error::NotFound));
+    }
+    fn making(&mut self, private: bool) {
+        if private {
+            self.absent();
+        } else {
+            self.down(Request::MakeDirectory {
+                owner: OWNER,
+                root: self.root,
+                path: Box::from(&b"new"[..]),
+                mode: 0o711,
+            });
+            self.done(Ok(Done::Fd(PARENT)));
+        }
+        self.done(Ok(Done::Nothing));
+    }
+    fn assert_next(&self, expected: Op) {
+        assert_eq!(self.subs.iter().next().expect("one operation").kind, expected);
+        assert!(self.events.is_empty(), "terminal waits for the operation");
+    }
     fn opened(&mut self) -> Token {
         self.begin();
         self.done(Ok(Done::Stat(root_stat())));
         assert!(self.events.is_empty(), "parent closes before Opened");
         self.done(Ok(Done::Nothing));
-        let Event::Opened { file, .. } = self.events.pop().unwrap() else { panic!("a verified root") };
+        self.take_opened()
+    }
+    fn take_opened(&mut self) -> Token {
+        let Some(Event::Opened { owner, file, len }) = self.events.pop() else { panic!("a verified root") };
+        assert_eq!((owner, len), (OWNER, 0));
         file
     }
     fn close_refusal(&mut self, expected: Unsafe, closes: usize) {
@@ -135,7 +162,7 @@ fn private_root_and_load_links_are_typed_refusals() {
 
 #[test]
 fn making_a_directory_preserves_mode_and_exists_is_a_failure() {
-    for result in [Ok(Done::Nothing), Err(Error::Exists)] {
+    for (label, result) in [("made", Ok(Done::Nothing)), ("exists", Err(Error::Exists))] {
         let mut rig = Rig::new();
         rig.down(Request::MakeDirectory { owner: OWNER, root: rig.root, path: Box::from(&b"new"[..]), mode: 0o711 });
         rig.done(Ok(Done::Fd(PARENT)));
@@ -144,13 +171,17 @@ fn making_a_directory_preserves_mode_and_exists_is_a_failure() {
             _ => false,
         });
         rig.done(result.clone());
+        if result.is_ok() {
+            rig.done(Ok(Done::Nothing));
+        }
         rig.done(Ok(Done::Nothing));
         assert_eq!(
             rig.events.pop(),
             Some(match result {
                 Ok(_) => Event::Made { owner: OWNER },
                 Err(error) => Event::Failed { owner: OWNER, error, committed: false, residue: None },
-            })
+            }),
+            "{label}"
         );
     }
 }
@@ -238,6 +269,7 @@ fn an_absent_private_root_is_made_once_with_owner_only_mode() {
     let Op::MakeDirectory { mode, .. } = &rig.subs.iter().next().unwrap().kind else { panic!("make absent root") };
     assert_eq!(*mode, 0o700);
     rig.done(Ok(Done::Nothing));
+    rig.done(Ok(Done::Nothing));
     rig.done(Ok(Done::Fd(PRIVATE)));
     rig.done(Ok(Done::Stat(root_stat())));
     rig.done(Ok(Done::Nothing));
@@ -299,5 +331,84 @@ fn denied_private_opens_use_path_metadata_only_to_name_a_refusal() {
             assert_eq!(rig.io.open_files(), if root_request { 1 } else { 2 });
             assert!(rig.events.is_empty() && rig.io.takes());
         }
+    }
+}
+
+#[test]
+fn a_made_directory_answers_after_its_parent_is_synced() {
+    let mut rig = Rig::new();
+    rig.making(false);
+    rig.assert_next(Op::Sync { fd: PARENT });
+    rig.done(Ok(Done::Nothing));
+    rig.assert_next(Op::Close { fd: PARENT });
+    rig.done(Ok(Done::Nothing));
+    assert_eq!(rig.events.pop(), Some(Event::Made { owner: OWNER }));
+    assert!(rig.subs.is_empty() && rig.io.takes());
+}
+
+#[test]
+fn a_private_root_made_is_synced_before_it_is_opened() {
+    let mut rig = Rig::new();
+    rig.making(true);
+    rig.assert_next(Op::Sync { fd: PARENT });
+    rig.done(Ok(Done::Nothing));
+    rig.assert_next(Op::Open { root: PARENT, path: Box::from(&b"secret"[..]), how: OpenHow::ReadNoFollow });
+    rig.done(Ok(Done::Fd(PRIVATE)));
+    rig.done(Ok(Done::Stat(root_stat())));
+    rig.done(Ok(Done::Nothing));
+    let _file = rig.take_opened();
+    assert!(rig.subs.is_empty() && rig.io.takes());
+}
+
+#[test]
+fn a_private_root_found_is_not_synced() {
+    for (label, raced) in [("opened", false), ("exists while making", true)] {
+        let mut rig = Rig::new();
+        if raced {
+            rig.absent();
+            rig.done(Err(Error::Exists));
+            rig.assert_next(Op::Open { root: PARENT, path: Box::from(&b"secret"[..]), how: OpenHow::ReadNoFollow });
+            rig.done(Ok(Done::Fd(PRIVATE)));
+        } else {
+            rig.begin();
+        }
+        rig.assert_next(Op::Stat { fd: PRIVATE });
+        rig.done(Ok(Done::Stat(root_stat())));
+        rig.assert_next(Op::Close { fd: PARENT });
+        rig.done(Ok(Done::Nothing));
+        let _file = rig.take_opened();
+        assert!(rig.subs.is_empty() && rig.io.takes(), "{label}");
+    }
+}
+
+#[test]
+fn a_failed_parent_sync_answers_committed() {
+    for (label, private, expired) in [
+        ("made sync failed", false, false),
+        ("private sync failed", true, false),
+        ("made sync deadline", false, true),
+        ("private sync deadline", true, true),
+    ] {
+        let mut rig = Rig::new();
+        rig.making(private);
+        rig.assert_next(Op::Sync { fd: PARENT });
+        if expired {
+            file_layer::expire(&mut rig.io, Time::from_nanos(Duration::from_secs(2).as_nanos()), &mut rig.subs);
+        }
+        rig.done(if expired { Ok(Done::Nothing) } else { Err(Error::Other(5)) });
+        rig.assert_next(Op::Close { fd: PARENT });
+        rig.done(Ok(Done::Nothing));
+        assert_eq!(
+            rig.events.pop(),
+            Some(Event::Failed {
+                owner: OWNER,
+                error: if expired { Error::TimedOut } else { Error::Other(5) },
+                committed: true,
+                residue: None
+            }),
+            "{label}"
+        );
+        assert!(rig.subs.is_empty() && rig.io.takes(), "{label}");
+        assert_eq!(rig.io.open_files(), 1, "{label}");
     }
 }

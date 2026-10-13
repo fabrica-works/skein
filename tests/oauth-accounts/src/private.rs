@@ -71,6 +71,8 @@ pub struct FileSystem {
     pub faulted: bool,
     observer_alive: bool,
     pub cuts: usize,
+    pub(crate) root_at_cut: bool,
+    pub(crate) record_at_cut: Option<Vec<u8>>,
 }
 
 impl FileSystem {
@@ -131,8 +133,11 @@ impl FileSystem {
                 }));
             }
         }
+        Self::with_items(story, &items)
+    }
+    fn with_items(story: Story, items: &[Item]) -> Self {
         let mut files = Files::for_user(1234);
-        let root = files.lay(&items);
+        let root = files.lay(items);
         Self {
             files,
             root,
@@ -144,6 +149,8 @@ impl FileSystem {
             faulted: false,
             observer_alive: true,
             cuts: 0,
+            root_at_cut: false,
+            record_at_cut: None,
         }
     }
     pub(crate) fn for_cuts() -> Self {
@@ -151,6 +158,13 @@ impl FileSystem {
         files.files.close(files.root);
         files.observer_alive = false;
         files
+    }
+    #[cfg(test)]
+    pub(crate) fn absent_for_cuts() -> Self {
+        let mut machine = Self::with_items(Story::Missing, &[]);
+        machine.files.close(machine.root);
+        machine.observer_alive = false;
+        machine
     }
     pub(crate) fn startup(&mut self) -> Handle {
         Handle::new(self.files.open(self.root, b".", How::Directory).expect("independent startup root").raw())
@@ -200,6 +214,16 @@ impl Machine for FileSystem {
         if cut == skein_world::Cut::PowerLoss {
             self.files.crash(seed);
         }
+        let root = self.files.reopen_root(0);
+        if let Ok(private) = self.files.open(root, b"secret", How::Directory) {
+            self.root_at_cut = true;
+            if let Ok(record) = self.files.open(private, b"record", How::Read) {
+                self.record_at_cut = Some(self.files.read(record, 0, 1024).expect("whole cut record"));
+                self.files.close(record);
+            }
+            self.files.close(private);
+        }
+        self.files.close(root);
         self.cuts += 1;
     }
     fn open_root(&mut self, path: &[u8]) -> Result<Handle, Error> {

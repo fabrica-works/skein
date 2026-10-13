@@ -71,7 +71,9 @@ mod startup;
 pub(crate) mod terminal;
 
 mod opens;
+mod roots;
 use opens::open;
+pub use roots::make_root;
 
 pub(crate) use startup::{read_file, read_private_file};
 

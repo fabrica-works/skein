@@ -20,6 +20,7 @@ pub(super) enum Action {
 enum Phase {
     ParentOpening,
     Making,
+    SyncingParent,
     Opening,
     Stating,
     DeniedOpening,
@@ -51,6 +52,7 @@ impl Opening {
             Action::Make { .. } => match self.phase {
                 Phase::ParentOpening => true,
                 Phase::Making
+                | Phase::SyncingParent
                 | Phase::Opening
                 | Phase::Stating
                 | Phase::DeniedOpening
@@ -64,7 +66,12 @@ impl Opening {
     pub(super) fn can_cancel(&self) -> bool {
         match self.phase {
             Phase::ParentOpening | Phase::Opening | Phase::DeniedOpening => true,
-            Phase::Making | Phase::Stating | Phase::DeniedStating | Phase::ClosingFile | Phase::ClosingParent => false,
+            Phase::Making
+            | Phase::SyncingParent
+            | Phase::Stating
+            | Phase::DeniedStating
+            | Phase::ClosingFile
+            | Phase::ClosingParent => false,
         }
     }
 }
@@ -249,6 +256,10 @@ pub(super) fn up(
                 Phase::Opening if error == Error::NotAFile => {
                     opening.terminal = Some(Event::Refused { owner: opening.owner, found: Unsafe::Kind(Kind::Other) });
                 }
+                Phase::SyncingParent => {
+                    opening.terminal =
+                        Some(Event::Failed { owner: opening.owner, error, committed: true, residue: None });
+                }
                 Phase::ParentOpening
                 | Phase::Opening
                 | Phase::Stating
@@ -277,6 +288,12 @@ pub(super) fn up(
                 }
             }
             Phase::Making => {
+                super::store::done_nothing(done);
+                opening.phase = Phase::SyncingParent;
+                let fd = opening.parent.expect("made directory's parent remains open");
+                issue(io, opening, Op::Sync { fd }, subs);
+            }
+            Phase::SyncingParent => {
                 super::store::done_nothing(done);
                 match opening.action {
                     Action::Private { .. } => open(io, opening, subs),
@@ -347,6 +364,12 @@ pub(super) fn stopped(
         Phase::Opening | Phase::DeniedOpening => {
             if let Ok(done) = complete.result {
                 opening.file = Some(super::store::done_fd(done));
+            }
+        }
+        Phase::SyncingParent => {
+            if reason != Error::Cancelled {
+                opening.terminal =
+                    Some(Event::Failed { owner: opening.owner, error: reason, committed: true, residue: None });
             }
         }
         Phase::Making | Phase::Stating | Phase::DeniedStating | Phase::ClosingFile | Phase::ClosingParent => {}

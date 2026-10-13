@@ -34,10 +34,10 @@ pub use clock::{Clock, Now};
 pub use drive::{Host, drive};
 pub use ring::{
     Config, DirectoryAccess, HostedPipes, Kernel, OpenError, OutputKind, Wait, abandon_binary, close_keeper_fd,
-    directory_access, effective_user, hosted_pipes, make_subreaper, open_append, open_cgroup, open_pidfd, open_root,
-    open_signal_pipe, open_termination_signals, pidfd_exited, poll_child, prepare_output, process_id, set_subreaper,
-    signal_current_thread, signal_kept_child, start_binary, start_binary_in_cgroup, subreaper, wait_cgroup_change,
-    write_service_signal,
+    directory_access, effective_user, hosted_pipes, make_root, make_subreaper, open_append, open_cgroup, open_pidfd,
+    open_root, open_signal_pipe, open_termination_signals, pidfd_exited, poll_child, prepare_output, process_id,
+    set_subreaper, signal_current_thread, signal_kept_child, start_binary, start_binary_in_cgroup, subreaper,
+    wait_cgroup_change, write_service_signal,
 };
 pub use seed::{crypto_seed, seed};
 pub use startup::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_private_file, read_trust_roots};

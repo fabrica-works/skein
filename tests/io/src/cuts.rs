@@ -45,6 +45,10 @@ pub struct Owner {
     vault: Option<Token>,
     private: bool,
     start_store: bool,
+    absent: bool,
+    issued: u32,
+    opened_at: Option<u32>,
+    stored_at: Option<u32>,
     phase: Phase,
     pub recovered: Option<Box<[u8]>>,
     completions: Queue<Complete>,
@@ -64,8 +68,12 @@ fn make(inherited: &Inherited) -> Owner {
         root,
         signal: inherited.signal,
         vault: None,
-        private: name.as_ref() == b"private",
+        private: name.as_ref() != b"ordinary",
         start_store: false,
+        absent: name.as_ref() == b"absent",
+        issued: 0,
+        opened_at: None,
+        stored_at: None,
         phase: Phase::Open,
         recovered: None,
         completions: Queue::with_capacity(4),
@@ -81,6 +89,7 @@ impl Owner {
             self.phase = match event.owner() {
                 OPEN => match event {
                     Event::Opened { file, .. } => {
+                        self.opened_at = Some(self.issued);
                         self.vault = Some(file);
                         if self.start_store { Phase::Store } else { Phase::Load }
                     }
@@ -88,6 +97,7 @@ impl Owner {
                 },
                 STORE => {
                     assert!(matches!(event, Event::Stored { .. }), "store terminal {event:?}");
+                    self.stored_at = Some(self.issued);
                     Phase::Load
                 }
                 LOAD => match event {
@@ -96,6 +106,7 @@ impl Owner {
                         self.recovered = Some(bytes);
                         Phase::CloseVault
                     }
+                    Event::Failed { error: Error::NotFound, .. } if self.absent => Phase::CloseVault,
                     other => panic!("loading recovery record: {other:?}"),
                 },
                 CLOSE_VAULT => {
@@ -128,6 +139,7 @@ impl Host for Owner {
             file_layer::expire(&mut self.io, now, &mut self.submissions);
         }
         if !self.io.takes() {
+            self.issued += self.submissions.len();
             return;
         }
         let request = match self.phase {
@@ -172,6 +184,7 @@ impl Host for Owner {
             file_layer::down(&mut self.io, now, request, &mut self.up, &mut self.submissions);
             self.observe();
         }
+        self.issued += self.submissions.len();
     }
     fn completions(&mut self) -> &mut Queue<Complete> {
         &mut self.completions
@@ -218,6 +231,8 @@ pub struct FileSystem {
     pub files: Files,
     pub opened: [u32; 2],
     pub cuts: u32,
+    root_at_cut: bool,
+    record_at_cut: Option<Vec<u8>>,
 }
 
 impl FileSystem {
@@ -249,7 +264,7 @@ impl FileSystem {
             ]);
             files.close(root);
         }
-        Self { files, opened: [0; 2], cuts: 0 }
+        Self { files, opened: [0; 2], cuts: 0, root_at_cut: false, record_at_cut: None }
     }
 }
 
@@ -262,6 +277,16 @@ impl Machine for FileSystem {
             Cut::Kill => {}
             Cut::PowerLoss => self.files.crash(seed),
         }
+        let root = self.files.reopen_root(0);
+        if let Ok(vault) = self.files.open(root, b"vault", How::Directory) {
+            self.root_at_cut = true;
+            if let Ok(record) = self.files.open(vault, b"record", How::Read) {
+                self.record_at_cut = Some(self.files.read(record, 0, MAX).expect("whole cut record"));
+                self.files.close(record);
+            }
+            self.files.close(vault);
+        }
+        self.files.close(root);
         self.cuts += 1;
     }
     fn open_root(&mut self, path: &[u8]) -> Result<Handle, Error> {
@@ -327,4 +352,50 @@ pub fn world(seed: u64, config: Config, private: bool, peer: bool) -> World<Owne
         );
     }
     world
+}
+
+#[cfg(test)]
+mod absent_tests {
+    use super::*;
+
+    #[global_allocator]
+    static HEAP: skein_heap::Counting = skein_heap::Counting;
+
+    fn absent_world(seed: u64) -> World<Owner, Judge, FileSystem> {
+        let mut files = Files::for_user(USER);
+        let root = files.lay(&[]);
+        files.close(root);
+        let machine = FileSystem { files, opened: [0; 2], cuts: 0, root_at_cut: false, record_at_cut: None };
+        let mut world =
+            World::new(seed, Config::calm(), Judge { started: false }, Memory::Checked).with_machine(machine);
+        world.spawn_restartable(
+            vec![StartupRoot { name: Box::from(&b"absent"[..]), path: Box::from(&b"root-0"[..]) }],
+            make,
+        );
+        world
+    }
+
+    #[test]
+    fn an_absent_private_root_and_acknowledged_store_survive_every_power_loss_cut() {
+        let uncut = absent_world(0).run();
+        let opened = uncut.procs[0].opened_at.expect("root answered");
+        let stored = uncut.procs[0].stored_at.expect("store answered");
+        assert_eq!(uncut.procs[0].recovered.as_deref(), Some(NEW));
+        for before in 0..uncut.submissions[0] {
+            {
+                let (label, cut) = ("power loss", Cut::PowerLoss);
+                let mut world = absent_world(0);
+                world.cut(0, before, cut);
+                let outcome = world.run();
+                assert_eq!(outcome.machine.cuts, 1, "{label}, before {before}");
+                if before >= opened {
+                    assert!(outcome.machine.root_at_cut, "{label}, root acknowledged before {before}");
+                }
+                if before >= stored {
+                    assert_eq!(outcome.machine.record_at_cut.as_deref(), Some(NEW), "{label}, store before {before}");
+                }
+                assert_eq!(outcome.machine.files.open_handles(), 0, "{label}, before {before}");
+            }
+        }
+    }
 }

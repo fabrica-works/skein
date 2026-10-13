@@ -10,8 +10,12 @@ use skein_world::domain::Ledger;
 use skein_world::{Host, Memory, Outcome, Referee, World};
 use std::net::{Ipv4Addr, SocketAddr};
 mod browser;
+#[cfg(test)]
+mod cuts;
+mod issuer;
 mod protocol;
 pub use browser::Browser;
+use issuer::issuer;
 pub use protocol::protocol;
 const ROOM: u32 = 64;
 fn io_limits() -> io::Limits {
@@ -135,6 +139,8 @@ pub struct Client {
     files: Queue<accounts::FileLower>,
     file_driver: Option<skein_world::files::Driver>,
     file_keep: Option<(skein_lib::Token, oauth::SavedToken)>,
+    opened_private: Option<Time>,
+    stored_private: Option<Time>,
     above: Queue<accounts::Event>,
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
@@ -152,19 +158,23 @@ pub struct Client {
 }
 impl Client {
     fn new(story: Story, large: bool) -> Self {
-        let limits = super::world::limits();
+        Self::with_limits(story, large, super::world::limits(), ROOM)
+    }
+    fn with_limits(story: Story, large: bool, limits: accounts::Limits, room: u32) -> Self {
         Self {
             io: io::Io::new(&limits.io),
             component: None,
             limits,
-            events: Queue::with_capacity(ROOM),
-            requests: Queue::with_capacity(ROOM),
-            files: Queue::with_capacity(ROOM),
+            events: Queue::with_capacity(room),
+            requests: Queue::with_capacity(room),
+            files: Queue::with_capacity(room),
             file_driver: None,
             file_keep: None,
-            above: Queue::with_capacity(ROOM),
-            completions: Queue::with_capacity(ROOM),
-            submissions: Queue::with_capacity(ROOM),
+            opened_private: None,
+            stored_private: None,
+            above: Queue::with_capacity(room),
+            completions: Queue::with_capacity(room),
+            submissions: Queue::with_capacity(room),
             address: None,
             story,
             facts: Vec::with_capacity(16),
@@ -347,6 +357,12 @@ impl Client {
         while let Some(event) = self.file_driver.as_mut().expect("file driver").take_event() {
             if event.owner() == skein_lib::Token::new(u64::MAX) {
                 continue;
+            }
+            if matches!(event, io::file::Event::Opened { .. }) {
+                self.opened_private = Some(env.now);
+            }
+            if matches!(event, io::file::Event::Stored { .. }) {
+                self.stored_private = Some(env.now);
             }
             if self.file_keep.as_ref().is_some_and(|(owner, _)| *owner == event.owner()) {
                 let (_, record) = self.file_keep.take().expect("matching keep");
@@ -733,60 +749,6 @@ impl Referee<Process> for Judge {
     fn passed(&self) -> bool {
         self.passed
     }
-}
-fn issuer(story: Story, large: bool) -> Process {
-    let registration = registration(story);
-    let profile = super::world::limits();
-    let mut issuer = peer::Peer::new(
-        (Ipv4Addr::LOCALHOST, 31000).into(),
-        Transport::Plaintext,
-        skein_fake_peers::Limits {
-            io: profile.io,
-            connections: 2,
-            queue: ROOM,
-            plaintext: 32_768,
-            ciphertext: 32_768,
-            observations: 16,
-            observation_bytes: 4096,
-        },
-        fake::Config {
-            authorization_url: registration.authorization_url,
-            token_endpoint: registration.token_endpoint,
-            client_id: registration.client_id,
-            client_secret: registration.client_secret,
-            redirect_uri: registration.redirect_uri,
-            refresh_token: if large { vec![b's'; 256].into_boxed_slice() } else { bytes::copy_of(b"seed") },
-        },
-        fake::Limits {
-            document: profile.client.document,
-            uri_bytes: 256,
-            request_bytes: 1024,
-            codes: 1,
-            rotations: 2,
-            plans: 2,
-        },
-        profile.server,
-    )
-    .expect("issuer");
-    for (access, refresh) in [(b'a', b"r1".as_slice()), (b'b', b"r2".as_slice())] {
-        issuer
-            .queue(fake::Plan {
-                status: 200,
-                body: fake::Body::Token(oauth::TokenResponse {
-                    access_token: vec![access; if large { 256 } else { 16 }].into_boxed_slice(),
-                    refresh_token: Some(if large {
-                        vec![if access == b'a' { b'r' } else { b't' }; 256].into_boxed_slice()
-                    } else {
-                        bytes::copy_of(refresh)
-                    }),
-                    expires_in: 30,
-                }),
-                delay: Duration::from_millis(5),
-                retry_after: Duration::ZERO,
-            })
-            .expect("plan");
-    }
-    Process::Issuer(Box::new(issuer))
 }
 /// Runs sign-in with the actual component and independent socket processes.
 #[must_use]
