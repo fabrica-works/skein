@@ -88,3 +88,42 @@ fn an_encoding_that_does_not_fit_writes_nothing() {
     assert_eq!(writer.written(), 0);
     assert_eq!(base64::encoded_len(Alphabet::Standard, u32::MAX), None);
 }
+
+#[test]
+fn each_byte_is_taken_only_by_its_alphabet_or_refused_as_padding() {
+    const ALPHABETS: [(Alphabet, &[u8]); 2] = [
+        (Alphabet::Standard, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"),
+        (Alphabet::Url, b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"),
+    ];
+    for (alphabet, symbols) in ALPHABETS {
+        for byte in 0_u8..=255 {
+            let (label, expected) = if byte == b'=' {
+                ("padding", Err(Error::Padding { at: 0 }))
+            } else if symbols.contains(&byte) {
+                ("alphabet symbol", Ok(()))
+            } else {
+                ("outside alphabet", Err(Error::Symbol { at: 0 }))
+            };
+            let mut decoder = Decoder::new(alphabet, 1);
+            assert_eq!(decoder.push(&[byte]), expected, "{alphabet:?}: {label}, byte {byte}");
+        }
+    }
+}
+
+#[test]
+fn a_partway_refusal_keeps_the_first_error_and_no_bytes_from_the_piece() {
+    let cases: [(&str, &[u8], u32, Error); 4] = [
+        ("symbol", b"Zg!", 6, Error::Symbol { at: 6 }),
+        ("padding", b"Zg=A", 6, Error::Padding { at: 7 }),
+        ("trailing bits", b"Zh==", 6, Error::Bits),
+        ("maximum", b"Zm9v", 4, Error::TooLong { max: 4 }),
+    ];
+    for (label, piece, max, error) in cases {
+        let mut decoder = Decoder::new(Alphabet::Standard, max);
+        decoder.push(b"Zm9v").expect("prefix fits");
+        assert_eq!(decoder.push(piece), Err(error), "{label}: partway refusal");
+        assert_eq!(decoder.len(), 3, "{label}: only prefix bytes retained");
+        assert_eq!(decoder.push(b"!"), Err(error), "{label}: first error retained");
+        assert_eq!(decoder.finish(), Err(error), "{label}: finish remains refused");
+    }
+}

@@ -79,6 +79,30 @@ pub fn encode(alphabet: Alphabet, bytes: &[u8], out: &mut Writer) -> Result<(), 
     Ok(())
 }
 
+// A value of 64 marks a byte outside the alphabet; padding is checked separately.
+const STANDARD_VALUES: [u8; 256] = [
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+    64, 64, 64, 64, 64, 64, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+    24, 25, 64, 64, 64, 64, 64, 64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+    47, 48, 49, 50, 51, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+];
+const URL_VALUES: [u8; 256] = [
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
+    64, 64, 64, 64, 64, 64, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+    24, 25, 64, 64, 64, 64, 63, 64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+    47, 48, 49, 50, 51, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+];
+
 #[derive(Clone, Copy, Debug)]
 struct State {
     alphabet: Alphabet,
@@ -117,19 +141,15 @@ impl State {
         if self.padding != 0 {
             return Err(Error::Padding { at });
         }
-        let table: &[u8] = match self.alphabet {
-            Alphabet::Standard => b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
-            Alphabet::Url => b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
+        let table = match self.alphabet {
+            Alphabet::Standard => &STANDARD_VALUES,
+            Alphabet::Url => &URL_VALUES,
         };
-        let mut value = None;
-        for (index, symbol) in table.iter().enumerate() {
-            if *symbol == byte {
-                value = Some(index);
-                break;
-            }
+        let value = *table.get(usize::from(byte)).expect("byte indexes a 256-entry table");
+        if value == 64 {
+            return Err(Error::Symbol { at });
         }
-        let value = value.ok_or(Error::Symbol { at })?;
-        self.carry = (self.carry << 6_u32) | u16::try_from(value).expect("six bit digit");
+        self.carry = (self.carry << 6_u32) | u16::from(value);
         self.bits = self.bits.checked_add(6).expect("at most twelve bits");
         if self.bits < 8 {
             return Ok(None);
@@ -204,18 +224,19 @@ impl Decoder {
         if let Some(error) = self.failed {
             return Err(error);
         }
-        let mut checked = self.state;
+        let start = self.state;
+        let room = self.max.checked_sub(start.len).expect("decoded length stays within maximum");
+        self.bytes.reserve(piece.len().min(usize::try_from(room).or(Err(Error::Length))?));
         for byte in piece {
-            if let Err(error) = checked.push(*byte, self.max) {
-                self.failed = Some(error);
-                return Err(error);
-            }
-        }
-        let added = checked.len.checked_sub(self.state.len).expect("decoded length only grows");
-        self.bytes.reserve_exact(usize::try_from(added).or(Err(Error::Length))?);
-        for byte in piece {
-            if let Some(byte) = self.state.push(*byte, self.max)? {
-                self.bytes.push(byte);
+            match self.state.push(*byte, self.max) {
+                Ok(Some(byte)) => self.bytes.push(byte),
+                Ok(None) => {}
+                Err(error) => {
+                    self.bytes.truncate(usize::try_from(start.len).expect("length of owned bytes"));
+                    self.state = start;
+                    self.failed = Some(error);
+                    return Err(error);
+                }
             }
         }
         Ok(())
