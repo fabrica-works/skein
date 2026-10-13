@@ -84,6 +84,8 @@ if [[ -n ${HEAVY_TASK:-} ]]; then
     exit 2
 fi
 export HEAVY_TASK=1
+# testing-strategy.md, section 8: queued tests start directly by default.
+export NEXTEST_DOUBLE_SPAWN=${NEXTEST_DOUBLE_SPAWN-0}
 
 # Lane settings come from here, never from the caller.
 unset CARGO_BUILD_JOBS NEXTEST_TEST_THREADS
