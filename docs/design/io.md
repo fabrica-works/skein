@@ -140,11 +140,11 @@ hands the kernel.
   a request only while io can hold a refusal (`Io::takes`), as it
   reserves room in the submissions.
 - **The startup check.** Whoever stacks a machine on a stream checks that
-  the machine's largest read demand is no more than
+  the machine's largest exact read (a fill or a scan) is no more than
   `Limits::largest_read` (the intake cap), and its largest room no more
   than `Limits::largest_room` (the output cap). A demand past either
   could never be met, and io asserts it, as lib's intake does (lib.md,
-  7).
+  7). A read of what has arrived is met whatever its maximum.
 
 ## 3. Sockets and pipes
 
@@ -360,11 +360,12 @@ it, and by `resume` after a request in the down pass
 
 io keeps the contract of a stream (lib.md, 7) as the side below:
 
-- **A demand is answered at most once:** by `Bytes`, exactly what its
-  read asks for, or by `Room`, whichever io can give first; either answer
-  ends it, and nothing is outstanding until the side above states its
-  next. The side above states its next demand only after an answer, never
-  in place of one outstanding, which io asserts.
+- **A demand is answered at most once:** by `Bytes`, what its read asks
+  for (lib.md, 7: exactly, or for a read of what has arrived, what the
+  intake holds up to its maximum), or by `Room`, whichever io can give
+  first; either answer ends it, and nothing is outstanding until the side
+  above states its next. The side above states its next demand only after
+  an answer, never in place of one outstanding, which io asserts.
 - **`Read::Nothing` with no room withdraws** the outstanding demand, and
   only when the side above will read no more: it is closing, or its read
   crossed `End`. An answer
@@ -378,12 +379,18 @@ io keeps the contract of a stream (lib.md, 7) as the side below:
   withdraws it. Room may still be granted after `End`, as the stream can
   still send to a peer that only half-closed. A read larger than what is
   left before the end is never met; a side above that must see every
-  byte reads by its framing.
+  byte reads by its framing, or reads what has arrived.
 - **`Failed` may come at any time,** a demand outstanding or not, and
   nothing follows it but `Closed`. After `End` it says only that the
   stream can no longer send: what was read stands.
 - **A scan that meets no delimiter within its maximum delivers exactly
   the maximum,** and the side above decides what that means.
+- **A read of what has arrived is met by the first delivered that finds
+  a byte in the intake:** in the up pass after the down pass that stated
+  it, if the intake holds one, or else in the pass its next receive
+  lands. A receive asks for the room the intake has (at most
+  `Limits::receive`), so a stream read so costs one delivery per receive,
+  not one per byte. Pipes meet it as sockets do (section 3).
 - **Room grants one more `Send`** of up to that many bytes, and the
   output counts a `Send` in flight until all of it is sent. A `Send` past
   the output cap or `Limits::sends`, or after `Finish`, is the layer

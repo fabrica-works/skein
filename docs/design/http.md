@@ -1,6 +1,6 @@
 # HTTP
 
-Provisional, 2026-10-04; revised 2026-10-10. The design of
+Provisional, 2026-10-04; revised 2026-10-13. The design of
 `skein-http`: the protocol machines for HTTP/1.1, client and server, and
 for server-sent events, reader and writer. They are step machines of a
 connection's stack (programming-model.md, 4): each depends on lib only,
@@ -231,14 +231,15 @@ above has taken yet, in an intake of `Limits::read`, allocated with the
 client.
 
 - **It reads below only what a demand above still needs,** in the
-  demand's own shape, a fill or a scan to the same delimiter, and never
-  past the body's framing. A scan for a line passes through as a scan,
-  so a slow event stream is read as each event comes; nothing is read
-  ahead of a demand. A delivery that meets the demand whole, with nothing
-  held, goes up as it came; others are met from the intake, across the
-  chunks of a chunked body too. A delimiter split between two chunks is
-  completed a byte at a time, while what is held ends partway through
-  it, so that nothing past it is read either.
+  demand's own shape, a fill, a scan to the same delimiter, or a read of
+  what has arrived no larger than what is left of the chunk or of the
+  body's length, and never past the body's framing. A scan for a line
+  passes through as a scan, so a slow event stream is read as each event
+  comes; nothing is read ahead of a demand. A delivery that meets the
+  demand whole, with nothing held, goes up as it came; others are met
+  from the intake, across the chunks of a chunked body too. A delimiter
+  split between two chunks is completed a byte at a time, while what is
+  held ends partway through it, so that nothing past it is read either.
 - **The framing is read only when a demand needs what lies past it:** a
   chunk's size line (a scan to LF of at most `Limits::head`, then
   hexadecimal digits, then nothing or an extension, which is ignored),
@@ -407,8 +408,9 @@ pub enum Error { LineTooLong, EventTooLong, FieldTooLong, Stream(Fault) }
   not yet answered and an open event's data without a word, and answers
   `Closed`.
 - **`sse::Data`,** a side below over one box, remains for data already
-  whole, such as a recorded event: each demand answered at once by
-  exactly what it reads, or by `End` when what is left cannot meet it, as
+  whole, such as a recorded event: each demand answered at once by what
+  it reads (exactly, or all that is left up to the maximum of a read of
+  what has arrived), or by `End` when what is left cannot meet it, as
   lib's intake would.
 - **What it waits for**, `waiting()`: `Next`, `Bytes`, `Above` (an open
   event's data waits for a demand), `Close`, `Nothing`. Every line is
@@ -892,7 +894,8 @@ pub struct Limits {
   neighbours:
   - **The client's** runs one connection for one exchange after another.
     Below, the server's stream: its bytes arrive in pieces cut at random,
-    late, into an intake under its cap, and meet each read exactly; room
+    late, into an intake under its cap, and meet each read as lib's
+    intake does (lib.md, 7); room
     is granted late, one `Send` a grant, while a response may wait; now
     and then the server is patient, and answers each exchange only once
     it has the whole request, so that a client that waited for the
@@ -901,7 +904,8 @@ pub struct Limits {
     way, and fails, before its end or after it; after a close it may
     still answer what was on its way. Above, a user makes the calls,
     uploads each body in pieces within the room granted, reads with
-    fills, line scans and scans to LF, CRLF and a quote of every size,
+    fills, line scans, scans to LF, CRLF and a quote, and reads of what
+    has arrived, of every size,
     slowly, withdraws a demand and discards, discards the rest now and
     then, sends a withdrawal or a discard that crosses its answer, the body's
     end among them, stops for a while, and closes after the last exchange
@@ -933,8 +937,8 @@ pub struct Limits {
     as the end.
   - **The server's** runs one connection for one request after another.
     Below, the client's stream: its bytes arrive in pieces cut at random,
-    late, and meet each read exactly; room is granted late and each
-    `Send` held to it as io holds it, one a grant, made before room is
+    late, and meet each read as lib's intake does; room is granted late
+    and each `Send` held to it as io holds it, one a grant, made before room is
     demanded again, and a read past the end outstanding until withdrawn,
     as TLS holds it; the client pipelines
     its requests, or is patient and sends each once the last exchange is

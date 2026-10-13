@@ -1,6 +1,6 @@
 # TLS
 
-Provisional, 2026-10-04, revised 2026-10-12. The design of
+Provisional, 2026-10-04, revised 2026-10-13. The design of
 `skein-tls`: a TLS stream machine over rustls, ciphertext below and
 plaintext above. It is the one exception of programming-model.md,
 section 3: the only step code that depends on a crate from outside skein
@@ -75,19 +75,20 @@ pub enum Event {
   demanded before `Ready`: its demands wait for the handshake. A
   connection that holds a call while it handshakes (temper's llm.md, 8)
   makes the call on `Ready`.
-- **The plaintext stream** keeps lib.md, 7, and holds the side above to
-  it as io does: each demand answered at most once, exactly, from the
-  client's intake; `End` once the server's `close_notify` was read and
-  nothing held meets a demand; `Room` once room for the records of what
-  the side above demanded came below. A `Room` grants one `Send`, as io's
-  does (io.md, 3.3), and a demand of room comes only once the last grant
-  was sent within, by a `Send`, empty or not, or given up by `Finish`. A
-  read that crosses `End` is never met, and its demand stays outstanding,
-  as io's does: until `Room` answers it, if it asked room, or until the
-  side above withdraws it. A side above that writes on after the end
-  waits for that `Room`, or withdraws the demand and then demands room
-  alone; room that came below for the demand withdrawn is handed on to the
-  next or asked for again (3.2).
+- **The plaintext stream** keeps lib.md, 7, and holds the side above to it
+  as io does: each demand answered at most once, from the client's intake,
+  as lib's intake meets it (exactly, or for a read of what has arrived,
+  what the intake holds up to its maximum); `End` once the server's
+  `close_notify` was read and nothing held meets a demand; `Room` once
+  room for the records of what the side above demanded came below. A
+  `Room` grants one `Send`, as io's does (io.md, 3.3), and a demand of
+  room comes only once the last grant was sent within, by a `Send`, empty
+  or not, or given up by `Finish`. A read that crosses `End` is never met,
+  and its demand stays outstanding, as io's does: until `Room` answers it,
+  if it asked room, or until the side above withdraws it. A side above
+  that writes on after the end waits for that `Room`, or withdraws the
+  demand and then demands room alone; room that came below for the demand
+  withdrawn is handed on to the next or asked for again (3.2).
 - **`Finish`** sends `close_notify`, then finishes the stream below. It
   comes with no demand outstanding, unless a read that crossed `End`: a
   read the client is still reading below for would hold `close_notify`

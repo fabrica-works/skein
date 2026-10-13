@@ -186,6 +186,11 @@ For each record and enumeration:
     and the sizes of the generated types, which only the compiler knows,
     a `boxed` variant's record counting its own size.
 
+  Each is `None` for limits past a ceiling. It checks the family's
+  limits once, where it is asked, then reaches the types its fields name
+  without checking them again: a worst case costs the types it reaches,
+  not their number times the family's limits.
+
 ## 5. Versions
 
 - **Any change a reader would notice is a new version:** a new schema,
@@ -218,9 +223,9 @@ For each record and enumeration:
   with every other limit at its ceiling: decoding checks the limit it is
   given, so a small one checks the same code as the ceiling, which the
   worst case (section 4) and the memory test check.
-- **Table tests:** each generated test checks a group of cases, golden
-  values or bounds, about 64, and names every case that fails. A test
-  process costs more to start than one case costs to check
+- **Table tests:** each generated test checks a group of cases, up to
+  1,024 golden values or 64 bounds, and names every case that fails. A
+  test process costs more to start than one case costs to check
   (testing-strategy.md, section 8).
 - **Drift:** a test runs the generator on the schema and compares the
   result with the committed code and golden bytes. On a difference it
@@ -230,7 +235,8 @@ For each record and enumeration:
   what it needs of a type or a field (its declaration by name, whether a
   type holds bounds, a field's path) is found once per generation. The
   limits are checked against the ceilings once per family, where their
-  owner makes them, never in each type or each call (section 4).
+  owner makes them, and once by each worst case asked of them; never in
+  each type, nor in a constructor or a decoder (section 4).
 - **Generated files** say so in their first line. They are left out of
   formatting, and pass the workspace's lints with no allowances: the
   generator writes what the lints accept (functions short enough, no

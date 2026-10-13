@@ -108,9 +108,9 @@ translates.
 A machine world runs one protocol machine from a seed, and plays both of
 its neighbours:
 
-- **The side below:** a stream that delivers exactly what was demanded,
-  from peer bytes cut at random; that grants room late; that ends early,
-  or fails.
+- **The side below:** a stream that delivers what was demanded (exactly,
+  or what has arrived of it), from peer bytes cut at random; that grants
+  room late; that ends early, or fails.
 - **The side above:** a user that demands slowly, stops demanding,
   requests at awkward moments, and closes in every state.
 
@@ -467,7 +467,11 @@ Raising a budget is an explicit decision, not a fix.
 
 **A test is a process.** nextest runs each test in a process of its own,
 which costs some milliseconds before the test checks anything, more for
-a large binary. So cases of one behaviour that each cost less than that
+a large binary. The gate, and every command the machine's queue runs,
+starts nextest without its double spawn (`NEXTEST_DOUBLE_SPAWN=0`, set by
+each repository's `scripts/check.sh` and by `heavy`): nextest otherwise
+starts each test through a process of its own first, which doubles that
+cost and guards only a terminal's job control, which a gate never uses. So cases of one behaviour that each cost less than that
 (a golden value per type, a refusal per limit, a check per source file)
 are rows of one table test, which checks every row and names each that
 fails; a group of rows takes a test of its own only to share the work
@@ -476,12 +480,11 @@ built once per test, not per case; a lookup by key, not a scan; the
 library's own searches, which run optimized in unoptimized builds,
 rather than a loop over bytes.
 
-**What a test costs the suite.** A test's process costs about 5 ms on the
+**What a test costs the suite.** A test's process costs about 3 ms on the
 development machine before it checks anything, and the gate runs eight
 at once, each two to three times slower than alone. So each test adds
-about 12 ms to the suite's total, and about 1.5 ms to its wall time,
-before its own work; a fixture built once per process is built once per
-test. A fixture many tests share is cheap to build, or a constant, and
+about 8 ms to the suite's total, and about 1 ms to its wall time, before
+its own work; a fixture built once per process is built once per test. A fixture many tests share is cheap to build, or a constant, and
 cases of one behaviour stay rows of one test.
 
 **A tool is not the code under test.** What a test runs to check a

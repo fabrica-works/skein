@@ -1,6 +1,6 @@
 # Programming model (Rust)
 
-Provisional, 2026-10-03, revised 2026-10-10. How code is written in skein
+Provisional, 2026-10-03, revised 2026-10-13. How code is written in skein
 and in every service built on it. Read this first, before writing or
 reviewing any of it.
 
@@ -367,11 +367,13 @@ is a socket, a pipe, TLS's plaintext or an HTTP body. The side below is io
 for a socket or a pipe, and the machine beneath in a stack.
 
 - **Reading is a demand, not a request.** Each state of the side above
-  says what it needs, "fill N bytes" or "scan to a delimiter, at most M
+  says what it needs, "fill N bytes", "scan to a delimiter, at most M
+  bytes" or, for bytes nothing frames, "what has arrived, at most M
   bytes", and how much output room. The side below delivers `Bytes` only
   when that demand can be met, and `Room` likewise; a state with no demand
-  receives neither. `Bytes` carries exactly the demanded bytes as an owned
-  `Box<[u8]>`, which the side above reads through a `lib::Reader`.
+  receives neither. `Bytes` carries the demanded bytes (exactly N, the
+  scan, or one to M bytes of what has arrived) as an owned `Box<[u8]>`,
+  which the side above reads through a `lib::Reader`.
 - **Unparsed input belongs to the side below,** in its `lib::Intake`,
   under its cap: io for a socket, TLS for its plaintext. The side above
   never handles another side's receive buffers.

@@ -1,6 +1,6 @@
 # lib
 
-Provisional, 2026-10-03, revised 2026-10-12. The design of `skein-lib`:
+Provisional, 2026-10-03, revised 2026-10-13. The design of `skein-lib`:
 the building blocks every step crate shares, in skein and in every
 service built on it. The mechanics are those of programming-model.md;
 this document says what lib holds and what each part promises.
@@ -139,7 +139,13 @@ crates use it and keep no copy of their own.
 (programming-model.md, 4.3):
 
 ```rust
-pub enum Read { Nothing, Fill(u32), Scan { until: Delimiter, max: u32 }, Line { max: u32 } }
+pub enum Read {
+    Nothing,
+    Fill(u32),
+    Scan { until: Delimiter, max: u32 },
+    Line { max: u32 },
+    Arrived { max: u32 },               // what has arrived: one byte to max
+}
 
 pub enum Down {                         // to the side below
     Demand { read: Read, room: u32 },   // what this state needs, and the output room it wants
@@ -148,7 +154,7 @@ pub enum Down {                         // to the side below
 }
 
 pub enum Up {                           // from the side below
-    Bytes(Box<[u8]>),                   // exactly the demand
+    Bytes(Box<[u8]>),                   // the demand: exactly, or what has arrived of it
     Room,                               // the room asked for is free
     End,                                // the other side will send nothing more
     Failed(Fault),                      // the stream is broken: no more Bytes or Room
@@ -162,8 +168,9 @@ the peer reset it, the side below could not make sense of the peer's data
 **The contract of a stream.** Every side below meets it, io's and every
 machine's:
 
-- **A demand is answered at most once:** by `Bytes`, exactly what its
-  read asks for, or by `Room`, whichever the side below can give first;
+- **A demand is answered at most once:** by `Bytes`, what its read asks
+  for (exactly, but for a read of what has arrived, below), or by `Room`,
+  whichever the side below can give first;
   either answer ends it, and nothing is outstanding until the side above
   states its next. The side above states its next demand only after an
   answer, never in place of one outstanding. A state that wants nothing
@@ -184,7 +191,7 @@ machine's:
   still send to a peer that only half-closed. A read larger than what is
   left before the end is never met; a side above that must see every byte
   reads by its framing (a scan, or fills no larger than its framing says
-  remain).
+  remain), or reads what has arrived, which is met while a byte is left.
 - **`Room` grants one `Send`** of at most the room asked for; the side
   above sends within it (an empty `Send` gives it up), or finishes, before
   it demands room again. **`Finish` comes with no read outstanding,**
@@ -199,6 +206,32 @@ machine's:
   the maximum.** What that means is the side above's: a framing error for
   a line or a head, one piece of a longer text for a string scanned to its
   quote (json.md, 3.2).
+- **A read of what has arrived (`Arrived`) is met as soon as the side
+  below holds a byte,** by all it holds then, up to the read's maximum: at
+  least one byte, at most the maximum. It is the read of bytes nothing
+  frames: a child's output, a body read to its end. It waits for no more
+  than one byte, so a reader of such a stream pays one delivery for what
+  arrived together, not one per byte.
+  - **What a delivery holds is how the bytes arrived:** the receives,
+    records or chunks they came in. A side above that reads what has
+    arrived makes the same of the bytes whatever the cuts; only their
+    order is the stream's. In a simulated world, how bytes arrive is the
+    writers' writes and the cuts the seed draws (simulator.md, 1 and 4),
+    so a world stays one function of its seed.
+  - **Its maximum is at least one byte** (a read of none is `Nothing`). A
+    maximum past what the side below can hold is met with what it holds:
+    the side below never waits to fill it. The side above's memory counts
+    a delivery of its maximum.
+  - **A side below that reads another stream to meet it** reads below no
+    more than it needs: a read of what has arrived, where its framing
+    allows one (an HTTP body within what is left of its chunk or its
+    length, http.md, 3.3), or by its framing (TLS, a record at a time,
+    tls.md, 3.2).
+  - **Exact reads stay where the bytes are framed,** or where the side
+    above must not take more than it can act on in one step: a header, a
+    length-prefixed frame, a document read up to its end and never past
+    (json.md, 3.2), a terminal's keys when each may be an event of its
+    own.
 - **A line scan (`Line`) ends at the first line end, a CR or an LF,
   whichever comes first,** for text whose lines end with LF, CRLF or CR
   alone, as an event stream's do (http.md, 4.1): a CRLF is two ends, the
@@ -214,12 +247,15 @@ it is made. It is allocated once, at the cap, and never grows.
 - It appends what arrives while it has room, and reports the room left,
   so receiving stops at the cap.
 - It meets a fill, a scan or a line scan as soon as it can, each delivery
-  a box of exactly the demanded length. A scan that reaches its maximum
-  with no delimiter delivers exactly the maximum: the side above sees a
-  scan that does not end with the delimiter, and decides what it means.
+  a box of exactly the demanded length, and a read of what has arrived as
+  soon as it holds a byte, with all it holds up to the read's maximum. A
+  scan that reaches its maximum with no delimiter delivers exactly the
+  maximum: the side above sees a scan that does not end with the
+  delimiter, and decides what it means.
 - A fill larger than the cap, or a scan whose maximum is shorter than the
   delimiter (one byte, for a line scan) or longer than the cap, could
-  never be met: the caller's bug, asserted.
+  never be met: the caller's bug, asserted. So is a read of what has
+  arrived with a maximum of zero; any other maximum can be met.
 - A scan remembers how far it has searched, so a scan for the same
   delimiter, or a line scan after a line scan, does not search the same
   bytes again.
