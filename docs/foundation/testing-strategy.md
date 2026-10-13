@@ -1,6 +1,6 @@
 # Testing strategy
 
-Provisional, 2026-10-03, revised 2026-10-12. How code in skein and in
+Provisional, 2026-10-03, revised 2026-10-13. How code in skein and in
 every service built on it is tested. Read it with programming-model.md,
 whose terms it uses, before writing or reviewing tests.
 
@@ -471,6 +471,19 @@ across threads. A test is cheaper by its algorithm first: a fixture
 built once per test, not per case; a lookup by key, not a scan; the
 library's own searches, which run optimized in unoptimized builds,
 rather than a loop over bytes.
+
+**What a test costs the suite.** A test's process costs about 5 ms on the
+development machine before it checks anything, and the gate runs eight
+at once, each two to three times slower than alone. So each test adds
+about 12 ms to the suite's total, and about 1.5 ms to its wall time,
+before its own work; a fixture built once per process is built once per
+test. A fixture many tests share is cheap to build, or a constant, and
+cases of one behaviour stay rows of one test.
+
+**A tool is not the code under test.** What a test runs to check a
+repository rather than the code it ships (a check of the sources' names,
+a generator that a drift test runs) may be built optimized: that hides
+nothing the tests check, and it costs what it does, not ten times that.
 
 A fuzzy test lives beside its world and uses that world's settings,
 random ones included. When a fuzzy seed fails, the bug is fixed and the
