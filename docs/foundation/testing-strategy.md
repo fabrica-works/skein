@@ -345,7 +345,11 @@ The harness checks, in every world and in the simulator:
 - **Invariants once it settles:** no live entities (every slab empty),
   nothing in flight, every record handed back, every child gone and its
   pipes read to the end, every answer taken once; and ownership is a
-  tree, with no orphans.
+  tree, with no orphans. A child its owner ended, which ended by a
+  signal, may leave output unread: closing a child kills its group, and
+  an abort closes a pipe at once, leaving what it had not read (io.md,
+  3 and 6). A child that exited with its own status has its output read
+  to the end.
 - **The teardown invariant:** a world that ends by itself ends with no
   deadline firing after the last word other than io's own: its close and
   retry deadlines, and the stall deadlines owners state for files (io.md,
