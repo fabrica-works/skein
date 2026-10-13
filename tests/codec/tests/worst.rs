@@ -31,4 +31,18 @@ mod tests {
         assert_eq!(scalars::worst_case_bytes(&scalars::CEILINGS), Some(27));
         assert_eq!(scalars::worst_case_heap(&scalars::CEILINGS), Some(0));
     }
+
+    #[test]
+    fn a_worst_case_past_a_ceiling_is_none() {
+        let mut limits = v1::CEILINGS;
+        limits.report_fields = 3;
+        assert_eq!(v1::Report::worst_case_bytes(&limits), None);
+        assert_eq!(v1::Report::worst_case_heap(&limits), None);
+        assert_eq!(v1::Choice::worst_case_bytes(&limits), None);
+        assert_eq!(v1::Choice::worst_case_heap(&limits), None);
+        assert_eq!(v1::Report::worst_case_bytes(&v1::CEILINGS), Some(63));
+        assert_eq!(v1::Report::worst_case_heap(&v1::CEILINGS), Some(88));
+        assert_eq!(v1::Choice::worst_case_bytes(&v1::CEILINGS), Some(64));
+        assert_eq!(v1::Choice::worst_case_heap(&v1::CEILINGS), Some(88));
+    }
 }

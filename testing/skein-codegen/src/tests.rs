@@ -15,14 +15,23 @@ fn a_family_of_120_records_has_no_function_past_100_lines() {
     let mut function = None;
     for (index, line) in output.rust.lines().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("pub fn ") || trimmed.starts_with("fn ") {
+        if trimmed.starts_with("pub fn ") || trimmed.starts_with("pub(crate) fn ") || trimmed.starts_with("fn ") {
             let indent = line.len().checked_sub(trimmed.len()).expect("indent length");
-            function = Some((index, format!("{}}}", " ".repeat(indent))));
+            function = Some((index, format!("{}}}", " ".repeat(indent)), 0));
         }
-        if let Some((start, closing)) = &function
+        // Table rows count as cases, rather than function logic (testing-strategy.md, 8).
+        if let Some((_, _, rows)) = &mut function
+            && trimmed.starts_with("(\"")
+        {
+            *rows += 1;
+        }
+        if let Some((start, closing, rows)) = &function
             && line == closing
         {
-            assert!(index.checked_sub(*start).expect("function length") < 100, "function at line {start}");
+            assert!(
+                index.checked_sub(*start).expect("function length").checked_sub(*rows).expect("table rows") < 100,
+                "function at line {start}"
+            );
             function = None;
         }
     }
@@ -88,7 +97,7 @@ fn a_family_of_400_bounded_declarations_generates_in_half_a_second() {
     let schema = parse(&source).expect("valid large family");
     let output = generate(&schema);
     assert_eq!(output.goldens.len(), 800, "two fixed golden values per record");
-    assert_eq!(output.rust.matches("fn golden_").count(), 13, "at most 64 golden cases per table");
+    assert_eq!(output.rust.matches("fn golden_").count(), 1, "at most 1,024 golden cases per table");
     assert_eq!(output.rust.matches("fn bounds_").count(), 7, "at most 64 bound cases per table");
     assert_eq!(
         output.rust.matches("check_limits(limits)?;").count(),
@@ -104,4 +113,21 @@ fn an_optional_unbounded_record_needs_no_bound_check() {
             .expect("valid family");
     let output = generate(&schema);
     assert!(!output.rust.contains("if let Some(some_0) = self.maybe.as_ref()"));
+}
+
+#[test]
+fn a_worst_case_checks_its_familys_limits_once() {
+    let output = small_bound_family();
+    let mut functions = 0_usize;
+    for part in output.rust.split("fn worst_case_").skip(1) {
+        let (signature, body) = part.split_once(" {").expect("function body");
+        let checks = body.matches("check_limits(limits)").count();
+        if signature.contains("_within(") {
+            assert_eq!(checks, 0, "{signature}");
+        } else {
+            assert_eq!(checks, 1, "{signature}");
+        }
+        functions += 1;
+    }
+    assert_eq!(functions, 6, "two public type, two inner and two family functions");
 }

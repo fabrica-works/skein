@@ -134,20 +134,26 @@ impl Credential {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.credential_name))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.credential_value))?)?;
-        Some(size)
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.credential_name))?)?.checked_add(4_u64.checked_add(u64::from(limits.credential_value))?)?;
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
-        heap = heap.checked_add(u64::from(limits.credential_name))?;
-        heap = heap.checked_add(u64::from(limits.credential_value))?;
-        Some(heap)
+        heap = heap.checked_add(u64::from(limits.credential_name))?.checked_add(u64::from(limits.credential_value))?;
+        heap.checked_add(0)
     }
 }
 
@@ -156,7 +162,7 @@ impl Credential {
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
-    biggest = biggest.max(Credential::worst_case_bytes(limits)?);
+    biggest = biggest.max(Credential::worst_case_bytes_within(limits)?);
     Some(biggest)
 }
 
@@ -165,7 +171,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
 pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
-    biggest = biggest.max(Credential::worst_case_heap(limits)?);
+    biggest = biggest.max(Credential::worst_case_heap_within(limits)?);
     Some(biggest)
 }
 

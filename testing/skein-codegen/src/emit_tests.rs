@@ -258,7 +258,7 @@ fn bound_cases(record: &Record, schema: &Context<'_>, cases: &mut Vec<String>) {
 }
 
 fn tables(name: &str, cases: &[String], out: &mut String) {
-    for (index, chunk) in cases.chunks(64).enumerate() {
+    for (index, chunk) in cases.chunks(if name == "golden" { 1_024 } else { 64 }).enumerate() {
         out.push_str(&format!(
             "    #[test]\n    fn {name}_{index}() {{\n        const CASES: [Case; {}] = [\n",
             chunk.len()

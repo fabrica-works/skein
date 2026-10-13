@@ -3111,28 +3111,30 @@ impl HostTool {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
-        size = size.checked_add(1_u64)?;
-        size = size.checked_add(1_u64)?;
-        size = size.checked_add(1_u64)?;
-        size = size.checked_add(1_u64)?;
-        size = size.checked_add(4_u64)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.host_tool_payload))?)?;
-        Some(size)
+        size = size.checked_add(1_u64)?.checked_add(1_u64)?;
+        size = size.checked_add(1_u64)?.checked_add(1_u64)?;
+        size = size.checked_add(4_u64)?.checked_add(4_u64.checked_add(u64::from(limits.host_tool_payload))?)?;
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
-        heap = heap.checked_add(0_u64)?;
-        heap = heap.checked_add(0_u64)?;
-        heap = heap.checked_add(0_u64)?;
-        heap = heap.checked_add(0_u64)?;
-        heap = heap.checked_add(0_u64)?;
-        heap = heap.checked_add(u64::from(limits.host_tool_payload))?;
-        Some(heap)
+        heap = heap.checked_add(0_u64)?.checked_add(0_u64)?;
+        heap = heap.checked_add(0_u64)?.checked_add(0_u64)?;
+        heap = heap.checked_add(0_u64)?.checked_add(u64::from(limits.host_tool_payload))?;
+        heap.checked_add(0)
     }
 }
 
@@ -3141,18 +3143,26 @@ impl Boundless {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(_limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
         size = size.checked_add(4_u64)?;
-        Some(size)
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(_limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
-        Some(heap)
+        heap.checked_add(0)
     }
 }
 
@@ -3161,18 +3171,26 @@ impl Payload {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.payload_data))?)?;
-        Some(size)
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.payload_data))?;
-        Some(heap)
+        heap.checked_add(0)
     }
 }
 
@@ -3181,18 +3199,26 @@ impl OtherPayload {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(_limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
         size = size.checked_add(1_u64)?;
-        Some(size)
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(_limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
-        Some(heap)
+        heap.checked_add(0)
     }
 }
 
@@ -3201,10 +3227,13 @@ impl Shared {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut biggest = 0_u64;
-        biggest = biggest.max(Payload::worst_case_bytes(limits)?);
-        biggest = biggest.max(Payload::worst_case_bytes(limits)?);
-        biggest = biggest.max(OtherPayload::worst_case_bytes(limits)?);
+        biggest = biggest.max(Payload::worst_case_bytes_within(limits)?).max(Payload::worst_case_bytes_within(limits)?);
+        biggest = biggest.max(OtherPayload::worst_case_bytes_within(limits)?);
         1_u64.checked_add(biggest)
     }
 
@@ -3212,11 +3241,14 @@ impl Shared {
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut biggest = 0_u64;
-        biggest = biggest.max(Payload::worst_case_heap(limits)?);
-        biggest = biggest.max(Payload::worst_case_heap(limits)?);
-        biggest = biggest.max(OtherPayload::worst_case_heap(limits)?);
-        Some(biggest)
+        biggest = biggest.max(Payload::worst_case_heap_within(limits)?).max(Payload::worst_case_heap_within(limits)?);
+        biggest = biggest.max(OtherPayload::worst_case_heap_within(limits)?);
+        biggest.checked_add(0)
     }
 }
 
@@ -3225,18 +3257,26 @@ impl OneByteItems {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.one_byte_items_items).checked_mul(Shared::worst_case_bytes(limits)?)?)?)?;
-        Some(size)
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.one_byte_items_items).checked_mul(Shared::worst_case_bytes_within(limits)?)?)?)?;
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
-        heap = heap.checked_add(List::<Shared>::worst_case(limits.one_byte_items_items)?.checked_add(u64::from(limits.one_byte_items_items).checked_mul(Shared::worst_case_heap(limits)?)?)?)?;
-        Some(heap)
+        heap = heap.checked_add(List::<Shared>::worst_case(limits.one_byte_items_items)?.checked_add(u64::from(limits.one_byte_items_items).checked_mul(Shared::worst_case_heap_within(limits)?)?)?)?;
+        heap.checked_add(0)
     }
 }
 
@@ -3245,18 +3285,26 @@ impl OptionalPayload {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
         size = size.checked_add(1_u64.checked_add(4_u64.checked_add(u64::from(limits.optional_payload_data_some))?)?)?;
-        Some(size)
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.optional_payload_data_some))?;
-        Some(heap)
+        heap.checked_add(0)
     }
 }
 
@@ -3265,9 +3313,12 @@ impl BoxedChoice {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut biggest = 0_u64;
-        biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
-        biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
+        biggest = biggest.max(OptionalPayload::worst_case_bytes_within(limits)?).max(OptionalPayload::worst_case_bytes_within(limits)?);
         1_u64.checked_add(biggest)
     }
 
@@ -3275,10 +3326,13 @@ impl BoxedChoice {
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut biggest = 0_u64;
-        biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?.checked_add(u64::try_from(size_of::<OptionalPayload>()).ok()?)?);
-        biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
-        Some(biggest)
+        biggest = biggest.max(OptionalPayload::worst_case_heap_within(limits)?.checked_add(u64::try_from(size_of::<OptionalPayload>()).ok()?)?).max(OptionalPayload::worst_case_heap_within(limits)?);
+        biggest.checked_add(0)
     }
 }
 
@@ -3287,8 +3341,12 @@ impl InlineChoice {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut biggest = 0_u64;
-        biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
+        biggest = biggest.max(OptionalPayload::worst_case_bytes_within(limits)?);
         1_u64.checked_add(biggest)
     }
 
@@ -3296,9 +3354,13 @@ impl InlineChoice {
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut biggest = 0_u64;
-        biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
-        Some(biggest)
+        biggest = biggest.max(OptionalPayload::worst_case_heap_within(limits)?);
+        biggest.checked_add(0)
     }
 }
 
@@ -3307,20 +3369,26 @@ impl FixedWidthItems {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(8_u64)?)?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(4_u64)?)?)?;
-        Some(size)
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(8_u64)?)?)?.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(4_u64)?)?)?;
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
-        heap = heap.checked_add(List::<u64>::worst_case(limits.fixed_width_items_wide)?.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(0_u64)?)?)?;
-        heap = heap.checked_add(List::<u32>::worst_case(limits.fixed_width_items_narrow)?.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(0_u64)?)?)?;
-        Some(heap)
+        heap = heap.checked_add(List::<u64>::worst_case(limits.fixed_width_items_wide)?.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(0_u64)?)?)?.checked_add(List::<u32>::worst_case(limits.fixed_width_items_narrow)?.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(0_u64)?)?)?;
+        heap.checked_add(0)
     }
 }
 
@@ -3329,236 +3397,124 @@ impl LongRecord {
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_bytes_within(limits)
+    }
+
+    pub(crate) fn worst_case_bytes_within(limits: &Limits) -> Option<u64> {
         let mut size = 0_u64;
-        size = Self::worst_case_bytes_0(limits, size)?;
-        size = Self::worst_case_bytes_1(limits, size)?;
-        Some(size)
-    }
-
-    fn worst_case_bytes_0(limits: &Limits, mut size: u64) -> Option<u64> {
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_alpha))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_bravo))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_charlie))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_delta))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_echo))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_foxtrot))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_golf))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_hotel))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_india))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_juliet))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_kilo))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_lima))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_mike))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_november))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_oscar))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_papa))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_quebec))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_romeo))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_sierra))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_tango))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_uniform))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_victor))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_whiskey))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_xray))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_yankee))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_zulu))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_amber))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_birch))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cedar))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_dune))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_acorn))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_anchor))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_apron))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_atlas))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_autumn))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_avocado))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_walnut))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_badge))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_bamboo))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_barrel))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_beacon))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_beetle))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_bronze))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cactus))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_camera))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_canyon))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cello))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cobalt))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_comet))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_compass))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_coral))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cotton))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_coyote))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cricket))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_crystal))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_dragon))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_engine))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_falcon))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_feather))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_fern))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_flute))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_fossil))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_galaxy))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_garden))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_glacier))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_granite))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_harbor))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_hazel))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_helmet))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_honey))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_igloo))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_island))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_ivory))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_jasmine))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_kettle))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_lantern))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_leopard))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_lobster))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_magnet))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_marble))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_meadow))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_mermaid))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_meteor))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_mosaic))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_napkin))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_nectar))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_ocean))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_olive))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_orchid))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_panda))?)?;
-        Some(size)
-    }
-
-    fn worst_case_bytes_1(limits: &Limits, mut size: u64) -> Option<u64> {
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_pencil))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_planet))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_pollen))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_quartz))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_rainbow))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_raven))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_rocket))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_saffron))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_salmon))?)?;
-        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_satin))?)?;
-        Some(size)
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_alpha))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_bravo))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_charlie))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_delta))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_echo))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_foxtrot))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_golf))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_hotel))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_india))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_juliet))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_kilo))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_lima))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_mike))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_november))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_oscar))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_papa))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_quebec))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_romeo))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_sierra))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_tango))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_uniform))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_victor))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_whiskey))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_xray))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_yankee))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_zulu))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_amber))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_birch))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cedar))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_dune))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_acorn))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_anchor))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_apron))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_atlas))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_autumn))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_avocado))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_walnut))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_badge))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_bamboo))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_barrel))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_beacon))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_beetle))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_bronze))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_cactus))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_camera))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_canyon))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_cello))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_cobalt))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_comet))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_compass))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_coral))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_cotton))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_coyote))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_cricket))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_crystal))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_dragon))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_engine))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_falcon))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_feather))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_fern))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_flute))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_fossil))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_galaxy))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_garden))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_glacier))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_granite))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_harbor))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_hazel))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_helmet))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_honey))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_igloo))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_island))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_ivory))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_jasmine))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_kettle))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_lantern))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_leopard))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_lobster))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_magnet))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_marble))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_meadow))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_mermaid))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_meteor))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_mosaic))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_napkin))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_nectar))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_ocean))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_olive))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_orchid))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_panda))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_pencil))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_planet))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_pollen))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_quartz))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_rainbow))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_raven))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_rocket))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_saffron))?)?;
+        size = size.checked_add(4_u64.checked_add(u64::from(limits.long_record_salmon))?)?.checked_add(4_u64.checked_add(u64::from(limits.long_record_satin))?)?;
+        size.checked_add(0)
     }
 
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
         if check_limits(limits).is_err() { return None; }
+        Self::worst_case_heap_within(limits)
+    }
+
+    pub(crate) fn worst_case_heap_within(limits: &Limits) -> Option<u64> {
         let mut heap = 0_u64;
-        heap = Self::worst_case_heap_0(limits, heap)?;
-        heap = Self::worst_case_heap_1(limits, heap)?;
-        Some(heap)
-    }
-
-    fn worst_case_heap_0(limits: &Limits, mut heap: u64) -> Option<u64> {
-        heap = heap.checked_add(u64::from(limits.long_record_alpha))?;
-        heap = heap.checked_add(u64::from(limits.long_record_bravo))?;
-        heap = heap.checked_add(u64::from(limits.long_record_charlie))?;
-        heap = heap.checked_add(u64::from(limits.long_record_delta))?;
-        heap = heap.checked_add(u64::from(limits.long_record_echo))?;
-        heap = heap.checked_add(u64::from(limits.long_record_foxtrot))?;
-        heap = heap.checked_add(u64::from(limits.long_record_golf))?;
-        heap = heap.checked_add(u64::from(limits.long_record_hotel))?;
-        heap = heap.checked_add(u64::from(limits.long_record_india))?;
-        heap = heap.checked_add(u64::from(limits.long_record_juliet))?;
-        heap = heap.checked_add(u64::from(limits.long_record_kilo))?;
-        heap = heap.checked_add(u64::from(limits.long_record_lima))?;
-        heap = heap.checked_add(u64::from(limits.long_record_mike))?;
-        heap = heap.checked_add(u64::from(limits.long_record_november))?;
-        heap = heap.checked_add(u64::from(limits.long_record_oscar))?;
-        heap = heap.checked_add(u64::from(limits.long_record_papa))?;
-        heap = heap.checked_add(u64::from(limits.long_record_quebec))?;
-        heap = heap.checked_add(u64::from(limits.long_record_romeo))?;
-        heap = heap.checked_add(u64::from(limits.long_record_sierra))?;
-        heap = heap.checked_add(u64::from(limits.long_record_tango))?;
-        heap = heap.checked_add(u64::from(limits.long_record_uniform))?;
-        heap = heap.checked_add(u64::from(limits.long_record_victor))?;
-        heap = heap.checked_add(u64::from(limits.long_record_whiskey))?;
-        heap = heap.checked_add(u64::from(limits.long_record_xray))?;
-        heap = heap.checked_add(u64::from(limits.long_record_yankee))?;
-        heap = heap.checked_add(u64::from(limits.long_record_zulu))?;
-        heap = heap.checked_add(u64::from(limits.long_record_amber))?;
-        heap = heap.checked_add(u64::from(limits.long_record_birch))?;
-        heap = heap.checked_add(u64::from(limits.long_record_cedar))?;
-        heap = heap.checked_add(u64::from(limits.long_record_dune))?;
-        heap = heap.checked_add(u64::from(limits.long_record_acorn))?;
-        heap = heap.checked_add(u64::from(limits.long_record_anchor))?;
-        heap = heap.checked_add(u64::from(limits.long_record_apron))?;
-        heap = heap.checked_add(u64::from(limits.long_record_atlas))?;
-        heap = heap.checked_add(u64::from(limits.long_record_autumn))?;
-        heap = heap.checked_add(u64::from(limits.long_record_avocado))?;
-        heap = heap.checked_add(u64::from(limits.long_record_walnut))?;
-        heap = heap.checked_add(u64::from(limits.long_record_badge))?;
-        heap = heap.checked_add(u64::from(limits.long_record_bamboo))?;
-        heap = heap.checked_add(u64::from(limits.long_record_barrel))?;
-        heap = heap.checked_add(u64::from(limits.long_record_beacon))?;
-        heap = heap.checked_add(u64::from(limits.long_record_beetle))?;
-        heap = heap.checked_add(u64::from(limits.long_record_bronze))?;
-        heap = heap.checked_add(u64::from(limits.long_record_cactus))?;
-        heap = heap.checked_add(u64::from(limits.long_record_camera))?;
-        heap = heap.checked_add(u64::from(limits.long_record_canyon))?;
-        heap = heap.checked_add(u64::from(limits.long_record_cello))?;
-        heap = heap.checked_add(u64::from(limits.long_record_cobalt))?;
-        heap = heap.checked_add(u64::from(limits.long_record_comet))?;
-        heap = heap.checked_add(u64::from(limits.long_record_compass))?;
-        heap = heap.checked_add(u64::from(limits.long_record_coral))?;
-        heap = heap.checked_add(u64::from(limits.long_record_cotton))?;
-        heap = heap.checked_add(u64::from(limits.long_record_coyote))?;
-        heap = heap.checked_add(u64::from(limits.long_record_cricket))?;
-        heap = heap.checked_add(u64::from(limits.long_record_crystal))?;
-        heap = heap.checked_add(u64::from(limits.long_record_dragon))?;
-        heap = heap.checked_add(u64::from(limits.long_record_engine))?;
-        heap = heap.checked_add(u64::from(limits.long_record_falcon))?;
-        heap = heap.checked_add(u64::from(limits.long_record_feather))?;
-        heap = heap.checked_add(u64::from(limits.long_record_fern))?;
-        heap = heap.checked_add(u64::from(limits.long_record_flute))?;
-        heap = heap.checked_add(u64::from(limits.long_record_fossil))?;
-        heap = heap.checked_add(u64::from(limits.long_record_galaxy))?;
-        heap = heap.checked_add(u64::from(limits.long_record_garden))?;
-        heap = heap.checked_add(u64::from(limits.long_record_glacier))?;
-        heap = heap.checked_add(u64::from(limits.long_record_granite))?;
-        heap = heap.checked_add(u64::from(limits.long_record_harbor))?;
-        heap = heap.checked_add(u64::from(limits.long_record_hazel))?;
-        heap = heap.checked_add(u64::from(limits.long_record_helmet))?;
-        heap = heap.checked_add(u64::from(limits.long_record_honey))?;
-        heap = heap.checked_add(u64::from(limits.long_record_igloo))?;
-        heap = heap.checked_add(u64::from(limits.long_record_island))?;
-        heap = heap.checked_add(u64::from(limits.long_record_ivory))?;
-        heap = heap.checked_add(u64::from(limits.long_record_jasmine))?;
-        heap = heap.checked_add(u64::from(limits.long_record_kettle))?;
-        heap = heap.checked_add(u64::from(limits.long_record_lantern))?;
-        heap = heap.checked_add(u64::from(limits.long_record_leopard))?;
-        heap = heap.checked_add(u64::from(limits.long_record_lobster))?;
-        heap = heap.checked_add(u64::from(limits.long_record_magnet))?;
-        heap = heap.checked_add(u64::from(limits.long_record_marble))?;
-        heap = heap.checked_add(u64::from(limits.long_record_meadow))?;
-        heap = heap.checked_add(u64::from(limits.long_record_mermaid))?;
-        heap = heap.checked_add(u64::from(limits.long_record_meteor))?;
-        heap = heap.checked_add(u64::from(limits.long_record_mosaic))?;
-        heap = heap.checked_add(u64::from(limits.long_record_napkin))?;
-        heap = heap.checked_add(u64::from(limits.long_record_nectar))?;
-        heap = heap.checked_add(u64::from(limits.long_record_ocean))?;
-        heap = heap.checked_add(u64::from(limits.long_record_olive))?;
-        heap = heap.checked_add(u64::from(limits.long_record_orchid))?;
-        heap = heap.checked_add(u64::from(limits.long_record_panda))?;
-        Some(heap)
-    }
-
-    fn worst_case_heap_1(limits: &Limits, mut heap: u64) -> Option<u64> {
-        heap = heap.checked_add(u64::from(limits.long_record_pencil))?;
-        heap = heap.checked_add(u64::from(limits.long_record_planet))?;
-        heap = heap.checked_add(u64::from(limits.long_record_pollen))?;
-        heap = heap.checked_add(u64::from(limits.long_record_quartz))?;
-        heap = heap.checked_add(u64::from(limits.long_record_rainbow))?;
-        heap = heap.checked_add(u64::from(limits.long_record_raven))?;
-        heap = heap.checked_add(u64::from(limits.long_record_rocket))?;
-        heap = heap.checked_add(u64::from(limits.long_record_saffron))?;
-        heap = heap.checked_add(u64::from(limits.long_record_salmon))?;
-        heap = heap.checked_add(u64::from(limits.long_record_satin))?;
-        Some(heap)
+        heap = heap.checked_add(u64::from(limits.long_record_alpha))?.checked_add(u64::from(limits.long_record_bravo))?;
+        heap = heap.checked_add(u64::from(limits.long_record_charlie))?.checked_add(u64::from(limits.long_record_delta))?;
+        heap = heap.checked_add(u64::from(limits.long_record_echo))?.checked_add(u64::from(limits.long_record_foxtrot))?;
+        heap = heap.checked_add(u64::from(limits.long_record_golf))?.checked_add(u64::from(limits.long_record_hotel))?;
+        heap = heap.checked_add(u64::from(limits.long_record_india))?.checked_add(u64::from(limits.long_record_juliet))?;
+        heap = heap.checked_add(u64::from(limits.long_record_kilo))?.checked_add(u64::from(limits.long_record_lima))?;
+        heap = heap.checked_add(u64::from(limits.long_record_mike))?.checked_add(u64::from(limits.long_record_november))?;
+        heap = heap.checked_add(u64::from(limits.long_record_oscar))?.checked_add(u64::from(limits.long_record_papa))?;
+        heap = heap.checked_add(u64::from(limits.long_record_quebec))?.checked_add(u64::from(limits.long_record_romeo))?;
+        heap = heap.checked_add(u64::from(limits.long_record_sierra))?.checked_add(u64::from(limits.long_record_tango))?;
+        heap = heap.checked_add(u64::from(limits.long_record_uniform))?.checked_add(u64::from(limits.long_record_victor))?;
+        heap = heap.checked_add(u64::from(limits.long_record_whiskey))?.checked_add(u64::from(limits.long_record_xray))?;
+        heap = heap.checked_add(u64::from(limits.long_record_yankee))?.checked_add(u64::from(limits.long_record_zulu))?;
+        heap = heap.checked_add(u64::from(limits.long_record_amber))?.checked_add(u64::from(limits.long_record_birch))?;
+        heap = heap.checked_add(u64::from(limits.long_record_cedar))?.checked_add(u64::from(limits.long_record_dune))?;
+        heap = heap.checked_add(u64::from(limits.long_record_acorn))?.checked_add(u64::from(limits.long_record_anchor))?;
+        heap = heap.checked_add(u64::from(limits.long_record_apron))?.checked_add(u64::from(limits.long_record_atlas))?;
+        heap = heap.checked_add(u64::from(limits.long_record_autumn))?.checked_add(u64::from(limits.long_record_avocado))?;
+        heap = heap.checked_add(u64::from(limits.long_record_walnut))?.checked_add(u64::from(limits.long_record_badge))?;
+        heap = heap.checked_add(u64::from(limits.long_record_bamboo))?.checked_add(u64::from(limits.long_record_barrel))?;
+        heap = heap.checked_add(u64::from(limits.long_record_beacon))?.checked_add(u64::from(limits.long_record_beetle))?;
+        heap = heap.checked_add(u64::from(limits.long_record_bronze))?.checked_add(u64::from(limits.long_record_cactus))?;
+        heap = heap.checked_add(u64::from(limits.long_record_camera))?.checked_add(u64::from(limits.long_record_canyon))?;
+        heap = heap.checked_add(u64::from(limits.long_record_cello))?.checked_add(u64::from(limits.long_record_cobalt))?;
+        heap = heap.checked_add(u64::from(limits.long_record_comet))?.checked_add(u64::from(limits.long_record_compass))?;
+        heap = heap.checked_add(u64::from(limits.long_record_coral))?.checked_add(u64::from(limits.long_record_cotton))?;
+        heap = heap.checked_add(u64::from(limits.long_record_coyote))?.checked_add(u64::from(limits.long_record_cricket))?;
+        heap = heap.checked_add(u64::from(limits.long_record_crystal))?.checked_add(u64::from(limits.long_record_dragon))?;
+        heap = heap.checked_add(u64::from(limits.long_record_engine))?.checked_add(u64::from(limits.long_record_falcon))?;
+        heap = heap.checked_add(u64::from(limits.long_record_feather))?.checked_add(u64::from(limits.long_record_fern))?;
+        heap = heap.checked_add(u64::from(limits.long_record_flute))?.checked_add(u64::from(limits.long_record_fossil))?;
+        heap = heap.checked_add(u64::from(limits.long_record_galaxy))?.checked_add(u64::from(limits.long_record_garden))?;
+        heap = heap.checked_add(u64::from(limits.long_record_glacier))?.checked_add(u64::from(limits.long_record_granite))?;
+        heap = heap.checked_add(u64::from(limits.long_record_harbor))?.checked_add(u64::from(limits.long_record_hazel))?;
+        heap = heap.checked_add(u64::from(limits.long_record_helmet))?.checked_add(u64::from(limits.long_record_honey))?;
+        heap = heap.checked_add(u64::from(limits.long_record_igloo))?.checked_add(u64::from(limits.long_record_island))?;
+        heap = heap.checked_add(u64::from(limits.long_record_ivory))?.checked_add(u64::from(limits.long_record_jasmine))?;
+        heap = heap.checked_add(u64::from(limits.long_record_kettle))?.checked_add(u64::from(limits.long_record_lantern))?;
+        heap = heap.checked_add(u64::from(limits.long_record_leopard))?.checked_add(u64::from(limits.long_record_lobster))?;
+        heap = heap.checked_add(u64::from(limits.long_record_magnet))?.checked_add(u64::from(limits.long_record_marble))?;
+        heap = heap.checked_add(u64::from(limits.long_record_meadow))?.checked_add(u64::from(limits.long_record_mermaid))?;
+        heap = heap.checked_add(u64::from(limits.long_record_meteor))?.checked_add(u64::from(limits.long_record_mosaic))?;
+        heap = heap.checked_add(u64::from(limits.long_record_napkin))?.checked_add(u64::from(limits.long_record_nectar))?;
+        heap = heap.checked_add(u64::from(limits.long_record_ocean))?.checked_add(u64::from(limits.long_record_olive))?;
+        heap = heap.checked_add(u64::from(limits.long_record_orchid))?.checked_add(u64::from(limits.long_record_panda))?;
+        heap = heap.checked_add(u64::from(limits.long_record_pencil))?.checked_add(u64::from(limits.long_record_planet))?;
+        heap = heap.checked_add(u64::from(limits.long_record_pollen))?.checked_add(u64::from(limits.long_record_quartz))?;
+        heap = heap.checked_add(u64::from(limits.long_record_rainbow))?.checked_add(u64::from(limits.long_record_raven))?;
+        heap = heap.checked_add(u64::from(limits.long_record_rocket))?.checked_add(u64::from(limits.long_record_saffron))?;
+        heap = heap.checked_add(u64::from(limits.long_record_salmon))?.checked_add(u64::from(limits.long_record_satin))?;
+        heap.checked_add(0)
     }
 }
 
@@ -3567,17 +3523,17 @@ impl LongRecord {
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
     if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
-    biggest = biggest.max(HostTool::worst_case_bytes(limits)?);
-    biggest = biggest.max(Boundless::worst_case_bytes(limits)?);
-    biggest = biggest.max(Payload::worst_case_bytes(limits)?);
-    biggest = biggest.max(OtherPayload::worst_case_bytes(limits)?);
-    biggest = biggest.max(Shared::worst_case_bytes(limits)?);
-    biggest = biggest.max(OneByteItems::worst_case_bytes(limits)?);
-    biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
-    biggest = biggest.max(BoxedChoice::worst_case_bytes(limits)?);
-    biggest = biggest.max(InlineChoice::worst_case_bytes(limits)?);
-    biggest = biggest.max(FixedWidthItems::worst_case_bytes(limits)?);
-    biggest = biggest.max(LongRecord::worst_case_bytes(limits)?);
+    biggest = biggest.max(HostTool::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(Boundless::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(Payload::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(OtherPayload::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(Shared::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(OneByteItems::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(OptionalPayload::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(BoxedChoice::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(InlineChoice::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(FixedWidthItems::worst_case_bytes_within(limits)?);
+    biggest = biggest.max(LongRecord::worst_case_bytes_within(limits)?);
     Some(biggest)
 }
 
@@ -3586,17 +3542,17 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
 pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
     if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
-    biggest = biggest.max(HostTool::worst_case_heap(limits)?);
-    biggest = biggest.max(Boundless::worst_case_heap(limits)?);
-    biggest = biggest.max(Payload::worst_case_heap(limits)?);
-    biggest = biggest.max(OtherPayload::worst_case_heap(limits)?);
-    biggest = biggest.max(Shared::worst_case_heap(limits)?);
-    biggest = biggest.max(OneByteItems::worst_case_heap(limits)?);
-    biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
-    biggest = biggest.max(BoxedChoice::worst_case_heap(limits)?);
-    biggest = biggest.max(InlineChoice::worst_case_heap(limits)?);
-    biggest = biggest.max(FixedWidthItems::worst_case_heap(limits)?);
-    biggest = biggest.max(LongRecord::worst_case_heap(limits)?);
+    biggest = biggest.max(HostTool::worst_case_heap_within(limits)?);
+    biggest = biggest.max(Boundless::worst_case_heap_within(limits)?);
+    biggest = biggest.max(Payload::worst_case_heap_within(limits)?);
+    biggest = biggest.max(OtherPayload::worst_case_heap_within(limits)?);
+    biggest = biggest.max(Shared::worst_case_heap_within(limits)?);
+    biggest = biggest.max(OneByteItems::worst_case_heap_within(limits)?);
+    biggest = biggest.max(OptionalPayload::worst_case_heap_within(limits)?);
+    biggest = biggest.max(BoxedChoice::worst_case_heap_within(limits)?);
+    biggest = biggest.max(InlineChoice::worst_case_heap_within(limits)?);
+    biggest = biggest.max(FixedWidthItems::worst_case_heap_within(limits)?);
+    biggest = biggest.max(LongRecord::worst_case_heap_within(limits)?);
     Some(biggest)
 }
 

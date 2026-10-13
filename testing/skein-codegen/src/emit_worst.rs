@@ -37,7 +37,7 @@ fn bytes_expr(ty: &Type, bound: &str) -> String {
             let item_expr = bytes_expr(item, &format!("{bound}_some"));
             format!("1_u64.checked_add({item_expr})?")
         }
-        Type::Named(name) => format!("{name}::worst_case_bytes(limits)?"),
+        Type::Named(name) => format!("{name}::worst_case_bytes_within(limits)?"),
     }
 }
 
@@ -53,47 +53,73 @@ fn heap_expr(ty: &Type, bound: &str) -> String {
             )
         }
         Type::Option(item) => heap_expr(item, &format!("{bound}_some")),
-        Type::Named(name) => format!("{name}::worst_case_heap(limits)?"),
+        Type::Named(name) => format!("{name}::worst_case_heap_within(limits)?"),
     }
 }
 
 fn emit_record(record: &Record, out: &mut String) {
+    let limits_name = if record.fields.iter().any(|field| bytes_expr(&field.ty, "").contains("limits")) {
+        "limits"
+    } else {
+        "_limits"
+    };
     let size_mut = if record.fields.is_empty() { "" } else { "mut " };
-    out.push_str(&format!("impl {} {{\n    /// Maximum encoded bytes under these limits.\n    #[must_use]\n    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        let {size_mut}size = {}_u64;\n", record.name, if record.versioned { 2_u64 } else { 0_u64 }));
+    out.push_str(&format!("impl {} {{\n    /// Maximum encoded bytes under these limits.\n    #[must_use]\n    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        Self::worst_case_bytes_within(limits)\n    }}\n\n    pub(crate) fn worst_case_bytes_within({limits_name}: &Limits) -> Option<u64> {{\n        let {size_mut}size = {}_u64;\n", record.name, if record.versioned { 2_u64 } else { 0_u64 }));
+    let mut bytes = Vec::new();
     for field in &record.fields {
         let bound = format!("{}_{}", emit_limits::snake(&record.name), field.name);
-        out.push_str(&format!("        size = size.checked_add({})?;\n", bytes_expr(&field.ty, &bound)));
+        bytes.push(bytes_expr(&field.ty, &bound));
     }
+    emit_fold(&bytes, "size", "checked_add", "?", out);
     let heap_mut = if record.fields.is_empty() { "" } else { "mut " };
-    out.push_str(&format!("        Some(size)\n    }}\n\n    /// Maximum heap held by one decoded value under these limits.\n    #[must_use]\n    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        let {heap_mut}heap = 0_u64;\n"));
+    out.push_str(&format!("        size.checked_add(0)\n    }}\n\n    /// Maximum heap held by one decoded value under these limits.\n    #[must_use]\n    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        Self::worst_case_heap_within(limits)\n    }}\n\n    pub(crate) fn worst_case_heap_within({limits_name}: &Limits) -> Option<u64> {{\n        let {heap_mut}heap = 0_u64;\n"));
+    let mut heaps = Vec::new();
     for field in &record.fields {
         let bound = format!("{}_{}", emit_limits::snake(&record.name), field.name);
-        out.push_str(&format!("        heap = heap.checked_add({})?;\n", heap_expr(&field.ty, &bound)));
+        heaps.push(heap_expr(&field.ty, &bound));
     }
-    out.push_str("        Some(heap)\n    }\n}\n\n");
+    emit_fold(&heaps, "heap", "checked_add", "?", out);
+    out.push_str("        heap.checked_add(0)\n    }\n}\n\n");
+}
+
+// Chained pairs keep a record or enumeration with many fields below the function limit.
+fn emit_fold(values: &[String], name: &str, operation: &str, checked: &str, out: &mut String) {
+    for pair in values.chunks(2) {
+        out.push_str(&format!("        {name} = {name}"));
+        for value in pair {
+            out.push_str(&format!(".{operation}({value}){checked}"));
+        }
+        out.push_str(";\n");
+    }
 }
 
 fn emit_enum(enumeration: &Enumeration, out: &mut String) {
+    let limits_name =
+        if enumeration.variants.iter().any(|variant| variant.record.is_some()) { "limits" } else { "_limits" };
     let biggest_mut = if enumeration.variants.iter().any(|variant| variant.record.is_some()) { "mut " } else { "" };
-    out.push_str(&format!("impl {} {{\n    /// Maximum encoded bytes among variants.\n    #[must_use]\n    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        let {biggest_mut}biggest = 0_u64;\n", enumeration.name));
+    out.push_str(&format!("impl {} {{\n    /// Maximum encoded bytes among variants.\n    #[must_use]\n    pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        Self::worst_case_bytes_within(limits)\n    }}\n\n    pub(crate) fn worst_case_bytes_within({limits_name}: &Limits) -> Option<u64> {{\n        let {biggest_mut}biggest = 0_u64;\n", enumeration.name));
+    let mut bytes = Vec::new();
     for variant in &enumeration.variants {
         if let Some(record) = &variant.record {
-            out.push_str(&format!("        biggest = biggest.max({record}::worst_case_bytes(limits)?);\n"));
+            bytes.push(format!("{record}::worst_case_bytes_within(limits)?"));
         }
     }
-    out.push_str(&format!("        1_u64.checked_add(biggest)\n    }}\n\n    /// Maximum heap held by any decoded variant.\n    #[must_use]\n    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        let {biggest_mut}biggest = 0_u64;\n"));
+    emit_fold(&bytes, "biggest", "max", "", out);
+    out.push_str(&format!("        1_u64.checked_add(biggest)\n    }}\n\n    /// Maximum heap held by any decoded variant.\n    #[must_use]\n    pub fn worst_case_heap(limits: &Limits) -> Option<u64> {{\n        if check_limits(limits).is_err() {{ return None; }}\n        Self::worst_case_heap_within(limits)\n    }}\n\n    pub(crate) fn worst_case_heap_within({limits_name}: &Limits) -> Option<u64> {{\n        let {biggest_mut}biggest = 0_u64;\n"));
+    let mut heaps = Vec::new();
     for variant in &enumeration.variants {
         if let Some(record) = &variant.record {
-            let heap = format!("{record}::worst_case_heap(limits)?");
+            let heap = format!("{record}::worst_case_heap_within(limits)?");
             let heap = if variant.boxed {
                 format!("{heap}.checked_add(u64::try_from(size_of::<{record}>()).ok()?)?")
             } else {
                 heap
             };
-            out.push_str(&format!("        biggest = biggest.max({heap});\n"));
+            heaps.push(heap);
         }
     }
-    out.push_str("        Some(biggest)\n    }\n}\n\n");
+    emit_fold(&heaps, "biggest", "max", "", out);
+    out.push_str("        biggest.checked_add(0)\n    }\n}\n\n");
 }
 
 pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
@@ -110,7 +136,7 @@ pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
             Declaration::Record(record) => &record.name,
             Declaration::Enum(enumeration) => &enumeration.name,
         };
-        out.push_str(&format!("    biggest = biggest.max({name}::worst_case_bytes(limits)?);\n"));
+        out.push_str(&format!("    biggest = biggest.max({name}::worst_case_bytes_within(limits)?);\n"));
     }
     out.push_str(&format!("    Some(biggest)\n}}\n\n/// Maximum heap held by one decoded top-level value.\n#[must_use]\npub fn worst_case_heap(limits: &Limits) -> Option<u64> {{\n    if check_limits(limits).is_err() {{ return None; }}\n    let {biggest_mut}biggest = 0_u64;\n"));
     for declaration in schema.declarations {
@@ -118,7 +144,7 @@ pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
             Declaration::Record(record) => &record.name,
             Declaration::Enum(enumeration) => &enumeration.name,
         };
-        out.push_str(&format!("    biggest = biggest.max({name}::worst_case_heap(limits)?);\n"));
+        out.push_str(&format!("    biggest = biggest.max({name}::worst_case_heap_within(limits)?);\n"));
     }
     out.push_str("    Some(biggest)\n}\n");
 }
