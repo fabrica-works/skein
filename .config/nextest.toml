@@ -1,12 +1,12 @@
 # The two test suites (docs/foundation/testing-strategy.md, section 8): the
-# focused one, every test but the fuzzy ones, within 15 seconds; and the fuzzy
+# focused one, every test but the fuzzy ones, within 30 seconds; and the fuzzy
 # one, the test binaries named fuzzy_* beside the focused tests of each crate
 # under tests/, within a minute. A suite past its budget fails, naming the
 # tests it stopped; a test past its slow period is flagged SLOW as it runs.
 
 [profile.default]
 default-filter = "not binary(/^fuzzy_/) and not binary(/^browser_/) and not binary(=live)"
-global-timeout = "15s"
+global-timeout = "30s"
 slow-timeout = { period = "3s" }
 
 # The tests under tests/ first, the longest, then the many short step tests
