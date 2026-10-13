@@ -83,8 +83,8 @@ pub struct Settings {
 /// How the side above reads a body.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Reads {
-    /// With fills and scans of every size up to the limit, to LF, CRLF or
-    /// a quote: it may not see the last bytes, which no demand meets.
+    /// With fills, scans to LF, CRLF or a quote, and reads of what has
+    /// arrived, including maxima past the cap. Exact reads may miss the tail.
     Any,
     /// A byte at a time: it sees every byte.
     Bytes,
@@ -651,9 +651,11 @@ impl World<'_> {
         let ended = below.life == Life::Ended;
         match below.demand {
             Some((read, room)) => {
+                let held = below.intake.len();
                 let met = if ended { None } else { below.intake.meet(read) };
                 if let Some(bytes) = met {
-                    assert!(delivers(read, &bytes), "a delivery is exactly the demand");
+                    assert!(delivers(read, &bytes), "a delivery meets the demand");
+                    assert!(bytes.len() <= usize::try_from(held).expect("fits a usize"), "no more than was held");
                     self.fell.early_response |= room > 0;
                     below.demand = None;
                     self.up(Up::Bytes(bytes));
@@ -828,11 +830,14 @@ impl World<'_> {
             Reads::Bytes => Read::Fill(1),
             Reads::Any => {
                 let n = draw(&mut self.rng, 1, most);
-                match self.rng.below(5) {
+                match self.rng.below(6) {
                     0 => Read::Fill(n),
                     1 => Read::Scan { until: Delimiter::LF, max: n },
                     2 if n >= 2 => Read::Scan { until: Delimiter::CRLF, max: n },
                     3 => Read::Line { max: n },
+                    4 => Read::Arrived {
+                        max: if self.rng.below(16) == 0 { most.checked_add(1).expect("small read cap") } else { n },
+                    },
                     _ => Read::Scan { until: Delimiter::new(b"\"").expect("one byte"), max: n },
                 }
             }
@@ -931,7 +936,7 @@ impl World<'_> {
             Event::Upload(other @ (Up::Bytes(_) | Up::End)) => panic!("the upload is written: {other:?}"),
             Event::Body(Up::Bytes(bytes)) => {
                 let Face::Demanded(read, 0) = self.above.body else { panic!("bytes for a body demand outstanding") };
-                assert!(delivers(read, &bytes), "exactly what the demand reads: {read:?}, {}", bytes.escape_ascii());
+                assert!(delivers(read, &bytes), "what the demand reads: {read:?}, {}", bytes.escape_ascii());
                 self.above.body = Face::Idle;
                 if let Some(after) = &mut self.above.discard_after {
                     *after = after.saturating_sub(1);
@@ -1063,7 +1068,7 @@ impl World<'_> {
     }
 }
 
-/// Whether `bytes` are exactly what `read` asks for, as an intake meets it.
+/// Whether `bytes` meet `read` exactly, or with what has arrived.
 fn delivers(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,

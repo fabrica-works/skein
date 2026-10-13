@@ -187,12 +187,7 @@ impl Ledger {
                     // Either answer ends the demand (lib.md, 7).
                     Up::Bytes(bytes) => {
                         assert!(!told.ended, "no Bytes after End");
-                        assert!(
-                            met(told.read, bytes),
-                            "Bytes exactly as demanded: {:?}, {} bytes",
-                            told.read,
-                            bytes.len()
-                        );
+                        assert!(met(told.read, bytes), "Bytes meet the demand: {:?}, {} bytes", told.read, bytes.len());
                         (told.read, told.room) = (Read::Nothing, 0);
                     }
                     Up::Room => {
@@ -236,7 +231,7 @@ impl Ledger {
     }
 }
 
-/// Whether `bytes` are exactly what `read` demands (lib.md, 7).
+/// Whether `bytes` meet `read` exactly, or with what has arrived (lib.md, 7).
 fn met(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,

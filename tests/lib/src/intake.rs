@@ -50,34 +50,31 @@ pub fn reference(stream: &[u8], read: Read) -> Option<usize> {
 /// Feeds `input` to an intake of `capacity` in pieces of the lengths in
 /// `pieces` (cycled), cut further where a piece does not fit, meeting
 /// `demands` in turn as soon as each can be met; checks every delivery
-/// against the reference, and that the demands met are those the whole
-/// input meets, returning how many that is.
+/// against the reference of what has arrived then, returning how many
+/// demands are met.
 #[expect(clippy::must_use_candidate, reason = "it asserts as it goes; the count is for a caller that knows it")]
 pub fn check(input: &[u8], demands: &[Read], capacity: u32, pieces: &[usize]) -> usize {
-    let mut expected = Vec::new();
-    let mut rest = input;
-    for &read in demands {
-        if read == Read::Nothing {
-            expected.push(None);
-            continue;
-        }
-        let Some(n) = reference(rest, read) else { break };
-        let (taken, after) = rest.split_at_checked(n).expect("the reference takes what the stream holds");
-        expected.push(Some(taken));
-        rest = after;
-    }
-
     let mut intake = Intake::with_capacity(capacity);
-    let mut unfed = input;
+    let (mut used, mut arrived) = (0, 0);
     let mut pieces = pieces.iter().cycle();
-    for (index, (&read, &expected)) in demands.iter().zip(&expected).enumerate() {
-        let delivered = loop {
+    for (index, &read) in demands.iter().enumerate() {
+        loop {
+            let held = &input[used..arrived];
+            let expected = reference(held, read).map(|n| &held[..n]);
             let delivered = intake.meet(read);
-            if delivered.is_some() || read == Read::Nothing {
-                break delivered;
+            assert_eq!(delivered.as_deref(), expected, "demand {index}: {read:?}");
+            if let Some(bytes) = delivered {
+                used += bytes.len();
+                break;
             }
-            assert!(!unfed.is_empty(), "demand {index} ({read:?}) is met by the whole input");
+            if read == Read::Nothing {
+                break;
+            }
+            if arrived == input.len() {
+                return index;
+            }
             assert!(intake.room() > 0, "demand {index} ({read:?}) fits the cap, so a full intake meets it");
+            let unfed = &input[arrived..];
             let want = (*pieces.next().expect("pieces cycle")).clamp(1, unfed.len());
             let fits = want.min(usize::try_from(intake.room()).expect("a u32 fits a usize"));
             if fits < want {
@@ -85,18 +82,11 @@ pub fn check(input: &[u8], demands: &[Read], capacity: u32, pieces: &[usize]) ->
                 assert_eq!(intake.append(&unfed[..want]), Err(Overflow));
                 assert_eq!(intake.len(), before, "a refused append appends nothing");
             }
-            let (piece, after) = unfed.split_at_checked(fits).expect("no more than is left");
-            assert_eq!(intake.append(piece), Ok(()));
-            unfed = after;
-        };
-        assert_eq!(delivered.as_deref(), expected, "demand {index}: {read:?}");
+            assert_eq!(intake.append(&unfed[..fits]), Ok(()));
+            arrived += fits;
+        }
     }
-    // Nothing more is met than the whole input meets.
-    if let Some(&read) = demands.get(expected.len()) {
-        intake.append(unfed).expect("the rest of the input fits the cap");
-        assert_eq!(intake.meet(read), None, "demand {} is not met by the whole input", expected.len());
-    }
-    expected.len()
+    demands.len()
 }
 
 /// Takes `n` bytes from the front of the model, as a delivery does.

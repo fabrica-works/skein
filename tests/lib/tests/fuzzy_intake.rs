@@ -17,10 +17,11 @@ fn random_splits_demands_and_caps_meet_what_the_reference_meets() {
         }
         let mut demands = Vec::new();
         for _ in 0..rng.between(1, 40) {
-            let read = match rng.below(6) {
+            let read = match rng.below(7) {
                 0 => Read::Nothing,
                 1 => Read::Fill(u32::try_from(rng.below(u64::from(capacity) + 1)).unwrap()),
                 2 => Read::Line { max: u32::try_from(rng.between(1, u64::from(capacity))).unwrap() },
+                3 => arrived(&mut rng, capacity),
                 _ => {
                     let until = delimiters[usize::try_from(rng.below(4)).unwrap()];
                     let shortest = u64::try_from(until.as_bytes().len()).unwrap();
@@ -63,9 +64,10 @@ fn every_meet_takes_what_the_buffer_holds_demands_changing_or_not() {
                     model.extend_from_slice(&bytes[..len]);
                 }
             } else {
-                let read = match rng.below(4) {
+                let read = match rng.below(5) {
                     0 => Read::Nothing,
                     1 => Read::Fill(u32::try_from(rng.below(u64::from(capacity) + 1)).unwrap()),
+                    2 => arrived(&mut rng, capacity),
                     _ => {
                         let until = delimiters[usize::try_from(rng.below(11)).unwrap()];
                         let shortest = u32::try_from(until.len()).unwrap();
@@ -95,4 +97,13 @@ fn every_meet_takes_what_the_buffer_holds_demands_changing_or_not() {
             assert_eq!(intake.is_empty(), model.is_empty());
         }
     }
+}
+
+fn arrived(rng: &mut Rng, capacity: u32) -> Read {
+    let max = if capacity == 0 || rng.below(16) == 0 {
+        capacity + 1
+    } else {
+        u32::try_from(rng.between(1, u64::from(capacity))).expect("draw within the capacity")
+    };
+    Read::Arrived { max }
 }

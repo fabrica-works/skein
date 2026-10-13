@@ -28,6 +28,7 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Some("megabyte") => megabyte(),
         Some("usage") => {
             let mut accumulator = 1_u64;
             for _ in 0..2_000_000 {
@@ -109,4 +110,13 @@ fn main() -> ExitCode {
         }
         other => panic!("unknown fixture program {other:?}"),
     }
+}
+
+fn megabyte() -> ExitCode {
+    let pattern: [u8; 4096] = std::array::from_fn(|at| u8::try_from(at % 256).expect("pattern byte"));
+    let mut stdout = std::io::stdout().lock();
+    for _ in 0..256 {
+        stdout.write_all(&pattern).expect("write patterned megabyte");
+    }
+    ExitCode::SUCCESS
 }

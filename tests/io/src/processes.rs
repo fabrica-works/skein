@@ -21,6 +21,8 @@ pub enum Story {
     CloseExited,
     /// Signal the group after the leader's observed exit, before its close.
     SignalExited,
+    /// Read a megabyte of patterned output, then close the exited child.
+    Megabyte,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +47,8 @@ pub struct Process {
     lifecycle: Lifecycle,
     ended: u32,
     pipe_closed: u32,
+    output_bytes: usize,
+    output_deliveries: u32,
     completions: Queue<Complete>,
     submissions: Queue<Submit>,
     events: Queue<Event>,
@@ -65,7 +69,7 @@ impl Process {
     /// Starts the actual owner; `real` requires the fixture's complete readiness line.
     #[must_use]
     pub fn new(root: Fd, program: &[u8], story: Story, real: bool) -> Self {
-        let limits = Limits { intake: 64, receive: 32, ..crate::scenarios::limits(3) };
+        let limits = Limits { intake: 65_536, receive: 65_536, ..crate::scenarios::limits(3) };
         let mut requests = Queue::with_capacity(32);
         let mut pipes = vec![Pipe { child: 1, way: Way::Out, parent: None }];
         if real {
@@ -78,6 +82,7 @@ impl Process {
                 dir: Box::from(b".".as_slice()),
                 program: Box::from(program),
                 args: Box::from([Box::from(match story {
+                    Story::Megabyte => b"megabyte".as_slice(),
                     Story::SignalRunning => b"fork-live".as_slice(),
                     Story::CloseExited | Story::SignalExited => b"fork-exit".as_slice(),
                 })]),
@@ -93,11 +98,13 @@ impl Process {
             root_closing: false,
             child: None,
             pipes: Vec::with_capacity(2),
-            ready: !real,
+            ready: !real || story == Story::Megabyte,
             acted: false,
             lifecycle: Lifecycle::Running,
             ended: 0,
             pipe_closed: 0,
+            output_bytes: 0,
+            output_deliveries: 0,
             completions: Queue::with_capacity(32),
             submissions: Queue::with_capacity(32),
             events: Queue::with_capacity(32),
@@ -115,7 +122,7 @@ impl Process {
                 assert_eq!(owner, OWNER);
                 assert!(self.child.replace(child).is_none(), "one child admitted");
                 self.pipes.extend(pipes.iter().copied());
-                self.demand(pipes[0], Read::Fill(1));
+                self.demand(pipes[0], Read::Arrived { max: 65_536 });
                 if let Some(&stderr) = pipes.get(1) {
                     self.demand(stderr, Read::Line { max: 64 });
                 }
@@ -126,10 +133,20 @@ impl Process {
                 self.lifecycle = Lifecycle::Exited;
             }
             Event::Stream { owner, up: Up::Bytes(bytes) } => {
-                assert_eq!(self.pipes.get(1), Some(&owner), "only stderr carries readiness");
-                assert!(bytes.starts_with(b"descendant:") && bytes.ends_with(b"\n"));
-                self.ready = true;
-                self.demand(owner, Read::Fill(1));
+                if self.pipes.first() == Some(&owner) {
+                    assert_eq!(self.story, Story::Megabyte, "only the megabyte fixture writes stdout");
+                    for (offset, &byte) in bytes.iter().enumerate() {
+                        assert_eq!(byte, u8::try_from((self.output_bytes + offset) % 256).expect("pattern byte"));
+                    }
+                    self.output_bytes += bytes.len();
+                    self.output_deliveries += 1;
+                    self.demand(owner, Read::Arrived { max: 65_536 });
+                } else {
+                    assert_eq!(self.pipes.get(1), Some(&owner), "only stderr carries readiness");
+                    assert!(bytes.starts_with(b"descendant:") && bytes.ends_with(b"\n"));
+                    self.ready = true;
+                    self.demand(owner, Read::Line { max: 64 });
+                }
             }
             Event::Stream { owner, up: Up::End } => {
                 assert!(self.pipes.contains(&owner));
@@ -171,7 +188,10 @@ impl Process {
                 Request::Signal { child, signal: Signal::Kill, to: Target::Group }
             }
             Story::CloseExited if self.lifecycle == Lifecycle::Exited => Request::Close { entity: child },
-            Story::SignalExited | Story::CloseExited => return,
+            Story::Megabyte if self.lifecycle == Lifecycle::Exited && self.pipe_closed == 2 => {
+                Request::Close { entity: child }
+            }
+            Story::SignalExited | Story::CloseExited | Story::Megabyte => return,
         };
         self.acted = true;
         self.requests.push(request);
@@ -183,6 +203,10 @@ impl Process {
         assert_eq!(self.ended, u32::try_from(self.pipes.len()).expect("two pipes"));
         assert_eq!(self.pipe_closed, self.ended);
         assert!(self.is_empty(), "the owner and io hold nothing");
+        if self.story == Story::Megabyte {
+            assert_eq!(self.output_bytes, 1_048_576);
+            assert!(self.output_deliveries <= 4_096, "one delivery per 256 bytes or more");
+        }
     }
 }
 

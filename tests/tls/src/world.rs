@@ -249,7 +249,7 @@ fn meets(read: Read, bytes: &[u8]) -> bool {
     }
 }
 
-/// Whether `bytes` are exactly what `read` asks for, as an intake meets it.
+/// Whether `bytes` meet `read` exactly, or with what has arrived.
 fn delivers(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,
@@ -430,9 +430,11 @@ impl<'a> World<'a> {
         let over = below.eof && below.wire.is_empty();
         match below.demand {
             Some((read, room)) => {
+                let held = below.intake.len();
                 let met = if ended { None } else { below.intake.meet(read) };
                 if let Some(bytes) = met {
-                    assert!(delivers(read, &bytes), "a delivery is exactly the demand");
+                    assert!(delivers(read, &bytes), "a delivery meets the demand");
+                    assert!(bytes.len() <= usize::try_from(held).expect("fits a usize"), "no more than was held");
                     below.demand = None;
                     self.up(Up::Bytes(bytes));
                 } else if room > 0 && self.rng.chance(self.settings.grant) {
@@ -569,11 +571,14 @@ impl<'a> World<'a> {
             Reads::Bytes => Read::Fill(1),
             Reads::Any => {
                 let n = draw(&mut self.rng, 1, most);
-                match self.rng.below(5) {
+                match self.rng.below(6) {
                     0 => Read::Fill(n),
                     1 => Read::Scan { until: Delimiter::LF, max: n },
                     2 if n >= 2 => Read::Scan { until: Delimiter::CRLF, max: n },
                     3 => Read::Line { max: n },
+                    4 => Read::Arrived {
+                        max: if self.rng.below(16) == 0 { most.checked_add(1).expect("small read cap") } else { n },
+                    },
                     _ => Read::Scan { until: Delimiter::new(b"\"").expect("one byte"), max: n },
                 }
             }
@@ -620,7 +625,7 @@ impl<'a> World<'a> {
                 assert!(above.agreed.is_some(), "nothing on the stream before Ready");
                 let Face::Demanded(read, _) = above.face else { panic!("bytes for a demand outstanding") };
                 assert!(read != Read::Nothing, "bytes answer a read");
-                assert!(delivers(read, &bytes), "exactly what the demand reads: {read:?}, {}", bytes.escape_ascii());
+                assert!(delivers(read, &bytes), "what the demand reads: {read:?}, {}", bytes.escape_ascii());
                 above.face = Face::Idle;
                 above.received.extend_from_slice(&bytes);
             }

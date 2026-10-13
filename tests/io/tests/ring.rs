@@ -125,6 +125,11 @@ fn group_story(story: skein_io_world::processes::Story) {
 }
 
 #[test]
+fn a_megabyte_on_a_real_pipe_arrives_in_few_deliveries() {
+    group_story(skein_io_world::processes::Story::Megabyte);
+}
+
+#[test]
 fn a_descendant_holding_the_pipe_ends_with_a_signal_to_the_group() {
     group_story(skein_io_world::processes::Story::SignalRunning);
 }
