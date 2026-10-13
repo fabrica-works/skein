@@ -1,9 +1,10 @@
 //! Hosting through the world harness, with scripted services on raw pipes.
 
 use skein_heap::Counting;
-use skein_io::kernel::{Exit, Spawn};
+use skein_io::kernel::{Complete, Error, Exit, Fd, Op, Spawn, Submit};
+use skein_lib::{Queue, Time, Token, Wall};
 use skein_sim::{Config, Handle};
-use skein_world::{HostedProgram, Inherited, Memory, World};
+use skein_world::{Cut, Host, HostedProgram, Inherited, Machine, Memory, Referee, StartupRoot, World};
 use skein_world_tests::hosted::{Act, Judge, RootMachine, Script};
 
 #[global_allocator]
@@ -162,4 +163,183 @@ fn a_killed_childs_leak_is_checked_when_it_is_dropped() {
         leaky_killed_child,
         &[Act::Spawn, Act::Write(0, b"hello"), Act::Read(1), Act::Signal(Signal::Kill), Act::Read(1), Act::Wait],
     ));
+}
+
+/// Keeps the root's startup signal alongside the existing exchange script.
+#[derive(Debug)]
+struct CuttingScript {
+    script: Script,
+    signal: Option<Fd>,
+    closing: bool,
+}
+
+impl Host for CuttingScript {
+    fn iterate(&mut self, now: Time, wall: Wall) {
+        if self.closing && !self.script.completions().is_empty() {
+            self.closing = false;
+        }
+        self.script.iterate(now, wall);
+        if self.script.is_empty()
+            && let Some(fd) = self.signal.take()
+        {
+            self.script.submissions().push(Submit { op: Token::new(u64::MAX), kind: Op::Close { fd } });
+            self.closing = true;
+        }
+    }
+    fn drain(&mut self) {
+        self.script.drain();
+    }
+    fn completions(&mut self) -> &mut Queue<Complete> {
+        self.script.completions()
+    }
+    fn submissions(&mut self) -> &mut Queue<Submit> {
+        self.script.submissions()
+    }
+    fn work_pending(&self, now: Time) -> bool {
+        self.script.work_pending(now) || (self.script.is_empty() && self.signal.is_some())
+    }
+    fn next_deadline(&self) -> Option<Time> {
+        self.script.next_deadline()
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.script.next_policy_deadline()
+    }
+    fn is_empty(&self) -> bool {
+        self.script.is_empty() && self.signal.is_none() && !self.closing
+    }
+    fn worst_case(&self) -> u64 {
+        self.script.worst_case()
+    }
+    fn operations(&self) -> u32 {
+        self.script.operations()
+    }
+}
+
+#[derive(Debug, Default)]
+struct CuttingMachine {
+    opened: u64,
+    cuts: u32,
+}
+
+impl Machine for CuttingMachine {
+    fn open_root(&mut self, path: &[u8]) -> Result<Handle, Error> {
+        assert_eq!(path, b"launch");
+        self.opened += 1;
+        Ok(Handle::new(self.opened))
+    }
+    fn close_root(&mut self, _root: Handle) {}
+    fn cut(&mut self, cut: Cut, held: &[Handle], _seed: u64) {
+        assert_eq!(cut, Cut::PowerLoss);
+        assert_eq!(held, &[Handle::new(1)]);
+        self.cuts += 1;
+    }
+    fn step(&mut self, call: skein_sim::Call, answers: &mut Queue<skein_sim::Answer>) {
+        RootMachine.step(call, answers);
+    }
+}
+
+struct CuttingJudge;
+
+impl Referee<CuttingScript> for CuttingJudge {
+    fn act(&mut self, _now: Time, _procs: &mut [CuttingScript]) {}
+    fn observe(&mut self, _now: Time, _procs: &[CuttingScript]) {}
+    fn next_deadline(&self) -> Option<Time> {
+        None
+    }
+    fn overdue(&self, _now: Time) -> Option<String> {
+        None
+    }
+    fn passed(&self) -> bool {
+        true
+    }
+}
+
+fn cutting_parent(inherited: &Inherited) -> CuttingScript {
+    CuttingScript {
+        script: Script::parent(
+            inherited.roots[0].1,
+            &[Act::Spawn, Act::Write(0, b"hello"), Act::Read(1), Act::Read(1), Act::Wait],
+        ),
+        signal: Some(inherited.signal),
+        closing: false,
+    }
+}
+
+fn cutting_child(spawn: &Spawn, inherited: &Inherited) -> CuttingScript {
+    CuttingScript { script: child(spawn, inherited), signal: None, closing: false }
+}
+
+fn cutting_idle(inherited: &Inherited) -> CuttingScript {
+    CuttingScript { script: Script::child(inherited, &[]), signal: None, closing: false }
+}
+
+fn cutting_world() -> World<CuttingScript, CuttingJudge, CuttingMachine> {
+    let mut world =
+        World::new(7, Config::calm(), CuttingJudge, Memory::Checked).with_machine(CuttingMachine::default());
+    world.host(HostedProgram { program: Box::from(&b"hosted"[..]), make: cutting_child, instances: 1, operations: 8 });
+    world.spawn_restartable(
+        vec![StartupRoot { name: Box::from(&b"launch"[..]), path: Box::from(&b"launch"[..]) }],
+        cutting_parent,
+    );
+    world
+}
+
+#[test]
+fn a_power_loss_drops_hosted_children_and_restarts_the_roots() {
+    let mut world = cutting_world();
+    world.spawn_restartable(vec![], cutting_idle);
+    world.cut(0, 2, Cut::PowerLoss);
+    let (mut roots, mut old_child, mut restarted) = (None, None, false);
+    let outcome = world.run_with_inputs(|_, pids, _| {
+        let original = *roots.get_or_insert([pids[0], pids[1]]);
+        if pids[0] == original[0] && pids.len() == 3 {
+            old_child = Some(pids[2]);
+        } else if pids[0] != original[0] && !restarted {
+            assert!(old_child.is_some(), "the child was running when power failed");
+            assert_ne!(pids[1], original[1], "the other root also restarted");
+            assert_eq!(pids.len(), 2, "only roots remain immediately after the cut");
+            restarted = true;
+        }
+        if restarted && pids.len() == 3 {
+            assert_ne!(Some(pids[2]), old_child, "the parent launches a fresh child");
+        }
+    });
+    assert!(restarted);
+    assert_eq!(outcome.machine.cuts, 1);
+    assert_eq!(outcome.machine.opened, 2);
+    assert_eq!(outcome.procs.len(), 3);
+    assert_eq!(outcome.procs[0].script.received, b"reply");
+    assert_eq!(outcome.procs[2].script.received, b"hello");
+    assert_eq!(outcome.procs[0].script.child_exit, Some(Exit::Code(0)));
+}
+
+fn admit_without_factory(world: &mut World<CuttingScript, CuttingJudge, CuttingMachine>) {
+    world.spawn(|| CuttingScript { script: Script::new(&[]), signal: None, closing: false });
+}
+
+#[test]
+fn a_power_loss_needs_every_roots_factory() {
+    for (label, before_planning, message) in [
+        ("planning", true, "power loss needs every process's restart factory"),
+        ("execution", false, "power loss needs every live process's factory"),
+    ] {
+        let refusal = std::panic::catch_unwind(|| {
+            let mut world = cutting_world();
+            if before_planning {
+                admit_without_factory(&mut world);
+            }
+            world.cut(0, 2, Cut::PowerLoss);
+            if !before_planning {
+                admit_without_factory(&mut world);
+            }
+            drop(world.run());
+        })
+        .expect_err(label);
+        let text = refusal
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| refusal.downcast_ref::<String>().map(String::as_str))
+            .expect("panic text");
+        assert_eq!(text, message, "{label}");
+    }
 }

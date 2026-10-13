@@ -276,11 +276,14 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
 
     /// Cuts `host` once before its zero-based `before`th submission.
     /// Its factory must be restartable; power loss requires factories for
-    /// every admitted process because it restarts the whole machine.
+    /// every process the world started; hosted children stay dead.
     pub fn cut(&mut self, host: usize, before: u32, cut: Cut) {
         assert!(self.restart.get(host).is_some_and(Option::is_some), "a cut needs a restart factory");
         if cut == Cut::PowerLoss {
-            assert!(self.restart.iter().all(Option::is_some), "power loss needs every process's restart factory");
+            assert!(
+                self.restart.iter().zip(&self.hosted).all(|(restart, hosted)| restart.is_some() || hosted.is_some()),
+                "power loss needs every process's restart factory"
+            );
         }
         assert!(!self.cuts.iter().any(|planned| planned.host == host), "a host is cut once");
         self.cuts.push(PlannedCut { host, before, cut, done: false });
@@ -633,7 +636,13 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
         let affected: Vec<_> = match cut.cut {
             Cut::Kill => vec![cut.host],
             Cut::PowerLoss => {
-                assert!(self.restart.iter().all(Option::is_some), "power loss needs every live process's factory");
+                assert!(
+                    self.restart
+                        .iter()
+                        .zip(&self.hosted)
+                        .all(|(restart, hosted)| restart.is_some() || hosted.is_some()),
+                    "power loss needs every live process's factory"
+                );
                 (0..self.procs.len()).collect()
             }
         };
@@ -655,8 +664,24 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
             self.sim.assert_no_open_fds(pid);
         }
         self.machine.cut(cut.cut, &handles, self.seed);
-        for at in affected {
+        for at in affected.into_iter().rev() {
             let old_pid = *self.pids.get(at).expect("a pid per process");
+            if self.hosted.get(at).expect("a status per process").is_some() {
+                let proc = self.procs.remove(at);
+                match &mut self.heap {
+                    Some(heap) => {
+                        heap.release(at, proc);
+                    }
+                    None => drop(proc),
+                }
+                self.pids.remove(at);
+                self.hosted.remove(at);
+                self.finished.remove(at);
+                self.restart.remove(at);
+                self.submissions.remove(at);
+                self.signals.retain(|_, (owner, _)| *owner != old_pid);
+                continue;
+            }
             let declaration =
                 self.restart.get_mut(at).expect("a slot per process").take().expect("a factory for a cut");
             let pid = self.sim.spawn_process();
