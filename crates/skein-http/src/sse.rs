@@ -379,6 +379,10 @@ fn data_demand(reader: &mut Reader, env: &Env<Limits>, request: Down, above: &mu
             pump(reader, env, above);
             return;
         }
+        Read::Arrived { max } => {
+            assert!(max > 0, "a read of what has arrived has a positive maximum");
+            1
+        }
         Read::Fill(count) => count,
         Read::Scan { max, .. } | Read::Line { max } => max,
     };

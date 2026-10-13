@@ -96,7 +96,11 @@ pub(super) fn closing_up(
         Up::Bytes(_) => {
             closing.demand = match closing.demand {
                 Some(Demand { read: Read::Nothing, room }) => Some(Demand { read: Read::Nothing, room }),
-                Some(Demand { read: Read::Fill(_) | Read::Scan { .. } | Read::Line { .. }, .. }) | None => None,
+                Some(Demand {
+                    read: Read::Fill(_) | Read::Scan { .. } | Read::Line { .. } | Read::Arrived { .. },
+                    ..
+                })
+                | None => None,
             };
         }
         Up::Room => {

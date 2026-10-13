@@ -276,3 +276,31 @@ fn a_child_close_kills_its_group_after_an_in_flight_owner_signal_settles() {
         }
     }
 }
+
+#[test]
+fn a_childs_output_is_read_as_it_arrives() {
+    let mut rig = Rig::new(Limits { sockets: 3, ..limits() });
+    let mut spawn = rig.down(Request::Spawn { owner: owner(1), spawn: command(&[(1, Way::Out)]) }).take(Kind::Spawn);
+    parent_ends(&mut spawn, &[Fd::new(12)]);
+    let out = rig.complete(spawn, Ok(Done::Spawned { pidfd: Fd::new(11) }));
+    let pipe = match out.events.as_slice() {
+        [Event::Spawned { pipes, .. }] => pipes[0],
+        other => panic!("spawned pipe: {other:?}"),
+    };
+    let read = rig.next().take(Kind::PipeRead);
+    rig.down(Request::Stream { stream: pipe, down: Down::Demand { read: Read::Arrived { max: 64 }, room: 0 } })
+        .nothing();
+    rig.next().nothing();
+    let Op::PipeRead { fd, mut buf } = read.kind else { panic!("pipe read") };
+    for (to, from) in buf.iter_mut().zip(b"hey") {
+        *to = *from;
+    }
+    let mut out =
+        rig.complete(crate::kernel::Submit { op: read.op, kind: Op::PipeRead { fd, buf } }, Ok(Done::Count(3)));
+    assert_eq!(out.events, [Event::Stream { owner: pipe, up: Up::Bytes(Box::from(&b"hey"[..])) }]);
+    let read = out.take(Kind::PipeRead);
+    rig.down(Request::Stream { stream: pipe, down: Down::Demand { read: Read::Arrived { max: 64 }, room: 0 } })
+        .nothing();
+    rig.next().nothing();
+    assert_eq!(rig.complete(read, Ok(Done::Count(0))).events, [Event::Stream { owner: pipe, up: Up::End }]);
+}

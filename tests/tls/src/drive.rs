@@ -72,7 +72,9 @@ impl Wire {
                 match read {
                     Read::Nothing => {}
                     Read::Fill(n) => assert!(n <= client::LARGEST_READ && !self.ended, "a fill within the cap"),
-                    Read::Scan { .. } | Read::Line { .. } => panic!("the client reads records by fills"),
+                    Read::Scan { .. } | Read::Line { .. } | Read::Arrived { .. } => {
+                        panic!("the client reads records by fills")
+                    }
                 }
                 if room > 0 {
                     assert!(!self.finished, "no room after Finish");

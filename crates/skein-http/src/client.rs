@@ -842,6 +842,10 @@ fn body_demanded(
         Face::Idle | Face::Demand(_) if read == Read::Nothing => Face::Withdrawn,
         Face::Idle => {
             let wanted = match read {
+                Read::Arrived { max } => {
+                    assert!(max > 0, "a read of what has arrived has a positive maximum");
+                    1
+                }
                 Read::Fill(n) => n,
                 Read::Scan { max, .. } | Read::Line { max } => max,
                 Read::Nothing => unreachable!("a withdrawal is matched above"),

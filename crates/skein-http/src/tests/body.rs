@@ -441,3 +441,17 @@ fn a_demand_past_what_the_intake_holds_is_the_side_above_s_bug() {
     machine.bytes(b"\r\n");
     machine.down(Request::Body(Down::Demand { read: Read::Fill(5), room: 0 }));
 }
+
+#[test]
+fn a_read_of_what_has_arrived_never_reads_past_the_body() {
+    let read = Read::Arrived { max: 64 };
+    for wire in [
+        &b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhelloHTTP/1.1 204 No Content\r\n\r\n"[..],
+        &b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhe\r\n3\r\nllo\r\n0\r\n\r\nHTTP/1.1 204 No Content\r\n\r\n"[..],
+    ] {
+        let exchanged = respond(wire, read);
+        assert_eq!(exchanged.body, b"hello");
+        assert!(exchanged.ended);
+        assert_eq!(exchanged.outcome, Some(Event::Done(Reuse::Keep)));
+    }
+}

@@ -239,6 +239,7 @@ fn a_shorter_scan_after_a_longer_one_still_stops_at_its_max() {
 fn reference(stream: &[u8], read: Read) -> Option<usize> {
     match read {
         Read::Nothing => None,
+        Read::Arrived { max } => (!stream.is_empty()).then_some(stream.len().min(usize::try_from(max).unwrap())),
         Read::Fill(n) => {
             let n = usize::try_from(n).unwrap();
             (stream.len() >= n).then_some(n)
@@ -484,4 +485,80 @@ fn clearing_an_intake_keeps_its_capacity_and_resets_the_scan_cache() {
     assert!(intake.is_empty());
     intake.append(b"x\n").unwrap();
     assert_eq!(intake.meet(scan(Delimiter::LF, 8)), Some(boxed(b"x\n")));
+}
+
+#[test]
+fn a_read_of_what_has_arrived_takes_all_held_up_to_its_maximum() {
+    let mut intake = Intake::with_capacity(16);
+    intake.append(b"hello").expect("within the cap");
+    assert_eq!(intake.meet(Read::Arrived { max: 3 }), Some(boxed(b"hel")));
+    assert_eq!(intake.meet(Read::Arrived { max: 64 }), Some(boxed(b"lo")));
+    assert_eq!(intake.meet(Read::Arrived { max: 64 }), None);
+}
+
+#[test]
+fn a_read_of_what_has_arrived_waits_for_one_byte() {
+    let mut intake = Intake::with_capacity(4);
+    assert_eq!(intake.meet(Read::Arrived { max: 64 }), None);
+    intake.append(b"a").unwrap();
+    assert_eq!(intake.meet(Read::Arrived { max: 64 }), Some(boxed(b"a")));
+}
+
+#[test]
+#[should_panic(expected = "a read of what has arrived has a positive maximum")]
+fn a_read_of_what_has_arrived_of_zero_is_the_caller_s_bug() {
+    drop(Intake::with_capacity(4).meet(Read::Arrived { max: 0 }));
+}
+
+#[test]
+fn a_scan_after_a_read_of_what_has_arrived_still_finds_its_delimiter() {
+    let mut intake = Intake::with_capacity(16);
+    intake.append(b"abc\r").unwrap();
+    assert_eq!(intake.meet(scan(Delimiter::CRLF, 16)), None);
+    assert_eq!(intake.meet(Read::Arrived { max: 2 }), Some(boxed(b"ab")));
+    intake.append(b"\nrest").unwrap();
+    assert_eq!(intake.meet(scan(Delimiter::CRLF, 16)), Some(boxed(b"c\r\n")));
+}
+
+/// Each split reads a piece into an empty intake and drains it. Borrow the
+/// deliveries of each possible piece, built once, across every split.
+fn arrived_deliveries(input: &[u8]) -> Vec<Vec<Vec<Box<[u8]>>>> {
+    let mut intake = Intake::with_capacity(16);
+    let mut pieces = Vec::new();
+    for start in 0..input.len() {
+        let mut ends = Vec::new();
+        for end in 0..=input.len() {
+            let mut delivered = Vec::new();
+            if end > start {
+                intake.append(&input[start..end]).unwrap();
+                while let Some(piece) = intake.meet(Read::Arrived { max: 3 }) {
+                    assert!((1..=3).contains(&piece.len()));
+                    delivered.push(piece);
+                }
+            }
+            ends.push(delivered);
+        }
+        pieces.push(ends);
+    }
+    pieces
+}
+
+#[test]
+fn every_split_delivers_the_same_bytes_in_order_to_reads_of_what_has_arrived() {
+    let pieces = arrived_deliveries(INPUT);
+    let mut delivered = Vec::with_capacity(INPUT.len());
+    for chosen in 0_u32..1 << (INPUT.len() - 1) {
+        delivered.clear();
+        let mut start = 0;
+        for (offset, _) in INPUT.iter().enumerate() {
+            let at = offset + 1;
+            if at == INPUT.len() || chosen & (1 << (at - 1)) != 0 {
+                for piece in &pieces[start][at] {
+                    delivered.extend_from_slice(piece);
+                }
+                start = at;
+            }
+        }
+        assert_eq!(delivered, INPUT, "split {chosen:b}");
+    }
 }

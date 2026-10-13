@@ -126,6 +126,10 @@ impl Bottom {
                     Read::Nothing => 0,
                     Read::Fill(n) => n,
                     Read::Scan { max, .. } | Read::Line { max } => max,
+                    Read::Arrived { max } => {
+                        assert!(max > 0);
+                        1
+                    }
                 };
                 assert!(wanted <= self.intake.capacity(), "no read past the intake's cap: {wanted}");
                 assert!(room <= self.output_cap, "no room past the output's cap: {room}");

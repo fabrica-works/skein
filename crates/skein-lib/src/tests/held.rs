@@ -51,3 +51,12 @@ fn a_delimiter_must_end_within_the_maximum() {
     assert_eq!(data.answer(Read::Scan { until: Delimiter::CRLF, max: 3 }), Some(Up::Bytes(boxed(b"ab\r"))));
     assert_eq!(data.answer(Read::Scan { until: Delimiter::CRLF, max: 3 }), Some(Up::Bytes(boxed(b"\ncd"))));
 }
+
+#[test]
+fn held_meets_a_read_of_what_has_arrived_with_what_is_left() {
+    let mut held = Held::new(boxed(b"hello"));
+    assert_eq!(held.answer(Read::Arrived { max: 3 }), Some(Up::Bytes(boxed(b"hel"))));
+    assert_eq!(held.answer(Read::Arrived { max: 64 }), Some(Up::Bytes(boxed(b"lo"))));
+    assert_eq!(held.answer(Read::Arrived { max: 64 }), Some(Up::End));
+    assert_eq!(held.answer(Read::Arrived { max: 64 }), None);
+}

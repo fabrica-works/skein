@@ -235,7 +235,7 @@ pub fn run(scenario: &Scenario, settings: &Settings, seed: u64) -> Run {
 /// Whether `bytes` hold what `read` asks for, from their start.
 fn meets(read: Read, bytes: &[u8]) -> bool {
     match read {
-        Read::Nothing => !bytes.is_empty(),
+        Read::Nothing | Read::Arrived { .. } => !bytes.is_empty(),
         Read::Fill(n) => bytes.len() >= usize::try_from(n).expect("fits a usize"),
         Read::Scan { until, max } => {
             let max = usize::try_from(max).expect("fits a usize");
@@ -254,6 +254,7 @@ fn delivers(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,
         Read::Fill(n) => bytes.len() == usize::try_from(n).expect("fits a usize"),
+        Read::Arrived { max } => !bytes.is_empty() && bytes.len() <= usize::try_from(max).expect("fits a usize"),
         Read::Scan { until, max } => {
             let delimiter = until.as_bytes();
             match bytes.windows(delimiter.len()).position(|window| window == delimiter) {
@@ -683,7 +684,9 @@ impl<'a> World<'a> {
                         assert!(below.life == Life::Open, "nothing read after the end");
                         assert!(n <= client::LARGEST_READ && n <= below.intake.capacity(), "no read past the caps");
                     }
-                    Read::Scan { .. } | Read::Line { .. } => panic!("the client reads records by fills"),
+                    Read::Scan { .. } | Read::Line { .. } | Read::Arrived { .. } => {
+                        panic!("the client reads records by fills")
+                    }
                 }
                 assert!(room <= client::largest_room(&self.settings.limits), "no room past the largest declared");
                 assert!(room <= self.settings.output, "no room past the output cap");

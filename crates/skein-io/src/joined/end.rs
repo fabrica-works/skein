@@ -81,6 +81,7 @@ pub(crate) fn request(current: &mut End, id: Id<Entity>, down: Down, limits: &Li
                         max <= limits.intake && usize::try_from(max).expect("u32 index") >= until.as_bytes().len(),
                         "scan within intake"
                     ),
+                    Read::Arrived { max } => assert!(max > 0, "a read of what has arrived has a positive maximum"),
                     Read::Line { max } => assert!(max > 0 && max <= limits.intake, "line within intake"),
                 }
                 open.demand = Demand { read, room };

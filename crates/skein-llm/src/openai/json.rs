@@ -74,7 +74,7 @@ impl Json {
                         None => max,
                     }
                 }
-                Read::Nothing | Read::Line { .. } => return Err(DecodeError::Malformed),
+                Read::Nothing | Read::Line { .. } | Read::Arrived { .. } => return Err(DecodeError::Malformed),
             };
             let delivery = if count <= remaining.len() {
                 let delivery = bytes::copy_of(remaining.get(..count).ok_or(DecodeError::Malformed)?);

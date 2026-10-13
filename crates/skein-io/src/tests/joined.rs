@@ -444,3 +444,14 @@ fn a_joined_deadline_settles_both_pending_outputs_from_their_own_ends() {
         ]
     );
 }
+
+#[test]
+fn a_joined_end_meets_a_read_of_what_has_arrived_with_what_its_peer_moved() {
+    use skein_lib::stream::{Down, Read, Up};
+    let (mut rig, connector, socket) = bound();
+    send(&mut rig, connector, b"hello");
+    rig.next().nothing();
+    rig.next().nothing();
+    stream(&mut rig, socket, Down::Demand { read: Read::Arrived { max: 64 }, room: 0 });
+    assert_eq!(rig.next().events, [Event::Stream { owner: owner(3), up: Up::Bytes(Box::from(&b"hello"[..])) }]);
+}

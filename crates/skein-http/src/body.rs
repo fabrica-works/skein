@@ -173,6 +173,7 @@ fn piece(face: Face, intake: &Intake, most: u32, left: u64) -> Read {
     let held = intake.len();
     match face {
         Face::Discarding => Read::Fill(at_most(most, left)),
+        Face::Demand(Read::Arrived { max }) => Read::Arrived { max: at_most(max, left) },
         Face::Demand(Read::Fill(n)) => {
             Read::Fill(at_most(n.checked_sub(held).expect("a fill the intake has not met"), left))
         }
@@ -283,6 +284,7 @@ fn answers(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,
         Read::Fill(n) => index(n) == bytes.len(),
+        Read::Arrived { max } => !bytes.is_empty() && bytes.len() <= index(max),
         Read::Scan { until, max } => match bytes::find(bytes, until.as_bytes()) {
             Some(at) => at.saturating_add(until.as_bytes().len()) == bytes.len(),
             None => bytes.len() == index(max),

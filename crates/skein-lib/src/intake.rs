@@ -121,10 +121,12 @@ impl Intake {
     ///   `until`, if it ends within the first `max`; otherwise, once `max`
     ///   are buffered, exactly `max` bytes, which do not end with `until`;
     /// - `Line { max }`: the same, to the first CR or LF;
+    /// - `Arrived { max }`: all held up to `max`, once a byte is held;
     /// - `Nothing`: nothing.
     ///
     /// A demand the cap can never meet, a fill or a scan past the capacity,
-    /// is the caller's bug, as is a scan too short to hold its delimiter.
+    /// is the caller's bug, as is a scan too short to hold its delimiter
+    /// or a read of what has arrived with a maximum of zero.
     pub fn meet(&mut self, read: Read) -> Option<Box<[u8]>> {
         let (until, max) = match read {
             Read::Nothing => return None,
@@ -134,6 +136,10 @@ impl Intake {
                     return None;
                 }
                 return Some(self.take(n));
+            }
+            Read::Arrived { max } => {
+                assert!(max > 0, "a read of what has arrived has a positive maximum");
+                return if self.is_empty() { None } else { Some(self.take(self.len().min(max))) };
             }
             Read::Scan { until, max } => (Until::Delimiter(until), max),
             Read::Line { max } => (Until::LineEnd, max),

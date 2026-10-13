@@ -142,6 +142,16 @@ pub(crate) fn request(
             assert!(room == 0 || pipe.independent.idle(), "classic room cannot overlap independent output");
             assert!(pipe.demand.is_none(), "one demand at a time");
             assert!(room <= env.limits.output, "demand fits the output cap");
+            match read {
+                Read::Nothing => {}
+                Read::Fill(n) => assert!(n <= env.limits.intake, "fill within intake"),
+                Read::Scan { until, max } => assert!(
+                    max <= env.limits.intake && usize::try_from(max).expect("u32 index") >= until.as_bytes().len(),
+                    "scan within intake"
+                ),
+                Read::Line { max } => assert!(max > 0 && max <= env.limits.intake, "line within intake"),
+                Read::Arrived { max } => assert!(max > 0, "a read of what has arrived has a positive maximum"),
+            }
             pipe.demand = Some((read, room));
             tables.ready.mark(id);
         }

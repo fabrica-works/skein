@@ -999,7 +999,7 @@ pub(crate) fn delivered(
     let end = match *reader {
         Reader::Ended => match demand.read {
             Read::Nothing => intake.is_empty(),
-            Read::Fill(_) | Read::Scan { .. } | Read::Line { .. } => true,
+            Read::Fill(_) | Read::Scan { .. } | Read::Line { .. } | Read::Arrived { .. } => true,
         },
         Reader::Receiving(_) | Reader::Full | Reader::Stalled | Reader::Told => false,
     };
@@ -1027,6 +1027,10 @@ fn demand(open: &mut Open, read: Read, room: u32, id: Id<Entity>, env: &Env<Limi
             );
             false
         }
+        Read::Arrived { max } => {
+            assert!(max > 0, "a read of what has arrived has a positive maximum");
+            false
+        }
         Read::Line { max } => {
             assert!(
                 max <= cap && max > 0,
@@ -1037,7 +1041,7 @@ fn demand(open: &mut Open, read: Read, room: u32, id: Id<Entity>, env: &Env<Limi
     };
     let outstanding = match open.demand.read {
         Read::Nothing => open.demand.room > 0,
-        Read::Fill(_) | Read::Scan { .. } | Read::Line { .. } => true,
+        Read::Fill(_) | Read::Scan { .. } | Read::Line { .. } | Read::Arrived { .. } => true,
     };
     assert!(
         withdrawal || !outstanding,

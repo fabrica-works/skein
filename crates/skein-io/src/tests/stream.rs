@@ -669,3 +669,22 @@ fn a_demand_in_place_of_one_outstanding_is_the_owner_s_bug() {
     let _ask = ask(&mut rig, socket, Read::Fill(2), 0);
     let _again = ask(&mut rig, socket, Read::Fill(1), 0);
 }
+
+#[test]
+fn a_read_of_what_has_arrived_is_met_by_the_receive_that_lands() {
+    let mut rig = Rig::new(limits());
+    let (socket, recv) = connected(&mut rig, owner(1), FD);
+    ask(&mut rig, socket, Read::Arrived { max: 64 }, 0).nothing();
+    rig.next().nothing();
+    let mut out = filled(&mut rig, recv, b"abc");
+    assert_eq!(out.events, [bytes(b"abc")]);
+    let recv = out.take(Kind::Recv);
+    ask(&mut rig, socket, Read::Arrived { max: 64 }, 0).nothing();
+    rig.next().nothing();
+    let mut out = filled(&mut rig, recv, b"de");
+    assert_eq!(out.events, [bytes(b"de")]);
+    let recv = out.take(Kind::Recv);
+    ask(&mut rig, socket, Read::Arrived { max: 64 }, 0).nothing();
+    rig.next().nothing();
+    assert_eq!(filled(&mut rig, recv, b"").events, [up(Up::End)]);
+}

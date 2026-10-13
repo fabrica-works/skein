@@ -151,7 +151,7 @@ pub fn validate(input: &[u8], limits: &Limits) -> Result<(), Error> {
                     None => max,
                 }
             }
-            Read::Nothing | Read::Line { .. } => return Err(Error::Unexpected),
+            Read::Nothing | Read::Line { .. } | Read::Arrived { .. } => return Err(Error::Unexpected),
         };
         let delivery = if count <= remaining.len() {
             let bytes = skein_lib::bytes::copy_of(remaining.get(..count).expect("delivery within input"));

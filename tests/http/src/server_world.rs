@@ -613,6 +613,7 @@ fn meets(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,
         Read::Fill(n) => bytes.len() >= usize::try_from(n).expect("fits a usize"),
+        Read::Arrived { .. } => !bytes.is_empty(),
         Read::Scan { until, max } => {
             let max = usize::try_from(max).expect("fits a usize");
             let window = &bytes[..max.min(bytes.len())];
@@ -630,6 +631,7 @@ fn delivers(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,
         Read::Fill(n) => bytes.len() == usize::try_from(n).expect("fits a usize"),
+        Read::Arrived { max } => !bytes.is_empty() && bytes.len() <= usize::try_from(max).expect("fits a usize"),
         Read::Scan { until, max } => {
             let delimiter = until.as_bytes();
             let first = bytes.windows(delimiter.len()).position(|window| window == delimiter);
@@ -1438,6 +1440,10 @@ impl World<'_> {
                     Read::Nothing => 0,
                     Read::Fill(n) => n,
                     Read::Scan { max, .. } | Read::Line { max } => max,
+                    Read::Arrived { max } => {
+                        assert!(max > 0);
+                        1
+                    }
                 };
                 assert!(wanted <= server::largest_read(&self.settings.limits), "no read past the largest declared");
                 assert!(wanted <= below.intake.capacity(), "no read past the cap below");

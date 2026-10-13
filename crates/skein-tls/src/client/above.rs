@@ -162,10 +162,14 @@ pub(in crate::client) fn answer(read: Read, reading: &mut Reading, peer: Peer, i
     }
 }
 
-/// The most a read takes.
+/// The intake capacity a read needs to be met (lib.md, 7).
 pub(in crate::client) fn largest(read: Read) -> u32 {
     match read {
         Read::Nothing => 0,
+        Read::Arrived { max } => {
+            assert!(max > 0, "a read of what has arrived has a positive maximum");
+            1
+        }
         Read::Fill(bytes) | Read::Scan { max: bytes, .. } | Read::Line { max: bytes } => bytes,
     }
 }

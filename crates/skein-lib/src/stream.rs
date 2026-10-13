@@ -40,6 +40,10 @@ pub enum Read {
     /// pairs them. `max` is at least one and at most the cap of the side
     /// below; breaking either is the caller's bug, asserted below.
     Line { max: u32 },
+    /// What has arrived: everything held once a byte is held, at most
+    /// `max`. The maximum is positive, asserted below, and may exceed the
+    /// side below's capacity: it never waits to fill it (lib.md, 7).
+    Arrived { max: u32 },
 }
 
 /// To the side below.
@@ -66,8 +70,9 @@ pub enum Down {
 /// From the side below.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum Up {
-    /// Exactly what the demand's read asks for: its one answer. One already
-    /// on its way when the demand was withdrawn may still arrive.
+    /// What the demand's read asks for, exactly or what has arrived of it:
+    /// its one answer. One already on its way when the demand was withdrawn
+    /// may still arrive.
     Bytes(Box<[u8]>),
     /// The room asked for is free: the demand's one answer, which grants one
     /// `Send`.

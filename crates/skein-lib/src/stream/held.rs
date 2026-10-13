@@ -43,6 +43,10 @@ impl Held {
                 let n = index(n);
                 if n <= rest.len() { Some(n) } else { None }
             }
+            Read::Arrived { max } => {
+                assert!(max > 0, "a read of what has arrived has a positive maximum");
+                if rest.is_empty() { None } else { Some(rest.len().min(index(max))) }
+            }
             Read::Scan { until, max } => {
                 let max = index(max);
                 let window = rest.get(..max.min(rest.len())).expect("within the rest");

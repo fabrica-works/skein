@@ -554,6 +554,7 @@ impl Below<'_> {
                 self.withdrawn = self.demand.take();
                 return;
             }
+            Read::Arrived { max } => panic!("the reader scans, it does not read what has arrived: {max}"),
             Read::Fill(n) => panic!("the reader scans, it does not fill: {n}"),
             Read::Scan { until, max } => panic!("the reader scans to a line end, not to {until:?}: {max}"),
             Read::Line { max } => max,

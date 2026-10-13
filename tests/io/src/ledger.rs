@@ -240,6 +240,7 @@ impl Ledger {
 fn met(read: Read, bytes: &[u8]) -> bool {
     match read {
         Read::Nothing => false,
+        Read::Arrived { max } => !bytes.is_empty() && bytes.len() <= usize::try_from(max).expect("fits a usize"),
         Read::Fill(n) => bytes.len() == n as usize,
         Read::Scan { until, max } => {
             let until = until.as_bytes();

@@ -498,7 +498,9 @@ impl Handshake {
         } else if let Some(requested) = self.read {
             let count = match requested {
                 Read::Fill(count) => count,
-                Read::Nothing | Read::Line { .. } | Read::Scan { .. } => unreachable!("exact record Fill"),
+                Read::Nothing | Read::Line { .. } | Read::Scan { .. } | Read::Arrived { .. } => {
+                    unreachable!("exact record Fill")
+                }
             };
             assert!(self.peer.output.len() >= count, "server supplies pending record");
             self.read = None;
@@ -614,4 +616,42 @@ fn ciphertext_must_answer_the_fill_exactly() {
     let right = machine.started();
     machine.sent_hello(right);
     machine.up(LowerEvent::Stream(Up::Bytes(Box::from([0; 4]))));
+}
+
+#[test]
+fn a_read_of_what_has_arrived_takes_one_records_plaintext() {
+    use rustls::unbuffered::ConnectionState;
+    let mut handshake = Handshake::new();
+    for _ in 0..512_u32 {
+        handshake.take();
+        handshake.receive();
+        if !handshake.machine.above.is_empty() {
+            assert_eq!(
+                handshake.machine.above.pop(),
+                Some(Event::Client(client::Event::Ready(client::Agreed {
+                    version: client::Version::Tls12,
+                    alpn: None
+                })))
+            );
+            break;
+        }
+    }
+    let mut ciphertext = [0; 128];
+    let status = handshake.peer.tls.process_tls_records(&mut []);
+    let ConnectionState::WriteTraffic(mut traffic) = status.state.unwrap() else { panic!("server ready") };
+    let count = traffic.encrypt(b"hello", &mut ciphertext).unwrap();
+    let machine = &mut handshake.machine;
+    machine.down(Request::Client(client::Request::Stream(Down::Demand { read: Read::Arrived { max: 64 }, room: 0 })));
+    assert_eq!(
+        machine.below.pop(),
+        Some(LowerRequest::Stream(Down::Demand { read: Read::Fill(client::HEADER), room: 0 }))
+    );
+    machine.up(LowerEvent::Stream(Up::Bytes(Box::from(&ciphertext[..5]))));
+    assert_eq!(
+        machine.below.pop(),
+        Some(LowerRequest::Stream(Down::Demand { read: Read::Fill(u32::try_from(count - 5).unwrap()), room: 0 }))
+    );
+    machine.up(LowerEvent::Stream(Up::Bytes(Box::from(&ciphertext[5..count]))));
+    assert_eq!(machine.above.pop(), Some(Event::Client(client::Event::Stream(Up::Bytes(Box::from(&b"hello"[..]))))));
+    assert!(machine.above.is_empty() && machine.below.is_empty());
 }

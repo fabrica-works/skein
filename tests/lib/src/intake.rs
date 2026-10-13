@@ -18,6 +18,9 @@ pub fn scan(until: Delimiter, max: u32) -> Read {
 pub fn reference(stream: &[u8], read: Read) -> Option<usize> {
     match read {
         Read::Nothing => None,
+        Read::Arrived { max } => {
+            (!stream.is_empty()).then_some(stream.len().min(usize::try_from(max).expect("a u32 fits a usize")))
+        }
         Read::Fill(n) => {
             let n = usize::try_from(n).expect("a u32 fits a usize");
             (stream.len() >= n).then_some(n)
