@@ -153,10 +153,13 @@ pub enum Request {
         from: Box<[u8]>,
         to: Box<[u8]>,
     },
+    /// Removes one file or empty directory by name: `Removed` or `Failed` (io.md, 5).
     Remove {
         owner: Token,
         root: Fd,
         name: Box<[u8]>,
+        /// Removes an empty directory when true, a file when false; never its contents.
+        directory: bool,
     },
     List {
         owner: Token,

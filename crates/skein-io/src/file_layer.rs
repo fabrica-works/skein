@@ -581,13 +581,13 @@ fn down_inner(io: &mut FileIo, request: Request, events: &mut Queue<Event>, subs
             io.pending = Some(Pending::Rename { owner });
             io.issue(Op::Rename { from_dir: root, from, to_dir: root, to }, subs);
         }
-        Request::Remove { owner, root, name } => {
+        Request::Remove { owner, root, name, directory } => {
             if !crate::kernel::is_name(&name) {
                 events.push(Event::Failed { owner, error: Error::InvalidArgument, committed: false, residue: None });
                 return;
             }
             io.pending = Some(Pending::Remove { owner });
-            io.issue(Op::Remove { dir: root, name, directory: false }, subs);
+            io.issue(Op::Remove { dir: root, name, directory }, subs);
         }
         Request::List { owner, root } => {
             io.pending = Some(Pending::ListOpening { owner });

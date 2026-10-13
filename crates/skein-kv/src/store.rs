@@ -346,6 +346,7 @@ impl Store {
                 owner: IO_OWNER,
                 root: self.root(),
                 name: self.tail_name.as_ref().expect("set").clone(),
+                directory: false,
             });
         } else {
             self.create_segment(name, below);
@@ -655,6 +656,7 @@ pub fn up(
                     owner: IO_OWNER,
                     root: store.root(),
                     name: Box::from(&b"snapshot.tmp"[..]),
+                    directory: false,
                 });
             } else {
                 store.start_recovery(below);
@@ -992,7 +994,7 @@ pub fn fire(store: &mut Store, env: &Env<Limits>, _above: &mut Queue<Event>, bel
             };
             (
                 SnapAction::RemoveOld { name: name.clone() },
-                file::Request::Remove { owner: IO_OWNER, root: store.root(), name },
+                file::Request::Remove { owner: IO_OWNER, root: store.root(), name, directory: false },
             )
         }
         SnapStage::CleanupSyncDirectory => {
@@ -1022,6 +1024,7 @@ fn snapshot_up(
                 owner: IO_OWNER,
                 root: store.root(),
                 name: Box::from(&b"snapshot.tmp"[..]),
+                directory: false,
             });
             return;
         }
