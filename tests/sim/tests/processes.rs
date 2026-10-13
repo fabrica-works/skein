@@ -42,6 +42,75 @@ fn usage(world: &mut World, parent: Pid) -> Usage {
     usage
 }
 
+struct OutputChild {
+    world: World,
+    parent: Pid,
+    root: Fd,
+    pidfd: Fd,
+    output: Fd,
+    service: Pid,
+    writer: Fd,
+}
+
+fn hosted_output() -> OutputChild {
+    let mut world = World::calm();
+    let parent = world.spawn();
+    let root = world.root(parent, &[]);
+    let (pidfd, output) = child(&mut world, parent, root, Program::Service, true);
+    let output = output.expect("a requested output pipe");
+    let (service, inherited) = world.sim.bind_service(parent, pidfd);
+    let &(1, writer) = inherited.first().expect("the child's output pipe") else {
+        panic!("the requested child descriptor")
+    };
+    assert_eq!(
+        world.call(service, Op::PipeWrite { fd: writer, bytes: Box::from(b"ab".as_slice()), from: 0 }).result,
+        Ok(Done::Count(2))
+    );
+    OutputChild { world, parent, root, pidfd, output, service, writer }
+}
+
+fn settle_output_child(child: &mut OutputChild, exit: Exit) {
+    assert_eq!(
+        child.world.call(child.parent, Op::Wait { pidfd: child.pidfd, reap: false }).result,
+        Ok(Done::Exit(exit))
+    );
+    child.world.call(child.parent, Op::Wait { pidfd: child.pidfd, reap: true });
+    child.world.close(child.parent, child.pidfd);
+    child.world.close(child.parent, child.root);
+    child.world.settled(child.parent);
+    child.world.settled(child.service);
+    child.world.sim.assert_hosted_settled(child.parent);
+}
+
+#[test]
+fn a_killed_childs_unread_output_is_settled() {
+    let mut child = hosted_output();
+    let read = child.world.call(child.parent, Op::PipeRead { fd: child.output, buf: Box::new([0; 1]) });
+    assert_eq!(read.result, Ok(Done::Count(1)));
+    let Op::PipeRead { buf, .. } = read.kind else { panic!("the output read record") };
+    assert_eq!(buf.as_ref(), b"a");
+    child.world.close(child.parent, child.output);
+    assert_eq!(
+        child
+            .world
+            .call(child.parent, Op::Signal { pidfd: child.pidfd, signal: Signal::Kill, to: Target::Group })
+            .result,
+        Ok(Done::Nothing)
+    );
+    child.world.close(child.service, child.writer);
+    settle_output_child(&mut child, Exit::Signal(9));
+}
+
+#[test]
+#[should_panic(expected = "every hosted child's output pipe was read to its end once settled")]
+fn a_childs_own_exit_with_unread_output_is_caught() {
+    let mut child = hosted_output();
+    child.world.close(child.service, child.writer);
+    child.world.sim.finish_service(child.service, Exit::Code(0));
+    child.world.close(child.parent, child.output);
+    settle_output_child(&mut child, Exit::Code(0));
+}
+
 #[test]
 fn a_group_signal_reaches_a_member_the_leader_started_before_and_after_its_exit() {
     for exit_leader in [false, true] {

@@ -243,17 +243,22 @@ impl Sim {
         self.submit(pid, &mut submits);
     }
 
-    /// Checks a parent's hosted children have exited and their output pipes
-    /// were read through EOF (testing-strategy.md, section 6).
+    /// Checks hosted children have exited, and output from children that exited
+    /// with their own code was read through EOF (testing-strategy.md, section 6).
     pub fn assert_hosted_settled(&self, pid: Pid) {
         for child in self.process(pid).children.values() {
             if child.service.is_some() {
                 assert!(child.exit.is_some(), "every hosted child finished once settled");
-                for pipe in &child.pipes {
-                    assert!(
-                        pipe.spec.way != Way::Out || pipe.read_to_end,
-                        "every hosted child's output pipe was read to its end once settled"
-                    );
+                match child.exit {
+                    Some(Exit::Code(_)) => {
+                        for pipe in &child.pipes {
+                            assert!(
+                                pipe.spec.way != Way::Out || pipe.read_to_end,
+                                "every hosted child's output pipe was read to its end once settled"
+                            );
+                        }
+                    }
+                    Some(Exit::Signal(_)) | None => {}
                 }
             }
         }
