@@ -1,6 +1,6 @@
 # The simulator
 
-Provisional, 2026-10-03, revised 2026-10-12. The design of `skein-sim`:
+Provisional, 2026-10-03, revised 2026-10-13. The design of `skein-sim`:
 the simulated kernel that every world from io worlds up runs on
 (testing-strategy.md, 2). It is a backend of the kernel boundary
 (kernel.md), for every process of one world, with every choice drawn from
@@ -139,8 +139,11 @@ would: to show that what a service keeps durably survives (io.md, 5.2).
   process is dropped with what it has in flight, which never completes,
   and its descriptors go with it.
 - **A kill cuts one process; a power loss cuts the machine:** every
-  process on it is dropped at the same point, and each restarts over
-  what the machine kept.
+  process on it is dropped at the same point. The processes the world
+  started restart over what the machine kept, each by its own factory,
+  as a machine's services start again at its boot. A child one of them
+  spawned is not started again by the world: its parent, restarted,
+  spawns it again if it chooses, as after a real boot.
 - **What the machine keeps** depends on the cut. After a kill, every
   operation that completed stands, as the kernel's cache keeps it. After
   a power loss, what a crash keeps: what was synced; unsynced writes
