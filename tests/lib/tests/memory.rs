@@ -600,12 +600,15 @@ fn journal_memory<W: Item + std::fmt::Debug, O: Item + std::fmt::Debug>(limits: 
 fn a_request_table_filled_to_every_limit_stays_within_its_worst_case() {
     for capacity in CAPACITIES {
         for restored in [false, true] {
-            request_table_memory::<u8, u8>(capacity, restored);
-            request_table_memory::<u64, u64>(capacity, restored);
-            request_table_memory::<u128, u128>(capacity, restored);
             request_table_memory::<[u64; 8], [u64; 8]>(capacity, restored);
-            request_table_memory::<[u64; 8], u8>(capacity, restored);
-            request_table_memory::<u8, [u64; 8]>(capacity, restored);
+            // All pairs use the same map keys; the slab is covered at 300.
+            if capacity <= 64 {
+                request_table_memory::<u8, u8>(capacity, restored);
+                request_table_memory::<u64, u64>(capacity, restored);
+                request_table_memory::<u128, u128>(capacity, restored);
+                request_table_memory::<[u64; 8], u8>(capacity, restored);
+                request_table_memory::<u8, [u64; 8]>(capacity, restored);
+            }
         }
     }
 }

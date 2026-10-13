@@ -27,7 +27,7 @@ fn a_captured_completion_decodes_under_tiny_retained_limits() {
 
 #[test]
 fn an_oversized_native_call_is_scanned_and_completes_without_its_arguments() {
-    let arguments = "x".repeat(1_048_576);
+    let arguments = "x".repeat(1 << 18);
     let done = format!(
         r#"{{"type":"response.output_item.done","output_index":0,"item":{{"arguments":"{arguments}","id":"i","call_id":"c","name":"read","type":"function_call"}}}}"#
     );
@@ -40,7 +40,7 @@ fn an_oversized_native_call_is_scanned_and_completes_without_its_arguments() {
     world.assert_once();
     assert!(
         world.seen.iter().any(|event| matches!(event, client::Event::Completed { completion, .. }
-        if matches!(completion.content.as_ref(), [Block::Oversize { bytes: 1_048_576, .. }]))),
+        if matches!(completion.content.as_ref(), [Block::Oversize { bytes: 262_144, .. }]))),
         "{:?}",
         world.seen
     );

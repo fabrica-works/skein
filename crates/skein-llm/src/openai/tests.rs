@@ -1387,12 +1387,12 @@ fn captured_completion_retains_status_and_usage_without_echoes() {
 fn native_function_arguments_are_counted_without_text_even_with_a_late_tag() {
     let input = format!(
         r#"{{"type":"response.output_item.done","output_index":0,"item":{{"arguments":"{}","id":"i","call_id":"c","name":"read","type":"function_call"}}}}"#,
-        "x".repeat(1_048_576)
+        "x".repeat(131_072)
     );
     let value = Json::collected(projected(input.as_bytes(), crate::Provider::OpenAiCodex));
     let item = json::value_at(value.view(), json::required(value.view(), b"item").unwrap()).unwrap();
     let args = json::value_at(item, json::required(item, b"arguments").unwrap()).unwrap();
-    assert_eq!(crate::openai::response::long_text(args), Some(1_048_576));
+    assert_eq!(crate::openai::response::long_text(args), Some(131_072));
     assert_eq!(json::record_text(args, 0).unwrap(), b"");
 }
 

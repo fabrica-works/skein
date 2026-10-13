@@ -451,10 +451,10 @@ fn a_large_event_holds_only_its_intake_piece_and_delivery() {
 }
 
 #[test]
-fn an_event_of_a_megabyte_costs_the_same_reader_memory_as_a_small_one() {
+fn an_event_far_longer_than_its_chunk_costs_the_same_reader_memory_as_a_small_one() {
     let limits = sse::Limits { line: 2 << 20, event: 2 << 20, field: 8, chunk: 4 };
     let small = format!("event: 12345678\nid: 12345678\ndata: {}\n\n", "a".repeat(64));
-    let large = format!("event: 12345678\nid: 12345678\ndata: {}\n\n", "a".repeat(1 << 20));
+    let large = format!("event: 12345678\nid: 12345678\ndata: {}\n\n", "a".repeat(1 << 14));
     let small = events(limits, small.as_bytes(), None);
     let large = events(limits, large.as_bytes(), None);
     assert_eq!(small, large, "the reader holds no event buffer");

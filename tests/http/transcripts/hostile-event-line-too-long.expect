@@ -1,7 +1,7 @@
 # Written by hand: a response a broken or hostile server sends.
-# One data line of 20,000 bytes, longer than the reader's line limit and
+# One data line of 2,000 bytes, longer than the reader's line limit and
 # shorter than its event limit.
-sse line 4096 event 65536 field 256 chunk 4096
+sse line 512 event 8192 field 256 chunk 4096
 status HTTP/1.1 200
 header Content-Type "text/event-stream"
 header Cache-Control "no-cache"

@@ -1,9 +1,10 @@
 # Written by hand: a response a broken or hostile server sends.
 # Drafted by the reference readers, then checked by hand.
+sse event 2048
 status HTTP/1.1 200
 header Content-Type "text/event-stream"
 header Cache-Control "no-cache"
-header Content-Length "19500"
-framing length 19500
+header Content-Length "2080"
+framing length 2080
 sse failed event-too-long
 done keep

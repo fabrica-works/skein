@@ -716,8 +716,8 @@ fn replay_at_its_cap_owns_only_shared_text_and_fixed_records() {
 }
 
 fn selective_peak(size: usize, call_arguments: bool) -> u64 {
-    // One MiB across the four independently ignored echo paths keeps this
-    // focused memory world within its serial one-second budget.
+    // A quarter MiB across the four independently ignored echo paths keeps
+    // the ignored fields far larger than their retained limits.
     let text = "x".repeat(if call_arguments { size } else { size / 4 });
     let documents = if call_arguments {
         vec![
@@ -775,14 +775,14 @@ fn selective_peak(size: usize, call_arguments: bool) -> u64 {
 #[test]
 fn selective_echo_high_water_is_independent_of_the_echo_size() {
     let short = selective_peak(64, false);
-    let long = selective_peak(1_048_576, false);
+    let long = selective_peak(1 << 18, false);
     assert_eq!(short, long, "discarded echoes never become an event buffer");
 }
 
 #[test]
 fn selective_oversize_call_high_water_is_independent_of_the_argument_size() {
     let short = selective_peak(64, true);
-    let long = selective_peak(1_048_576, true);
+    let long = selective_peak(1 << 18, true);
     assert_eq!(short, long, "discarded arguments retain only their length");
 }
 

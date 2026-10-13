@@ -216,9 +216,13 @@ pub fn v4(port: u16) -> Addr {
 /// Bytes no two offsets of a short span repeat in, to catch reordering.
 #[must_use]
 pub fn pattern(len: usize) -> Box<[u8]> {
-    let mut bytes = vec![0_u8; len];
-    for (at, byte) in bytes.iter_mut().enumerate() {
+    // The formula repeats after 65,536 bytes.
+    const PERIOD: usize = 1 << 16;
+    let mut period = vec![0_u8; PERIOD.min(len)];
+    for (at, byte) in period.iter_mut().enumerate() {
         *byte = u8::try_from(at.wrapping_mul(31).wrapping_add(at >> 8) & 0xff).expect("masked to a byte");
     }
+    let mut bytes = period.repeat(len.div_ceil(PERIOD));
+    bytes.truncate(len);
     bytes.into_boxed_slice()
 }

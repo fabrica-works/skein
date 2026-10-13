@@ -24,7 +24,10 @@ fn a_large_transfer_takes_short_sends_and_many_receives() {
 
     // Nothing reads yet, so the first send takes what the socket buffers hold.
     let first = world.run(Op::send(client, bytes.clone(), 0).unwrap());
-    let Ok(Done::Count(first_sent)) = first.result else { panic!("a send: {first:?}") };
+    let (Ok(Done::Count(first_sent)), Op::Send { bytes: back, .. }) = (first.result, first.kind) else {
+        panic!("a send")
+    };
+    let mut outgoing = Some(back);
     assert!(usize::try_from(first_sent).unwrap() < LEN, "a short send: {first_sent} of {LEN}");
 
     let mut received = Vec::with_capacity(LEN);
@@ -36,7 +39,7 @@ fn a_large_transfer_takes_short_sends_and_many_receives() {
     while received.len() < LEN {
         assert!(world.clock.now().now < deadline, "the transfer finished in time");
         if sending.is_none() && usize::try_from(from).unwrap() < LEN {
-            sending = Some(world.start(Op::send(client, bytes.clone(), from).unwrap()));
+            sending = Some(world.start(Op::send(client, outgoing.take().unwrap(), from).unwrap()));
         }
         if receiving.is_none() {
             receiving = Some(world.start(Op::recv(server, vec![0; 64 << 10].into_boxed_slice()).unwrap()));
@@ -45,8 +48,9 @@ fn a_large_transfer_takes_short_sends_and_many_receives() {
         if let Some(op) = sending
             && let Some(sent) = world.arrived.remove(&op)
         {
-            let Ok(Done::Count(n)) = sent.result else { panic!("a send: {sent:?}") };
+            let (Ok(Done::Count(n)), Op::Send { bytes: back, .. }) = (sent.result, sent.kind) else { panic!("a send") };
             from = from.checked_add(n).unwrap();
+            outgoing = Some(back);
             sending = None;
         }
         if let Some(op) = receiving
