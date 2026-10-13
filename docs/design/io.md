@@ -558,7 +558,7 @@ pub enum Request {
     Stat { owner, file }, Sync { owner, file }, Close { owner, file },
     // the entries of a directory
     SyncDirectory { owner, root: Fd }, List { owner, root: Fd },
-    Rename { owner, root: Fd, from, to }, Remove { owner, root: Fd, name },
+    Rename { owner, root: Fd, from, to }, Remove { owner, root: Fd, name, directory },
 }
 // each request ends in one event: its own, Failed { error } or Cancelled
 ```
@@ -587,6 +587,12 @@ pub enum Request {
   a read reaches the end. `Sync` makes a file's writes durable,
   `SyncDirectory` a directory's entries. These are what kv.md's log
   segments need (kv.md, section 8).
+- **Removing** takes one name. `Remove` removes a file, or, with
+  `directory`, an empty directory, never what lies inside one: a
+  directory that is not empty fails with the kernel's error, as
+  `unlinkat` with `AT_REMOVEDIR` does (kernel.md, 6.1). io never
+  traverses to remove a tree. Its owner removes the names it knows, then
+  the directory, so nothing it did not write is removed.
 - **Writing a file that exists:** `OpenWrite` opens an existing regular
   file to read and write, never creating it (`Missing` if it is absent),
   so a writer that resumes a file after a restart writes at the offsets
