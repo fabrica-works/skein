@@ -1,6 +1,6 @@
 # io
 
-Provisional, 2026-10-03, revised 2026-10-12. The design of `skein-io`'s
+Provisional, 2026-10-03, revised 2026-10-13. The design of `skein-io`'s
 step layer: the lowest step layer of every service. It owns sockets,
 pipes, files and child processes, the operations in flight on them, and
 the receive and send queues, and it is the only layer that sees a
@@ -587,6 +587,17 @@ pub enum Request {
   a read reaches the end. `Sync` makes a file's writes durable,
   `SyncDirectory` a directory's entries. These are what kv.md's log
   segments need (kv.md, section 8).
+- **What a request makes by a path, io makes durable** before it
+  answers: `Store` after its directory's `Sync` (5.2); `MakeDirectory`
+  after a `Sync` of the directory it made the new one in; `OpenPrivate`,
+  when it made its directory, after the same, before it opens it. io
+  holds that directory open, having opened it to make the name (below),
+  and the owner, which named a root and a path, has no descriptor for
+  it. A failed `Sync` there answers `Failed` with `committed`: the
+  directory is made, its durability unknown. What an owner makes
+  beneath a root it holds open (`Create`, `Rename`, `Remove`, and the
+  entries of a directory io made) is durable once it syncs that root
+  (`SyncDirectory`), as kv's segments are.
 - **Removing** takes one name. `Remove` removes a file, or, with
   `directory`, an empty directory, never what lies inside one: a
   directory that is not empty fails with the kernel's error, as
@@ -759,13 +770,13 @@ part is the modes and the checks; what the files hold, and their names,
 are the owner's (oauth.md, 6).
 
 - **A private root.** The directory is made `0o700` if it is absent
-  (`MakeDirectory` takes a mode, as `Create` does; kernel.md, 6.1), and
-  opened beneath its root as a root of its own, without following a link
-  at its name. io stats what it opened and refuses it unless it is a
-  directory with no group or other permission bits and the expected
-  owner, saying what it found unsafe (a link, a non-directory, group or
-  other bits, another owner), so an owner tells a planted file from a
-  failed read.
+  (`MakeDirectory` takes a mode, as `Create` does; kernel.md, 6.1), the
+  directory it lies in synced (section 5), and opened beneath its root
+  as a root of its own, without following a link at its name. io stats
+  what it opened and refuses it unless it is a directory with no group
+  or other permission bits and the expected owner, saying what it found
+  unsafe (a link, a non-directory, group or other bits, another owner),
+  so an owner tells a planted file from a failed read.
 - **Private files are made `0o600`,** less the umask, which only takes
   bits away, and are replaced whole with that mode (5.2), never with the
   old file's: a file found with group or other bits is not copied
@@ -947,7 +958,10 @@ Built, for sockets:
   that settles at its deadline. The kernel records for files are held to
   the ring by the conformance suite (kernel.md, 8), and kv's tests run
   the driver over the simulator, on a fake machine that crashes at every
-  step of a commit and a snapshot (kv.md, section 9).
+  step of a commit and a snapshot (kv.md, section 9). A world that cuts
+  a power loss lays nothing its requests make: its private root and its
+  directories start absent, so a cut after each make and before its
+  answer finds the directory there only if the request answered it.
 
 To come with what section 9 builds:
 

@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-12. How far skein's code is from its design, and which
+Updated 2026-10-13. How far skein's code is from its design, and which
 plans take it there. The designer keeps this file (development.md,
 section 3.3).
 
@@ -28,9 +28,9 @@ Section 2 names an increment of smith's reliability plan as
 | `foundation/testing-strategy.md` | partly | 6: state digests, transition coverage, `cargo fuzz`: not planned |
 | `lib.md` | partly | 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 13: `Slab::get2_mut`, the state digest: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 9: fixed files, 10: the ring's descriptor limit: not planned |
-| `io.md` | partly | 5: `Remove` of an empty directory (smith's reliability plan, a step its supervisor names); 5.1: a write pipe's stated write deadline (smith's reliability plan, a step its supervisor names); 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut` (jig's jig-protocol); 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
+| `io.md` | partly | 5: `Remove` of an empty directory (smith's reliability plan, a step its supervisor names); 5.1: a write pipe's stated write deadline (smith's reliability plan, a step its supervisor names); 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut`, and a made directory synced into its parent, with a world that cuts after each make (jig's jig-protocol, skein-03.s1); 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 3.1: a cut kept until synced (jig's jig-protocol); 5: the state digest: not planned |
-| `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol), `directory_access` (smith's reliability plan, a step its supervisor names); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
+| `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol); 6: `make_root` (jig's jig-protocol, skein-03.s1); 6.1: `directory_access` (smith's reliability plan, a step its supervisor names); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
 | `testing.md` | partly | 6: the gate's build for `wasm32-unknown-unknown`: not built; 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
 | `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |

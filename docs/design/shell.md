@@ -1,6 +1,6 @@
 # The shell kit
 
-Provisional, 2026-10-03, revised 2026-10-12. The design of
+Provisional, 2026-10-03, revised 2026-10-13. The design of
 `skein-shell`: what a service's `main` runs its loop on. The kernel (the
 io_uring backend of the kernel boundary, kernel.md), the clock and the
 seed; the loop itself, over a service's `Host`, and how it ends; what
@@ -130,11 +130,15 @@ Before its loop, a service's `main`, with the kit:
 3. blocks the termination signals that io will read, so they arrive as
    `Shutdown` events (io.md);
 4. opens the first roots for io's files, from configuration, with
-   `open_root` (io.md, 5; kernel.md, 6.1). A root, a workspace, belongs
-   on a filesystem mounted `nodev`: the ring refuses to open a device
-   beneath it, but only after the device's own `open` has run. It opens
-   the files it appends to beneath them, a trace among them, which io
-   adopts as streams once the service is made (io.md, 5.1);
+   `open_root` (io.md, 5; kernel.md, 6.1), which makes nothing; a root
+   that may be absent, such as a state directory, with `make_root`,
+   which makes each absent directory along its path with the mode given,
+   syncing the directory each lies in, before it opens the last, so that
+   a root the service relies on survives a crash. A root, a workspace,
+   belongs on a filesystem mounted `nodev`: the ring refuses to open a
+   device beneath it, but only after the device's own `open` has run. It
+   opens the files it appends to beneath them, a trace among them, which
+   io adopts as streams once the service is made (io.md, 5.1);
 5. resolves the configured peer host names into socket addresses
    (io.md, 4), and hands on an in-process name as configured,
    unresolved;
