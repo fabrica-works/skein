@@ -43,7 +43,8 @@ the generated code shares. Codecs carry the bodies of a framed channel
   generated for it. It holds what the generated code shares:
   - the reasons a decoding fails;
   - bounded reads of lengths, counts and text;
-  - reading a versioned record's version.
+  - reading a versioned record's version;
+  - writing a piece of items and splitting one (section 3).
 - **`skein-codegen`** is the generator: ordinary Rust, not step code. A
   consumer depends on it in its tests only.
 - **A consumer's codec crate** holds its schemas, the generated code, its
@@ -111,6 +112,16 @@ enum Form {
   `secret`, the word changes the Rust type and not the bytes, so marking
   a variant or unmarking it moves no golden bytes and no version
   (section 5).
+- **A sum crosses as one piece.** A schema bounds each field and each
+  count, so a list's worst case is its count times its item's, and lists
+  of items that hold lists multiply. Where an owner bounds a collection
+  by its bytes in all, not by its count times its largest item, the
+  collection is one `bytes N` field, N the owner's sum: its items each
+  after a `u32` length, written and split with `skein-codec`'s piece
+  helpers, each item decoded by its own type's code as the reader splits
+  the piece. A piece whose lengths do not end exactly at its end is
+  refused as malformed. Its worst case is its bound, and its items'
+  decoded size is the owner's to count against the same sum.
 - **A type uses only types declared before it.** The types form a tree, and
   decoding nests to a fixed depth.
 - **No imports.** A record of another family, such as a charter carried in
