@@ -92,8 +92,8 @@ fn a_family_of_400_bounded_declarations_generates_in_half_a_second() {
     assert_eq!(output.rust.matches("fn bounds_").count(), 7, "at most 64 bound cases per table");
     assert_eq!(
         output.rust.matches("check_limits(limits)?;").count(),
-        800,
-        "one limits check per public constructor and decoder"
+        0,
+        "constructors and decoders check only their values"
     );
 }
 

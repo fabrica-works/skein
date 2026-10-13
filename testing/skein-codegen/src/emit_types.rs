@@ -186,10 +186,11 @@ fn emit_record(schema: &Context<'_>, record: &Record, out: &mut String) {
     let members = names.join(", ");
     let has_bounds = schema.has_bounds(&Type::Named(record.name.clone()));
     let check = if has_bounds { "        value.check(limits)?;\n" } else { "" };
+    let limits = if has_bounds { "limits" } else { "_limits" };
     if schema.bounds.is_empty() {
         out.push_str(&format!("    /// Makes a value; this family has no adjustable bounds.\n    #[must_use]\n    pub fn new(_limits: &Limits, parts: {}Parts) -> Self {{\n        let {}Parts {{ {members} }} = parts;\n        Self {{ {members} }}\n    }}\n\n", record.name, record.name));
     } else {
-        out.push_str(&format!("    /// Makes a value within the given limits.\n    pub fn new(limits: &Limits, parts: {}Parts) -> Result<Self, Problem> {{\n        let {}Parts {{ {members} }} = parts;\n        check_limits(limits)?;\n        let value = Self {{ {members} }};\n{check}        Ok(value)\n    }}\n\n", record.name, record.name));
+        out.push_str(&format!("    /// Makes a value within the given limits.\n    pub fn new({limits}: &Limits, parts: {}Parts) -> Result<Self, Problem> {{\n        let {}Parts {{ {members} }} = parts;\n        let value = Self {{ {members} }};\n{check}        Ok(value)\n    }}\n\n", record.name, record.name));
     }
     for field in &record.fields {
         out.push_str(&format!(
@@ -239,7 +240,8 @@ fn emit_enum(schema: &Context<'_>, enumeration: &Enumeration, out: &mut String) 
     }
     let has_bounds = schema.has_bounds(&Type::Named(enumeration.name.clone()));
     let check = if has_bounds { "        value.check(limits)?;\n" } else { "" };
-    out.push_str(&format!("impl {} {{\n    /// Checks the payload against the given limits.\n    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {{\n        check_limits(limits)?;\n{check}        Ok(value)\n    }}\n\n", enumeration.name));
+    let limits = if has_bounds { "limits" } else { "_limits" };
+    out.push_str(&format!("impl {} {{\n    /// Checks the payload against the given limits.\n    pub fn new({limits}: &Limits, value: Self) -> Result<Self, Problem> {{\n{check}        Ok(value)\n    }}\n\n", enumeration.name));
     if !has_bounds {
         out.push_str("}\n\n");
         return;

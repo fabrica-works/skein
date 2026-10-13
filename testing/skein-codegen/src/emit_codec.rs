@@ -220,9 +220,6 @@ fn emit_record(schema: &Context<'_>, record: &Record, out: &mut String) {
     } else {
         out.push_str("        Ok(())\n    }\n\n    /// Reads a whole record and refuses trailing bytes.\n    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {\n");
     }
-    if !schema.bounds.is_empty() {
-        out.push_str("        check_limits(limits)?;\n");
-    }
     if record.fields.is_empty() && !record.versioned {
         out.push_str("        let value = Self::decode_from(limits, reader);\n");
     } else {
@@ -328,9 +325,6 @@ fn emit_enum(schema: &Context<'_>, enumeration: &Enumeration, out: &mut String) 
         }
     }
     out.push_str("        }\n        Ok(())\n    }\n\n    /// Reads a whole variant and refuses trailing bytes.\n    pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {\n");
-    if !schema.bounds.is_empty() {
-        out.push_str("        check_limits(limits)?;\n");
-    }
     out.push_str("        let value = Self::decode_from(limits, reader)?;\n");
     out.push_str(&format!("        if !reader.is_empty() {{ return Err(Problem {{ path: Path::{}Tag, reason: skein_codec::Reason::Trailing }}); }}\n        Ok(value)\n    }}\n\n", enumeration.name));
     out.push_str(&format!("    fn decode_from({limits}: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {{\n        let tag = reader.u8().ok_or({})?;\n        let value = match tag {{\n", short(&format!("{}Tag", enumeration.name))));

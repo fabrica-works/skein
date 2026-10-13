@@ -33,7 +33,8 @@ pub struct Problem {
     pub reason: skein_codec::Reason,
 }
 
-fn check_limits(limits: &Limits) -> Result<(), Problem> {
+/// Checks the family limits, naming the first limit past its ceiling.
+pub fn check_limits(limits: &Limits) -> Result<(), Problem> {
     check_limits_0(limits)?;
     Ok(())
 }
@@ -64,7 +65,6 @@ impl Credential {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: CredentialParts) -> Result<Self, Problem> {
         let CredentialParts { name, value } = parts;
-        check_limits(limits)?;
         let value = Self { name, value };
         value.check(limits)?;
         Ok(value)
@@ -117,7 +117,6 @@ impl Credential {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::CredentialTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -130,15 +129,11 @@ impl Credential {
     }
 }
 
-fn limits_valid(limits: &Limits) -> bool {
-    limits.credential_name <= CEILINGS.credential_name && limits.credential_value <= CEILINGS.credential_value
-}
-
 impl Credential {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.credential_name))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.credential_value))?)?;
@@ -148,7 +143,7 @@ impl Credential {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.credential_name))?;
         heap = heap.checked_add(u64::from(limits.credential_value))?;
@@ -159,7 +154,7 @@ impl Credential {
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Credential::worst_case_bytes(limits)?);
     Some(biggest)
@@ -168,7 +163,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
 /// Maximum heap held by one decoded top-level value.
 #[must_use]
 pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Credential::worst_case_heap(limits)?);
     Some(biggest)

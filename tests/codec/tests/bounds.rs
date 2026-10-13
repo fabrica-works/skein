@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use skein_codec::Reason;
-    use skein_codec_tests::v1::{CEILINGS, Field, Path, Report};
+    use skein_codec_tests::v1::{CEILINGS, Effect, Field, FieldParts, Limits, Path, Report, check_limits};
     use skein_lib::{Reader, Writer, bytes};
 
     fn field_bytes(name_length: u32, value_length: u32) -> Box<[u8]> {
@@ -31,6 +31,53 @@ mod tests {
         }
         writer.put(&[0_u8; 12]).expect("effect, option, nonce, age room");
         writer.finish()
+    }
+
+    fn limits_past_ceilings() -> Limits {
+        Limits { field_name: 5, field_value: 5, ..CEILINGS }
+    }
+
+    fn field_parts(value_length: usize) -> FieldParts {
+        FieldParts { name: bytes::zeroed(0), value: bytes::zeroed(value_length) }
+    }
+
+    #[test]
+    fn family_check_names_the_first_limit_past_its_ceiling() {
+        let problem = check_limits(&limits_past_ceilings()).expect_err("limits past ceilings");
+        assert_eq!((problem.path, problem.reason), (Path::FieldName, Reason::Bound));
+    }
+
+    #[test]
+    fn constructor_with_limits_past_ceilings_accepts_a_value_at_its_ceiling() {
+        Field::new(&limits_past_ceilings(), field_parts(4)).expect("value within its ceiling");
+    }
+
+    #[test]
+    fn constructor_with_limits_past_ceilings_refuses_a_value_past_its_ceiling() {
+        let problem = Field::new(&limits_past_ceilings(), field_parts(5)).expect_err("value past its ceiling");
+        assert_eq!((problem.path, problem.reason), (Path::FieldValue, Reason::Bound));
+    }
+
+    #[test]
+    fn decoder_with_limits_past_ceilings_accepts_a_value_at_its_ceiling() {
+        Field::decode(&limits_past_ceilings(), &mut Reader::new(&field_bytes(0, 4))).expect("value within its ceiling");
+    }
+
+    #[test]
+    fn decoder_with_limits_past_ceilings_refuses_a_value_past_its_ceiling() {
+        let problem = Field::decode(&limits_past_ceilings(), &mut Reader::new(&field_bytes(0, 5)))
+            .expect_err("value past its ceiling");
+        assert_eq!((problem.path, problem.reason), (Path::FieldValue, Reason::Bound));
+    }
+
+    #[test]
+    fn enum_constructor_does_not_check_unrelated_family_limits() {
+        assert_eq!(Effect::new(&limits_past_ceilings(), Effect::Read), Ok(Effect::Read));
+    }
+
+    #[test]
+    fn enum_decoder_does_not_check_unrelated_family_limits() {
+        assert_eq!(Effect::decode(&limits_past_ceilings(), &mut Reader::new(&[0])), Ok(Effect::Read));
     }
 
     #[test]

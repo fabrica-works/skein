@@ -88,12 +88,11 @@ pub(crate) fn emit(schema: &Context<'_>, out: &mut String) {
     emit_check(schema, out);
 }
 
-/// One family check at each public constructor and decoder entrance.
+/// One public family check where its owner makes the limits.
 pub(crate) fn emit_check(schema: &Context<'_>, out: &mut String) {
-    if schema.bounds.is_empty() {
-        return;
-    }
-    out.push_str("fn check_limits(limits: &Limits) -> Result<(), Problem> {\n");
+    out.push_str("/// Checks the family limits, naming the first limit past its ceiling.\n");
+    let limits = if schema.bounds.is_empty() { "_limits" } else { "limits" };
+    out.push_str(&format!("pub fn check_limits({limits}: &Limits) -> Result<(), Problem> {{\n"));
     for (index, _) in schema.bounds.chunks(90).enumerate() {
         out.push_str(&format!("    check_limits_{index}(limits)?;\n"));
     }

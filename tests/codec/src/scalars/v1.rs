@@ -44,6 +44,11 @@ pub struct Problem {
     pub reason: skein_codec::Reason,
 }
 
+/// Checks the family limits, naming the first limit past its ceiling.
+pub fn check_limits(_limits: &Limits) -> Result<(), Problem> {
+    Ok(())
+}
+
 /// Movable fields of `Empty`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EmptyParts {
@@ -279,13 +284,11 @@ impl Scalars {
     }
 }
 
-fn limits_valid(_limits: &Limits) -> bool { true }
-
 impl Empty {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let size = 0_u64;
         Some(size)
     }
@@ -293,7 +296,7 @@ impl Empty {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let heap = 0_u64;
         Some(heap)
     }
@@ -303,7 +306,7 @@ impl Flag {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         1_u64.checked_add(biggest)
     }
@@ -311,7 +314,7 @@ impl Flag {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         Some(biggest)
     }
@@ -321,7 +324,7 @@ impl Scalars {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(1_u64)?;
         size = size.checked_add(2_u64)?;
@@ -337,7 +340,7 @@ impl Scalars {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
@@ -354,7 +357,7 @@ impl Scalars {
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Empty::worst_case_bytes(limits)?);
     biggest = biggest.max(Flag::worst_case_bytes(limits)?);
@@ -365,7 +368,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
 /// Maximum heap held by one decoded top-level value.
 #[must_use]
 pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Empty::worst_case_heap(limits)?);
     biggest = biggest.max(Flag::worst_case_heap(limits)?);

@@ -60,7 +60,8 @@ pub struct Problem {
     pub reason: skein_codec::Reason,
 }
 
-fn check_limits(limits: &Limits) -> Result<(), Problem> {
+/// Checks the family limits, naming the first limit past its ceiling.
+pub fn check_limits(limits: &Limits) -> Result<(), Problem> {
     check_limits_0(limits)?;
     Ok(())
 }
@@ -93,7 +94,6 @@ impl Field {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: FieldParts) -> Result<Self, Problem> {
         let FieldParts { name, value } = parts;
-        check_limits(limits)?;
         let value = Self { name, value };
         value.check(limits)?;
         Ok(value)
@@ -130,8 +130,7 @@ pub enum Effect {
 
 impl Effect {
     /// Checks the payload against the given limits.
-    pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
-        check_limits(limits)?;
+    pub fn new(_limits: &Limits, value: Self) -> Result<Self, Problem> {
         Ok(value)
     }
 
@@ -169,7 +168,6 @@ impl Report {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: ReportParts) -> Result<Self, Problem> {
         let ReportParts { title, fields, effect, present, nonce, age } = parts;
-        check_limits(limits)?;
         let value = Self { title, fields, effect, present, nonce, age };
         value.check(limits)?;
         Ok(value)
@@ -226,7 +224,6 @@ pub enum Choice {
 impl Choice {
     /// Checks the payload against the given limits.
     pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
-        check_limits(limits)?;
         value.check(limits)?;
         Ok(value)
     }
@@ -252,9 +249,8 @@ pub struct Marker {
 
 impl Marker {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: MarkerParts) -> Result<Self, Problem> {
+    pub fn new(_limits: &Limits, parts: MarkerParts) -> Result<Self, Problem> {
         let MarkerParts {  } = parts;
-        check_limits(limits)?;
         let value = Self {  };
         Ok(value)
     }
@@ -292,7 +288,6 @@ impl Field {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::FieldTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -325,7 +320,6 @@ impl Effect {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::EffectTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -398,7 +392,6 @@ impl Report {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::ReportTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -438,7 +431,6 @@ impl Choice {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::ChoiceTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -467,7 +459,6 @@ impl Marker {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader);
         if !reader.is_empty() { return Err(Problem { path: Path::MarkerTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -478,15 +469,11 @@ impl Marker {
     }
 }
 
-fn limits_valid(limits: &Limits) -> bool {
-    limits.field_name <= CEILINGS.field_name && limits.field_value <= CEILINGS.field_value && limits.report_title <= CEILINGS.report_title && limits.report_fields <= CEILINGS.report_fields
-}
-
 impl Field {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.field_name))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.field_value))?)?;
@@ -496,7 +483,7 @@ impl Field {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.field_name))?;
         heap = heap.checked_add(u64::from(limits.field_value))?;
@@ -508,7 +495,7 @@ impl Effect {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         1_u64.checked_add(biggest)
     }
@@ -516,7 +503,7 @@ impl Effect {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let biggest = 0_u64;
         Some(biggest)
     }
@@ -526,7 +513,7 @@ impl Report {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 2_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.report_title))?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.report_fields).checked_mul(Field::worst_case_bytes(limits)?)?)?)?;
@@ -540,7 +527,7 @@ impl Report {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.report_title))?;
         heap = heap.checked_add(List::<Field>::worst_case(limits.report_fields)?.checked_add(u64::from(limits.report_fields).checked_mul(Field::worst_case_heap(limits)?)?)?)?;
@@ -556,7 +543,7 @@ impl Choice {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(Report::worst_case_bytes(limits)?);
         1_u64.checked_add(biggest)
@@ -565,7 +552,7 @@ impl Choice {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(Report::worst_case_heap(limits)?);
         Some(biggest)
@@ -576,7 +563,7 @@ impl Marker {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let size = 0_u64;
         Some(size)
     }
@@ -584,7 +571,7 @@ impl Marker {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let heap = 0_u64;
         Some(heap)
     }
@@ -593,7 +580,7 @@ impl Marker {
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Field::worst_case_bytes(limits)?);
     biggest = biggest.max(Effect::worst_case_bytes(limits)?);
@@ -606,7 +593,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
 /// Maximum heap held by one decoded top-level value.
 #[must_use]
 pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(Field::worst_case_heap(limits)?);
     biggest = biggest.max(Effect::worst_case_heap(limits)?);

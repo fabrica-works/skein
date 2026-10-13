@@ -484,7 +484,8 @@ pub struct Problem {
     pub reason: skein_codec::Reason,
 }
 
-fn check_limits(limits: &Limits) -> Result<(), Problem> {
+/// Checks the family limits, naming the first limit past its ceiling.
+pub fn check_limits(limits: &Limits) -> Result<(), Problem> {
     check_limits_0(limits)?;
     check_limits_1(limits)?;
     Ok(())
@@ -627,7 +628,6 @@ impl HostTool {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: HostToolParts) -> Result<Self, Problem> {
         let HostToolParts { skein_bools, max_tokens, payload } = parts;
-        check_limits(limits)?;
         let value = Self { skein_bools, max_tokens, payload };
         value.check(limits)?;
         Ok(value)
@@ -682,9 +682,8 @@ pub struct Boundless {
 
 impl Boundless {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: BoundlessParts) -> Result<Self, Problem> {
+    pub fn new(_limits: &Limits, parts: BoundlessParts) -> Result<Self, Problem> {
         let BoundlessParts { count } = parts;
-        check_limits(limits)?;
         let value = Self { count };
         Ok(value)
     }
@@ -716,7 +715,6 @@ impl Payload {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: PayloadParts) -> Result<Self, Problem> {
         let PayloadParts { data } = parts;
-        check_limits(limits)?;
         let value = Self { data };
         value.check(limits)?;
         Ok(value)
@@ -751,9 +749,8 @@ pub struct OtherPayload {
 
 impl OtherPayload {
     /// Makes a value within the given limits.
-    pub fn new(limits: &Limits, parts: OtherPayloadParts) -> Result<Self, Problem> {
+    pub fn new(_limits: &Limits, parts: OtherPayloadParts) -> Result<Self, Problem> {
         let OtherPayloadParts { value } = parts;
-        check_limits(limits)?;
         let value = Self { value };
         Ok(value)
     }
@@ -784,7 +781,6 @@ pub enum Shared {
 impl Shared {
     /// Checks the payload against the given limits.
     pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
-        check_limits(limits)?;
         value.check(limits)?;
         Ok(value)
     }
@@ -815,7 +811,6 @@ impl OneByteItems {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: OneByteItemsParts) -> Result<Self, Problem> {
         let OneByteItemsParts { items } = parts;
-        check_limits(limits)?;
         let value = Self { items };
         value.check(limits)?;
         Ok(value)
@@ -855,7 +850,6 @@ impl OptionalPayload {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: OptionalPayloadParts) -> Result<Self, Problem> {
         let OptionalPayloadParts { data } = parts;
-        check_limits(limits)?;
         let value = Self { data };
         value.check(limits)?;
         Ok(value)
@@ -889,7 +883,6 @@ pub enum BoxedChoice {
 impl BoxedChoice {
     /// Checks the payload against the given limits.
     pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
-        check_limits(limits)?;
         value.check(limits)?;
         Ok(value)
     }
@@ -916,7 +909,6 @@ pub enum InlineChoice {
 impl InlineChoice {
     /// Checks the payload against the given limits.
     pub fn new(limits: &Limits, value: Self) -> Result<Self, Problem> {
-        check_limits(limits)?;
         value.check(limits)?;
         Ok(value)
     }
@@ -950,7 +942,6 @@ impl FixedWidthItems {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: FixedWidthItemsParts) -> Result<Self, Problem> {
         let FixedWidthItemsParts { wide, narrow } = parts;
-        check_limits(limits)?;
         let value = Self { wide, narrow };
         value.check(limits)?;
         Ok(value)
@@ -1289,7 +1280,6 @@ impl LongRecord {
     /// Makes a value within the given limits.
     pub fn new(limits: &Limits, parts: LongRecordParts) -> Result<Self, Problem> {
         let LongRecordParts { alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel, india, juliet, kilo, lima, mike, november, oscar, papa, quebec, romeo, sierra, tango, uniform, victor, whiskey, xray, yankee, zulu, amber, birch, cedar, dune, acorn, anchor, apron, atlas, autumn, avocado, walnut, badge, bamboo, barrel, beacon, beetle, bronze, cactus, camera, canyon, cello, cobalt, comet, compass, coral, cotton, coyote, cricket, crystal, dragon, engine, falcon, feather, fern, flute, fossil, galaxy, garden, glacier, granite, harbor, hazel, helmet, honey, igloo, island, ivory, jasmine, kettle, lantern, leopard, lobster, magnet, marble, meadow, mermaid, meteor, mosaic, napkin, nectar, ocean, olive, orchid, panda, pencil, planet, pollen, quartz, rainbow, raven, rocket, saffron, salmon, satin } = parts;
-        check_limits(limits)?;
         let value = Self { alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel, india, juliet, kilo, lima, mike, november, oscar, papa, quebec, romeo, sierra, tango, uniform, victor, whiskey, xray, yankee, zulu, amber, birch, cedar, dune, acorn, anchor, apron, atlas, autumn, avocado, walnut, badge, bamboo, barrel, beacon, beetle, bronze, cactus, camera, canyon, cello, cobalt, comet, compass, coral, cotton, coyote, cricket, crystal, dragon, engine, falcon, feather, fern, flute, fossil, galaxy, garden, glacier, granite, harbor, hazel, helmet, honey, igloo, island, ivory, jasmine, kettle, lantern, leopard, lobster, magnet, marble, meadow, mermaid, meteor, mosaic, napkin, nectar, ocean, olive, orchid, panda, pencil, planet, pollen, quartz, rainbow, raven, rocket, saffron, salmon, satin };
         value.check(limits)?;
         Ok(value)
@@ -1854,7 +1844,6 @@ impl HostTool {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::HostToolTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -1889,7 +1878,6 @@ impl Boundless {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::BoundlessTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -1922,7 +1910,6 @@ impl Payload {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::PayloadTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -1952,7 +1939,6 @@ impl OtherPayload {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::OtherPayloadTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -1988,7 +1974,6 @@ impl Shared {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::SharedTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2032,7 +2017,6 @@ impl OneByteItems {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::OneByteItemsTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2074,7 +2058,6 @@ impl OptionalPayload {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::OptionalPayloadTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2109,7 +2092,6 @@ impl BoxedChoice {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::BoxedChoiceTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2148,7 +2130,6 @@ impl InlineChoice {
 
     /// Reads a whole variant and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::InlineChoiceTag, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2196,7 +2177,6 @@ impl FixedWidthItems {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::FixedWidthItemsTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -2234,7 +2214,6 @@ impl LongRecord {
 
     /// Reads a whole record and refuses trailing bytes.
     pub fn decode(limits: &Limits, reader: &mut skein_lib::Reader<'_>) -> Result<Self, Problem> {
-        check_limits(limits)?;
         let value = Self::decode_from(limits, reader)?;
         if !reader.is_empty() { return Err(Problem { path: Path::LongRecordTail, reason: skein_codec::Reason::Trailing }); }
         Ok(value)
@@ -3127,15 +3106,11 @@ impl LongRecord {
         Ok(LongRecordDecoded1 { igloo: decoded_igloo, island: decoded_island, ivory: decoded_ivory, jasmine: decoded_jasmine, kettle: decoded_kettle, lantern: decoded_lantern, leopard: decoded_leopard, lobster: decoded_lobster, magnet: decoded_magnet, marble: decoded_marble, meadow: decoded_meadow, mermaid: decoded_mermaid, meteor: decoded_meteor, mosaic: decoded_mosaic, napkin: decoded_napkin, nectar: decoded_nectar, ocean: decoded_ocean, olive: decoded_olive, orchid: decoded_orchid, panda: decoded_panda, pencil: decoded_pencil, planet: decoded_planet, pollen: decoded_pollen, quartz: decoded_quartz, rainbow: decoded_rainbow, raven: decoded_raven, rocket: decoded_rocket, saffron: decoded_saffron, salmon: decoded_salmon, satin: decoded_satin })
     }
 }
-fn limits_valid(limits: &Limits) -> bool {
-    limits.host_tool_payload <= CEILINGS.host_tool_payload && limits.payload_data <= CEILINGS.payload_data && limits.one_byte_items_items <= CEILINGS.one_byte_items_items && limits.optional_payload_data_some <= CEILINGS.optional_payload_data_some && limits.fixed_width_items_wide <= CEILINGS.fixed_width_items_wide && limits.fixed_width_items_narrow <= CEILINGS.fixed_width_items_narrow && limits.long_record_alpha <= CEILINGS.long_record_alpha && limits.long_record_bravo <= CEILINGS.long_record_bravo && limits.long_record_charlie <= CEILINGS.long_record_charlie && limits.long_record_delta <= CEILINGS.long_record_delta && limits.long_record_echo <= CEILINGS.long_record_echo && limits.long_record_foxtrot <= CEILINGS.long_record_foxtrot && limits.long_record_golf <= CEILINGS.long_record_golf && limits.long_record_hotel <= CEILINGS.long_record_hotel && limits.long_record_india <= CEILINGS.long_record_india && limits.long_record_juliet <= CEILINGS.long_record_juliet && limits.long_record_kilo <= CEILINGS.long_record_kilo && limits.long_record_lima <= CEILINGS.long_record_lima && limits.long_record_mike <= CEILINGS.long_record_mike && limits.long_record_november <= CEILINGS.long_record_november && limits.long_record_oscar <= CEILINGS.long_record_oscar && limits.long_record_papa <= CEILINGS.long_record_papa && limits.long_record_quebec <= CEILINGS.long_record_quebec && limits.long_record_romeo <= CEILINGS.long_record_romeo && limits.long_record_sierra <= CEILINGS.long_record_sierra && limits.long_record_tango <= CEILINGS.long_record_tango && limits.long_record_uniform <= CEILINGS.long_record_uniform && limits.long_record_victor <= CEILINGS.long_record_victor && limits.long_record_whiskey <= CEILINGS.long_record_whiskey && limits.long_record_xray <= CEILINGS.long_record_xray && limits.long_record_yankee <= CEILINGS.long_record_yankee && limits.long_record_zulu <= CEILINGS.long_record_zulu && limits.long_record_amber <= CEILINGS.long_record_amber && limits.long_record_birch <= CEILINGS.long_record_birch && limits.long_record_cedar <= CEILINGS.long_record_cedar && limits.long_record_dune <= CEILINGS.long_record_dune && limits.long_record_acorn <= CEILINGS.long_record_acorn && limits.long_record_anchor <= CEILINGS.long_record_anchor && limits.long_record_apron <= CEILINGS.long_record_apron && limits.long_record_atlas <= CEILINGS.long_record_atlas && limits.long_record_autumn <= CEILINGS.long_record_autumn && limits.long_record_avocado <= CEILINGS.long_record_avocado && limits.long_record_walnut <= CEILINGS.long_record_walnut && limits.long_record_badge <= CEILINGS.long_record_badge && limits.long_record_bamboo <= CEILINGS.long_record_bamboo && limits.long_record_barrel <= CEILINGS.long_record_barrel && limits.long_record_beacon <= CEILINGS.long_record_beacon && limits.long_record_beetle <= CEILINGS.long_record_beetle && limits.long_record_bronze <= CEILINGS.long_record_bronze && limits.long_record_cactus <= CEILINGS.long_record_cactus && limits.long_record_camera <= CEILINGS.long_record_camera && limits.long_record_canyon <= CEILINGS.long_record_canyon && limits.long_record_cello <= CEILINGS.long_record_cello && limits.long_record_cobalt <= CEILINGS.long_record_cobalt && limits.long_record_comet <= CEILINGS.long_record_comet && limits.long_record_compass <= CEILINGS.long_record_compass && limits.long_record_coral <= CEILINGS.long_record_coral && limits.long_record_cotton <= CEILINGS.long_record_cotton && limits.long_record_coyote <= CEILINGS.long_record_coyote && limits.long_record_cricket <= CEILINGS.long_record_cricket && limits.long_record_crystal <= CEILINGS.long_record_crystal && limits.long_record_dragon <= CEILINGS.long_record_dragon && limits.long_record_engine <= CEILINGS.long_record_engine && limits.long_record_falcon <= CEILINGS.long_record_falcon && limits.long_record_feather <= CEILINGS.long_record_feather && limits.long_record_fern <= CEILINGS.long_record_fern && limits.long_record_flute <= CEILINGS.long_record_flute && limits.long_record_fossil <= CEILINGS.long_record_fossil && limits.long_record_galaxy <= CEILINGS.long_record_galaxy && limits.long_record_garden <= CEILINGS.long_record_garden && limits.long_record_glacier <= CEILINGS.long_record_glacier && limits.long_record_granite <= CEILINGS.long_record_granite && limits.long_record_harbor <= CEILINGS.long_record_harbor && limits.long_record_hazel <= CEILINGS.long_record_hazel && limits.long_record_helmet <= CEILINGS.long_record_helmet && limits.long_record_honey <= CEILINGS.long_record_honey && limits.long_record_igloo <= CEILINGS.long_record_igloo && limits.long_record_island <= CEILINGS.long_record_island && limits.long_record_ivory <= CEILINGS.long_record_ivory && limits.long_record_jasmine <= CEILINGS.long_record_jasmine && limits.long_record_kettle <= CEILINGS.long_record_kettle && limits.long_record_lantern <= CEILINGS.long_record_lantern && limits.long_record_leopard <= CEILINGS.long_record_leopard && limits.long_record_lobster <= CEILINGS.long_record_lobster && limits.long_record_magnet <= CEILINGS.long_record_magnet && limits.long_record_marble <= CEILINGS.long_record_marble && limits.long_record_meadow <= CEILINGS.long_record_meadow && limits.long_record_mermaid <= CEILINGS.long_record_mermaid && limits.long_record_meteor <= CEILINGS.long_record_meteor && limits.long_record_mosaic <= CEILINGS.long_record_mosaic && limits.long_record_napkin <= CEILINGS.long_record_napkin && limits.long_record_nectar <= CEILINGS.long_record_nectar && limits.long_record_ocean <= CEILINGS.long_record_ocean && limits.long_record_olive <= CEILINGS.long_record_olive && limits.long_record_orchid <= CEILINGS.long_record_orchid && limits.long_record_panda <= CEILINGS.long_record_panda && limits.long_record_pencil <= CEILINGS.long_record_pencil && limits.long_record_planet <= CEILINGS.long_record_planet && limits.long_record_pollen <= CEILINGS.long_record_pollen && limits.long_record_quartz <= CEILINGS.long_record_quartz && limits.long_record_rainbow <= CEILINGS.long_record_rainbow && limits.long_record_raven <= CEILINGS.long_record_raven && limits.long_record_rocket <= CEILINGS.long_record_rocket && limits.long_record_saffron <= CEILINGS.long_record_saffron && limits.long_record_salmon <= CEILINGS.long_record_salmon && limits.long_record_satin <= CEILINGS.long_record_satin
-}
-
 impl HostTool {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(1_u64)?;
         size = size.checked_add(1_u64)?;
@@ -3149,7 +3124,7 @@ impl HostTool {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         heap = heap.checked_add(0_u64)?;
@@ -3165,7 +3140,7 @@ impl Boundless {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64)?;
         Some(size)
@@ -3174,7 +3149,7 @@ impl Boundless {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         Some(heap)
@@ -3185,7 +3160,7 @@ impl Payload {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.payload_data))?)?;
         Some(size)
@@ -3194,7 +3169,7 @@ impl Payload {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.payload_data))?;
         Some(heap)
@@ -3205,7 +3180,7 @@ impl OtherPayload {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(1_u64)?;
         Some(size)
@@ -3214,7 +3189,7 @@ impl OtherPayload {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(0_u64)?;
         Some(heap)
@@ -3225,7 +3200,7 @@ impl Shared {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(Payload::worst_case_bytes(limits)?);
         biggest = biggest.max(Payload::worst_case_bytes(limits)?);
@@ -3236,7 +3211,7 @@ impl Shared {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(Payload::worst_case_heap(limits)?);
         biggest = biggest.max(Payload::worst_case_heap(limits)?);
@@ -3249,7 +3224,7 @@ impl OneByteItems {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.one_byte_items_items).checked_mul(Shared::worst_case_bytes(limits)?)?)?)?;
         Some(size)
@@ -3258,7 +3233,7 @@ impl OneByteItems {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(List::<Shared>::worst_case(limits.one_byte_items_items)?.checked_add(u64::from(limits.one_byte_items_items).checked_mul(Shared::worst_case_heap(limits)?)?)?)?;
         Some(heap)
@@ -3269,7 +3244,7 @@ impl OptionalPayload {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(1_u64.checked_add(4_u64.checked_add(u64::from(limits.optional_payload_data_some))?)?)?;
         Some(size)
@@ -3278,7 +3253,7 @@ impl OptionalPayload {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(u64::from(limits.optional_payload_data_some))?;
         Some(heap)
@@ -3289,7 +3264,7 @@ impl BoxedChoice {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
         biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
@@ -3299,7 +3274,7 @@ impl BoxedChoice {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?.checked_add(u64::try_from(size_of::<OptionalPayload>()).ok()?)?);
         biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
@@ -3311,7 +3286,7 @@ impl InlineChoice {
     /// Maximum encoded bytes among variants.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(OptionalPayload::worst_case_bytes(limits)?);
         1_u64.checked_add(biggest)
@@ -3320,7 +3295,7 @@ impl InlineChoice {
     /// Maximum heap held by any decoded variant.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut biggest = 0_u64;
         biggest = biggest.max(OptionalPayload::worst_case_heap(limits)?);
         Some(biggest)
@@ -3331,7 +3306,7 @@ impl FixedWidthItems {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(8_u64)?)?)?;
         size = size.checked_add(4_u64.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(4_u64)?)?)?;
@@ -3341,7 +3316,7 @@ impl FixedWidthItems {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = heap.checked_add(List::<u64>::worst_case(limits.fixed_width_items_wide)?.checked_add(u64::from(limits.fixed_width_items_wide).checked_mul(0_u64)?)?)?;
         heap = heap.checked_add(List::<u32>::worst_case(limits.fixed_width_items_narrow)?.checked_add(u64::from(limits.fixed_width_items_narrow).checked_mul(0_u64)?)?)?;
@@ -3353,7 +3328,7 @@ impl LongRecord {
     /// Maximum encoded bytes under these limits.
     #[must_use]
     pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut size = 0_u64;
         size = Self::worst_case_bytes_0(limits, size)?;
         size = Self::worst_case_bytes_1(limits, size)?;
@@ -3471,7 +3446,7 @@ impl LongRecord {
     /// Maximum heap held by one decoded value under these limits.
     #[must_use]
     pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-        if !limits_valid(limits) { return None; }
+        if check_limits(limits).is_err() { return None; }
         let mut heap = 0_u64;
         heap = Self::worst_case_heap_0(limits, heap)?;
         heap = Self::worst_case_heap_1(limits, heap)?;
@@ -3590,7 +3565,7 @@ impl LongRecord {
 /// Maximum wire bytes among this family's top-level types.
 #[must_use]
 pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(HostTool::worst_case_bytes(limits)?);
     biggest = biggest.max(Boundless::worst_case_bytes(limits)?);
@@ -3609,7 +3584,7 @@ pub fn worst_case_bytes(limits: &Limits) -> Option<u64> {
 /// Maximum heap held by one decoded top-level value.
 #[must_use]
 pub fn worst_case_heap(limits: &Limits) -> Option<u64> {
-    if !limits_valid(limits) { return None; }
+    if check_limits(limits).is_err() { return None; }
     let mut biggest = 0_u64;
     biggest = biggest.max(HostTool::worst_case_heap(limits)?);
     biggest = biggest.max(Boundless::worst_case_heap(limits)?);
