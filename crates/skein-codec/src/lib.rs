@@ -1,4 +1,4 @@
-//! Shared bounded reads for schema-generated codecs (codec.md, sections 2 and 4).
+//! Shared bounded reads and pieces for codecs (codec.md, sections 2 to 4).
 //! The reader owns no state beyond its cursor; this crate knows no schema or
 //! field path. Generated decoders call these helpers after choosing a limit.
 
@@ -17,6 +17,8 @@ pub mod generated_tests;
 
 use alloc::boxed::Box;
 use skein_lib::Reader;
+
+pub mod piece;
 
 #[cfg(test)]
 mod tests;
@@ -38,6 +40,8 @@ pub enum Reason {
     Version,
     /// Bytes remained after the record.
     Trailing,
+    /// A piece's item lengths did not end exactly at its end.
+    Malformed,
 }
 
 /// Reads a length and checks both its limit and the available bytes.

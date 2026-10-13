@@ -1,6 +1,8 @@
 use super::{Reason, read_count, read_len, read_text, version_of};
 use skein_lib::Reader;
 
+mod piece;
+
 #[test]
 fn length_checks_header_limit_and_remaining() {
     assert_eq!(read_len(&mut Reader::new(&[0, 0, 0]), 2), Err(Reason::Short));
@@ -35,8 +37,16 @@ fn version_reads_only_prefix() {
 
 #[test]
 fn every_reason_is_distinct() {
-    let reasons =
-        [Reason::Short, Reason::Bound, Reason::Tag, Reason::Bool, Reason::Utf8, Reason::Version, Reason::Trailing];
+    let reasons = [
+        Reason::Short,
+        Reason::Bound,
+        Reason::Tag,
+        Reason::Bool,
+        Reason::Utf8,
+        Reason::Version,
+        Reason::Trailing,
+        Reason::Malformed,
+    ];
     for (index, first) in reasons.iter().enumerate() {
         for (other_index, second) in reasons.iter().enumerate() {
             if index != other_index {
