@@ -1,6 +1,6 @@
 # Codecs from schemas
 
-Provisional, 2026-10-06, revised 2026-10-12. How an application protocol
+Provisional, 2026-10-06, revised 2026-10-13. How an application protocol
 built on skein encodes its records. A schema says each record's fields
 and their bounds. skein's generator turns it into plain Rust codecs,
 limits, worst cases and golden bytes, and `skein-codec` holds the little
@@ -132,7 +132,13 @@ For each family:
 - **Its limits.** A plain struct with one limit per bound in the schema,
   and a constant holding the schema's bounds as ceilings. A side's limits
   may be smaller than the ceilings, never larger (programming-model.md,
-  section 7).
+  section 7). One generated function checks a family's limits against
+  its ceilings, naming the first past one; the family's owner calls it
+  once, where it makes its limits. Constructors and decoders check
+  values only, never the limits: each value against its limit no higher
+  than its ceiling, so no value past a ceiling exists or decodes, whatever
+  limits they are given, and a call costs what its value holds, not the
+  family's size.
 - **Its problems.** An enumeration of the family's fields, and a problem
   that names one of them with `skein-codec`'s reason.
 
@@ -212,8 +218,8 @@ For each record and enumeration:
 - **The generator's cost grows with its schema,** not with its square:
   what it needs of a type or a field (its declaration by name, whether a
   type holds bounds, a field's path) is found once per generation. The
-  limits are checked against the ceilings once per family, not in each
-  type.
+  limits are checked against the ceilings once per family, where their
+  owner makes them, never in each type or each call (section 4).
 - **Generated files** say so in their first line. They are left out of
   formatting, and pass the workspace's lints with no allowances: the
   generator writes what the lints accept (functions short enough, no
