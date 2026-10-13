@@ -338,6 +338,7 @@ fn thirty_two_unknown_arrays_exercise_the_compact_record_bound() {
     bounds.reasoning = 4096;
     bounds.strings = 64;
     bounds.answer = 140_000;
+    bounds.receiving = 1_048_576;
     bounds.request = 1024;
     let bound = client::call_worst_case(&bounds).unwrap();
     let meter = Meter::new();

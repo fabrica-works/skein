@@ -1069,11 +1069,11 @@ fn output(
                 let size = block_size(&block);
                 let next = client.content_bytes.checked_add(size);
                 match next {
-                    Some(next) if next <= u64::from(env.limits.answer) => client.content_bytes = next,
+                    Some(next) if next <= u64::from(env.limits.receiving) => client.content_bytes = next,
                     Some(_) | None => {
                         fail(
                             client,
-                            Failure::Limit { which: crate::Cap::Answer, bound: u64::from(env.limits.answer) },
+                            Failure::Limit { which: crate::Cap::Answer, bound: u64::from(env.limits.receiving) },
                             bytes::copy_of(b""),
                             above,
                         );
@@ -1330,16 +1330,11 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let native = limits.native();
     let decoder = openai::response::decoder_fixed_worst_case(&native)?
         .max(anthropic::decoder_worst_case(&native)?.checked_sub(u64::from(limits.answer))?);
-    // Replay records are fixed-capacity storage beside the pool's payload text.
-    let replay_records = List::<skein_json::Compact>::worst_case(limits.tokens)?
-        .checked_mul(u64::from(limits.output_items))?
-        .checked_mul(2)?;
     u64::try_from(size_of::<Client>())
         .ok()?
         .checked_add(http::worst_case(&http_fixed)?)?
         .checked_add(sse::worst_case(&event_stream(limits))?)?
         .checked_add(decoder)?
-        .checked_add(replay_records)?
         .checked_add(List::<Block>::worst_case(limits.output_items)?.checked_mul(3)?)?
         .checked_add(
             collector::worst_case(&filter::collector(limits), &filter::caps(limits), &openai::filter::EVENT)?.max(
@@ -1672,8 +1667,8 @@ fn trim(mut value: &[u8]) -> &[u8] {
 }
 
 fn block_size(block: &Block) -> u64 {
-    // Replay values have already passed the dialect's document cap. Count
-    // their token payload without allocating another serialization.
+    // Replay owns exactly its retained text and records. Its completion's
+    // total belongs to the receiving reservation (llm.md, section 4.2).
     let mut bytes = 0_u64;
     let replay = match block {
         Block::Text { text, replay } | Block::Refusal { text, replay } => {
@@ -1707,21 +1702,8 @@ fn block_size(block: &Block) -> u64 {
     };
     if let Some(replay) = replay {
         let document = replay.value.document();
-        for index in 0..document.len() {
-            let record = document.token(index).expect("admitted record");
-            let length = match record.kind {
-                skein_json::Kind::Key | skein_json::Kind::String | skein_json::Kind::Number => u64::from(record.len),
-                skein_json::Kind::ObjectStart
-                | skein_json::Kind::ObjectEnd
-                | skein_json::Kind::ArrayStart
-                | skein_json::Kind::ArrayEnd
-                | skein_json::Kind::True
-                | skein_json::Kind::False
-                | skein_json::Kind::Null => 1,
-                skein_json::Kind::Long => unreachable!("admitted Json contains no Long"),
-            };
-            bytes = bytes.saturating_add(length);
-        }
+        let records = List::<skein_json::Compact>::worst_case(document.len()).expect("u32 record count fits u64");
+        bytes = bytes.saturating_add(u64::from(document.text_len())).saturating_add(records);
     }
     bytes
 }

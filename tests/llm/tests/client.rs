@@ -835,7 +835,7 @@ fn receiving_caps_admit_the_edge_and_refuse_one_over_by_name() {
         (Cap::Depth, 4),
         (Cap::Skip, document + 8),
         (Cap::OutputItems, 1),
-        (Cap::Answer, 31),
+        (Cap::Answer, 101),
         (Cap::Metadata, opaque),
     ] {
         for bound in [edge, edge - 1] {
@@ -853,7 +853,7 @@ fn receiving_caps_admit_the_edge_and_refuse_one_over_by_name() {
                     }
                     bounds.output_items = bound;
                 }
-                Cap::Answer => bounds.answer = bound,
+                Cap::Answer => bounds.receiving = bound,
                 Cap::Metadata => bounds.metadata = bound,
                 _ => unreachable!(),
             }
