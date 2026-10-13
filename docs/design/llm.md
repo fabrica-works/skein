@@ -394,6 +394,13 @@ derivation's own:
   272,000-token window, and allocates them all. The owner declares them
   instead. A request within its byte limit that would carry more is
   refused by name, as any count past its bound is.
+- **Replay values are charged at their total.** What a completion keeps
+  for replay, each block's item IDs, phase and opaque values, is held at
+  its own length and charged at the total its blocks keep, within the
+  receiving reservation that already holds the answer and the reasoning
+  share. It is never reserved as output items × one block's largest:
+  output items each holding a reasoning item's worst case is memory no
+  completion holds, and each call in flight would reserve it.
 - **The encoder makes no copies.** A request is written from the values
   its owner holds, borrowed, straight into the request's bytes, which
   the memory pool reserves:
