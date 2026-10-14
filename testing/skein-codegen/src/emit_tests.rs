@@ -260,12 +260,12 @@ fn bound_cases(record: &Record, schema: &Context<'_>, cases: &mut Vec<String>) {
 fn tables(name: &str, cases: &[String], out: &mut String) {
     let item = name.to_uppercase();
     for (index, chunk) in cases.chunks(if name == "golden" { 1_024 } else { 64 }).enumerate() {
-        out.push_str(&format!("    const {item}_{index}: [Case; {}] = [\n", chunk.len()));
+        out.push_str(&format!("    static {item}_{index}: [Case; {}] = [\n", chunk.len()));
         for case in chunk {
             out.push_str(case);
         }
         out.push_str(&format!(
-            "    ];\n\n    #[test]\n    fn {name}_{index}() {{\n        table({item}_{index});\n    }}\n\n"
+            "    ];\n\n    #[test]\n    fn {name}_{index}() {{\n        table(&{item}_{index});\n    }}\n\n"
         ));
     }
 }

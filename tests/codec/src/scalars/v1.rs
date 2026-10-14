@@ -400,10 +400,10 @@ mod golden_tests {
 
     type Case = (&'static str, fn() -> bool);
 
-    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+    pub(super) fn table<const N: usize>(cases: &[Case; N]) {
         let mut failures = [None; N];
         let mut passed = true;
-        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+        for ((name, case), failure) in cases.iter().zip(&mut failures) {
             if !case() {
                 *failure = Some(name);
                 passed = false;
@@ -429,7 +429,7 @@ mod golden_tests {
         encoded && decoded
     }
 
-    const GOLDEN_0: [Case; 8] = [
+    static GOLDEN_0: [Case; 8] = [
         ("record_empty_smallest", || { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_empty_full", || { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_flag_off_smallest", || { let value = Flag::Off; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
@@ -442,7 +442,7 @@ mod golden_tests {
 
     #[test]
     fn golden_0() {
-        table(GOLDEN_0);
+        table(&GOLDEN_0);
     }
 
 }

@@ -4,10 +4,10 @@ use alloc::boxed::Box;
 
 type Case = (&'static str, fn() -> bool);
 
-pub(super) fn table<const N: usize>(cases: [Case; N]) {
+pub(super) fn table<const N: usize>(cases: &[Case; N]) {
     let mut failures = [None; N];
     let mut passed = true;
-    for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+    for ((name, case), failure) in cases.iter().zip(&mut failures) {
         if !case() {
             *failure = Some(name);
             passed = false;

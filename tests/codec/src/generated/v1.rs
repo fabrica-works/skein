@@ -644,10 +644,10 @@ mod golden_tests {
 
     type Case = (&'static str, fn() -> bool);
 
-    pub(super) fn table<const N: usize>(cases: [Case; N]) {
+    pub(super) fn table<const N: usize>(cases: &[Case; N]) {
         let mut failures = [None; N];
         let mut passed = true;
-        for ((name, case), failure) in cases.into_iter().zip(&mut failures) {
+        for ((name, case), failure) in cases.iter().zip(&mut failures) {
             if !case() {
                 *failure = Some(name);
                 passed = false;
@@ -690,7 +690,7 @@ mod golden_tests {
         };
         at && past
     }
-    const GOLDEN_0: [Case; 14] = [
+    static GOLDEN_0: [Case; 14] = [
         ("record_field_smallest", || { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([].as_slice()), value: Box::from([].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_field_full", || { let value = Field::new(&CEILINGS, FieldParts { name: Box::from([97_u8, 98_u8, 99_u8].as_slice()), value: Box::from([0_u8, 127_u8, 255_u8].as_slice()) }).expect("golden within ceilings"); let bytes: &[u8] = &[0, 0, 0, 3, 97, 98, 99, 0, 0, 0, 3, 0, 127, 255]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Field::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_effect_read_smallest", || { let value = Effect::Read; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Effect::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
@@ -709,10 +709,10 @@ mod golden_tests {
 
     #[test]
     fn golden_0() {
-        table(GOLDEN_0);
+        table(&GOLDEN_0);
     }
 
-    const BOUNDS_0: [Case; 4] = [
+    static BOUNDS_0: [Case; 4] = [
         ("bound_field_name", || bound((Path::FieldName, skein_codec::Reason::Bound), &Limits { field_name: 3, ..CEILINGS }, &[0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Field::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_field_value", || bound((Path::FieldValue, skein_codec::Reason::Bound), &Limits { field_value: 3, ..CEILINGS }, &[0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0], |limits, bytes| match Field::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
         ("bound_report_title", || bound((Path::ReportTitle, skein_codec::Reason::Bound), &Limits { report_title: 3, ..CEILINGS }, &[0, 1, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], &[0, 1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], |limits, bytes| match Report::decode(limits, &mut skein_lib::Reader::new(bytes)) { Ok(value) => Ok(value), Err(problem) => Err((problem.path, problem.reason)) })),
@@ -721,7 +721,7 @@ mod golden_tests {
 
     #[test]
     fn bounds_0() {
-        table(BOUNDS_0);
+        table(&BOUNDS_0);
     }
 
 }
