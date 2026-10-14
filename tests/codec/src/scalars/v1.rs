@@ -429,9 +429,7 @@ mod golden_tests {
         encoded && decoded
     }
 
-    #[test]
-    fn golden_0() {
-        const CASES: [Case; 8] = [
+    const GOLDEN_0: [Case; 8] = [
         ("record_empty_smallest", || { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_empty_full", || { let value = Empty::new(&CEILINGS, EmptyParts {  }); let bytes: &[u8] = &[]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Empty::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("enum_flag_off_smallest", || { let value = Flag::Off; let bytes: &[u8] = &[0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
@@ -440,8 +438,11 @@ mod golden_tests {
         ("enum_flag_on_full", || { let value = Flag::On; let bytes: &[u8] = &[1]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Flag::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_scalars_smallest", || { let value = Scalars::new(&CEILINGS, ScalarsParts { a: 0_u8, b: 0_u16, c: 0_u32, d: 0_u64, e: false, f: skein_lib::Duration::from_nanos(0_u64), g: [0_u8; 2], h: Flag::Off }); let bytes: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Scalars::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
         ("record_scalars_full", || { let value = Scalars::new(&CEILINGS, ScalarsParts { a: u8::MAX, b: u16::MAX, c: u32::MAX, d: u64::MAX, e: true, f: skein_lib::Duration::from_nanos(u64::MAX), g: [165_u8; 2], h: Flag::Off }); let bytes: &[u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 165, 165, 0]; let mut writer = skein_lib::Writer::new(usize::try_from(value.measure()).expect("size fits usize")); let encoded = match value.encode(&mut writer) { Ok(()) => Ok(writer.finish()), Err(problem) => Err(problem) }; golden(value, bytes, encoded, Scalars::decode(&CEILINGS, &mut skein_lib::Reader::new(bytes))) }),
-        ];
-        table(CASES);
+    ];
+
+    #[test]
+    fn golden_0() {
+        table(GOLDEN_0);
     }
 
 }
