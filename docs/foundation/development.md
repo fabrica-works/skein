@@ -742,7 +742,8 @@ may veto.
 - **A code audit.** For the parts the plan touches, the planner checks the
   code against the design, so that the run does not discover that the
   code already differs from it. What it finds goes in `findings/`, and
-  into the increments that fix it.
+  into the increments that fix it. A finding marked "not verified" is
+  verified (a race reproduced or traced) before a Shape rests on it.
 - **A consistency review.** A sub-agent reads the whole plan against the
   design and looks for:
   - dependency cycles;
@@ -829,6 +830,15 @@ the run's pace and its tokens.
     say so.
   - Most increments prove in the suite. A live proof is for an increment
     that touches a live service, about once or twice a session.
+- **Generated code proves itself downstream.** An increment that changes
+  what a generator emits for other repositories runs, once, before it
+  lands: in a scratch worktree of each downstream repository with
+  generated families, its generator patched to the increment's worktree
+  (`cargo --config 'patch."<the upstream's URL>".<crate>.path="<worktree>/crates/<crate>"'`),
+  the families regenerated, and that repository's clippy. The planner
+  writes and runs that command at the plan's base (section 5.4). In
+  test-budgets, two added steps on the longest chain fixed what only
+  smith's and jig's clippy saw.
 - **A script needed twice is kept.** When a later increment needs the same
   proof, it becomes a test in the suite, or a script under the
   repository's `scripts/`, and the plan names it.
@@ -1466,7 +1476,11 @@ lines each.>
   does both (section 10.3). When the same kind of block comes back, it
   adds a standing rule to the plan's README; a rule that would serve every
   plan becomes a proposal for the retrospective (section 15).
-- **The designer decides a design gap.** The supervisor writes the
+- **The designer decides a design gap,** always. When the step can go on
+  meanwhile, the supervisor's interim ruling lets it go on only with work
+  that does not rest on the answer, and the question still goes to the
+  designer at once: in test-budgets, a gap ruled a fixture defect left
+  recovery's behaviour unchecked against the design. The supervisor writes the
   question to the run's `question.md`, in `blocked.md`'s shape, with its
   own reading of the design, and wakes the designer: `plan wake designer
   "question.md has a question: answer it as development.md, section 10.4,

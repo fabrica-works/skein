@@ -111,8 +111,10 @@ a rule that would serve every plan, a proposal for the retrospective
    starts a fresh designer from a brief. If it says the designer is at
    work, never wake it again: send it a message (SendMessage) naming
    `question.md`.
-3. **Go on** with everything else. A step that cannot go on without the
-   answer waits; say so in the unblock, if any.
+3. **Go on** with everything else. A design gap always goes to the
+   designer, even when its step can go on meanwhile: then an interim
+   unblock lets the step go on only with work that does not rest on the
+   answer, and says so. A step that cannot go on without the answer waits.
 4. **When `answer.md` comes:** write the draft's Decision as one line that
    names the answer's commits, followed by `answer.md`'s text, appended
    with a shell command (`cat`), never typed again. Then `plan ruling`, as
