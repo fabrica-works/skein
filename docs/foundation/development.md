@@ -119,6 +119,14 @@ the implementers.
   the session files that mention the point, with Markdown-only landings.
 - **Decides within the user's delegation.** What stays with the user is in
   section 10.4.
+- **Waits for its sub-agents' notifications,** and never polls their
+  files or sleeps: a sub-agent in the background notifies when it ends,
+  and each request in between re-reads the whole context. Past about
+  300K tokens, the designer of a new design writes what it holds to its
+  files (the design worktree, a handover note in its scratch directory)
+  and hands over to a fresh session that starts from them. In
+  client-composition, the designer's 600-second sleep outlived its
+  cache, and re-wrote 419K.
 
 ### 2.2 The planner
 
@@ -135,6 +143,12 @@ the implementers.
   implementers follow the plan's words as written.
 - **Runs what it prescribes** before the plan lands (section 5.4), through
   `heavy`, like every role (section 11.1).
+- **Waits and hands over as the designer does** (section 2.1): on its
+  sub-agents' notifications, never polling or sleeping, and to a fresh
+  session from the plan's files past about 300K tokens. Each successor's
+  session gets its own `Planner-Session:` trailer. In client-composition,
+  the planner ran to 617K in one context, and spent $16.96 at 465K to
+  567K while its reviewers ran, about 57 of those requests polls.
 
 ### 2.3 The coordinator
 
@@ -632,7 +646,11 @@ user only what they and the design leave open, and asks before writing.
 **A session file, `<repository>/NN-<name>.md`:**
 - **Title and summary:** "Session NN: …", with one paragraph.
 - **Read first:** the design sections, decisions and findings it builds
-  on.
+  on, and, by number, the sections of skein's `programming-model.md` and
+  `testing-strategy.md` its increments rely on. The implementer reads
+  those two documents by these sections only: in client-composition,
+  each of the 13 threads read both whole, 14K to 23K tokens that every
+  later request carried.
 - **What the design asks:** a short restatement, with section references.
 - **Choices this plan makes,** within the design's latitude.
 - **Rules that bind it:** the two or three rules of the README and
@@ -692,6 +710,12 @@ may veto.
   sessions rebase on each other.
 - **The increments that need nothing outside come first,** so the session
   can start at once.
+- **An increment whose Needs land before its session's comes first in
+  its session,** and the README's "Needs at start" for that session is
+  that first increment's Needs: the session starts when they land, and
+  its later increments wait within it for theirs. In client-composition,
+  jig 08.2 needed only what had landed by 14:48, but came second in a
+  session that waited for jig 07, and started at 16:07.
 - **Dependencies are named by capability,** for example "skein 03's
   `TimedOut` phase", never by increment number alone: numbers move.
 - **Upstream first** (section 9.5): an increment that needs an upstream
@@ -765,6 +789,9 @@ may veto.
   - shared interfaces without one owner;
   - increments that cannot land alone;
   - increments without a shape, a test shape or a proof;
+  - a session in which a later increment's Needs land before its first
+    increment's, or whose "Needs at start" in the README is not its first
+    increment's (section 5.3);
   - proofs no higher than their increment's tests without a reason, and
     sides that run ahead of what they meet (sections 5.3 and 5.5).
 
@@ -898,6 +925,14 @@ shows them precisely.
   ms, a focused world test under 0.5 s, a fuzzy test about 5 s, on the
   development machine, unoptimized. A test past its ceiling is made
   cheaper before it lands. It is not merged with others to fit.
+- **A suite's time is aimed at for the whole run.** The README states what
+  the run may add to each suite in all, which the hourly checks follow
+  and "Done when" measures by the median of three gate runs on the gate
+  machine. A plan gives a session a share of that aim only where the
+  share is larger than one gate's swing on the gate machine (about 1.3 s
+  on carbon-forge): a smaller share fires on noise. In client-composition,
+  shares of 0.2 s to 0.8 s were checked against single gates that swung
+  by 1.3 s, and the whole run added 0.69 s.
 - **Six tests or so per increment are enough to show.** More adds little.
   Production bodies stay out of the plan (section 5.2): they go stale at
   once.
@@ -1076,7 +1111,10 @@ started it, which record it themselves.
   changes. Add nothing else: no code, line ranges, or graph or coverage
   evidence, whatever other instructions say about spawning. In
   reliability, such evidence grew the prompts from about 1,500
-  characters to about 15,000.
+  characters to about 15,000. A restarted or handed-over session's prompt
+  replaces the reading, from "then ~/src/rust/<repository>/AGENTS.md" to
+  "and nothing else of the process.", with "Read only what its section
+  8.1 says to read after a handover." (implementer.md, 8.1).
 - **Threads.** Spawn a fresh thread for each session and for each
   handover (section 7.3); never give a finished thread another session's
   work, since it would carry that session's whole context. At most eight

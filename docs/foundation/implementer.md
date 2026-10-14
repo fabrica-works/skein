@@ -15,9 +15,16 @@ are read only when a case needs them.
 - this card;
 - your session file, and the design sections its "Read first" names, not
   the whole design;
+- the sections of skein's `programming-model.md` and
+  `testing-strategy.md` that its "Read first" names, never either whole;
 - the plan's `README.md` and `code-organization.md`;
-- your repository's `AGENTS.md` and the workflow it names;
-- after a handover, your checkpoint first.
+- your repository's `AGENTS.md` and the workflow it names.
+
+**After a handover or a restart, read only** this card, your checkpoint,
+then the increment it names in your session file with the session's
+"Rules that bind it", and `code-organization.md`'s "Don't" list. Read
+nothing else of the set above again unless your increment names it. In
+client-composition, successors re-read 64K to 74K tokens of it.
 
 Never development.md whole: read one of its sections only when this card
 or your session file names it. Read one file at a time: an output past
@@ -30,7 +37,8 @@ first edit, and every request after carried them.
    `git fetch origin && git switch -c <plan>/<repository>-<NN>-<item>
    origin/main`.
 3. **Implement it with its tests,** following the repository's `AGENTS.md`
-   and skein's `programming-model.md` and `testing-strategy.md`:
+   and the sections of skein's `programming-model.md` and
+   `testing-strategy.md` your session file names:
    - the increment's Shape gives your paths, names and signatures;
    - its Test shape gives your test file, the fixtures to reuse, and the
      reference test to write the others like.
@@ -185,6 +193,10 @@ it.
   waits, no empty input, no `ps`, no `pueue status`. Each call is a
   request that carries your whole context: in test-budgets, waits that
   saw nothing took 36% of the implementers' input.
+- **Start a heavy command with that longest wait too,** never a yield of
+  one second, which comes back empty at once and costs a request of its
+  own: in client-composition, 108 such launches were 10.2% of the
+  implementers' input.
 
 ### 8.4 Commits
 
