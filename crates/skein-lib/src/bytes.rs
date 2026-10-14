@@ -44,6 +44,15 @@ pub fn find_from(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
     if needle.is_empty() {
         return Some(from);
     }
+    if needle.len() == 1 {
+        let wanted = needle.first().expect("a one-byte needle has its byte");
+        for (at, byte) in haystack.iter().enumerate().skip(from) {
+            if byte == wanted {
+                return Some(at);
+            }
+        }
+        return None;
+    }
     TwoWay::of(needle).find(haystack, needle, from)
 }
 
@@ -76,12 +85,16 @@ pub fn count(haystack: &[u8], needle: &[u8], cap: u32) -> u32 {
         let positions = u32::try_from(haystack.len()).unwrap_or(u32::MAX).saturating_add(1);
         return positions.min(cap);
     }
-    let needle_split = TwoWay::of(needle);
+    let needle_split = if needle.len() == 1 { None } else { Some(TwoWay::of(needle)) };
     let mut found = 0;
     let mut from = 0;
     // Bounded by the cap, and by the haystack: each match moves past itself.
     while found < cap {
-        let Some(at) = needle_split.find(haystack, needle, from) else {
+        let next = match &needle_split {
+            Some(split) => split.find(haystack, needle, from),
+            None => find_from(haystack, needle, from),
+        };
+        let Some(at) = next else {
             break;
         };
         found = add32(found, 1);

@@ -305,3 +305,27 @@ fn secrets_compare_and_hash_over_their_bytes() {
     b"key".as_slice().hash(&mut bytes_hash);
     assert_eq!(secret_hash.finish(), bytes_hash.finish());
 }
+
+#[test]
+fn a_one_byte_needle_is_found_as_the_two_way_search_finds_it() {
+    let mut haystack = [b'a'; 64];
+    for (at, byte) in haystack.iter_mut().enumerate() {
+        if at % 3 == 0 {
+            *byte = b'b';
+        }
+    }
+    for byte in [b'a', b'b'] {
+        let needle = [byte];
+        for from in 0..=haystack.len() + 1 {
+            assert_eq!(find_from(&haystack, &needle, from), naive(&haystack, &needle, from), "{byte} at {from}");
+            let suffix = haystack.get(from..).unwrap_or_default();
+            for cap in [1, 2, 64] {
+                assert_eq!(
+                    count(suffix, &needle, cap),
+                    naive_count(suffix, &needle, cap),
+                    "{byte} at {from}, cap {cap}"
+                );
+            }
+        }
+    }
+}
