@@ -1,6 +1,6 @@
 # Programming model (Rust)
 
-Provisional, 2026-10-03, revised 2026-10-13. How code is written in skein
+Provisional, 2026-10-03, revised 2026-10-14. How code is written in skein
 and in every service built on it. Read this first, before writing or
 reviewing any of it.
 
@@ -154,6 +154,13 @@ to a file.
   beneath rustls, a few lines each. In tests, the only `unsafe` is the
   counting allocator's `unsafe impl GlobalAlloc` (skein's testing.md,
   section 6).
+- **In a client compiled to WebAssembly, the glue crates are the only
+  `unsafe` code,** since they make every platform call: `wasm-bindgen`,
+  `js-sys` and `web-sys`, pinned to exact versions, and their
+  dependencies. Such a client, as jig's in a browser (jig's
+  `protocol/browser.md`), has no kernel and no ring. Its shell's own
+  crate forbids `unsafe`, and its step code runs there unchanged
+  (lib.md, section 2).
 - **No std handle types that close on drop.** `OwnedFd`, `File`,
   `TcpStream`, `TcpListener` and `std::process::Child` release kernel
   resources in their destructors, at a moment the lifecycle did not
@@ -168,7 +175,9 @@ to a file.
   (shell.md, 12). Before the loop, startup reads its configuration and
   certificates with the kit (shell.md, 6).
 - **Panics abort.** `panic = "abort"` in every profile: a panic anywhere is
-  fail-stop, and a supervisor restarts the process.
+  fail-stop, and a supervisor restarts the process. In a client compiled
+  to WebAssembly the abort is a trap, and its shell restarts the client,
+  in a browser by reloading its page.
 
 ## 3. Step functions
 

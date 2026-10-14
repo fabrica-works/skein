@@ -26,7 +26,7 @@ Section 2 names an increment of smith's reliability plan as
 
 | Document | Built | Left |
 |---|---|---|
-| `foundation/programming-model.md` | partly | 4.3: a read of what has arrived (jig's test-budgets, skein 01); 10.3: rules held in review only, with no checker: not planned |
+| `foundation/programming-model.md` | partly | 4.3: a read of what has arrived (jig's test-budgets, skein 01); 2.1: a client compiled to WebAssembly, the glue crates its only `unsafe`, 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 2.4: machine worlds reading what has arrived (jig's test-budgets, skein 01.2); 8: nextest without its double spawn in the gates and the queue, the suites back within 15 s on carbon-forge (jig's test-budgets); 6: state digests, transition coverage, `cargo fuzz`: not planned |
 | `lib.md` | partly | 7: `Read::Arrived`, met by the intake and `Held`, and skein's readers of unframed bytes on it (jig's test-budgets, skein 01.1, 01.3); 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 13: `Slab::get2_mut`, the state digest: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 9: fixed files, 10: the ring's descriptor limit: not planned |
@@ -45,7 +45,7 @@ Section 2 names an increment of smith's reliability plan as
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
 | `fake-llm.md` | partly | 2.1: a changed tool choice keeps an automatic query's prefix (smith's parity); 7: providers' cache granularity: not planned |
 | `oauth.md` | partly | 6.4: a record dropped when its refresh fails as sign in again (jig's jig-protocol); 7: IPv6 loopback, device authorization, a credential helper: not planned |
-| `browser.md` | yes | 11: open questions only: not planned |
+| `browser.md` | partly | 5, 6, 9: a name matched by words and a press at a point, with the real browser's checks of both, 11: open questions: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
 
 Several "Not built yet" sections still list parts that `main` has:
@@ -138,8 +138,8 @@ process trees in the end-to-end kit).
   names a stall, and operations the kernel cannot interrupt. Wait for a
   decision.
 - **The browser's open questions** (`browser.md`, section 11): Chromium's
-  sandbox under containment, other browsers, text by pattern. The first
-  waits for contained trees.
+  sandbox under containment, other browsers, text by a pattern beyond
+  words. The first waits for contained trees.
 
 ## 4. Drafts
 

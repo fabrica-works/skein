@@ -1,11 +1,12 @@
 # Browser
 
-Implemented, 2026-10-06. The design of `skein-browser`: a testing kit
-that drives a real, headless Chromium from a service's loop, so that a
-service with a web can test it as a person uses it. It is a step machine
-over the child's pipes, speaking the DevTools protocol (CDP), with no
-dependency beyond skein. Its first user is temper's web (temper's
-`docs/design/web/architecture.md`, 7.3).
+Implemented, 2026-10-06, revised 2026-10-14. The design of
+`skein-browser`: a testing kit that drives a real, headless Chromium from
+a service's loop, so that a service with a web can test it as a person
+uses it. It is a step machine over the child's pipes, speaking the
+DevTools protocol (CDP), with no dependency beyond skein. Its first user
+is temper's web (temper's `docs/design/web/architecture.md`, 7.3); jig's
+browser tier is another (jig's `protocol/browser.md`, section 15).
 
 ## 1. In one page
 
@@ -17,9 +18,9 @@ dependency beyond skein. Its first user is temper's web (temper's
   events from below, deadlines fired by the loop. It never sleeps, and
   it has no async runtime.
 - **A test sees what a person sees.** It finds things by role and
-  accessible name in the browser's accessibility tree, presses them,
-  types into them, and waits for what should show. It runs no script in
-  the page and reads no page state.
+  accessible name in the browser's accessibility tree, the name exactly
+  or by words in it, presses them, types into them, and waits for what
+  should show. It runs no script in the page and reads no page state.
 - **Actions check what a person would.** A press lands only on something
   on screen, enabled and not covered by something else. Otherwise it is
   refused, saying why, and the test can wait and try again.
@@ -148,7 +149,7 @@ pub enum Request {                                       // from the test
     Go     { page: Token, op: Token, to: Go },           // an address, reload, back, forward
     Find   { page: Token, op: Token, query: Query },     // one look
     Await  { page: Token, op: Token, query: Query, expect: Expect, within: Duration },
-    Press  { page: Token, op: Token, node: Node },
+    Press  { page: Token, op: Token, node: Node, at: Option<Point> },  // none: the box's centre
     Type   { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },  // an IME composition, left open
     Key    { page: Token, op: Token, key: Key },         // Enter, Escape, Tab, Backspace, arrows
@@ -171,7 +172,9 @@ pub enum Event {                                         // to the test
     Closed  { owner: Token },                            // terminal
 }
 
-pub struct Query { role: Box<[u8]>, name: Box<[u8]>, within: Option<Node>, boxes: bool }
+pub struct Query { role: Box<[u8]>, name: Box<[u8]>, matching: Match, within: Option<Node>, boxes: bool }
+pub enum Match   { Exact, Words }                        // Words: the name contains the query's bytes
+pub struct Point { x: u32, y: u32 }                      // whole CSS pixels from the box's top left
 pub struct Seen  { node: Node, role: Box<[u8]>, name: Box<[u8]>, value: Box<[u8]>,
                    states: States, rect: Option<Rect> }   // focused, disabled, checked, expanded, selected
 pub enum Expect  { Present, Count(u32), Absent }
@@ -183,10 +186,24 @@ pub enum Expect  { Present, Count(u32), Absent }
 - **A node is the browser's backend node id,** which names one element
   for as long as it lives. A node since removed is `Gone`, as a stale
   handle is.
-- **Names are exact,** as the page computes them for assistive
-  technology: an element's label, or its text. Patterns are out. A
-  query may be scoped `within` a node found before, such as a button
-  within a card. `boxes` asks for each match's place on screen too.
+- **Names match exactly or by words,** as the page computes them for
+  assistive technology: an element's label, or its text. `Exact`: the
+  name is the query's name. `Words`: the name contains the query's bytes,
+  unbroken and with case kept, as a person finds a sentence by a few
+  words in it. Other patterns are out (section 11). A query may be scoped
+  `within` a node found before, such as a button within a card. `boxes`
+  asks for each match's place on screen too.
+- **Text is found by words,** as a static text node's name: Chromium
+  gives each run of text a node of role `StaticText`, named by its text.
+  Words such as "3 failing" find "Checks: 3 failing, 2 passed", and keep
+  finding it while its other numbers change. Words match within one
+  node's name: a sentence that markup splits, such as one with a strong
+  word in it, is several nodes.
+- **A press lands at its node's centre, or at a point the test names**
+  within the node's box, in whole CSS pixels from its top left. A point
+  reaches what has no accessible node of its own: a shape of an inline
+  SVG, hidden from assistive technology, pressed through the named node
+  that holds it.
 - **Every operation has one terminal event:** `Found`, `Met`, `Missed`,
   `Done`, `Refused`, `Snapshot` or `Screenshot`. Every person, page and
   the browser itself ends with one `Closed`.
@@ -200,15 +217,26 @@ to the next command, never a closure waiting on a reply:
 |---|---|
 | opening a page | create a target in the person's context, attach to it, enable the domains it reports on, set the viewport, navigate; `Opened` once the load event fires |
 | go | navigate, reload, or move through the history; `Done` once the navigation commits: the load event for a new document, the same-document event for one that stays |
-| find | the accessibility nodes matching the role and the name, under the scope or the document; their properties; their boxes, if asked |
+| find | the accessibility nodes matching the role and the name, under the scope or the document: exactly, both asked of CDP; by words, the role's nodes asked without a name, their names compared in the kit; at most `Limits::matches` kept, the rest counted in `more`; their properties; their boxes, if asked |
 | await | a find, again every `Limits::poll`, until the expectation holds (`Met`) or `within` passes (`Missed`) |
-| press | the node scrolled into view; its box's centre; layout metrics turn the viewport point into document coordinates for the hit test; refused `Hidden` without a box, `Disabled` if its accessibility node says so, `Covered` if the hit test at that point finds something outside it; then the mouse moved, pressed and released at the viewport point |
+| press | the node scrolled into view, its named point with it; its box's centre, or the named point in the box; layout metrics turn the viewport point into document coordinates for the hit test; refused `Hidden` without a box or with a point outside it, `Disabled` if its accessibility node says so, `Covered` unless the hit test at that point lands on the node or inside it; then the mouse moved, pressed and released at the viewport point |
 | type | the node focused; the text inserted |
 | compose | the node focused; a composition set and left open, which a later `Type` commits |
 | key | the key down and up, with the text it makes |
 | snapshot | the accessibility tree under the document, as indented lines of role, name, value and states, cut at `Limits::snapshot` |
 | screenshot | the viewport as PNG, under `Limits::screenshot` |
 
+- **A find by words reads each name whole,** as the reply carries it,
+  before a kept name is cut to `Limits::text`. Its reply holds every node
+  of the role under its scope, and a reply past `Limits::message` fails
+  the browser (section 4): a test scopes a find by words `within` a node,
+  or raises the limit.
+- **A press at a point reaches a shape of an inline SVG.** The hit test
+  there lands on the shape, inside the node that holds it, and the mouse
+  goes down on the shape; something over the shape covers it, as it would
+  cover a button. The kit checks only that the hit lands inside the node:
+  where no shape is painted, such as inside a shape with no fill, the
+  press goes to what is beneath, and the test sees that by its effect.
 - **A press is done when the browser has taken it,** not when its
   effects show. What follows a press (a request, a page redrawn) the test
   awaits.
@@ -271,14 +299,18 @@ allocator's high water against `worst_case`.
 - **The real browser:** the kit in the real loop against Chromium,
   opening fixed pages served by a small `skein-http` server in the same
   loop: a button that changes a heading, a form, a dialog that covers a
-  button, a button far down a long page, a script that throws, and a
-  resource the content security policy blocks. These tests check the facts the fake
-  browser assumes: the framing, flattened sessions, what the
-  accessibility queries match, boxes and the hit test, and the events
+  button, a button far down a long page, a script that throws, a
+  resource the content security policy blocks, a sentence whose text is
+  found by a few of its words, and a named figure holding an inline SVG
+  hidden from assistive technology, whose shape, pressed through the
+  figure at a point, changes a heading. These tests check the facts the
+  fake browser assumes: the framing, flattened sessions, what the
+  accessibility queries match, with a name and without one, boxes and
+  the hit test, on an element and on a shape of an SVG, and the events
   each step waits for. A new Chromium version is a run of these, and a
-  fact that changed is fixed in the fake first. They need Chromium and do
-  not replay, so they form a suite of their own, beside the focused and
-  fuzzy suites (`--profile browser`, within two minutes). A missing
+  fact that changed is fixed in the fake first. They need Chromium and
+  do not replay, so they form a suite of their own, beside the focused
+  and fuzzy suites (`--profile browser`, within two minutes). A missing
   Chromium fails that suite, naming what is missing; it is never a skip.
 
 The kit's tests are a crate of their own, `tests/browser`
@@ -303,5 +335,6 @@ The kit's tests are a crate of their own, `tests/browser`
   it.
 - **Other browsers.** CDP is Chromium's; Firefox and WebKit would need
   WebDriver BiDi, a second wire, if a bug ever shows only there.
-- **Text by pattern,** should exact names prove too strict for text that
-  carries numbers or times.
+- **Text by pattern beyond words,** should words in a name prove too
+  strict for text that carries numbers or times: case folded, or a number
+  or a time matched by its shape rather than its digits.
