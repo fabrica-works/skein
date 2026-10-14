@@ -39,6 +39,11 @@ answer ownership is checked before effects or payload copies.
   with its scope, its length in tokens and a digest of its content,
   written at injected time and expired after the configured lifetime. The
   oldest entry gives way when the table is full.
+- **A query's prefix** is its model, its tools and its system text,
+  then, for a marked query alone, its tool choice, then its messages. A
+  changed choice therefore keeps an automatic query's whole prefix, as
+  the Codex wire does, and only a marked query's tools and system text,
+  as Anthropic's does.
 - **Reads.** An automatic query reads the longest prefix written in its
   scope that it begins with. A query without a scope reads only with the
   configured chance, as a provider's random routing does, so a world can

@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-13. How far skein's code is from its design, and which
+Updated 2026-10-14. How far skein's code is from its design, and which
 plans take it there. The designer keeps this file (development.md,
 section 3.3).
 
@@ -11,6 +11,7 @@ section 3.3).
 | jig's test-budgets | done 2026-10-14 | lib.md 7, io.md 2 and 3.3, http.md 3.3, 4 and 6, tls.md 3.1, programming-model.md 4.3, testing-strategy.md 2.4: a read of what has arrived; testing-strategy.md 8: nextest without its double spawn, the focused suite back within 15 s; codec.md 4: generated worst cases checked once | jig's `docs/development/plans/test-budgets/` |
 | jig's jig-protocol | done 2026-10-13 | io.md 3.5 (joined sockets), section 4 (in-process addresses), 5 (`OpenWrite`, `Cut`); kernel.md 6.1 (the `Write` open, `Truncate`); simulator.md 3.1 (a cut kept until synced); shell.md 5 (the cryptographic seed), 6.1 (`read_private_file`); lib.md 6 (`Secret`), 6.1 (`base64`), 8 (`CryptoRng`); codec.md 3–4 (`secret N`, `boxed` variants), 6 (lints); oauth.md 6.4 (a record dropped on sign in again) | jig's `docs/development/plans/jig-protocol/` |
 | tls-cleanup | done 2026-10-12 | tls.md 3.6 (the code in its words, one engine for both faces); the crate's and its world's tests, one behaviour each | `docs/development/plans/tls-cleanup/` |
+| smith's parity | drafting | fake-llm.md 2.1: a changed tool choice keeps an automatic query's prefix | smith's `docs/development/plans/parity/` |
 | smith's reliability | done 2026-10-14 | kernel.md 6.3, io.md 7 and shell.md 6.3: terminal modes (skein 02.6). Its first run (2026-10-09 to 2026-10-12) built io.md 5–7; kernel.md 6; simulator.md 3; shell.md 6, 12–13; tls.md 3.4; json.md 3, 5; http.md 4; llm.md 2, 4; llm-connection.md 4–7; fake-llm.md 2–3; oauth.md 1, 6; examples.md 3.3, 6; testing-strategy.md 6 | smith's `docs/development/plans/reliability/` |
 | smith-testing | done 2026-10-08 | simulator.md 3 (hosted spawns); llm-connection.md and oauth.md, plaintext to loopback; fake-llm.md 3 (peers on loopback); examples.md 6, 8; testing-strategy.md 2.8–2.9 | `~/src/rust/plans/smith-testing/` (not versioned) |
 | smith-protocol-layer | done 2026-10-08 | codec.md; channel.md; llm-connection.md 3–6, 8 | `~/src/rust/plans/smith-protocol-layer/` (not versioned) |
@@ -42,7 +43,7 @@ Section 2 names an increment of smith's reliability plan as
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 2, 4.2: a run of consecutive reasoning items as one block; replay values charged at their total (smith's reliability plan, a step its supervisor names). 6: Codex routing state, WebSocket: not planned |
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
-| `fake-llm.md` | partly | 7: providers' cache granularity: not planned |
+| `fake-llm.md` | partly | 2.1: a changed tool choice keeps an automatic query's prefix (smith's parity); 7: providers' cache granularity: not planned |
 | `oauth.md` | partly | 6.4: a record dropped when its refresh fails as sign in again (jig's jig-protocol); 7: IPv6 loopback, device authorization, a credential helper: not planned |
 | `browser.md` | yes | 11: open questions only: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |

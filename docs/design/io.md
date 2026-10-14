@@ -1,6 +1,6 @@
 # io
 
-Provisional, 2026-10-03, revised 2026-10-13. The design of `skein-io`'s
+Provisional, 2026-10-03, revised 2026-10-14. The design of `skein-io`'s
 step layer: the lowest step layer of every service. It owns sockets,
 pipes, files and child processes, the operations in flight on them, and
 the receive and send queues, and it is the only layer that sees a
@@ -847,6 +847,11 @@ private root or file owned by anyone else is refused, saying so.
   signal to the group therefore reaches the child and whatever it started
   that stayed in its group, and never a stranger, even once the child
   itself has exited.
+  - **One signal in flight.** A child has at most one signal in flight
+    (3.4). A `Signal` sent while one is in flight, or once its owner has
+    begun to close the child, is dropped, and nothing tells the owner. An
+    owner that must be sure its signal went closes the child instead:
+    closing kills its group.
 - **A child is *closed*** once it has exited and its pipes and pidfd are
   closed. It has one terminal event, which comes after all of those.
   Closing a child sends `Kill` to its group, whether or not the child
