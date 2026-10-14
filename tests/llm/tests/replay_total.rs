@@ -16,8 +16,8 @@ fn standard_client_bound_excludes_per_item_replay_capacity() {
     };
     let derived = Limits::derive(&declared).unwrap();
     for (provider, parent, removed, fixed, receiving) in [
-        (Provider::OpenAiCodex, 106_615_620, 53_501_856, 53_113_764, 3_527_212),
-        (Provider::Anthropic, 106_613_244, 53_501_040, 53_112_204, 3_527_206),
+        (Provider::OpenAiCodex, 106_615_620, 53_485_471, 53_130_149, 3_527_212),
+        (Provider::Anthropic, 106_613_244, 53_484_655, 53_128_589, 3_527_206),
     ] {
         let mut bounds = derived.dialect(provider);
         bounds.http.request = 4096;

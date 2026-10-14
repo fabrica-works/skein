@@ -1037,3 +1037,19 @@ fn values_text_edge(documents: &[&str]) -> u32 {
         .max()
         .expect("nonempty event sequence")
 }
+
+#[test]
+fn an_error_body_read_as_it_arrives_is_the_same_whatever_its_cuts() {
+    for piece in [1, u32::MAX] {
+        let mut bounds = limits();
+        bounds.error_bytes = 4;
+        bounds.detail_bytes = 32;
+        let mut world = World::new(call(7), bounds, response(503, "", b"abcdefgh", false), 7);
+        world.fragmentation(piece, 0);
+        world.request(client::Request::Start);
+        world.run();
+        world.settle();
+        world.assert_once();
+        assert!(world.seen.iter().any(|event| matches!(event, client::Event::Failed { failure: Failure::Unavailable, detail, .. } if detail.as_ref() == b"error body cut: abcd")));
+    }
+}

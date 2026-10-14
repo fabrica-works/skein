@@ -73,7 +73,14 @@ impl Exchange {
             match event {
                 http::Event::Response(response) => {
                     self.response = Some(response);
-                    self.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                    self.requests.push(http::Request::Body(Down::Demand {
+                        read: Read::Arrived {
+                            max: u32::try_from(1024_usize.saturating_sub(self.received.len()))
+                                .expect("bounded response room")
+                                .max(1),
+                        },
+                        room: 0,
+                    }));
                 }
                 http::Event::Upload(Up::Room) => {
                     let end = self.offset.checked_add(256).expect("bounded upload").min(self.body.len());
@@ -91,7 +98,14 @@ impl Exchange {
                         "bounded token response"
                     );
                     self.received.extend_from_slice(&bytes);
-                    self.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                    self.requests.push(http::Request::Body(Down::Demand {
+                        read: Read::Arrived {
+                            max: u32::try_from(1024_usize.saturating_sub(self.received.len()))
+                                .expect("bounded response room")
+                                .max(1),
+                        },
+                        room: 0,
+                    }));
                 }
                 http::Event::Body(Up::End) | http::Event::Closed => {}
                 http::Event::Done(_) => {

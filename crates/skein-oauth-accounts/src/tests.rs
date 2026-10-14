@@ -2,7 +2,7 @@ use super::*;
 use skein_lib::{Duration, Env, List, Queue, Time, Wall, bytes};
 use skein_oauth::{ClientLimits, SavedToken};
 
-fn limits() -> Limits {
+pub(crate) fn limits() -> Limits {
     Limits {
         accounts: 2,
         file_stall: Duration::from_secs(1),

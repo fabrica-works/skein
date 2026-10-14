@@ -294,7 +294,13 @@ impl Web {
             match event {
                 tls::Event::Ready(_) => self.phase = Phase::Calling,
                 tls::Event::Stream(up) => http::up(&mut self.http, &http_env, up, &mut self.events, &mut self.plain),
-                tls::Event::Failed(_) => self.transport_failed(env),
+                tls::Event::Failed(_) => {
+                    // HTTP has heard the stream failure and keeps a body read
+                    // whole before it. Only a handshake failure bypasses HTTP.
+                    if self.phase == Phase::Handshaking {
+                        self.transport_failed(env);
+                    }
+                }
                 tls::Event::Closed => {
                     self.phase = Phase::Closing;
                     self.close_socket(io);
@@ -337,7 +343,10 @@ impl Web {
         match event {
             http::Event::Response(response) => {
                 self.response = Some(response);
-                self.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                self.requests.push(http::Request::Body(Down::Demand {
+                    read: Read::Arrived { max: self.document.room().saturating_add(1) },
+                    room: 0,
+                }));
             }
             http::Event::Upload(Up::Room) => {
                 let end = self
@@ -367,7 +376,10 @@ impl Web {
                     for byte in &bytes {
                         self.document.push(*byte).expect("response document admitted");
                     }
-                    self.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                    self.requests.push(http::Request::Body(Down::Demand {
+                        read: Read::Arrived { max: self.document.room().saturating_add(1) },
+                        room: 0,
+                    }));
                 }
             }
             http::Event::Done(_) => {
@@ -498,4 +510,60 @@ fn parse_seconds(bytes: &[u8]) -> Option<u64> {
         value = value.checked_mul(10)?.checked_add(u64::from(byte.checked_sub(b'0')?))?;
     }
     Some(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use skein_lib::{Time, Wall};
+
+    fn token_web(limits: &Limits) -> Web {
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *limits };
+        let endpoint = Endpoint { address: ([127, 0, 0, 1], 31000).into(), transport: Transport::Plaintext };
+        let request = oauth::HttpRequest {
+            id: 7,
+            endpoint: bytes::copy_of(b"http://127.0.0.1:31000/token"),
+            content_type: b"application/x-www-form-urlencoded",
+            body: Box::new([]),
+            deadline: Time::ZERO,
+        };
+        let mut web = Web::new(request, &endpoint, limits).expect("token endpoint");
+        while web.requests.pop().is_some() {}
+        web.http_event(
+            &env,
+            http::Event::Response(http::Response {
+                version: skein_http::Version::Http11,
+                status: 200,
+                headers: Box::new([]),
+                framing: http::Framing::Chunked,
+            }),
+        );
+        web
+    }
+
+    #[test]
+    fn a_token_response_read_as_it_arrives_is_the_same_whatever_its_cuts() {
+        let mut limits = crate::tests::limits();
+        limits.client.document.document_bytes = 32;
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+        for piece in [1, 21] {
+            let mut web = token_web(&limits);
+            assert_eq!(
+                web.requests.pop(),
+                Some(http::Request::Body(Down::Demand { read: Read::Arrived { max: 33 }, room: 0 }))
+            );
+            for bytes in br#"{"access_token":"ok"}"#.chunks(piece) {
+                web.http_event(&env, http::Event::Body(Up::Bytes(bytes::copy_of(bytes))));
+                if piece == 1 && web.document.len() < 21 {
+                    while web.requests.pop().is_some() {}
+                }
+            }
+            assert_eq!(
+                web.requests.pop(),
+                Some(http::Request::Body(Down::Demand { read: Read::Arrived { max: 12 }, room: 0 }))
+            );
+            web.http_event(&env, http::Event::Done(http::Reuse::Close));
+            assert_eq!(web.answer.expect("token response").body.as_ref(), br#"{"access_token":"ok"}"#);
+        }
+    }
 }

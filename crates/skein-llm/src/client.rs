@@ -849,7 +849,10 @@ fn response_head(
         }
     } else {
         client.state = State::ErrorBody;
-        client.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+        client.requests.push(http::Request::Body(Down::Demand {
+            read: Read::Arrived { max: client.error.room().saturating_add(1) },
+            room: 0,
+        }));
     }
 }
 
@@ -870,7 +873,10 @@ fn body_event(client: &mut Client, event: Up, env: &Env<Limits>, above: &mut Que
                     error_cut(client, env, above);
                     closing(client, env, above, below);
                 } else {
-                    client.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                    client.requests.push(http::Request::Body(Down::Demand {
+                        read: Read::Arrived { max: client.error.room().saturating_add(1) },
+                        room: 0,
+                    }));
                 }
             }
             Up::End => error_end(client, env, above),
@@ -1344,6 +1350,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<collector::Event>::worst_case(1)?)?
         .checked_add(Queue::<Down>::worst_case(1)?)?
         .checked_add(u64::from(limits.error_bytes).checked_mul(4)?)?
+        .checked_add(u64::from(limits.error_bytes).checked_add(1)?)?
         .checked_add(crate::document::worst_case(&error_document(limits))?)?
         .checked_add(Queue::<http::Event>::worst_case(HTTP_EVENTS)?)?
         .checked_add(Queue::<sse::Event>::worst_case(SSE_EVENTS)?)?

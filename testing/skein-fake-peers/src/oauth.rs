@@ -247,7 +247,10 @@ impl Peer {
                 for byte in bytes {
                     connection.body.push(byte).expect("admitted request body");
                 }
-                connection.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                connection.requests.push(http::Request::Body(Down::Demand {
+                    read: Read::Arrived { max: connection.body.room().max(1) },
+                    room: 0,
+                }));
             }
             http::Event::Body(Up::End) => self.post(index, now, wall),
             http::Event::Reply(Up::Room) => {
@@ -336,7 +339,10 @@ impl Peer {
             if count != 1 {
                 connection.content_type = None;
             }
-            connection.requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+            connection.requests.push(http::Request::Body(Down::Demand {
+                read: Read::Arrived { max: connection.body.room().max(1) },
+                room: 0,
+            }));
         } else {
             self.respond(index, 404, Box::new([]), Box::new([]), Duration::ZERO);
         }

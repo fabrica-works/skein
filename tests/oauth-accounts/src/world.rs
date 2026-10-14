@@ -832,7 +832,7 @@ impl Referee<Process> for Judge {
                 }
                 Story::Retry => {
                     assert_eq!(posts, 2);
-                    assert!(client.facts.contains(&Fact::Granted(1)));
+                    assert!(client.facts.contains(&Fact::Granted(1)), "owner facts: {:?}", client.facts);
                     assert!(client.facts.contains(&Fact::Keep(1)));
                 }
                 Story::Lead
@@ -843,7 +843,7 @@ impl Referee<Process> for Judge {
                 | Story::CloseSending
                 | Story::CloseKeeping => {
                     assert_eq!(posts, 1);
-                    assert!(client.facts.contains(&Fact::Granted(1)));
+                    assert!(client.facts.contains(&Fact::Granted(1)), "owner facts: {:?}", client.facts);
                     assert!(client.facts.contains(&Fact::Keep(1)));
                 }
             }
@@ -1131,11 +1131,31 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     assert_eq!(call.method, skein_http::Method::Post);
                     assert_eq!(call.target.as_ref(), b"/token");
                     assert_eq!(call.header(b"content-type"), Some(b"application/x-www-form-urlencoded".as_slice()));
-                    server_requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                    server_requests.push(http::Request::Body(Down::Demand {
+                        read: Read::Arrived {
+                            max: profile
+                                .client
+                                .document
+                                .document_bytes
+                                .saturating_sub(u32::try_from(body.len()).expect("bounded request body"))
+                                .max(1),
+                        },
+                        room: 0,
+                    }));
                 }
                 http::Event::Body(Up::Bytes(bytes)) => {
                     body.extend_from_slice(&bytes);
-                    server_requests.push(http::Request::Body(Down::Demand { read: Read::Fill(1), room: 0 }));
+                    server_requests.push(http::Request::Body(Down::Demand {
+                        read: Read::Arrived {
+                            max: profile
+                                .client
+                                .document
+                                .document_bytes
+                                .saturating_sub(u32::try_from(body.len()).expect("bounded request body"))
+                                .max(1),
+                        },
+                        room: 0,
+                    }));
                 }
                 http::Event::Body(Up::End) => issuer.step(
                     fake::Event::Post {

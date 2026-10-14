@@ -210,15 +210,15 @@ impl Connection {
     }
 
     /// The next piece of the body, read by its framing (http.md, 3.3): what
-    /// is left of a length, at most a thousand bytes at once; a chunked one,
-    /// a byte at a time, as only the client knows where its chunks end.
+    /// is left of a length, at most a thousand bytes at once; a chunked one
+    /// reads what has arrived, and the client keeps it within the framing.
     fn demand_body(&mut self) {
         let read = match self.status {
             Some((_, Framing::Length(length))) => {
                 let left = length - u64::try_from(self.body.len()).expect("fits");
                 Read::Fill(u32::try_from(left.min(1_000)).expect("fits").max(1))
             }
-            Some((_, Framing::Chunked | Framing::UntilEnd | Framing::Empty)) | None => Read::Fill(1),
+            Some((_, Framing::Chunked | Framing::UntilEnd | Framing::Empty)) | None => Read::Arrived { max: 1_000 },
         };
         self.http_down(http::Request::Body(Down::Demand { read, room: 0 }));
     }

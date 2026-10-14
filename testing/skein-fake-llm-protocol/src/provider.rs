@@ -603,22 +603,21 @@ fn entrance(
     demand_body(server, limits);
 }
 
-// A known length permits exact bounded batches, including the final short
-// batch. Unknown chunked lengths keep their conservative demand: Fill must
-// never wait for bytes beyond the body end. After zero, probe for actual End
-// rather than treating the announced length as a terminal.
+// Known lengths use bounded exact reads; unknown bodies read what has
+// arrived. After zero, a read probes End rather than assuming a terminal.
 fn body_read(remaining: Option<u64>, cap: u32) -> Read {
-    let size = match remaining {
-        Some(remaining) => u32::try_from(remaining.min(u64::from(cap))).expect("bounded HTTP read"),
-        None => 1,
-    };
-    Read::Fill(size.max(1))
+    match remaining {
+        Some(remaining) => Read::Fill(u32::try_from(remaining.min(u64::from(cap))).expect("bounded HTTP read").max(1)),
+        None => Read::Arrived { max: cap.max(1) },
+    }
 }
 
 fn demand_body(server: &mut Server, limits: &Limits) {
-    server
-        .requests
-        .push(http::Request::Body(Down::Demand { read: body_read(server.remaining_body, limits.http.read), room: 0 }));
+    let cap = match server.remaining_body {
+        Some(_) => limits.http.read,
+        None => server.body.room(),
+    };
+    server.requests.push(http::Request::Body(Down::Demand { read: body_read(server.remaining_body, cap), room: 0 }));
 }
 
 fn next_response(count: &mut u64) -> Option<u64> {
@@ -998,7 +997,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.http.head).checked_mul(3)?)?
         // Queued body events and the current entrance delivery own their
         // batches separately from HTTP's intake and the accumulated document.
-        .checked_add(u64::from(limits.http.read).checked_mul(u64::from(EVENTS.checked_add(1)?))?)
+        .checked_add(u64::from(request.max(limits.http.read)).checked_mul(u64::from(EVENTS.checked_add(1)?))?)
 }
 
 #[cfg(test)]
@@ -1008,15 +1007,16 @@ mod tests {
         use skein_lib::stream::Read;
 
         for (remaining, cap, expected) in [
-            (None, 256, 1),
-            (Some(0), 256, 1),
-            (Some(1), 256, 1),
-            (Some(257), 256, 256),
-            (Some(255), 256, 255),
-            (Some(u64::MAX), u32::MAX, u32::MAX),
-            (Some(8192), 1, 1),
+            (None, 256, Read::Arrived { max: 256 }),
+            (None, 0, Read::Arrived { max: 1 }),
+            (Some(0), 256, Read::Fill(1)),
+            (Some(1), 256, Read::Fill(1)),
+            (Some(257), 256, Read::Fill(256)),
+            (Some(255), 256, Read::Fill(255)),
+            (Some(u64::MAX), u32::MAX, Read::Fill(u32::MAX)),
+            (Some(8192), 1, Read::Fill(1)),
         ] {
-            assert_eq!(super::body_read(remaining, cap), Read::Fill(expected));
+            assert_eq!(super::body_read(remaining, cap), expected);
         }
     }
 
