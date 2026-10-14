@@ -42,8 +42,8 @@ context. Handle the event, then start the watch again:
 | `blocked:` and the blocks' headings | a ruling (section 3), or a design question (section 4) |
 | `answer:` | the unblock from the designer's answer (section 4) |
 | `check:` and steps, each with its session file | the ready check (section 5) |
-| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes |
-| `quiet again:` | a push notification to the user, with the command `plan resume` |
+| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, it crashed: `plan resume crash` |
+| `quiet again:` | an alert to the user, with the command `plan resume` |
 | `paused:` | read `paused.md`; nothing else waits for you until the run resumes |
 | `done:` | the end (section 8) |
 | `context: … past 300K: hand over now` | after the event in hand, section 7 |
@@ -51,6 +51,10 @@ context. Handle the event, then start the watch again:
 
 An idle coordinator (`idle.md`, development.md, section 7.4) has ended its
 turn on purpose: its silence is no event, and a ring starts its next turn.
+
+**An alert to the user** is a push notification, and one line, with its
+UTC time, appended to the run's `alerts.md`, which `plan status` prints
+first.
 
 **End every turn with at most one line of text.** Nobody reads the
 terminal: the record is the run's files. A summary written there is
@@ -79,7 +83,11 @@ carried by every later request.
 5. **Write the unblock once,** to `<run>/unblock.draft.md`, in development.md
    section 10.3's shape, with its `## Landed` section empty. Its Decision
    is the ruling's whole text. Write `{ruling}` where it names its own
-   number.
+   number. Its `## Checked` section gives each premise of step 3 with the
+   command that checked it and what it printed; `Reverses:` names only an
+   earlier answer, and `Amends:` the plan or design text it changes. In
+   the reliability run, 10 of the 11 reversed answers rested on a premise
+   nobody had checked.
 6. **Run `plan ruling "<title>" "<kind>, <session>'s block of <time>"`.** It
    appends the Decision to `decisions.md` as the next ruling, lands it
    with your plan edits (`land --docs`), names the commit in `## Landed`,
@@ -109,8 +117,10 @@ a rule that would serve every plan, a proposal for the retrospective
    starts a fresh designer from a brief. If it says the designer is at
    work, never wake it again: send it a message (SendMessage) naming
    `question.md`.
-3. **Go on** with everything else. A step that cannot go on without the
-   answer waits; say so in the unblock, if any.
+3. **Go on** with everything else. A design gap always goes to the
+   designer, even when its step can go on meanwhile: then an interim
+   unblock lets the step go on only with work that does not rest on the
+   answer, and says so.
 4. **When `answer.md` comes:** write the draft's Decision as one line that
    names the answer's commits, followed by `answer.md`'s text, appended
    with a shell command (`cat`), never typed again. Then `plan ruling`, as
@@ -160,9 +170,11 @@ The cron job's prompt brings you here, once an hour.
    ```
    Run the hourly check of the run in <run>, as skein's
    docs/foundation/development.md, section 14.1, steps 1 to 4, say,
-   with sections 14.2 and 14.3. Return only: the check's entry (at most
-   15 lines, section 14.1, step 5), and, if something needs action, the
-   steer's points in section 10.3's shape. Change no file yourself.
+   with sections 14.2 and 14.3: read plan pulse's whole output, and
+   plan downstream's, and sample one test and one diff. Return only: the
+   check's entry (at most 15 lines, section 14.1, step 5), and, if
+   something needs action, the steer's points in section 10.3's shape.
+   Change no file yourself.
    ```
 
    Its reading stays in its own context; only its entry reaches yours.
@@ -195,10 +207,14 @@ When the watch prints `done:` (development.md, section 7.6):
 
 1. Add to each decision in `done.md` the design commit that took it in,
    or "not in the design yet".
-2. Mark the plan `done <date>` in each `STATUS.md` that has its row, with
+2. Run each "Done when" command of the plan once, through `heavy` where it
+   builds or tests, and append their output to `done.md` under `## Done
+   when, checked <UTC time>`. One that fails goes to the user, as an
+   alert.
+3. Mark the plan `done <date>` in each `STATUS.md` that has its row, with
    `land --docs`.
-3. Stop your watch and delete your cron job.
-4. Start the retrospective: `plan retro`.
+4. Stop your watch and delete your cron job.
+5. Start the retrospective: `plan retro`.
 
 ## 9. What the supervisor does not do
 

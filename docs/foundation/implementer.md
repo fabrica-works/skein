@@ -13,17 +13,20 @@ are read only when a case needs them.
 
 **Before the first increment, read only:**
 - this card;
-- your session file, and the design sections its "Read first" names, not
-  the whole design;
-- the plan's `README.md` and `code-organization.md`;
-- your repository's `AGENTS.md` and the workflow it names;
+- your repository's `AGENTS.md`;
+- your session file, then the design sections its "Read first" names,
+  and the sections of the plan's `README.md`, of `code-organization.md`
+  and of skein's foundation documents that it cites: by those sections,
+  not whole. Its "Rules that bind it" repeats every plan rule that
+  applies to you;
 - after a handover, your checkpoint first.
 
 Never development.md whole: read one of its sections only when this card
 or your session file names it. Read one file at a time: an output past
 your tool's cap (about 10,000 tokens on Codex) is cut, and what was cut is
 read again. In test-budgets, threads read 80K to 125K tokens before their
-first edit, and every request after carried them.
+first edit, and every request after carried them; in the reliability run,
+`programming-model.md`, 52 KB, was often read whole.
 
 1. **Read the increment** in the session file.
 2. **Branch from `origin/main`** in your worktree:
@@ -37,8 +40,13 @@ first edit, and every request after carried them.
 4. **Run its proof once,** as its Proof line says (section 8.8).
 5. **Run clippy once** on what you changed: `heavy cargo clippy -p <each
    crate you changed> --all-targets -- -D warnings`, and fix what it
-   prints. A plan's "run nothing before `land`" means no proof run and no
-   suite, not no clippy.
+   prints. **Then run once the focused tests of the crates that depend on
+   what you changed:** `heavy cargo nextest run --workspace -E
+   'rdeps(<crate>) | rdeps(<other crate>)'`, and fix what fails. A plan's
+   "run nothing before `land`" means no proof run and no whole suite, not
+   no clippy and no such tests. `land` runs clippy again on the tree it
+   lands, a conflict's resolution included. In the reliability run, 54
+   gates failed on tests no focused run had included.
 6. **Land it** with `land` (section 8.5), then report (section 8.6).
 
 **The code graph** indexes the primary checkouts, which are on `main`.
@@ -75,48 +83,39 @@ it.
   fields is an implementation choice. Nor does a field you add, private to
   its crate and reached by no other session's code, bounded by a limit
   and priced in its owner's worst case.
-- **An edit outside the increment's Files** is an implementation choice,
-  named in the commit body, in the cases below. In every case no test is
-  renamed or loosened (no `matches!` in place of an equality), and no
-  assertion is removed, but a removed mechanism's. Any other edit outside
-  Files is a question (section 8.7).
-  - **A small fix that the change, its Proof or the gate needs:** at most
-    20 lines in all, in any session's files, shared test files and test
-    roots included. It keeps every test's name and every assertion's
-    expected value; a test's or a fixture's inputs may change, so that the
-    test checks the same behaviour under the new code. Moving a test's
-    unchanged statements into a named helper of the same file, to keep a
-    function within its limit, counts for nothing.
-  - **A failure the Shape explains:** when the gate fails, other than on a
-    timeout, in a test outside Files because the behaviour the Shape adds
-    reaches its fixture or its story (a new control pressed, a message now
-    judged again), fix the fixture or the story's inputs as a small fix,
-    name the Shape's words that explain it, and land again.
-  - **A value printed differently:** where the Shape changes how a value
-    prints (a renamed or re-wrapped variant in a trace or in `Debug` text,
-    a moved tag), the expected literals that print it become what the new
-    code prints for the same behaviour, at most 10 lines in all.
-  - **A new variant's arms:** an increment that adds a variant adds the arm
-    that each exhaustive match outside its Files then needs, in any
-    session's crate, written as its neighbours are, at most 5 lines a
-    match. Tests for those arms only where the Test shape names them.
-  - **The case the Shape changes:** a test outside Files that sets up the
-    very case whose answer the Shape changes, and expects the old answer,
-    expects the new one: its inputs and name kept, at most 4 assertions in
-    all, each named in the commit body with the Shape's words it follows.
+- **An edit outside the increment's Files** is part of the increment, with
+  no question, in the cases below; the commit body lists each under
+  "Users outside Files:". In every case no test is renamed or loosened (no
+  `matches!` in place of an equality), and no assertion is removed, but a
+  removed mechanism's. Any other edit outside Files is a question (section
+  8.7).
+  - **An edit that only follows a change the Shape names,** wherever it
+    falls in the repository, whatever its size:
+    - a new variant handled as its match handles the others; tests for
+      those arms only where the Test shape names them;
+    - a removed or renamed name replaced by its successor, and a value
+      printed differently (a trace, `Debug` text, a moved tag) expected as
+      the new code prints it for the same behaviour;
+    - a call adapted to a new signature;
+    - an expected value that the same story now produces, where the
+      Shape changes that case's answer: its inputs and name kept, and the
+      Shape's words it follows named in the commit body;
+    - a fixture's or a story's inputs kept on their story, where the
+      behaviour the Shape adds reaches them (a new control pressed, a
+      message now judged again): when the gate fails so, outside Files,
+      make the edit and land again;
+    - a value the Shape makes invalid (a constructor that now refuses it)
+      replaced, in each test that builds it, by a valid value in the same
+      role (distinct where it was distinct, as long where its length
+      matters), one constant per file, with the expected values that echo
+      it;
+    - a version's move with its whole sweep: every import, qualified name,
+      version constant, served range and expected version that names the
+      old version, with no alias for the old one left.
   - **A removed mechanism's tests** are the increment's, in any file: each
     moved to its replacement's behaviour, its name kept, where the Shape
-    names a replacement, and removed otherwise. No limit above binds them.
-  - **A value the Shape makes invalid** (a constructor that now refuses
-    it) is replaced in each test that builds it by a valid value in the
-    same role (distinct where it was distinct, as long where its length
-    matters), one constant per file; an expected value that echoes it
-    changes with it. It counts toward no limit above. A test whose subject
-    is the refused value is a removed mechanism's.
-  - **A version's move carries its whole sweep:** every import, qualified
-    name, version constant, served range and expected version that names
-    the old version, in any file, with no alias for the old one left. It
-    counts toward no limit above.
+    names a replacement, and removed otherwise. A test whose subject is a
+    value the Shape makes invalid is one.
   - **A test moving from a fake to the real component:** its fixture
     supplies what the real component requires, and an assertion that sees
     exactly that addition becomes an exact equality with the fixture's own
@@ -124,9 +123,14 @@ it.
     values become the design's, quoting its section. Any other failure on
     the real component is a finding, for a question.
   - **The harness the increment's tests need:** the peer, world or fixture
-    kit that the increment's prescribed tests run on may grow past 20
-    lines, in any session's test files: test code only, every landed
-    test's name and expected value kept.
+    kit that the increment's prescribed tests run on, in any session's test
+    files: test code only, every landed test's name and expected value
+    kept.
+  - **A small fix that the change, its Proof or the gate needs,** and that
+    follows no change of the Shape: at most 20 lines in all, in any
+    session's files, every test's name and expected value kept. Moving a
+    test's unchanged statements into a named helper of the same file, to
+    keep a function within its limit, counts for nothing.
   - **Inside Files by rule:** the file that code the Files or the Shape
     names has moved to since the plan was written; a new module beside a
     file past 800 lines, where `code-organization.md` sends new code; the
@@ -137,6 +141,9 @@ it.
     its own crate (`pub(crate)`, `pub(super)`, a module root's re-export)
     so that a sibling module reuses it, when it changes no behaviour,
     signature or test. Public API across crates stays a question.
+
+  In the reliability run, its README's rule on such edits was widened 11
+  times, and 77 commit bodies listed users outside Files.
 - **Test ceilings** (the Test shape's, or `code-organization.md`'s) bind
   the tests an increment writes: those it adds, and those whose inputs or
   setup it changes. A test changed only in an expected value is not made
@@ -146,6 +153,12 @@ it.
 - **Cases of one behaviour are rows of one table test** (testing-strategy.md,
   section 8), which checks every row and names each that fails. Tests of
   different behaviours are never merged to fit a budget.
+- **Diagnostics are never committed.** To find the cause of a failure in
+  your own increment, you may add a print or an assertion message in any
+  file of your worktree, and run the failing test at most three times for
+  it, or within the budget a step to find a cause names (section 8.7).
+  Remove every such line before you commit: `git diff origin/main` shows
+  none of them at `land`.
 - **Evidence is the gate, the proof, and what the repository's workflow
   or the plan asks beyond the gate; nothing else.** Write no manifests of
   inputs, no observers, no polling scripts, and no repeated measurements.
@@ -171,7 +184,8 @@ it.
 - **Light commands run directly:** git, `cargo fmt`, reading, `rg`.
 - **Whole suites run only in `land`'s gate,** or for a measurement or a
   probe that the Proof line or the repository's workflow names. Do not
-  run the gate before `land`.
+  run the gate before `land`. The focused tests of your crates'
+  dependents, once, before `land` (section 8.1) are no whole suite.
 - **Never set `CARGO_BUILD_JOBS` or `NEXTEST_TEST_THREADS`,** nor pass
   `-j` beyond what the workflow documents: the lanes set the width.
 - **Never nest them:** `heavy land`, or `heavy` inside a heavy command,
@@ -179,12 +193,14 @@ it.
 - **Read a command's log from the path `heavy` prints.** If your tool call
   ends before the command, the task runs on: `heavy` printed its id
   first, and `pueue wait <id>` and `pueue log <id>` reach it.
-- **Wait with your tool's longest wait, and nothing between.** Wait for a
-  running command (`land`, a long `heavy`) in calls of the longest wait
-  your tool allows, 60 seconds on Codex, one after the other: no shorter
-  waits, no empty input, no `ps`, no `pueue status`. Each call is a
-  request that carries your whole context: in test-budgets, waits that
-  saw nothing took 36% of the implementers' input.
+- **Wait with your tool's longest wait, and nothing between.** On Codex,
+  wait for a running command (`land`, a long `heavy`) with `write_stdin`,
+  empty input and `yield_time_ms: 300000`, one call after the other until
+  it ends: the reliability run measured that wait at 300 seconds, where
+  Codex's own `wait` returns within 60. No shorter waits, no `ps`, no
+  `pueue status`. Each call is a request that carries your whole context:
+  in test-budgets, waits that saw nothing took 36% of the implementers'
+  input.
 
 ### 8.4 Commits
 
@@ -201,17 +217,22 @@ Step: <repository>-<NN>.<item>
 ```
 
 The last paragraph is the trailers, and nothing else: no blank line
-inside it, and no key with a space. `land` adds the trailers `Gate-Tree`
-and `Gate-Result`. A commit that landed without its body is never
+inside it, and no key with a space. `land` refuses a commit whose
+`Plan:`, `Step:` or `Proof:` line git does not read as a trailer: amend
+it. `land` adds the trailers `Gate-Tree` and `Gate-Result`. A commit that landed without its body is never
 rewritten; the body goes in the report.
 
 ### 8.5 Landing
 
-Run `land` from your worktree (development.md, section 9). It builds and
-runs clippy in the build lane before it takes the gate lane. By its exit
+Run `land` from your worktree (development.md, section 9). It waits,
+saying so, while another landing in the repository has its turn; that
+wait is its place in the gate's line: keep waiting. It builds and runs
+clippy in the build lane before it takes the gate lane. By its exit
 status:
 
-- **2, refused:** fix what it names. "Nothing to land" after a 5 means the
+- **2, refused:** fix what it names: a commit's trailers (section 8.4), or
+  a word the plan's Pulse forbids, which you replace by what the code
+  checks, never by a synonym. "Nothing to land" after a 5 means the
   commit had landed.
 - **3, conflicts:** resolve them against the design, never by dropping
   another session's change. Then `git rebase --continue`, and `land` again.
@@ -221,8 +242,9 @@ status:
   or a test's wall-clock bound), in tests outside your session's files,
   `land` again once without asking; a second failure on the same tree is
   a question. If it fails in another way in code your increment did not
-  touch, see section 8.2's "A failure the Shape explains", and otherwise
-  stop on a question (section 8.7).
+  touch, and the behaviour your Shape adds explains it, it is an edit
+  that follows the Shape (section 8.2): make it, and land again;
+  otherwise stop on a question (section 8.7).
 - **6, main kept moving:** wait 60 seconds, and `land` again. After three
   such tries, report it and stop.
 - **5, 7 or 8:** report it, and stop.
@@ -292,6 +314,14 @@ it instead of finding them again.
   that covers the case is your answer: follow it, and name it in the
   commit body. In jig-protocol, about a quarter of the rulings answered
   with a rule that already existed.
+- **An increment that outgrows its Size** (past the margin
+  `code-organization.md` gives, or 1.5 times its Size without one) is
+  split, without a question, at a point that lands alone: land the first
+  part, and report the split, with what the rest holds (`Next:`). The
+  coordinator records the rest as your session's next step. Ask only when
+  no such point exists.
+- **A step whose Scope is to find a cause** works within the budget its
+  session file gives, in runs and minutes, and asks only past it.
 - **A dependency not landed yet is not a block.** Do the increments that
   do not need it, then report what you wait for.
 - **While a question is open,** go on with whatever does not depend on it.

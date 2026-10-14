@@ -5,7 +5,7 @@
 #   plan start PLAN_DIR           check, claim, start the supervisor and the coordinator
 #   plan status                   render status.md from the ledger, with the roles
 #   plan attach ROLE              open a role's session: coordinator, supervisor, designer
-#   plan resume                   after a restart, start the roles again
+#   plan resume [CAUSE]           after a restart or a crash, start the roles again
 #   plan claim PLAN_DIR           make it this machine's active run
 #   plan release                  end the active run
 #   plan worktree REPO NAME       a session's worktree, at origin/main
@@ -145,6 +145,8 @@ check() {
     # Every primary checkout a plan builds on: on main, clean, equal to
     # origin's main, and origin takes a push. Without DEV_REPOS, the plan's
     # repository and those upstream of it; without a plan, all of them.
+    # --fix fast-forwards a clean checkout that is only behind, and keeps
+    # the code graph's index out of git status.
     local repo dir ahead behind checked=$repos
     [[ -n ${DEV_REPOS:-} || -z ${project:-} ]] || checked=$(upstream "$project")
     for repo in $checked; do
@@ -154,10 +156,18 @@ check() {
             fail "$repo: primary checkout is not on main"
             continue
         fi
+        if ((fix)) && ! grep -qsx '.codebase-memory/' "$dir/.git/info/exclude"; then
+            mkdir -p "$dir/.git/info" && echo '.codebase-memory/' >>"$dir/.git/info/exclude"
+        fi
         [[ -z $(git -C "$dir" status --porcelain) ]] ||
             fail "$repo: primary checkout has changes"
         git -C "$dir" fetch --quiet origin || { fail "$repo: cannot fetch origin"; continue; }
         read -r behind ahead < <(git -C "$dir" rev-list --left-right --count origin/main...main)
+        if ((fix && behind && !ahead)) && [[ -z $(git -C "$dir" status --porcelain) ]] &&
+            git -C "$dir" merge --quiet --ff-only origin/main; then
+            ok "$repo: main fast-forwarded $behind commits to origin/main"
+            behind=0
+        fi
         if ((ahead || behind)); then
             fail "$repo: main is $ahead ahead and $behind behind origin/main"
         else
@@ -225,6 +235,8 @@ check_plan() {
     for file in README.md code-organization.md; do
         [[ -f $plan_dir/$file ]] && ok "plan has $file" || fail "plan has no $file"
     done
+    [[ -f $plan_dir/findings/planning.md ]] && ok "plan has findings/planning.md" ||
+        warn "plan has no findings/planning.md, the record of its audit, reviews and commands (development.md, section 5.4)"
     if [[ -n $(git -C "$top_dir" status --porcelain -- "$rel") ]]; then
         fail "plan has uncommitted changes"
     elif git -C "$top_dir" cat-file -e "origin/main:$rel/README.md" 2>/dev/null; then
@@ -620,6 +632,11 @@ status() {
     done)
     {
         printf '# %s on %s\n\nRendered %s from ledger.tsv.\n\n' "$name" "$(sed -n 3p "$active")" "$(now)"
+        if [[ -s $run/alerts.md ]]; then
+            printf '## Alerts\n\n'
+            tail -n 10 "$run/alerts.md"
+            printf '\n'
+        fi
         awk -F'\t' -v git="$landed_git" '
             BEGIN { n = split(git, g, "\n"); for (i = 1; i <= n; i++) if (g[i] != "") ongit[g[i]] = 1 }
             NR == 1 { next }
@@ -878,15 +895,17 @@ coordinator_prompt() {
 
 coordinator_resume_prompt() {
     local text="Resume the run of $plan_dir as skein's docs/foundation/development.md, section 7.6, says."
+    [[ -z ${1:-} ]] || text+=" The cause, for your log.md heading: $1."
     echo "${PLAN_COORDINATOR_RESUME:-$text}"
 }
 
 # The turn a ring starts for an idle coordinator: the ring's message, then
 # what to do with it.
 coordinator_wake_prompt() {
+    local text="You were idle (plan idle). Re-read context.md, run the wake-up command of skein's docs/foundation/development.md, section 7.4, and act on what it shows."
     echo "$1"
     echo
-    echo "You were idle (plan idle). Re-read context.md, run the wake-up command of skein's docs/foundation/development.md, section 7.4, and act on what it shows."
+    echo "${PLAN_COORDINATOR_WAKE:-$text}"
 }
 
 start_coordinator() {
@@ -975,9 +994,12 @@ attach() {
     exec "${line[@]}"
 }
 
-# After a restart, or a role's crash: start what is not running again.
+# After a restart, or a role's crash: start what is not running again. The
+# cause, when the caller knows it (reboot, crash, the user's request), goes
+# to the coordinator for its log.
 resume() {
     load
+    local cause=${1:-}
     [[ ! -f $run/done.md ]] || die "the run is done"
     pueue status >/dev/null 2>&1 ||
         { systemctl --user start pueued 2>/dev/null || pueued --daemonize >/dev/null 2>&1 || true; }
@@ -1012,7 +1034,7 @@ resume() {
     if [[ $state == inProgress ]]; then
         echo "coordinator: working"
     else
-        codex_call turn/start "$(jq -cn --arg t "$thread" --arg p "$(coordinator_resume_prompt)" \
+        codex_call turn/start "$(jq -cn --arg t "$thread" --arg p "$(coordinator_resume_prompt "$cause")" \
             '{threadId: $t, input: [{type: "text", text: $p}]}')" >/dev/null ||
             die "the Codex daemon did not start the coordinator's turn"
         echo "coordinator: resumed, Codex thread $thread"
@@ -1253,16 +1275,17 @@ downstream() {
     ((probed)) || echo "downstream: no repository pins $(tr '\n' ' ' <<<"$changed" | sed 's/ $//')"
 }
 
-# Each Codex thread's context, the input of its last request: the
-# coordinator's, then each session's. A session past PLAN_CONTEXT_LIMIT
-# (200,000 tokens) hands over after its next landing (development.md,
-# section 7.3).
+# Each Codex thread's context, the input of its last request, and the
+# largest it reached: the coordinator's, then each session's. A session
+# whose largest passed PLAN_CONTEXT_LIMIT (200,000 tokens) hands over after
+# its next landing (development.md, section 7.3): a compaction lowers the
+# last, and must not hide it.
 contexts() {
     load
     local limit=${PLAN_CONTEXT_LIMIT:-200000} kind slot thread last peak flag
     while IFS=$'\t' read -r kind slot thread last peak; do
         flag=""
-        [[ $kind != session ]] || ((last <= limit)) || flag="  past $((limit / 1000))K: hand over"
+        [[ $kind != session ]] || ((peak <= limit)) || flag="  past $((limit / 1000))K: hand over"
         printf '%-14s %s  %dK, peak %dK%s\n' "$slot" "$thread" "$((last / 1000))" "$((peak / 1000))" "$flag"
     done < <(thread_contexts)
 }
@@ -1273,7 +1296,7 @@ case $cmd in
 check) check "$@" ;;
 start) start "$@" ;;
 attach) attach "$@" ;;
-resume) resume ;;
+resume) resume "$@" ;;
 claim) claim "$@" ;;
 release) release ;;
 worktree) worktree "$@" ;;

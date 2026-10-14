@@ -239,8 +239,14 @@ run_started() {
     date -u -d "${at:-now}" +%s
 }
 
+# When the run ended: done.md's "Recorded <time>" line, which the
+# coordinator writes first (development.md, section 7.6), or else when
+# done.md last changed; now, while it runs.
 run_ended() {
-    if [[ -f $run/done.md ]]; then stat -c %Y "$run/done.md"; else date +%s; fi
+    local at
+    [[ -f $run/done.md ]] || { date +%s; return; }
+    at=$(sed -nE 's/^Recorded:? ([0-9]{4}-[0-9T:-]+Z).*$/\1/p' "$run/done.md" | head -n1)
+    if [[ -n $at ]]; then date -u -d "$at" +%s; else stat -c %Y "$run/done.md"; fi
 }
 
 # Seconds the coordinator worked: the span of its rollouts' events, less
@@ -290,21 +296,24 @@ median_and_p90() {
         print m, p }'
 }
 
-# Lines added and removed in code and in tests, by the given commits
-# (repository and hash per line): code+ code- tests+ tests-.
+# Lines added and removed, by the given commits (repository and hash per
+# line), in four kinds: production code, tests, generated code (under a
+# generated/ directory), and data (any file not Rust: goldens, lock files,
+# fixtures). Eight numbers: added and removed for each, in that order.
 line_counts() {
-    local repo hash added removed path ca=0 cr=0 ta=0 tr=0
+    local repo hash
     while IFS=$'\t' read -r repo hash; do
-        while IFS=$'\t' read -r added removed path; do
-            [[ $added == - ]] && continue
-            if is_test_path "$path"; then
-                ta=$((ta + added)); tr=$((tr + removed))
-            else
-                ca=$((ca + added)); cr=$((cr + removed))
-            fi
-        done < <(git -C "$root/$repo" show --format= --numstat "$hash")
-    done
-    echo "$ca $cr $ta $tr"
+        git -C "$root/$repo" show --format= --numstat "$hash"
+    done | awk -F'\t' '
+        $1 == "-" { next }
+        {
+            if ($3 ~ /(^|\/)generated(\/|$)/) k = "g"
+            else if ($3 !~ /\.rs$/) k = "d"
+            else if ($3 ~ /(^|\/)(tests?|testing)(\/|$)/ || $3 ~ /tests?\.rs$/) k = "t"
+            else k = "c"
+            a[k] += $1; r[k] += $2
+        }
+        END { printf "%d %d %d %d %d %d %d %d\n", a["c"], r["c"], a["t"], r["t"], a["g"], r["g"], a["d"], r["d"] }'
 }
 
 # The words of a set of files at a revision, one per line, lower case:
@@ -358,6 +367,30 @@ pin_lag() {
         [[ -z $line ]] || out+="${out:+; }$repo: $line"
     done
     echo "${out:-none}"
+}
+
+# The coordinator's record against its shapes (development.md, sections
+# 7.3, 7.5, 10.2 and 10.3), from line $1 of log.md on: headings no shape
+# names, Kind values section 10.2 does not list, and context.md's lines
+# past 200 characters. The metrics read the record by those shapes.
+record_check() {
+    local headings kinds long
+    headings=$(awk -v from="${1:-1}" '
+        NR < from || !/^## / { next }
+        /^## [A-Za-z0-9_-]+ ([0-9]+|repin), [0-9T:-]+Z$/ { next }
+        /^## (Blocked and unblocked|Steered|Coordinator resumed|Claimed|Released|Idle), / { next }
+        /^## [A-Za-z0-9_-]+ [^ ]+: .*, [0-9T:-]+Z$/ { next }
+        /^## (Decision|Landed|Instructions|Checked)$/ || /^## [0-9]+\. / { next }
+        { n++; if (n == 1) first = $0 }
+        END { if (n) printf "%d (the first: \"%s\")", n, first; else printf "none" }' "$run/log.md" 2>/dev/null)
+    kinds=$(awk -v from="${1:-1}" '
+        NR >= from && /^- Kind: / {
+            k = $0; sub(/^- Kind: */, "", k)
+            if (k !~ /^(design gap|plan defect|cross-session scope|process|infrastructure|credentials)$/) c[k]++
+        }
+        END { for (k in c) printf "%s\"%s\" %d", (n++ ? ", " : ""), k, c[k]; if (!n) printf "none" }' "$run/log.md" 2>/dev/null)
+    long=$(awk 'length($0) > 200 { n++ } END { print n + 0 }' "$run/context.md" 2>/dev/null || echo 0)
+    echo "headings no shape names: ${headings:-none}; Kind values not in section 10.2: ${kinds:-none}; context.md lines past 200 characters: $long"
 }
 
 # Gate-lane tasks since a time (all of them, without one): land's gates,
@@ -436,6 +469,7 @@ pulse() {
         NR > 1 && $4 == "check" { s = s (n++ ? ", " : "") $1 " " int((now - epoch($9)) / 60) " min" }
         END { if (n) printf "%d to check (%s); ", n, s }' "$run/ledger.tsv" 2>/dev/null || true)
     [[ ! -f $run/idle.md ]] || line+="the coordinator idle since $(head -n1 "$run/idle.md"); "
+    echo "- Record: $(record_check "$from")."
     echo "- Channel: ${line:-nothing open; }$(grep -c '^## Steered' "$run/log.md" 2>/dev/null || true) steers in all, $(grep -cE '^Steer .*point [0-9]+: cannot' "$run/log.md" 2>/dev/null || true) points refused"
 
     # Proofs, and the commits since.
@@ -487,8 +521,8 @@ pulse() {
     slow=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { print $9 }' "$run/logs/heavy.tsv" 2>/dev/null |
         while read -r file; do grep -c 'SLOW \[' "$file" 2>/dev/null || true; done | awk '{ n += $1 } END { print n + 0 }')
     counts=$(cut -f1,2 <<<"$commits" | { grep . || true; } | line_counts)
-    read -r ca cr ta tr <<<"$counts"
-    echo "  SLOW lines in gate logs: $slow; lines added and removed: code +$ca -$cr, tests +$ta -$tr."
+    read -r ca cr ta tr ga gr da dr <<<"$counts"
+    echo "  SLOW lines in gate logs: $slow; lines added and removed: code +$ca -$cr, tests +$ta -$tr, generated +$ga -$gr, data +$da -$dr."
 
     # Code signals in the added lines.
     local limit words types added big exceptions word_hits type_hits helpers
@@ -542,7 +576,7 @@ pulse() {
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
     echo "- Pins behind upstream main, in commits: $(pin_lag)."
     echo "- Contexts: $(thread_contexts | awk -F'\t' -v limit="${PLAN_CONTEXT_LIMIT:-200000}" '
-        $1 == "session" { line = line (n++ ? ", " : "") $2 " " int($4 / 1000) "K"; if ($4 > limit) past = past (p++ ? ", " : "") $2 }
+        $1 == "session" { line = line (n++ ? ", " : "") $2 " " int($4 / 1000) "K"; if ($5 > limit) past = past (p++ ? ", " : "") $2 }
         END { printf "%s", (n ? line : "no session yet"); if (p) printf " (past %dK: %s)", limit / 1000, past }'); Claude Code: $(claude_role_contexts)."
     echo "- Machine: heartbeat $((now_s - beat)) s ago; $mem GB memory and $disk GB disk free."
 
@@ -586,6 +620,8 @@ metrics_of() {
         while IFS=$'\t' read -r at since kind; do
             a=$(date -u -d "$at" +%s 2>/dev/null) || continue
             b=$(date -u -d "$since" +%s 2>/dev/null) || continue
+            # A Since written after its answer is a record's slip, not a wait.
+            ((a >= b)) || continue
             printf '%s\t%s\t%s\n' "$b" "$a" "${kind:-unknown}"
         done)
     m escalations "$(cut -f3 <<<"$escalations" | grep . | sort | uniq -c | awk '{ k = $2; for (i = 3; i <= NF; i++) k = k " " $i; printf "%s%s %d", (NR > 1 ? ", " : ""), k, $1 }')" "by kind"
@@ -642,6 +678,8 @@ metrics_of() {
         END { for (i = 1; i <= n; i++) printf "%s%s first: %s; last: %s", (i > 1 ? " | " : ""), order[i], first[order[i]], last[order[i]] }' <<<"$commits")" "Gate-Result, by repository"
     local repo hash at step proof layer want below=0
     local -A by_layer=()
+    # Each step once, by its last commit: a step landed in several commits
+    # proves itself at its tip.
     while IFS=$'\t' read -r repo hash at step proof _; do
         [[ -n $repo ]] || continue
         layer=$(proof_layer "$proof")
@@ -651,12 +689,13 @@ metrics_of() {
         if [[ -n $want && $layer != none ]] && (($(layer_rank "$layer") < $(layer_rank "$want"))); then
             below=$((below + 1))
         fi
-    done <<<"$commits"
+    done < <(awk -F'\t' '{ last[$4] = $0; if (!($4 in seen)) { seen[$4] = 1; order[++n] = $4 } }
+        END { for (i = 1; i <= n; i++) print last[order[i]] }' <<<"$commits")
     m proofs "$(for layer in unit world joint process live none; do [[ -n ${by_layer[$layer]:-} ]] && printf '%s %s, ' "$layer" "${by_layer[$layer]}"; done)$below below plan" steps
     m report_lines "$(report_lengths 1 | median_and_p90 | awk '{ print $1 " median, " $2 " p90" }')" lines
-    local ca cr ta tr
-    read -r ca cr ta tr <<<"$(cut -f1,2 <<<"$commits" | grep . | line_counts)"
-    m lines "code +$ca -$cr, tests +$ta -$tr" lines
+    local ca cr ta tr ga gr da dr
+    read -r ca cr ta tr ga gr da dr <<<"$(cut -f1,2 <<<"$commits" | grep . | line_counts)"
+    m lines "code +$ca -$cr, tests +$ta -$tr, generated +$ga -$gr, data +$da -$dr" lines
     m pin_lag "$(pin_lag)" "commits behind upstream main"
     m contexts "$(thread_contexts | awk -F'\t' '$1 == "session" { print $5 }' | median_and_p90 |
         awk '{ printf "%dK median, %dK p90", $1 / 1000, $2 / 1000 }') of the sessions' peaks; $(grep -c '^Handover, ' "$run/log.md" 2>/dev/null || true) handovers" ""
