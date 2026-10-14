@@ -41,8 +41,10 @@ the implementers.
   - A session is one implementer's work, and an increment lands on its
     own.
   - Each increment gives its shape (paths, names and signatures), its test
-    shape, the things it must not do, and its proof: the check that it
-    works for real, at the highest layer the code reached by then allows.
+    shape, the things it must not do, and its proof: a smoke check, on top
+    of its tests, that it works for real, connected to what is around it.
+  - Parts that meet are connected from the start, so that neither is
+    built against its own idea of the other.
   - It ends by repinning the repositories downstream of what it changed,
     and repairing what that breaks (section 5.7).
 - **Plans are written for a literal reader** (section 4.5). The executor
@@ -701,18 +703,30 @@ may veto.
   fuzzy. Anything beyond that is a decision to raise, not one to take.
 - **Each increment proves itself** at the highest layer within reach
   (section 5.5).
-- **The meeting point comes first.** Where two sides meet through a
-  translation or a contract (a client and its engine, a protocol's two
-  ends):
-  - the translation starts with the first types on both sides, exhaustive
-    both ways, and every increment that adds a variant extends it, so that
-    drift is a build error the day it happens;
+- **The meeting point comes first.** Where two parts meet, across a wire
+  or inside one process (a client and its server, a protocol's two ends,
+  a domain and its store, a service and its host):
   - one thin end-to-end story runs as soon as the far side can answer, and
     each increment grows it;
+  - neither side runs ahead by more than one session: a session that
+    needs an earlier session of its own side also needs, in the README's
+    "Needs at start", a story that runs that earlier session's work
+    against the other side. A story counts when it runs the real other
+    side, at the joint layer or above; a fake does not. Where the other
+    side cannot answer yet, the plan builds the thinnest part of it that
+    can first, or says in one line why it cannot;
+  - where the two speak different vocabularies, the translation starts
+    with the first types on both sides, exhaustive both ways, and every
+    increment that adds a variant extends it, so that drift is a build
+    error the day it happens;
   - a fake's scenarios also run against the real side, so that the fake
     cannot agree with one side where the other does not;
   - it costs some parallelism, and is worth it: it is what lets later
-    increments prove themselves at the joint layer.
+    increments prove themselves at the joint layer. jig's client was built
+    against a scripted engine in its own vocabulary, and met the engine
+    only near the end of its run; the drift came at once, as a burst of
+    design questions and supplementary increments (jig's
+    `docs/development/tech-debt.md`, section 9).
 - **Test cost holds from the first increment.**
   - The plan cites the repository's rules for what tests may cost (jig:
     `docs/development/workflow.md`, section 2), and gives each increment
@@ -750,7 +764,9 @@ may veto.
   - fences that contradict each other;
   - shared interfaces without one owner;
   - increments that cannot land alone;
-  - increments without a shape, a test shape or a proof.
+  - increments without a shape, a test shape or a proof;
+  - proofs no higher than their increment's tests without a reason, and
+    sides that run ahead of what they meet (sections 5.3 and 5.5).
 
   The planner fixes what it finds.
 - **A literal reading.** A second sub-agent reads the plan as the executor
@@ -788,10 +804,14 @@ may veto.
 
 ### 5.5 Each increment's proof
 
-Each increment shows that what it puts in place works for real, not in
-theory, with the most convincing check its moment allows. The planner
-chooses the proof as part of the increment, balancing confidence against
-the run's pace and its tokens.
+Most of an increment's testing sits at the layer that suits each
+behaviour, mostly the lowest, so that development and the suites stay
+fast (testing-strategy.md, section 1). The proof is something else: one
+check, on top of those tests, that what the increment puts in place works
+for real, connected to what is around it, not in theory. It is a smoke
+test of the plumbing, not more coverage. The planner chooses it as part
+of the increment, with judgement: within reason and where it applies,
+balancing confidence against the run's pace and its tokens.
 
 - **The layer.** The proof sits at the highest layer the code reached by
   then allows. From lowest to highest, with jig's as examples:
@@ -804,14 +824,22 @@ the run's pace and its tokens.
   | process | the real binaries, on this machine | `ops` standalone, in-memory sockets or loopback | about a minute |
   | live | real outside services | a real LLM provider, a browser | at most 5 minutes |
 
+- **Above its tests.** The proof runs the increment's work at least one
+  layer above the increment's own tests, the way its caller reaches it: a
+  domain's change in the joint world, a client's change against the real
+  server, a binary's change by running the binary. Where nothing above
+  exists yet (a codec, a type, a step machine that nothing calls), the
+  Proof line says so, and names the increment that connects it (section
+  5.3). In jig-protocol, 163 of the 180 landed proofs were at the unit or
+  world layer.
 - **The Proof line** of an increment (section 5.2) gives:
-  - **the layer,** and, when it is not the highest one that exists, why
-    not, in one line;
+  - **the layer,** and, when it is not the highest one that exists or is
+    no higher than the increment's tests, why, in one line;
   - **what runs:** a test by name, in the suite, which is preferred, or a
     script the implementer writes and keeps in the run's
-    `logs/<repository>-<NN>/`. A
-    script is for what the suite cannot hold: live services, real
-    binaries, a browser;
+    `logs/<repository>-<NN>/`, with its output. A script is for what the
+    suite cannot hold: live services, real binaries, a browser, a one-off
+    run of commands against a running server;
   - **what it shows,** as something observable: "the person sees the task
     that needs them first", not "the inbox works";
   - **its bound:** wall time, and for a live service the number of calls
@@ -828,6 +856,7 @@ the run's pace and its tokens.
     work, and runs in minutes at most.
   - Where the highest layer would cost more, take the next one down, and
     say so.
+  - One story, not a matrix: the cases belong in the tests (section 5.6).
   - Most increments prove in the suite. A live proof is for an increment
     that touches a live service, about once or twice a session.
 - **Generated code proves itself downstream.** An increment that changes
@@ -1771,7 +1800,8 @@ the entry, and sends the steer.
      Has the coordinator invented anything (section 2.3)?
    - **proof:** did what landed prove itself at the layer its Proof line
      named? Has a higher layer come within reach, so that later Proof
-     lines should rise?
+     lines should rise? Has one side of a meeting point run a session
+     ahead of the other (section 5.3)?
    - **waste:** report lengths, evidence beyond the gate and the proof,
      gates per step, polling, idle slots, tokens per step;
    - **tests:** the checklist;
