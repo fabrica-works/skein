@@ -11,10 +11,16 @@
 #   plan worktree REPO NAME       a session's worktree, at origin/main
 #   plan worktree --remove REPO NAME
 #   plan set STEP KEY=VALUE...    add or change a step in the ledger
+#   plan log REPO NN [FILE]       log an implementer's report (stdin, or FILE); print its file
+#   plan idle REASON              the coordinator ends its turn; the doorbell starts the next
 #   plan watch                    wait for something the supervisor must see
 #   plan ring MESSAGE             ring the coordinator's doorbell
+#   plan docs                     the supervisor's worktree of the plan's repository
+#   plan ruling [--text FILE] TITLE SOURCE  land a ruling in decisions.md, once
+#   plan ready STEP [NOTE]        a checked step may start: set it ready, ring
 #   plan join ROLE                record this Claude Code session as the run's ROLE
-#   plan wake ROLE MESSAGE        resume a Claude Code role's session with MESSAGE
+#   plan wake ROLE MESSAGE        wake a Claude Code role: resumed, or fresh past its limits
+#   plan handover supervisor      start the supervisor's successor, from this session
 #   plan pulse                    the run's numbers since the last check
 #   plan downstream               type-check each downstream repository against the plan's upstream mains
 #   plan contexts                 each Codex thread's context, and the sessions past the limit
@@ -59,11 +65,18 @@ codex_threads=${PLAN_CODEX_THREADS:-$(profile_value max_threads)}
 codex_sandbox=${PLAN_CODEX_SANDBOX:-danger-full-access}
 # Where the Claude Code roles start: the workspace, which Claude Code must trust.
 claude_dir=${PLAN_CLAUDE_DIR:-$root}
+# The long-lived Claude Code roles' limits (development.md, sections 10.4
+# and 10.5): the supervisor hands over past its context limit; a wake starts
+# a fresh designer past its limit, or once its session has been idle longer
+# than its cache lives.
+supervisor_limit=${PLAN_SUPERVISOR_LIMIT:-300000}
+designer_limit=${PLAN_DESIGNER_LIMIT:-150000}
+designer_idle=${PLAN_DESIGNER_IDLE:-3600}
 
 die() { echo "plan: $*" >&2; exit 2; }
 
 usage() {
-    sed -n '3,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+    sed -n '3,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 
@@ -124,7 +137,10 @@ check() {
     ok() { echo "ok    $*"; }
     warn() { echo "warn  $*"; }
     fail() { echo "FAIL  $*"; failed=1; }
-    (($#)) && check_plan "$1"
+    if (($#)); then
+        check_plan "$1"
+        check_decisions
+    fi
 
     # Every primary checkout a plan builds on: on main, clean, equal to
     # origin's main, and origin takes a push. Without DEV_REPOS, the plan's
@@ -227,6 +243,48 @@ check_plan() {
     ready | "active on $(host)"*) ok "STATUS.md says $state" ;;
     *) fail "STATUS.md says $state" ;;
     esac
+}
+
+# The last retrospective's proposals, each decided (development.md,
+# sections 6 and 15.1): the retrospective added last to any repository's
+# origin/main (its main, without one), other than this plan's own, has a row in its section 10 for
+# each proposal of its section 8, and no row that is still open.
+check_decisions() {
+    local repo ref at path best_at=0 best_repo="" best_ref="" best_path="" text open where
+    # shellcheck disable=SC2086 # the repositories, one word each
+    for repo in $(printf '%s\n' $all_repos $repos | awk '!seen[$0]++'); do
+        [[ -d $root/$repo/.git ]] || continue
+        ref=origin/main
+        git -C "$root/$repo" rev-parse --verify --quiet "$ref" >/dev/null || ref=main
+        while read -r at path; do
+            [[ -n $path && $repo/$path != "$project/$rel/retrospective.md" ]] || continue
+            if ((at > best_at)); then best_at=$at; best_repo=$repo; best_ref=$ref; best_path=$path; fi
+        done < <(git -C "$root/$repo" log "$ref" --diff-filter=A --format='%ct' --name-only \
+            -- 'docs/development/plans/*/retrospective.md' 2>/dev/null |
+            awk '/^[0-9]+$/ { at = $1; next } NF { print at, $0 }')
+    done
+    if [[ -z $best_path ]]; then
+        ok "no retrospective yet: no proposal waits for a decision"
+        return 0
+    fi
+    where="$best_repo's $(basename "$(dirname "$best_path")")"
+    text=$(git -C "$root/$best_repo" show "$best_ref:$best_path")
+    open=$(awk '
+        /^## / { section = $2 }
+        section == "8." && /^[0-9]+\. \*\*/ { n = $1; sub(/\.$/, "", n); order[++k] = n }
+        section == "10." && /^\| *[0-9]+ *\|/ {
+            split($0, f, "|"); n = f[2]; d = f[3]
+            gsub(/^ +| +$/, "", n); gsub(/^ +| +$/, "", d)
+            if (d != "" && tolower(d) !~ /^open/) decided[n] = 1
+        }
+        END { for (i = 1; i <= k; i++) if (!(order[i] in decided)) printf "%s%s", (j++ ? ", " : ""), order[i] }' <<<"$text")
+    if ! grep -q '^## 10\. ' <<<"$text"; then
+        fail "the last retrospective, $where, has no section 10 for the user's decisions (development.md, section 15.1)"
+    elif [[ -n $open ]]; then
+        fail "the last retrospective, $where, has proposals not yet decided: $open (its section 10; development.md, section 15.1)"
+    else
+        ok "the last retrospective's proposals are decided ($where)"
+    fi
 }
 
 # Codex's daemon, and its updater, keep the environment of whoever starts
@@ -421,6 +479,11 @@ release() {
     if [[ -n $(ls -A "$run/wt" 2>/dev/null) ]]; then
         die "worktrees are left in $run/wt; remove them first"
     fi
+    if [[ -d $run/docs ]]; then
+        [[ -z $(git -C "$run/docs" status --porcelain) ]] ||
+            die "the supervisor's worktree $run/docs has changes: land or discard them first"
+        git -C "$root/${name%%/*}" worktree remove "$run/docs"
+    fi
     printf '## Released, %s\n\n' "$(now)" >>"$run/log.md"
     rm -f "$active"
     echo "released $name"
@@ -463,8 +526,8 @@ set_step() {
         repo | session | slot | thread | branch | commit | title | note) ;;
         state)
             case ${pair#*=} in
-            waiting | ready | running | blocked | landed | dropped) ;;
-            *) die "state is one of waiting, ready, running, blocked, landed, dropped" ;;
+            waiting | check | ready | running | blocked | landed | dropped) ;;
+            *) die "state is one of waiting, check, ready, running, blocked, landed, dropped" ;;
             esac
             ;;
         *) die "unknown key $key" ;;
@@ -504,6 +567,46 @@ set_step() {
     flock -u 8
 }
 
+# An implementer's report, logged by the implementer itself (development.md,
+# section 8.6), so that nobody types it again: kept as reports/<repository>-
+# <NN>-<time>.md, and appended to log.md under its heading, with the time
+# read from the clock. Prints the report's path.
+log_report() {
+    load
+    local repo=${1:?repository} session=${2:?session} file=${3:-} at stamp out i=1
+    at=$(now)
+    stamp=$(date -u -d "$at" +%Y%m%dT%H%M%SZ)
+    mkdir -p "$run/reports"
+    out=$run/reports/$repo-$session-$stamp.md
+    while [[ -e $out ]]; do
+        i=$((i + 1))
+        out=$run/reports/$repo-$session-$stamp-$i.md
+    done
+    if [[ -n $file ]]; then cat -- "$file" >"$out"; else cat >"$out"; fi
+    if ! grep -q '[^[:space:]]' "$out"; then
+        rm -f "$out"
+        die "the report is empty"
+    fi
+    exec 7>"$run/log.md.lock"
+    flock 7
+    { printf '## %s %s, %s\n\n' "$repo" "$session" "$at"; cat "$out"; printf '\n'; } >>"$run/log.md"
+    flock -u 7
+    echo "$out"
+}
+
+# The coordinator, with nothing running and nothing to do, ends its turn
+# instead of sleeping (development.md, section 7.4): idle.md says since when
+# and why, the watch does not take its silence for a fault, and the next
+# ring starts its next turn.
+idle() {
+    load
+    local reason=${1:?reason} at
+    at=$(now)
+    printf '%s\n%s\n' "$at" "$reason" >"$run/idle.md"
+    printf '## Idle, %s\n\n%s\n\n' "$at" "$reason" >>"$run/log.md"
+    echo "idle since $at: end your turn now; the doorbell starts your next one"
+}
+
 status() {
     load
     ledger_upgrade
@@ -529,16 +632,16 @@ status() {
                 if ($4 != "landed" && ($1 in ongit)) extra[++y] = $1 " (" $4 ")"
             }
             END {
-                printf "%d of %d steps landed; %d running, %d blocked, %d ready, %d waiting.\n\n",
-                    all["landed"], steps, all["running"], all["blocked"], all["ready"], all["waiting"]
-                print "| Repo | Session | Landed | Running | Blocked | Ready | Waiting | Total |"
-                print "|---|---|---|---|---|---|---|---|"
+                printf "%d of %d steps landed; %d running, %d blocked, %d ready, %d to check, %d waiting.\n\n",
+                    all["landed"], steps, all["running"], all["blocked"], all["ready"], all["check"], all["waiting"]
+                print "| Repo | Session | Landed | Running | Blocked | Ready | Check | Waiting | Total |"
+                print "|---|---|---|---|---|---|---|---|---|"
                 for (i = 1; i <= k; i++) {
                     split(order[i], p, " ")
-                    printf "| %s | %s | %d | %d | %d | %d | %d | %d |\n", p[1], p[2],
+                    printf "| %s | %s | %d | %d | %d | %d | %d | %d | %d |\n", p[1], p[2],
                         count[order[i], "landed"], count[order[i], "running"],
                         count[order[i], "blocked"], count[order[i], "ready"],
-                        count[order[i], "waiting"], total[order[i]]
+                        count[order[i], "check"], count[order[i], "waiting"], total[order[i]]
                 }
                 if (r) {
                     print "\n## Running\n\n| Step | Slot | Branch | Since | Title |\n|---|---|---|---|---|"
@@ -561,65 +664,113 @@ status() {
 }
 
 # Wait until the supervisor has something to do (development.md, section
-# 10.5): a new blocked report, the designer's answer, the coordinator gone
-# quiet (once, and again after as long), a pause or the end. Prints what,
-# and exits. The designer has no watch: plan wake resumes it.
+# 10.5): a new blocked report, the designer's answer, steps to check before
+# they start, the coordinator gone quiet (once, and again after as long)
+# unless it is idle, a pause or the end. Prints what, then the supervisor's
+# context, and exits. A session that has handed over is told so and shown
+# nothing. The designer has no watch: plan wake brings it back.
 watch() {
     load
-    local seen=$run/.watch quiet=${PLAN_QUIET:-600} sig beat age
+    local seen=$run/.watch
     touch "$seen"
     while :; do
-        if [[ -f $run/done.md ]] && ! grep -qx "done" "$seen"; then
-            echo "done" >>"$seen"
-            echo "done: $run/done.md"
-            return
-        fi
-        if [[ -f $run/paused.md ]]; then
-            sig=paused:$(stat -c %Y "$run/paused.md")
-            if ! grep -qxF "$sig" "$seen"; then
-                echo "$sig" >>"$seen"
-                echo "paused: $run/paused.md"
-                return
-            fi
-        fi
-        if [[ -f $run/blocked.md && ! -f $run/unblock.md ]]; then
-            sig=blocked:$(grep '^## ' "$run/blocked.md" | sha1sum | cut -c1-12)
-            if ! grep -qxF "$sig" "$seen"; then
-                echo "$sig" >>"$seen"
-                echo "blocked: $run/blocked.md"
-                grep '^## ' "$run/blocked.md" || true
-                return
-            fi
-        fi
-        if [[ -f $run/answer.md ]]; then
-            sig=answer:$(stat -c %Y "$run/answer.md")
-            if ! grep -qxF "$sig" "$seen"; then
-                echo "$sig" >>"$seen"
-                echo "answer: $run/answer.md"
-                return
-            fi
-        fi
-        if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md ]]; then
-            beat=$(stat -c %Y "$run/heartbeat")
-            age=$(($(date +%s) - beat))
-            for sig in quiet2:$beat quiet:$beat; do
-                if [[ $sig == quiet2:* ]] && { ((age <= 2 * quiet)) || ! grep -qxF "quiet:$beat" "$seen"; }; then
-                    continue
-                fi
-                if ((age > quiet)) && ! grep -qxF "$sig" "$seen"; then
-                    echo "quiet:$beat" >>"$seen"
-                    echo "$sig" >>"$seen"
-                    if [[ $sig == quiet2:* ]]; then
-                        echo "quiet again: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
-                    else
-                        echo "quiet: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
-                    fi
-                    return
-                fi
-            done
+        handed_over && return 4
+        if watch_once "$seen"; then
+            supervisor_context
+            return 0
         fi
         sleep "${PLAN_POLL:-30}"
     done
+}
+
+# One look for an event not yet shown: prints it and succeeds, or fails.
+watch_once() {
+    local seen=$1 quiet=${PLAN_QUIET:-600} sig beat age step repo session file shown=0
+    if [[ -f $run/done.md ]] && ! grep -qx "done" "$seen"; then
+        echo "done" >>"$seen"
+        echo "done: $run/done.md"
+        return 0
+    fi
+    if [[ -f $run/paused.md ]]; then
+        sig=paused:$(stat -c %Y "$run/paused.md")
+        if ! grep -qxF "$sig" "$seen"; then
+            echo "$sig" >>"$seen"
+            echo "paused: $run/paused.md"
+            return 0
+        fi
+    fi
+    if [[ -f $run/blocked.md && ! -f $run/unblock.md ]]; then
+        sig=blocked:$(grep '^## ' "$run/blocked.md" | sha1sum | cut -c1-12)
+        if ! grep -qxF "$sig" "$seen"; then
+            echo "$sig" >>"$seen"
+            echo "blocked: $run/blocked.md"
+            grep '^## ' "$run/blocked.md" || true
+            return 0
+        fi
+    fi
+    if [[ -f $run/answer.md ]]; then
+        sig=answer:$(stat -c %Y "$run/answer.md")
+        if ! grep -qxF "$sig" "$seen"; then
+            echo "$sig" >>"$seen"
+            echo "answer: $run/answer.md"
+            return 0
+        fi
+    fi
+    # Steps the coordinator holds for the supervisor's check before they
+    # start (development.md, section 7.2), each shown once, all at once.
+    while IFS=$'\t' read -r step repo session; do
+        sig=check:$step
+        ! grep -qxF "$sig" "$seen" || continue
+        echo "$sig" >>"$seen"
+        file=$(find "$plan_dir/$repo" -maxdepth 1 -name "$session-*.md" 2>/dev/null | sort | head -n1)
+        echo "check: $step${file:+, $file}"
+        shown=1
+    done < <(awk -F'\t' 'NR > 1 && $4 == "check" { print $1 "\t" $2 "\t" $3 }' "$run/ledger.tsv" 2>/dev/null)
+    ((!shown)) || return 0
+    if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md && ! -f $run/idle.md ]]; then
+        beat=$(stat -c %Y "$run/heartbeat")
+        age=$(($(date +%s) - beat))
+        for sig in quiet2:$beat quiet:$beat; do
+            if [[ $sig == quiet2:* ]] && { ((age <= 2 * quiet)) || ! grep -qxF "quiet:$beat" "$seen"; }; then
+                continue
+            fi
+            if ((age > quiet)) && ! grep -qxF "$sig" "$seen"; then
+                echo "quiet:$beat" >>"$seen"
+                echo "$sig" >>"$seen"
+                if [[ $sig == quiet2:* ]]; then
+                    echo "quiet again: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
+                else
+                    echo "quiet: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
+                fi
+                return 0
+            fi
+        done
+    fi
+    return 1
+}
+
+# True, and says so, when this Claude Code session is a supervisor that
+# handed over (development.md, section 10.5): plan handover names it in
+# the run's handed-over file. A resumed session, which Claude Code may give
+# a new id, is not one.
+handed_over() {
+    local me=${CLAUDE_CODE_SESSION_ID:-}
+    [[ -n $me ]] && grep -qxF "$me" "$run/handed-over" 2>/dev/null || return 1
+    echo "handed over: session $(role_session supervisor) supervises the run now. End your turn, and start no watch, check or cron job."
+}
+
+# The supervisor's context, the input of its last request, and past its
+# limit the word to hand over (development.md, section 10.5).
+supervisor_context() {
+    local session tokens
+    session=$(role_session supervisor)
+    [[ -n $session ]] || return 0
+    read -r tokens _ <<<"$(claude_context "$session")"
+    if ((tokens > supervisor_limit)); then
+        echo "context: the supervisor's is $((tokens / 1000))K, past $((supervisor_limit / 1000))K: hand over now (supervisor.md, section 7)"
+    else
+        echo "context: the supervisor's is $((tokens / 1000))K"
+    fi
 }
 
 # The run's roles (development.md, section 2): the coordinator's Codex
@@ -650,6 +801,14 @@ session_state() {
 # directory, and records it. With a session id, continues that session.
 claude_role() {
     local role=$1 prompt=$2 resume=${3:-} out id session
+    if [[ ${PLAN_DRY_RUN:-} == 1 ]]; then
+        if [[ -n $resume ]]; then
+            echo "$role: would resume $resume: $prompt"
+        else
+            echo "$role: would start a fresh session: $prompt"
+        fi
+        return
+    fi
     local args=(--bg -n "$plan $role" --model "$claude_model" --effort "$claude_effort"
         --dangerously-skip-permissions)
     [[ -n $resume ]] && args+=(--resume "$resume")
@@ -683,6 +842,10 @@ coordinator_state() {
 ring() {
     load
     local message=${1:?message} thread turn
+    if [[ ${PLAN_DRY_RUN:-} == 1 ]]; then
+        echo "would ring the coordinator: $message"
+        return
+    fi
     thread=$(cat "$run/thread" 2>/dev/null) || die "no coordinator thread in $run/thread"
     # shellcheck source=codex.sh
     source "$kit/codex.sh"
@@ -690,6 +853,16 @@ ring() {
     turn=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" |
         jq -r '[.thread.turns[]? | select(.status == "inProgress")] | last | .id // empty') ||
         { echo "plan: the coordinator's thread is not loaded: plan resume" >&2; exit 3; }
+    if [[ -z $turn && -f $run/idle.md ]]; then
+        # An idle coordinator ended its turn (plan idle): the ring starts the next.
+        codex_call turn/start "$(jq -cn --arg t "$thread" --arg p "$(coordinator_wake_prompt "$message")" \
+            '{threadId: $t, input: [{type: "text", text: $p}]}')" >/dev/null ||
+            { echo "plan: the Codex daemon did not start the idle coordinator's turn" >&2; exit 3; }
+        rm -f "$run/idle.md"
+        codex_close
+        echo "woke the idle coordinator: $message"
+        return
+    fi
     [[ -n $turn ]] || { echo "plan: the coordinator has no turn in progress: plan resume" >&2; exit 3; }
     codex_call turn/steer "$(jq -cn --arg t "$thread" --arg u "$turn" --arg m "$message" \
         '{threadId: $t, expectedTurnId: $u, input: [{type: "text", text: $m}]}')" >/dev/null
@@ -706,6 +879,14 @@ coordinator_prompt() {
 coordinator_resume_prompt() {
     local text="Resume the run of $plan_dir as skein's docs/foundation/development.md, section 7.6, says."
     echo "${PLAN_COORDINATOR_RESUME:-$text}"
+}
+
+# The turn a ring starts for an idle coordinator: the ring's message, then
+# what to do with it.
+coordinator_wake_prompt() {
+    echo "$1"
+    echo
+    echo "You were idle (plan idle). Re-read context.md, run the wake-up command of skein's docs/foundation/development.md, section 7.4, and act on what it shows."
 }
 
 start_coordinator() {
@@ -731,13 +912,25 @@ start_coordinator() {
 }
 
 supervisor_prompt() {
-    local text="Supervise the run of $plan_dir as skein's docs/foundation/development.md, sections 2.5, 3.3, 4.5, 6, 7.6, 10 and 14, say. The run's directory is $run."
+    local text="Supervise the run of $plan_dir as skein's docs/foundation/supervisor.md says. The run's directory is $run."
     echo "${PLAN_SUPERVISOR_PROMPT:-$text}"
 }
 
 supervisor_resume_prompt() {
-    local text="Your session restarted. Start your watch and your hourly check again (development.md, section 6, step 4), read the end of supervision.md, and go on supervising the run of $plan_dir."
+    local text="Your session restarted. Start your watch and your hourly check again (skein's docs/foundation/supervisor.md, section 1), read the end of supervision.md, and go on supervising the run of $plan_dir."
     echo "${PLAN_SUPERVISOR_RESUME:-$text}"
+}
+
+supervisor_handover_prompt() {
+    local text="Take over the supervision of the run of $plan_dir from a session that handed over at its context's limit, as skein's docs/foundation/supervisor.md, section 1, says for a successor. The run's directory is $run."
+    echo "${PLAN_SUPERVISOR_HANDOVER:-$text}"
+}
+
+# A designer started fresh for one question, from a brief instead of the
+# whole history of the session before it (development.md, section 10.4).
+designer_fresh_prompt() {
+    local text="You are the designer of the run of $plan_dir, started fresh for one question, as skein's docs/foundation/development.md, sections 2.1, 4.4, 4.5 and 10.4, say. The run's directory is $run. Read $run/question.md, the design sections and plan files it names, and the earlier questions and answers of this run that touch it (the \"Question and answer\" sections of $run/supervision.md); read no other file of the run."
+    echo "${PLAN_DESIGNER_PROMPT:-$text}"
 }
 
 retro_prompt() {
@@ -837,14 +1030,145 @@ join() {
         echo "End your turn now, and start no watch: plan wake brings you back with each question (development.md, section 10.4)."
 }
 
-# Resumes a role's Claude Code session in the background with a message. A
-# session already running gets a copy, which Claude Code names.
+# Wakes a role's Claude Code session in the background with a message
+# (development.md, section 10.4). A session at work is never woken: a
+# second wake would fork a copy of it. A designer whose context is past its
+# limit, or whose session has been idle longer than its cache lives, starts
+# fresh from a brief; any other session is resumed.
 wake() {
     load
-    local role=${1:?role} message=${2:?message} session
+    local role=${1:?role} message=${2:?message} session tokens at idle_for
     session=$(role_session "$role")
     [[ -n $session ]] || die "no $role recorded in $run/claude.tsv (plan join $role)"
+    if [[ $(session_state "$session") == busy ]]; then
+        echo "$role: at work in session $session; not woken. Send it a message (SendMessage) naming the file to read." >&2
+        return 3
+    fi
+    if [[ $role == designer ]]; then
+        read -r tokens at <<<"$(claude_context "$session")"
+        idle_for=$(($(date +%s) - at))
+        if ((tokens > designer_limit || (at > 0 && idle_for > designer_idle))); then
+            echo "designer: $((tokens / 1000))K, idle $((idle_for / 60)) min: a fresh session"
+            claude_role designer "$(designer_fresh_prompt) Then: $message"
+            return
+        fi
+    fi
     claude_role "$role" "$message" "$session"
+}
+
+# The supervisor hands over to a fresh session (development.md, section
+# 10.5), from its own session, once its watch and cron job are stopped and
+# its handover is in supervision.md.
+handover() {
+    load
+    local role=${1:?role: supervisor} old
+    [[ $role == supervisor ]] || die "only the supervisor hands over; plan wake starts a fresh designer"
+    old=$(role_session supervisor)
+    [[ -z ${CLAUDE_CODE_SESSION_ID:-} || $CLAUDE_CODE_SESSION_ID == "$old" ]] ||
+        die "this session is not the run's supervisor; $old is"
+    printf '## Handed over, %s\n\nFrom session %s.\n\n' "$(now)" "${old:-none}" >>"$run/supervision.md"
+    [[ -z $old ]] || printf '%s\n' "$old" >>"$run/handed-over"
+    claude_role supervisor "$(supervisor_handover_prompt)"
+    echo "This session supervises no more: with its watch and its cron job stopped, end your turn."
+}
+
+# The supervisor's worktree of the plan's repository (development.md,
+# section 10.3): created at origin/main, and moved to it whenever it is
+# clean. Its plan edits land with plan ruling. Prints its path.
+docs_worktree() {
+    local project=${name%%/*} dir=$run/docs
+    git -C "$root/$project" fetch --quiet origin main 2>/dev/null || true
+    local base=origin/main
+    git -C "$root/$project" rev-parse --verify --quiet "$base" >/dev/null || base=main
+    if [[ ! -d $dir ]]; then
+        git -C "$root/$project" worktree add --quiet -B "$plan/docs" "$dir" "$base"
+    elif [[ -z $(git -C "$dir" status --porcelain) ]]; then
+        git -C "$dir" switch --quiet -C "$plan/docs" "$base"
+    fi
+    echo "$dir"
+}
+
+docs() {
+    load
+    docs_worktree
+}
+
+# A ruling, written once (development.md, section 10.3): its text is the
+# Decision of unblock.draft.md, or with --text a file's. It becomes the next
+# numbered ruling in the plan's decisions.md, under "## Rulings"; it lands
+# with the plan edits waiting in the supervisor's worktree, with land
+# --docs; and "{ruling}" in the title and the draft becomes its number. For
+# an unblock, the draft's Landed section names the commit, the draft becomes
+# unblock.md, and the doorbell rings.
+ruling() {
+    load
+    local text="" draft=$run/unblock.draft.md
+    if [[ ${1:-} == --text ]]; then
+        text=${2:?file}
+        shift 2
+    fi
+    local title=${1:?title} source=${2:?source} dir rel file decision n entry project=${name%%/*} hash files
+    if [[ -z $text ]]; then
+        [[ -f $draft ]] || die "no $draft: write the unblock there first (supervisor.md, section 3)"
+        decision=$(awk '/^## Decision/ { on = 1; next } /^## / { on = 0 } on' "$draft")
+    else
+        decision=$(cat -- "$text")
+    fi
+    # From the first line with text; command substitution drops the blank lines at the end.
+    decision=$(sed '/[^[:space:]]/,$!d' <<<"$decision")
+    [[ -n $decision ]] || die "the ruling has no text"
+    dir=$(docs_worktree)
+    rel=$(cd "$plan_dir" && git rev-parse --show-prefix)
+    rel=${rel%/}
+    file=$dir/$rel/decisions.md
+    [[ -f $file ]] || die "no decisions.md in $dir/$rel"
+    n=$(awk '/^[0-9]+\. \*\*/ { k = $1 + 0; if (k > m) m = k } END { print (m < 100 ? 101 : m + 1) }' "$file")
+    title=${title//\{ruling\}/$n}
+    decision=${decision//\{ruling\}/$n}
+    entry=$(printf '%s. **%s** (%s).\n' "$n" "$title" "$source"; awk 'NF { $0 = "     " $0 } { print }' <<<"$decision")
+    ENTRY=$entry awk '
+        BEGIN { entry = ENVIRON["ENTRY"] }
+        /^## Rulings/ { rulings = 1 }
+        /^## For the user/ && !done { if (!rulings) print "## Rulings\n"; print entry "\n"; done = 1 }
+        { print }
+        END { if (!done) { if (!rulings) print "\n## Rulings"; print "\n" entry } }' "$file" >"$file.new"
+    mv "$file.new" "$file"
+    git -C "$dir" add -A
+    git -C "$dir" commit --quiet -m "Ruling $n of $plan" -m "$title ($source)."
+    local args=(--docs)
+    git -C "$dir" remote get-url origin >/dev/null 2>&1 || args+=(--local)
+    (cd "$dir" && "$kit/land" "${args[@]}") >&2 || die "ruling $n did not land: its commit waits in $dir"
+    hash=$(git -C "$dir" rev-parse --short HEAD)
+    files=$(git -C "$dir" show --format= --name-only HEAD | sed "s|^$rel/||" | paste -sd ',' - | sed 's/,/, /g')
+    if [[ -z $text ]]; then
+        sed -i "s/{ruling}/$n/g" "$draft"
+        LANDED="$project \`$hash\`: ruling $n, in $files." awk '
+            /^## Landed/ { print; print ""; print ENVIRON["LANDED"]; print ""; skip = 1; next }
+            /^## / { skip = 0 }
+            !skip { print }' "$draft" >"$draft.new"
+        mv "$draft.new" "$draft"
+        if [[ -f $run/unblock.md ]]; then
+            sed '1{/^# Unblock/d}' "$draft" >>"$run/unblock.md"
+            rm -f "$draft"
+        else
+            mv "$draft" "$run/unblock.md"
+        fi
+        echo "ruling $n landed as $project $hash; unblock.md is ready"
+        (ring "unblock.md is ready") || echo "plan: the doorbell did not ring; the coordinator finds unblock.md at its next wake-up" >&2
+    else
+        echo "ruling $n landed as $project $hash"
+    fi
+}
+
+# Steps the supervisor has checked against main (development.md, section
+# 7.2): ready, with the check's note, and the doorbell rung for them.
+ready() {
+    load
+    local step=${1:?step} note=${2:-no change}
+    [[ $(awk -F'\t' -v s="$step" 'NR > 1 && $1 == s { print $4 }' "$run/ledger.tsv") == check ]] ||
+        die "$step is not waiting for its check"
+    set_step "$step" state=ready "note=checked $(now): $note"
+    (ring "ready: $step") || echo "plan: the doorbell did not ring; the coordinator starts $step at its next wake-up" >&2
 }
 
 retro() {
@@ -954,11 +1278,17 @@ claim) claim "$@" ;;
 release) release ;;
 worktree) worktree "$@" ;;
 set) set_step "$@" ;;
+log) log_report "$@" ;;
+idle) idle "$@" ;;
 status) status ;;
 watch) watch "$@" ;;
 ring) ring "$@" ;;
+docs) docs ;;
+ruling) ruling "$@" ;;
+ready) ready "$@" ;;
 join) join "$@" ;;
 wake) wake "$@" ;;
+handover) handover "$@" ;;
 pulse) pulse ;;
 downstream) downstream ;;
 contexts) contexts ;;

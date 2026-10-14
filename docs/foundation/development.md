@@ -1,6 +1,6 @@
 # Development process
 
-Provisional, 2026-10-09, revised 2026-10-12. How work goes from an idea
+Provisional, 2026-10-09, revised 2026-10-14. How work goes from an idea
 to `main` in skein and in every project built on it (smith, temper, jig):
 who designs, who plans, who builds, who supervises, where each of them
 writes, and how they talk to each other. Read it before starting a design,
@@ -12,16 +12,18 @@ a plan or a run.
 implementing, landing and escalating. Section 11 is each machine's build
 infrastructure, section 12 several machines at once, and section 13 the
 questions still open. Section 14 is the supervisor's hourly check, and
-section 15 the retrospective that ends a run. Section 8, the implementer's
-card, stands on its own: it is what an implementing agent reads. Section
-4.5 binds everything written for the coordinator and the implementers.
+section 15 the retrospective that ends a run. Two roles read a card of
+their own instead of this document: the implementer's card, section 8,
+is `implementer.md`, and the supervisor's is `supervisor.md`, both beside
+this file. Section 4.5 binds everything written for the coordinator and
+the implementers.
 
 ## 1. In one page
 
 - **Six roles, two agent programs.**
   - The designer and the planner (Claude Code, Opus 5.5 at xhigh effort,
     interactive with the user) turn an idea into design documents and a
-    plan.
+    plan. The planner works in a fresh session, from the landed design.
   - The coordinator (Codex, gpt-6.1-sol at high effort) runs the plan with
     implementers (Codex sub-agents, same model and effort), as many at once
     as the plan and the machine allow.
@@ -68,13 +70,25 @@ card, stands on its own: it is what an implementing agent reads. Section
     it asks the designer first, through `question.md`.
   - Only decisions with long-term consequences that are hard to change
     reach the user.
-- **The supervisor checks the run once an hour** (section 14). It uses
-  numbers from `plan pulse`, reads what changed, and samples one test and
-  one diff. It steers through `steer.md`, and adjusts the plan when that
-  helps the run.
+- **The supervisor checks the run once an hour** (section 14), through a
+  sub-agent. It uses numbers from `plan pulse`, reads what changed, and
+  samples one test and one diff. It steers through `steer.md`, and adjusts
+  the plan when that helps the run. Before a session that did not start
+  at the claim begins, it checks the session file against `main`.
+- **Contexts stay small, and nothing is written twice.** A long context
+  is carried by every request, and checks thin as it grows.
+  - The supervisor hands over to a fresh session past 300,000 tokens.
+  - A designer past 150,000 tokens, or idle for an hour, is woken fresh,
+    from a brief.
+  - Implementers log their own reports, so that the coordinator does not
+    type them again.
+  - A ruling is written once, and `plan ruling` lands it.
+  - An idle coordinator ends its turn, and the doorbell starts the next.
 - **A retrospective ends every run** (section 15). It lands as
   `retrospective.md` beside the plan, with the changes it proposes to this
-  document.
+  document. The user decides each before the next run starts: `plan
+  check` refuses a plan while a proposal of the last retrospective is
+  open.
 - **Everything else is decided where it arises,** and reported:
   implementation choices by the implementer, the run's rulings by the
   supervisor, design gaps by the designer.
@@ -107,7 +121,11 @@ card, stands on its own: it is what an implementing agent reads. Section
 ### 2.2 The planner
 
 - **Turns a landed design into a plan** (section 5). It is the designer's
-  model and effort, often the designer's own session.
+  model and effort, in a fresh session started from the landed design: a
+  designer's session carries the whole design conversation into every
+  request (test-budgets was planned in one that reached 709K tokens). The
+  plan's landing commit names the session in a `Planner-Session:`
+  trailer, so that the metrics count it (section 15.2).
 - **Does not change the design while planning.** A gap the plan exposes is
   closed by the designer, under the designer's rules, before the plan
   relies on it.
@@ -132,8 +150,9 @@ card, stands on its own: it is what an implementing agent reads. Section
 ### 2.4 The implementer
 
 - **Implements one session at a time,** increment by increment, in its own
-  worktree (section 8). It lands its own increments and resolves its own
-  rebase conflicts.
+  worktree, as its card says (section 8, `implementer.md`). It lands its
+  own increments and resolves its own rebase conflicts. It logs its own
+  reports with `plan log`, and sends the coordinator a pointer.
 - **Hands over between increments** when its context grows past 200,000
   tokens: a fresh implementer goes on from its checkpoint (section 7.3).
 - **Escalates to the coordinator,** and only on real gaps (section 8.7).
@@ -156,27 +175,35 @@ card, stands on its own: it is what an implementing agent reads. Section
     check;
   - writes the short session file of a step not in the plan.
 
-  Each adjustment lands with `land --docs`, is recorded in
-  `decisions.md`, and reaches the coordinator as a steer that names the
-  commit. It never changes what the design asks: a change that would is a
-  design question, for the designer.
+  Each adjustment is recorded in `decisions.md` and lands with `plan
+  ruling`, which writes the ruling once (section 10.3), and reaches the
+  coordinator as a steer or an unblock that names the commit. It never
+  changes what the design asks: a change that would is a design question,
+  for the designer.
+- **Checks each session file against `main`** before the session starts,
+  when it did not start at the claim: the ready check (section 7.2).
 - **Asks the designer** what the design must answer, in the run's
   `question.md`, and writes the unblock once the designer has answered.
-- **Checks the run once an hour** (section 14), and steers (section 10.3).
+- **Checks the run once an hour** (section 14), through a sub-agent, and
+  steers (section 10.3).
 - **Watches the coordinator** (section 10.5): its heartbeat, its pauses
   and its end.
 - **Does not review in depth and writes no code.** A question that needs
   more than the hourly check goes to a read-only sub-agent with a bounded
   question, or waits for the retrospective.
-- **Hands over** to a fresh session once past half its context.
-  `supervision.md` and the run's files are enough to go on.
+- **Hands over** to a fresh session once its context passes 300,000
+  tokens, and starts its successor itself (section 10.5). `supervision.md`
+  and the run's files are enough to go on.
+- **Works from its card,** `supervisor.md`, which says each of these step
+  by step, and reads of this document only the sections the card names.
 
 ### 2.6 The retrospective's author
 
 - **A fresh session after the run** (section 15). It took no part in the
   run, so it reads the record with fresh eyes.
-- **Proposes, and decides nothing.** The user chooses which of its
-  proposals to adopt, and the designer applies them.
+- **Proposes, and decides nothing.** The user decides each of its
+  proposals, before the next run starts (section 15.1), and the designer
+  applies them.
 
 ## 3. Where things live
 
@@ -278,7 +305,7 @@ skein and smith lives in smith.
 | `decisions.md` | the decisions the plan rests on, the supervisor's rulings during the run, and those left to the user |
 | `later.md` | what the design names but the plan does not do, and when it should be done |
 | `findings/` | evidence the plan cites, if any (section 4.1) |
-| `retrospective.md` | after the run: what happened, and what should change (section 15) |
+| `retrospective.md` | after the run: what happened, what should change, and the user's decision on each proposal (section 15) |
 | `metrics.tsv` | after the run: its numbers, as `plan metrics` computes them (section 15.2) |
 
 The shapes are in section 5.2. A plan is committed and pushed before its
@@ -296,17 +323,21 @@ machine's run. Nothing here is versioned.
 |---|---|---|
 | `ledger.tsv` | the coordinator, through `plan set` | one row per increment: `step`, `repo`, `session`, `state`, `slot`, `thread`, `branch`, `commit`, `updated`, `title`, `note` (section 7.3) |
 | `status.md` | `plan status` | the ledger, rendered, checked against `origin/main` |
-| `log.md` | the coordinator | every report as received, every escalation and its answer; appended only |
+| `log.md` | the implementers, through `plan log`; the coordinator | every report, every escalation and its answer; appended only |
+| `reports/<repository>-<NN>-<time>.md` | `plan log` | each report, as its implementer wrote it, for the files that name it (section 8.6) |
 | `context.md` | the coordinator | what a restarted coordinator needs; rewritten, never appended |
 | `thread`, `threads` | `plan start`, `plan resume`, the coordinator | the coordinator's Codex thread's id, for the doorbell; every thread it has had, with when, for the metrics |
-| `claude.tsv` | `plan start`, `join`, `wake`, `retro` | one line per Claude Code session that works on the run: its role, its session id and when, for `plan attach`, `plan wake` and the metrics |
+| `claude.tsv` | `plan start`, `join`, `wake`, `handover`, `retro` | one line per Claude Code session that works on the run: its role, its session id and when, for `plan attach`, `plan wake` and the metrics; a role's last line is its current session |
 | `heartbeat` | the coordinator | touched at every wake-up |
+| `idle.md` | `plan idle`; removed by `plan ring` | since when, and why, the coordinator ended its turn with nothing to do (section 7.4) |
 | `.watch` | `plan watch` | the escalations and events the supervisor, or the designer, has seen |
+| `handed-over` | `plan handover` | the supervisor sessions that handed over, to which `plan watch` shows nothing more |
 | `blocked.md` | the coordinator | open escalations (section 10.2) |
-| `unblock.md` | the supervisor | the answer (section 10.3) |
+| `unblock.draft.md`, `unblock.md` | the supervisor; `plan ruling` | the answer, written once as a draft, then landed and moved into place (section 10.3) |
+| `docs/` | `plan docs` | the supervisor's worktree of the plan's repository, for its plan edits; removed by `plan release` |
 | `steer.md` | the supervisor | an instruction nobody asked for (section 10.3) |
 | `question.md`, `answer.md` | the supervisor; the designer | a design question, and its answer (section 10.4) |
-| `supervision.md` | the supervisor | one entry per hourly check (section 14); appended only |
+| `supervision.md` | the supervisor; `plan handover` | one entry per hourly check (section 14), each handover, and each design question with its answer; appended only |
 | `.pulse` | `plan pulse` | where the last check stopped |
 | `paused.md`, `done.md` | the coordinator | a pause's checkpoint; the run's end |
 | `sessions/<repository>-<NN>.md` | the implementer | its session's checkpoint (section 8.6) |
@@ -319,7 +350,8 @@ there adds its new headings to it.
 
 Nothing in the run's directory is removed before the run's retrospective
 has landed (section 15), except:
-- the worktrees (section 7.6);
+- the worktrees (section 7.6), and the supervisor's `docs/`, which `plan
+  release` removes;
 - sessions' `target/` directories (section 11.4);
 - escalation files, once they have been appended to `log.md` or
   `supervision.md`.
@@ -337,24 +369,30 @@ and those upstream of it, or all four without a plan.
 
 | Tool | Does |
 |---|---|
-| `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11) |
-| `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local` |
-| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan, the queue and its repository's gate (sections 6 and 12) |
+| `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes |
+| `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local`, and `LAND_PREBUILD` the build lane's command before the gate |
+| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan, the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12) |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
 | `plan resume` | after a restart, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn (section 7.6) |
 | `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
-| `plan wake ROLE MESSAGE` | resumes a Claude Code role's session in the background with MESSAGE (section 10.4) |
+| `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief past `PLAN_DESIGNER_LIMIT` (150,000 tokens) or `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
+| `plan handover supervisor` | from the supervisor's session, starts its successor, and records it (section 10.5) |
 | `plan retro [PLAN_DIR]` | starts the run's retrospective, by default the last run's, released or not (section 15) |
 | `plan claim PLAN_DIR`, `plan release` | start and end the machine's run; `plan start` claims |
 | `plan worktree [--remove] REPOSITORY NAME` | a session's worktree, at `origin/main` |
 | `plan set STEP KEY=VALUE…` | adds or changes a ledger row |
+| `plan log REPOSITORY NN [FILE]` | logs an implementer's report, from FILE or its standard input, in `log.md` and `reports/`, and prints the report's file (section 8.6) |
+| `plan idle REASON` | the coordinator, with nothing running, ends its turn; `idle.md` says why, and the next ring starts its next turn (section 7.4) |
+| `plan docs` | prints the supervisor's worktree of the plan's repository, made at `origin/main`, and moved there whenever it is clean |
+| `plan ruling [--text FILE] TITLE SOURCE` | lands a ruling, written once: the Decision of `unblock.draft.md`, or FILE's text, as the next ruling of `decisions.md`, with the plan edits in the supervisor's worktree; then, for an unblock, names the commit, moves the draft to `unblock.md` and rings (section 10.3) |
+| `plan ready STEP [NOTE]` | sets a step the supervisor has checked to `ready`, and rings (section 7.2) |
 | `plan status` | renders `status.md` |
-| `plan watch` | waits until the supervisor has something to do (section 10.5) |
+| `plan watch` | waits until the supervisor has something to do, and prints its context; past `PLAN_SUPERVISOR_LIMIT` (300,000 tokens), the word to hand over (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
 | `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (200,000 tokens) (section 7.3) |
 | `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane, and lands nothing (sections 5.7 and 14.1) |
-| `plan ring MESSAGE` | rings the coordinator's doorbell (section 7.4) |
+| `plan ring MESSAGE` | rings the coordinator's doorbell, and starts the turn of an idle one (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
 | `test-plan [--live]` | tests `plan` on a workspace of its own; `--live` also starts real roles, on cheap models. It compiles nothing: it runs in the build lane (`heavy test-plan`) |
 
@@ -373,8 +411,11 @@ The roles run in the background:
   approve.
 
 `HEAVY_BUILD_JOBS`, `HEAVY_BUILD_SLOTS` and `HEAVY_TAIL` tune the queue;
-`PLAN_MIN_DISK_GB`, `PLAN_MIN_MEM_GB`, `PLAN_QUIET`, `PLAN_POLL` and
-`PLAN_CLAUDE_DIR` (where the Claude Code roles start) tune `plan`.
+`PLAN_MIN_DISK_GB`, `PLAN_MIN_MEM_GB`, `PLAN_QUIET`, `PLAN_POLL`,
+`PLAN_CLAUDE_DIR` (where the Claude Code roles start), the roles' limits
+above, and `PLAN_CLAUDE_PRICES` (the list prices the metrics use, section
+15.2) tune `plan`. `PLAN_DRY_RUN=1` prints what `plan` would start or
+ring, and starts and rings nothing.
 
 ## 4. Designing
 
@@ -687,6 +728,13 @@ may veto.
 
 ### 5.4 Before the run
 
+- **Each sub-agent gets one question.** The audits and reviews below run
+  in read-only sub-agents, each started fresh, never as a fork, which
+  would carry the planner's whole context. Each prompt names its one
+  question, the files to read, and a report of at most 40 lines. In
+  test-budgets, the planning's sub-agents read 283M input tokens, each
+  growing to 280K to 400K; with its own session's, the planning read
+  more than the run.
 - **A code audit.** For the parts the plan touches, the planner checks the
   code against the design, so that the run does not discover that the
   code already differs from it. What it finds goes in `findings/`, and
@@ -714,14 +762,24 @@ may veto.
     when" item, and `cargo doc` where a Proof asks for no warning;
   - each type sketch, compiled under clippy with warnings as errors, in a
     scratch worktree;
-  - a search for the users of each type whose Shape changes, which go in
-    the increment's Files.
+  - a search for the users of each thing a Shape changes (a type, a
+    generator's output, a fixture, a literal, a count): its name, its
+    copies by content and the values derived from it, in its repository
+    and every repository downstream. They go in the increment's Files: in
+    test-budgets, nine of the eleven plan defects were such users.
 
   A command that fails, a count that is not what the plan says, or a
   sketch that does not compile is a plan defect, fixed before the plan
   lands. The fixes of the reviews above get the same run.
+
+  What cannot run at the base, because it names code an earlier session
+  lands, is checked when its session becomes ready: the supervisor's
+  ready check (section 7.2) greps its names and compiles its sketches
+  against `main` before the session starts.
 - **The plan lands** with `land --docs`, and `STATUS.md` gets the plan's
-  row, `ready`.
+  row, `ready`. The landing commit carries the trailer `Planner-Session:
+  <the planner's $CLAUDE_CODE_SESSION_ID>`, which the metrics read
+  (section 15.2).
 
 ### 5.5 Each increment's proof
 
@@ -852,6 +910,11 @@ commits behind smith.
 2. **The machine is ready.** `plan check --fix <plan-dir>` passes. It
    checks:
    - the plan and its `STATUS.md` row;
+   - that the user has decided each proposal of the last retrospective:
+     the one added last to any repository's `origin/main` has a row for
+     each of its proposals in its section 10, and none of them open
+     (section 15.1). A retrospective's proposals left undecided recur:
+     six of jig-protocol's did, in test-budgets;
    - the primary checkouts of the plan's repository and of those upstream
      of it: on `main`, clean, equal to `origin/main`, with an `origin` that
      takes a push (`git push --dry-run`);
@@ -871,41 +934,43 @@ commits behind smith.
      `~/src/rust/tmp/active-plan`;
    - it starts the supervisor, a background Claude Code session (Opus 5.5,
      xhigh) in the workspace, named `<plan> supervisor`, with "Supervise the
-     run of `<plan-dir>` as skein's docs/foundation/development.md,
-     sections 2.5, 3.3, 4.5, 6, 7.6, 10 and 14, say.";
+     run of `<plan-dir>` as skein's docs/foundation/supervisor.md says.";
    - it starts the coordinator, a thread on Codex's daemon named `<plan>
      coordinator`, with "Coordinate the run of `<plan-dir>`, as skein's
      docs/foundation/development.md, section 7, says.";
    - it rings the doorbell once, which the coordinator logs (section 7.4).
      If the ring fails, steers wait for the coordinator's next wake-up.
-4. **The supervisor, first:**
+4. **The supervisor, first** (`supervisor.md`, section 1):
    - marks the plan `active on <machine> since <date>` in each `STATUS.md`
      that has its row, with `land --docs`; the row is what keeps another
      machine from claiming the same plan;
    - starts its watch, `plan watch`, in the background (section 10.5);
-   - starts its hourly check (section 14): in Claude Code, a loop or a
-     cron job, which lasts only as long as the session.
+   - starts its hourly check (section 14): in Claude Code, a cron job,
+     which lasts only as long as the session.
 5. **The designer joins,** if the plan may raise design questions: in its
    Claude Code session, it runs `plan join designer`, so that the
    supervisor can wake it (section 10.4), then ends its turn. It does not
    watch the run: no watch, loop or cron job. `plan wake` brings it back
-   with each question. Watching costs its whole context at every wake
-   (49M input tokens in tls-cleanup, with no question asked); an observer,
-   if the user wants one, is a fresh session with a small context.
+   with each question, or starts a fresh designer from a brief (section
+   10.4). Watching costs its whole context at every wake (49M input tokens
+   in tls-cleanup, with no question asked); an observer, if the user wants
+   one, is a fresh session with a small context.
 6. **The user looks in when they want:** `plan status` shows the steps and
    the roles; `plan attach supervisor` and `plan attach coordinator` open
    their sessions.
 
 A session that takes over from another, supervisor or designer, records
-itself with `plan join <role>`.
+itself with `plan join <role>`, unless `plan handover` or `plan wake`
+started it, which record it themselves.
 
 ## 7. Coordinating
 
 ### 7.1 Setting up
 
-1. Read this document's sections 3.5, 3.6 and 7 to 12, the plan's
-   `README.md` and `code-organization.md`, and the head of each session
-   file: its increments and dependencies.
+1. Read this document's sections 3.5, 3.6, 7 and 9 to 12, `implementer.md`'s
+   section 8.6 (what reports say), the plan's `README.md` and
+   `code-organization.md`, and the head of each session file: its
+   increments and dependencies.
 2. Write your thread's id to the run's `thread` file:
    `printf '%s\n' "${CODEX_THREAD_ID:-unknown}" > <run>/thread`. If it
    writes `unknown`, say so in `log.md`.
@@ -920,7 +985,16 @@ itself with `plan join <role>`.
 ### 7.2 Starting sessions
 
 - **Start every session whose start dependencies have landed,** unless
-  memory or disk is short (section 11.4).
+  memory or disk is short (section 11.4). The sessions that can start at
+  the claim start at once: the planner checked their files at the plan's
+  base (section 5.4).
+- **The ready check.** Any other session, when its start dependencies
+  have landed, waits for the supervisor to check its file against `main`:
+  `plan set <its first step> state=check`, and go on with everything
+  else. When the supervisor has checked it, it runs `plan ready <step>`,
+  which sets the step `ready` and rings: "ready: <step>". Start it then.
+  Repins (section 5.7), restarts, handovers and steps added by an unblock
+  or a steer start without a check.
 - **When there are fewer slots than sessions,** start first the sessions
   others wait on, in the README's order. Never hold a slot idle to keep
   the order.
@@ -930,23 +1004,25 @@ itself with `plan join <role>`.
 
   ```
   You are an implementer. Read ~/src/rust/skein/docs/foundation/
-  development.md, section 8, then ~/src/rust/<repository>/AGENTS.md,
-  then <plan-dir>/README.md and <plan-dir>/code-organization.md, then
-  <plan-dir>/<repository>/<file>. Implement that session in <worktree>,
-  one increment at a time. Your checkpoint is
-  <run>/sessions/<repository>-<NN>.md, and your logs and scripts go in
-  <run>/logs/<repository>-<NN>/.
+  implementer.md, then ~/src/rust/<repository>/AGENTS.md, then
+  <plan-dir>/README.md and <plan-dir>/code-organization.md, then
+  <plan-dir>/<repository>/<file>, and nothing else of the process.
+  Implement that session in <worktree>, one increment at a time. Your
+  checkpoint is <run>/sessions/<repository>-<NN>.md, and your logs and
+  scripts go in <run>/logs/<repository>-<NN>/. Use the code graph as
+  ~/src/rust/AGENTS.md says, and never call list_projects.
   ```
 
   A repin step (section 5.7) gets this prompt instead:
 
   ```
   You are an implementer. Read ~/src/rust/skein/docs/foundation/
-  development.md, sections 8 and 5.7, then ~/src/rust/<repository>/
-  AGENTS.md. Repin <repository> on <the repositories it moves> as
-  section 5.7 says, in <worktree>. Your checkpoint is
-  <run>/sessions/<repository>-repin.md, and your logs go in
-  <run>/logs/<repository>-repin/.
+  implementer.md, then development.md's section 5.7 alone, then
+  ~/src/rust/<repository>/AGENTS.md. Repin <repository> on <the
+  repositories it moves> as section 5.7 says, in <worktree>. Your
+  checkpoint is <run>/sessions/<repository>-repin.md, and your logs go
+  in <run>/logs/<repository>-repin/. Use the code graph as
+  ~/src/rust/AGENTS.md says, and never call list_projects.
   ```
 
   A sub-agent starts in the coordinator's directory, so it does not load
@@ -969,11 +1045,15 @@ itself with `plan join <role>`.
 ### 7.3 Reports
 
 An implementer reports when an increment lands, when it stops on a
-question, and when its session ends or yields (section 8.6). After each
-report:
+question, and when its session ends or yields (section 8.6). It logs the
+report itself, with `plan log`, which appends it to `log.md`, and sends
+you four lines: the report's file, the step and its state, the commit,
+and the question in one line, or "none". After each:
 
-1. Append it to `log.md`, as received, under the heading `## <repository>
-   <NN>, <UTC time>`, for example `## jig 22, 2026-10-11T10:05:00Z`.
+1. Do not append the report to `log.md`, nor type it again anywhere: it
+   is logged. Read its file only for what the four lines do not say. A
+   report that came without `plan log`, as a whole message: ask its
+   implementer, once, to log it, and go on.
 2. Check it with git only, in the session's worktree. For a landed step:
    - `git merge-base --is-ancestor <commit> origin/main && echo on-main`
      prints `on-main`;
@@ -1004,9 +1084,10 @@ report:
 5. Start what the plan now allows, and resume the sessions waiting for
    what landed.
 
-A report's question goes into `blocked.md` (section 10.2), unless it is
-only a dependency not yet landed: that is not a block, and the session is
-resumed when the dependency lands.
+A report's question goes into `blocked.md` (section 10.2), with the
+report's file and the question's line, unless it is only a dependency not
+yet landed: that is not a block, and the session is resumed when the
+dependency lands.
 
 **Steps not in the plan.**
 - **You start a step only from the plan, an unblock or a steer.**
@@ -1023,6 +1104,8 @@ resumed when the dependency lands.
 
 **A step's state** in the ledger is one of:
 - `waiting`: something it needs has not landed;
+- `check`: what it needs has landed, and its session file waits for the
+  supervisor's ready check;
 - `ready`: it can start;
 - `running`: its session is on it, with the slot and the branch;
 - `blocked`: on an escalation, named in the note;
@@ -1041,17 +1124,22 @@ resumed when the dependency lands.
   - If `unblock.md` is listed, handle it (section 10.3); then `steer.md`,
     if it is listed.
   - Act on memory and disk as section 11.4 says.
-- **When no session is running,** `wait_agent` may return at once. Wait
-  with `sleep 60` instead, and run the wake-up command after each.
+- **When no session is running,** and nothing is left for you to do
+  (holding for an answer, for the user, or for a pause to end): rewrite
+  `context.md`, run `plan idle "<what you wait for>"`, and end your turn.
+  The next ring starts your next turn, with its message. Never sleep in a
+  loop: in jig-protocol, 60-second sleeps while holding for the user made
+  205 requests, and 52M input tokens, with nothing to do.
 - **No background waits.** Do not start `until` loops, `sleep` sessions,
   watchers or polling scripts, in the background or in a sub-agent. They
   cannot wake you, and they die with you. The wait above and the
   doorbell are the only ways you are woken.
 - **The doorbell.** After writing `unblock.md` or `steer.md`, the
   supervisor runs `plan ring`, which steers a one-line message ("steer.md
-  is ready") into your turn and ends your wait. Handle the file it names
-  as at any wake-up. A ring that names no file: append `Rang, <UTC time>:
-  <message>` to `log.md`, and wait again.
+  is ready") into your turn and ends your wait; if you are idle, it starts
+  your next turn. Handle the file it names as at any wake-up. "ready:
+  <step>": start that step (section 7.2). A ring that names neither: append
+  `Rang, <UTC time>: <message>` to `log.md`, and wait again.
 - **A finished implementer** ends its turn with its last report. Give a
   session that yielded its next step with `followup_task`, unless its
   context is past the limit (section 7.3).
@@ -1113,205 +1201,24 @@ resumed when the dependency lands.
 
 ## 8. Implementing: the implementer's card
 
-### 8.1 Each increment
+The implementer's card is `implementer.md`, beside this document: what an
+implementing agent reads instead of this one. Its sections keep their
+numbers, so "section 8.5" names the same rule here and there:
 
-1. **Read the increment** in the session file, and the design sections its
-   "Read first" names. Read only those, not the whole design.
-2. **Branch from `origin/main`** in your worktree:
-   `git fetch origin && git switch -c <plan>/<repository>-<NN>-<item>
-   origin/main`.
-3. **Implement it with its tests,** following the repository's `AGENTS.md`
-   and skein's `programming-model.md` and `testing-strategy.md`:
-   - the increment's Shape gives your paths, names and signatures;
-   - its Test shape gives your test file, the fixtures to reuse, and the
-     reference test to write the others like.
-4. **Run its proof once,** as its Proof line says (section 8.8).
-5. **Run clippy once** on what you changed: `heavy cargo clippy -p <each
-   crate you changed> --all-targets -- -D warnings`, and fix what it
-   prints. A plan's "run nothing before `land`" means no proof run and no
-   suite, not no clippy.
-6. **Land it** with `land` (section 8.5), then report (section 8.6).
-
-The code graph indexes the primary checkouts, which are on `main`: use it
-for structure, and check each name it gives with `rg` in your worktree
-before relying on it.
-
-### 8.2 Rules
-
-- **The design is the contract.** Never edit `docs/design/`, the plan or
-  the run's files other than your checkpoint and your logs directory. Where the code seems to
-  need a different design, stop (section 8.7).
-- **Implementation choices are yours:** names, module placement, values
-  within the presets' ranges. Report them; do not ask.
-- **Work only in your worktree.** Never touch a primary checkout or another
-  session's worktree.
-- **No `git stash`:** the stash is shared by every worktree of a
-  repository. Commit work in progress on your branch instead.
-- **Upstream first** (section 9.5).
-- **Removing a mechanism removes all of it,** in this repository and in
-  this increment: code, limits, accounting, facts, tests and docs.
-- **Each test lands with the code it covers.**
-- **The plan's "Don't" lists bind you:** the plan's own, in
-  `code-organization.md`, and the increment's.
-- **Departing from the Shape** is an implementation choice. Make it when
-  the code needs it, and say how and why in the commit body. The
-  exception is a type that crosses a boundary: changing its fields is a
-  question (section 8.7).
-- **A type crosses a boundary** when something outside your session's own
-  files uses it: another session's files, another crate's code, another
-  repository. A `pub` type that only your files use does not; changing its
-  fields is an implementation choice.
-- **An edit outside the increment's Files** is an implementation choice,
-  named in the commit body, when:
-  - the increment's change, its Proof or the gate needs it;
-  - it is in your session's own files;
-  - it is at most 20 lines;
-  - it changes no test's expected value or name.
-
-  Any other edit outside Files is a question (section 8.7).
-- **Test ceilings** (the Test shape's, or `code-organization.md`'s) are
-  read once, from the times nextest prints in your last focused run. A
-  test above twice its ceiling is made cheaper before it lands. Never
-  merge tests to fit a budget.
-- **Evidence is the gate, the proof, and what the repository's workflow
-  or the plan asks beyond the gate; nothing else.** Write no manifests of
-  inputs, no observers, no polling scripts, and no repeated measurements.
-  Logs and scripts go in `<run>/logs/<repository>-<NN>/`.
-
-### 8.3 Heavy commands
-
-`heavy`, `land` and `plan` are on your `PATH`, from skein's
-`scripts/dev/`.
-
-- **`heavy <command>`** runs what compiles, and the tests of the crates you
-  touch: `cargo check`, `clippy`, `build`, `doc`, `nextest -p …`, and
-  `test-plan`, which compiles nothing. It uses the build lane.
-- **`heavy --gate <command>`** runs, alone on the machine, whole suites,
-  measurements (with the profiles and flags your repository's workflow
-  documents, such as `--profile measure -j 1`), probes and benchmarks.
-  `land` runs the gate itself.
-- **Light commands run directly:** git, `cargo fmt`, reading, `rg`.
-- **Whole suites run only in `land`'s gate,** or for a measurement or a
-  probe that the Proof line or the repository's workflow names. Do not
-  run the gate before `land`.
-- **Never set `CARGO_BUILD_JOBS` or `NEXTEST_TEST_THREADS`,** nor pass
-  `-j` beyond what the workflow documents: the lanes set the width.
-- **Never nest them:** `heavy land`, or `heavy` inside a heavy command,
-  waits for itself.
-- **Read a command's log from the path `heavy` prints.** Never dump
-  `pueue status`. If your tool call times out, the task runs on: `heavy`
-  printed its id first, and `pueue wait <id>` and `pueue log <id>` reach
-  it.
-- **Wait in one call.** Run `land` and a long `heavy` command in one tool
-  call with the longest wait your tool allows. Never poll them with short
-  calls that return nothing: in tls-cleanup, empty polls took up to 43% of
-  a session's input tokens. If the call still times out, `pueue wait
-  <id>` is the next single wait.
-
-### 8.4 Commits
-
-```
-<Subject, imperative, at most 72 characters>
-
-<What changed and why. The design section it follows. Where it departs
-from a sketch, how and why. The evidence the repository asks for beyond
-the gate.>
-
-Proof: <layer>, <test name or script path>, <result in one line>
-Plan: <plan>
-Step: <repository>-<NN>.<item>
-```
-
-`land` adds the trailers `Gate-Tree` and `Gate-Result`. A commit that
-landed without its body is never rewritten; the body goes in the report.
-
-### 8.5 Landing
-
-Run `land` from your worktree (section 9). By its exit status:
-
-- **2, refused:** fix what it names. "Nothing to land" after a 5 means the
-  commit had landed.
-- **3, conflicts:** resolve them against the design, never by dropping
-  another session's change. Then `git rebase --continue`, and `land` again.
-  If resolving needs a decision, stop (section 8.7).
-- **4, the gate failed:** fix it, and `land` again. If it fails only on a
-  timeout (a suite's global timeout, or a test's wall-clock bound), in
-  tests outside your session's files, `land` again once without asking; a
-  second failure on the same tree is a question. If it fails in another
-  way in code your increment did not touch, stop on a question (section
-  8.7).
-- **6, main kept moving:** wait 60 seconds, and `land` again. After three
-  such tries, report it and stop.
-- **5, 7 or 8:** report it, and stop.
-
-### 8.6 Reports and the checkpoint
-
-**When to message the coordinator:** when an increment lands, when you stop
-on a question, and when the session ends or yields. Send nothing else; in
-particular, no progress messages: every message wakes the coordinator.
-After a landing, send the report and go on. When the session is done, or
-nothing is left that does not wait (it yields), end your turn with the
-report as your final answer.
-
-A report is at most 40 lines. Name the files that hold anything longer
-(`<run>/logs/<repository>-<NN>/…`) by path; do not paste them. Use this shape, in full
-sentences:
-
-```
-Session: <repository> <NN>
-Step: <step>, <landed | question | blocked | done | yielded>
-Commit: <full hash> on origin/main, parent <full hash>
-Gate: <the Gate-Result trailer>
-Proof: <the commit's Proof line>
-Evidence: <what the repository asks beyond the gate, or "none">
-Next: <the next step, or what it waits for, by capability>
-Questions: <none, or each question with the design text quoted, the
-options, your proposal, and what you continue with meanwhile>
-Agreements: <none, or what you agreed with another session>
-Worktree: <clean, or what is in it>
-```
-
-**The checkpoint.** After each report, overwrite your checkpoint,
-`sessions/<repository>-<NN>.md`, with the same facts and with what is in
-progress. A restarted implementer continues from it.
-
-**Hand over** when the coordinator says so, after a landing: overwrite
-your checkpoint, then end your turn with your report. The checkpoint adds,
-in at most 15 lines, what the next increment needs from what you learned
-and the session file does not say: the files and fixtures it touches, the
-commands that worked, the traps you met. A fresh implementer reads it
-instead of finding them again.
-
-### 8.7 When to stop
-
-- **Stop only for a real gap:** the design, `decisions.md` and the session
-  file are silent or contradict each other, and the choice changes
-  behaviour that something outside the code can observe. Quote what they
-  say.
-- **A dependency not landed yet is not a block.** Do the increments that
-  do not need it, then report what you wait for.
-- **While a question is open,** go on with whatever does not depend on it.
-- **A fix outside your increment** is a question too: a failing proof, or
-  a gate failing in code you did not touch. Two exceptions need no
-  question: an edit outside Files within section 8.2's bounds, and one
-  retry of a gate that failed only on a timeout (section 8.5).
-
-### 8.8 The proof
-
-- **Run the increment's proof once,** when the increment is done and its
-  focused tests pass: the test, or the script, its Proof line names.
-- **A script** goes in `<run>/logs/<repository>-<NN>/`. Aim for at most
-  about 100 lines. It stays within the Proof line's bound: wall time, and for a
-  live service its calls or tokens.
-- **Record it** in the commit's `Proof:` line (section 8.4) and in the
-  report.
-- **A rebase does not run it again,** unless the rebase's conflicts
-  touched what it proves.
-- **If it fails,** it found a bug: fix it before landing. If the fix lies
-  outside your increment, stop on a question (section 8.7).
-- **If the Proof line cannot be followed,** say why in the report, run the
-  same check one layer down (section 5.5) within the same bound, and
-  record that one. Do not stop for this.
+- **8.1 Each increment:** what to read, and nothing else; the steps from
+  branch to landing; the code graph.
+- **8.2 Rules:** the design as the contract; implementation choices; the
+  edits outside Files that need no question; test ceilings and table
+  tests; evidence.
+- **8.3 Heavy commands:** the lanes, a committed and built tree before the
+  gate lane, and how to wait.
+- **8.4 Commits:** the message and its trailers.
+- **8.5 Landing:** `land`'s exit statuses, and what each asks.
+- **8.6 Reports and the checkpoint:** a report logged with `plan log`, and
+  the four lines sent to the coordinator.
+- **8.7 When to stop:** a real gap, after looking for the rule that
+  answers it.
+- **8.8 The proof.**
 
 ## 9. Landing
 
@@ -1320,9 +1227,18 @@ instead of finding them again.
 From a clean worktree on the branch to land, `land`:
 
 1. rebases the branch on `origin/main`;
-2. runs the repository's gate, `scripts/check.sh`, through `heavy --gate`,
-   unless a gate already passed on a tree that differs from this one only
-   in Markdown files under `docs/` (section 9.2);
+2. unless a gate already passed on this tree, or on one that differs from
+   it only in Markdown files under `docs/` (section 9.2):
+   - in a Cargo repository, builds the tree and runs its lints in the build
+     lane, `LAND_PREBUILD`: by default `cargo fmt --check && cargo clippy
+     --workspace --all-targets -- -D warnings && cargo nextest run
+     --workspace --no-run`. A failure here is exit 4, and costs the gate
+     lane nothing;
+   - runs the repository's gate, `scripts/check.sh`, through `heavy
+     --gate`. Its own build and lints then find nothing to redo, so the
+     lane that runs alone holds the machine for the suites: in
+     jig-protocol, a passing gate spent 65 of its 98 seconds alone on
+     building and lints, and the build lane stood paused 76% of the run;
 3. writes the evidence into the tip commit's trailers;
 4. pushes the tip to `origin`'s `main`;
 5. moves the local `main`, and the checkout that has it, to the tip.
@@ -1336,7 +1252,7 @@ tries. Its exit status:
 | 0 | landed |
 | 2 | refused before starting, or nothing to land |
 | 3 | the rebase stopped on conflicts, left in progress |
-| 4 | the gate failed |
+| 4 | the build, its lints or the gate failed |
 | 5 | the local `main` could not follow: with a push, the commit landed on `origin/main`; with `--local`, nothing landed |
 | 6 | main kept moving |
 | 7 | fetching or pushing failed |
@@ -1398,9 +1314,9 @@ gated.
 
 ### 10.1 From the implementer
 
-An implementer stops on a real gap (section 8.7) and reports it to the
-coordinator, in a Codex message, with the question in the report's
-shape (section 8.6).
+An implementer stops on a real gap (section 8.7), logs its report with
+the question in it (`plan log`), and sends the coordinator the report's
+four lines (section 8.6).
 
 ### 10.2 From the coordinator: `blocked.md`
 
@@ -1416,9 +1332,11 @@ directory, then keeps everything else going.
   infrastructure | credentials
 - Since: <time>. Still running: <sessions>.
 - Needed: <the decision, in one sentence>.
-
-<The report, as received.>
+- Report: <the report's file, as its four lines name it>.
+- Question: <the question's line, as sent>.
 ```
+
+The supervisor reads the report from its file: nobody types it again.
 
 - **One file.** A new escalation while one is open goes under a new
   heading in the same file.
@@ -1435,17 +1353,28 @@ Reverses: <the time of an earlier answer this one reverses>, or nothing.
 
 ## Decision
 
-<The decision, quoting the design or plan text it rests on.>
+<The decision, quoting the design or plan text it rests on: the ruling's
+whole text, written once.>
 
 ## Landed
 
-<Design and plan commits, with their hashes.>
+<Design and plan commits, with their hashes: plan ruling fills it.>
 
 ## Instructions
 
 1. …
 ```
 
+- **The supervisor writes an unblock once,** as `unblock.draft.md`, and
+  runs `plan ruling "<title>" "<kind>, <session>'s block of <time>"`. It
+  appends the Decision to the plan's `decisions.md` as the next ruling,
+  lands it with the plan edits in the supervisor's worktree (`plan docs`),
+  fills in Landed, moves the draft to `unblock.md`, and rings. The ruling
+  is typed nowhere else: in the second supervisor session of jig-protocol,
+  its own writing, each ruling typed four or five times, was about 14% of
+  its input. A
+  plan change a steer rests on lands the same way, with `plan ruling
+  --text <file>`, which rings nothing.
 - **When the coordinator finds `unblock.md`:**
   1. it appends both files to `log.md`, under "Blocked and unblocked,
      <time>";
@@ -1503,24 +1432,37 @@ Reverses: <the time of an earlier answer this one reverses>, or nothing.
   - process, infrastructure and credentials, within what the user allows.
 
   It records each ruling in the plan's `decisions.md`, and lands each
-  change to the plan with `land --docs` before the unblock that relies on
-  it. When the same kind of block comes back, it adds a standing rule to
-  the plan's README; a rule that would serve every plan becomes a proposal
-  for the retrospective (section 15).
+  change to the plan before the unblock that relies on it: `plan ruling`
+  does both (section 10.3). When the same kind of block comes back, it
+  adds a standing rule to the plan's README; a rule that would serve every
+  plan becomes a proposal for the retrospective (section 15).
 - **The designer decides a design gap.** The supervisor writes the
   question to the run's `question.md`, in `blocked.md`'s shape, with its
   own reading of the design, and wakes the designer: `plan wake designer
   "question.md has a question: answer it as development.md, section 10.4,
   says."` This resumes the designer's own session in the background, with
   its context; a designer session the user has open gets a copy instead.
+  - **A fresh designer** starts instead, from a brief (`plan wake`'s
+    prompt: the role, `question.md`, and the earlier questions and answers
+    in `supervision.md`), when the last designer's context is past 150,000
+    tokens or its session has been idle for over an hour, longer than its
+    cache lives. In jig-protocol, each wake re-read a history that grew to
+    966K tokens: 75% to 80% of the designer's 514M input tokens.
+  - **A designer at work is never woken again:** a second wake forks a
+    copy without the first's answers. `plan wake` refuses it, and the
+    supervisor sends the designer a message instead (in Claude Code,
+    `SendMessage`) naming `question.md`.
+
   The designer:
   1. decides;
   2. amends the design with `land --docs`, then the session files that
      mention the point;
   3. writes `answer.md`, naming the commits.
 
-  The supervisor then writes the unblock, appends both files to
-  `supervision.md`, and deletes them.
+  The supervisor then writes the unblock, whose Decision appends
+  `answer.md`'s text rather than typing it again, lands it with `plan
+  ruling`, appends both files to `supervision.md` under "Question and
+  answer, <time>", and deletes them.
 - **Before an answer is sent,** its author checks it against the code
   (the code graph indexes `main`) and quotes the text it rests on.
   - An answer keeps the plan's relative checks ("62 less the removed"). A
@@ -1547,8 +1489,14 @@ Reverses: <the time of an earlier answer this one reverses>, or nothing.
   `run_in_background`). It ends, saying why, when:
   - `blocked.md` has headings it has not shown, and no answer is pending;
   - `answer.md` appears;
-  - the coordinator's heartbeat is older than ten minutes;
+  - steps wait for their ready check (section 7.2), each with its session
+    file;
+  - the coordinator's heartbeat is older than ten minutes, unless the
+    coordinator is idle (`idle.md`, section 7.4);
   - the run pauses or ends.
+
+  Then it prints the supervisor's context, the input of its last request,
+  and past `PLAN_SUPERVISOR_LIMIT` (300,000 tokens) the word to hand over.
 - **After each event,** the supervisor handles it, then runs the watch
   again.
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
@@ -1556,12 +1504,24 @@ Reverses: <the time of an earlier answer this one reverses>, or nothing.
   the supervisor alerts the user (in Claude Code, a push notification).
   The alert gives the restart command, `plan resume`.
 - **The designer has no watch.** After `plan join designer` it ends its
-  turn; `plan wake` resumes it with each question (section 6, step 5).
-- **When the supervisor's context grows past about half its window,** a
-  fresh supervisor session takes over. It reads `blocked.md` and the end
-  of `supervision.md` first: the watch does not show again what it has
-  shown. This document, the plan, `decisions.md`, `log.md` and
-  `supervision.md` are enough to go on.
+  turn; `plan wake` brings it back with each question (section 6, step 5).
+- **When the supervisor's context passes 300,000 tokens,** it hands over
+  to a fresh session, and starts it itself (`supervisor.md`, section 7):
+  1. it finishes the event in hand;
+  2. it appends a `## Handover, <time>` entry to `supervision.md`, of at
+     most 30 lines: what is open, the steers it follows up, the rulings in
+     force that the plan does not yet say, the next check's focus;
+  3. it stops its watch and deletes its cron job;
+  4. it runs `plan handover supervisor`, which starts the successor and
+     records it in `claude.tsv`;
+  5. it ends its turn. A watch it left running exits with "handed over:",
+     and shows it nothing.
+
+  Nobody else starts the successor: in jig-protocol, a supervisor that
+  left it to the user ran nine more hours past 500K tokens, and its
+  answers read less code as it grew (half under 200K, none above 800K).
+  The successor reads its card, the handover entry and the open escalation
+  files: the watch does not show again what it has shown.
 
 ### 10.6 Stopping the line
 
@@ -1597,9 +1557,12 @@ the run heading away from its plan's "Done when".
   - **gate** (parallelism 1) runs gates, whole suites, measurements,
     probes and benchmarks. A gate task pauses every other pueue group,
     waits for their running tasks, runs alone, then resumes them, so
-    suite times are measured on a quiet machine;
+    suite times are measured on a quiet machine. It takes only a
+    committed tree: `heavy --gate` refuses a git worktree with changes
+    before it queues;
   - **build** (parallelism 2) runs everything else, each task with
-    `HEAVY_BUILD_JOBS` (4) cargo jobs.
+    `HEAVY_BUILD_JOBS` (4) cargo jobs, `land`'s build and lints before
+    its gate included (section 9.1).
 - **A gate task killed outright** (`pueue kill`) cannot resume what it
   paused. `plan check --fix` starts a paused lane again.
 - **`heavy` is the only way in, for every role.** The planner's and the
@@ -1617,7 +1580,9 @@ the run heading away from its plan's "Done when".
 prints only its tail and the log's path. It also appends a line to
 `logs/heavy.tsv`: the task's id, its lane, when it ended, the seconds it
 waited and ran, its exit status, the memory available as it ended (GB),
-its directory, its log and its command. Then it removes the task from
+its directory, its log, its command and its label (`HEAVY_LABEL`: `land
+<repository>` for `land`'s gates, which the metrics count apart from the
+gate lane's other tasks). Then it removes the task from
 pueue, which keeps the daemon's state small. It does both on every exit,
 even when it cannot read pueue's answer.
 
@@ -1683,9 +1648,22 @@ that machine.
 - **Gating again when main moves** is most of the queue's time: a branch
   is gated again each time another lands first. A gate now holds across
   Markdown under `docs/` (section 9.2), which removes the regates after
-  rulings. A single lander that rebases and gates several branches in turn
-  could cut the rest. The metric `gates_per_step` (section 15.2) shows
-  what it would save.
+  rulings, and `land` builds in the build lane first (section 9.1), which
+  shortens each gate. A lock from the rebase to the push (test-budgets'
+  proposal 4), or a single lander that rebases and gates several branches
+  in turn, could cut the rest. The metric `gates_per_step` (section 15.2)
+  shows what it would save.
+- **The build lane's pass before the gate** was replayed against
+  jig-protocol's queue, not run: build waits fell from 45.7 hours to
+  about 6.8 in the replay. The first run checks, in a gate's log, that
+  the gate's own clippy and build find nothing to redo.
+- **An idle coordinator's next turn** comes from `plan ring` starting it
+  (`turn/start`), as `plan resume` does: untested while sessions have
+  ended their turns and wait on a `followup_task`.
+- **The roles' limits** (300,000 tokens for the supervisor; 150,000
+  tokens or an hour idle for the designer) come from jig-protocol's
+  costs, not from a measured optimum. The next runs' `cost_claude` and
+  `answers_reversed` say whether to move them.
 - **`wait_agent`'s longest timeout.** 300 seconds works, and the doorbell
   ends such a wait within a second (tested 2026-10-11). Codex's
   `multi_agent_v2.max_wait_timeout_ms` bounds it; its default is unknown.
@@ -1714,6 +1692,14 @@ Once an hour, the supervisor checks whether the run heads for its plan's
 tests that stay cheap and readable. It is a light check of about ten
 minutes. Problems are cheaper to fix the hour they appear.
 
+**A sub-agent runs steps 1 to 4** (`supervisor.md`, section 6): a fresh
+one, never a fork, which returns the entry of step 5 and any steer's
+points, and changes no file itself. What it reads stays in its own
+context: in jig-protocol's second supervisor session, the checks run in
+the supervisor's own context cost about a fifth of it, and each added 7K
+to 23K tokens that every later request carried. The supervisor appends
+the entry, and sends the steer.
+
 1. **Run `plan pulse`** (section 14.2). It prints the numbers since the
    last check, and moves its mark. Once the plan has landed in a
    repository others build on, also run `plan downstream`, in the
@@ -1740,10 +1726,11 @@ minutes. Problems are cheaper to fix the hour they appear.
      gates per step, polling, idle slots, tokens per step;
    - **tests:** the checklist;
    - **taste:** the pulse's code signals, and the sampled diff.
-5. **Write** an entry in `supervision.md`, of at most 15 lines: the
-   pulse's headline numbers, one line per judgement, and the steers sent.
-   When something needs action, write `steer.md` (section 10.3), then
-   ring the doorbell.
+5. **The entry,** for `supervision.md`, of at most 15 lines: the pulse's
+   headline numbers, one line per judgement, the rulings since the last
+   check, and the steers to send. When something needs action, the steer's
+   points, in section 10.3's shape: the supervisor writes `steer.md` from
+   them, then rings the doorbell.
 
 ### 14.2 What `plan pulse` prints
 
@@ -1752,12 +1739,15 @@ Since the last check:
 - **progress:** steps landed, planned and not, against the plan's rest;
   the planned count over the last three hours; each running session's
   time since its last landing;
-- **the channel:** open blocks and their age; steers not acknowledged;
+- **the channel:** open blocks and their age; steps waiting for their
+  ready check, and for how long; an idle coordinator, since when; steers
+  not acknowledged;
 - **proofs:** each landed step's `Proof:` line, its layer against the one
   its increment named, and the steps with none;
 - **waste:** the log's growth; the reports' median and longest length;
-  gates per landed step; queue wait against run time (`logs/heavy.tsv`);
-  files and scripts written under `logs/`;
+  `land`'s gates per landed step, and the gate lane's other tasks; queue
+  wait against run time (`logs/heavy.tsv`); files and scripts written
+  under `logs/`;
 - **tests:** each suite's time from the `Gate-Result` trailers, against
   its budget; the tests past four fifths of a ceiling, and the SLOW ones;
   lines added in tests and in code;
@@ -1770,11 +1760,12 @@ Since the last check:
   more. A forbidden word moves to a synonym the list does not name
   ("actual" became "observed", 9 to 119); the check reads this line;
 - **cost so far:** the time and token metrics of section 15.2, for the
-  run so far;
+  run so far, and what Claude Code's tokens cost at list prices, by role
+  and by kind, since the planning;
 - **pins:** how many commits each repository's pins are behind the
   upstream mains;
 - **contexts:** each session's context, and those past the limit
-  (section 7.3);
+  (section 7.3); the supervisor's and the designer's;
 - **the machine:** the heartbeat's age, memory and disk.
 
 The numbers come from the script, not from reading: a log read by eye is
@@ -1843,7 +1834,8 @@ question and its own budget, or waits for the retrospective.
   - the Codex traces of the coordinator and of each session (from the
     run's `threads` file, and the threads each spawned), and the Claude
     Code transcripts of the supervisor and the designer (from
-    `claude.tsv`);
+    `claude.tsv`) and of the planner (the plan's `Planner-Session:`
+    trailer);
   - the earlier plans' metrics (`plan metrics --history`) and their
     retrospectives.
 - **It runs `plan metrics --out <its branch's plan directory>/metrics.tsv
@@ -1865,8 +1857,15 @@ question and its own budget, or waits for the retrospective.
      it changes (this one, a repository's `workflow.md` or `AGENTS.md`,
      the plan's shape), and the metric it should move, and which way.
   9. **Debts left in the code,** for the repository's `tech-debt.md`.
-- **The user decides** which proposals to adopt; the designer applies
-  them.
+  10. **Decisions:** a table with one row per proposal, `| <N> | open |
+      |`, for the user. Each row's decision becomes `adopted`, `adopted in
+      part: <what>`, `rejected: <why>` or `deferred: <until when>`, and its
+      last column where it was applied.
+- **The user decides each proposal before the next run starts,** and the
+  designer applies what is adopted and records each decision in section
+  10. `plan check` refuses a plan while the last retrospective lacks
+  section 10 or has a proposal still open (section 6). In test-budgets,
+  six of jig-protocol's seventeen undecided proposals recurred.
 
 ### 15.2 Metrics
 
@@ -1881,7 +1880,7 @@ counts them by hand.
 | `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes |
 | `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan, steps added during the run, steps dropped |
 | `step_h` | `running_h` per landed step |
-| `escalations` | blocks, by kind (section 10.2) |
+| `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing |
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |
 | `blocked_h` | hours in which at least one block was open |
 | `answers_reversed` | unblocks whose `Reverses:` line names an earlier answer |
@@ -1889,14 +1888,16 @@ counts them by hand.
 | `restarts` | `log.md`'s "Coordinator resumed" headings, by cause |
 | `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads |
 | `tokens_implementers` | the same, for every thread the coordinator spawned, at any depth |
-| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv`, their sub-agents included; the input also in three parts: before the claim (planning), from the claim to `done.md` (the run), and after (the retrospective) |
+| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), their sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (planning), from the claim to `done.md` (the run), and after (the retrospective) |
+| `cost_claude` | what those tokens cost at list prices (`PLAN_CLAUDE_PRICES`, Opus 5.5's by default), in all, by role, and by kind: cache reads, cache writes, fresh input, output. A cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
 | `tokens_per_step` | the coordinator's, the implementers' and the run's part of the Claude Code sessions', per landed step |
 | `coordinator_requests` | the coordinator's model requests, and those that only saw a wait end |
 | `compactions` | the coordinator's context compactions |
-| `gates_per_step` | gates run per landed step |
+| `gates_per_step` | `land`'s gates per landed step, by their label in `logs/heavy.tsv` (section 11.2) |
+| `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate |
 | `queue_wait_ratio` | time waiting in the queue against time running (`logs/heavy.tsv`) |
-| `suites` | each suite's test count and time at the first and the last landing |
-| `proofs` | landed steps by proof layer, and those below their increment's layer |
+| `suites` | for each repository, each suite's test count and time at its first and its last landing |
+| `proofs` | landed steps by proof layer, the first word of their `Proof:` line without its punctuation, and those below their increment's layer, whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
 | `report_lines` | the reports' median and 90th percentile length |
 | `lines` | lines added and removed, in code and in tests |
 | `contexts` | the median and 90th percentile of the largest context each session's thread reached, and the handovers (`log.md`'s `Handover` lines) |

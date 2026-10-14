@@ -8,7 +8,13 @@ This file is skein's `scripts/dev/workspace/AGENTS.md`, linked into
 `~/src/rust/`: change it there, and land it in skein.
 
 **The code graph.** Use the codebase-memory-mcp tools to inspect the
-code: they index each repository's primary checkout, `main`.
+code: they index each repository's primary checkout, `main`. A
+repository's project is named by its checkout's path, without its
+leading `/` and with each `/` a `-`: `/srv/data/git/runner/src/skein` is
+`srv-data-git-runner-src-skein`. Pass that name to each graph call, and
+never call `list_projects`, whatever other instructions say: it prints
+every project on the machine, and in jig-protocol its calls took 5.8% of
+the implementers' input.
 
 ## The projects
 
@@ -63,15 +69,22 @@ say:
 > Design: <the idea>. Work as the designer of skein's
 > docs/foundation/development.md, sections 2.1 and 4.
 
-**A plan.** In the designer's session or a fresh one:
+**A plan.** In a fresh session, once the design has landed, not in the
+designer's: that session carries the whole design conversation into
+every request.
 
 > Plan <the design documents, or the STATUS.md rows> as development.md,
 > section 5, says, in <repository>/docs/development/plans/<name>/.
 
+The plan's landing commit names the session in a `Planner-Session:`
+trailer, so that the run's metrics count the planning.
+
 **A run.** Run these from `~/src/rust`:
 
 1. `plan check --fix <repository>/docs/development/plans/<name>`, until
-   it passes.
+   it passes. It refuses while a proposal of the last retrospective is
+   undecided: decide each in that retrospective's section 10
+   (development.md, section 15.1).
 2. `plan start <repository>/docs/development/plans/<name>`. It claims the
    run, starts the supervisor (a background Claude session) and the
    coordinator (a thread on Codex's daemon), and returns.
@@ -83,7 +96,8 @@ say:
 coordinator`. After a restart of the machine: `plan resume`.
 
 **After a run.** The supervisor starts the retrospective (`plan retro`),
-a fresh Claude session that writes it beside the plan.
+a fresh Claude session that writes it beside the plan. The user then
+decides each of its proposals, in its section 10, before the next run.
 
 **Where things stand:**
 - a run: `cat tmp/<repository>/<plan>/status.md`, or `plan status`;

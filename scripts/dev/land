@@ -4,8 +4,12 @@
 #   land [--docs] [--local] [--gate COMMAND] [--tries N]
 #
 # From a clean worktree on the branch to land: rebase it on origin/main,
-# run the repository's gate through `heavy --gate`, record the gate's
-# evidence in the tip commit's trailers, and push the tip to origin's main.
+# build it and run its lints in the build lane, run the repository's gate
+# through `heavy --gate`, record the gate's evidence in the tip commit's
+# trailers, and push the tip to origin's main. The build lane's pass leaves
+# the gate's own build and lints nothing to redo, so the gate lane, which
+# runs alone, holds the machine for the suites, and a tree that does not
+# build or lint never takes it.
 # A gate that passed before the rebase still holds when what moved main
 # changed only Markdown files under docs/, which no gate reads.
 # The push only fast-forwards, so it is the lock: a rejected push means
@@ -18,6 +22,10 @@
 #          the repository's land.lock) instead of pushing.
 # --gate   The gate, a shell command, instead of scripts/check.sh.
 # --tries  How many times to start again when main moves (default 5).
+#
+# LAND_PREBUILD is the build lane's command before the gate, in a Cargo
+# repository: by default formatting, clippy as the gates run it, and the
+# tests' build. Empty, there is none.
 #
 # Exit status:
 #   0  landed
@@ -117,6 +125,10 @@ gated_before() {
     echo "$before"
 }
 
+# The build lane's pass before the gate (development.md, section 9.1).
+prebuild_command='cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo nextest run --workspace --no-run'
+prebuild=${LAND_PREBUILD-$prebuild_command}
+
 # The gate's evidence, as one line: each nextest summary, in the order the
 # gate runs them, then the time the gate ran.
 evidence() {
@@ -167,7 +179,15 @@ Resolve them, run git rebase --continue, then land again."
         else
             gated=$tree
             out=$(mktemp)
-            if ! "$kit/heavy" --gate --tail 60 bash -c "$gate" >"$out" 2>&1; then
+            if [[ -n $prebuild && -f Cargo.toml ]]; then
+                if ! HEAVY_LABEL="land $repo prebuild" "$kit/heavy" --tail 60 bash -c "$prebuild" >"$out" 2>&1; then
+                    cat "$out"
+                    rm -f "$out"
+                    die 4 "the build or its lints failed on $(git rev-parse --short HEAD), in the build lane; the gate did not run"
+                fi
+                grep '^heavy: task ' "$out" | tail -n1 >&2 || true
+            fi
+            if ! HEAVY_LABEL="land $repo" "$kit/heavy" --gate --tail 60 bash -c "$gate" >"$out" 2>&1; then
                 cat "$out"
                 rm -f "$out"
                 die 4 "the gate failed on $(git rev-parse --short HEAD)"

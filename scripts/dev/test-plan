@@ -2,7 +2,8 @@
 # Tests plan on a workspace of its own, in a temporary directory.
 #
 #   test-plan          the commands that need no agent: the ledger, status,
-#                      watch, pulse, metrics, attach (printed); about 30 s
+#                      watch, pulse, metrics, reports, rulings, the decisions
+#                      check, attach, wake and handover (printed); about 40 s
 #   test-plan --live   also start, ring, resume, wake and retro, with cheap
 #                      models and prompts that end at once; it spends a few
 #                      cents of each program's usage, and takes a few minutes
@@ -60,11 +61,29 @@ cat >"$dir/alpha/01-first.md" <<'EOF'
 ### 1.1 The first increment
 Proof: world, the story `first`, in the suite.
 
-### 1.2 The second increment
+### 01.2 The second increment
 Proof: joint, the joint story `second`.
 EOF
+cat >"$dir/alpha/02-second.md" <<'EOF'
+# Session 02: second
+
+### 02.1 The third increment
+Proof: unit; the unit tests.
+EOF
+cat >"$dir/decisions.md" <<'EOF'
+# Decisions
+
+## The plan's own
+
+1. **One decision.** Its reason.
+
+## For the user
+
+Nothing.
+EOF
+planner=99999999-8888-7777-6666-555555555555
 git -C "$repo" add -A
-git -C "$repo" commit -q -m "Plan the demo"
+git -C "$repo" commit -q -m "Plan the demo" -m "Planner-Session: $planner"
 
 run=$("$plan" claim "$dir")
 expect claim "$run" "$DEV_TMP/alpha/demo"
@@ -95,7 +114,7 @@ commit() {
 seq 1 60 | sed 's/^/\/\/ line /' >"$repo/src/big.rs"
 echo "pub struct OwnerThing; // the actual one" >>"$repo/src/big.rs"
 for i in 1 2 3 4; do echo "fn text() {}" >"$repo/tests/t$i.rs"; done
-commit alpha-01.1 "world, the story first, passed" "scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
+commit alpha-01.1 "world; the story first, passed" "scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
 echo "fn text() {} // exact" >"$repo/tests/t5.rs"
 echo "#[expect(clippy::too_many_lines)]" >>"$repo/src/big.rs"
 commit alpha-01.2 "unit, the unit tests, passed" "scripts/check.sh passed: 12 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all"
@@ -107,7 +126,10 @@ commit alpha-01.s1 "" "scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0
     printf '## alpha 01, 2026-10-11T10:05:00Z\n\nline\nline\nline\n\n'
     printf '## Blocked and unblocked, 2026-10-11T10:30:00Z\n\n# Blocked\n\n## alpha 01.2: a gap, 2026-10-11T10:00:00Z\n\n'
     printf -- '- Kind: design gap\n- Since: 2026-10-11T10:00:00Z. Still running: none.\n\n# Unblock\n\nReverses: nothing\n\n'
-    printf '## Blocked and unblocked, 2026-10-11T12:00:00Z\n\n- Kind: plan defect\n- Since: 2026-10-11T11:00:00Z. Still running: none.\n\nReverses: 2026-10-11T10:30:00Z\n\n'
+    # The gap stays open, listed again beside a second escalation: each counts once.
+    printf '## Blocked and unblocked, 2026-10-11T12:00:00Z\n\n# Blocked\n\n## alpha 01.2: a gap, 2026-10-11T10:00:00Z\n\n'
+    printf -- '- Kind: design gap\n- Since: 2026-10-11T10:00:00Z. Still running: none.\n\n'
+    printf '## alpha 01.4: another, 2026-10-11T11:00:00Z\n\n- Kind: plan defect\n- Since: 2026-10-11T11:00:00Z. Still running: none.\n\nReverses: 2026-10-11T10:30:00Z\n\n'
     printf '## Steered, 2026-10-11T11:30:00Z\n\nSteer 2026-10-11T11:30:00Z, point 1: cannot, no room.\n\n'
     printf '## Coordinator resumed, 2026-10-11T12:00:00Z: reboot\n\n'
     printf '## alpha 01, 2026-10-11T12:05:00Z\n\nline\n\n'
@@ -115,7 +137,7 @@ commit alpha-01.s1 "" "scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0
 mkdir -p "$run/logs/alpha-01"
 printf 'SLOW [ 1.2s] a\nSLOW [ 2.0s] b\n' >"$run/logs/gate-1.log"
 stamp=$(date -u +%FT%TZ)
-printf '1\tgate\t%s\t10\t100\t0\t5.0\t/x\t%s\tcheck\n2\tbuild\t%s\t5\t20\t0\t5.0\t/x\t/dev/null\tcargo\n3\tgate\t%s\t5\t80\t0\t5.0\t/x\t/dev/null\tcheck\n' \
+printf '1\tgate\t%s\t10\t100\t0\t5.0\t/x\t%s\tcheck\tland alpha\n2\tbuild\t%s\t5\t20\t0\t5.0\t/x\t/dev/null\tcargo\tland alpha prebuild\n3\tgate\t%s\t5\t80\t0\t5.0\t/x\t/dev/null\tcheck\tmeasure\n' \
     "$stamp" "$run/logs/gate-1.log" "$stamp" "$stamp" >"$run/logs/heavy.tsv"
 echo "#!/bin/sh" >"$run/logs/alpha-01/proof.sh"
 
@@ -148,7 +170,12 @@ assistant() { printf '{"type":"assistant","message":{"id":"%s","usage":{"input_t
     printf '{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"m0","usage":{"input_tokens":1000,"output_tokens":1}}}\n'
 } >"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
 assistant s1 3 0 0 3 >"$CLAUDE_CONFIG_DIR/projects/p/$session/subagents/agent-1.jsonl"
-printf 'supervisor\t%s\t%s\n' "$session" "$stamp" >"$run/claude.tsv"
+# A forked session copies m1, which counts once, and adds m3.
+fork=22222222-3333-4444-5555-666666666666
+{ assistant m1 1 10 100 5; assistant m3 4 0 0 2; } >"$CLAUDE_CONFIG_DIR/projects/p/$fork.jsonl"
+# The planner's session, named by the plan's Planner-Session trailer: before the claim.
+printf '{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"m9","usage":{"input_tokens":500,"output_tokens":2}}}\n' >"$CLAUDE_CONFIG_DIR/projects/p/$planner.jsonl"
+printf 'supervisor\t%s\t%s\ndesigner\t%s\t%s\n' "$session" "$stamp" "$fork" "$stamp" >"$run/claude.tsv"
 
 # The pulse.
 pulse=$("$plan" pulse)
@@ -157,29 +184,31 @@ expect pulse "$pulse" \
     "- Running: alpha-01.3 (w1)" \
     "below plan: alpha-01.2 (unit, planned joint)" \
     "no Proof line: alpha-01.s1" \
-    "reports 1 lines median, 3 p90" "2 gates for 3 landings" "queue 20 s waiting, 200 s running" \
+    "reports 1 lines median, 3 p90" "1 land gates for 3 landings, 1 other gate-lane tasks" "queue 20 s waiting, 200 s running" \
     "last gate: scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all; within four fifths of the budgets" \
     "SLOW lines in gate logs: 2" \
     "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
     "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
-    "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 116/15" \
+    "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 120/17" \
+    "Claude Code at list prices, since the planning: \$0: planner \$0, supervisor \$0, designer \$0" \
     "1 steers in all, 1 points refused" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
-    "- Contexts: t-impl-1 250K (past 200K: t-impl-1)."
+    "- Contexts: t-impl-1 250K (past 200K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 sleep 1
 expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
 
 # The metrics.
-metrics=$("$plan" metrics)
+metrics=$(PLAN_CLAUDE_PRICES="1000000 1000000 1000000 1000000 1000000" "$plan" metrics)
 expect metrics "$metrics" \
     $'running_h\t0.5\th' $'steps_planned\t2\t' $'steps_added\t1\t' \
-    $'escalations\tdesign gap 1, plan defect 1\t' $'escalation_wait_min\t30.0\t' $'blocked_h\t1.5\th' \
+    $'escalations\tdesign gap 1, plan defect 1\t' $'escalation_wait_min\t60.0\t' $'blocked_h\t2.0\th' \
     $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\treboot 1\t' \
-    $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1116 in (8% cached), 16 out; in: 1000 before the claim, 116 in the run, 0 after' \
+    $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1620 in (6% cached), 20 out; in: 1500 before the claim, 120 in the run, 0 after' \
+    $'cost_claude\t$1640: planner $502, supervisor $1132, designer $6; cache reads $100, cache writes $10, fresh input $1510, output $20\t' \
     $'coordinator_requests\t4, 1 after a wait ran out' $'compactions\t1\t' \
-    $'gates_per_step\t0.7\t' $'queue_wait_ratio\t0.10\t' \
-    $'suites\tfirst: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
+    $'gates_per_step\t0.3\t' $'gate_lane_other\t1\t' $'queue_wait_ratio\t0.10\t' \
+    $'suites\talpha first: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
     $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90' \
     $'pin_lag\tnone\t' $'contexts\t260K median, 260K p90 of the sessions\' peaks; 0 handovers'
 "$plan" metrics --out "$dir/metrics.tsv" >/dev/null
@@ -202,8 +231,51 @@ expect "watch quiet" "$(PLAN_QUIET=2 watch)" "quiet: no heartbeat"
 expect "watch quiet again" "$(PLAN_QUIET=2 watch)" "quiet again: no heartbeat"
 touch "$run/heartbeat"
 echo "# Paused" >"$run/paused.md"
-expect "watch paused" "$(watch)" "paused: $run/paused.md"
+expect "watch paused" "$(watch)" "paused: $run/paused.md" "context: the supervisor's is 1K"
 rm "$run/paused.md"
+"$plan" set alpha-02.1 repo=alpha session=02 state=check title=third
+expect "status check" "$("$plan" status)" "1 to check"
+expect "watch check" "$(PLAN_SUPERVISOR_LIMIT=500 watch)" "check: alpha-02.1, $dir/alpha/02-second.md" "hand over now"
+expect "ready" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1)" "would ring the coordinator: ready: alpha-02.1"
+expect "ready in the ledger" "$(grep alpha-02.1 "$run/ledger.tsv")" $'\tready\t' "checked "
+expect "ready twice" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1 2>&1 || true)" "is not waiting for its check"
+# An idle coordinator's silence is no event.
+expect idle "$("$plan" idle "waiting for the user")" "end your turn now"
+touch -d '-5 seconds' "$run/heartbeat"
+expect "watch idle" "$(PLAN_QUIET=2 timeout 3 "$plan" watch || echo "watch exited $?")" "watch exited 124"
+rm "$run/idle.md"
+touch "$run/heartbeat"
+
+# A report, logged by its implementer.
+report=$(printf 'Session: alpha 01\nStep: alpha-01.3, landed\n' | "$plan" log alpha 01)
+expect "log" "$report" "$run/reports/alpha-01-"
+expect "logged" "$(tail -n 5 "$run/log.md")" "## alpha 01, " "Step: alpha-01.3, landed"
+
+# A ruling, written once in the draft unblock, then landed in decisions.md
+# with the plan edit waiting in the supervisor's worktree.
+printf '# Unblock\n\nAnswer to the blocked report of 2026-10-11T10:00:00Z.\nReverses: nothing.\n\n## Decision\n\nDo the thing, as ruling {ruling} says.\n\n## Landed\n\n## Instructions\n\n1. Go on.\n' >"$run/unblock.draft.md"
+docs=$("$plan" docs)
+echo "Amended." >>"$docs/docs/development/plans/demo/alpha/01-first.md"
+ruled=$(PLAN_DRY_RUN=1 "$plan" ruling "The thing, ruling {ruling}" "plan defect, alpha 01's block of 2026-10-11T10:00:00Z" 2>&1)
+expect ruling "$ruled" "ruling 101 landed as alpha " "would ring the coordinator: unblock.md is ready"
+expect "ruling in decisions.md" "$(git -C "$repo" show main:docs/development/plans/demo/decisions.md)" \
+    "101. **The thing, ruling 101** (plan defect, alpha 01's block of 2026-10-11T10:00:00Z)." "     Do the thing, as ruling 101 says." $'\n\n## For the user'
+expect "ruling's plan edit" "$(git -C "$repo" show main:docs/development/plans/demo/alpha/01-first.md)" "Amended."
+expect "unblock from the draft" "$(cat "$run/unblock.md")" "## Landed" "ruling 101, in alpha/01-first.md, decisions.md." "1. Go on."
+printf 'The second.\n' >"$t/ruling.txt"
+expect "ruling from a file" "$("$plan" ruling --text "$t/ruling.txt" "Second" "ready check of alpha-02.1" 2>/dev/null)" "ruling 102 landed as alpha "
+rm "$run/unblock.md"
+
+# The user's decisions on the last retrospective's proposals.
+older=$repo/docs/development/plans/older
+mkdir -p "$older"
+printf '# Retrospective\n\n## 8. Proposals\n\n1. **One.** Why.\n\n2. **Two.** Why.\n   1. A sub-item.\n\n## 10. Decisions\n\n| Proposal | Decision | Where |\n|---|---|---|\n| 1 | adopted | here |\n| 2 | open | |\n' >"$older/retrospective.md"
+git -C "$repo" add -A
+git -C "$repo" commit -q -m "An older retrospective"
+expect "decisions open" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "FAIL  the last retrospective, alpha's older, has proposals not yet decided: 2"
+sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.md"
+git -C "$repo" commit -q -am "Decide the older retrospective's proposals"
+expect "decisions made" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "ok    the last retrospective's proposals are decided (alpha's older)"
 
 # The roles, offline.
 expect "attach coordinator" "$(PLAN_DRY_RUN=1 "$plan" attach coordinator)" "codex resume --remote unix:// $coordinator"
@@ -211,6 +283,17 @@ expect "attach supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor)" "claude
 expect "join outside a session" "$(CLAUDE_CODE_SESSION_ID='' "$plan" join designer 2>&1 || true)" "run plan join from the Claude Code session itself"
 expect "join" "$(CLAUDE_CODE_SESSION_ID=fake-designer "$plan" join designer)" "designer: Claude Code session fake-designer" "End your turn now"
 expect "roles" "$(PLAN_NO_ROLES='' "$plan" status)" "## Roles" "- coordinator: $coordinator" "- supervisor: $session, gone"
+expect "wake resumes" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: would resume fake-designer: question.md"
+# A designer past its context's limit starts fresh.
+big=33333333-4444-5555-6666-777777777777
+printf '{"type":"assistant","timestamp":"%s","message":{"id":"b1","usage":{"input_tokens":1,"cache_read_input_tokens":200000,"output_tokens":1}}}\n' "$(date -u +%FT%T.000Z)" >"$CLAUDE_CONFIG_DIR/projects/p/$big.jsonl"
+printf 'designer\t%s\t%s\n' "$big" "$stamp" >>"$run/claude.tsv"
+expect "wake fresh" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: 200K, idle 0 min: a fresh session" "designer: would start a fresh session: You are the designer"
+# The supervisor hands over; the old session's watch then shows nothing.
+expect handover "$(CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more"
+expect "handover by another" "$(CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
+printf 'supervisor\tnew-supervisor\t%s\n' "$stamp" >>"$run/claude.tsv"
+expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "watch exited $?")" "handed over: session new-supervisor" "watch exited 4"
 
 # After the run's release, metrics and retro find it as the last run.
 "$plan" release >/dev/null

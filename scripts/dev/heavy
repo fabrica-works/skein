@@ -11,7 +11,9 @@
 # every other group, waits for their running tasks, runs, and resumes them.
 # The task runs from the current directory with the caller's environment.
 # Its whole output goes to a log file; heavy prints the last lines and the
-# log's path.
+# log's path. The gate lane takes only a committed tree: from a git
+# worktree with changes, it refuses before queueing, rather than after a
+# wait for a run that measures what nobody can land.
 set -euo pipefail
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
@@ -78,6 +80,13 @@ while (($#)); do
 done
 (($#)) || usage
 
+# What the gate lane runs is committed (development.md, section 8.3).
+if [[ $lane == gate ]] && git rev-parse --is-inside-work-tree >/dev/null 2>&1 &&
+    [[ -n $(git status --porcelain 2>/dev/null) ]]; then
+    echo "heavy: the gate lane takes only a committed tree, and $(git rev-parse --show-toplevel) has changes: commit them, then run it again" >&2
+    exit 2
+fi
+
 # A heavy command inside a heavy task waits for itself.
 if [[ -n ${HEAVY_TASK:-} ]]; then
     echo "heavy: already inside a heavy task; run the command directly" >&2
@@ -132,11 +141,11 @@ times=$(jq -r '.status.Done | if . == null then "0 0" else
 read -r waited ran <<<"${times:-0 0}"
 memory=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
 
-# One line per task, for the queue's statistics (section 11.2); then forget
-# the task, so the daemon's state stays small.
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$lane" \
+# One line per task, for the queue's statistics (section 11.2), its label
+# last; then forget the task, so the daemon's state stays small.
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$lane" \
     "$(date -u +%FT%TZ)" "$waited" "$ran" "$code" "$memory" "$PWD" "$log" \
-    "$*" >>"$logs/heavy.tsv"
+    "${*//$'\t'/ }" "${HEAVY_LABEL:-$(basename "$PWD")}" >>"$logs/heavy.tsv"
 pueue remove "$id" >/dev/null 2>&1 || true
 
 total=$(wc -l <"$log")

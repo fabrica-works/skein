@@ -41,20 +41,29 @@ layer_rank() {
     esac
 }
 
-# The layer a step's increment names in its session file's Proof line.
+# The layer a step's increment names in its session file's Proof line. Its
+# heading may write the session as the step does ("### 06.1") or without
+# the zero ("### 6.1").
 planned_layer() {
     local step=$1 repo session item file
     repo=${step%-*}
     session=${step##*-}
     item=${session#*.}
     session=${session%%.*}
+    [[ $session =~ ^[0-9]+$ ]] || return 0
     for file in "$plan_dir/$repo/$session"-*.md; do
         [[ -f $file ]] || continue
-        awk -v id="$((10#$session)).$item" '
-            /^### / { inside = ($2 == id) }
-            inside && /^Proof:/ { sub(/^Proof: */, ""); sub(/[ ,.;].*/, ""); print; exit }' "$file"
+        awk -v id="$((10#$session)).$item" -v raw="$session.$item" '
+            /^### / { inside = ($2 == id || $2 == raw) }
+            inside && /^Proof:/ { sub(/^Proof: */, ""); sub(/[ ,.;:].*/, ""); print; exit }' "$file"
         return
     done
+}
+
+# A Proof line's layer: its first word, without punctuation.
+proof_layer() {
+    local layer=${1%%[ ,;:.]*}
+    echo "${layer:--}"
 }
 
 # Codex's rollout directories that exist.
@@ -126,29 +135,101 @@ thread_contexts() {
     done < <(run_threads)
 }
 
-# A Claude Code session's tokens, its sub-agents' included: input (fresh,
-# cache writes and cache reads), output, and the cache reads, each message
-# counted once. In three parts (development.md, section 15.2): before the
-# claim, from the claim to done.md, and after; a message without a time
-# counts in the run. Nine numbers: three for each part.
-claude_tokens() {
-    local files
-    files=$(find "$claude_home/projects" \( -name "$1.jsonl" -o -path "*/$1/subagents/*.jsonl" \) 2>/dev/null || true)
-    [[ -n $files ]] || { echo "0 0 0 0 0 0 0 0 0"; return; }
-    # shellcheck disable=SC2086 # one path per line, none with spaces
-    jq -r 'select(.type == "assistant" and .message.usage != null) | .message as $m | $m.usage as $u
-        | [$m.id, (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0) + ($u.cache_read_input_tokens // 0)), ($u.output_tokens // 0), ($u.cache_read_input_tokens // 0),
-           ((.timestamp // "") | if . == "" then "" else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 | tostring) end)]
-        | @tsv' $files 2>/dev/null |
-        awk -F'\t' -v start="$(run_started)" -v end="$(run_ended)" '
-            { i[$1] = $2; o[$1] = $3; c[$1] = $4; t[$1] = $5 }
+# A Claude Code session's context, from its transcript: the input of its
+# last request, and when that request was made (seconds since the epoch);
+# "0 0" when it has none.
+claude_context() {
+    local file last
+    file=$(find "$claude_home/projects" -maxdepth 2 -name "$1.jsonl" 2>/dev/null | head -n1)
+    [[ -n $file ]] || { echo "0 0"; return; }
+    last=$(tac "$file" | head -n 400 | jq -r 'select(.type == "assistant" and .message.usage != null and .message.model != "<synthetic>")
+        | [(.message.usage | (.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)),
+           ((.timestamp // "") | if . == "" then 0 else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) end)]
+        | "\(.[0]) \(.[1])"' 2>/dev/null | head -n1 || true)
+    echo "${last:-0 0}"
+}
+
+# The run's Claude Code sessions, role and session id, each once: the
+# planner's first, named by the Planner-Session trailers of the plan's
+# commits (development.md, section 5.4), then claude.tsv's, in its order.
+claude_roles() {
+    {
+        local top prefix
+        if top=$(git -C "$plan_dir" rev-parse --show-toplevel 2>/dev/null); then
+            prefix=$(cd "$plan_dir" && git rev-parse --show-prefix)
+            git -C "$top" log main --format='%(trailers:key=Planner-Session,valueonly,separator=%x0A)' -- "${prefix%/}" 2>/dev/null |
+                awk 'NF { print "planner\t" $1 }'
+        fi
+        awk -F'\t' 'NF >= 2 { print $1 "\t" $2 }' "$run/claude.tsv" 2>/dev/null || true
+    } | awk -F'\t' '!seen[$2]++'
+}
+
+# The Claude Code sessions' messages, their sub-agents' included, each
+# message counted once across every session: a resumed or forked session's
+# transcript copies the messages before it, which count for the first role
+# that has them. One line each: role, part (1 before the claim, 2 from the
+# claim to done.md, 3 after; a message without a time counts in the run),
+# fresh input, 5-minute cache writes, 1-hour cache writes, cache reads,
+# output.
+claude_messages() {
+    local role session files
+    while IFS=$'\t' read -r role session; do
+        [[ -n $session ]] || continue
+        files=$(find "$claude_home/projects" \( -name "$session.jsonl" -o -path "*/$session/subagents/*.jsonl" \) 2>/dev/null || true)
+        [[ -n $files ]] || continue
+        # shellcheck disable=SC2086 # one path per line, none with spaces
+        jq -r --arg role "$role" 'select(.type == "assistant" and .message.usage != null) | .message as $m | $m.usage as $u
+            | ($u.cache_creation // {}) as $c
+            | (if ($c.ephemeral_1h_input_tokens // null) == null and ($c.ephemeral_5m_input_tokens // null) == null
+               then ($u.cache_creation_input_tokens // 0) else ($c.ephemeral_1h_input_tokens // 0) end) as $hour
+            | [$role, $m.id, ($u.input_tokens // 0), ($c.ephemeral_5m_input_tokens // 0), $hour,
+               ($u.cache_read_input_tokens // 0), ($u.output_tokens // 0),
+               ((.timestamp // "") | if . == "" then "" else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 | tostring) end)]
+            | @tsv' $files 2>/dev/null || true
+    done < <(claude_roles) |
+        awk -F'\t' -v OFS='\t' -v start="$(run_started)" -v end="$(run_ended)" '
+            !($2 in role) { role[$2] = $1; order[++n] = $2 }
+            { for (i = 3; i <= 7; i++) if ($i + 0 > v[$2, i] + 0) v[$2, i] = $i
+              if ($8 != "" && !($2 in t)) t[$2] = $8 }
             END {
-                for (k in i) {
-                    part = (t[k] == "") ? 2 : (t[k] < start) ? 1 : (t[k] <= end) ? 2 : 3
-                    a[part] += i[k]; b[part] += o[k]; d[part] += c[k]
+                for (j = 1; j <= n; j++) {
+                    k = order[j]
+                    part = (!(k in t)) ? 2 : (t[k] < start) ? 1 : (t[k] <= end) ? 2 : 3
+                    print role[k], part, v[k, 3] + 0, v[k, 4] + 0, v[k, 5] + 0, v[k, 6] + 0, v[k, 7] + 0
                 }
-                printf "%d %d %d %d %d %d %d %d %d\n", a[1], b[1], d[1], a[2], b[2], d[2], a[3], b[3], d[3]
-            }' || true
+            }'
+}
+
+# The Claude Code sessions' tokens: input (fresh, cache writes and cache
+# reads), output, and the cache reads, for each part (development.md,
+# section 15.2). Nine numbers: three for each part.
+claude_tokens() {
+    claude_messages | awk -F'\t' '
+        { a[$2] += $3 + $4 + $5 + $6; b[$2] += $7; d[$2] += $6 }
+        END { printf "%d %d %d %d %d %d %d %d %d\n", a[1], b[1], d[1], a[2], b[2], d[2], a[3], b[3], d[3] }'
+}
+
+# What the Claude Code sessions' tokens cost at list prices (development.md,
+# section 15.2): in all, by role, and by kind. PLAN_CLAUDE_PRICES gives the
+# dollars per million tokens of fresh input, 5-minute cache writes, 1-hour
+# cache writes, cache reads and output; Opus 5.5's by default. A cache read
+# costs a fortieth of a 1-hour write, so token counts alone hide most of
+# what a long context costs.
+claude_cost() {
+    claude_messages | awk -F'\t' -v prices="${PLAN_CLAUDE_PRICES:-4 5 8 0.20 20}" '
+        BEGIN { split(prices, p, " ") }
+        {
+            if (!($1 in by)) roles[++n] = $1
+            c = ($3 * p[1] + $4 * p[2] + $5 * p[3] + $6 * p[4] + $7 * p[5]) / 1e6
+            by[$1] += c; total += c
+            fresh += $3 * p[1] / 1e6; writes += ($4 * p[2] + $5 * p[3]) / 1e6
+            reads += $6 * p[4] / 1e6; out += $7 * p[5] / 1e6
+        }
+        END {
+            printf "$%.0f", total
+            for (i = 1; i <= n; i++) printf "%s%s $%.0f", (i == 1 ? ": " : ", "), roles[i], by[roles[i]]
+            printf "; cache reads $%.0f, cache writes $%.0f, fresh input $%.0f, output $%.0f\n", reads, writes, fresh, out
+        }'
 }
 
 # When the run started: its claim, from log.md.
@@ -279,6 +360,29 @@ pin_lag() {
     echo "${out:-none}"
 }
 
+# Gate-lane tasks since a time (all of them, without one): land's gates,
+# then the others (measurements, probes, live runs, plan check's gate), by
+# the label in heavy.tsv's eleventh column. A queue whose lines carry no
+# label counts every gate-lane task as a gate.
+land_gates() {
+    awk -F'\t' -v s="${1:-}" '
+        $2 == "gate" && (s == "" || $3 >= s) { g++; if (NF >= 11) { lab = 1; if ($11 ~ /^land /) l++ } }
+        END { if (!lab) l = g; print l + 0, g - l + 0 }' "$run/logs/heavy.tsv" 2>/dev/null || echo "0 0"
+}
+
+# Each long-lived Claude Code role's context: its latest session's, the
+# input of its last request (development.md, section 10.5).
+claude_role_contexts() {
+    local role session tokens out=""
+    for role in supervisor designer; do
+        session=$(role_session "$role")
+        [[ -n $session ]] || continue
+        read -r tokens _ <<<"$(claude_context "$session")"
+        out+="${out:+, }$role $((tokens / 1000))K"
+    done
+    echo "${out:-none}"
+}
+
 pulse() {
     load
     ledger_upgrade
@@ -327,6 +431,11 @@ pulse() {
         [[ -f $run/$file.md ]] || continue
         line+="$file.md $(grep -c '^## ' "$run/$file.md" || true) headings, $(((now_s - $(stat -c %Y "$run/$file.md")) / 60)) min old; "
     done
+    line+=$(awk -F'\t' -v now="$now_s" '
+        function epoch(t,   c, e) { c = "date -u -d \"" t "\" +%s"; c | getline e; close(c); return e }
+        NR > 1 && $4 == "check" { s = s (n++ ? ", " : "") $1 " " int((now - epoch($9)) / 60) " min" }
+        END { if (n) printf "%d to check (%s); ", n, s }' "$run/ledger.tsv" 2>/dev/null || true)
+    [[ ! -f $run/idle.md ]] || line+="the coordinator idle since $(head -n1 "$run/idle.md"); "
     echo "- Channel: ${line:-nothing open; }$(grep -c '^## Steered' "$run/log.md" 2>/dev/null || true) steers in all, $(grep -cE '^Steer .*point [0-9]+: cannot' "$run/log.md" 2>/dev/null || true) points refused"
 
     # Proofs, and the commits since.
@@ -338,7 +447,7 @@ pulse() {
             missing+="$step "
             continue
         fi
-        layer=${proof%%[ ,]*}
+        layer=$(proof_layer "$proof")
         want=$(planned_layer "$step")
         proofs+="$step $layer; "
         if [[ -n $want ]] && (($(layer_rank "$layer") < $(layer_rank "$want"))); then
@@ -352,11 +461,11 @@ pulse() {
     log_lines=$(wc -l <"$run/log.md" 2>/dev/null || echo 0)
     reports=$(report_lengths "$from" | median_and_p90)
     landed_since=$(grep -c . <<<"$commits" || true)
-    gates=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { n++ } END { print n + 0 }' "$run/logs/heavy.tsv" 2>/dev/null || echo 0)
+    gates=$(land_gates "$after")
     wait_run=$(awk -F'\t' -v s="$after" '$3 >= s { w += $4; r += $5 } END { printf "%d s waiting, %d s running", w, r }' "$run/logs/heavy.tsv" 2>/dev/null || echo "no queue statistics")
     files=$(find "$run/logs" -type f -newermt "@$((since + 1))" 2>/dev/null | wc -l)
     scripts=$(find "$run/logs" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' \) -newermt "@$((since + 1))" 2>/dev/null | wc -l)
-    echo "- Waste: log +$((log_lines - from + 1)) lines; reports ${reports/ / lines median, } p90; $gates gates for $landed_since landings; queue $wait_run; logs/ +$files files, $scripts scripts."
+    echo "- Waste: log +$((log_lines - from + 1)) lines; reports ${reports/ / lines median, } p90; ${gates% *} land gates for $landed_since landings, ${gates#* } other gate-lane tasks; queue $wait_run; logs/ +$files files, $scripts scripts."
 
     # Tests.
     local budgets focused fuzzy last_gate counts
@@ -415,7 +524,7 @@ pulse() {
     echo "- Rising words: $(rising_words)."
 
     # Cost so far, and the machine.
-    local coordinator_in=0 coordinator_out=0 sessions_in=0 sessions_out=0 claude_in=0 claude_out=0 kind thread a b session
+    local coordinator_in=0 coordinator_out=0 sessions_in=0 sessions_out=0 claude_in=0 claude_out=0 kind thread a b
     while IFS=$'\t' read -r kind thread; do
         [[ -n $thread ]] || continue
         read -r a b _ <<<"$(codex_tokens "$thread")"
@@ -425,11 +534,8 @@ pulse() {
             sessions_in=$((sessions_in + a)); sessions_out=$((sessions_out + b))
         fi
     done < <(run_threads)
-    while read -r session; do
-        read -r _ _ _ a b _ <<<"$(claude_tokens "$session")"
-        claude_in=$((claude_in + a)); claude_out=$((claude_out + b))
-    done < <(cut -f2 "$run/claude.tsv" 2>/dev/null | sort -u)
-    echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out."
+    read -r _ _ _ claude_in claude_out _ <<<"$(claude_tokens)"
+    echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out; Claude Code at list prices, since the planning: $(claude_cost)."
     local beat mem disk
     beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$now_s")
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
@@ -437,7 +543,7 @@ pulse() {
     echo "- Pins behind upstream main, in commits: $(pin_lag)."
     echo "- Contexts: $(thread_contexts | awk -F'\t' -v limit="${PLAN_CONTEXT_LIMIT:-200000}" '
         $1 == "session" { line = line (n++ ? ", " : "") $2 " " int($4 / 1000) "K"; if ($4 > limit) past = past (p++ ? ", " : "") $2 }
-        END { printf "%s", (n ? line : "no session yet"); if (p) printf " (past %dK: %s)", limit / 1000, past }')."
+        END { printf "%s", (n ? line : "no session yet"); if (p) printf " (past %dK: %s)", limit / 1000, past }'); Claude Code: $(claude_role_contexts)."
     echo "- Machine: heartbeat $((now_s - beat)) s ago; $mem GB memory and $disk GB disk free."
 
     printf '%s %s\n' "$now_s" "$((log_lines + 1))" >"$mark"
@@ -463,12 +569,19 @@ metrics_of() {
     m step_h "$(awk -v r="$running" -v n="$landed" 'BEGIN { printf "%.2f", n ? r / 3600 / n : 0 }')" "h per step"
 
     # Escalations: each Kind and Since line belongs to the "Blocked and
-    # unblocked" heading above it (development.md, section 10.3).
+    # unblocked" heading above it (development.md, section 10.3). One that
+    # stays open is listed again in each later section, until the one that
+    # answers it: it counts once, answered at its last listing.
     local escalations
-    escalations=$(awk '
-        /^## Blocked and unblocked, / { at = $0; sub(/^## Blocked and unblocked, */, "", at); kind = ""; next }
+    escalations=$(awk -F'\t' '
+        /^## Blocked and unblocked, / { at = $0; sub(/^## Blocked and unblocked, */, "", at); kind = ""; heading = ""; next }
+        /^## [A-Za-z0-9_-]+ [^ ]+: .*, [0-9T:-]+Z$/ && at != "" { heading = $0 }
         /^- Kind: / && at != "" { kind = $0; sub(/^- Kind: */, "", kind) }
-        /^- Since: / && at != "" { since = $0; sub(/^- Since: */, "", since); sub(/\. .*$/, "", since); print at "\t" since "\t" kind }
+        /^- Since: / && at != "" { since = $0; sub(/^- Since: */, "", since); sub(/\. .*$/, "", since)
+            key = (heading != "" ? heading : since "\t" kind)
+            if (!(key in last)) order[++n] = key
+            last[key] = at; first[key] = since; kinds[key] = kind; heading = "" }
+        END { for (i = 1; i <= n; i++) print last[order[i]] "\t" first[order[i]] "\t" kinds[order[i]] }
         ' "$run/log.md" 2>/dev/null |
         while IFS=$'\t' read -r at since kind; do
             a=$(date -u -d "$at" +%s 2>/dev/null) || continue
@@ -485,7 +598,7 @@ metrics_of() {
     m restarts "$(sed -nE 's/^## Coordinator resumed, .*: ([^:]*)$/\1/p' "$run/log.md" 2>/dev/null | sort | uniq -c | awk '{ printf "%s%s %d", (NR > 1 ? ", " : ""), $2, $1 }')" "by cause"
 
     # Tokens.
-    local kind thread a b c session ci=0 co=0 cc=0 si=0 so=0 sc=0 li=0 lo=0 lc=0 requests=0 idle=0 compactions=0 file
+    local kind thread a b c ci=0 co=0 cc=0 si=0 so=0 sc=0 li=0 lo=0 lc=0 requests=0 idle=0 compactions=0 file
     local pa pb pc ra rb rc xa xb xc bi=0 ri=0 ro=0 xi=0
     while IFS=$'\t' read -r kind thread; do
         [[ -n $thread ]] || continue
@@ -501,33 +614,37 @@ metrics_of() {
             si=$((si + a)); so=$((so + b)); sc=$((sc + c))
         fi
     done < <(run_threads)
-    while read -r session; do
-        read -r pa pb pc ra rb rc xa xb xc <<<"$(claude_tokens "$session")"
-        li=$((li + pa + ra + xa)); lo=$((lo + pb + rb + xb)); lc=$((lc + pc + rc + xc))
-        bi=$((bi + pa)); ri=$((ri + ra)); ro=$((ro + rb)); xi=$((xi + xa))
-    done < <(cut -f2 "$run/claude.tsv" 2>/dev/null | sort -u)
+    read -r pa pb pc ra rb rc xa xb xc <<<"$(claude_tokens)"
+    li=$((pa + ra + xa)); lo=$((pb + rb + xb)); lc=$((pc + rc + xc))
+    bi=$pa; ri=$ra; ro=$rb; xi=$xa
     share() { awk -v c="$1" -v a="$2" 'BEGIN { printf "%d%%", a ? 100 * c / a : 0 }'; }
     m tokens_coordinator "$ci in ($(share "$cc" "$ci") cached), $co out" tokens
     m tokens_implementers "$si in ($(share "$sc" "$si") cached), $so out" tokens
     m tokens_claude "$li in ($(share "$lc" "$li") cached), $lo out; in: $bi before the claim, $ri in the run, $xi after" tokens
+    m cost_claude "$(claude_cost)" "dollars at list prices"
     m tokens_per_step "$(((ci + co + si + so + ri + ro) / (landed ? landed : 1)))" "tokens per step, the run's"
     m coordinator_requests "$requests, $idle after a wait ran out" requests
     m compactions "$compactions" compactions
 
     # The queue.
     local tsv=$run/logs/heavy.tsv
-    m gates_per_step "$(awk -F'\t' -v n="$landed" '$2 == "gate" { g++ } END { printf "%.1f", n ? g / n : 0 }' "$tsv" 2>/dev/null || echo 0)" "gates per step"
+    local gates
+    gates=$(land_gates)
+    m gates_per_step "$(awk -v g="${gates% *}" -v n="$landed" 'BEGIN { printf "%.1f", n ? g / n : 0 }')" "land gates per step"
+    m gate_lane_other "${gates#* }" "gate-lane tasks besides land's gates"
     m queue_wait_ratio "$(awk -F'\t' '{ w += $4; r += $5 } END { printf "%.2f", r ? w / r : 0 }' "$tsv" 2>/dev/null || echo 0)" "waiting per running"
 
     # The commits.
     local commits
     commits=$(plan_commits 0)
-    m suites "first: $(awk -F'\t' '$6 != "" && $6 != "-" { print $6; exit }' <<<"$commits"); last: $(awk -F'\t' '$6 != "" && $6 != "-" { g = $6 } END { print g }' <<<"$commits")" "Gate-Result"
+    m suites "$(awk -F'\t' '$6 != "" && $6 != "-" && $6 !~ /^none/ {
+            if (!($1 in first)) { first[$1] = $6; order[++n] = $1 } last[$1] = $6 }
+        END { for (i = 1; i <= n; i++) printf "%s%s first: %s; last: %s", (i > 1 ? " | " : ""), order[i], first[order[i]], last[order[i]] }' <<<"$commits")" "Gate-Result, by repository"
     local repo hash at step proof layer want below=0
     local -A by_layer=()
     while IFS=$'\t' read -r repo hash at step proof _; do
         [[ -n $repo ]] || continue
-        layer=${proof%%[ ,]*}
+        layer=$(proof_layer "$proof")
         [[ $layer != - ]] || layer=none
         by_layer[$layer]=$((${by_layer[$layer]:-0} + 1))
         want=$(planned_layer "$step")
