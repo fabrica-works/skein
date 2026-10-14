@@ -110,7 +110,7 @@ fn ordered(previous: Mark, next: Mark) -> bool {
 
 pub(crate) fn tokens(query: &Query) -> u64 {
     let mut prefix = Prefix::system(query);
-    prefix.choice(&query.choice);
+    prefix.choice(query);
     for message in &query.messages {
         prefix.role(message.role);
         for part in &message.parts {
@@ -123,7 +123,7 @@ pub(crate) fn tokens(query: &Query) -> u64 {
 pub(crate) fn read(cache: &Cache, query: &Query, now: Time) -> u64 {
     let mut prefix = Prefix::system(query);
     let mut read = cache.matches(scope(&query.caching), prefix, now);
-    prefix.choice(&query.choice);
+    prefix.choice(query);
     for (message_index, message) in query.messages.iter().enumerate() {
         prefix.role(message.role);
         for (part_index, part) in message.parts.iter().enumerate() {
@@ -146,7 +146,7 @@ pub(crate) fn write(cache: &mut Cache, query: &Query, now: Time, read: u64) -> u
     if marked(&query.caching, Mark::System) {
         written = cache.store(scope(&query.caching), prefix, now);
     }
-    prefix.choice(&query.choice);
+    prefix.choice(query);
     for (message_index, message) in query.messages.iter().enumerate() {
         prefix.role(message.role);
         for (part_index, part) in message.parts.iter().enumerate() {
@@ -245,8 +245,12 @@ impl Prefix {
             .expect("query bytes admitted before caching");
     }
 
-    fn choice(&mut self, choice: &ToolChoice) {
-        match choice {
+    fn choice(&mut self, query: &Query) {
+        match &query.caching {
+            Caching::Scope(_) | Caching::Unscoped => return,
+            Caching::Marks(_) => {}
+        }
+        match &query.choice {
             ToolChoice::Auto => self.byte(0),
             ToolChoice::None => self.byte(1),
             ToolChoice::Only(names) => {
@@ -363,6 +367,22 @@ mod tests {
         }
         assert_eq!(write(&mut cache, &query(Some([3; 16])), Time::from_nanos(4), 2), 0);
         assert_eq!(cache.entries.len(), 2);
+    }
+
+    #[test]
+    fn an_automatic_query_keeps_its_whole_prefix_across_a_choice_change() {
+        for scope in [None, Some([1; 16])] {
+            let mut cache = Cache::new(3, Duration::from_secs(300));
+            let first = query(scope);
+            assert_eq!(write(&mut cache, &first, Time::ZERO, 0), 2);
+            for choice in [ToolChoice::None, ToolChoice::Only(Box::new([b"tool".as_slice().into()]))] {
+                let mut second = first.clone();
+                second.choice = choice;
+                assert_eq!(read(&cache, &second, Time::ZERO), 2, "scope {scope:?}, choice {:?}", second.choice);
+                assert_eq!(write(&mut cache, &second, Time::ZERO, 2), 0);
+                assert_eq!(cache.entries.len(), 1);
+            }
+        }
     }
 
     #[test]
