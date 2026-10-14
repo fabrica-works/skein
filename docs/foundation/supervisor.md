@@ -42,7 +42,7 @@ context. Handle the event, then start the watch again:
 | `blocked:` and the blocks' headings | a ruling (section 3), or a design question (section 4) |
 | `answer:` | the unblock from the designer's answer (section 4) |
 | `check:` and steps, each with its session file | the ready check (section 5) |
-| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes |
+| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, or its thread is not loaded, run `plan resume` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
 | `quiet again:` | a push notification to the user, with the command `plan resume` |
 | `paused:` | read `paused.md`; nothing else waits for you until the run resumes |
 | `done:` | the end (section 8) |
@@ -64,7 +64,9 @@ carried by every later request.
    question for the designer (section 4).
 3. **Check before you answer** (development.md, section 10.4):
    - grep `main` for every symbol, file, field and signature that your
-     ruling or a new step names, and quote what you find;
+     ruling or a new step names, and quote what you find in the draft's
+     `## Checked` (development.md, section 10.3): each premise, the
+     command, and its output;
    - when the ruling changes a thing (a generator's output, a fixture, a
      type, a literal, a count), search its name, its copies by content and
      the values derived from it, in its repository and every repository
@@ -194,7 +196,10 @@ answers read code under 200K tokens, and none above 800K.
 When the watch prints `done:` (development.md, section 7.6):
 
 1. Add to each decision in `done.md` the design commit that took it in,
-   or "not in the design yet".
+   or "not in the design yet". Then run each "Done when" command of the
+   plan's README once, as written, through `heavy` where it compiles or
+   runs tests, and append each command with its output to `done.md`,
+   under `## Done when, run <UTC time>`.
 2. Mark the plan `done <date>` in each `STATUS.md` that has its row, with
    `land --docs`.
 3. Stop your watch and delete your cron job.

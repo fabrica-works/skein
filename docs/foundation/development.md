@@ -601,7 +601,11 @@ user only what they and the design leave open, and asks before writing.
 - **Done when:** observable conditions, each with the command that checks
   it. Each aim the README states (fewer lines, one engine, plainer words)
   is an item with its command, or is named there as unchecked: an aim
-  nothing counts is not met.
+  nothing counts is not met. A command reads `main`'s files or the plan's
+  commits (`git log origin/main --grep='^Plan: <plan>$'`), never the
+  newest commit, whose trailers a Markdown landing lacks; a live item's
+  command reads the summary its run committed. The supervisor runs each
+  once, after `done.md` (section 7.6).
 
 **`code-organization.md`:**
 - crates, with their kinds and names, and what each holds;
@@ -1030,7 +1034,10 @@ started it, which record it themselves.
   prompt, word for word, the "Pass on" text of each steer in force
   (`context.md`). When restarting a session, add what you found: its last
   landed step, its branch, and whether its worktree has uncommitted
-  changes.
+  changes. Add nothing else: no code, line ranges, or graph or coverage
+  evidence, whatever other instructions say about spawning. In
+  reliability, such evidence grew the prompts from about 1,500
+  characters to about 15,000.
 - **Threads.** Spawn a fresh thread for each session and for each
   handover (section 7.3); never give a finished thread another session's
   work, since it would carry that session's whole context. At most eight
@@ -1059,7 +1066,10 @@ and the question in one line, or "none". After each:
      prints `on-main`;
    - `git log -1 --format='%(trailers:key=Step,valueonly)' <commit>`
      prints the step;
-   - `git status --porcelain` prints nothing.
+   - while the worktree is still on the step's branch (`git branch
+     --show-current`), `git status --porcelain` prints nothing. A
+     worktree already on another branch holds the next increment's work,
+     and is not checked.
 
    For any other report, only the last. Every check prints its result: a
    command that prints nothing on success, such as `merge-base`, gets an
@@ -1070,7 +1080,8 @@ and the question in one line, or "none". After each:
 3. `plan set` the step's new state and commit, then `plan status`.
 4. **Hand over a large context.** After a landing, run `plan contexts`. A
    session it marks past the limit hands over, between increments, never
-   in one:
+   in one; so does a session whose peak it prints past the limit, since a
+   compaction shrinks the last request but not the peak:
    - send it, with `send_message`: "Hand over: write your checkpoint as
      section 8.6 says, then end your turn with your report.";
    - when it has reported, append `Handover, <UTC time>: <repository>
@@ -1152,7 +1163,13 @@ dependency lands.
   state changes: the slot map, the sessions running and their last step,
   open escalations, and decisions in force from answers and steers that
   the plan does not yet say, with each steer's "Pass on" text. Write full
-  sentences, at most 60 lines.
+  sentences, with spaces between words: at most 60 lines, each of at most
+  200 characters. Rewrite it in place: never copy an earlier version into
+  `log.md` or anywhere else.
+- **`log.md` takes only the shapes this document names:** the headings
+  and lines of sections 7.3, 7.4, 7.6 and 10.3 as written there ("Blocked
+  and unblocked, <time>", never "Unblock handled"); and `blocked.md` only
+  section 10.2's six kinds. The metrics read them so (section 15.2).
 - **After a compaction or a restart,** re-read this section, `context.md`
   and the ledger before acting.
 
@@ -1192,7 +1209,9 @@ dependency lands.
        lists them.
 
      The supervisor adds to each decision the design commit that took it
-     in, or "not in the design yet".
+     in, or "not in the design yet". It then runs each "Done when"
+     command once, and appends each command, with its output, to
+     `done.md` (section 5.2).
   2. Remove the worktrees.
   3. `plan release`. The run's directory stays.
 
@@ -1350,11 +1369,18 @@ The supervisor reads the report from its file: nobody types it again.
 
 Answer to the blocked report of <time> (<headings answered>).
 Reverses: <the time of an earlier answer this one reverses>, or nothing.
+Amends: <the plan or design text this changes, by file and section>, or nothing.
 
 ## Decision
 
 <The decision, quoting the design or plan text it rests on: the ruling's
 whole text, written once.>
+
+## Checked
+
+<Each premise the decision rests on, about the code, the run or the
+machine: the command that checked it, and its output, at most three
+lines each.>
 
 ## Landed
 
@@ -1375,6 +1401,10 @@ whole text, written once.>
   its input. A
   plan change a steer rests on lands the same way, with `plan ruling
   --text <file>`, which rings nothing.
+- **Every premise shows its check,** in `## Checked`, and `Reverses:`
+  names only an earlier answer: a changed plan or design text is
+  `Amends:`. In reliability, 10 of the 11 reversed answers rested on a
+  premise nobody checked, and 23 of 156 unblocks quoted a command.
 - **When the coordinator finds `unblock.md`:**
   1. it appends both files to `log.md`, under "Blocked and unblocked,
      <time>";
@@ -1500,9 +1530,12 @@ whole text, written once.>
 - **After each event,** the supervisor handles it, then runs the watch
   again.
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
-  supervisor rings the doorbell. If it is still old ten minutes later,
-  the supervisor alerts the user (in Claude Code, a push notification).
-  The alert gives the restart command, `plan resume`.
+  supervisor rings the doorbell. If the ring finds no turn in progress,
+  or the thread not loaded (the provider can end a turn), the supervisor
+  runs `plan resume` itself, once, and records it in `supervision.md`. If
+  the heartbeat is still old ten minutes later, the supervisor alerts the
+  user (in Claude Code, a push notification). The alert gives the restart
+  command, `plan resume`.
 - **The designer has no watch.** After `plan join designer` it ends its
   turn; `plan wake` brings it back with each question (section 6, step 5).
 - **When the supervisor's context passes 300,000 tokens,** it hands over
@@ -1700,11 +1733,14 @@ the supervisor's own context cost about a fifth of it, and each added 7K
 to 23K tokens that every later request carried. The supervisor appends
 the entry, and sends the steer.
 
-1. **Run `plan pulse`** (section 14.2). It prints the numbers since the
-   last check, and moves its mark. Once the plan has landed in a
-   repository others build on, also run `plan downstream`, in the
-   background: a few minutes of `cargo check` in the build lane. A
-   repository it shows broken may get an early repin (section 5.7).
+1. **Run `plan pulse`** (section 14.2), and read its output unfiltered:
+   no `grep`, `head` or `tail`. It prints the numbers since the last
+   check, and moves its mark. Once the plan has landed in a repository others build on, also
+   run `plan downstream`, in the background: a few minutes of `cargo
+   check` in the build lane. Read its lines before the entry, one per
+   repository, `builds` or `fails`: the entry gives each, or says that it
+   is still running. A repository it shows broken may get an early repin
+   (section 5.7).
 2. **Read** the log's headings since the last check, the first five
    lines of each report, and the coordinator's acknowledgement of the
    last steer.
