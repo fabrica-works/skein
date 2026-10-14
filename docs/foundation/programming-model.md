@@ -156,11 +156,13 @@ to a file.
   section 6).
 - **In a client compiled to WebAssembly, the glue crates are the only
   `unsafe` code,** since they make every platform call: `wasm-bindgen`,
-  `js-sys` and `web-sys`, pinned to exact versions, and their
-  dependencies. Such a client, as jig's in a browser (jig's
-  `protocol/browser.md`), has no kernel and no ring. Its shell's own
-  crate forbids `unsafe`, and its step code runs there unchanged
-  (lib.md, section 2).
+  `js-sys` and `web-sys`, pinned to exact versions, their dependencies,
+  and the code their macros generate. Such a client, as jig's in a
+  browser (jig's `protocol/browser.md`), has no kernel and no ring. No
+  crate of it writes `unsafe` of its own: a kit of the platform's parts
+  forbids it, and the application's own shell holds only what the glue's
+  macros generate, for its start and for bindings to its own
+  JavaScript. Its step code runs there unchanged (lib.md, section 2).
 - **No std handle types that close on drop.** `OwnedFd`, `File`,
   `TcpStream`, `TcpListener` and `std::process::Child` release kernel
   resources in their destructors, at a moment the lifecycle did not
