@@ -63,7 +63,7 @@ pub fn command(line: &[u8], numbers: Option<&[NodeId]>, tree: &Tree, longest: u3
     let Some(node) = tree.find(id) else {
         return refused(Refusal::Gone, number);
     };
-    if tree.bound(id).is_none() || node.states.as_slice().contains(&State::Disabled) {
+    if tree.bound(id).is_none() || tree.disabled(id) {
         return refused(Refusal::Gone, number);
     }
     let words = trim(line.get(split..).expect("words follow the number"));

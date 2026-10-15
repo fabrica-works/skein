@@ -1,4 +1,4 @@
-use skein_ui::{Binding, Builder, Limits, Owner, Region, Role, Run, State, Tree};
+use skein_ui::{Binding, Builder, Limits, NodeId, Owner, Region, Role, Run, State, Tree};
 
 use skein_lib::{Queue, Token};
 
@@ -172,8 +172,16 @@ fn controls(b: &mut Builder) {
     }
 }
 fn select(b: &mut Builder) {
+    label_select(b, false);
+}
+
+pub const SECOND_OPTION: NodeId = NodeId(7); // page (2), banner, main, select, one, two
+pub fn label_select(b: &mut Builder, disabled: bool) {
     b.open(Role::Select);
     b.name(b"Select");
+    if disabled {
+        b.state(State::Disabled);
+    }
     for (name, selected) in [(b"One".as_slice(), false), (b"Two", true), (b"Three", false)] {
         b.open(Role::Option);
         b.name(name);

@@ -3,6 +3,7 @@ use crate::{Command, Print, Refusal, command, refusal_line, render};
 use skein_lib::{Queue, bytes::copy_of};
 use skein_ui::Act;
 use skein_ui::{Builder, NodeId, Role, State, Tree};
+const NO_NODE: NodeId = NodeId(0); // no visible node
 fn page() -> Tree {
     fixtures::page(|b| fixtures::button(b, b"Accept", true))
 }
@@ -166,5 +167,34 @@ fn numbers_hold_across_a_print_and_renumber_at_the_next() {
         command(b"2", Some(print.numbers.as_slice()), &new, 1),
         Command::Refused { refusal: Refusal::NoNumber, number: 2 }
     );
-    assert_ne!(release, NodeId(0));
+    assert_ne!(release, NO_NODE);
+}
+
+#[test]
+fn an_option_is_chosen_by_its_number() {
+    let tree = fixtures::page(|b| fixtures::label_select(b, false));
+    let print = numbers(&tree);
+    assert_eq!(
+        command(b"2", Some(print.numbers.as_slice()), &tree, 80),
+        Command::Act { node: fixtures::SECOND_OPTION, first: Act::Press, submit: false }
+    );
+}
+#[test]
+fn an_option_of_a_disabled_select_prints_unnumbered() {
+    let tree = fixtures::page(|b| fixtures::label_select(b, true));
+    let print = numbers(&tree);
+    assert_eq!(
+        print.text.as_slice(),
+        b"== ops == \nSelect: (disabled)\n  [-] ( ) One\n  [-] (*) Two\n  [-] ( ) Three\n"
+    );
+}
+#[test]
+fn an_option_disabled_after_the_print_is_gone() {
+    let shown = fixtures::page(|b| fixtures::label_select(b, false));
+    let print = numbers(&shown);
+    let later = fixtures::page(|b| fixtures::label_select(b, true));
+    assert_eq!(
+        command(b"2", Some(print.numbers.as_slice()), &later, 80),
+        Command::Refused { refusal: Refusal::Gone, number: 2 }
+    );
 }

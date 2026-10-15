@@ -273,7 +273,7 @@ fn control(tree: &Tree, at: u32, indent: u32, print: &mut Print) {
     let n = tree.get(at).expect("control exists");
     start(&mut print.text, indent);
     if n.external.is_none() {
-        number(n, print);
+        number(tree, n, print);
     }
     if n.role == Role::Choice || n.role == Role::Option {
         raw(&mut print.text, if has(n, State::Selected) { b"(*) " } else { b"( ) " });
@@ -433,9 +433,9 @@ fn start(out: &mut List<u8>, indent: u32) {
 fn has(n: &Node, state: State) -> bool {
     n.states.as_slice().contains(&state)
 }
-fn number(n: &Node, print: &mut Print) {
+fn number(tree: &Tree, n: &Node, print: &mut Print) {
     raw(&mut print.text, b"[");
-    if (n.binding.is_some() || n.link.is_some()) && !has(n, State::Disabled) {
+    if (n.binding.is_some() || n.link.is_some()) && !tree.disabled(n.id) {
         print.numbers.push(n.id).expect("numbers fit nodes");
         raw(&mut print.text, Decimal::of(u64::from(print.numbers.len())).as_bytes());
     } else {
