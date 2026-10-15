@@ -1,4 +1,4 @@
-use super::{Glue, Inputs, bundle, sha256};
+use super::{Glue, Inputs, Refusal, bundle, sha256};
 use skein_scratch::Scratch;
 use std::collections::BTreeMap;
 use std::fs;
@@ -99,6 +99,58 @@ fn the_same_inputs_give_the_same_bundle() {
     assert_eq!(first, second);
     let files = contents(&a);
     assert_eq!(files, contents(&b));
-    assert_eq!(files.len(), 6);
+    assert_eq!(files.len(), 8);
     assert_eq!(files.get(&format!("{first}/files/about.txt")), Some(&b"About".to_vec()));
+}
+
+#[test]
+fn the_page_matches_its_golden() {
+    let scratch = Scratch::new("bundle-golden");
+    let inputs = inputs(&scratch);
+    let out = scratch.path().join("out");
+    bundle(&inputs, &glue(), &out).expect("bundle");
+    assert_eq!(fs::read(out.join("index.html")).expect("page"), include_bytes!("tests/golden/index.html"));
+}
+
+#[test]
+fn an_own_page_gets_the_directory_at_each_marker() {
+    let scratch = Scratch::new("bundle-own");
+    let mut inputs = inputs(&scratch);
+    let page = scratch.path().join("own.html");
+    fs::write(&page, b"\xff{bundle}boot.js {bundle}a.css").expect("own page bytes");
+    inputs.page = Some(page);
+    let out = scratch.path().join("out");
+    let digest = bundle(&inputs, &glue(), &out).expect("bundle");
+    let mut expected = vec![255];
+    expected.extend_from_slice(format!("/static/{digest}/boot.js /static/{digest}/a.css").as_bytes());
+    assert_eq!(fs::read(out.join("index.html")).expect("page"), expected);
+}
+
+#[test]
+fn an_own_page_without_the_marker_is_refused() {
+    let scratch = Scratch::new("bundle-marker");
+    let mut inputs = inputs(&scratch);
+    let page = scratch.path().join("own.html");
+    fs::write(&page, b"<html></html>").expect("own page");
+    inputs.page = Some(page.clone());
+    assert_eq!(bundle(&inputs, &glue(), &scratch.path().join("out")), Err(Refusal::NoMarker { page }));
+}
+
+#[test]
+fn references_go_under_the_prefix() {
+    let scratch = Scratch::new("bundle-prefix");
+    let mut inputs = inputs(&scratch);
+    inputs.prefix = "/assets/ui/".into();
+    inputs.noscript = "Use <scripts> & WebAssembly".into();
+    let out = scratch.path().join("out");
+    let digest = bundle(&inputs, &glue(), &out).expect("bundle");
+    let page = fs::read_to_string(out.join("index.html")).expect("page");
+    for reference in ["skein-ui.css", "a.css", "boot.js"] {
+        assert!(page.contains(&format!("\"/assets/ui/{digest}/{reference}\"")), "{reference}");
+    }
+    assert!(page.contains("Use &lt;scripts&gt; &amp; WebAssembly"));
+    assert_eq!(
+        fs::read(out.join(digest.to_string()).join("boot.js")).expect("starter"),
+        b"import init from \"./notes.js\";\ninit();\n"
+    );
 }

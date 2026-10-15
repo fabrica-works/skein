@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod digest;
+mod page;
 mod sha256;
 pub use digest::Digest;
 
@@ -34,6 +35,7 @@ pub struct Glue {
 /// An input that could not be bundled.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Refusal {
+    NoMarker { page: PathBuf },
     Io { path: PathBuf },
 }
 
@@ -44,6 +46,7 @@ fn io<T>(path: &Path, result: std::io::Result<T>) -> Result<T, Refusal> {
 /// Replace `out` with the complete bundle, returning its directory's digest.
 pub fn bundle(inputs: &Inputs, glue: &Glue, out: &Path) -> Result<Digest, Refusal> {
     let mut files = BTreeMap::new();
+    files.insert("boot.js".into(), page::starter(&inputs.name));
     files.insert(format!("{}.js", inputs.name), glue.js.clone());
     files.insert(format!("{}_bg.wasm", inputs.name), glue.wasm.clone());
     for (path, bytes) in &glue.snippets {
@@ -60,6 +63,7 @@ pub fn bundle(inputs: &Inputs, glue: &Glue, out: &Path) -> Result<Digest, Refusa
         collect(directory, "files", &mut files)?;
     }
     let digest = digest::of(&files);
+    let page = page::render(inputs, digest)?;
     if out.exists() {
         io(out, fs::remove_dir_all(out))?;
     }
@@ -71,6 +75,8 @@ pub fn bundle(inputs: &Inputs, glue: &Glue, out: &Path) -> Result<Digest, Refusa
         io(parent, fs::create_dir_all(parent))?;
         io(&path, fs::write(&path, bytes))?;
     }
+    let index = out.join("index.html");
+    io(&index, fs::write(&index, page))?;
     Ok(digest)
 }
 
