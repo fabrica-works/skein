@@ -25,14 +25,15 @@ impl Print {
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<(u32, u64)> {
     let text = u64::from(limits.text_bytes).checked_add(u64::from(limits.text_per_node))?;
-    let lines = u64::from(limits.nodes).checked_add(text)?.checked_add(1)?;
+    let lines = u64::from(limits.nodes).checked_mul(2)?.checked_add(text)?.checked_add(1)?;
     // Each input byte can be a newline, with every ancestor named; code adds four.
     // Three replacement bytes and two code delimiters cover each nonempty run.
     let width = u64::from(limits.depth).checked_mul(2)?.checked_add(6)?;
     let bytes = lines
         .checked_mul(width)?
         .checked_add(text.checked_mul(5)?)?
-        .checked_add(u64::from(limits.nodes).checked_mul(400)?)?
+        // Base words, longest entry kind, required, and two u32 positions.
+        .checked_add(u64::from(limits.nodes).checked_mul(400 + 19 + 11 + 27)?)?
         .checked_add(16)?;
     Some((u32::try_from(lines).ok()?, bytes))
 }
