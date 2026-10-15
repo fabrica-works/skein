@@ -1000,6 +1000,7 @@ name = "skein-ui-web"
 version = "0.0.0"
 dependencies = [
  "js-sys",
+ "skein-lib",
  "skein-ui",
  "wasm-bindgen",
  "web-sys",

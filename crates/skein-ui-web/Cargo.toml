@@ -14,6 +14,9 @@ wasm-bindgen.workspace = true
 js-sys.workspace = true
 web-sys.workspace = true
 
+[dev-dependencies]
+skein-lib.workspace = true
+
 # Browser parts are ordinary Rust (ui-web.md, 5.1).
 [lints.rust]
 unsafe_code = "forbid"
