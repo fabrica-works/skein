@@ -1,0 +1,76 @@
+== Every role == 
+Banner:
+  child
+Navigation:
+  child
+Main:
+  child
+Aside:
+  child
+Footer:
+  child
+Form:
+  child
+Search:
+  child
+Region:
+  child
+Figure:
+  child
+Dialog:
+  child
+Disclosure:
+  child
+List:
+  child
+Tree:
+  child
+Menu:
+  child
+Choices:
+  child
+Tabs:
+  child
+Log:
+  child
+## Details
+plain emphasis strong `code` link
+- first
+  continued
+  second
+- tree item
+left | right
+outside
+Term:
+  Description
+  Another line
+[1] Act
+[2] Act
+[3] Act
+[4] Act
+[-] Unavailable (disabled)
+[-] Unbound
+external <https://example.test/>
+[5] Message: hello (enter sends)
+[6] Message: (empty)
+[7] ( ) Option
+[8] (*) Option
+[9] [ ] Option
+[10] [x] Option
+* Ready
+* Loading
+! Warning
+Progress: half
+today
+    one
+    two
+> one
+> two
+--
+fragment
+Drawing:
+  fallback
+Picture
+[-] States (disabled) (expanded) (busy) (current) (invalid) (pressed) (selected)
+- Card:
+    [11] Nested
