@@ -368,11 +368,18 @@ Each is found in the semantic or accessibility APIs of two platforms
 
 - **A bound node may name a key it answers to:** a letter `a` to `z` or
   a digit `0` to `9`, with no modifier, with the platform's primary one
-  (Control; Command on macOS), or with Alt (`Shortcut { key, modifier }`);
-  or Escape.
+  (Control; Command on Apple's platforms), or with Alt (`Shortcut { key,
+  modifier }`); or Escape.
+- **The primary modifier is a fact of the platform,** which a shell reads
+  from its platform once, at start, and maps and matches shortcuts by:
+  not the look's, which is the application's and the same on every
+  platform, and not both modifiers, since each platform has one.
 - **A shell with keys** turns the key into a press of the first node in
   preorder that names it, unless that node is disabled; a shortcut with
-  no modifier never while a field or a component has the focus.
+  no modifier never while a field or a component has the focus. A key
+  presses only with its shortcut's modifier held and no other: none, the
+  primary one alone, or Alt alone. Any other set, Shift held among it,
+  or Control on Apple's platforms, is no shortcut.
 - **Escape** is named only inside a dialog (section 14). The platform's
   Escape key, or its escape or back gesture, presses the first bound,
   enabled node in the open dialog that names it, wherever the focus is

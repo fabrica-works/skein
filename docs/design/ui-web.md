@@ -307,20 +307,27 @@ the plan's.
 | Part | Takes | Gives |
 |---|---|---|
 | the inbox, `Inbox<R>` | the application's turn function, at start; reports, each wrapped into `R` | the reports, in order; it calls the turn when one waits and no turn runs, within the callback that raised it |
-| the page | a mount element, the look, the mapping (skein's table, the application's elements and components); patches and the tree | elements kept in place; acts on node ids; a drawing's box resized; the link nodes it holds |
+| the page | a mount element, the look, the mapping (skein's table, the application's elements and components), the primary modifier; patches and the tree | elements kept in place; acts on node ids; a drawing's box resized; the link nodes it holds |
 | scenes as SVG | a scene, the look's names | SVG elements: the page's default for a drawing |
 | fetch | exchanges (a path on the origin, the method, headers and body the application gives, a bound on the answer's body), abandons; the stream opened (a path, its headers, a bound on a piece) and closed; the exchanges it may hold in flight | an exchange answered (its status and its body) or failed; the stream opened, a piece, its end; one read outstanding, the next asked by the loop |
 | the small store | records by key, the application's prefix, its own bound | the records read at start; a write done or failed, synchronously |
 | the transport | a step's writes, exchanges, the stream opened or closed, and a navigation away, whole | the store's writes first, their outcome reported; then exchanges and the stream through fetch (an opening while hidden, through the hidden tab), or every exchange of the step failed when a write failed; the navigation only after the step's writes, none when one failed |
 | history | a path to show, as a new entry or in place | the path and query the page opened at; a place gone to by back or forward, as a path; the scroll kept per entry, given back after patches |
 | the timer | a deadline | one timer, reported due |
-| the platform's facts | nothing | the monotonic clock, wall time, a seed from the cryptographic generator, the person's offset and languages |
+| the platform's facts | nothing | the monotonic clock, wall time, a seed from the cryptographic generator, the person's offset and languages, the primary modifier |
 | title and closing | a title, the language; whether closing loses requests | the document's title and `lang`; `beforeunload` registered only while it would |
 | restart | the words for "the application failed"; its limit, three reloads in a minute by default; its key | the panic hook: a reload within the limit; past it, the page says so and starts nothing |
 | the hidden tab | its delay, a minute by default; the tab hidden or shown; an opening of the stream while hidden | a deadline, past which fetch closes the stream; the opening held until shown, then made through fetch |
 
 - **A report** is one platform happening, as data, in the type of the
   part that raised it (the table's "Gives"), or an effect's (section 11).
+- **The primary modifier** (ui.md, 6.1) is Meta, a browser's name for
+  Command, when `navigator.platform` names one of Apple's platforms (it
+  starts with `Mac`, `iPhone`, `iPad` or `iPod`), and Control otherwise,
+  an unreadable platform among it. The shell reads it once, at start,
+  and gives it to the page part when it makes it; the page part writes
+  shortcuts (section 6) and matches keys (section 7) by it, its pure half
+  reading no platform.
 - **The inbox is generic over the application's report type,** `R`:
   each part that reports is given, when it is made, the inbox and a
   function wrapping its report into `R`, the application's variant for
@@ -452,8 +459,9 @@ the host tests (section 14).
     column header's sort* is `aria-sort`, `ascending` or `descending`;
   - *a region name* is `data-region="<its name>"`; *style tokens* are
     classes, by their names (section 12); *a shortcut* is
-    `aria-keyshortcuts`, in ARIA's form (`Control+K`, `Meta+K` on macOS,
-    `Alt+K`, `K`, `Escape`).
+    `aria-keyshortcuts`, in ARIA's form (`Alt+K`, `K`, `Escape`), a
+    primary one by the primary modifier the page part was given (5.1):
+    `Control+K`, or `Meta+K`, never both.
 - **An image's address** is a path on the origin or an `https` URL,
   checked by skein-ui as Markdown's external links are (ui.md, 3.5);
   the `src` takes it as is. An `https` one needs its origin in the
@@ -560,7 +568,19 @@ the host tests (section 14).
   - a press in a drawing's scene: `Drawing` (section 8).
 - **Shortcuts** (ui.md, 6.1): the platform's keys turned into a press of
   the first bound, enabled node in preorder naming the key; a shortcut
-  with no modifier never while a field has the focus.
+  with no modifier never while a field has the focus. The page part's
+  platform half gives each `keydown` as the event holds it, and its pure
+  half decides:
+  - *the modifier,* from the event's `ctrlKey`, `metaKey`, `altKey` and
+    `shiftKey`, by the primary modifier (5.1): none held, none; the
+    primary one alone, the primary; Alt alone, Alt; any other set, no
+    shortcut;
+  - *the key,* the event's `key`, lowercased, when it is a letter `a` to
+    `z` or a digit; else the letter or digit its `code` names (`KeyK`,
+    `Digit5`), as when Alt on macOS composes another character, or a
+    layout gives other letters;
+  - *a key that presses a node* has its default prevented, so that the
+    browser does not act on it as well.
 - **Escape:** the platform's Escape key in an open dialog, which the
   browser gives the `<dialog>` as its cancel event, presses the first
   bound, enabled node in the dialog naming Escape; with none, it does
@@ -765,7 +785,11 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   step tests in its crate's `src/` (testing.md, section 6), and what
   needs more than one crate in `tests/ui-web`:
   - the mapping and its overrides, a golden row per role, state and
-    property (section 6);
+    property (section 6), a primary shortcut's under each primary
+    modifier;
+  - keys made shortcuts under each primary modifier (section 7): the
+    primary one pressing; the other one, Shift besides, or Control with
+    Alt pressing nothing; Alt's composed character read by its `code`;
   - patches applied to a model of the document, printed as HTML and
     compared with golden files of the example's pages: each kind of
     patch, a focus request, a check's and a select's choice put back,
