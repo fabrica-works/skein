@@ -1,6 +1,8 @@
 //! The list, addresses and capacities (examples.md, 9.5).
 mod drift;
 mod fixtures;
+mod person;
+mod text;
 use crate::{Place, State, limits, places};
 use skein_lib::{Queue, Writer};
 use skein_ui::{Role, View};

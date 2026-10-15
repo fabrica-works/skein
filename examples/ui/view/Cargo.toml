@@ -11,6 +11,8 @@ skein-lib.workspace = true
 skein-ui.workspace = true
 
 [dev-dependencies]
+skein-ui-text.workspace = true
+skein-fake-person.workspace = true
 skein-codegen = { path = "../../../testing/skein-codegen" }
 
 [lints]

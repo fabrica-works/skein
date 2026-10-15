@@ -960,8 +960,10 @@ version = "0.0.0"
 dependencies = [
  "skein-codec",
  "skein-codegen",
+ "skein-fake-person",
  "skein-lib",
  "skein-ui",
+ "skein-ui-text",
 ]
 
 [[package]]
