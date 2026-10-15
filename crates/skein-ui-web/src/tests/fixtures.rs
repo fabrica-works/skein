@@ -102,7 +102,13 @@ pub fn made(role: skein_ui::Role) -> skein_ui::Made {
     made
 }
 pub fn look() -> crate::Look<'static> {
-    crate::Look { elements: &[], names: NAMES, pictures: &[(OWNER, &[b"picture.png"])], draw: no_drawing }
+    crate::Look {
+        components: &[],
+        elements: &[],
+        names: NAMES,
+        pictures: &[(OWNER, &[b"picture.png"])],
+        draw: no_drawing,
+    }
 }
 fn no_drawing(_: skein_ui::DrawingKind, _: &[u8], _: u16, _: u16, _: &mut skein_ui::scene::Scene) -> bool {
     false

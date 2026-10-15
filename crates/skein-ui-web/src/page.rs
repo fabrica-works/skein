@@ -8,13 +8,14 @@ use skein_ui::{
     scene::{Point, Scene},
 };
 
+mod components;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
 use crate::{
     Look,
     dom::{self, Child, Element},
-    mapping::{self, Primary},
+    mapping::Primary,
     svg,
 };
 
@@ -32,6 +33,7 @@ pub enum Op {
     Href { node: NodeId, path: Box<[u8]> },
     Focus { node: NodeId },
     ScrollEnd { node: NodeId },
+    Component { node: NodeId, component: usize, made: Made },
 }
 
 struct Held {
@@ -133,6 +135,13 @@ impl<'a> Page<'a> {
                     let value = value.as_ref().map_or_else(|| Vec::new().into_boxed_slice(), |v| v.text.clone());
                     ops.push(Op::Value { node: *node, value });
                 }
+            }
+            match patch {
+                Patch::Attribute { node, .. }
+                | Patch::Text { node, .. }
+                | Patch::Value { node, .. }
+                | Patch::Move { node, .. } => self.component_op(*node, ops),
+                Patch::Insert { .. } | Patch::Remove { .. } => {}
             }
         }
         self.collection_sizes(ops);
@@ -273,7 +282,7 @@ impl<'a> Page<'a> {
                 open.pop();
             }
             let node_parent = open.last().map_or(parent, |(node, _)| *node);
-            let element = mapping::element(made, &self.look, self.prefix, self.primary);
+            let element = components::element(made, &self.look, self.prefix, self.primary);
             let held = Held {
                 made: made.clone(),
                 parent: node_parent,
@@ -292,6 +301,9 @@ impl<'a> Page<'a> {
         }
         let node = nodes[0].id;
         ops.push(Op::Insert { node, parent, before, element: self.render(node) });
+        for made in nodes {
+            self.component_op(made.id, ops);
+        }
     }
 
     fn preorder(&self, node: NodeId, out: &mut Vec<NodeId>) {
@@ -343,7 +355,7 @@ impl<'a> Page<'a> {
 
     fn remap(&mut self, node: NodeId) {
         let held = self.nodes.get_mut(&node).expect("held node");
-        held.element = mapping::element(&held.made, &self.look, self.prefix, self.primary);
+        held.element = components::element(&held.made, &self.look, self.prefix, self.primary);
         if held.made.attribute.role == Role::Menu {
             menu_element(&mut held.element, self.menu == Some(node));
         }
@@ -358,6 +370,9 @@ impl<'a> Page<'a> {
     fn draw(&mut self, node: NodeId) {
         let held = self.nodes.get_mut(&node).expect("held node");
         held.drawn = None;
+        if components::index(&held.made, &self.look).is_some() {
+            return;
+        }
         if let Some(drawing) = &held.made.attribute.drawing
             && let Some((width, height)) = held.size
         {

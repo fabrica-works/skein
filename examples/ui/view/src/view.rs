@@ -182,6 +182,7 @@ fn form(state: &State, builder: &mut Builder) {
     builder.bind(TITLE);
     builder.close();
     builder.open(Role::TextArea);
+    builder.style(Style { owner: OWNER, token: 2 });
     builder.name(&phrase(state, 11));
     builder.value(&state.body, state.title_written);
     builder.bind(BODY);

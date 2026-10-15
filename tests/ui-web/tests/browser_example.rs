@@ -236,3 +236,23 @@ fn the_charts_fallback_is_read_by_its_name() {
     ]));
     assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
 }
+
+#[test]
+fn the_body_grows_with_its_words_and_reports_them() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::text(b"Live"), within: SECOND }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"Three lines".as_slice().into(),
+        }),
+        harness::Step::Taller {
+            find: Find::exactly_named(Role::TextArea, b"Body"),
+            words: b"Milk\nBread\nButter".as_slice().into(),
+        },
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"Three lines"), within: SECOND }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Link, b"Three lines") }),
+        harness::Step::Person(Step::See { find: Find::text(b"Milk Bread Butter"), within: SECOND }),
+    ]));
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}

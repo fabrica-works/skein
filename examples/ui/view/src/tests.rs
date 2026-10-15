@@ -127,3 +127,25 @@ fn an_unknown_note_says_there_is_none() {
     state.build(&mut view, &mut Queue::with_capacity(1200));
     assert_eq!(heading(&view), b"No such note.");
 }
+
+#[test]
+fn a_notes_page_keeps_the_bodys_line_breaks() {
+    let mut state = fixtures::state();
+    let mut parts = fixtures::notes().notes().get(0).expect("fixture note").clone().into_parts();
+    parts.body = b"Milk\nBread\nButter".as_slice().into();
+    let mut notes = skein_lib::List::with_capacity(64);
+    notes.push(crate::records::Note::new(&crate::records::CEILINGS, parts).unwrap()).unwrap();
+    state.notes = crate::records::Notes::new(&crate::records::CEILINGS, crate::records::NotesParts { notes }).unwrap();
+    state.place = Place::Note { number: 7 };
+    let mut view = View::new(&limits::limits());
+    state.build(&mut view, &mut Queue::with_capacity(1200));
+    let mut paragraph = false;
+    let mut body = Box::<[u8]>::from([]);
+    for node in view.tree().nodes() {
+        if paragraph {
+            body = node.text.get(0).expect("body text").text.clone();
+        }
+        paragraph = node.role == Role::Paragraph;
+    }
+    assert_eq!(body.as_ref(), b"Milk\nBread\nButter");
+}

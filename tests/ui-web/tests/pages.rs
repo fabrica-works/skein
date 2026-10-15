@@ -4,7 +4,8 @@ use skein_ui::{Owner, Role, Style, View, look::Names};
 use skein_ui_example_view::{Duties, Place, Report, State, limits, places, records};
 use skein_ui_web::{Look, mapping::Primary, page::Page};
 const OWNER: Owner = Owner { number: 1 };
-const NAMES: &[Names<'_>] = &[Names { owner: OWNER, prefix: b"notes", styles: &[b"notes-card"], regions: &[] }];
+const NAMES: &[Names<'_>] =
+    &[Names { owner: OWNER, prefix: b"notes", styles: &[b"notes-card", b"notes-bar", b"notes-grow"], regions: &[] }];
 fn no_drawing(_: skein_ui::DrawingKind, _: &[u8], _: u16, _: u16, _: &mut skein_ui::scene::Scene) -> bool {
     false
 }
@@ -55,6 +56,7 @@ fn html(state: &State) -> String {
     let mut page = Page::new(
         Look {
             names: NAMES,
+            components: &[(OWNER, Role::TextArea, Style { owner: OWNER, token: 2 })],
             pictures: &[],
             draw: no_drawing,
             elements: &[(OWNER, Role::Region, Style { owner: OWNER, token: 0 }, "article")],

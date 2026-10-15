@@ -3,3 +3,4 @@ body { margin: 2rem; font-family: sans-serif; }
 form { display: grid; gap: .5rem; max-width: 32rem; }
 aside figure { height: 144px; max-width: 32rem; margin: 1rem 0; }
 .notes-bar { fill: currentColor; }
+.notes-grow { box-sizing: border-box; overflow: hidden; resize: none; }

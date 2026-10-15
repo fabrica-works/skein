@@ -12,6 +12,7 @@ use skein_shell::{Clock, Config, Kernel, Wait, open_root};
 use std::fmt::Write as _;
 use std::{collections::VecDeque, ffi::OsString, os::unix::ffi::OsStrExt, path::PathBuf};
 
+const POLL: Duration = Duration::from_millis(10);
 const SERVER: Token = Token::new(10);
 const PROCESS: Token = Token::new(11);
 const BROWSER: Token = Token::new(12);
@@ -33,6 +34,7 @@ pub trait Play {
     fn at(&self) -> u32 {
         0
     }
+    fn check_deadline(&mut self, _face: &mut BrowserFace<'_>, _now: Time) {}
     fn server_action(&mut self) -> Option<ServerAction> {
         None
     }
@@ -441,6 +443,7 @@ impl Runtime {
             if !self.opened[index] || done[index] {
                 continue;
             }
+            play.check_deadline(face, now);
             if let Some(why) = face.failure() {
                 self.fail(index, play.at().saturating_sub(1), why);
                 break;
@@ -598,7 +601,7 @@ impl Runtime {
                 .next_deadline()
                 .into_iter()
                 .chain(self.browser.next_deadline())
-                .fold(time.now.saturating_add(Duration::from_millis(10)), Time::min);
+                .fold(time.now.saturating_add(POLL), Time::min);
             self.kernel.submit(&mut self.submits, if pending { Wait::No } else { Wait::Until(until) });
         }
         let mut outcome = self.outcome.expect("terminal outcome");

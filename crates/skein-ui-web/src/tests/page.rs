@@ -473,7 +473,8 @@ fn a_changed_count_sets_each_items_setsize_again() {
             | Op::Choice { .. }
             | Op::Href { .. }
             | Op::Focus { .. }
-            | Op::ScrollEnd { .. } => None,
+            | Op::ScrollEnd { .. }
+            | Op::Component { .. } => None,
         })
         .collect();
     assert_eq!(sizes, [(COUNTED_FIRST, "20"), (COUNTED_SECOND, "20")]);
@@ -510,4 +511,50 @@ fn an_options_description_follows_its_select() {
         page.html(),
         r#"<div><main data-node="2"><select data-node="3"><option data-node="4" aria-describedby="skein-ui-description-4">One</option></select><span id="skein-ui-description-4">Help</span></main></div>"#
     );
+}
+
+const COMPONENT_BODY: NodeId = NodeId(3); // page, main, body
+fn component_body(builder: &mut Builder, value: &[u8], written: u64) {
+    main(builder);
+    builder.open(Role::TextArea);
+    builder.name(b"Body");
+    builder.style(skein_ui::Style { owner: OWNER, token: 0 });
+    builder.value(value, written);
+    builder.close();
+    end(builder);
+}
+fn component_page() -> Page<'static> {
+    Page::new(
+        crate::Look {
+            components: &[(OWNER, Role::TextArea, skein_ui::Style { owner: OWNER, token: 0 })],
+            ..fixtures::look()
+        },
+        &LIMITS,
+        b"/",
+        Primary::Control,
+    )
+}
+#[test]
+fn a_component_node_keeps_its_host_and_data_node() {
+    let (mut page, mut view) = (component_page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| component_body(b, b"Old", 0)), &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| component_body(b, b"New", 1)), &mut Vec::new());
+    assert_eq!(
+        page.html(),
+        r#"<div><main data-node="2"><textarea data-node="3" aria-label="Body" class="test-mark" data-component="0">New</textarea></main></div>"#
+    );
+}
+#[test]
+fn a_component_patch_receives_the_new_value() {
+    let (mut page, mut view, mut ops) = (component_page(), View::new(&LIMITS), Vec::new());
+    page.apply(&fixtures::patches(&mut view, 0, |b| component_body(b, b"Old", 0)), &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| component_body(b, b"New", 1)), &mut ops);
+    let values: Vec<_> = ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Component { node, made, .. } => Some((*node, made.value.as_ref().map(|value| value.text.as_ref()))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(values, vec![(COMPONENT_BODY, Some(b"New".as_slice()))]);
 }

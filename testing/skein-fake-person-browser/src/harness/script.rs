@@ -4,6 +4,7 @@ use crate::BrowserFace;
 use skein_fake_person::{Next, Person};
 use skein_lib::Time;
 use std::collections::VecDeque;
+mod growth;
 
 pub enum Step {
     Person(skein_fake_person::Step<Box<[u8]>>),
@@ -13,6 +14,7 @@ pub enum Step {
     Warned(bool),
     Key(skein_browser::boundary::Key),
     Focused(skein_fake_person::Find),
+    Taller { find: skein_fake_person::Find, words: Box<[u8]> },
     PressAt { find: skein_fake_person::Find, at: skein_browser::boundary::Point },
     Compose { find: skein_fake_person::Find, words: Box<[u8]> },
     Type { find: skein_fake_person::Find, words: Box<[u8]> },
@@ -26,6 +28,7 @@ pub struct Script {
     action: Option<ServerAction>,
     title: Option<Box<[u8]>>,
     focused: Option<skein_fake_person::Find>,
+    growth: Option<growth::Growth>,
     press: Option<(skein_fake_person::Find, skein_browser::boundary::Point)>,
     text: Option<(skein_fake_person::Find, Box<[u8]>, bool)>,
 }
@@ -40,8 +43,20 @@ impl Script {
             title: None,
             focused: None,
             press: None,
+            growth: None,
             text: None,
         }
+    }
+    fn grow(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Option<Next<Box<[u8]>>> {
+        if let Some(mut growth) = self.growth.take() {
+            if growth.next(face, now) {
+                self.at += 1;
+            } else {
+                self.growth = Some(growth);
+            }
+            return Some(Next::Wait { until: None });
+        }
+        None
     }
     fn press_at(&mut self, face: &mut BrowserFace<'_>) -> Option<Next<Box<[u8]>>> {
         let (find, at) = self.press.take()?;
@@ -83,6 +98,9 @@ impl Script {
 }
 impl Play for Script {
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
+        if let Some(next) = self.grow(face, now) {
+            return next;
+        }
         if let Some(next) = self.press_at(face) {
             return next;
         }
@@ -142,6 +160,7 @@ impl Play for Script {
                 face.key(key);
                 self.at += 1;
             }
+            Step::Taller { find, words } => self.growth = Some(growth::Growth::new(find, words)),
             Step::PressAt { find, at } => self.press = Some((find, at)),
             Step::Focused(find) => self.focused = Some(find),
             Step::Compose { find, words } => self.text = Some((find, words, true)),
@@ -181,6 +200,13 @@ impl Play for Script {
     }
     fn at(&self) -> u32 {
         self.at + self.person.as_ref().map_or(0, Person::at)
+    }
+    fn check_deadline(&mut self, face: &mut BrowserFace<'_>, now: Time) {
+        if let Some(why) = self.growth.as_ref().and_then(|growth| growth.expired(now)) {
+            face.fail(why);
+            self.growth = None;
+            self.at += 1;
+        }
     }
     fn server_action(&mut self) -> Option<ServerAction> {
         self.action.take()

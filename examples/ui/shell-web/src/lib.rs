@@ -16,8 +16,14 @@ use skein_ui_web::{
 };
 use std::{cell::RefCell, rc::Rc};
 
-const NAMES: &[Names<'_>] =
-    &[Names { owner: Owner { number: 1 }, prefix: b"notes", styles: &[b"notes-card", b"notes-bar"], regions: &[] }];
+mod grow;
+
+const NAMES: &[Names<'_>] = &[Names {
+    owner: Owner { number: 1 },
+    prefix: b"notes",
+    styles: &[b"notes-card", b"notes-bar", b"notes-grow"],
+    regions: &[],
+}];
 // Each part wraps its happening in the application's report type.
 enum Report {
     Start,
@@ -76,6 +82,7 @@ pub fn start() {
         Look {
             names: NAMES,
             pictures: &[],
+            components: &[(Owner { number: 1 }, Role::TextArea, Style { owner: Owner { number: 1 }, token: 2 })],
             draw: skein_ui_example_view::draw::draw,
             elements: &[(Owner { number: 1 }, Role::Region, Style { owner: Owner { number: 1 }, token: 0 }, "article")],
         },
@@ -83,7 +90,7 @@ pub fn start() {
         b"notes",
         facts.primary,
     )));
-    let dom = Dom::new(mount, &page, &inbox, Report::Act);
+    let dom = Dom::new(mount, &page, &inbox, Report::Act, &[grow::new]);
     let history = history::web::History::new(Rc::clone(&inbox), Report::Place);
     let timer = timer::web::Timer::new(Rc::clone(&inbox), || Report::Due);
     let title = title::web::Title::default();

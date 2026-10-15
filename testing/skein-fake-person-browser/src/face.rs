@@ -14,6 +14,7 @@ struct Choice {
 
 struct Search {
     title: bool,
+    boxes: bool,
     find: Find,
     depth: usize,
     role: usize,
@@ -62,6 +63,7 @@ impl<'a> BrowserFace<'a> {
         if self.search.is_none() {
             self.ask(Search {
                 title: true,
+                boxes: false,
                 find: Find::exactly_named(Role::Page, words),
                 depth: 0,
                 role: 0,
@@ -106,6 +108,26 @@ impl<'a> BrowserFace<'a> {
         self.requests.push(request);
         Ok(())
     }
+    pub(crate) fn find_boxed(&mut self, find: &Find) -> Found {
+        if let Some(answer) = self.answer.take() {
+            return answer;
+        }
+        if self.search.is_none() {
+            self.ask(Search {
+                title: false,
+                boxes: true,
+                find: find.clone(),
+                depth: 0,
+                role: 0,
+                within: None,
+                op: Token::new(0),
+            });
+        }
+        self.answer.take().unwrap_or(Found::Pending)
+    }
+    pub(crate) fn height(&self, node: NodeId) -> Option<u64> {
+        self.seen.get(usize::try_from(node.0).expect("node fits"))?.0.rect.map(|rect| rect.height)
+    }
     pub(crate) fn press_at(&mut self, node: NodeId, at: skein_browser::boundary::Point) -> Result<(), String> {
         let seen = &self.seen.get(usize::try_from(node.0).expect("node fits")).ok_or("unknown drawing")?.0;
         let node = seen.node;
@@ -148,7 +170,13 @@ impl<'a> BrowserFace<'a> {
         self.requests.push(Request::Find {
             page: self.page,
             op: search.op,
-            query: Query { role: Box::from(*role), name: name.into(), matching, within: search.within, boxes: false },
+            query: Query {
+                role: Box::from(*role),
+                name: name.into(),
+                matching,
+                within: search.within,
+                boxes: search.boxes,
+            },
         });
         self.search = Some(search);
     }
@@ -352,7 +380,15 @@ impl Face for BrowserFace<'_> {
             return answer;
         }
         if self.search.is_none() {
-            self.ask(Search { title: false, find: find.clone(), depth: 0, role: 0, within: None, op: Token::new(0) });
+            self.ask(Search {
+                title: false,
+                boxes: false,
+                find: find.clone(),
+                depth: 0,
+                role: 0,
+                within: None,
+                op: Token::new(0),
+            });
         }
         self.answer.take().unwrap_or(Found::Pending)
     }

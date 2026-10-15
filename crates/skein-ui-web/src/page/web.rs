@@ -15,6 +15,9 @@ use crate::{
     inbox::Inbox,
 };
 
+mod components;
+pub use components::{Component, Constructor};
+
 type Listener = (String, Closure<dyn FnMut(web_sys::Event)>);
 
 /// Owns the mount's listeners and resize observer until the page ends.
@@ -30,12 +33,19 @@ impl Dom {
         page: &Rc<RefCell<Page<'static>>>,
         inbox: &Rc<Inbox<R>>,
         wrap: fn(NodeId, Act) -> R,
+        components: &'static [Constructor],
     ) -> Self {
         let document = Rc::new(Mounted {
             document: mount.owner_document().expect("mount has its document"),
             mount,
             nodes: RefCell::new(BTreeMap::new()),
             observer: RefCell::new(None),
+            constructors: components,
+            components: RefCell::new(BTreeMap::new()),
+            report: {
+                let inbox = Rc::clone(inbox);
+                Rc::new(move |node, act| inbox.raise(wrap(node, act)))
+            },
         });
         let (target, model) = (Rc::clone(&document), Rc::clone(page));
         let resize = Closure::new(move |entries: js_sys::Array, _: ResizeObserver| {
@@ -58,6 +68,11 @@ impl Dom {
                 let Some(element) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
                     return;
                 };
+                if element.closest("[data-component]").expect("component selector").is_some()
+                    && event.type_() != "keydown"
+                {
+                    return;
+                }
                 let node = if event.type_() == "click" {
                     let link = element.closest("a[data-node]").expect("link selector");
                     link.as_ref().and_then(|link| target.id(link)).or_else(|| target.nearest(&element))
@@ -109,6 +124,7 @@ impl Dom {
 
 impl Drop for Dom {
     fn drop(&mut self) {
+        self.document.remove_components();
         if let Some(observer) = self.document.observer.borrow_mut().take() {
             observer.disconnect();
         }
@@ -131,6 +147,9 @@ struct Mounted {
     mount: Element,
     nodes: RefCell<BTreeMap<NodeId, Group>>,
     observer: RefCell<Option<ResizeObserver>>,
+    constructors: &'static [Constructor],
+    components: RefCell<BTreeMap<NodeId, components::Instance>>,
+    report: Rc<dyn Fn(NodeId, Act)>,
 }
 
 impl Mounted {
@@ -245,7 +264,11 @@ impl Mounted {
                 Op::Move { node, parent, before } => self.move_group(*node, *parent, *before),
                 Op::Replace { node, element } => self.refresh(*node, element, true),
                 Op::Attributes { node, element } | Op::Text { node, element } => self.refresh(*node, element, false),
+                Op::Component { node, component, made } => self.component(*node, *component, made),
                 Op::Value { node, value: bytes } => {
+                    if self.components.borrow().contains_key(node) {
+                        continue;
+                    }
                     let element = self.group(*node).element;
                     let text = String::from_utf8_lossy(bytes);
                     if let Some(input) = element.dyn_ref::<HtmlInputElement>() {
@@ -366,6 +389,7 @@ impl Mounted {
             if let Some(observer) = self.observer.borrow().as_ref() {
                 observer.unobserve(&element);
             }
+            self.remove_component(id);
             self.nodes.borrow_mut().remove(&id);
         }
         for root in group.roots {
@@ -404,6 +428,9 @@ impl Mounted {
     fn refresh(&self, node: NodeId, model: &Model, replace: bool) {
         let mut group = self.group(node);
         let own = super::semantic(model);
+        if own.attribute("data-component").is_none() {
+            self.remove_component(node);
+        }
         if replace {
             let replacement: Element = self.make(own, false)[0].clone().unchecked_into();
             let children = self.semantic_children(&group.element);
@@ -437,7 +464,7 @@ impl Mounted {
             self.nodes.borrow_mut().insert(node, group.clone());
         } else {
             attributes(&group.element, own, group.element.is_same_node(Some(&self.mount)));
-            if group.element.tag_name() != "TEXTAREA" {
+            if group.element.tag_name() != "TEXTAREA" && own.attribute("data-component").is_none() {
                 self.content(&group.element, own);
             }
         }
@@ -634,7 +661,9 @@ fn restore_selection(element: &Element, start: u32, end: u32, direction: &str) {
 fn read(event: &web_sys::Event, element: &Element, node: Option<NodeId>, document: &Mounted) -> Vec<Event> {
     let mut out = Vec::new();
     if let Some(key) = event.dyn_ref::<KeyboardEvent>() {
-        let in_field = ["INPUT", "TEXTAREA", "SELECT"].contains(&element.tag_name().as_str())
+        let in_component = element.closest("[data-component]").expect("component selector").is_some();
+        let in_field = in_component
+            || ["INPUT", "TEXTAREA", "SELECT"].contains(&element.tag_name().as_str())
             || element.dyn_ref::<HtmlElement>().is_some_and(HtmlElement::is_content_editable);
         out.push(Event::Key {
             key: key.key().into_bytes().into_boxed_slice(),
@@ -645,6 +674,9 @@ fn read(event: &web_sys::Event, element: &Element, node: Option<NodeId>, documen
             shift: key.shift_key(),
             in_field,
         });
+        if in_component {
+            return out;
+        }
         if key.key() == "Enter"
             && let Some(node) = node
         {

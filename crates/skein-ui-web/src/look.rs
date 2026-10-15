@@ -8,5 +8,7 @@ pub struct Look<'a> {
     /// Each owner's picture files, indexed by the picture's number.
     pub pictures: &'a [(Owner, &'a [&'a [u8]])],
     pub draw: Draw,
+    /// Native hosts delegated to constructors in the same order on the web.
+    pub components: &'a [(Owner, skein_ui::Role, skein_ui::Style)],
     pub elements: &'a [(Owner, skein_ui::Role, skein_ui::Style, &'static str)],
 }

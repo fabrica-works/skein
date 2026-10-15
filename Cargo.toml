@@ -210,3 +210,12 @@ partial_pub_fields = "deny"           # a struct is plain data or opaque, not bo
 mod_module_files = "deny"
 tests_outside_test_module = "deny"
 iter_over_hash_type = "deny"
+
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+strip = true
