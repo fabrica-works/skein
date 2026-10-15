@@ -30,6 +30,7 @@ pub struct World {
     pub disabled: bool,
     pub covered: bool,
     pub hidden: bool,
+    pub hit_points: Vec<(i64, i64)>,
     fault: Option<(Vec<u8>, Fault)>,
     delayed: VecDeque<Vec<u8>>,
     outstanding: BTreeMap<u64, Time>,
@@ -59,6 +60,7 @@ impl World {
             disabled: false,
             covered: false,
             hidden: false,
+            hit_points: Vec::new(),
             fault: None,
             delayed: VecDeque::new(),
             outstanding: BTreeMap::new(),
@@ -139,6 +141,12 @@ impl World {
                         self.outstanding.insert(id, self.env.now.saturating_add(self.env.limits.answer));
                         let method = root.get(b"method").and_then(|method| method.text()).expect("method");
                         let session = root.get(b"sessionId").and_then(|session| session.text());
+                        if method.as_ref() == b"DOM.getNodeForLocation" {
+                            let params = root.get(b"params").expect("hit test params");
+                            let x = params.get(b"x").and_then(|value| value.i64()).expect("hit x");
+                            let y = params.get(b"y").and_then(|value| value.i64()).expect("hit y");
+                            self.hit_points.push((x, y));
+                        }
                         let result = self.reply(&method, root.get(b"params"));
                         let session_field = session
                             .as_deref()

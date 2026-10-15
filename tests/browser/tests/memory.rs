@@ -39,7 +39,7 @@ fn reports_faults_and_terminals_fit_the_declared_bound() {
     world.fault(b"Accessibility.getFullAXTree", Fault::Interleave);
     world.ask(Request::Snapshot { page: Token::new(3), op: Token::new(5) });
     world.disabled = true;
-    world.ask(Request::Press { page: Token::new(3), op: Token::new(6), node: 7 });
+    world.ask(Request::Press { page: Token::new(3), op: Token::new(6), node: 7, at: None });
     let measured = meter.end();
     assert!(measured.peak() <= bound, "whole world peak {} exceeds browser bound {bound}", measured.peak());
     drop(world);

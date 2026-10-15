@@ -1,10 +1,48 @@
-use skein_browser::boundary::{Below, Down, Event, Expect, Match, Query, Refusal, Request, Trouble};
+use skein_browser::boundary::{Below, Down, Event, Expect, Match, Point, Query, Refusal, Request, Trouble};
 use skein_browser::wire::decode::Document;
 use skein_browser::{down, fire, up};
 use skein_lib::stream;
 use skein_lib::{Time, Token};
 
 use crate::world::{Fault, World};
+
+#[test]
+fn a_point_outside_the_box_is_hidden() {
+    let mut world = World::new();
+    world.start();
+    world.open();
+    for point in [Point { x: 100, y: 0 }, Point { x: 0, y: 30 }, Point { x: u32::MAX, y: u32::MAX }] {
+        world.ask(Request::Press { page: Token::new(3), op: Token::new(4), node: 7, at: Some(point) });
+        match world.above.pop() {
+            Some(Event::Refused { op, why }) => {
+                assert_eq!(op, Token::new(4));
+                assert_eq!(why, Refusal::Hidden);
+            }
+            event => panic!("expected Hidden for {point:?}, got {event:?}"),
+        }
+    }
+    assert!(world.hit_points.is_empty());
+    assert!(!world.sent.iter().any(|command| {
+        command.windows(b"Input.dispatchMouseEvent".len()).any(|part| part == b"Input.dispatchMouseEvent")
+    }));
+}
+
+#[test]
+fn a_press_at_a_point_hits_there() {
+    let mut world = World::new();
+    world.start();
+    world.open();
+    for (at, expected) in
+        [(None, (60, 25)), (Some(Point { x: 0, y: 0 }), (10, 10)), (Some(Point { x: 99, y: 29 }), (109, 39))]
+    {
+        world.ask(Request::Press { page: Token::new(3), op: Token::new(4), node: 7, at });
+        match world.above.pop() {
+            Some(Event::Done { op }) => assert_eq!(op, Token::new(4)),
+            event => panic!("expected Done for {at:?}, got {event:?}"),
+        }
+        assert_eq!(world.hit_points.last(), Some(&expected), "point {at:?}");
+    }
+}
 
 #[test]
 fn a_find_by_words_asks_without_a_name() {
@@ -78,7 +116,7 @@ fn lifecycle_find_and_press() {
         }
         other => panic!("expected Found, got {other:?}"),
     }
-    world.ask(Request::Press { page: Token::new(3), op: Token::new(5), node: 7 });
+    world.ask(Request::Press { page: Token::new(3), op: Token::new(5), node: 7, at: None });
     assert!(matches!(world.above.pop(), Some(Event::Done { op }) if op == Token::new(5)));
     let mouse = world
         .sent
@@ -227,7 +265,7 @@ fn press_refuses_disabled_hidden_and_covered_without_mouse() {
         world.disabled = disabled;
         world.hidden = hidden;
         world.covered = covered;
-        world.ask(Request::Press { page: Token::new(3), op: Token::new(10), node: 7 });
+        world.ask(Request::Press { page: Token::new(3), op: Token::new(10), node: 7, at: None });
         assert!(
             matches!(world.above.pop(), Some(Event::Refused { op, why: observed }) if op == Token::new(10) && observed == why)
         );
@@ -281,7 +319,7 @@ fn node_disappearing_during_press_is_refused_before_mouse() {
     world.start();
     world.open();
     world.fault(b"DOM.getContentQuads", Fault::Error);
-    world.ask(Request::Press { page: Token::new(3), op: Token::new(12), node: 7 });
+    world.ask(Request::Press { page: Token::new(3), op: Token::new(12), node: 7, at: None });
     assert!(matches!(world.above.pop(), Some(Event::Refused { op, why: Refusal::Gone }) if op == Token::new(12)));
     assert!(!world.sent.iter().any(|command| {
         command.windows(b"Input.dispatchMouseEvent".len()).any(|part| part == b"Input.dispatchMouseEvent")

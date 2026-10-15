@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use skein_lib::stream::{self, Delimiter, Read};
 use skein_lib::{Env, List, Queue, Time, Token};
 
-use crate::boundary::{Below, Down, Event, Expect, Go, Key, Match, Query, Rect, Refusal, Seen, States, Trouble};
+use crate::boundary::{Below, Down, Event, Expect, Go, Key, Match, Point, Query, Rect, Refusal, Seen, States, Trouble};
 use crate::limits::Limits;
 use crate::params::Params;
 use crate::wire::decode::{Document, Value};
@@ -79,7 +79,7 @@ struct Operation {
 enum OpKind {
     Go(Go),
     Find { query: Query, expect: Option<(Expect, Time)>, seen: List<Seen>, more: u32, next: u32 },
-    Press { node: u64, at: Option<(i64, i64)>, hit: Option<u64> },
+    Press { node: u64, point: Option<Point>, at: Option<(i64, i64)>, hit: Option<u64> },
     Type { text: Box<[u8]>, compose: bool },
     Key(Key),
     Snapshot,
@@ -531,8 +531,8 @@ impl Browser {
                 }
                 self.start_find(env, op);
             }
-            Request::Press { page, op, node } => {
-                if !self.admit_op(env, page, op, OpKind::Press { node, at: None, hit: None }) {
+            Request::Press { page, op, node, at } => {
+                if !self.admit_op(env, page, op, OpKind::Press { node, point: at, at: None, hit: None }) {
                     return;
                 }
                 self.issue_step(env, op, b"DOM.scrollIntoViewIfNeeded", &Params::Backend(node), Step::Scroll);
@@ -1582,12 +1582,14 @@ impl Browser {
                     self.finish_refused(token, Refusal::Hidden);
                     return;
                 };
-                if rect.width == 0 || rect.height == 0 {
+                let point = match self.op(token) {
+                    Some(Operation { kind: OpKind::Press { point, .. }, .. }) => *point,
+                    Some(_) | None => None,
+                };
+                let Some((x, y)) = crate::find::position(rect, point) else {
                     self.finish_refused(token, Refusal::Hidden);
                     return;
-                }
-                let x = rect.x.saturating_add(i64::try_from(rect.width / 2).unwrap_or(i64::MAX));
-                let y = rect.y.saturating_add(i64::try_from(rect.height / 2).unwrap_or(i64::MAX));
+                };
                 if let Some(op) = self.op_mut(token)
                     && let OpKind::Press { at, .. } = &mut op.kind
                 {

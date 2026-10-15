@@ -32,7 +32,7 @@ pub enum Request {
     Go { page: Token, op: Token, to: Go },
     Find { page: Token, op: Token, query: Query },
     Await { page: Token, op: Token, query: Query, expect: Expect, within: Duration },
-    Press { page: Token, op: Token, node: Node },
+    Press { page: Token, op: Token, node: Node, at: Option<Point> },
     Type { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Key { page: Token, op: Token, key: Key },
@@ -94,6 +94,13 @@ pub struct Query {
 pub enum Match {
     Exact,
     Words,
+}
+
+/// Whole CSS pixels from the node's box's top left.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Point {
+    pub x: u32,
+    pub y: u32,
 }
 
 /// What an expectation asks of the query's result.

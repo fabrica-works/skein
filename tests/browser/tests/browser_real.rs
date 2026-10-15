@@ -462,7 +462,7 @@ impl Rig {
                     }
                     Scenario::Button | Scenario::Covered | Scenario::Scroll | Scenario::Throw => {
                         self.stage = Stage::Pressing;
-                        self.ask(Request::Press { page: PAGE, op: PRESS, node });
+                        self.ask(Request::Press { page: PAGE, op: PRESS, node, at: None });
                     }
                 }
             }

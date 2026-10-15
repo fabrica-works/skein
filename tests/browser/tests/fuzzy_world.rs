@@ -64,7 +64,7 @@ fn varied_pages_and_faults_hold_the_contract() {
                 world.hidden = !world.disabled && next(&mut seed) & 1 != 0;
                 world.covered = !world.disabled && !world.hidden && next(&mut seed) & 1 != 0;
                 referee.press(op);
-                world.ask(Request::Press { page: Token::new(3), op, node: 7 });
+                world.ask(Request::Press { page: Token::new(3), op, node: 7, at: None });
                 let events = observe(&mut world, &mut referee);
                 assert!(
                     matches!(events.as_slice(), [Event::Done { .. } | Event::Refused { .. }]),
