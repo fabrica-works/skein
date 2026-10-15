@@ -52,6 +52,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-ui-bundle = { path = "crates/skein-ui-bundle" }
 skein-lib = { path = "crates/skein-lib" }
 skein-channel = { path = "crates/skein-channel" }
 skein-io = { path = "crates/skein-io" }
@@ -107,6 +108,9 @@ overflow-checks = true
 # half-closed connection that reads a corrupted record (tls.md, 6). Cargo
 # reads profiles only from the root manifest: a workspace that depends on
 # skein-tls copies this into its own.
+[profile.dev.package.skein-ui-bundle]
+opt-level = 3
+
 [profile.dev.package.rustls]
 debug-assertions = false
 
