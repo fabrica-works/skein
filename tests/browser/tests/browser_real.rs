@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use skein_browser::boundary::{Below, Down, Event, Expect, Key, Match, Query, Refusal, Request, Trouble};
+use skein_browser::boundary::{Below, Down, Event, Expect, Key, Match, Point, Query, Refusal, Request, Trouble};
 use skein_browser::{self as browser, Browser};
 use skein_io::kernel::{self, Complete, Done, Op, Pipe, Spawn, Submit, Way};
 use skein_io::{self as io, Io};
@@ -132,6 +132,8 @@ enum Scenario {
     Scroll,
     Throw,
     Csp,
+    Words,
+    Figure,
 }
 
 impl Scenario {
@@ -143,6 +145,8 @@ impl Scenario {
             Scenario::Scroll => "/scroll",
             Scenario::Throw => "/throw",
             Scenario::Csp => "/csp",
+            Scenario::Words => "/words",
+            Scenario::Figure => "/figure",
         }
     }
 }
@@ -437,6 +441,14 @@ impl Rig {
                     Scenario::Csp => {
                         self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"heading", b"CSP page") })
                     }
+                    Scenario::Words => {
+                        let mut words = query(b"StaticText", b"3 failing");
+                        words.matching = Match::Words;
+                        self.ask(Request::Find { page: PAGE, op: FIND, query: words });
+                    }
+                    Scenario::Figure => {
+                        self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"figure", b"Error rate") });
+                    }
                 }
             }
             Event::Found { op, seen, more } => {
@@ -460,6 +472,14 @@ impl Rig {
                             within: Duration::from_millis(500),
                         });
                     }
+                    Scenario::Words => {
+                        assert_eq!(seen.get(0).expect("sentence").name.as_ref(), b"Checks: 3 failing, 2 passed");
+                        self.close_browser();
+                    }
+                    Scenario::Figure => {
+                        self.stage = Stage::Pressing;
+                        self.ask(Request::Press { page: PAGE, op: PRESS, node, at: Some(Point { x: 30, y: 25 }) });
+                    }
                     Scenario::Button | Scenario::Covered | Scenario::Scroll | Scenario::Throw => {
                         self.stage = Stage::Pressing;
                         self.ask(Request::Press { page: PAGE, op: PRESS, node, at: None });
@@ -480,7 +500,8 @@ impl Rig {
                         Scenario::Form => b"Hello Ada".as_slice(),
                         Scenario::Scroll => b"Scrolled".as_slice(),
                         Scenario::Throw => b"Before".as_slice(),
-                        Scenario::Covered | Scenario::Csp => {
+                        Scenario::Figure => b"Pressed shape".as_slice(),
+                        Scenario::Covered | Scenario::Csp | Scenario::Words => {
                             panic!("no action should complete for {:?}", self.scenario)
                         }
                     };
@@ -629,4 +650,18 @@ fn chromium_reports_a_script_exception() {
     let chromium = chromium();
     let profile = Profile::fresh();
     Rig::new(&chromium, &profile.0, Scenario::Throw).run();
+}
+
+#[test]
+fn chromium_finds_a_sentence_by_a_few_of_its_words() {
+    let chromium = chromium();
+    let profile = Profile::fresh();
+    Rig::new(&chromium, &profile.0, Scenario::Words).run();
+}
+
+#[test]
+fn chromium_presses_an_svg_shape_through_its_figure_at_a_point() {
+    let chromium = chromium();
+    let profile = Profile::fresh();
+    Rig::new(&chromium, &profile.0, Scenario::Figure).run();
 }
