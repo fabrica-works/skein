@@ -1,11 +1,11 @@
 # The implementer's card
 
-Provisional, 2026-10-14. What an implementing agent reads of the
-development process: development.md's section 8, in a file of its own,
-so that an implementer reads this card and not the whole process. Its
-sections keep their numbers, 8.1 to 8.8, so that "development.md,
-section 8.5" still names them. The sections of development.md it names
-are read only when a case needs them.
+Provisional, 2026-10-14, revised 2026-10-15. What an implementing agent
+reads of the development process: development.md's section 8, in a file
+of its own, so that an implementer reads this card and not the whole
+process. Its sections keep their numbers, 8.1 to 8.8, so that
+"development.md, section 8.5" still names them. The sections of
+development.md it names are read only when a case needs them.
 
 ## 8. Implementing
 
@@ -60,7 +60,9 @@ it.
 - **The design is the contract.** Never edit `docs/design/`, the plan or
   the run's files other than your checkpoint, your reports and your logs
   directory. Where the code seems to need a different design, stop
-  (section 8.7).
+  (section 8.7). One exception: a vocabulary addition's step writes the
+  design rows its session file quotes, word for word, and no other
+  (development.md, section 4.6).
 - **Implementation choices are yours:** names, module placement, values
   within the presets' ranges. Report them; do not ask.
 - **Work only in your worktree.** Never touch a primary checkout or another
@@ -216,6 +218,15 @@ The last paragraph is the trailers, and nothing else: no blank line
 inside it, and no key with a space. `land` adds the trailers `Gate-Tree`
 and `Gate-Result`. A commit that landed without its body is never
 rewritten; the body goes in the report.
+
+**Before `land`, check that git reads your trailers:** `git log -1
+--format='%(trailers:key=Step,valueonly)'` prints your step. If it prints
+nothing, write the message to a file, `git commit --amend -F <file>`, and
+check again. `git commit -m` keeps a `\n` as two characters, so trailers
+typed so are one line: in client-composition, git read no `Plan:` or
+`Step:` in jig-06.1's commit, as in one commit of each of the two runs
+before, so `plan status` disagrees for good and the metrics leave the
+step out.
 
 ### 8.5 Landing
 

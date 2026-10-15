@@ -1,6 +1,6 @@
 # Development process
 
-Provisional, 2026-10-09, revised 2026-10-14. How work goes from an idea
+Provisional, 2026-10-09, revised 2026-10-15. How work goes from an idea
 to `main` in skein and in every project built on it (smith, temper, jig):
 who designs, who plans, who builds, who supervises, where each of them
 writes, and how they talk to each other. Read it before starting a design,
@@ -112,8 +112,10 @@ the implementers.
   foundation documents and the code, and turns an idea into a draft or
   into contract text.
 - **Is the only role that edits `docs/design/`,** in any repository,
-  including `draft/` and `STATUS.md`. One exception: the supervisor
-  changes a plan's state in `STATUS.md` (section 3.3).
+  including `draft/` and `STATUS.md`. Two exceptions: the supervisor
+  changes a plan's state in `STATUS.md` (section 3.3), and an implementer
+  lands a vocabulary addition's rows, as the designer gave them, with
+  their code (section 4.6).
 - **Answers a run's design questions** (section 10.4). They reach it from
   the supervisor, in the run's `question.md`. It amends the design, and
   the session files that mention the point, with Markdown-only landings.
@@ -505,7 +507,13 @@ sub-agents write and review in parallel.
 
 A design lands as a Markdown-only branch, with `land --docs` (section
 9.4), and with `STATUS.md` updated in the same landing. Its commit body
-says what changed and why.
+says what changed and why. Its trailers name each Claude Code session that
+wrote it, the designer's, its successors' and its sub-agents', one
+`Designer-Session: <session id>` line each, as a plan's landing names its
+planner (section 5.4), so that a plan's whole cost, its design included,
+can be counted. `plan metrics` does not read them yet: that waits for the
+kit, after smith's parity run. In client-composition, $28.13 of design and
+orchestration went uncounted.
 
 ### 4.5 Writing for the executor
 
@@ -553,6 +561,35 @@ everything those agents read: plans, prompts, unblocks and steers.
 - **Read every time from the clock.** A time written into a run's files,
   a heading, a ledger note or a `Reverses:` line, is read from `date -u`
   when it is written, never estimated.
+
+### 4.6 Vocabulary additions
+
+skein's `ui.md`, section 4.3, "The light path": an addition to skein-ui's
+vocabulary that maps one to one onto an HTML or ARIA semantic lands as
+one small skein change, without a design round. The variant, its rows in
+`ui.md`, `ui-text.md` and `ui-web.md`, the fake person's name and their
+golden rows land in one commit, with `land` and skein's gate. No draft,
+no review, and no `STATUS.md` change: the design and its code land
+together.
+
+- **The designer decides that an addition takes the light path,** in a
+  run or outside one: it is a design gap like any other (section 10.4).
+  Its answer names the variant, what it maps to on the web and on the
+  criterion's second platform (`ui.md`, 4.1), and the text of each row.
+  An addition that does not map one to one is a change to the design
+  (section 4.1).
+- **During a run,** the need goes to the designer as any design
+  question (section 10.4), from an implementer's block or a ready check.
+  The designer lands nothing: `answer.md` gives the rows. The supervisor
+  adds a step `skein-<NN>.s<k>`, whose short session file quotes them,
+  and the step that uses the variant waits for its landing (section
+  9.5).
+- **Outside a run,** the designer decides it for the design or the plan
+  that needs it (the planner asks, section 2.2), and the plan makes it an
+  increment in skein, before those that use it, whose session file quotes
+  the rows.
+- **Its implementer writes the rows word for word,** and no other design
+  text (section 2.1; implementer.md, 8.2).
 
 ## 5. Planning
 
@@ -1066,13 +1103,18 @@ started it, which record it themselves.
   memory or disk is short (section 11.4). The sessions that can start at
   the claim start at once: the planner checked their files at the plan's
   base (section 5.4).
-- **The ready check.** Any other session, when its start dependencies
-  have landed, waits for the supervisor to check its file against `main`:
-  `plan set <its first step> state=check`, and go on with everything
-  else. When the supervisor has checked it, it runs `plan ready <step>`,
-  which sets the step `ready` and rings: "ready: <step>". Start it then.
-  Repins (section 5.7), restarts, handovers and steps added by an unblock
-  or a steer start without a check.
+- **The ready check.** Any other session waits for the supervisor to
+  check its file against `main`. As soon as the increments it needs at its
+  start have landed, or all but one, which is running, `plan set <its
+  first step> state=check`, and go on with everything else: the
+  supervisor checks it while that increment runs, and once it lands
+  re-checks only what `main` moved since. When the supervisor has checked
+  it, it runs `plan ready <step>`, which sets the step `ready` and rings:
+  "ready: <step>". Start it then. Repins (section 5.7), restarts,
+  handovers and steps added by an unblock or a steer start without a
+  check. In client-composition, checks started only after the landing
+  held sessions 103 minutes in all, about 70 of them on the chain that
+  set the run's length.
 - **When there are fewer slots than sessions,** start first the sessions
   others wait on, in the README's order. Never hold a slot idle to keep
   the order.
@@ -1192,8 +1234,9 @@ dependency lands.
 
 **A step's state** in the ledger is one of:
 - `waiting`: something it needs has not landed;
-- `check`: what it needs has landed, and its session file waits for the
-  supervisor's ready check;
+- `check`: what it needs has landed, or all of it but one running
+  increment, and its session file waits for the supervisor's ready check
+  (section 7.2);
 - `ready`: it can start;
 - `running`: its session is on it, with the slot and the branch;
 - `blocked`: on an escalation, named in the note;
@@ -1610,6 +1653,12 @@ lines each.>
   and past `PLAN_SUPERVISOR_LIMIT` (300,000 tokens) the word to hand over.
 - **After each event,** the supervisor handles it, then runs the watch
   again.
+- **A ready check never holds the watch.** Its sub-agent runs in the
+  background, and the watch runs again at once. The sub-agent's end, and
+  the landing the check waits for, wake the supervisor beside the watch
+  (supervisor.md, section 5). In client-composition, checks ran with the
+  watch off, one after another: jig 06's, in `check` from 14:15, was
+  shown at 14:22, after jig 10's.
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
   supervisor rings the doorbell. If the ring finds no turn in progress,
   or the thread not loaded (the provider can end a turn), the supervisor
@@ -1625,7 +1674,8 @@ lines each.>
   2. it appends a `## Handover, <time>` entry to `supervision.md`, of at
      most 30 lines: what is open, the steers it follows up, the rulings in
      force that the plan does not yet say, the next check's focus;
-  3. it stops its watch and deletes its cron job;
+  3. it stops its watch, and each ready check's sub-agent and wait, and
+     deletes its cron job;
   4. it runs `plan handover supervisor`, which starts the successor and
      records it in `claude.tsv`;
   5. it ends its turn. A watch it left running exits with "handed over:",
@@ -1635,7 +1685,8 @@ lines each.>
   left it to the user ran nine more hours past 500K tokens, and its
   answers read less code as it grew (half under 200K, none above 800K).
   The successor reads its card, the handover entry and the open escalation
-  files: the watch does not show again what it has shown.
+  files, and starts again each ready check left open: the watch does not
+  show again what it has shown.
 
 ### 10.6 Stopping the line
 

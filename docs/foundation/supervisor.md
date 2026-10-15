@@ -1,9 +1,10 @@
 # The supervisor's card
 
-Provisional, 2026-10-14. What a run's supervisor does, step by step: all
-it reads of the process at its start. development.md's sections 2.5, 10
-and 14 are the policy behind it. The sections of development.md this card
-names are read when a case needs them, never the whole document.
+Provisional, 2026-10-14, revised 2026-10-15. What a run's supervisor
+does, step by step: all it reads of the process at its start.
+development.md's sections 2.5, 10 and 14 are the policy behind it. The
+sections of development.md this card names are read when a case needs
+them, never the whole document.
 
 ## 1. Starting, or taking over
 
@@ -126,34 +127,66 @@ a rule that would serve every plan, a proposal for the retrospective
 
 The coordinator holds each session that did not start at the claim, at its
 first step, in the state `check`, until you have checked its session file
-against `main` (development.md, section 7.2). Most plan defects are a
-session file written before the code it names: in jig-protocol, about 55
-of 69.
+against `main` (development.md, section 7.2). It sets `check` as soon as
+the last increment the session needs at its start is running, so that
+your check is done while that increment runs, off the run's chain. Most
+plan defects are a session file written before the code it names: in
+jig-protocol, about 55 of 69. In client-composition, all three plan
+defects came from increments no check had read.
 
-1. **Start a read-only sub-agent,** a fresh one, never a fork, with this
-   prompt, its blanks filled:
+1. **Start a read-only sub-agent in the background,** a fresh one, never
+   a fork, with this prompt, its blanks filled. Then run the watch again
+   at once: the sub-agent's notification wakes you when it ends.
 
    ```
    Check <session file> against origin/main of <the plan's repositories>,
-   for the increments whose Needs have landed. For each: grep every name
-   its Files, Shape and Test shape give (crates, files, types, fields,
-   functions, fixtures by file:line); for each thing it changes, search
-   its name, its copies by content and the values derived from it, in its
-   repository and each repository downstream, for users its Files miss;
-   compile each Rust sketch that names landed code, under clippy, in a
-   scratch worktree, through heavy. Read nothing else, and change no file
-   outside the scratch worktree. Report at most 30 lines: each mismatch,
-   with its file:line and the correction. Stop at about 15 minutes, and
-   report what you checked.
+   every increment of it, and note each repository's origin/main commit
+   when you start. For each increment: grep every name its Files, Shape
+   and Test shape give (crates, files, types, fields, functions, fixtures
+   by file:line); a name that an increment not landed yet adds is no
+   mismatch: name that increment. For each thing it changes, search its
+   name, its copies by content and the values derived from it, in its
+   repository and each repository downstream, for users its Files miss.
+   In a scratch worktree, through heavy: compile each Rust sketch that
+   names landed code, under clippy; apply each correction you make to
+   code (a sketch, a fixture, a world's setup), and run each suite it
+   reaches, under each profile the repository's gate runs, fuzzy
+   included. Read nothing else, and change no file outside the scratch
+   worktree. Report at most 30 lines: the commits you checked, each
+   mismatch with its file:line and the correction, and each suite run
+   with its result. Stop at about 25 minutes, and report what you checked
+   and what you did not.
    ```
 
 2. **Correct what it reports** in your worktree, and land the corrections
    with `plan ruling --text <file> "<session>'s Shapes against main"
    "ready check of <step>"`.
-3. **Let it start:** `plan ready <step> "<ruling N, or no change>"`. It sets
+3. **Re-check what moved since.** When the increment the session waited
+   for has not landed yet, wait for it with a second background command
+   beside the watch:
+
+   ```
+   until awk -F'\t' '$1 == "<that step>" && $4 == "landed" { f = 1 } END { exit !f }' <run>/ledger.tsv; do sleep 60; done
+   ```
+
+   Once it has landed, list what `main` moved since the check: `git diff
+   --stat <the commit checked> origin/main`, after a fetch, in each
+   repository the session names. Grep the session file's names in the
+   files it lists, and correct what moved as in step 2. A moved file that
+   a sketch or a suite of the check reads goes to a fresh sub-agent with
+   step 1's prompt, for those alone. In client-composition, re-checking
+   08.1 after 08.2 had landed took 43 seconds (ruling 119).
+4. **Let it start:** `plan ready <step> "<ruling N, or no change>"`. It sets
    the step `ready` and rings the coordinator, who starts it.
 
-With nothing to correct, `plan ready <step>` at once.
+With nothing to correct, and nothing moved since the check, `plan ready
+<step>` at once.
+
+**A check left open** by a handover or a restart is started again by the
+session that goes on, from the handover entry and the ledger's steps in
+`check` (`awk -F'\t' '$4 == "check"' <run>/ledger.tsv`): its background
+commands ended with the session before it, and the watch does not show a
+step twice.
 
 ## 6. The hourly check
 
@@ -184,8 +217,9 @@ When the watch prints that your context is past 300,000 tokens
    lines: what is open (blocks, questions, steps to check), the steers
    whose points you still follow up, the rulings in force that the plan
    does not yet say, and the next check's focus.
-3. Stop your watch (in Claude Code, stop its background task) and delete
-   your cron job.
+3. Stop your watch, and each ready check's sub-agent and wait (section 5;
+   in Claude Code, stop their background tasks), and delete your cron
+   job.
 4. Run `plan handover supervisor`. It starts your successor and records it.
 5. End your turn, and do nothing more. If anything wakes you, `plan watch`
    prints `handed over:`: end your turn again.
