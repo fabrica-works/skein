@@ -77,8 +77,8 @@ carried by every later request.
      ("refresh any further copy, and list it in the commit body"), not
      with a prohibition.
 4. **Edit the plan** where the ruling changes it (a session file's Files
-   or Shape, a new step's short file, a README rule), in your worktree:
-   `plan docs` prints its path.
+   or Shape, a new step's short file, a README rule, a `later.md` row for
+   work it defers), in your worktree: `plan docs` prints its path.
 5. **Write the unblock once,** to `<run>/unblock.draft.md`, in development.md
    section 10.3's shape, with its `## Landed` section empty. Its Decision
    is the ruling's whole text. Write `{ruling}` where it names its own

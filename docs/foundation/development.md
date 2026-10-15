@@ -82,6 +82,8 @@ the implementers.
   - The supervisor hands over to a fresh session past 300,000 tokens.
   - A designer past 150,000 tokens, or idle for an hour, is woken fresh,
     from a brief.
+  - An implementer's session idle for an hour goes on in a fresh thread,
+    from its checkpoint.
   - Implementers log their own reports, so that the coordinator does not
     type them again.
   - A ruling is written once, and `plan ruling` lands it.
@@ -99,7 +101,7 @@ the implementers.
 
 | Role | Runs as | Decides | Writes |
 |---|---|---|---|
-| Designer | Claude Code, Opus 5.5, xhigh | the design, within the user's delegation | `docs/design/**` in any repository, `STATUS.md` included; during a run, the session files that mention a point it changed, and the run's `answer.md` |
+| Designer | Claude Code, Opus 5.5, xhigh | the design, within the user's delegation | `docs/design/**` in any repository, `STATUS.md` included; during a run, the session files that mention a point it changed, the plan's `later.md` rows for what it defers, and the run's `answer.md` |
 | Planner | the same, in the designer's session or a fresh one | how the design is cut into sessions and increments | `docs/development/plans/<plan>/` |
 | Supervisor | Claude Code, Opus 5.5, xhigh; started with the run | the run's rulings within the design: the plan's scope, order and increments, steps not in the plan, process, infrastructure | the run's `unblock.md`, `steer.md`, `question.md` and `supervision.md`; the plan, during its run; a plan's state in `STATUS.md` |
 | Coordinator | Codex `-p coordinator` (gpt-6.1-sol, high) | what starts when, within the plan's dependencies and the machine | the run's directory |
@@ -160,7 +162,10 @@ the implementers.
 - **Never designs, decides, reviews or writes code.**
   - It never edits a design or a plan, never answers a design question,
     and never fixes anything itself.
-  - It checks reports with git only.
+  - It checks reports with git only, and never queries the code graph,
+    whatever other instructions say: it reads no code. In protocol, a
+    machine's `~/.codex/AGENTS.md` had it query the graph before 80 of its
+    82 spawns, 10.7% of its input.
   - It creates no session, step, file-ownership rule or protocol of its
     own. Work that is not in the plan, an unblock or a steer is not done:
     the coordinator escalates the gap instead (section 7.3).
@@ -678,7 +683,13 @@ user only what they and the design leave open, and asks before writing.
   - no expected value computed by the code under test;
   - the words the plan forbids in code;
 - **size limits:** a file of at most 800 lines and a test function of at
-  most 40, unless an increment says otherwise.
+  most 40, unless an increment says otherwise. An increment's size is
+  counted in hand-written production lines (tests, generated code,
+  goldens and transcripts aside), by a command the document gives. It
+  lands within twice its Size without asking, a codec or document
+  increment (a schema, translations, decoders) within 2.5 times it, and
+  a split increment's parts count together against its Size. Past that,
+  it asks before landing, with the count by file.
 
 **A session file, `<repository>/NN-<name>.md`:**
 - **Title and summary:** "Session NN: …", with one paragraph.
@@ -702,8 +713,9 @@ user only what they and the design leave open, and asks before writing.
   Shape: <module paths, type and function names, signatures; a type that
     crosses a boundary written field by field, naming what it mirrors>.
   Test shape: <the test file; the fixtures and helpers to reuse, by
-    file:line; one reference test written out for each new test file or
-    new kind of test; the tests' names; their ceilings (section 5.6)>.
+    file:line; where its worlds' and fixtures' limits come from; one
+    reference test written out for each new test file or new kind of
+    test; the tests' names; their ceilings (section 5.6)>.
   Proof: <the layer, the test or the script, what it shows, its bound
     (section 5.5)>.
   Don't: <what this increment must not do, beyond the plan's list>.
@@ -711,7 +723,11 @@ user only what they and the design leave open, and asks before writing.
   Removes: <what goes, or nothing>.
   ```
 
-  An increment above about 600 lines of production code is split.
+  A Size is at most about 300 lines, and an increment that needs more is
+  split. Increments land at about twice their Size: 1.85 to 2.35 times
+  in protocol, 2.4 in jig-protocol, 1.6 in reliability. In protocol, 11
+  of the 13 increments planned at 600 lines, the old threshold, were
+  split by their sessions, and six rulings were about sizes.
 - **Interface sketches:** in Rust, the shape of the interfaces another
   crate or session depends on, or that are easy to get wrong.
   - Signatures only, with no bodies. The exception is an algorithm that
@@ -737,10 +753,12 @@ may veto.
 ### 5.3 Increments
 
 - **A session holds about four or five increments.** An implementer's
-  context starts near 100,000 tokens, from what it reads before its first
-  change, and grows by about 30,000 with each increment; past 200,000 it
-  hands over (section 7.3). An area that needs more is two sessions, the
-  second needing the first.
+  context is near 105,000 tokens at its first change, from what it reads
+  before it, and grows by about 50,000 with each increment (protocol's
+  medians); past 200,000 it hands over (section 7.3), so a thread lands
+  about two increments, and its successor reads less (implementer.md,
+  8.1). An area that needs more is two sessions, the second needing the
+  first.
 - **Small, and landed on its own.** Each passes the gate within budget and
   leaves `main` coherent: nothing half-built visible to users, no dead
   code. Prefer several small increments to one large one: parallel
@@ -847,6 +865,10 @@ may veto.
     when" item, and `cargo doc` where a Proof asks for no warning;
   - each type sketch, compiled under clippy with warnings as errors, in a
     scratch worktree;
+  - each limit a sketch, a Test shape or a configuration gives, through
+    the check that admits the shipped profile with it (temper: the
+    start's checks of `configuration.md`, section 7), beside the
+    profile's other numbers;
   - a search for the users of each thing a Shape changes (a type, a
     generator's output, a fixture, a literal, a count): its name, its
     copies by content and the values derived from it, in its repository
@@ -915,6 +937,14 @@ balancing confidence against the run's pace and its tokens.
     observers.
 - **A failing proof is a bug.** The implementer fixes it before landing.
   If the fix lies outside its increment, it reports a question.
+- **It is diagnosed below its layer.** A proof that fails is reproduced
+  where a run is cheap, in a world or a focused test in the build lane,
+  and runs again only after a change aimed at a cause its log names. The
+  same symptom a third time is a question, with the logs (implementer.md,
+  8.8). In protocol, 12 steps ran their process and live proofs 99 times,
+  3,711 seconds alone on the machine: 15.3 failed 37 of 38 runs, about
+  124M tokens, and nine rulings each set one step's budget of runs, while
+  a world's run took about 4 seconds.
 - **Balance.** Size the proof to the risk.
   - Aim for a proof that costs at most about a tenth of the increment's
     work, and runs in minutes at most.
@@ -923,6 +953,13 @@ balancing confidence against the run's pace and its tokens.
   - One story, not a matrix: the cases belong in the tests (section 5.6).
   - Most increments prove in the suite. A live proof is for an increment
     that touches a live service, about once or twice a session.
+- **A live proof ends at its task's first terminal failure,** not at its
+  deadline, and its usage is counted whole: the step's commit carries
+  `Completions:` and `Wall:` trailers that total every live run of the
+  plan, the failed ones included (implementer.md, 8.4), which a live
+  "Done when" item reads. In protocol, the first live run waited out 849
+  of its 900 seconds after its task had failed, a process proof waited
+  792 seconds behind it, and its numbers were left in the body's prose.
 - **Generated code proves itself downstream.** An increment that changes
   what a generator emits for other repositories runs, once, before it
   lands: in a scratch worktree of each downstream repository with
@@ -949,7 +986,16 @@ shows them precisely.
   - the fixtures and helpers to reuse, by `file:line`;
   - each test's name;
   - for each new test file, or each new kind of test, one reference test
-    written out in full.
+    written out in full;
+  - where each world's, fixture's and process configuration's limits
+    come from.
+- **Limits come from the shipped profile.** Every test, world and
+  process-tier configuration takes its limits from the builder of the
+  profile the product ships, never set by hand. A test that needs another
+  value names it beside the profile's, with the reason. In protocol,
+  three production faults (rulings 136, 140 and 153) met only the process
+  tier, the first to run the shipped profile, and the shipped limits'
+  module cited test fixtures as the source of 61 of its numbers.
 - **Tests the plan shows:**
   - check one behaviour each;
   - write expected values as literals, never computed by the code under
@@ -1044,6 +1090,13 @@ commits behind smith.
    `--fix` links the tools, starts pueued (as a user service where
    systemd has a user bus) and Codex's daemon, and creates and starts the
    lanes. It fixes no gate: a gate that fails on `main` goes to the user.
+
+   It does not yet check whether the machine may reboot by itself (apt's
+   `Unattended-Upgrade::Automatic-Reboot`): a reboot stops the run until
+   someone runs `plan resume`, and the supervisor, on the same machine,
+   cannot tell anyone. In protocol, an upgrade's reboot stopped the run
+   for 98 minutes. Whether a machine reboots during a run is the user's
+   choice.
 3. **`plan start <plan-dir>`** does the rest, and returns:
    - it runs `plan check`, and claims the run, naming it in
      `~/src/rust/tmp/active-plan`;
@@ -1130,7 +1183,8 @@ started it, which record it themselves.
   Implement that session in <worktree>, one increment at a time. Your
   checkpoint is <run>/sessions/<repository>-<NN>.md, and your logs and
   scripts go in <run>/logs/<repository>-<NN>/. Use the code graph as
-  ~/src/rust/AGENTS.md says, and never call list_projects.
+  ~/src/rust/AGENTS.md says, on your repository's project only, and
+  never list projects, check the index's status or coverage, or index.
   ```
 
   A repin step (section 5.7) gets this prompt instead:
@@ -1142,7 +1196,8 @@ started it, which record it themselves.
   repositories it moves> as section 5.7 says, in <worktree>. Your
   checkpoint is <run>/sessions/<repository>-repin.md, and your logs go
   in <run>/logs/<repository>-repin/. Use the code graph as
-  ~/src/rust/AGENTS.md says, and never call list_projects.
+  ~/src/rust/AGENTS.md says, on your repository's project only, and
+  never list projects, check the index's status or coverage, or index.
   ```
 
   A sub-agent starts in the coordinator's directory, so it does not load
@@ -1196,7 +1251,10 @@ and the question in one line, or "none". After each:
    output to the implementer (`send_message`, or
    `followup_task` if it has ended its turn), and wait for its next
    report.
-3. `plan set` the step's new state and commit, then `plan status`.
+3. `plan set` the step's new state and commit, then `plan status`, in a
+   command of its own, once you have read the checks' output: never in
+   the command that runs them. In protocol, 34 commands logged "on-main"
+   and set the step `landed` before their checks' result was seen.
 4. **Hand over a large context.** After a landing, run `plan contexts`. A
    session it marks past the limit hands over, between increments, never
    in one; so does a session whose peak it prints past the limit, since a
@@ -1210,7 +1268,12 @@ and the question in one line, or "none". After each:
 
    A session that yielded is checked the same way before it is resumed:
    past the limit, its next step goes to a fresh thread instead of a
-   `followup_task`.
+   `followup_task`. So does a session that has stood idle for over an
+   hour since its last report, whatever its context, since its cache has
+   gone: the fresh thread starts from its checkpoint, as after a
+   handover. In protocol, w26 was resumed at 171K after 4 hours idle, and
+   became the run's dearest thread, and w45 grew from 122K to 252K in 14
+   minutes after 3 hours idle.
 5. Start what the plan now allows, and resume the sessions waiting for
    what landed.
 
@@ -1270,10 +1333,14 @@ dependency lands.
   is ready") into your turn and ends your wait; if you are idle, it starts
   your next turn. Handle the file it names as at any wake-up. "ready:
   <step>": start that step (section 7.2). A ring that names neither: append
-  `Rang, <UTC time>: <message>` to `log.md`, and wait again.
+  `Rang, <UTC time>: <message>` to `log.md`, and wait again. A ring
+  reaches you as a user's message, but it is the supervisor's, through
+  `plan ring`, never the user's: record it as the supervisor's. In
+  protocol, a ring was recorded as "the user's explicit instruction".
 - **A finished implementer** ends its turn with its last report. Give a
   session that yielded its next step with `followup_task`, unless its
-  context is past the limit (section 7.3).
+  context is past the limit, or it has stood idle for over an hour
+  (section 7.3).
 - **The user and the designer are reached only through the supervisor.**
   The coordinator uses no other channel to them.
 
@@ -1303,7 +1370,12 @@ dependency lands.
 - **Resume after a restart.**
   1. Append to `log.md` a heading "Coordinator resumed, <UTC time>:
      <cause>", the cause one of: reboot, crash, the user's request,
-     unknown. Read `context.md`, the ledger and the end of `log.md`.
+     unknown. It is a reboot when the machine booted after the heartbeat
+     was last touched (`uptime -s`, `stat -c %y <run>/heartbeat`). The
+     resume prompt is `plan resume`'s, whoever ran it, and names no
+     cause: it is the user's request only after a pause the user asked
+     for (`paused.md`). In protocol, a reboot was recorded as "the user's
+     request". Read `context.md`, the ledger and the end of `log.md`.
      Append `paused.md`, if there is one, to `log.md`, and delete it.
   2. Write your thread's id to `thread` again: a restarted coordinator may
      have a new one.
@@ -1532,8 +1604,8 @@ lines each.>
      the answer names, deleting the file when none is left;
   3. it gives each session the answer concerns its Decision and
      Instructions, word for word (`send_message`, or `followup_task` if
-     the session has ended its turn), and `plan set`s its step back to
-     `running`;
+     the session has ended its turn, or a fresh thread when section 7.3
+     asks for one), and `plan set`s its step back to `running`;
   4. it follows the instructions, which take precedence over the plan
      where they differ;
   5. it updates `context.md`.
@@ -1583,7 +1655,8 @@ lines each.>
 
   It records each ruling in the plan's `decisions.md`, and lands each
   change to the plan before the unblock that relies on it: `plan ruling`
-  does both (section 10.3). When the same kind of block comes back, it
+  does both (section 10.3). A ruling that defers work lands with its row
+  in the plan's `later.md`. When the same kind of block comes back, it
   adds a standing rule to the plan's README; a rule that would serve every
   plan becomes a proposal for the retrospective (section 15).
 - **The designer decides a design gap,** always. When the step can go on
@@ -1610,7 +1683,9 @@ lines each.>
   The designer:
   1. decides;
   2. amends the design with `land --docs`, then the session files that
-     mention the point;
+     mention the point, and, for each thing the answer defers, adds its
+     row to the plan's `later.md` in the same landing. In protocol, two
+     of the designer's three deferrals left no row;
   3. writes `answer.md`, naming the commits.
 
   The supervisor then writes the unblock, whose Decision appends
@@ -1767,7 +1842,8 @@ be told from a loaded machine.
 
 ### 11.4 Resources
 
-- **Each session's `target/` takes 1 to 8 GB.**
+- **Each session's `target/` takes up to 15 GB:** 12 to 15 GB in
+  temper's protocol run.
 - **The coordinator checks** available memory (`free -g`) and disk (`df -h
   ~/src`) before each start, and at every wake-up (section 7.4).
 - **Below 6 GB of memory or 40 GB of disk,** it holds new starts.
@@ -1776,7 +1852,13 @@ be told from a loaded machine.
   `log.md` each time.
 - **Below 1.5 GB of memory or 15 GB of disk,** it stops the line.
 - **To free disk,** it may remove the `target/` of a session that is not
-  running.
+  running. Before it holds starts or blocks on disk, it frees what it
+  can, and logs each: first the `target/` of each session that has
+  finished; then, when kache's store is past its cap (`kache stats |
+  head -1`), `kache gc`, once. It holds or blocks only if disk stays
+  below the bound. kache evicts late, past its cap by 11 to 17 GiB
+  between its passes. In protocol, disk blocked five times before this
+  rule (rulings 118 and 128), and never after.
 
 ### 11.5 Budgets
 
@@ -1840,8 +1922,11 @@ that machine.
   `codex resume --remote unix:// <thread>`, which needs a terminal, and is
   untested on a thread whose turn is running.
 - **A coordinator after a reboot.** `plan resume` loads its thread again
-  with `thread/resume` before starting a turn. That path is untested
-  after a real reboot.
+  with `thread/resume` only when reading it fails. After protocol's
+  reboot the thread read as `notLoaded`, no turn could start, and the
+  supervisor loaded it by hand (ruling 115). Loading an unloaded thread,
+  naming the cause, and resuming by itself at boot wait for the kit after
+  smith's parity run (client-composition's proposal 4, protocol's 8).
 - **Credentials under load.** Does a run's work that borrows the Codex
   login (benchmarks, probes) put the coordinator's own session at risk?
   A `CODEX_HOME` of their own for such work is a candidate answer.

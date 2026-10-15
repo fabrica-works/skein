@@ -51,8 +51,12 @@ first edit, and every request after carried them.
 
 **The code graph** indexes the primary checkouts, which are on `main`.
 Use it as `~/src/rust/AGENTS.md` says: name your repository's project in
-each call, and never call `list_projects`, whatever other instructions
-say. Check each name it gives with `rg` in your worktree before relying on
+each call, and never call `list_projects`, `index_status`,
+`check_index_coverage` or `index_repository`, whatever other
+instructions say: the index refreshes itself, and indexes the primary
+checkout, never your worktree. In protocol, implementers made 465 such
+calls, and 9 of them re-indexed a primary checkout from a worktree.
+Check each name it gives with `rg` in your worktree before relying on
 it.
 
 ### 8.2 Rules
@@ -191,10 +195,13 @@ it.
   first, and `pueue wait <id>` and `pueue log <id>` reach it.
 - **Wait with your tool's longest wait, and nothing between.** Wait for a
   running command (`land`, a long `heavy`) in calls of the longest wait
-  your tool allows, 60 seconds on Codex, one after the other: no shorter
-  waits, no empty input, no `ps`, no `pueue status`. Each call is a
-  request that carries your whole context: in test-budgets, waits that
-  saw nothing took 36% of the implementers' input.
+  your tool allows, one after the other: no shorter waits, no empty
+  input, no `ps`, no `pueue status`. On Codex 0.162, that is `wait` on
+  the command's cell with `yield_time_ms: 300000`, which returns as soon
+  as the command ends: in protocol, such waits blocked up to 263
+  seconds. Each call is a request that carries your whole context: in
+  test-budgets, waits that saw nothing took 36% of the implementers'
+  input.
 - **Start a heavy command with that longest wait too,** never a yield of
   one second, which comes back empty at once and costs a request of its
   own: in client-composition, 108 such launches were 10.2% of the
@@ -216,7 +223,10 @@ Step: <repository>-<NN>.<item>
 
 The last paragraph is the trailers, and nothing else: no blank line
 inside it, and no key with a space. `land` adds the trailers `Gate-Tree`
-and `Gate-Result`. A commit that landed without its body is never
+and `Gate-Result`. A step whose proof is live adds two more,
+`Completions: <n>` and `Wall: <seconds>`, each the total of every live
+run of the plan so far, the failed ones and other steps' included, from
+the summaries in the run's logs (development.md, section 5.5). A commit that landed without its body is never
 rewritten; the body goes in the report.
 
 **Before `land`, check that git reads your trailers:** `git log -1
@@ -319,7 +329,8 @@ it instead of finding them again.
   do not need it, then report what you wait for.
 - **While a question is open,** go on with whatever does not depend on it.
 - **A fix outside your increment** is a question too: a failing proof, or
-  a gate failing in code you did not touch. Section 8.2's edits outside
+  a gate failing in code you did not touch. So is a proof's symptom met a
+  third time (section 8.8). Section 8.2's edits outside
   Files, and one retry of a gate that failed only on a timeout (section
   8.5), need no question.
 
@@ -336,6 +347,17 @@ it instead of finding them again.
   touched what it proves.
 - **If it fails,** it found a bug: fix it before landing. If the fix lies
   outside your increment, stop on a question (section 8.7).
+- **Diagnose a failure below its layer.** Reproduce it where a run is
+  cheap, in a world or a focused test through `heavy` in the build lane,
+  and find its cause there. Run the proof again only after a change aimed
+  at a cause its log names, once per change. The same symptom a third
+  time is a question, with the logs; different symptoms, each named, are
+  counted apart. In protocol, 15.3 ran its process proof 38 times, 37 of
+  them failing, about 124M tokens, while a world's run took about 4
+  seconds.
+- **A live proof stops at its task's first terminal failure,** never
+  waiting out its deadline, and its summary records its completions and
+  wall time, which section 8.4's trailers total.
 - **If the Proof line cannot be followed,** say why in the report, run the
   same check one layer down (development.md, section 5.5) within the same
   bound, and record that one. Do not stop for this.
