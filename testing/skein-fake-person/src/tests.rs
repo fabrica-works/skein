@@ -462,3 +462,41 @@ fn the_random_person_never_acts_on_a_landmark() {
     }
     assert!(acted > 0);
 }
+
+#[test]
+fn typing_into_a_button_fails_as_unexpected() {
+    let view = page_with_control(Role::Button, b"Save");
+    let find = Find::named(Role::Button, b"Save");
+    let mut person = Person::<u8>::new(Box::new([Step::Type { find: find.clone(), words: Box::from(*b"text") }]));
+    assert_eq!(
+        person.next(&mut TreeFace::new(view.tree()), Time::ZERO),
+        Next::Failed { step: 0, why: Why::Unexpected { find } }
+    );
+}
+
+#[test]
+fn pressing_an_option_of_a_disabled_select_fails() {
+    let view = random::page_with_option(true);
+    let find = Find::named(Role::Option, b"Daily");
+    let mut person = Person::<u8>::new(Box::new([Step::Press { find: find.clone() }]));
+    assert_eq!(
+        person.next(&mut TreeFace::new(view.tree()), Time::ZERO),
+        Next::Failed { step: 0, why: Why::Unexpected { find } }
+    );
+}
+
+#[test]
+fn a_drawing_takes_only_its_drawing_act() {
+    let view = random::page_with_bound_drawing_and_button();
+    let face = TreeFace::new(view.tree());
+    let rows = [
+        (Act::Press, false),
+        (Act::Toggle, false),
+        (Act::Input { value: Box::from(*b"text") }, false),
+        (Act::Submit, false),
+        (Act::Drawing { data: Box::from(*b"data") }, true),
+    ];
+    for (act, expected) in rows {
+        assert_eq!(face.allows(random::DRAWING, &act), expected, "{act:?}");
+    }
+}

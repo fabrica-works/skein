@@ -2,7 +2,7 @@
 //! The preorder subtree sizes scope queries (skein's ui.md, section 17.1).
 use crate::{Face, Find, Found, Target};
 use alloc::vec::Vec;
-use skein_ui::Act;
+use skein_ui::{Act, takes};
 use skein_ui::{Node, NodeId, Role, State, Tree};
 
 /// An immediate face over the last tree shown to the person.
@@ -106,15 +106,9 @@ impl Face for TreeFace<'_> {
         let Some(node) = self.tree.find(id) else {
             return false;
         };
-        if self.tree.bound(id).is_none() || node.states.as_slice().contains(&State::Disabled) || passive(node.role) {
-            return false;
-        }
-        match act {
-            Act::Press | Act::Toggle => true,
-            Act::Drawing { .. } => node.role == Role::Drawing,
-            Act::Input { .. } => node.role == Role::TextField || node.role == Role::TextArea,
-            Act::Submit => node.states.as_slice().contains(&State::SubmitsOnEnter),
-        }
+        self.tree.bound(id).is_some()
+            && !self.tree.disabled(id)
+            && takes(node.role, node.states.as_slice().contains(&State::SubmitsOnEnter), act)
     }
 }
 
@@ -172,23 +166,4 @@ pub(crate) fn role_name(role: Role) -> &'static str {
         Role::Slot => "slot",
         Role::Drawing => "drawing",
     }
-}
-
-pub(crate) fn passive(role: Role) -> bool {
-    [
-        Role::Banner,
-        Role::Navigation,
-        Role::Main,
-        Role::Complementary,
-        Role::ContentInfo,
-        Role::Form,
-        Role::Search,
-        Role::Menu,
-        Role::Select,
-        Role::ColumnHeader,
-        Role::RowHeader,
-        Role::Disclosure,
-        Role::Image,
-    ]
-    .contains(&role)
 }

@@ -240,8 +240,9 @@ fn each_role_has_its_own_name() {
     assert_eq!(failures, []);
 }
 
+pub(super) const DRAWING: NodeId = NodeId(2); // page, drawing
 const DRAWING_BUTTON: NodeId = NodeId(3); // page, drawing, button
-fn page_with_bound_drawing_and_button() -> View {
+pub(super) fn page_with_bound_drawing_and_button() -> View {
     build(|b| {
         b.open(Role::Page);
         b.drawing(DrawingKind { owner: Owner { number: 1 }, kind: 1 }, b"Chart", b"data", 32);
@@ -269,7 +270,7 @@ fn the_random_person_never_acts_on_a_drawing() {
 }
 
 const OPTION: NodeId = NodeId(3); // page, select, option
-fn page_with_option(disabled: bool) -> View {
+pub(super) fn page_with_option(disabled: bool) -> View {
     build(|b| {
         b.open(Role::Page);
         b.open(Role::Select);

@@ -76,9 +76,12 @@ impl RandomPerson {
 }
 
 fn available(tree: &Tree, node: &Node) -> bool {
-    !crate::tree::passive(node.role)
-        && node.role != Role::Drawing
+    let submits = node.states.as_slice().contains(&State::SubmitsOnEnter);
+    node.role != Role::Drawing
         && node.id != NodeId(0)
         && tree.bound(node.id).is_some()
         && !tree.disabled(node.id)
+        && [Act::Toggle, Act::Press, Act::Input { value: Box::new([]) }, Act::Submit]
+            .iter()
+            .any(|act| takes(node.role, submits, act))
 }

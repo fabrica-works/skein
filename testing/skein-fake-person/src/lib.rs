@@ -205,8 +205,9 @@ impl<A: Clone> Person<A> {
                 Found::Node(node) => {
                     let act = match step {
                         Step::Press { .. } => {
-                            let role = face.role(node);
-                            if role == Some(Role::Check) || role == Some(Role::Choice) {
+                            if face.role(node).is_some_and(|role| {
+                                skein_ui::takes(role, false, &Act::Toggle) && !skein_ui::takes(role, false, &Act::Press)
+                            }) {
                                 Act::Toggle
                             } else {
                                 Act::Press
