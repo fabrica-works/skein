@@ -7,6 +7,10 @@ cd "$(dirname "$0")/.."
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
+# The portable libraries and the browser-only halves on their shipping target.
+cargo check --target wasm32-unknown-unknown -p skein-lib -p skein-codec -p skein-http
+cargo clippy --target wasm32-unknown-unknown -p skein-ui -p skein-ui-web \
+    -p skein-ui-example-view -p skein-ui-example-shell-web -- -D warnings
 scripts/taste.sh crates/skein-tls tests/tls
 # The TLS machine on its own: the workspace's build unifies rustls's std,
 # which tests/tls turns on, and would hide a use of it.
@@ -15,6 +19,13 @@ cargo check -p skein-tls
 export NEXTEST_DOUBLE_SPAWN=0
 cargo nextest run --workspace
 cargo nextest run --workspace --profile fuzzy
-# The browser harness starts the example's binary.
+# The browser tier uses a dev-profile module under the server's strict policy.
+cargo build --target wasm32-unknown-unknown -p skein-ui-example-shell-web
+cargo run -p skein-ui-bundle -- \
+    --module target/wasm32-unknown-unknown/debug/skein_ui_example_shell_web.wasm \
+    --name skein_ui_example_shell_web --prefix /bundle/ --out target/ui-example-bundle \
+    --noscript 'Notes needs WebAssembly and scripts.'
 cargo build -p skein-ui-example-server
+SKEIN_UI_EXAMPLE_BUNDLE="$(pwd)/target/ui-example-bundle"
+export SKEIN_UI_EXAMPLE_BUNDLE
 cargo nextest run --workspace --profile browser

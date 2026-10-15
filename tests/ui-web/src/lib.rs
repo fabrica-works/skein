@@ -68,3 +68,24 @@ pub fn fixture_harness(bundle: &std::path::Path) -> skein_fake_person_browser::H
         expected: vec![],
     })
 }
+
+/// The same bound the first story gives each visible expectation.
+pub const SECOND: skein_lib::Duration = skein_lib::Duration::from_secs(1);
+
+/// The bundle made by the repository gate from its dev-profile module.
+#[must_use]
+pub fn example_bundle() -> std::path::PathBuf {
+    let directory = std::env::var_os("SKEIN_UI_EXAMPLE_BUNDLE")
+        .map(std::path::PathBuf::from)
+        .expect("run scripts/check.sh to build the example bundle and set SKEIN_UI_EXAMPLE_BUNDLE");
+    assert!(
+        directory.join("index.html").is_file(),
+        "run scripts/check.sh to provide the example bundle at {}",
+        directory.display()
+    );
+    directory
+}
+#[must_use]
+pub fn example_harness() -> skein_fake_person_browser::Harness {
+    fixture_harness(&example_bundle())
+}

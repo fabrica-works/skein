@@ -6,7 +6,7 @@ use crate::{Glue, Refusal};
 /// Generate web-target ES-module glue with the pinned glue library.
 pub fn glue(module: &Path, name: &str) -> Result<Glue, Refusal> {
     let mut bindgen = Bindgen::new();
-    bindgen.input_path(module).out_name(name);
+    bindgen.input_path(module).out_name(name).omit_default_module_path(false);
     bindgen.web(true).map_err(|_| Refusal::Glue)?;
     let mut output = bindgen.generate_output().map_err(|_| Refusal::Glue)?;
     let mut snippets = Vec::new();

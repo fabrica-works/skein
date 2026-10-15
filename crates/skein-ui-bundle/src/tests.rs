@@ -226,3 +226,13 @@ fn each_extension_has_its_type() {
         assert_eq!(super::types::of(Path::new(name)), *expected, "{name}");
     }
 }
+
+#[test]
+fn the_glue_loads_its_sibling_module_when_init_has_no_argument() {
+    let scratch = Scratch::new("glue-module-path");
+    let module = scratch.path().join("notes.wasm");
+    fs::write(&module, b"\0asm\x01\0\0\0").expect("empty module");
+    let glue = super::glue(&module, "notes").expect("web glue");
+    let js = std::str::from_utf8(&glue.js).expect("generated JavaScript");
+    assert!(js.contains("new URL('notes_bg.wasm', import.meta.url)"));
+}
