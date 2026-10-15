@@ -4,7 +4,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use skein_lib::Rng;
-use skein_ui::Act;
+use skein_ui::{Act, takes};
 use skein_ui::{Node, NodeId, Role, State, Tree};
 
 const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz 0123456789\n#*_`[]()>-+.!";
@@ -43,18 +43,22 @@ impl RandomPerson {
             1 => return Some(RandomDoing::Reload),
             _ => {}
         }
-        let count = tree.nodes().iter().filter(|node| available(node)).count();
+        let count = tree.nodes().iter().filter(|node| available(tree, node)).count();
         if count == 0 {
             return None;
         }
         let chosen = usize::try_from(self.rng.below(u64::try_from(count).expect("tree count fits u64")))
             .expect("node index fits usize");
-        let node = tree.nodes().iter().filter(|node| available(node)).nth(chosen).expect("chosen node exists");
-        let act = match self.rng.below(4) {
-            1 if field(node.role) => Act::Input { value: self.words() },
-            2 if node.states.as_slice().contains(&State::SubmitsOnEnter) => Act::Submit,
-            3 if choice(node.role) => Act::Toggle,
-            _ => Act::Press,
+        let node = tree.nodes().iter().filter(|node| available(tree, node)).nth(chosen).expect("chosen node exists");
+        let submits = node.states.as_slice().contains(&State::SubmitsOnEnter);
+        let act = if takes(node.role, submits, &Act::Toggle) {
+            Act::Toggle
+        } else if takes(node.role, submits, &Act::Press) {
+            Act::Press
+        } else if takes(node.role, submits, &Act::Submit) && self.rng.below(2) == 0 {
+            Act::Submit
+        } else {
+            Act::Input { value: self.words() }
         };
         Some(RandomDoing::Act { node: node.id, act })
     }
@@ -71,116 +75,10 @@ impl RandomPerson {
     }
 }
 
-fn available(node: &Node) -> bool {
+fn available(tree: &Tree, node: &Node) -> bool {
     !crate::tree::passive(node.role)
+        && node.role != Role::Drawing
         && node.id != NodeId(0)
-        && (node.binding.is_some() || node.link.is_some())
-        && !node.states.as_slice().contains(&State::Disabled)
-}
-
-fn field(role: Role) -> bool {
-    match role {
-        Role::TextField | Role::TextArea => true,
-        Role::Page
-        | Role::Banner
-        | Role::Navigation
-        | Role::Main
-        | Role::Complementary
-        | Role::ContentInfo
-        | Role::Form
-        | Role::Search
-        | Role::Menu
-        | Role::MenuItem
-        | Role::Disclosure
-        | Role::Image
-        | Role::Region
-        | Role::Heading { .. }
-        | Role::Paragraph
-        | Role::Text
-        | Role::List
-        | Role::Item
-        | Role::Table
-        | Role::Row
-        | Role::Cell
-        | Role::ColumnHeader
-        | Role::RowHeader
-        | Role::Select
-        | Role::Option
-        | Role::Term
-        | Role::Description
-        | Role::Button
-        | Role::Link
-        | Role::Choice
-        | Role::ChoiceGroup
-        | Role::Check
-        | Role::Dialog
-        | Role::Status
-        | Role::Alert
-        | Role::Log
-        | Role::Tree
-        | Role::TreeItem
-        | Role::Tabs
-        | Role::Tab
-        | Role::Progress
-        | Role::Time
-        | Role::Code
-        | Role::Quote
-        | Role::Separator
-        | Role::Figure
-        | Role::Slot
-        | Role::Drawing => false,
-    }
-}
-fn choice(role: Role) -> bool {
-    match role {
-        Role::Choice | Role::Check => true,
-        Role::Page
-        | Role::Banner
-        | Role::Navigation
-        | Role::Main
-        | Role::Complementary
-        | Role::ContentInfo
-        | Role::Form
-        | Role::Search
-        | Role::Menu
-        | Role::MenuItem
-        | Role::Disclosure
-        | Role::Image
-        | Role::Region
-        | Role::Heading { .. }
-        | Role::Paragraph
-        | Role::Text
-        | Role::List
-        | Role::Item
-        | Role::Table
-        | Role::Row
-        | Role::Cell
-        | Role::ColumnHeader
-        | Role::RowHeader
-        | Role::Select
-        | Role::Option
-        | Role::Term
-        | Role::Description
-        | Role::Button
-        | Role::Link
-        | Role::TextField
-        | Role::TextArea
-        | Role::ChoiceGroup
-        | Role::Dialog
-        | Role::Status
-        | Role::Alert
-        | Role::Log
-        | Role::Tree
-        | Role::TreeItem
-        | Role::Tabs
-        | Role::Tab
-        | Role::Progress
-        | Role::Time
-        | Role::Code
-        | Role::Quote
-        | Role::Separator
-        | Role::Figure
-        | Role::Slot
-        | Role::Drawing => false,
-    }
+        && tree.bound(node.id).is_some()
+        && !tree.disabled(node.id)
 }

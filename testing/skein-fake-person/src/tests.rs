@@ -24,12 +24,7 @@ fn scripted_people_report_acts_failures_and_bounded_waits() {
     unbound_disabled_and_noncomposer_controls_reject_scripted_acts();
 }
 
-#[test]
-fn random_people_replay_cover_enabled_controls_and_reject_unavailable_nodes() {
-    random_people_replay_the_same_seed_over_the_same_trees();
-    a_sweep_presses_every_bound_node_and_reaches_fields_composers_and_history();
-    random_people_never_act_on_unbound_disabled_or_unshown_nodes();
-}
+mod random;
 
 const LIMITS: Limits = Limits {
     nodes: 24,
@@ -56,6 +51,7 @@ fn build(fill: impl FnOnce(&mut Builder)) -> View {
 fn binding(n: u64) -> Binding {
     Binding { owner: Owner { number: 1 }, token: Token::new(n) }
 }
+const CONTROL: NodeId = NodeId(2); // page, control
 fn page_with_control(role: Role, name: &[u8]) -> View {
     build(|b| {
         b.open(Role::Page);
@@ -72,7 +68,7 @@ fn a_press_on_a_check_is_a_toggle() {
     let view = page_with_control(Role::Check, b"Notify me");
     let mut person: Person<u8> = Person::new(Box::new([Step::Press { find: Find::named(Role::Check, b"Notify") }]));
     let next = person.next(&mut TreeFace::new(view.tree()), Time::ZERO);
-    assert_eq!(next, Next::Do(Doing::Act { node: NodeId(2), act: Act::Toggle }));
+    assert_eq!(next, Next::Do(Doing::Act { node: CONTROL, act: Act::Toggle }));
 }
 
 #[test]
@@ -80,7 +76,7 @@ fn a_press_on_a_choice_is_a_toggle() {
     let view = page_with_control(Role::Choice, b"Daily");
     let mut person: Person<u8> = Person::new(Box::new([Step::Press { find: Find::named(Role::Choice, b"Daily") }]));
     let next = person.next(&mut TreeFace::new(view.tree()), Time::ZERO);
-    assert_eq!(next, Next::Do(Doing::Act { node: NodeId(2), act: Act::Toggle }));
+    assert_eq!(next, Next::Do(Doing::Act { node: CONTROL, act: Act::Toggle }));
 }
 
 #[test]
@@ -88,7 +84,7 @@ fn a_press_on_a_button_stays_a_press() {
     let view = page_with_control(Role::Button, b"Save");
     let mut person: Person<u8> = Person::new(Box::new([Step::Press { find: Find::named(Role::Button, b"Save") }]));
     let next = person.next(&mut TreeFace::new(view.tree()), Time::ZERO);
-    assert_eq!(next, Next::Do(Doing::Act { node: NodeId(2), act: Act::Press }));
+    assert_eq!(next, Next::Do(Doing::Act { node: CONTROL, act: Act::Press }));
 }
 fn region(name: &[u8]) -> Target {
     Target::Role { role: Role::Region, name: Box::from(name) }
@@ -292,154 +288,8 @@ fn unbound_disabled_and_noncomposer_controls_reject_scripted_acts() {
     }
 }
 
-fn random_tree() -> View {
-    build(|b| {
-        b.open(Role::Page);
-        b.open(Role::Button);
-        b.name(b"Accept");
-        b.bind(binding(1));
-        b.close();
-        b.open(Role::TextField);
-        b.name(b"Subject");
-        b.bind(binding(2));
-        b.close();
-        b.open(Role::TextArea);
-        b.name(b"Reply");
-        b.bind(binding(3));
-        b.state(State::SubmitsOnEnter);
-        b.close();
-        b.open(Role::Check);
-        b.name(b"Checked");
-        b.bind(binding(4));
-        b.close();
-        b.open(Role::Link);
-        b.name(b"Task");
-        b.link(binding(5));
-        b.close();
-        b.open(Role::TextArea);
-        b.name(b"Disabled");
-        b.bind(binding(6));
-        b.state(State::Disabled);
-        b.close();
-        b.open(Role::Button);
-        b.name(b"Unbound");
-        b.close();
-        b.close();
-    })
-}
-
-fn random_people_replay_the_same_seed_over_the_same_trees() {
-    let first = random_tree();
-    let second = fixture();
-    for seed in 0..32 {
-        let mut a = RandomPerson::new(seed, 32);
-        let mut b = RandomPerson::new(seed, 32);
-        for at in 0..64 {
-            let tree = if at % 2 == 0 { first.tree() } else { second.tree() };
-            assert_eq!(a.next(tree), b.next(tree), "seed {seed} at {at}");
-        }
-    }
-}
-
-fn a_sweep_presses_every_bound_node_and_reaches_fields_composers_and_history() {
-    use std::collections::BTreeSet;
-    let view = random_tree();
-    let tree = view.tree();
-    let expected: BTreeSet<_> = tree
-        .nodes()
-        .iter()
-        .filter(|n| tree.bound(n.id).is_some() && !n.states.as_slice().contains(&State::Disabled))
-        .map(|n| n.id)
-        .collect();
-    let mut pressed = BTreeSet::new();
-    let mut inputs = BTreeSet::new();
-    let mut submitted = BTreeSet::new();
-    let mut toggled = BTreeSet::new();
-    let mut alphabet = BTreeSet::new();
-    let mut back = false;
-    let mut reload = false;
-    let mut empty = false;
-    let mut full = false;
-    for seed in 0..32 {
-        let mut person = RandomPerson::new(seed, 32);
-        for _ in 0..64 {
-            match person.next(tree) {
-                Some(RandomDoing::Act { node, act }) => {
-                    let control = tree.find(node).expect("visible control");
-                    assert!(TreeFace::new(tree).allows(node, &act));
-                    match act {
-                        Act::Press => {
-                            pressed.insert(node);
-                        }
-                        Act::Input { value } => {
-                            assert!(value.len() <= 32);
-                            empty |= value.is_empty();
-                            full |= value.len() == 32;
-                            inputs.insert(node);
-                            alphabet.extend(value.iter().copied());
-                        }
-                        Act::Submit => {
-                            submitted.insert(node);
-                            assert!(control.states.as_slice().contains(&State::SubmitsOnEnter));
-                        }
-                        Act::Drawing { .. } => panic!("the random person never makes drawing acts"),
-                        Act::Toggle => {
-                            toggled.insert(node);
-                            assert_eq!(control.role, Role::Check);
-                        }
-                    }
-                }
-                Some(RandomDoing::Back) => back = true,
-                Some(RandomDoing::Reload) => reload = true,
-                None => unreachable!("tree has bound nodes"),
-            }
-        }
-    }
-    assert_eq!(pressed, expected);
-    assert_eq!(inputs.len(), 2);
-    assert_eq!(submitted.len(), 1);
-    assert_eq!(toggled.len(), 1);
-    assert!(back && reload && empty && full);
-    for byte in b" 0123456789#*_`[]()>-+.!\n" {
-        assert!(alphabet.contains(byte));
-    }
-}
-
-fn random_people_never_act_on_unbound_disabled_or_unshown_nodes() {
-    let view = build(|b| {
-        b.open(Role::Page);
-        b.open(Role::Button);
-        b.name(b"Unbound");
-        b.close();
-        b.open(Role::TextArea);
-        b.name(b"Disabled");
-        b.bind(binding(1));
-        b.state(State::Disabled);
-        b.close();
-        b.close();
-    });
-    let empty = skein_ui::Tree::new(0);
-    let unshown = {
-        let mut b = Builder::new(&LIMITS);
-        b.open(Role::Button);
-        b.bind(binding(1));
-        b.close();
-        b.finish()
-    };
-    let mut person = RandomPerson::new(1, 0);
-    for tree in [view.tree(), &empty, &unshown] {
-        for _ in 0..128 {
-            assert!(matches!(person.next(tree), None | Some(RandomDoing::Back | RandomDoing::Reload)));
-        }
-    }
-    let view = random_tree();
-    for _ in 0..128 {
-        if let Some(RandomDoing::Act { act: Act::Input { value }, .. }) = person.next(view.tree()) {
-            assert!(value.is_empty());
-        }
-    }
-}
-
+const UNSHOWN: NodeId = NodeId(0); // no visible preorder position
+const ABSENT: NodeId = NodeId(u32::MAX); // outside the fixture preorder
 #[test]
 fn a_subtree_face_distinguishes_repeated_regions_and_never_escapes() {
     let view = build(|b| {
@@ -465,8 +315,8 @@ fn a_subtree_face_distinguishes_repeated_regions_and_never_escapes() {
         panic!("first button");
     };
     assert!(!face.allows(first, &Act::Press));
-    assert!(TreeFace::subtree(view.tree(), NodeId(0)).is_none());
-    assert!(TreeFace::subtree(view.tree(), NodeId(u32::MAX)).is_none());
+    assert!(TreeFace::subtree(view.tree(), UNSHOWN).is_none());
+    assert!(TreeFace::subtree(view.tree(), ABSENT).is_none());
     assert!(
         matches!(
             TreeFace::new(view.tree())
