@@ -8,6 +8,7 @@ use skein_json::writer::{Encoder, Limits as JsonLimits};
 #[derive(Debug)]
 pub(crate) enum Params<'a> {
     Empty,
+    Dialog { accept: bool },
     Document,
     Object(&'a [u8]),
     Context(&'a [u8]),
@@ -44,6 +45,10 @@ impl Params<'_> {
         json.object_start();
         match self {
             Params::Empty => {}
+            Params::Dialog { accept } => {
+                json.key(b"accept");
+                json.boolean(*accept);
+            }
             Params::Document => {
                 json.key(b"expression");
                 json.string(b"document");

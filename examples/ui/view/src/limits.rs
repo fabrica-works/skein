@@ -9,7 +9,7 @@ pub fn limits() -> skein_ui::Limits {
         text_per_node: 256,
         text_bytes: 24_000,
         drawing_bytes: 0,
-        styles_per_node: 0,
+        styles_per_node: 1,
         patches: 1200,
         bindings: 66,
         slots: 0,

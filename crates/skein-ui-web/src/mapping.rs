@@ -38,6 +38,7 @@ pub fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) ->
 fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -> Element {
     let a = &made.attribute;
     let mut e = base(a.role, made.id.0);
+    override_element(&mut e, made, look);
     name(&mut e, made);
     properties(&mut e, made);
     collection(&mut e, made);
@@ -606,5 +607,25 @@ fn shortcut(e: &mut Element, shortcut: Option<Shortcut>, primary: Primary) {
             char::from(shortcut.key.to_ascii_uppercase()).to_string()
         };
         e.set("aria-keyshortcuts", &format!("{modifier}{key}"));
+    }
+}
+
+fn override_element(e: &mut Element, made: &Made, look: &Look<'_>) {
+    let a = &made.attribute;
+    if let Some((_, _, _, tag)) = look
+        .elements
+        .iter()
+        .find(|(owner, role, style, _)| *owner == style.owner && *role == a.role && a.styles.as_slice().contains(style))
+    {
+        e.tag = (*tag).into();
+        let aria = match a.role {
+            Role::Page | Role::Text | Role::Slot => "generic",
+            Role::TextArea => "textbox",
+            Role::Time => "time",
+            Role::Code => "code",
+            Role::Disclosure => "group",
+            role => std::str::from_utf8(accessible(role).first().expect("every role maps")).expect("ASCII role"),
+        };
+        e.set("role", aria);
     }
 }

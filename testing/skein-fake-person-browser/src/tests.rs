@@ -170,3 +170,40 @@ fn the_listening_line_gives_the_address() {
         assert_eq!(crate::harness::listening_address(stderr, b"server at "), expected);
     }
 }
+
+fn warn_go(face: &mut BrowserFace<'_>) {
+    face.perform(Doing::Reload).expect("reload accepted");
+    let Request::Go { op, .. } = face.requests().next().expect("go") else {
+        panic!("expected go");
+    };
+    face.event(&Event::Warned { op });
+    face.event(&Event::Done { op });
+}
+#[test]
+fn the_face_records_a_go_that_meets_its_closing_warning() {
+    let mut face = face();
+    warn_go(&mut face);
+    assert!(face.warned());
+}
+#[test]
+fn a_new_go_clears_the_faces_closing_warning_record() {
+    let mut face = face();
+    warn_go(&mut face);
+    face.perform(Doing::Go { address: b"/notes/7".as_slice().into() }).expect("go accepted");
+    assert!(!face.warned());
+}
+#[test]
+fn the_title_is_found_by_the_documents_root_name() {
+    let mut face = face();
+    face.title(b"Groceries");
+    assert_eq!(
+        query(&mut face),
+        Query {
+            role: b"RootWebArea".as_slice().into(),
+            name: b"Groceries".as_slice().into(),
+            matching: Match::Exact,
+            within: None,
+            boxes: false
+        }
+    );
+}

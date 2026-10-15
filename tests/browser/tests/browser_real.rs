@@ -86,3 +86,16 @@ fn chromium_survives_a_page_that_reloads_itself() {
         assert!(result.is_ok(), "reload case {name} failed: {result:?}");
     }
 }
+
+#[test]
+fn chromium_accepts_the_closing_warning_on_a_reload() {
+    let chromium = chromium();
+    let profile = Profile::fresh();
+    Rig::new(&chromium, &profile.0, Scenario::Leave).run();
+}
+#[test]
+fn chromium_dismisses_a_confirm_as_trouble() {
+    let chromium = chromium();
+    let profile = Profile::fresh();
+    Rig::new(&chromium, &profile.0, Scenario::Confirm).run();
+}

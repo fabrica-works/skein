@@ -41,6 +41,8 @@ pub enum Step {
     Person(skein_fake_person::Step<Box<[u8]>>),
     StopServer,
     StartServer,
+    Title(Box<[u8]>),
+    Warned(bool),
 }
 #[derive(Clone, Copy)]
 pub enum ServerAction {
@@ -52,15 +54,35 @@ pub struct Script {
     person: Option<Person<Box<[u8]>>>,
     at: u32,
     action: Option<ServerAction>,
+    title: Option<Box<[u8]>>,
 }
 impl Script {
     #[must_use]
     pub fn new(steps: Box<[Step]>) -> Self {
-        Self { steps: steps.into_vec().into(), person: None, at: 0, action: None }
+        Self { steps: steps.into_vec().into(), person: None, at: 0, action: None, title: None }
     }
 }
 impl Play for Script {
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
+        if let Some(title) = self.title.take() {
+            match face.title(&title) {
+                skein_fake_person::Found::Pending => {
+                    self.title = Some(title);
+                    return Next::Wait { until: None };
+                }
+                skein_fake_person::Found::Absent => {
+                    return Next::Failed {
+                        step: self.at,
+                        why: skein_fake_person::Why::Missing {
+                            find: skein_fake_person::Find::exactly_named(skein_ui::Role::Page, &title),
+                        },
+                    };
+                }
+                skein_fake_person::Found::Node(_) => {
+                    self.at += 1;
+                }
+            }
+        }
         if let Some(person) = &mut self.person {
             let next = person.next(face, now);
             match next {
@@ -83,6 +105,16 @@ impl Play for Script {
                     steps.push(step);
                 }
                 self.person = Some(Person::new(steps.into()));
+            }
+            Step::Warned(expected) => {
+                let warned = face.warned();
+                if warned != expected {
+                    face.fail(format!("last go warned {warned}, expected {expected}"));
+                }
+                self.at += 1;
+            }
+            Step::Title(words) => {
+                self.title = Some(words);
             }
             Step::StopServer => {
                 self.action = Some(ServerAction::Stop);
@@ -423,7 +455,8 @@ impl Runtime {
                 write!(self.snapshot, "\ncapture refused: {why:?}").expect("string write");
                 self.capturing = 3;
             }
-            Event::Found { .. }
+            Event::Warned { .. }
+            | Event::Found { .. }
             | Event::Met { .. }
             | Event::Missed { .. }
             | Event::Done { .. }

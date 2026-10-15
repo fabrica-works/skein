@@ -23,7 +23,7 @@ cargo nextest run --workspace --profile fuzzy
 cargo build --target wasm32-unknown-unknown -p skein-ui-example-shell-web
 cargo run -p skein-ui-bundle -- \
     --module target/wasm32-unknown-unknown/debug/skein_ui_example_shell_web.wasm \
-    --name skein_ui_example_shell_web --prefix /bundle/ --out target/ui-example-bundle \
+    --name skein_ui_example_shell_web --prefix /bundle/ --stylesheet examples/ui/shell-web/notes.css --out target/ui-example-bundle \
     --noscript 'Notes needs WebAssembly and scripts.'
 cargo build -p skein-ui-example-server
 SKEIN_UI_EXAMPLE_BUNDLE="$(pwd)/target/ui-example-bundle"

@@ -349,3 +349,97 @@ fn page_crash_mid_operation_reports_trouble_and_one_refusal() {
 }
 
 mod navigation;
+
+fn native_dialog(world: &mut World, kind: &str, message: &str) {
+    let bytes = format!(
+        r#"{{"method":"Page.javascriptDialogOpening","sessionId":"s1","params":{{"type":"{kind}","message":"{message}"}}}}"#
+    );
+    let mut bytes = bytes.into_bytes();
+    bytes.push(0);
+    up(
+        &mut world.browser,
+        &world.env,
+        Below::Replies(stream::Up::Bytes(bytes.into())),
+        &mut world.above,
+        &mut world.below,
+    );
+}
+fn dialog_answer(world: &World) -> bool {
+    let command = world
+        .sent
+        .iter()
+        .rev()
+        .find(|bytes| bytes.windows(27).any(|part| part == b"Page.handleJavaScriptDialog"))
+        .expect("dialog answered");
+    let document = Document::parse(&command[..command.len() - 1], world.env.limits.command).expect("answer command");
+    document
+        .root()
+        .get(b"params")
+        .expect("parameters")
+        .get(b"accept")
+        .and_then(|value| value.bool())
+        .expect("accept boolean")
+}
+#[test]
+fn a_go_accepts_its_pages_closing_warning() {
+    let mut world = World::new();
+    world.start();
+    world.open();
+    let go = Token::new(8);
+    down(
+        &mut world.browser,
+        &world.env,
+        Request::Go { page: Token::new(3), op: go, to: skein_browser::boundary::Go::Reload },
+        &mut world.above,
+        &mut world.below,
+    );
+    native_dialog(&mut world, "beforeunload", "");
+    match world.above.pop() {
+        Some(Event::Warned { op }) => assert_eq!(op, go),
+        other => panic!("expected Warned, got {other:?}"),
+    }
+    native_dialog(&mut world, "beforeunload", "");
+    assert!(world.above.is_empty(), "one warning per go");
+    world.drive();
+    assert!(dialog_answer(&world));
+    match world.above.pop() {
+        Some(Event::Done { op }) => assert_eq!(op, go),
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+const DISMISSED_DIALOGS: &[(&str, &str, &[u8])] =
+    &[("confirm", "Delete it?", b"confirm: Delete it?"), ("beforeunload", "", b"beforeunload: ")];
+#[test]
+fn a_dialog_outside_a_go_is_dismissed_as_trouble() {
+    for &(kind, message, expected) in DISMISSED_DIALOGS {
+        let mut world = World::new();
+        world.start();
+        world.open();
+        native_dialog(&mut world, kind, message);
+        match world.above.pop() {
+            Some(Event::Trouble { page, trouble, text }) => {
+                assert_eq!(page, Token::new(3));
+                assert_eq!(trouble, Trouble::Dialog);
+                assert_eq!(text.as_ref(), expected, "{kind}");
+            }
+            other => panic!("expected dialog trouble, got {other:?}"),
+        }
+        world.drive();
+        assert!(!dialog_answer(&world), "{kind}");
+    }
+}
+
+const DIALOG_TEXT_LIMITS: &[(u32, &[u8])] = &[(0, b""), (5, b"confi"), (19, b"confirm: Delete it?")];
+#[test]
+fn a_native_dialogs_trouble_text_is_cut_to_its_bound() {
+    for &(limit, expected) in DIALOG_TEXT_LIMITS {
+        let mut world = World::with_limits(skein_browser::Limits { text: limit, ..skein_browser::Limits::default() });
+        world.start();
+        world.open();
+        native_dialog(&mut world, "confirm", "Delete it?");
+        match world.above.pop() {
+            Some(Event::Trouble { text, .. }) => assert_eq!(text.as_ref(), expected, "limit {limit}"),
+            other => panic!("expected dialog trouble, got {other:?}"),
+        }
+    }
+}

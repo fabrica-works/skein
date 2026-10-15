@@ -1,5 +1,7 @@
 //! Real Chromium in one service loop with a skein-http page server.
 
+#[path = "real/dialogs.rs"]
+mod dialogs;
 #[path = "../../src/serve.rs"]
 mod serve;
 
@@ -137,11 +139,14 @@ pub enum Scenario {
     Facts,
     Choose,
     Reduction,
+    Leave,
+    Confirm,
 }
 
 impl Scenario {
     fn path(self) -> &'static str {
         match self {
+            Scenario::Leave | Scenario::Confirm => "/leave",
             Scenario::Button => "/button",
             Scenario::Form => "/form",
             Scenario::Covered => "/covered",
@@ -184,6 +189,7 @@ pub struct Rig {
     pub version: Box<[u8]>,
     stderr: Vec<u8>,
     pub snapshot: Box<[u8]>,
+    dialog: dialogs::State,
 }
 
 impl Rig {
@@ -220,6 +226,7 @@ impl Rig {
             child_closed: false,
             stage: Stage::Starting,
             scenario,
+            dialog: dialogs::State::new(scenario),
             context_ready: false,
             exception_seen: false,
             csp_log_seen: false,
@@ -420,6 +427,14 @@ impl Rig {
     }
 
     fn browser_event(&mut self, event: Event) {
+        let event = if matches!(self.scenario, Scenario::Leave | Scenario::Confirm) {
+            match self.dialog_event(event) {
+                Ok(()) => return,
+                Err(event) => event,
+            }
+        } else {
+            event
+        };
         match event {
             Event::Ready { version } => {
                 assert_eq!(self.stage, Stage::Starting);
@@ -433,6 +448,7 @@ impl Rig {
                 assert_eq!(self.stage, Stage::Opening);
                 self.stage = Stage::Finding;
                 match self.scenario {
+                    Scenario::Leave | Scenario::Confirm => unreachable!("dialog scenario handled above"),
                     Scenario::Reduction => {
                         self.stage = Stage::Expecting;
                         self.ask(Request::Await {
@@ -485,6 +501,7 @@ impl Rig {
                 assert_eq!(seen.len(), 1, "one accessible target for {:?}", self.scenario);
                 let node = seen.get(0).expect("target").node;
                 match self.scenario {
+                    Scenario::Leave | Scenario::Confirm => unreachable!("dialog scenario handled above"),
                     Scenario::Choose => {
                         self.stage = Stage::Pressing;
                         self.ask(Request::Type { page: PAGE, op: PRESS, node, text: Box::default() });
@@ -548,7 +565,9 @@ impl Rig {
                         Scenario::Scroll => b"Scrolled".as_slice(),
                         Scenario::Throw => b"Before".as_slice(),
                         Scenario::Figure => b"Pressed shape".as_slice(),
-                        Scenario::Covered
+                        Scenario::Leave
+                        | Scenario::Confirm
+                        | Scenario::Covered
                         | Scenario::Csp
                         | Scenario::Words
                         | Scenario::Facts

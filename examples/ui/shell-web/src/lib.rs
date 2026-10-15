@@ -2,21 +2,22 @@
 #![cfg(target_arch = "wasm32")]
 #![forbid(unsafe_code)]
 use skein_lib::Queue;
-use skein_ui::{Act, NodeId, Owner, View, look::Names};
+use skein_ui::{Act, NodeId, Owner, Role, Style, View, look::Names};
 use skein_ui_example_view::{Duties, Report as ViewReport, State, limits, places};
 use skein_ui_web::{
-    Look, fetch,
+    Look, fetch, history,
     inbox::Inbox,
     page::{Page, web::Dom},
     platform,
     store::Store,
+    timer, title,
     transport::{self, Carried, Requests},
     wasm_bindgen,
 };
 use std::{cell::RefCell, rc::Rc};
-use wasm_bindgen::{JsCast, closure::Closure};
 
-const NAMES: &[Names<'_>] = &[Names { owner: Owner { number: 1 }, prefix: b"notes", styles: &[], regions: &[] }];
+const NAMES: &[Names<'_>] =
+    &[Names { owner: Owner { number: 1 }, prefix: b"notes", styles: &[b"notes-card"], regions: &[] }];
 // Each part wraps its happening in the application's report type.
 enum Report {
     Start,
@@ -24,6 +25,7 @@ enum Report {
     Act(NodeId, Act),
     Fetch(fetch::Report),
     Carried(Carried),
+    Place(Box<[u8]>),
 }
 struct Shell {
     state: State,
@@ -32,8 +34,9 @@ struct Shell {
     dom: Dom,
     platform: platform::Browser<Report>,
     store: Store,
-    timer: Option<i32>,
-    timer_callback: Closure<dyn FnMut()>,
+    history: history::web::History,
+    timer: timer::web::Timer,
+    title: title::web::Title,
 }
 
 #[wasm_bindgen(start)]
@@ -70,15 +73,21 @@ pub fn start() {
     let state = State::start(facts.seed, path.as_bytes(), &records, facts.offset, &facts.languages);
     let limits = limits::limits();
     let page = Rc::new(RefCell::new(Page::new(
-        Look { names: NAMES, pictures: &[], draw: no_drawing },
+        Look {
+            names: NAMES,
+            pictures: &[],
+            draw: no_drawing,
+            elements: &[(Owner { number: 1 }, Role::Region, Style { owner: Owner { number: 1 }, token: 0 }, "article")],
+        },
         &limits,
         b"notes",
         facts.primary,
     )));
     let dom = Dom::new(mount, &page, &inbox, Report::Act);
-    let reports = Rc::clone(&inbox);
-    let timer_callback = Closure::new(move || reports.raise(Report::Due));
-    let mut shell = Shell { state, view: View::new(&limits), page, dom, platform, store, timer: None, timer_callback };
+    let history = history::web::History::new(Rc::clone(&inbox), Report::Place);
+    let timer = timer::web::Timer::new(Rc::clone(&inbox), || Report::Due);
+    let title = title::web::Title::default();
+    let mut shell = Shell { state, view: View::new(&limits), page, dom, platform, store, history, timer, title };
     // The inbox keeps the shell and its listeners alive and forbids a turn inside a turn.
     inbox.start(Box::new(move |inbox| shell.turn(inbox)));
     inbox.raise(Report::Start);
@@ -86,10 +95,16 @@ pub fn start() {
 impl Shell {
     fn turn(&mut self, inbox: &Inbox<Report>) {
         let (now, wall) = platform::clocks();
+        let mut new_page = false;
         while let Some(report) = inbox.next() {
             let mut read_on = false;
             let report = match report {
-                Report::Start | Report::Due => Some(ViewReport::Due),
+                Report::Start => Some(ViewReport::Due),
+                Report::Due => {
+                    self.timer.fired();
+                    Some(ViewReport::Due)
+                }
+                Report::Place(path) => Some(ViewReport::Place(places::parse(&path))),
                 Report::Act(node, act) => self.view.act(node, act).map(ViewReport::Act),
                 Report::Fetch(fetch::Report::Answered { exchange, status, body }) => {
                     Some(ViewReport::Answered { exchange, status, body })
@@ -118,6 +133,10 @@ impl Shell {
                 stream: None,
             };
             self.state.step(report, now, wall, &mut duties);
+            if let Some((place, replace)) = duties.show {
+                self.history.show(&places::bytes(place), replace);
+                new_page = !replace;
+            }
             let mut requests = Requests::default();
             while let Some(record) = duties.writes.pop() {
                 requests.writes.push(skein_ui_web::store::Record { key: record.key, value: record.value });
@@ -164,21 +183,26 @@ impl Shell {
             }
         }
         self.dom.apply(&ops);
-        let window = web_sys::window().expect("browser window");
-        if let Some(timer) = self.timer.take() {
-            window.clear_timeout_with_handle(timer);
+        self.finish_page(&ops, new_page, now);
+    }
+    fn finish_page(&mut self, ops: &[skein_ui_web::page::Op], new_page: bool, now: skein_lib::Time) {
+        let window = web_sys::window().expect("window");
+        let document = window.document().expect("document");
+        let heading = document.query_selector("main h1").expect("heading selector");
+        let words = heading.as_ref().and_then(|element| element.text_content()).unwrap_or_default();
+        self.title.set(words.as_bytes(), b"Notes", b"en", self.state.closing_loses());
+        if new_page {
+            window.scroll_to_with_x_and_y(0.0, 0.0);
+            if !ops.iter().any(|op| matches!(op, skein_ui_web::page::Op::Focus { .. })) {
+                use wasm_bindgen::JsCast;
+                if let Some(target) = heading.or_else(|| document.query_selector("main").expect("main selector")) {
+                    target.set_attribute("tabindex", "-1").expect("focus target");
+                    target.unchecked_ref::<web_sys::HtmlElement>().focus().expect("mounted target");
+                }
+            }
         }
-        if let Some(deadline) = self.state.deadline() {
-            let millis = deadline.as_nanos().saturating_sub(now.as_nanos()).div_ceil(1_000_000);
-            self.timer = Some(
-                window
-                    .set_timeout_with_callback_and_timeout_and_arguments_0(
-                        self.timer_callback.as_ref().unchecked_ref(),
-                        i32::try_from(millis).unwrap_or(i32::MAX),
-                    )
-                    .expect("view deadline"),
-            );
-        }
+        self.history.restore();
+        self.timer.set(self.state.deadline(), now);
     }
 }
 fn no_drawing(_: skein_ui::DrawingKind, _: &[u8], _: u16, _: u16, _: &mut skein_ui::scene::Scene) -> bool {

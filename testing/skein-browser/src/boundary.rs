@@ -44,17 +44,53 @@ pub enum Request {
 /// What the browser reports to the test.
 #[derive(Debug)]
 pub enum Event {
-    Ready { version: Box<[u8]> },
-    Opened { page: Token },
-    Found { op: Token, seen: List<Seen>, more: u32 },
-    Met { op: Token, seen: List<Seen> },
-    Missed { op: Token, seen: List<Seen>, more: u32 },
-    Done { op: Token },
-    Refused { op: Token, why: Refusal },
-    Snapshot { op: Token, text: Box<[u8]> },
-    Screenshot { op: Token, png: Box<[u8]> },
-    Trouble { page: Token, trouble: Trouble, text: Box<[u8]> },
-    Closed { owner: Token },
+    Ready {
+        version: Box<[u8]>,
+    },
+    Opened {
+        page: Token,
+    },
+    Found {
+        op: Token,
+        seen: List<Seen>,
+        more: u32,
+    },
+    Met {
+        op: Token,
+        seen: List<Seen>,
+    },
+    Missed {
+        op: Token,
+        seen: List<Seen>,
+        more: u32,
+    },
+    Done {
+        op: Token,
+    },
+    /// The go accepted its page's closing warning; it remains in flight.
+    Warned {
+        op: Token,
+    },
+    Refused {
+        op: Token,
+        why: Refusal,
+    },
+    Snapshot {
+        op: Token,
+        text: Box<[u8]>,
+    },
+    Screenshot {
+        op: Token,
+        png: Box<[u8]>,
+    },
+    Trouble {
+        page: Token,
+        trouble: Trouble,
+        text: Box<[u8]>,
+    },
+    Closed {
+        owner: Token,
+    },
 }
 
 /// Where to navigate.
@@ -162,4 +198,5 @@ pub enum Trouble {
     Console,
     Log,
     Crash,
+    Dialog,
 }

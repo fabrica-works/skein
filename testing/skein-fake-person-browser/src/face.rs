@@ -6,6 +6,7 @@ use skein_ui::{Act, NodeId, Role};
 use skein_ui_web::mapping::accessible;
 
 struct Search {
+    title: bool,
     find: Find,
     depth: usize,
     role: usize,
@@ -24,6 +25,8 @@ pub struct BrowserFace<'a> {
     seen: Vec<(Seen, Option<Role>)>,
     acting: Option<Token>,
     failure: Option<String>,
+    warned: bool,
+    go: Option<Token>,
 }
 
 impl<'a> BrowserFace<'a> {
@@ -39,7 +42,29 @@ impl<'a> BrowserFace<'a> {
             seen: Vec::new(),
             acting: None,
             failure: None,
+            warned: false,
+            go: None,
         }
+    }
+    pub fn title(&mut self, words: &[u8]) -> Found {
+        if let Some(answer) = self.answer.take() {
+            return answer;
+        }
+        if self.search.is_none() {
+            self.ask(Search {
+                title: true,
+                find: Find::exactly_named(Role::Page, words),
+                depth: 0,
+                role: 0,
+                within: None,
+                op: Token::new(0),
+            });
+        }
+        self.answer.take().unwrap_or(Found::Pending)
+    }
+    #[must_use]
+    pub fn warned(&self) -> bool {
+        self.warned
     }
     fn token(&mut self) -> Token {
         self.serial = self.serial.checked_add(1).expect("operation numbers fit");
@@ -53,12 +78,18 @@ impl<'a> BrowserFace<'a> {
     pub fn pending(&self) -> bool {
         self.search.is_some() || self.acting.is_some()
     }
+    pub(crate) fn fail(&mut self, why: String) {
+        self.failure = Some(why);
+    }
     pub fn failure(&mut self) -> Option<String> {
         self.failure.take()
     }
     fn ask(&mut self, mut search: Search) {
         let target = search.find.within.get(search.depth).unwrap_or(&search.find.target);
-        let (roles, name, matching) = query_parts(target);
+        let (mut roles, name, matching) = query_parts(target);
+        if search.title {
+            roles = &[b"RootWebArea"];
+        }
         let Some(role) = roles.get(search.role) else {
             self.answer = Some(Found::Absent);
             return;
@@ -83,6 +114,11 @@ impl<'a> BrowserFace<'a> {
     /// Deliver the kit's terminal events. Other pages' operations are ignored.
     pub fn event(&mut self, event: &Event) {
         match event {
+            Event::Warned { op } => {
+                if self.go == Some(*op) && self.acting == Some(*op) {
+                    self.warned = true;
+                }
+            }
             Event::Found { op, seen, .. } => {
                 if self.search.as_ref().map(|s| s.op) != Some(*op) {
                     return;
@@ -135,14 +171,22 @@ impl<'a> BrowserFace<'a> {
     pub fn perform(&mut self, doing: Doing<Box<[u8]>>) -> Result<(), String> {
         let op = self.token();
         let request = match doing {
-            Doing::Go { address } => Request::Go {
-                page: self.page,
-                op,
-                to: Go::Address(
-                    format!("http://{}{}", self.address, String::from_utf8_lossy(&address)).into_bytes().into(),
-                ),
-            },
-            Doing::Reload => Request::Go { page: self.page, op, to: Go::Reload },
+            Doing::Go { address } => {
+                self.warned = false;
+                self.go = Some(op);
+                Request::Go {
+                    page: self.page,
+                    op,
+                    to: Go::Address(
+                        format!("http://{}{}", self.address, String::from_utf8_lossy(&address)).into_bytes().into(),
+                    ),
+                }
+            }
+            Doing::Reload => {
+                self.warned = false;
+                self.go = Some(op);
+                Request::Go { page: self.page, op, to: Go::Reload }
+            }
             Doing::Act { node, act } => {
                 let (seen, _) = self
                     .seen
@@ -175,7 +219,7 @@ impl Face for BrowserFace<'_> {
             return answer;
         }
         if self.search.is_none() {
-            self.ask(Search { find: find.clone(), depth: 0, role: 0, within: None, op: Token::new(0) });
+            self.ask(Search { title: false, find: find.clone(), depth: 0, role: 0, within: None, op: Token::new(0) });
         }
         self.answer.take().unwrap_or(Found::Pending)
     }

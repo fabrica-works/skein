@@ -56,4 +56,5 @@ mod platform;
 mod store;
 mod transport;
 
+mod history;
 mod restart;

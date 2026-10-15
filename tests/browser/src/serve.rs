@@ -18,12 +18,14 @@ const SCROLL: &[u8] = br#"<!doctype html><html><body><div style="height:2200px">
 const THROW: &[u8] = br#"<!doctype html><html><body><button onclick="throw Error('test exception')">Throw</button><h1>Before</h1></body></html>"#;
 const CSP: &[u8] = br#"<!doctype html><html><body><h1>CSP page</h1><script>document.querySelector('h1').textContent='Wrong'</script></body></html>"#;
 
+const LEAVE: &[u8] = br#"<!doctype html><html><body><button onclick="window.onbeforeunload=event=>{event.preventDefault();event.returnValue='';};document.querySelector('h1').textContent='Held'">Hold</button><button onclick="document.querySelector('h1').textContent='Answer: '+confirm('Delete it?')">Ask</button><h1>Before</h1></body></html>"#;
 const WORDS: &[u8] = br#"<!doctype html><html><body><p>Checks: 3 failing, 2 passed</p></body></html>"#;
 const FIGURE: &[u8] = br#"<!doctype html><html><body><figure aria-label="Error rate"><svg aria-hidden="true" width="200" height="100"><rect id="bar" x="20" y="15" width="30" height="25" fill="blue" /></svg></figure><h1>Before</h1><script src="/press.js"></script></body></html>"#;
 const PRESS: &[u8] = br#"document.querySelector('#bar').addEventListener('click', () => { document.querySelector('h1').textContent = 'Pressed shape'; });"#;
 
 fn page(target: &[u8]) -> (u16, &'static [u8], bool) {
     match target {
+        b"/leave" => (200, LEAVE, false),
         b"/button" => (200, BUTTON, false),
         b"/form" => (200, FORM, false),
         b"/covered" => (200, COVERED, false),

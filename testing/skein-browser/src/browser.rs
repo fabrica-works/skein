@@ -74,6 +74,7 @@ struct Operation {
     page: Token,
     kind: OpKind,
     due: Option<Time>,
+    warned: bool,
 }
 
 #[derive(Debug)]
@@ -113,6 +114,7 @@ enum PendingKind {
     Step(Token, Step),
     CloseBrowser,
     Release,
+    Dialog,
     ClosePage(Token),
     ClosePerson(Token),
 }
@@ -631,7 +633,7 @@ impl Browser {
                 }
             }
         }
-        let accepted = self.insert_op(Operation { token, page, kind, due: None }, env.limits.ops);
+        let accepted = self.insert_op(Operation { token, page, kind, due: None, warned: false }, env.limits.ops);
         if !accepted {
             self.events.push_back(Event::Refused { op: token, why: Refusal::Limit });
         }
@@ -1083,7 +1085,7 @@ pub fn fire(browser: &mut Browser, env: &Env<Limits>, now: Time, above: &mut Que
                     browser.finish_refused(op, Refusal::Timeout);
                 }
             }
-            PendingKind::Release => {}
+            PendingKind::Release | PendingKind::Dialog => {}
             PendingKind::Version | PendingKind::CloseBrowser => browser.crash(),
             PendingKind::Context(person) | PendingKind::ClosePerson(person) => browser.close_person_local(person),
             PendingKind::Target(page)
@@ -1229,7 +1231,7 @@ impl Browser {
             Refusal::Protocol
         };
         match kind {
-            PendingKind::Release => {}
+            PendingKind::Release | PendingKind::Dialog => {}
             PendingKind::Version | PendingKind::CloseBrowser => self.crash(),
             PendingKind::Context(person) | PendingKind::ClosePerson(person) => self.close_person_local(person),
             PendingKind::Target(page)
@@ -1247,7 +1249,7 @@ impl Browser {
 
     fn reply(&mut self, env: &Env<Limits>, kind: PendingKind, result: Value<'_>) {
         match kind {
-            PendingKind::Release => {}
+            PendingKind::Release | PendingKind::Dialog => {}
             PendingKind::Version => {
                 let version = field_text(result, b"product").unwrap_or_default();
                 self.phase = Phase::Ready;
@@ -1343,17 +1345,73 @@ impl Browser {
         }
     }
 
-    fn notification(&mut self, env: &Env<Limits>, method: &[u8], root: Value<'_>) {
-        let session = field_text(root, b"sessionId");
-        let mut page = None;
-        for candidate in self.pages.iter().flatten() {
-            if !candidate.closed && candidate.session.as_deref() == session.as_deref() {
-                page = Some(candidate.token);
-                break;
+    fn dialog(&mut self, env: &Env<Limits>, page: Token, params: Value<'_>) {
+        let kind = field_text(params, b"type").unwrap_or_default();
+        let mut go = None;
+        if kind.as_ref() == b"beforeunload" {
+            for operation in self.ops.iter_mut().flatten() {
+                if operation.page != page {
+                    continue;
+                }
+                match operation.kind {
+                    OpKind::Go(_) => {
+                        go = Some(operation.token);
+                        if !operation.warned {
+                            operation.warned = true;
+                            self.events.push_back(Event::Warned { op: operation.token });
+                        }
+                        break;
+                    }
+                    OpKind::Find { .. }
+                    | OpKind::Press { .. }
+                    | OpKind::Type { .. }
+                    | OpKind::Key(_)
+                    | OpKind::Snapshot
+                    | OpKind::Screenshot => {}
+                }
             }
         }
+        if !self.queue_page(
+            env,
+            page,
+            b"Page.handleJavaScriptDialog",
+            &Params::Dialog { accept: go.is_some() },
+            PendingKind::Dialog,
+        ) {
+            self.close_page_local(page);
+        }
+        if go.is_none() {
+            let message = field_text(params, b"message").unwrap_or_default();
+            let limit = usize::try_from(env.limits.text).expect("text limit fits usize");
+            let length = kind.len().saturating_add(2).saturating_add(message.len()).min(limit);
+            let mut text = skein_lib::Writer::new(length);
+            for part in [kind.as_ref(), b": ", message.as_ref()] {
+                let kept = part.len().min(text.room());
+                text.put(part.get(..kept).expect("prefix of part")).expect("text room checked");
+            }
+            self.events.push_back(Event::Trouble { page, trouble: Trouble::Dialog, text: text.finish() });
+        }
+    }
+
+    fn notification_page(&self, session: Option<&[u8]>) -> Option<Token> {
+        for candidate in self.pages.iter().flatten() {
+            if !candidate.closed && candidate.session.as_deref() == session {
+                return Some(candidate.token);
+            }
+        }
+        None
+    }
+
+    fn notification(&mut self, env: &Env<Limits>, method: &[u8], root: Value<'_>) {
+        let session = field_text(root, b"sessionId");
+        let page = self.notification_page(session.as_deref());
         let params = root.get(b"params");
         match method {
+            b"Page.javascriptDialogOpening" => {
+                if let (Some(page), Some(params)) = (page, params) {
+                    self.dialog(env, page, params);
+                }
+            }
             b"Page.frameRequestedNavigation" | b"Page.frameStartedLoading" => {
                 if let (Some(page), Some(params)) = (page, params) {
                     let frame = frame_id(params, b"frameId", env.limits.text);

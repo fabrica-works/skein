@@ -180,7 +180,7 @@ fn mapped(row: &Row) -> Element {
     let tree = builder.finish();
     let mut made = Made::of(tree.get(0).expect("row root"));
     made.id = row.id;
-    let look = Look { names: &[], pictures: &[], draw: no_drawing };
+    let look = Look { names: &[], pictures: &[], draw: no_drawing, elements: &[] };
     let mut element = mapping::element(&made, &look, b"/", Primary::Control);
     if row.role == Role::Menu {
         for child in &mut element.children {

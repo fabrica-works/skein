@@ -195,6 +195,9 @@ impl State {
         if binding.owner != crate::view::OWNER {
             return None;
         }
+        if binding == crate::view::BACK {
+            return Some(Place::List);
+        }
         for note in self.notes.notes() {
             if note.number() == binding.token.raw() {
                 return Some(Place::Note { number: note.number() });

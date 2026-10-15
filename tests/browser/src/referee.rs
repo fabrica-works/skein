@@ -10,6 +10,7 @@ use skein_lib::Token;
 #[derive(Debug, Default)]
 pub struct Referee {
     terminal: BTreeSet<u64>,
+    warned: BTreeSet<u64>,
     expectations: BTreeMap<u64, Expect>,
     presses: BTreeMap<u64, usize>,
     mouse_events: usize,
@@ -37,6 +38,10 @@ impl Referee {
 
     pub fn event(&mut self, event: &Event, visible_matches: u32) {
         assert!(!self.closed, "nothing is emitted after Closed");
+        if let Event::Warned { op } = event {
+            assert!(!self.terminal.contains(&op.raw()), "Warned precedes its go's terminal");
+            assert!(self.warned.insert(op.raw()), "a go warns at most once");
+        }
         let op = match event {
             Event::Found { op, .. }
             | Event::Met { op, .. }
@@ -45,7 +50,11 @@ impl Referee {
             | Event::Refused { op, .. }
             | Event::Snapshot { op, .. }
             | Event::Screenshot { op, .. } => Some(*op),
-            Event::Ready { .. } | Event::Opened { .. } | Event::Trouble { .. } | Event::Closed { .. } => None,
+            Event::Warned { .. }
+            | Event::Ready { .. }
+            | Event::Opened { .. }
+            | Event::Trouble { .. }
+            | Event::Closed { .. } => None,
         };
         if let Some(op) = op {
             assert!(self.terminal.insert(op.raw()), "one terminal per operation: {op:?}");

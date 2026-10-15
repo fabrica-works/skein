@@ -65,3 +65,71 @@ fn a_note_added_in_one_page_shows_in_another() {
     ]));
     assert_eq!(example_harness().run(&mut [&mut reader, &mut writer]), Outcome::Done);
 }
+
+#[test]
+fn a_person_opens_a_note_and_comes_back_by_its_link() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::TextField, b"Title"), within: SECOND }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"Groceries".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"Groceries"), within: SECOND }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Link, b"Groceries") }),
+        harness::Step::Person(Step::See {
+            find: Find::exactly_named(Role::Heading { level: 1 }, b"Groceries"),
+            within: SECOND,
+        }),
+        harness::Step::Title("Groceries · Notes".as_bytes().into()),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Link, b"Back to notes") }),
+        harness::Step::Person(Step::See {
+            find: Find::exactly_named(Role::Heading { level: 1 }, b"Notes"),
+            within: SECOND,
+        }),
+    ]));
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}
+
+#[test]
+fn a_reload_with_an_add_pending_meets_the_closing_warning() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::TextField, b"Title"), within: SECOND }),
+        harness::Step::StopServer,
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"Groceries".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::Pause { span: skein_lib::Duration::from_millis(100) }),
+        harness::Step::StartServer,
+        harness::Step::Person(Step::Reload),
+        harness::Step::Warned(true),
+    ]));
+    let mut harness = harness::Harness::new(harness::Setup {
+        server: skein_ui_web_tests::server_binary(),
+        args: vec!["127.0.0.1:0".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
+        listening: b"skein-ui-example: listening at ",
+        chromium: skein_ui_web_tests::chromium(),
+        expected: vec![
+            b"Failed to load resource: net::ERR_CONNECTION_REFUSED".as_slice().into(),
+            b"Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING".as_slice().into(),
+        ],
+    });
+    assert_eq!(harness.run(&mut [&mut person]), Outcome::Done);
+}
+#[test]
+fn a_reload_once_the_add_is_made_meets_no_closing_warning() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::TextField, b"Title"), within: SECOND }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"Groceries".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"Groceries"), within: SECOND }),
+        harness::Step::Person(Step::Reload),
+        harness::Step::Warned(false),
+    ]));
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}

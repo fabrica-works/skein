@@ -96,3 +96,29 @@ fn the_views_worst_case_fits_its_limits() {
     assert_eq!(view.tree().len(), 461);
     assert!(limits::worst_case().expect("worst case fits u64") < 100_000_000, "view fits its 100 MB memory bound");
 }
+
+fn heading(view: &View) -> &[u8] {
+    let mut in_heading = false;
+    for node in view.tree().nodes() {
+        if in_heading {
+            return &node.text.get(0).expect("heading text run").text;
+        }
+        in_heading = node.role == Role::Heading { level: 1 };
+    }
+    unreachable!("fixture has a heading")
+}
+#[test]
+fn a_notes_page_shows_its_title_as_the_heading() {
+    let mut state = fixtures::state();
+    state.place = Place::Note { number: 7 };
+    let mut view = View::new(&limits::limits());
+    state.build(&mut view, &mut Queue::with_capacity(1200));
+    assert_eq!(heading(&view), b"Groceries");
+}
+#[test]
+fn an_unknown_note_says_there_is_none() {
+    let state = State::start(1, b"/notes/55", &[], 0, b"en");
+    let mut view = View::new(&limits::limits());
+    state.build(&mut view, &mut Queue::with_capacity(1200));
+    assert_eq!(heading(&view), b"No such note.");
+}

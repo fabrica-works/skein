@@ -345,3 +345,19 @@ fn every_node_maps_as_the_golden_page() {
     }
     assert_eq!(dom::print(&page), include_str!("golden/mapping.html").trim_end());
 }
+
+#[test]
+fn an_override_keeps_the_nodes_role_and_name() {
+    let mut made = fixtures::made(Role::Region);
+    made.attribute.name = Some(b"Groceries".as_slice().into());
+    made.attribute.styles.push(Style { owner: OWNER, token: 0 }).expect("fixture style fits");
+    let look = crate::Look {
+        elements: &[(OWNER, Role::Region, Style { owner: OWNER, token: 0 }, "article")],
+        ..fixtures::look()
+    };
+    let element = mapping::element(&made, &look, b"/", Primary::Control);
+    assert_eq!(
+        dom::print(&element),
+        r#"<article data-node="1" role="region" aria-label="Groceries" class="test-mark"></article>"#
+    );
+}

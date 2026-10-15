@@ -21,4 +21,7 @@ pub mod platform;
 pub mod store;
 pub mod transport;
 
+pub mod history;
 pub mod restart;
+pub mod timer;
+pub mod title;

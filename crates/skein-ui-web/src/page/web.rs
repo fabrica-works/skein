@@ -58,7 +58,12 @@ impl Dom {
                 let Some(element) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
                     return;
                 };
-                let node = target.nearest(&element);
+                let node = if event.type_() == "click" {
+                    let link = element.closest("a[data-node]").expect("link selector");
+                    link.as_ref().and_then(|link| target.id(link)).or_else(|| target.nearest(&element))
+                } else {
+                    target.nearest(&element)
+                };
                 let events = read(&event, &element, node, &target);
                 for data in events {
                     let mut ops = Vec::new();

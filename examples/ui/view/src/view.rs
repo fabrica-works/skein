@@ -6,11 +6,13 @@ use skein_ui::phrases::{
     Form, Language, Phrase, PhraseId, PhraseLimits, PhraseShape, Phrasebook, PluralClass, PluralRule, Segment,
     SpanUnit, WallFormat,
 };
-use skein_ui::{Binding, Builder, Key, Owner, Role, Run};
+use skein_ui::{Binding, Builder, Key, Owner, Role, Run, Style};
 pub(crate) const OWNER: Owner = Owner { number: 1 };
 pub(crate) const TITLE: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX) };
 pub(crate) const ADD: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 1) };
-const WORDS: [&[u8]; 10] = [
+pub(crate) const BACK: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 2) };
+pub(crate) const CARD: Style = Style { owner: OWNER, token: 0 };
+const WORDS: [&[u8]; 11] = [
     b"Notes",
     b"Live",
     b"Offline",
@@ -21,13 +23,14 @@ const WORDS: [&[u8]; 10] = [
     b"No such note.",
     b"Title",
     b"Add",
+    b"Back to notes",
 ];
 const WORD_LIMITS: PhraseLimits =
-    PhraseLimits { languages: 1, phrases: 10, holes: 0, segments: 10, text_bytes: 128, hole_bytes: 0 };
+    PhraseLimits { languages: 1, phrases: 11, holes: 0, segments: 11, text_bytes: 128, hole_bytes: 0 };
 
 pub(crate) fn words() -> Phrasebook {
-    let mut shapes = List::with_capacity(10);
-    let mut phrases = List::with_capacity(10);
+    let mut shapes = List::with_capacity(11);
+    let mut phrases = List::with_capacity(11);
     for (number, text) in WORDS.iter().enumerate() {
         let id = PhraseId { owner: OWNER, number: u16::try_from(number).expect("eight phrases fit") };
         shapes.push(PhraseShape { id, holes: Box::from([]), plural: None }).expect("eight shapes fit");
@@ -62,15 +65,16 @@ pub(crate) fn page(state: &State, builder: &mut Builder) {
     text(builder, Role::Status, &phrase(state, if state.live { 1 } else { 2 }));
     builder.close();
     builder.open(Role::Main);
-    text(builder, Role::Heading { level: 1 }, &phrase(state, 0));
     match state.place {
         Place::List => {
+            text(builder, Role::Heading { level: 1 }, &phrase(state, 0));
             list(state, builder);
             form(state, builder);
         }
         #[cfg(debug_assertions)]
         Place::Panic => text(builder, Role::Paragraph, &phrase(state, 7)),
-        Place::Note { .. } | Place::Missing => text(builder, Role::Paragraph, &phrase(state, 7)),
+        Place::Note { number } => note(state, number, builder),
+        Place::Missing => text(builder, Role::Heading { level: 1 }, &phrase(state, 7)),
     }
     builder.close();
     builder.close();
@@ -113,5 +117,46 @@ fn form(state: &State, builder: &mut Builder) {
     builder.name(&phrase(state, 9));
     builder.bind(ADD);
     builder.close();
+    builder.close();
+}
+
+fn note(state: &State, number: u64, builder: &mut Builder) {
+    let mut found = false;
+    for note in state.notes.notes() {
+        if note.number() != number {
+            continue;
+        }
+        found = true;
+        builder.open(Role::Region);
+        builder.name(note.title());
+        builder.style(CARD);
+        text(builder, Role::Heading { level: 1 }, note.title());
+        builder.open(Role::Paragraph);
+        let mut start = 0;
+        for (index, byte) in note.body().iter().enumerate() {
+            if index.saturating_sub(start) >= 252 && byte & 0xc0 != 0x80 {
+                builder.text(Run::Plain, note.body().get(start..index).expect("body chunk"));
+                start = index;
+            }
+        }
+        builder.text(Run::Plain, note.body().get(start..).expect("last body chunk"));
+        builder.close();
+        text(builder, Role::Time, note.due());
+        let minutes = skein_lib::Decimal::of(u64::from(note.minutes()));
+        text(builder, Role::Text, minutes.as_bytes());
+        let label = match note.label() {
+            Label::Idea => 4,
+            Label::Task => 5,
+            Label::Reference => 6,
+        };
+        text(builder, Role::Text, &phrase(state, label));
+        builder.close();
+    }
+    if !found {
+        text(builder, Role::Heading { level: 1 }, &phrase(state, 7));
+    }
+    builder.open(Role::Link);
+    builder.text(Run::Plain, &phrase(state, 10));
+    builder.link(BACK);
     builder.close();
 }
