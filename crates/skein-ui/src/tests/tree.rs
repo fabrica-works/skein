@@ -407,3 +407,22 @@ fn a_sort_on_a_cell_is_an_assertion() {
     b.open(Role::Cell);
     b.sort(crate::Sort::Ascending);
 }
+
+#[test]
+#[should_panic(expected = "required belongs to fields")]
+fn required_on_a_heading_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Heading { level: 1 });
+    b.state(State::Required);
+}
+
+#[test]
+fn required_is_kept_on_each_kind_of_field() {
+    for role in [Role::TextField, Role::TextArea, Role::Select, Role::Check, Role::ChoiceGroup] {
+        let mut b = Builder::new(&LIMITS);
+        b.open(role);
+        b.state(State::Required);
+        b.close();
+        assert_eq!(b.finish().get(0).unwrap().states.as_slice(), [State::Required], "{role:?}");
+    }
+}

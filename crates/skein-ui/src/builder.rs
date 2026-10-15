@@ -215,6 +215,13 @@ impl Builder {
 
     /// Add a semantic state once.
     pub fn state(&mut self, state: State) {
+        if state == State::Required {
+            assert!(
+                [Role::TextField, Role::TextArea, Role::Select, Role::Check, Role::ChoiceGroup]
+                    .contains(&self.node().role),
+                "required belongs to fields"
+            );
+        }
         if !self.node().states.as_slice().contains(&state) {
             self.node_mut().states.push(state).expect("nine closed states fit");
         }

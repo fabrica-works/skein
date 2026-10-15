@@ -140,6 +140,8 @@ pub enum State {
     Pressed,
     /// The node is selected.
     Selected,
+    /// The form needs this field filled.
+    Required,
     /// The node is submitsonenter.
     SubmitsOnEnter,
 }

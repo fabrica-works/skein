@@ -319,6 +319,7 @@ fn states(n: &Node, out: &mut List<u8>) {
         State::Invalid,
         State::Pressed,
         State::Selected,
+        State::Required,
         State::SubmitsOnEnter,
     ] {
         if !has(n, state) {
@@ -335,6 +336,7 @@ fn states(n: &Node, out: &mut List<u8>) {
                     raw(out, if state == State::Pressed { b" (pressed)" } else { b" (selected)" });
                 }
             }
+            State::Required => raw(out, b" (required)"),
             State::SubmitsOnEnter => {
                 if n.role == Role::TextField || n.role == Role::TextArea {
                     raw(out, b" (enter sends)");

@@ -124,6 +124,19 @@ enum Property {
 const LINK: Run = Run::Link { to: skein_lib::Token::new(1) };
 
 const PROPERTIES: &[(Role, Property, &str)] = &[
+    (Role::TextField, Property::State(State::Required), r#"<input data-node="1" type="text" required="">"#),
+    (Role::TextArea, Property::State(State::Required), r#"<textarea data-node="1" required=""></textarea>"#),
+    (Role::Select, Property::State(State::Required), r#"<select data-node="1" required=""></select>"#),
+    (
+        Role::Check,
+        Property::State(State::Required),
+        r#"<input data-node="1" type="checkbox" required="" id="skein-ui-label-1"><label for="skein-ui-label-1"></label>"#,
+    ),
+    (
+        Role::ChoiceGroup,
+        Property::State(State::Required),
+        r#"<div data-node="1" role="radiogroup" aria-required="true"></div>"#,
+    ),
     (
         Role::ColumnHeader,
         Property::Sort(skein_ui::Sort::Ascending),

@@ -153,6 +153,7 @@ fn controls(b: &mut Builder) {
         b.bind(binding());
         if role == Role::TextField {
             b.value(b"hello", 1);
+            b.state(State::Required);
             b.state(State::SubmitsOnEnter);
         }
         b.close();

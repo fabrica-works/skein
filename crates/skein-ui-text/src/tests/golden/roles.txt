@@ -53,7 +53,7 @@ Term:
 [-] Unavailable (disabled)
 [-] Unbound
 external <https://example.test/>
-[5] Message: hello (enter sends)
+[5] Message: hello (required) (enter sends)
 [6] Message: (empty)
 [7] ( ) Option
 [8] (*) Option
