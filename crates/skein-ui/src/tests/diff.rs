@@ -374,3 +374,30 @@ fn a_changed_position_is_one_attribute_patch() {
         }
     }
 }
+
+const SORTED_HEADER: NodeId = NodeId(1); // column header
+
+#[test]
+fn a_changed_sort_is_one_attribute_patch() {
+    let mut view = View::new(&LIMITS);
+    let mut out = Queue::with_capacity(LIMITS.patches);
+    for (shown, sort) in [(1, crate::Sort::Ascending), (2, crate::Sort::Descending)] {
+        let mut b = view.builder();
+        b.open(Role::ColumnHeader);
+        b.sort(sort);
+        b.close();
+        view.finish(b, shown, &mut out);
+        if shown == 1 {
+            while out.pop().is_some() {}
+        }
+    }
+    assert_eq!(out.len(), 1);
+    match out.pop().unwrap() {
+        Patch::Attribute { node, attribute } => {
+            assert_eq!((node, attribute.sort), (SORTED_HEADER, Some(crate::Sort::Descending)));
+        }
+        Patch::Insert { .. } | Patch::Remove { .. } | Patch::Move { .. } | Patch::Text { .. } | Patch::Value { .. } => {
+            panic!("only sort changed")
+        }
+    }
+}

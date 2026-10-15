@@ -10,7 +10,7 @@ fn a_tree_with_every_role_and_state_prints_its_golden_text() {
     let mut print = Print::new(&fixtures::LIMITS).unwrap();
     render(&tree, b"ops", None, &mut print);
     assert_eq!(print.text.as_slice(), include_bytes!("tests/golden/roles.txt"));
-    assert_eq!(print.numbers.len(), 11);
+    assert_eq!(print.numbers.len(), 14);
 }
 #[test]
 #[expect(clippy::disallowed_macros, reason = "hand-written golden bytes cover unsafe terminal text")]

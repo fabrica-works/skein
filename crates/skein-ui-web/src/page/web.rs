@@ -5,8 +5,8 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 use skein_ui::{Act, NodeId};
 use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{
-    Document, Element, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent, MouseEvent, Node,
-    ResizeObserver, ResizeObserverEntry,
+    Document, Element, HtmlElement, HtmlInputElement, HtmlOptionElement, HtmlSelectElement, HtmlTextAreaElement,
+    KeyboardEvent, MouseEvent, Node, ResizeObserver, ResizeObserverEntry,
 };
 
 use super::{Event, Op, Page};
@@ -132,6 +132,21 @@ impl Mounted {
     fn group(&self, node: NodeId) -> Group {
         self.nodes.borrow().get(&node).expect("operation names a mounted node").clone()
     }
+    fn subtree_group(&self, node: NodeId) -> Group {
+        let mut group = self.group(node);
+        for child in self.nodes.borrow().values() {
+            if group.element.contains(Some(&child.element)) {
+                for root in &child.roots {
+                    if !group.element.contains(Some(root))
+                        && !group.roots.iter().any(|held| held.is_same_node(Some(root)))
+                    {
+                        group.roots.push(root.clone());
+                    }
+                }
+            }
+        }
+        group
+    }
     fn id(&self, element: &Element) -> Option<NodeId> {
         let node = NodeId(element.get_attribute("data-node")?.parse().ok()?);
         self.nodes.borrow().contains_key(&node).then_some(node)
@@ -204,6 +219,12 @@ impl Mounted {
                 roots.insert(0, button.into());
             }
         }
+        if let Some(id) = element.get_attribute("aria-describedby")
+            && let Some(description) = self.document.get_element_by_id(&id)
+            && !element.contains(Some(&description))
+        {
+            roots.push(description.into());
+        }
         self.nodes.borrow_mut().insert(node, Group { element: element.clone(), roots });
         if element.tag_name().eq_ignore_ascii_case("figure")
             && let Some(observer) = self.observer.borrow().as_ref()
@@ -229,7 +250,12 @@ impl Mounted {
                     }
                 }
                 Op::Choice { node, checked } => {
-                    self.group(*node).element.unchecked_into::<HtmlInputElement>().set_checked(*checked);
+                    let element = self.group(*node).element;
+                    if let Some(option) = element.dyn_ref::<HtmlOptionElement>() {
+                        option.set_selected(*checked);
+                    } else {
+                        element.unchecked_into::<HtmlInputElement>().set_checked(*checked);
+                    }
                 }
                 Op::Href { node, path } => self
                     .group(*node)
@@ -269,10 +295,24 @@ impl Mounted {
         }
     }
     fn insert(&self, node: NodeId, parent: NodeId, before: Option<NodeId>, model: &Model) {
-        if parent == NodeId(0) && model.attribute("data-node").is_none() && !model.tag.is_empty() {
-            attributes(&self.mount, model, true);
-            for child in self.children(&model.children, false) {
+        let semantic = super::semantic(model);
+        if parent == NodeId(0) && semantic.attribute("data-node").is_none() {
+            attributes(&self.mount, semantic, true);
+            for child in self.children(&semantic.children, false) {
                 self.mount.append_child(&child).expect("mount accepts the page");
+            }
+            if model.tag.is_empty() {
+                for part in model.children.iter().filter_map(|child| match child {
+                    Child::Element(part) if part.attribute("id").is_some() => Some(part),
+                    Child::Element(_) | Child::Text(_) => None,
+                }) {
+                    let parent = self.mount.parent_node().expect("mount has a parent");
+                    for root in self.make(part, false) {
+                        parent
+                            .insert_before(&root, self.mount.next_sibling().as_ref())
+                            .expect("description follows the mount");
+                    }
+                }
             }
             self.register(node, &self.mount);
             self.scan(&self.mount);
@@ -281,7 +321,17 @@ impl Mounted {
         let parent = if parent == NodeId(0) { self.mount.clone() } else { self.destination(parent) };
         let anchor = before.map(|node| self.group(node).roots[0].clone());
         for root in self.make(model, false) {
-            parent.insert_before(&root, anchor.as_ref()).expect("insert anchor belongs to parent");
+            let description =
+                root.dyn_ref::<Element>().is_some_and(|root| root.id().starts_with("skein-ui-description-"));
+            if parent.tag_name() == "SELECT" && description {
+                parent
+                    .parent_node()
+                    .expect("select has a parent")
+                    .insert_before(&root, parent.next_sibling().as_ref())
+                    .expect("option description follows select");
+            } else {
+                parent.insert_before(&root, anchor.as_ref()).expect("insert anchor belongs to parent");
+            }
         }
         self.scan(&parent);
     }
@@ -294,7 +344,7 @@ impl Mounted {
         }
     }
     fn remove(&self, node: NodeId) {
-        let group = self.group(node);
+        let group = self.subtree_group(node);
         let removed: Vec<_> = self
             .nodes
             .borrow()
@@ -318,7 +368,7 @@ impl Mounted {
         }
     }
     fn move_group(&self, node: NodeId, parent: NodeId, before: Option<NodeId>) {
-        let group = self.group(node);
+        let group = self.subtree_group(node);
         let active = self
             .document
             .active_element()
@@ -327,7 +377,17 @@ impl Mounted {
         let parent = self.destination(parent);
         let anchor = before.map(|node| self.group(node).roots[0].clone());
         for root in group.roots {
-            parent.insert_before(&root, anchor.as_ref()).expect("move anchor belongs to parent");
+            let description =
+                root.dyn_ref::<Element>().is_some_and(|root| root.id().starts_with("skein-ui-description-"));
+            if parent.tag_name() == "SELECT" && description {
+                parent
+                    .parent_node()
+                    .expect("select has a parent")
+                    .insert_before(&root, parent.next_sibling().as_ref())
+                    .expect("option description follows select");
+            } else {
+                parent.insert_before(&root, anchor.as_ref()).expect("move anchor belongs to parent");
+            }
         }
         if let Some(element) = active {
             element.unchecked_ref::<HtmlElement>().focus().expect("moved focus remains mounted");
@@ -430,8 +490,39 @@ impl Mounted {
             }
         }
     }
+    fn option_description(&self, node: NodeId, model: &Model) {
+        let group = self.group(node);
+        let parent = group.element.closest("select").expect("select selector").expect("option has a select");
+        let container = parent.parent_node().expect("select has a parent");
+        for companion in group.roots.iter().skip(1) {
+            companion
+                .parent_node()
+                .expect("description is mounted")
+                .remove_child(companion)
+                .expect("remove description");
+        }
+        let mut roots = vec![group.element.clone().into()];
+        if model.tag.is_empty() {
+            for part in model.children.iter().filter_map(|child| match child {
+                Child::Element(part) if part.attribute("data-node").is_none() => Some(part),
+                Child::Element(_) | Child::Text(_) => None,
+            }) {
+                for root in self.make(part, false) {
+                    container
+                        .insert_before(&root, parent.next_sibling().as_ref())
+                        .expect("option description follows select");
+                    roots.push(root);
+                }
+            }
+        }
+        self.nodes.borrow_mut().get_mut(&node).expect("mounted option").roots = roots;
+    }
     fn companions(&self, node: NodeId, model: &Model) {
         let group = self.group(node);
+        if group.element.tag_name() == "OPTION" {
+            self.option_description(node, model);
+            return;
+        }
         let parent = group.element.parent_node().expect("mapped node is mounted");
         let mut anchor = group.roots.last().and_then(Node::next_sibling);
         let parts: Vec<&Model> = if model.tag.is_empty() {
@@ -489,6 +580,9 @@ fn attributes(element: &Element, model: &Model, mount: bool) {
         if element.get_attribute(name).as_ref() != Some(value) {
             element.set_attribute(name, value).expect("mapped attribute can be set");
         }
+    }
+    if let Some(option) = element.dyn_ref::<HtmlOptionElement>() {
+        option.set_selected(model.attribute("selected").is_some());
     }
     if let Some(input) = element.dyn_ref::<HtmlInputElement>()
         && ["checkbox", "radio"].contains(&input.type_().as_str())
@@ -580,7 +674,18 @@ fn read(event: &web_sys::Event, element: &Element, node: Option<NodeId>, documen
         "compositionend" => {
             out.push(Event::CompositionEnd { node, value: value(element).into_bytes().into_boxed_slice() });
         }
-        "change" => out.push(Event::Change { node }),
+        "change" => {
+            if let Some(select) = element.dyn_ref::<HtmlSelectElement>() {
+                if let Ok(index) = u32::try_from(select.selected_index())
+                    && let Some(option) = select.options().item(index)
+                    && let Some(option) = document.id(&option)
+                {
+                    out.push(Event::Choose { select: node, option });
+                }
+            } else {
+                out.push(Event::Change { node });
+            }
+        }
         "cancel" => out.push(Event::Cancel { dialog: node }),
         "close" => out.push(Event::Closed { dialog: node }),
         "focusin" => out.push(Event::Focused { node }),

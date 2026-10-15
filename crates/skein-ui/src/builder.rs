@@ -8,8 +8,8 @@ use crate::Binding;
 use crate::Limits;
 use crate::tree::length;
 use crate::{
-    Drawing, DrawingKind, EntryKind, Key, Node, Picture, Region, Role, Run, Shortcut, SlotRef, Source, Spans, State,
-    Style, TextRun, Tree, Value,
+    Drawing, DrawingKind, EntryKind, Key, Node, Picture, Region, Role, Run, Shortcut, SlotRef, Sort, Source, Spans,
+    State, Style, TextRun, Tree, Value,
 };
 
 use alloc::boxed::Box;
@@ -199,9 +199,18 @@ impl Builder {
     }
     /// Span rows and columns from a cell.
     pub fn spans(&mut self, spans: Spans) {
-        assert!(self.node().role == Role::Cell, "spans belong to cells");
+        assert!(
+            [Role::Cell, Role::ColumnHeader, Role::RowHeader].contains(&self.node().role),
+            "spans belong to cells or headers"
+        );
         assert!(spans.rows > 0 && spans.columns > 0, "spans start at one");
         self.node_mut().spans = Some(spans);
+    }
+
+    /// Give a column header its order.
+    pub fn sort(&mut self, sort: Sort) {
+        assert!(self.node().role == Role::ColumnHeader, "sort belongs to column headers");
+        self.node_mut().sort = Some(sort);
     }
 
     /// Add a semantic state once.
@@ -529,6 +538,7 @@ fn acted_on(role: Role) -> bool {
         | Role::Choice
         | Role::Check
         | Role::Tab
+        | Role::Option
         | Role::MenuItem => true,
         Role::Page
         | Role::Banner
@@ -547,6 +557,9 @@ fn acted_on(role: Role) -> bool {
         | Role::Table
         | Role::Row
         | Role::Cell
+        | Role::ColumnHeader
+        | Role::RowHeader
+        | Role::Select
         | Role::Term
         | Role::Description
         | Role::ChoiceGroup

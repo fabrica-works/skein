@@ -111,6 +111,10 @@ const BINDING_ROLES: &[(Role, bool)] = &[
     (Role::Table, false),
     (Role::Row, false),
     (Role::Cell, false),
+    (Role::ColumnHeader, false),
+    (Role::RowHeader, false),
+    (Role::Select, false),
+    (Role::Option, true),
     (Role::Term, false),
     (Role::Description, false),
     (Role::Button, true),
@@ -394,4 +398,12 @@ fn spans_of_zero_are_an_assertion() {
         });
         assert!(outcome.is_err(), "{spans:?}");
     }
+}
+
+#[test]
+#[should_panic(expected = "sort belongs to column headers")]
+fn a_sort_on_a_cell_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Cell);
+    b.sort(crate::Sort::Ascending);
 }

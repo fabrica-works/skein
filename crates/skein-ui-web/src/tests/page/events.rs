@@ -474,3 +474,38 @@ fn escape_presses_the_dialogs_escape_button() {
     page.apply(&fixtures::patches(&mut view, 0, dialog_escape), &mut Vec::new());
     assert_eq!(page.act(Event::Cancel { dialog: ESCAPE_DIALOG }, &mut Vec::new()), Some((ESCAPE_BUTTON, Act::Press)));
 }
+
+const SELECT: NodeId = NodeId(3); // page, main, select
+const SELECTED_OPTION: NodeId = NodeId(4); // page, main, select, first option
+const CHOSEN_OPTION: NodeId = NodeId(5); // page, main, select, first option, second option
+fn select(b: &mut Builder) {
+    main(b);
+    b.open(Role::Select);
+    for selected in [true, false] {
+        b.open(Role::Option);
+        b.bind(fixtures::binding(1));
+        if selected {
+            b.state(State::Selected);
+        }
+        b.close();
+    }
+    b.close();
+    end(b);
+}
+
+#[test]
+fn a_select_change_presses_the_option_and_puts_the_choice_back() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(&fixtures::patches(&mut view, 0, select), &mut Vec::new());
+    let act = page.act(Event::Choose { select: SELECT, option: CHOSEN_OPTION }, &mut ops);
+    assert_eq!(
+        (act, ops),
+        (
+            Some((CHOSEN_OPTION, Act::Press)),
+            vec![
+                Op::Choice { node: SELECTED_OPTION, checked: true },
+                Op::Choice { node: CHOSEN_OPTION, checked: false },
+            ]
+        )
+    );
+}

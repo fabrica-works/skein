@@ -91,6 +91,10 @@ pub fn command(line: &[u8], numbers: Option<&[NodeId]>, tree: &Tree, longest: u3
         | Role::Table
         | Role::Row
         | Role::Cell
+        | Role::ColumnHeader
+        | Role::RowHeader
+        | Role::Select
+        | Role::Option
         | Role::Term
         | Role::Description
         | Role::Button

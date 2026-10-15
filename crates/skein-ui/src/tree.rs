@@ -54,6 +54,14 @@ pub enum Role {
     Row,
     /// A cell node.
     Cell,
+    /// A header naming its column.
+    ColumnHeader,
+    /// A header naming its row.
+    RowHeader,
+    /// A named control choosing one option.
+    Select,
+    /// One option in a select.
+    Option,
     /// A term node.
     Term,
     /// A description node.
@@ -167,6 +175,12 @@ pub enum EntryKind {
     Time,
     Secret,
 }
+/// A column header's order (ui.md, 3.2).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Sort {
+    Ascending,
+    Descending,
+}
 /// The rows and columns a cell spans, each at least one (ui.md, 3.2).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Spans {
@@ -274,6 +288,7 @@ pub struct Node {
     pub count: Option<u32>,
     pub position: Option<u32>,
     pub spans: Option<Spans>,
+    pub sort: Option<Sort>,
     pub text: List<TextRun>,
     pub value: Option<Value>,
     pub link: Option<crate::Binding>,
@@ -303,6 +318,7 @@ impl Node {
             count: None,
             position: None,
             spans: None,
+            sort: None,
             text: List::with_capacity(0),
             value: None,
             link: None,
@@ -331,6 +347,7 @@ impl Node {
             count: None,
             position: None,
             spans: None,
+            sort: None,
             text: List::with_capacity(runs),
             value: None,
             link: None,

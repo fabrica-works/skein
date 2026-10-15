@@ -21,7 +21,7 @@ pub fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) ->
         let mut words = Element::new("span");
         words.set("id", &id);
         words.text(description);
-        if [Role::Item, Role::Cell].contains(&made.attribute.role) {
+        if [Role::Item, Role::Cell, Role::ColumnHeader, Role::RowHeader].contains(&made.attribute.role) {
             core.append(words);
         } else if e.tag.is_empty() {
             e.append(words);
@@ -142,6 +142,15 @@ fn collection(e: &mut Element, made: &Made) {
     if let Some(position) = a.position {
         e.set(if a.role == Role::Row { "aria-rowindex" } else { "aria-posinset" }, &position.to_string());
     }
+    if let Some(sort) = a.sort {
+        e.set(
+            "aria-sort",
+            match sort {
+                skein_ui::Sort::Ascending => "ascending",
+                skein_ui::Sort::Descending => "descending",
+            },
+        );
+    }
     if let Some(spans) = a.spans {
         if spans.rows > 1 {
             e.set("rowspan", &spans.rows.to_string());
@@ -174,6 +183,7 @@ fn properties(e: &mut Element, made: &Made) {
             Role::Button,
             Role::Link,
             Role::TextField,
+            Role::Select,
             Role::TextArea,
             Role::Choice,
             Role::Check,
@@ -202,6 +212,8 @@ fn base(role: Role, id: u32) -> Element {
                 e.set("aria-level", &level.to_string());
             }
         }
+        Role::ColumnHeader => e.set("scope", "col"),
+        Role::RowHeader => e.set("scope", "row"),
         Role::Button => e.set("type", "button"),
         Role::TextField => e.set("type", "text"),
         Role::Choice => e.set("type", "radio"),
@@ -224,6 +236,8 @@ fn base(role: Role, id: u32) -> Element {
         | Role::Table
         | Role::Row
         | Role::Cell
+        | Role::Select
+        | Role::Option
         | Role::Term
         | Role::Description
         | Role::Link
@@ -254,12 +268,16 @@ fn base(role: Role, id: u32) -> Element {
 fn state_attribute(e: &mut Element, role: Role, state: State) {
     match state {
         State::Disabled => e.set(
-            if [Role::Button, Role::TextField, Role::TextArea, Role::Choice, Role::Check].contains(&role) {
+            if [Role::Button, Role::TextField, Role::TextArea, Role::Choice, Role::Check, Role::Select, Role::Option]
+                .contains(&role)
+            {
                 "disabled"
             } else {
                 "aria-disabled"
             },
-            if [Role::Button, Role::TextField, Role::TextArea, Role::Choice, Role::Check].contains(&role) {
+            if [Role::Button, Role::TextField, Role::TextArea, Role::Choice, Role::Check, Role::Select, Role::Option]
+                .contains(&role)
+            {
                 ""
             } else {
                 "true"
@@ -274,8 +292,14 @@ fn state_attribute(e: &mut Element, role: Role, state: State) {
             if role == Role::Check { "" } else { "true" },
         ),
         State::Selected => e.set(
-            if role == Role::Choice { "checked" } else { "aria-selected" },
-            if role == Role::Choice { "" } else { "true" },
+            if role == Role::Choice {
+                "checked"
+            } else if role == Role::Option {
+                "selected"
+            } else {
+                "aria-selected"
+            },
+            if role == Role::Choice || role == Role::Option { "" } else { "true" },
         ),
         State::SubmitsOnEnter => e.set("enterkeyhint", "send"),
     }
@@ -326,6 +350,10 @@ pub const fn accessible(role: Role) -> &'static [&'static [u8]] {
         Role::Table => &[b"table"],
         Role::Row => &[b"row"],
         Role::Cell => &[b"cell"],
+        Role::ColumnHeader => &[b"columnheader"],
+        Role::RowHeader => &[b"rowheader"],
+        Role::Select => &[b"combobox"],
+        Role::Option => &[b"option"],
         Role::Term => &[b"term"],
         Role::Description => &[b"definition"],
         Role::Button => &[b"button"],
@@ -359,7 +387,7 @@ fn name(e: &mut Element, made: &Made) {
     let a = &made.attribute;
     if let Some(name) = &a.name {
         match a.role {
-            Role::Button | Role::Tab | Role::MenuItem => e.text(name),
+            Role::Button | Role::Tab | Role::MenuItem | Role::Option => e.text(name),
             Role::Disclosure => {
                 let mut summary = Element::new("summary");
                 summary.text(name);
@@ -383,6 +411,9 @@ fn name(e: &mut Element, made: &Made) {
             | Role::Table
             | Role::Row
             | Role::Cell
+            | Role::ColumnHeader
+            | Role::RowHeader
+            | Role::Select
             | Role::Term
             | Role::Description
             | Role::Link
@@ -460,6 +491,10 @@ fn value(e: &mut Element, made: &Made) {
             | Role::Table
             | Role::Row
             | Role::Cell
+            | Role::ColumnHeader
+            | Role::RowHeader
+            | Role::Select
+            | Role::Option
             | Role::Term
             | Role::Description
             | Role::Button
@@ -519,6 +554,9 @@ fn tag(role: Role) -> (&'static str, Option<&'static str>) {
         Role::Table => ("table", None),
         Role::Row => ("tr", None),
         Role::Cell => ("td", None),
+        Role::ColumnHeader | Role::RowHeader => ("th", None),
+        Role::Select => ("select", None),
+        Role::Option => ("option", None),
         Role::Term => ("div", Some("term")),
         Role::Description => ("div", Some("definition")),
         Role::Button => ("button", None),

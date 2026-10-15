@@ -143,6 +143,7 @@ fn node(tree: &Tree, at: u32, indent: u32, print: &mut Print) -> Option<u32> {
         | Role::Tree
         | Role::Menu
         | Role::ChoiceGroup
+        | Role::Select
         | Role::Tabs
         | Role::Log
         | Role::Drawing => {
@@ -173,6 +174,7 @@ fn node(tree: &Tree, at: u32, indent: u32, print: &mut Print) -> Option<u32> {
         | Role::TextField
         | Role::TextArea
         | Role::Choice
+        | Role::Option
         | Role::Check => {
             control(tree, at, indent, print);
             None
@@ -181,11 +183,13 @@ fn node(tree: &Tree, at: u32, indent: u32, print: &mut Print) -> Option<u32> {
             start(&mut print.text, indent);
             let mut first = true;
             for child in at.saturating_add(1)..at.saturating_add(n.size) {
-                if tree.get(child).expect("row child exists").role == Role::Cell {
+                let cell = tree.get(child).expect("row child exists");
+                if [Role::Cell, Role::ColumnHeader, Role::RowHeader].contains(&cell.role) {
                     if !first {
                         raw(&mut print.text, b" | ");
                     }
                     content(tree, child, &mut print.text, indent, false);
+                    sort(cell, &mut print.text);
                     first = false;
                 }
             }
@@ -206,6 +210,8 @@ fn node(tree: &Tree, at: u32, indent: u32, print: &mut Print) -> Option<u32> {
         | Role::Text
         | Role::Time
         | Role::Cell
+        | Role::ColumnHeader
+        | Role::RowHeader
         | Role::Term
         | Role::Status
         | Role::Alert
@@ -225,7 +231,7 @@ fn control(tree: &Tree, at: u32, indent: u32, print: &mut Print) {
     if n.external.is_none() {
         number(n, print);
     }
-    if n.role == Role::Choice {
+    if n.role == Role::Choice || n.role == Role::Option {
         raw(&mut print.text, if has(n, State::Selected) { b"(*) " } else { b"( ) " });
     }
     if n.role == Role::Check {
@@ -271,7 +277,16 @@ fn line(tree: &Tree, at: u32, mut indent: u32, out: &mut List<u8>) {
     if n.role == Role::Term {
         raw(out, b":");
     }
+    sort(n, out);
     finish(n, out);
+}
+fn sort(n: &Node, out: &mut List<u8>) {
+    if let Some(sort) = n.sort {
+        match sort {
+            skein_ui::Sort::Ascending => raw(out, b" (ascending)"),
+            skein_ui::Sort::Descending => raw(out, b" (descending)"),
+        }
+    }
 }
 fn finish(n: &Node, out: &mut List<u8>) {
     states(n, out);
@@ -316,7 +331,7 @@ fn states(n: &Node, out: &mut List<u8>) {
             State::Current => raw(out, b" (current)"),
             State::Invalid => raw(out, b" (invalid)"),
             State::Pressed | State::Selected => {
-                if n.role != Role::Choice && n.role != Role::Check {
+                if n.role != Role::Choice && n.role != Role::Option && n.role != Role::Check {
                     raw(out, if state == State::Pressed { b" (pressed)" } else { b" (selected)" });
                 }
             }

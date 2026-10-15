@@ -390,18 +390,38 @@ impl<'a> Page<'a> {
         } else {
             core
         };
-        let description = if [Role::Item, Role::Cell].contains(&self.held(node).made.attribute.role)
+        let description = if [Role::Item, Role::Cell, Role::ColumnHeader, Role::RowHeader]
+            .contains(&self.held(node).made.attribute.role)
             && self.held(node).made.attribute.description.is_some()
         {
             destination.children.pop()
         } else {
             None
         };
+        let mut option_descriptions = Vec::new();
         for child in &self.held(node).children {
-            destination.append(self.render(*child));
+            let rendered = self.render(*child);
+            if self.held(node).made.attribute.role == Role::Select && rendered.tag.is_empty() {
+                for part in rendered.children {
+                    match part {
+                        Child::Element(part) if part.attribute("data-node").is_some() => destination.append(part),
+                        part => option_descriptions.push(part),
+                    }
+                }
+            } else {
+                destination.append(rendered);
+            }
         }
         if let Some(description) = description {
             destination.children.push(description);
+        }
+        if !option_descriptions.is_empty() {
+            if !element.tag.is_empty() {
+                let mut pair = Element::new("");
+                pair.append(element);
+                element = pair;
+            }
+            element.children.extend(option_descriptions);
         }
         element
     }
@@ -447,6 +467,7 @@ fn focusable(role: Role) -> bool {
         Role::Button,
         Role::Link,
         Role::TextField,
+        Role::Select,
         Role::TextArea,
         Role::Choice,
         Role::Check,
@@ -465,6 +486,7 @@ pub enum Event {
     CompositionEnd { node: NodeId, value: Box<[u8]> },
     Enter { node: NodeId, shift: bool, composing: bool },
     Change { node: NodeId },
+    Choose { select: NodeId, option: NodeId },
     Cancel { dialog: NodeId },
     Closed { dialog: NodeId },
     Focused { node: NodeId },
@@ -521,6 +543,7 @@ impl Page<'_> {
                     None
                 }
             }
+            Event::Choose { select, option } => self.choose(select, option, ops),
             Event::Cancel { dialog } => {
                 self.held(dialog);
                 ops.push(Op::Attributes { node: dialog, element: self.own_element(dialog) });
@@ -567,6 +590,30 @@ impl Page<'_> {
             }
             event @ Event::Key { .. } => self.key(event, ops),
         }
+    }
+
+    fn choose(&self, select: NodeId, option: NodeId, ops: &mut Vec<Op>) -> Option<(NodeId, Act)> {
+        let held = self.held(select);
+        if held.made.attribute.role != Role::Select || !enabled(&held.made.attribute) {
+            return None;
+        }
+        let options: Vec<_> = held
+            .children
+            .iter()
+            .copied()
+            .filter(|child| self.held(*child).made.attribute.role == Role::Option)
+            .collect();
+        if !options.contains(&option) {
+            return None;
+        }
+        for node in options {
+            ops.push(Op::Choice {
+                node,
+                checked: self.held(node).made.attribute.states.as_slice().contains(&State::Selected),
+            });
+        }
+        let a = &self.held(option).made.attribute;
+        (enabled(a) && a.bound).then_some((option, Act::Press))
     }
 
     fn click(&mut self, node: NodeId, modifier: bool, ops: &mut Vec<Op>) -> Option<(NodeId, Act)> {

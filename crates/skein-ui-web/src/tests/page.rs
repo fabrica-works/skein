@@ -489,3 +489,25 @@ fn a_removed_count_removes_each_items_setsize() {
         r#"<div><main data-node="2"><ul data-node="3"><li data-node="4" aria-posinset="1"></li><li data-node="5" aria-posinset="2"></li></ul></main></div>"#
     );
 }
+
+#[test]
+fn an_options_description_follows_its_select() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.open(Role::Select);
+            b.open(Role::Option);
+            b.name(b"One");
+            b.description(b"Help");
+            b.close();
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(
+        page.html(),
+        r#"<div><main data-node="2"><select data-node="3"><option data-node="4" aria-describedby="skein-ui-description-4">One</option></select><span id="skein-ui-description-4">Help</span></main></div>"#
+    );
+}

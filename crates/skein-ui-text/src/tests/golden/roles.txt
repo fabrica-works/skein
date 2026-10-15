@@ -39,8 +39,10 @@ plain emphasis strong `code` link
   continued
   second
 - tree item
-left | right
+Name (ascending) | Value
+Row | left | right
 outside
+Outside header
 Term:
   Description
   Another line
@@ -57,6 +59,10 @@ external <https://example.test/>
 [8] (*) Option
 [9] [ ] Option
 [10] [x] Option
+Select:
+  [11] ( ) One
+  [12] (*) Two
+  [13] ( ) Three
 * Ready
 * Loading
 ! Warning
@@ -73,4 +79,4 @@ Drawing:
 Picture
 [-] States (disabled) (expanded) (busy) (current) (invalid) (pressed) (selected)
 - Card:
-    [11] Nested
+    [14] Nested

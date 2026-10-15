@@ -102,6 +102,10 @@ fn field(role: Role) -> bool {
         | Role::Table
         | Role::Row
         | Role::Cell
+        | Role::ColumnHeader
+        | Role::RowHeader
+        | Role::Select
+        | Role::Option
         | Role::Term
         | Role::Description
         | Role::Button
@@ -151,6 +155,10 @@ fn choice(role: Role) -> bool {
         | Role::Table
         | Role::Row
         | Role::Cell
+        | Role::ColumnHeader
+        | Role::RowHeader
+        | Role::Select
+        | Role::Option
         | Role::Term
         | Role::Description
         | Role::Button

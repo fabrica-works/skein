@@ -53,6 +53,7 @@ pub fn roles(b: &mut Builder) {
     groups(b);
     bodies(b);
     controls(b);
+    select(b);
     remaining(b);
     nested_item(b);
 }
@@ -107,11 +108,20 @@ fn bodies(b: &mut Builder) {
     b.close();
     b.open(Role::Table);
     b.open(Role::Row);
+    b.open(Role::ColumnHeader);
+    b.sort(skein_ui::Sort::Ascending);
+    b.text(Run::Plain, b"Name");
+    b.close();
+    leaf(b, Role::ColumnHeader, b"Value");
+    b.close();
+    b.open(Role::Row);
+    leaf(b, Role::RowHeader, b"Row");
     leaf(b, Role::Cell, b"left");
     leaf(b, Role::Cell, b"right");
     b.close();
     b.close();
     leaf(b, Role::Cell, b"outside");
+    leaf(b, Role::ColumnHeader, b"Outside header");
     leaf(b, Role::Term, b"Term");
     b.open(Role::Description);
     b.text(Run::Plain, b"Description");
@@ -159,6 +169,20 @@ fn controls(b: &mut Builder) {
             b.close();
         }
     }
+}
+fn select(b: &mut Builder) {
+    b.open(Role::Select);
+    b.name(b"Select");
+    for (name, selected) in [(b"One".as_slice(), false), (b"Two", true), (b"Three", false)] {
+        b.open(Role::Option);
+        b.name(name);
+        b.bind(binding());
+        if selected {
+            b.state(State::Selected);
+        }
+        b.close();
+    }
+    b.close();
 }
 fn remaining(b: &mut Builder) {
     leaf(b, Role::Status, b"Ready");

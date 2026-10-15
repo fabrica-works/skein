@@ -7,6 +7,10 @@ use skein_ui::{Made, Modifier, Picture, Region, Role, Run, Shortcut, State, Styl
 
 const ROLES: &[(Role, &str, &[&[u8]])] = &[
     (Role::Page, "<div></div>", &[b"generic"]),
+    (Role::ColumnHeader, r#"<th data-node="1" scope="col"></th>"#, &[b"columnheader"]),
+    (Role::RowHeader, r#"<th data-node="1" scope="row"></th>"#, &[b"rowheader"]),
+    (Role::Select, r#"<select data-node="1"></select>"#, &[b"combobox"]),
+    (Role::Option, r#"<option data-node="1"></option>"#, &[b"option"]),
     (Role::Banner, r#"<header data-node="1"></header>"#, &[b"banner"]),
     (Role::Navigation, r#"<nav data-node="1"></nav>"#, &[b"navigation"]),
     (Role::Main, r#"<main data-node="1"></main>"#, &[b"main"]),
@@ -97,6 +101,7 @@ fn each_role_has_its_accessible_roles() {
 #[derive(Clone, Copy, Debug)]
 enum Property {
     State(State),
+    Sort(skein_ui::Sort),
     Count,
     Position,
     Spans(skein_ui::Spans),
@@ -119,6 +124,24 @@ enum Property {
 const LINK: Run = Run::Link { to: skein_lib::Token::new(1) };
 
 const PROPERTIES: &[(Role, Property, &str)] = &[
+    (
+        Role::ColumnHeader,
+        Property::Sort(skein_ui::Sort::Ascending),
+        r#"<th data-node="1" scope="col" aria-sort="ascending"></th>"#,
+    ),
+    (
+        Role::ColumnHeader,
+        Property::Sort(skein_ui::Sort::Descending),
+        r#"<th data-node="1" scope="col" aria-sort="descending"></th>"#,
+    ),
+    (
+        Role::ColumnHeader,
+        Property::Spans(skein_ui::Spans { rows: 2, columns: 3 }),
+        r#"<th data-node="1" scope="col" rowspan="2" colspan="3"></th>"#,
+    ),
+    (Role::Option, Property::Name, r#"<option data-node="1">Words &amp; &lt;b&gt;</option>"#),
+    (Role::Option, Property::State(State::Selected), r#"<option data-node="1" selected=""></option>"#),
+    (Role::Select, Property::State(State::Disabled), r#"<select data-node="1" disabled=""></select>"#),
     (Role::Table, Property::Count, r#"<table data-node="1" aria-rowcount="20"></table>"#),
     (Role::Item, Property::Position, r#"<li data-node="1" aria-posinset="7"></li>"#),
     (Role::TreeItem, Property::Position, r#"<div data-node="1" role="treeitem" aria-posinset="7"></div>"#),
@@ -229,6 +252,7 @@ fn property(made: &mut Made, property: Property) {
         Property::State(state) => {
             made.attribute.states.push(state).expect("fixture state capacity");
         }
+        Property::Sort(sort) => made.attribute.sort = Some(sort),
         Property::Count => made.attribute.count = Some(20),
         Property::Position => made.attribute.position = Some(7),
         Property::Spans(spans) => made.attribute.spans = Some(spans),
