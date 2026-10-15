@@ -14,6 +14,7 @@ members = [
     "testing/skein-echo-client",
     "testing/skein-fake-machine",
     "testing/skein-fake-channel",
+    "testing/skein-fake-person",
     "testing/skein-fake-oauth",
     "testing/skein-fake-checkout",
     "testing/skein-fake-llm-domain",
@@ -52,6 +53,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-fake-person = { path = "testing/skein-fake-person" }
 skein-ui-text = { path = "crates/skein-ui-text" }
 skein-ui = { path = "crates/skein-ui" }
 skein-ui-bundle = { path = "crates/skein-ui-bundle" }

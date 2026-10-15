@@ -575,6 +575,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-fake-person"
+version = "0.0.0"
+dependencies = [
+ "skein-lib",
+ "skein-ui",
+]
+
+[[package]]
 name = "skein-heap"
 version = "0.0.0"
 
