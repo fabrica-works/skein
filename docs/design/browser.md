@@ -93,8 +93,11 @@ caps, as for any machine stacked on a stream (io.md, 2).
     default apps;
   - `about:blank` as the first page.
 
-  The environment is minimal, with a fixed locale and time zone, so
-  that a page renders dates and numbers the same everywhere.
+  The environment is minimal, and it is the child's whole environment
+  (io.md, 6): `LANG` and `LC_ALL` are `C.UTF-8`, which Chromium takes
+  as its `en-US`, and `TZ` is `UTC`. So a page renders dates and
+  numbers the same everywhere, and a native date or time field shows
+  its parts in one order (section 6).
 - **Ready** comes once the browser answers its first command
   (`Browser.getVersion`). The event carries the version, which the test
   writes into its report.
@@ -157,6 +160,7 @@ pub enum Request {                                       // from the test
     Press  { page: Token, op: Token, node: Node, at: Option<Point> },  // none: the box's centre
     Type   { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },  // an IME composition, left open
+    Keys   { page: Token, op: Token, node: Node, text: Box<[u8]> },  // each character a key: a native date or time field
     Key    { page: Token, op: Token, key: Key },         // Enter, Escape, Tab, Backspace, arrows
     Snapshot   { page: Token, op: Token },               // the accessibility tree, as text
     Screenshot { page: Token, op: Token },
@@ -229,6 +233,7 @@ to the next command, never a closure waiting on a reply:
 | press | the node scrolled into view, its named point with it; its box's centre, or the named point in the box; layout metrics turn the viewport point into document coordinates for the hit test; refused `Hidden` without a box or with a point outside it, `Disabled` if its accessibility node says so, `Covered` unless the hit test at that point lands on the node or inside it; then the mouse moved, pressed and released at the viewport point |
 | type | the node focused; the text inserted |
 | compose | the node focused; a composition set and left open, which a later `Type` commits |
+| keys | the node focused; for each character of the text, in order, its key down and up, the character its key and its text |
 | key | the key down and up, with the text it makes |
 | snapshot | the accessibility tree under the document, as indented lines of role, name, value and states, cut at `Limits::snapshot` |
 | screenshot | the viewport as PNG, under `Limits::screenshot` |
@@ -250,6 +255,18 @@ to the next command, never a closure waiting on a reply:
 - **Covered is not a failure.** A dialog that has not closed yet, or a
   toast over a button, covers it for a moment. The test decides whether
   to wait and press again.
+- **Typing inserts; keys press.** `type` inserts its text as one edit,
+  and commits a composition left open. A native date or time field
+  takes no inserted text. Each of its parts, a number or the half of
+  the day, takes keys, and a part filled moves the focus to the next.
+  `keys` reaches it as a person's keyboard does.
+  - The kit types the characters it is given, in order. Which
+    characters a field's parts take, and in which order, is the
+    test's: the browser's locale sets them (section 3), and the face
+    checks them as its facts (ui-web.md, 14.1 and 14.2).
+  - A key goes where the focus is. Focusing a field that does not have
+    the focus puts it on the field's first part; a field that has it
+    keeps it in the part it is in.
 - **A go answers its page's closing warning.** A person who navigates,
   reloads or moves back or forward has chosen to leave the document. So
   the kit accepts a `beforeunload` prompt that opens on the page while a
@@ -342,12 +359,15 @@ allocator's high water against `worst_case`.
   with a name and without one, boxes and the hit test, on an element and
   on a shape of an SVG, the events each step waits for, and the dialogs
   (a reload accepting the closing warning, a close meeting none, a
-  confirm dismissed). A new Chromium version is a run of these, and a
-  fact that changed is fixed in the fake first. They need Chromium and
-  do not replay, so they form a suite of their own, beside the focused
-  and fuzzy suites (`--profile browser`, within two minutes, which the
-  browser parts' tier shares: ui-web.md, 14.1). A missing Chromium
-  fails that suite, naming what is missing; it is never a skip.
+  confirm dismissed). The keys a native date or time field takes, and
+  their order, are the face's facts, checked with its others in this
+  suite (ui-web.md, 14.1). A new Chromium version is a run of these,
+  and a fact that changed is fixed in the fake first. They need
+  Chromium and do not replay, so they form a suite of their own, beside
+  the focused and fuzzy suites (`--profile browser`, within two minutes,
+  which the browser parts' tier shares: ui-web.md, 14.1). A missing
+  Chromium fails that suite, naming what is missing; it is never a
+  skip.
 
 The kit's tests are a crate of their own, `tests/browser`
 (`skein-browser-world`) (testing.md, 6).

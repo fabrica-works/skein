@@ -839,9 +839,12 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   pages that a small server on skein's HTTP serves in the test's loop,
   as the kit checks its own (browser.md, section 9): the accessible role
   Chromium computes for each element and input type of section 6's
-  table, which a find of that role asks for (14.2); and a `<select>`'s
-  option chosen by the kit's keys. A new Chromium version is a run of
-  these, and a fact that changed is fixed in the face's table first.
+  table, which a find of that role asks for (14.2); a `<select>`'s
+  option chosen by the kit's keys; and a date field and a time field
+  given their values by the keys 14.2 names, in their parts' order
+  under the kit's locale (browser.md, sections 3 and 6). A new Chromium
+  version is a run of these, and a fact that changed is fixed in the
+  face's table first.
 
 ### 14.2 The face and the harness
 
@@ -850,17 +853,37 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   - roles through section 6's mapping, which an override keeps (6.1):
     for each role, the accessible roles its elements compute in
     Chromium, which a find of that role asks the kit for (a text field:
-    `textbox`, and `spinbutton` for a number's; 14.1);
+    `textbox`; `spinbutton` for a number's, `Date` for a date's and
+    `InputTime` for a time's; 14.1);
   - names by words in them or exactly (browser.md, section 5); text by
     words within one run, a sentence that a strong word or a link splits
     being several runs;
   - `Pending` while the kit answers.
 - **Its acts:** press; type, an input's whole value (the field cleared,
-  then the words); Enter for a send; an option chosen with the kit's
-  keys, as a keyboard chooses one; `Go`, a navigation to the path the
-  application's codec prints for the address; a reload. A go and a
-  reload accept the page's closing warning, as a person who chose to go
-  answers it (browser.md, section 6).
+  then the words), a date's or a time's by the kit's keys (below);
+  Enter for a send; an option chosen with the kit's keys, as a keyboard
+  chooses one; `Go`, a navigation to the path the application's codec
+  prints for the address; a reload. A go and a reload accept the page's
+  closing warning, as a person who chose to go answers it (browser.md,
+  section 6).
+- **A date or a time is typed as a person types it,** into its native
+  field's parts, since that field takes no inserted text (browser.md,
+  section 6). The face knows the field by the role Chromium computes
+  for it, `Date` or `InputTime`. It turns the value, in the element's
+  own format (section 6), into the keys of the field's parts under the
+  kit's locale, `en-US` (browser.md, section 3), and gives them to the
+  kit's `keys`:
+  - a date `YYYY-MM-DD` is typed as its month, its day, then its year:
+    `2026-10-15` as `10152026`;
+  - a time `HH:MM` is typed as its hour on a 12-hour clock, its
+    minutes, then `A` before noon or `P` from noon: `14:30` as `0230P`,
+    `00:00` as `1200A`, `12:00` as `1200P`;
+  - the empty value is typed as no key;
+  - any other value fails the step, naming the field and the value,
+    since no person's keys put it in that field.
+
+  The order is a fact the face assumes (14.1). A Chromium that orders
+  the parts otherwise fails that fact, which names the field it typed.
 - **The harness,** in the same crate, ordinary Rust, runs the
   application's server binary and Chromium as children of one loop,
   through skein's io (testing-strategy.md, 2.9); opens the address the
