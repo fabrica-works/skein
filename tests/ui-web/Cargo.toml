@@ -9,6 +9,7 @@ publish.workspace = true
 skein-fake-person-browser.workspace = true
 skein-fake-person.workspace = true
 skein-ui.workspace = true
+skein-ui-web.workspace = true
 skein-ui-example-server.workspace = true
 skein-ui-bundle.workspace = true
 skein-ui-example-view.workspace = true

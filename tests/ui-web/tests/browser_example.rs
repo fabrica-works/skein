@@ -133,3 +133,44 @@ fn a_reload_once_the_add_is_made_meets_no_closing_warning() {
     ]));
     assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
 }
+
+#[test]
+fn a_person_fills_each_entry_kind_and_chooses_a_label() {
+    let mut steps = vec![harness::Step::Person(Step::See { find: Find::text(b"Live"), within: SECOND })];
+    for (role, name, words) in [
+        (Role::TextField, b"Title".as_slice(), b"Shopping".as_slice()),
+        (Role::TextArea, b"Body", b"Milk and bread"),
+        (Role::TextField, b"Due date", b"2026-10-15"),
+        (Role::TextField, b"Minutes", b"30"),
+    ] {
+        steps.push(harness::Step::Person(Step::Type { find: Find::exactly_named(role, name), words: words.into() }));
+    }
+    steps.extend([
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Option, b"task") }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"Shopping"), within: SECOND }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Link, b"Shopping") }),
+        harness::Step::Person(Step::See { find: Find::text(b"Milk and bread"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::text(b"2026-10-15"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::text(b"30"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::text(b"task"), within: SECOND }),
+    ]);
+    let mut person = Script::new(steps.into_boxed_slice());
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}
+
+#[test]
+fn a_person_chooses_a_label_by_its_option() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::text(b"Live"), within: SECOND }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"A reference".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Option, b"reference") }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"A reference"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::text(b"reference"), within: SECOND }),
+    ]));
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}

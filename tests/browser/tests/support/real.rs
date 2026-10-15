@@ -138,6 +138,8 @@ pub enum Scenario {
     Figure,
     Facts,
     Choose,
+    Select,
+    Dates,
     Reduction,
     Leave,
     Confirm,
@@ -155,7 +157,7 @@ impl Scenario {
             Scenario::Csp => "/csp",
             Scenario::Words => "/words",
             Scenario::Figure => "/figure",
-            Scenario::Facts | Scenario::Choose | Scenario::Reduction => "/facts",
+            Scenario::Facts | Scenario::Choose | Scenario::Select | Scenario::Dates | Scenario::Reduction => "/facts",
         }
     }
 }
@@ -463,7 +465,10 @@ impl Rig {
                         self.stage = Stage::Capturing;
                         self.ask(Request::Snapshot { page: PAGE, op: SNAPSHOT });
                     }
-                    Scenario::Choose => {
+                    Scenario::Dates => {
+                        self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"Date", b"case-entry_date") });
+                    }
+                    Scenario::Choose | Scenario::Select => {
                         self.ask(Request::Find { page: PAGE, op: FIND, query: query(b"combobox", b"Pick") });
                     }
                     Scenario::Button => {
@@ -494,6 +499,24 @@ impl Rig {
                     }
                 }
             }
+            Event::Found { op, seen, more } if matches!(self.scenario, Scenario::Dates) => {
+                assert_eq!(op, FIND);
+                assert_eq!(more, 0);
+                assert_eq!(seen.len(), 1);
+                let node = seen.get(0).expect("native field").node;
+                let text = match self.stage {
+                    Stage::Finding => {
+                        self.stage = Stage::Typing;
+                        b"10152026".as_slice()
+                    }
+                    Stage::Keying => {
+                        self.stage = Stage::Expecting;
+                        b"0230P".as_slice()
+                    }
+                    stage => panic!("unexpected native field at {stage:?}"),
+                };
+                self.ask(Request::Keys { page: PAGE, op: PRESS, node, text: text.into() });
+            }
             Event::Found { op, seen, more } => {
                 assert_eq!(op, FIND);
                 assert_eq!(self.stage, Stage::Finding);
@@ -506,7 +529,11 @@ impl Rig {
                         self.stage = Stage::Pressing;
                         self.ask(Request::Type { page: PAGE, op: PRESS, node, text: Box::default() });
                     }
-                    Scenario::Reduction | Scenario::Facts => panic!("facts take a snapshot"),
+                    Scenario::Select => {
+                        self.stage = Stage::Pressing;
+                        self.ask(Request::Press { page: PAGE, op: PRESS, node, at: None });
+                    }
+                    Scenario::Reduction | Scenario::Facts | Scenario::Dates => panic!("facts handled separately"),
                     Scenario::Form => {
                         self.stage = Stage::Typing;
                         self.ask(Request::Type { page: PAGE, op: PRESS, node, text: Box::from(&b"Ada"[..]) });
@@ -534,6 +561,28 @@ impl Rig {
                         self.ask(Request::Press { page: PAGE, op: PRESS, node, at: None });
                     }
                 }
+            }
+            Event::Done { op } if matches!(self.scenario, Scenario::Dates) => {
+                assert_eq!(op, PRESS);
+                match self.stage {
+                    Stage::Typing => {
+                        self.stage = Stage::Keying;
+                        self.ask(Request::Find {
+                            page: PAGE,
+                            op: FIND,
+                            query: query(b"InputTime", b"case-entry_time"),
+                        });
+                    }
+                    Stage::Expecting => {
+                        self.stage = Stage::Capturing;
+                        self.ask(Request::Snapshot { page: PAGE, op: SNAPSHOT });
+                    }
+                    stage => panic!("unexpected native entry Done at {stage:?}"),
+                }
+            }
+            Event::Done { op } if matches!(self.scenario, Scenario::Select) => {
+                assert_eq!((self.stage, op), (Stage::Pressing, PRESS));
+                self.close_browser();
             }
             Event::Done { op } if matches!(self.scenario, Scenario::Choose) => match self.stage {
                 Stage::Pressing => {
@@ -572,6 +621,8 @@ impl Rig {
                         | Scenario::Words
                         | Scenario::Facts
                         | Scenario::Choose
+                        | Scenario::Select
+                        | Scenario::Dates
                         | Scenario::Reduction => {
                             panic!("no action should complete for {:?}", self.scenario)
                         }

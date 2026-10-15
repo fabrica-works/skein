@@ -35,6 +35,7 @@ pub enum Request {
     Press { page: Token, op: Token, node: Node, at: Option<Point> },
     Type { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },
+    Keys { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Key { page: Token, op: Token, key: Key },
     Snapshot { page: Token, op: Token },
     Screenshot { page: Token, op: Token },

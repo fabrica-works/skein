@@ -87,7 +87,7 @@ fn the_title_field_has_its_accessible_name() {
     state.build(&mut view, &mut skein_lib::Queue::with_capacity(1200));
     let mut name = None;
     for node in view.tree().nodes() {
-        if node.role == skein_ui::Role::TextField {
+        if node.binding == Some(crate::view::TITLE) {
             name = node.name.clone();
         }
     }

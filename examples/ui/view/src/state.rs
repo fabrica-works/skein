@@ -52,6 +52,11 @@ pub struct State {
     shown: u64,
     pub(crate) title: Box<[u8]>,
     pub(crate) title_written: u64,
+    pub(crate) body: Box<[u8]>,
+    pub(crate) due: Box<[u8]>,
+    pub(crate) minutes: Box<[u8]>,
+    pub(crate) label: records::Label,
+    pub(crate) title_error: Option<u16>,
     seed: u64,
     serial: u64,
     pending: List<Option<records::Add>>,
@@ -84,6 +89,11 @@ impl State {
             shown: 0,
             title: Box::from([]),
             title_written: 0,
+            body: Box::from([]),
+            due: Box::from([]),
+            minutes: Box::from([]),
+            label: records::Label::Idea,
+            title_error: None,
             seed,
             serial: 0,
             pending,
@@ -101,15 +111,21 @@ impl State {
                     if bound.binding == crate::view::ADD {
                         self.add(duties);
                     }
+                    if bound.binding == crate::view::CLEAR {
+                        self.clear();
+                    }
+                    for (label, binding) in crate::view::LABELS {
+                        if bound.binding == binding {
+                            self.label = label;
+                        }
+                    }
                     if let Some(place) = self.address(bound.binding) {
                         self.place = place;
                         duties.show = Some((place, false));
                     }
                 }
                 Act::Input { value } => {
-                    if bound.binding == crate::view::TITLE && value.len() <= 256 {
-                        self.title = value;
-                    }
+                    self.input(bound.binding, value);
                 }
                 Act::Submit => {
                     if bound.binding == crate::view::TITLE {
@@ -218,8 +234,72 @@ impl State {
         }
         false
     }
+    fn input(&mut self, binding: Binding, value: Box<[u8]>) {
+        use crate::view::{BODY, DUE, MINUTES, TITLE};
+        let (field, bound) = if binding == TITLE {
+            (&mut self.title, 256)
+        } else if binding == BODY {
+            (&mut self.body, 480)
+        } else if binding == DUE {
+            (&mut self.due, 32)
+        } else if binding == MINUTES {
+            (&mut self.minutes, 32)
+        } else {
+            return;
+        };
+        if value.len() <= bound {
+            *field = value;
+        }
+        if binding == TITLE && !self.title.is_empty() {
+            self.title_error = None;
+        }
+    }
+    pub(crate) fn minute_count(&self) -> Option<u32> {
+        if self.minutes.is_empty() {
+            return Some(0);
+        }
+        u32::try_from(skein_ui::number(&self.minutes)?).ok()
+    }
+    pub(crate) fn due_valid(&self) -> bool {
+        let date = &self.due;
+        if date.is_empty() {
+            return true;
+        }
+        if date.len() != 10 || date.get(4) != Some(&b'-') || date.get(7) != Some(&b'-') {
+            return false;
+        }
+        let year = skein_ui::number(date.get(..4).expect("date length checked"));
+        let month = skein_ui::number(date.get(5..7).expect("date length checked"));
+        let day = skein_ui::number(date.get(8..).expect("date length checked"));
+        let year = match year {
+            Some(year) if year > 0 => year,
+            _ => return false,
+        };
+        let days = match month {
+            Some(4 | 6 | 9 | 11) => 30,
+            Some(2) if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+            Some(2) => 28,
+            Some(1 | 3 | 5 | 7 | 8 | 10 | 12) => 31,
+            _ => return false,
+        };
+        match day {
+            Some(day) => day > 0 && day <= days,
+            None => false,
+        }
+    }
+    fn clear(&mut self) {
+        self.title = Box::from([]);
+        self.body = Box::from([]);
+        self.due = Box::from([]);
+        self.minutes = Box::from([]);
+        self.label = records::Label::Idea;
+        self.title_error = None;
+        self.title_written = self.title_written.checked_add(1).expect("written count cannot exhaust");
+    }
     fn add(&mut self, duties: &mut Duties) {
-        if self.title.is_empty() {
+        self.title_error = if self.title.is_empty() { Some(16) } else { None };
+        let Some(minutes) = self.minute_count() else { return };
+        if self.title_error.is_some() || !self.due_valid() {
             return;
         }
         let mut slot = None;
@@ -244,10 +324,10 @@ impl State {
             records::AddParts {
                 key,
                 title: self.title.clone(),
-                body: Box::from([]),
-                due: Box::from([]),
-                minutes: 0,
-                label: records::Label::Idea,
+                body: self.body.clone(),
+                due: self.due.clone(),
+                minutes,
+                label: self.label.clone(),
             },
         )
         .expect("title within its ceiling");
@@ -255,8 +335,7 @@ impl State {
         duties.writes.push(Record { key: add_key(key), value: exchange.body.clone() });
         duties.exchanges.push(exchange);
         *self.pending.get_mut(index).expect("pending slot exists") = Some(add);
-        self.title = Box::from([]);
-        self.title_written = self.title_written.checked_add(1).expect("written count cannot exhaust");
+        self.clear();
     }
     fn add_answered(&mut self, exchange: u32, body: &[u8], duties: &mut Duties) {
         let Some(index) = exchange.checked_sub(1) else {

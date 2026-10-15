@@ -77,12 +77,19 @@ struct Operation {
     warned: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum Entry {
+    Insert,
+    Compose,
+    Keys,
+}
+
 #[derive(Debug)]
 enum OpKind {
     Go(Go),
     Find { query: Query, expect: Option<(Expect, Time)>, seen: List<Seen>, more: u32, next: u32 },
     Press { node: u64, point: Option<Point>, at: Option<(i64, i64)>, hit: Option<u64> },
-    Type { text: Box<[u8]>, compose: bool },
+    Type { text: Box<[u8]>, entry: Entry },
     Key(Key),
     Snapshot,
     Screenshot,
@@ -138,6 +145,7 @@ enum Step {
     Insert,
     KeyDown,
     KeyUp,
+    Character { offset: usize, down: bool },
     Snapshot,
     Screenshot,
 }
@@ -581,13 +589,19 @@ impl Browser {
                 self.issue_step(env, op, b"DOM.scrollIntoViewIfNeeded", &Params::Backend(node), Step::Scroll);
             }
             Request::Type { page, op, node, text } => {
-                if !self.admit_op(env, page, op, OpKind::Type { text, compose: false }) {
+                if !self.admit_op(env, page, op, OpKind::Type { text, entry: Entry::Insert }) {
                     return;
                 }
                 self.issue_step(env, op, b"DOM.focus", &Params::Backend(node), Step::Focus);
             }
             Request::Compose { page, op, node, text } => {
-                if !self.admit_op(env, page, op, OpKind::Type { text, compose: true }) {
+                if !self.admit_op(env, page, op, OpKind::Type { text, entry: Entry::Compose }) {
+                    return;
+                }
+                self.issue_step(env, op, b"DOM.focus", &Params::Backend(node), Step::Focus);
+            }
+            Request::Keys { page, op, node, text } => {
+                if !self.admit_op(env, page, op, OpKind::Type { text, entry: Entry::Keys }) {
                     return;
                 }
                 self.issue_step(env, op, b"DOM.focus", &Params::Backend(node), Step::Focus);
@@ -711,6 +725,45 @@ impl Browser {
             b"Input.dispatchKeyEvent",
             &Params::Key { kind, key: name, code, windows, text },
             step,
+        );
+    }
+
+    #[expect(clippy::disallowed_methods, reason = "keys decode the requested UTF-8 characters at the browser boundary")]
+    fn issue_character(&mut self, env: &Env<Limits>, op: Token, offset: usize, down: bool) {
+        let Some((text, Entry::Keys)) = self.type_detail(op) else { return };
+        let Ok(value) = core::str::from_utf8(&text) else {
+            self.finish_refused(op, Refusal::Protocol);
+            return;
+        };
+        let character = match value.get(offset..) {
+            Some(tail) => tail.chars().next(),
+            None => None,
+        };
+        let Some(character) = character else {
+            self.finish_done(op);
+            return;
+        };
+        let mut bytes = [0; 4];
+        let text = character.encode_utf8(&mut bytes).as_bytes();
+        let ascii = u8::try_from(character.to_ascii_uppercase()).unwrap_or(0);
+        let digit = [b'D', b'i', b'g', b'i', b't', ascii];
+        let letter = [b'K', b'e', b'y', ascii];
+        let code = if ascii.is_ascii_digit() {
+            digit.as_slice()
+        } else if ascii.is_ascii_alphabetic() {
+            letter.as_slice()
+        } else {
+            b""
+        };
+        let windows = if ascii.is_ascii_alphanumeric() { u64::from(ascii) } else { 0 };
+        let kind = if down { b"keyDown".as_slice() } else { b"keyUp".as_slice() };
+        let next = if down { offset } else { offset.checked_add(text.len()).expect("character within text") };
+        self.issue_step(
+            env,
+            op,
+            b"Input.dispatchKeyEvent",
+            &Params::Key { kind, key: text, code, windows, text },
+            Step::Character { offset: next, down },
         );
     }
 
@@ -1603,8 +1656,8 @@ impl Browser {
         if let OpKind::Press { hit, .. } = &self.op(token)?.kind { *hit } else { None }
     }
 
-    fn type_detail(&self, token: Token) -> Option<(Box<[u8]>, bool)> {
-        if let OpKind::Type { text, compose } = &self.op(token)?.kind { Some((text.clone(), *compose)) } else { None }
+    fn type_detail(&self, token: Token) -> Option<(Box<[u8]>, Entry)> {
+        if let OpKind::Type { text, entry } = &self.op(token)?.kind { Some((text.clone(), *entry)) } else { None }
     }
 
     fn key_state(&self, token: Token) -> Option<Key> {
@@ -1857,20 +1910,22 @@ impl Browser {
             Step::MouseUp | Step::Insert | Step::KeyUp => self.finish_done(token),
             Step::Focus => {
                 let detail = self.type_detail(token);
-                if let Some((text, compose)) = detail {
-                    if compose {
-                        self.issue_step(
-                            env,
-                            token,
-                            b"Input.imeSetComposition",
-                            &Params::Composition(&text),
-                            Step::Insert,
-                        );
-                    } else {
+                match detail {
+                    Some((text, Entry::Compose)) => self.issue_step(
+                        env,
+                        token,
+                        b"Input.imeSetComposition",
+                        &Params::Composition(&text),
+                        Step::Insert,
+                    ),
+                    Some((text, Entry::Insert)) => {
                         self.issue_step(env, token, b"Input.insertText", &Params::Text(&text), Step::Insert);
                     }
+                    Some((_, Entry::Keys)) => self.issue_character(env, token, 0, true),
+                    None => {}
                 }
             }
+            Step::Character { offset, down } => self.issue_character(env, token, offset, !down),
             Step::KeyDown => {
                 let key = self.key_state(token);
                 if let Some(key) = key {
@@ -1978,6 +2033,7 @@ impl Browser {
             | Step::Insert
             | Step::KeyDown
             | Step::KeyUp
+            | Step::Character { .. }
             | Step::Snapshot
             | Step::Screenshot => unreachable!("only mouse steps reach mouse"),
         };

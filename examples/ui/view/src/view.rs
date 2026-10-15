@@ -6,13 +6,22 @@ use skein_ui::phrases::{
     Form, Language, Phrase, PhraseId, PhraseLimits, PhraseShape, Phrasebook, PluralClass, PluralRule, Segment,
     SpanUnit, WallFormat,
 };
-use skein_ui::{Binding, Builder, Key, Owner, Role, Run, Style};
+use skein_ui::{Binding, Builder, EntryKind, Key, Owner, Role, Run, Style};
 pub(crate) const OWNER: Owner = Owner { number: 1 };
 pub(crate) const TITLE: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX) };
 pub(crate) const ADD: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 1) };
 pub(crate) const BACK: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 2) };
+pub(crate) const BODY: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 3) };
+pub(crate) const DUE: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 4) };
+pub(crate) const MINUTES: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 5) };
+pub(crate) const CLEAR: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 6) };
+pub(crate) const LABELS: [(Label, Binding); 3] = [
+    (Label::Idea, Binding { owner: OWNER, token: Token::new(u64::MAX - 7) }),
+    (Label::Task, Binding { owner: OWNER, token: Token::new(u64::MAX - 8) }),
+    (Label::Reference, Binding { owner: OWNER, token: Token::new(u64::MAX - 9) }),
+];
 pub(crate) const CARD: Style = Style { owner: OWNER, token: 0 };
-const WORDS: [&[u8]; 11] = [
+const WORDS: [&[u8]; 19] = [
     b"Notes",
     b"Live",
     b"Offline",
@@ -24,19 +33,27 @@ const WORDS: [&[u8]; 11] = [
     b"Title",
     b"Add",
     b"Back to notes",
+    b"Body",
+    b"Due date",
+    b"Minutes",
+    b"Label",
+    b"Clear",
+    b"Enter a title.",
+    b"Use YYYY-MM-DD for the due date.",
+    b"Enter a whole number of minutes.",
 ];
 const WORD_LIMITS: PhraseLimits =
-    PhraseLimits { languages: 1, phrases: 11, holes: 0, segments: 11, text_bytes: 128, hole_bytes: 0 };
+    PhraseLimits { languages: 1, phrases: 19, holes: 0, segments: 19, text_bytes: 256, hole_bytes: 0 };
 
 pub(crate) fn words() -> Phrasebook {
-    let mut shapes = List::with_capacity(11);
-    let mut phrases = List::with_capacity(11);
+    let mut shapes = List::with_capacity(19);
+    let mut phrases = List::with_capacity(19);
     for (number, text) in WORDS.iter().enumerate() {
-        let id = PhraseId { owner: OWNER, number: u16::try_from(number).expect("eight phrases fit") };
-        shapes.push(PhraseShape { id, holes: Box::from([]), plural: None }).expect("eight shapes fit");
+        let id = PhraseId { owner: OWNER, number: u16::try_from(number).expect("declared phrases fit") };
+        shapes.push(PhraseShape { id, holes: Box::from([]), plural: None }).expect("declared shapes fit");
         let segment = Segment::Text(Box::from(*text));
         let form = Form { class: PluralClass::Other, segments: Box::from([segment]) };
-        phrases.push(Phrase { id, forms: Box::from([form]) }).expect("eight phrases fit");
+        phrases.push(Phrase { id, forms: Box::from([form]) }).expect("declared phrases fit");
     }
     let language = Language {
         plural: PluralRule::English,
@@ -111,13 +128,52 @@ fn form(state: &State, builder: &mut Builder) {
     builder.name(&phrase(state, 8));
     builder.value(&state.title, state.title_written);
     builder.state(skein_ui::State::SubmitsOnEnter);
+    builder.state(skein_ui::State::Required);
+    invalid(state, builder, state.title_error);
     builder.bind(TITLE);
     builder.close();
-    builder.open(Role::Button);
-    builder.name(&phrase(state, 9));
-    builder.bind(ADD);
+    builder.open(Role::TextArea);
+    builder.name(&phrase(state, 11));
+    builder.value(&state.body, state.title_written);
+    builder.bind(BODY);
     builder.close();
+    for (binding, name, kind, value, bad, why) in [
+        (DUE, 12, EntryKind::Date, &state.due, !state.due_valid(), 17),
+        (MINUTES, 13, EntryKind::Number, &state.minutes, state.minute_count().is_none(), 18),
+    ] {
+        builder.open(Role::TextField);
+        builder.name(&phrase(state, name));
+        builder.entry(kind);
+        builder.value(value, state.title_written);
+        invalid(state, builder, if bad { Some(why) } else { None });
+        builder.bind(binding);
+        builder.close();
+    }
+    builder.open(Role::Select);
+    builder.name(&phrase(state, 14));
+    for ((label, binding), name) in LABELS.into_iter().zip(4..7) {
+        builder.open(Role::Option);
+        builder.name(&phrase(state, name));
+        if state.label == label {
+            builder.state(skein_ui::State::Selected);
+        }
+        builder.bind(binding);
+        builder.close();
+    }
     builder.close();
+    for (binding, name) in [(CLEAR, 15), (ADD, 9)] {
+        builder.open(Role::Button);
+        builder.name(&phrase(state, name));
+        builder.bind(binding);
+        builder.close();
+    }
+    builder.close();
+}
+fn invalid(state: &State, builder: &mut Builder, why: Option<u16>) {
+    if let Some(why) = why {
+        builder.state(skein_ui::State::Invalid);
+        builder.description(&phrase(state, why));
+    }
 }
 
 fn note(state: &State, number: u64, builder: &mut Builder) {

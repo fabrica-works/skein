@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 mod face;
 pub mod harness;
+mod keys;
 pub use face::BrowserFace;
 pub use harness::{Harness, Outcome, Play, Script, Setup, Step};
 #[cfg(test)]

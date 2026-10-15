@@ -443,3 +443,77 @@ fn a_native_dialogs_trouble_text_is_cut_to_its_bound() {
         }
     }
 }
+
+const FIELD: u64 = 7; // the world's sole backend node
+const PART_KEYS: &[&str] = &[
+    r#"DOM.focus {"backendNodeId":7}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyDown","key":"0","code":"Digit0","windowsVirtualKeyCode":48,"text":"0"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyUp","key":"0","code":"Digit0","windowsVirtualKeyCode":48,"text":"0"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyDown","key":"2","code":"Digit2","windowsVirtualKeyCode":50,"text":"2"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyUp","key":"2","code":"Digit2","windowsVirtualKeyCode":50,"text":"2"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyDown","key":"3","code":"Digit3","windowsVirtualKeyCode":51,"text":"3"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyUp","key":"3","code":"Digit3","windowsVirtualKeyCode":51,"text":"3"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyDown","key":"0","code":"Digit0","windowsVirtualKeyCode":48,"text":"0"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyUp","key":"0","code":"Digit0","windowsVirtualKeyCode":48,"text":"0"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyDown","key":"P","code":"KeyP","windowsVirtualKeyCode":80,"text":"P"}"#,
+    r#"Input.dispatchKeyEvent {"type":"keyUp","key":"P","code":"KeyP","windowsVirtualKeyCode":80,"text":"P"}"#,
+];
+fn key_commands(world: &World) -> Vec<String> {
+    world
+        .sent
+        .iter()
+        .map(|command| {
+            let document = Document::parse(&command[..command.len() - 1], world.env.limits.command).unwrap();
+            let root = document.root();
+            let method = root.get(b"method").unwrap().text().unwrap();
+            let params = root.get(b"params").unwrap().raw();
+            format!("{} {}", String::from_utf8_lossy(&method), String::from_utf8_lossy(params))
+        })
+        .collect()
+}
+fn keyed(text: &[u8]) -> World {
+    let mut world = World::new();
+    world.start();
+    world.open();
+    world.sent.clear();
+    world.ask(Request::Keys { page: Token::new(3), op: Token::new(4), node: FIELD, text: text.into() });
+    world
+}
+#[test]
+fn keys_type_each_character_as_its_key_down_and_up() {
+    let mut world = keyed(b"0230P");
+    assert_eq!(key_commands(&world), PART_KEYS);
+    match world.above.pop() {
+        Some(Event::Done { op }) => assert_eq!(op, Token::new(4)),
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+#[test]
+fn empty_keys_focus_without_typing() {
+    let mut world = keyed(b"");
+    assert_eq!(key_commands(&world), [r#"DOM.focus {"backendNodeId":7}"#]);
+    match world.above.pop() {
+        Some(Event::Done { op }) => assert_eq!(op, Token::new(4)),
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+#[test]
+fn keys_type_unicode_characters_without_a_physical_code() {
+    let world = keyed("é".as_bytes());
+    assert_eq!(
+        key_commands(&world),
+        [
+            r#"DOM.focus {"backendNodeId":7}"#,
+            r#"Input.dispatchKeyEvent {"type":"keyDown","key":"é","code":"","windowsVirtualKeyCode":0,"text":"é"}"#,
+            r#"Input.dispatchKeyEvent {"type":"keyUp","key":"é","code":"","windowsVirtualKeyCode":0,"text":"é"}"#,
+        ]
+    );
+}
+#[test]
+fn keys_refuse_text_that_is_not_utf8() {
+    let mut world = keyed(&[0xff]);
+    match world.above.pop() {
+        Some(Event::Refused { why, .. }) => assert_eq!(why, Refusal::Protocol),
+        other => panic!("expected Protocol, got {other:?}"),
+    }
+}

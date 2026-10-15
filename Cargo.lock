@@ -1048,6 +1048,7 @@ dependencies = [
  "skein-ui-bundle",
  "skein-ui-example-server",
  "skein-ui-example-view",
+ "skein-ui-web",
 ]
 
 [[package]]

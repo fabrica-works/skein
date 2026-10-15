@@ -8,5 +8,13 @@ Notes
   2026-10-15
   task
 Add:
-  [3] Title: (empty) (enter sends)
-  [4] Add
+  [3] Title: (empty) (required) (enter sends)
+  [4] Body: (empty)
+  [5] Due date: (empty) (date, YYYY-MM-DD)
+  [6] Minutes: (empty) (number)
+  Label:
+    [7] (*) idea
+    [8] ( ) task
+    [9] ( ) reference
+  [10] Clear
+  [11] Add

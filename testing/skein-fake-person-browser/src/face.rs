@@ -5,6 +5,13 @@ use skein_lib::Token;
 use skein_ui::{Act, NodeId, Role};
 use skein_ui_web::mapping::accessible;
 
+struct Choice {
+    option: u64,
+    selects: std::collections::VecDeque<u64>,
+    select: Option<u64>,
+    keys: std::collections::VecDeque<Key>,
+}
+
 struct Search {
     title: bool,
     find: Find,
@@ -27,6 +34,7 @@ pub struct BrowserFace<'a> {
     failure: Option<String>,
     warned: bool,
     go: Option<Token>,
+    choice: Option<Choice>,
 }
 
 impl<'a> BrowserFace<'a> {
@@ -44,6 +52,7 @@ impl<'a> BrowserFace<'a> {
             failure: None,
             warned: false,
             go: None,
+            choice: None,
         }
     }
     pub fn title(&mut self, words: &[u8]) -> Found {
@@ -144,7 +153,11 @@ impl<'a> BrowserFace<'a> {
                     self.warned = true;
                 }
             }
-            Event::Found { op, seen, .. } => {
+            Event::Found { op, seen, more } => {
+                if self.choice.is_some() && self.acting == Some(*op) {
+                    self.choice_found(seen, *more);
+                    return;
+                }
                 if self.search.as_ref().map(|s| s.op) != Some(*op) {
                     return;
                 }
@@ -167,6 +180,7 @@ impl<'a> BrowserFace<'a> {
             Event::Done { op } => {
                 if self.acting == Some(*op) {
                     self.acting = None;
+                    self.choice_key();
                 }
             }
             Event::Refused { op, why } => {
@@ -176,6 +190,7 @@ impl<'a> BrowserFace<'a> {
                 }
                 if self.acting == Some(*op) {
                     self.acting = None;
+                    self.choice = None;
                     self.failure = Some(format!("browser refused act: {why:?}"));
                 }
             }
@@ -213,10 +228,21 @@ impl<'a> BrowserFace<'a> {
                 Request::Go { page: self.page, op, to: Go::Reload }
             }
             Doing::Act { node, act } => {
-                let (seen, _) = self
+                let (seen, role) = self
                     .seen
                     .get(usize::try_from(node.0).expect("node fits"))
                     .ok_or_else(|| format!("unknown node {}", node.0))?;
+                if *role == Some(Role::Option) && act == Act::Press {
+                    let option = seen.node;
+                    self.choice = Some(Choice {
+                        option,
+                        selects: std::collections::VecDeque::new(),
+                        select: None,
+                        keys: std::collections::VecDeque::new(),
+                    });
+                    self.choice_query(b"combobox", None);
+                    return Ok(());
+                }
                 match act {
                     Act::Press | Act::Toggle => Request::Press { page: self.page, op, node: seen.node, at: None },
                     Act::Input { value } => {
@@ -226,7 +252,23 @@ impl<'a> BrowserFace<'a> {
                                 String::from_utf8_lossy(&seen.name)
                             ));
                         }
-                        Request::Type { page: self.page, op, node: seen.node, text: value }
+                        let keys = match seen.role.as_ref() {
+                            b"Date" => Some(crate::keys::date(&value)),
+                            b"InputTime" => Some(crate::keys::time(&value)),
+                            _ => None,
+                        };
+                        if let Some(keys) = keys {
+                            let text = keys.ok_or_else(|| {
+                                format!(
+                                    "field '{}' takes no value '{}'",
+                                    String::from_utf8_lossy(&seen.name),
+                                    String::from_utf8_lossy(&value)
+                                )
+                            })?;
+                            Request::Keys { page: self.page, op, node: seen.node, text }
+                        } else {
+                            Request::Type { page: self.page, op, node: seen.node, text: value }
+                        }
                     }
                     Act::Submit => Request::Key { page: self.page, op, key: Key::Enter },
                     Act::Drawing { .. } => return Err("a person cannot press a drawing mark".into()),
@@ -236,6 +278,56 @@ impl<'a> BrowserFace<'a> {
         self.acting = Some(op);
         self.requests.push(request);
         Ok(())
+    }
+    fn choice_query(&mut self, role: &[u8], within: Option<u64>) {
+        let op = self.token();
+        self.acting = Some(op);
+        self.requests.push(Request::Find {
+            page: self.page,
+            op,
+            query: Query { role: role.into(), name: Box::from([]), matching: Match::Words, within, boxes: false },
+        });
+    }
+    fn choice_found(&mut self, seen: &skein_lib::List<Seen>, more: u32) {
+        if more > 0 {
+            self.choice = None;
+            self.acting = None;
+            self.fail("the option's select query exceeded the kit's bound".into());
+            return;
+        }
+        let choice = self.choice.as_mut().expect("choice active");
+        if let Some(select) = choice.select {
+            if let Some(target) = seen.iter().position(|node| node.node == choice.option) {
+                let current = seen.iter().position(|node| node.states.selected).unwrap_or(0);
+                let key = if target < current { Key::ArrowUp } else { Key::ArrowDown };
+                choice.keys.extend(std::iter::repeat_n(key, target.abs_diff(current)));
+                choice.keys.push_back(Key::Enter);
+                let op = self.token();
+                self.acting = Some(op);
+                self.requests.push(Request::Press { page: self.page, op, node: select, at: None });
+                return;
+            }
+        } else {
+            choice.selects.extend(seen.iter().map(|node| node.node));
+        }
+        if let Some(select) = choice.selects.pop_front() {
+            choice.select = Some(select);
+            self.choice_query(b"option", Some(select));
+        } else {
+            self.choice = None;
+            self.acting = None;
+            self.fail("the option no longer belongs to a select".into());
+        }
+    }
+    fn choice_key(&mut self) {
+        let Some(choice) = self.choice.as_mut() else { return };
+        if let Some(key) = choice.keys.pop_front() {
+            let op = self.token();
+            self.acting = Some(op);
+            self.requests.push(Request::Key { page: self.page, op, key });
+        } else {
+            self.choice = None;
+        }
     }
 }
 impl Face for BrowserFace<'_> {

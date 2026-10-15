@@ -3,5 +3,13 @@ Notes
 * Offline
 No notes yet.
 Add:
-  [1] Title: (empty) (enter sends)
-  [2] Add
+  [1] Title: (empty) (required) (enter sends)
+  [2] Body: (empty)
+  [3] Due date: (empty) (date, YYYY-MM-DD)
+  [4] Minutes: (empty) (number)
+  Label:
+    [5] (*) idea
+    [6] ( ) task
+    [7] ( ) reference
+  [8] Clear
+  [9] Add

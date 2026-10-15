@@ -175,6 +175,8 @@ impl Params<'_> {
                 json.unsigned(*backend);
                 json.key(b"depth");
                 json.signed(*depth);
+                json.key(b"pierce");
+                json.boolean(true);
             }
         }
         json.object_end();
