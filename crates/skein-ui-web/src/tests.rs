@@ -55,3 +55,5 @@ mod hidden;
 mod platform;
 mod store;
 mod transport;
+
+mod restart;

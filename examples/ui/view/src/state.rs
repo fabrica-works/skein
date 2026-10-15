@@ -63,6 +63,8 @@ pub struct State {
 impl State {
     #[must_use]
     pub fn start(seed: u64, path: &[u8], records: &[Record], _offset: i32, _languages: &[u8]) -> State {
+        #[cfg(debug_assertions)]
+        assert!(places::parse(path) != Place::Panic, "the test address panics at start");
         let notes = records::Notes::new(&records::CEILINGS, records::NotesParts { notes: List::with_capacity(64) })
             .expect("empty notes fit");
         let mut pending = List::with_capacity(8);

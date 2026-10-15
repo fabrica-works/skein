@@ -41,6 +41,16 @@ pub fn start() {
     let window = web_sys::window().expect("browser window");
     let document = window.document().expect("browser document");
     let mount = document.get_element_by_id("app").expect("the bundle supplies #app");
+    if !skein_ui_web::restart::Restart::new(
+        3,
+        skein_lib::Duration::from_secs(60),
+        "skein-ui-restarts",
+        "The application failed.",
+    )
+    .install("app")
+    {
+        return;
+    }
     // Read the person's facts once. Later turns read only the two clocks.
     let facts = platform::facts();
     let location = window.location();

@@ -20,3 +20,5 @@ pub mod hidden;
 pub mod platform;
 pub mod store;
 pub mod transport;
+
+pub mod restart;

@@ -11,6 +11,10 @@ use skein_ui::{Role, View};
 
 const PATHS: &[(&[u8], Place, &[u8])] = &[
     (b"/", Place::List, b"/"),
+    #[cfg(debug_assertions)]
+    (b"/test/panic", Place::Panic, b"/test/panic"),
+    #[cfg(not(debug_assertions))]
+    (b"/test/panic", Place::Missing, b"/missing"),
     (b"/notes/7", Place::Note { number: 7 }, b"/notes/7"),
     (b"/notes/07", Place::Missing, b"/missing"),
     (b"/x", Place::Missing, b"/missing"),

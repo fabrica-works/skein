@@ -6,3 +6,5 @@ pub use face::BrowserFace;
 pub use harness::{Harness, Outcome, Play, Script, Setup, Step};
 #[cfg(test)]
 mod tests;
+
+pub mod stories;

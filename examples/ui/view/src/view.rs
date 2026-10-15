@@ -68,6 +68,8 @@ pub(crate) fn page(state: &State, builder: &mut Builder) {
             list(state, builder);
             form(state, builder);
         }
+        #[cfg(debug_assertions)]
+        Place::Panic => text(builder, Role::Paragraph, &phrase(state, 7)),
         Place::Note { .. } | Place::Missing => text(builder, Role::Paragraph, &phrase(state, 7)),
     }
     builder.close();
