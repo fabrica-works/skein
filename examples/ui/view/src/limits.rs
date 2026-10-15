@@ -11,7 +11,7 @@ pub fn limits() -> skein_ui::Limits {
         drawing_bytes: 0,
         styles_per_node: 1,
         patches: 1200,
-        bindings: 74,
+        bindings: 76,
         slots: 0,
         markdown_depth: 0,
         scene_marks: 0,

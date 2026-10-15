@@ -106,6 +106,14 @@ impl<'a> BrowserFace<'a> {
         self.requests.push(request);
         Ok(())
     }
+    pub(crate) fn key(&mut self, key: Key) {
+        let op = self.token();
+        self.acting = Some(op);
+        self.requests.push(Request::Key { page: self.page, op, key });
+    }
+    pub(crate) fn focused(&self, node: NodeId) -> bool {
+        self.seen.get(usize::try_from(node.0).expect("node fits")).is_some_and(|(seen, _)| seen.states.focused)
+    }
     pub(crate) fn field_is(&self, node: NodeId, words: &[u8]) -> bool {
         self.seen
             .get(usize::try_from(node.0).expect("node fits"))

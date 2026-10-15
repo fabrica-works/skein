@@ -116,6 +116,84 @@ fn clearing_the_form_replaces_its_values() {
     let mut state = State::start(1, b"/", &[], 0, b"en");
     input(&mut state, view::BODY, b"Milk");
     act(&mut state, view::CLEAR, Act::Press);
+    act(&mut state, view::DISCARD, Act::Press);
     let body = field(&state, view::BODY).value.expect("body value");
     assert_eq!((body.text.as_ref(), body.written), (b"".as_slice(), 1));
+}
+
+const DRAFT_FIELDS: &[(Binding, &[u8])] =
+    &[(view::TITLE, b"Shop"), (view::BODY, b"Milk"), (view::DUE, b"2026-10-15"), (view::MINUTES, b"30")];
+#[test]
+fn clearing_words_asks_in_a_dialog() {
+    for &(binding, value) in DRAFT_FIELDS {
+        let mut state = State::start(1, b"/", &[], 0, b"en");
+        input(&mut state, binding, value);
+        act(&mut state, view::CLEAR, Act::Press);
+        let mut tree = View::new(&limits::limits());
+        state.build(&mut tree, &mut Queue::with_capacity(1200));
+        let mut dialogs = skein_lib::List::with_capacity(1);
+        for node in tree.tree().nodes() {
+            if node.role == skein_ui::Role::Dialog {
+                dialogs.push(node.name.as_deref()).expect("one dialog");
+            }
+        }
+        assert_eq!(dialogs.as_slice(), &[Some(b"Discard draft?".as_slice())], "{binding:?}");
+    }
+}
+#[test]
+fn the_keep_button_names_escape() {
+    let mut state = State::start(1, b"/", &[], 0, b"en");
+    input(&mut state, view::TITLE, b"Shop");
+    act(&mut state, view::CLEAR, Act::Press);
+    assert_eq!(field(&state, view::KEEP).shortcut, Some(skein_ui::Shortcut::ESCAPE));
+}
+#[test]
+fn an_add_moves_the_focus_to_the_title() {
+    let mut state = State::start(1, b"/", &[], 0, b"en");
+    for title in [b"Shop".as_slice(), b"Read"] {
+        input(&mut state, view::TITLE, title);
+        act(&mut state, view::ADD, Act::Press);
+    }
+    assert_eq!(field(&state, view::TITLE).focus, Some(2));
+}
+#[test]
+fn a_discard_moves_the_focus_to_the_title() {
+    let mut state = State::start(1, b"/", &[], 0, b"en");
+    input(&mut state, view::BODY, b"Milk");
+    act(&mut state, view::CLEAR, Act::Press);
+    act(&mut state, view::DISCARD, Act::Press);
+    assert_eq!(field(&state, view::TITLE).focus, Some(1));
+}
+#[test]
+fn keeping_the_draft_preserves_its_words() {
+    let mut state = State::start(1, b"/", &[], 0, b"en");
+    input(&mut state, view::TITLE, b"Shop");
+    act(&mut state, view::CLEAR, Act::Press);
+    act(&mut state, view::KEEP, Act::Press);
+    assert_eq!(field(&state, view::TITLE).value.unwrap().text.as_ref(), b"Shop");
+}
+
+#[test]
+fn keeping_the_draft_closes_the_dialog() {
+    let mut state = State::start(1, b"/", &[], 0, b"en");
+    input(&mut state, view::TITLE, b"Shop");
+    act(&mut state, view::CLEAR, Act::Press);
+    act(&mut state, view::KEEP, Act::Press);
+    let mut tree = View::new(&limits::limits());
+    state.build(&mut tree, &mut Queue::with_capacity(1200));
+    let mut count = 0_u32;
+    for node in tree.tree().nodes() {
+        if node.role == skein_ui::Role::Dialog {
+            count += 1;
+        }
+    }
+    assert_eq!(count, 0);
+}
+#[test]
+fn keeping_the_draft_returns_focus_to_the_title() {
+    let mut state = State::start(1, b"/", &[], 0, b"en");
+    input(&mut state, view::TITLE, b"Shop");
+    act(&mut state, view::CLEAR, Act::Press);
+    act(&mut state, view::KEEP, Act::Press);
+    assert_eq!(field(&state, view::TITLE).focus, Some(1));
 }

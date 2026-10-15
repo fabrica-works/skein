@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+skein-browser.workspace = true
 skein-fake-person-browser.workspace = true
 skein-fake-person.workspace = true
 skein-ui.workspace = true

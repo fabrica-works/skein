@@ -43,6 +43,11 @@ pub struct Duties {
     pub show: Option<(Place, bool)>,
     pub stream: Option<StreamDuty>,
 }
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum DraftMode {
+    Editing,
+    Discarding,
+}
 #[derive(Debug)]
 pub struct State {
     pub(crate) notes: records::Notes,
@@ -52,6 +57,8 @@ pub struct State {
     shown: u64,
     pub(crate) title: Box<[u8]>,
     pub(crate) title_written: u64,
+    pub(crate) title_focus: u64,
+    pub(crate) draft: DraftMode,
     pub(crate) body: Box<[u8]>,
     pub(crate) due: Box<[u8]>,
     pub(crate) minutes: Box<[u8]>,
@@ -89,6 +96,8 @@ impl State {
             shown: 0,
             title: Box::from([]),
             title_written: 0,
+            title_focus: 0,
+            draft: DraftMode::Editing,
             body: Box::from([]),
             due: Box::from([]),
             minutes: Box::from([]),
@@ -107,23 +116,7 @@ impl State {
         match report {
             Report::Place(place) => self.place = place,
             Report::Act(bound) => match bound.act {
-                Act::Press => {
-                    if bound.binding == crate::view::ADD {
-                        self.add(duties);
-                    }
-                    if bound.binding == crate::view::CLEAR {
-                        self.clear();
-                    }
-                    for (label, binding) in crate::view::LABELS {
-                        if bound.binding == binding {
-                            self.label = label;
-                        }
-                    }
-                    if let Some(place) = self.address(bound.binding) {
-                        self.place = place;
-                        duties.show = Some((place, false));
-                    }
-                }
+                Act::Press => self.press(bound.binding, duties),
                 Act::Input { value } => {
                     self.input(bound.binding, value);
                 }
@@ -234,6 +227,39 @@ impl State {
         }
         false
     }
+    fn press(&mut self, binding: Binding, duties: &mut Duties) {
+        if binding == crate::view::ADD {
+            self.add(duties);
+        }
+        if binding == crate::view::CLEAR {
+            self.ask_clear();
+        }
+        if self.draft == DraftMode::Discarding && binding == crate::view::DISCARD {
+            self.clear();
+        }
+        if self.draft == DraftMode::Discarding && binding == crate::view::KEEP {
+            self.draft = DraftMode::Editing;
+            self.focus_title();
+        }
+        for (label, option) in crate::view::LABELS {
+            if binding == option {
+                self.label = label;
+            }
+        }
+        if let Some(place) = self.address(binding) {
+            self.place = place;
+            duties.show = Some((place, false));
+        }
+    }
+    fn ask_clear(&mut self) {
+        for value in [&self.title, &self.body, &self.due, &self.minutes] {
+            if !value.is_empty() {
+                self.draft = DraftMode::Discarding;
+                return;
+            }
+        }
+        self.clear();
+    }
     fn input(&mut self, binding: Binding, value: Box<[u8]>) {
         use crate::view::{BODY, DUE, MINUTES, TITLE};
         let (field, bound) = if binding == TITLE {
@@ -287,7 +313,12 @@ impl State {
             None => false,
         }
     }
+    fn focus_title(&mut self) {
+        self.title_focus = self.title_focus.checked_add(1).expect("focus count cannot exhaust");
+    }
     fn clear(&mut self) {
+        self.draft = DraftMode::Editing;
+        self.focus_title();
         self.title = Box::from([]);
         self.body = Box::from([]);
         self.due = Box::from([]);

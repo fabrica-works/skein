@@ -2,7 +2,7 @@
 use crate::BrowserFace;
 use browser::boundary::{Below, Down, Event, Request};
 use skein_browser::{self as browser, Browser};
-use skein_fake_person::{Next, Person};
+use skein_fake_person::Next;
 use skein_io::{
     self as io, Io,
     kernel::{self, Complete, Op, Pipe, Spawn, Submit, Way},
@@ -37,128 +37,12 @@ pub trait Play {
         None
     }
 }
-pub enum Step {
-    Person(skein_fake_person::Step<Box<[u8]>>),
-    StopServer,
-    StartServer,
-    Title(Box<[u8]>),
-    Warned(bool),
-    Compose { find: skein_fake_person::Find, words: Box<[u8]> },
-    Type { find: skein_fake_person::Find, words: Box<[u8]> },
-    Back,
-    Forward,
-}
+mod script;
+pub use script::{Script, Step};
 #[derive(Clone, Copy)]
 pub enum ServerAction {
     Stop,
     Start,
-}
-pub struct Script {
-    steps: VecDeque<Step>,
-    person: Option<Person<Box<[u8]>>>,
-    at: u32,
-    action: Option<ServerAction>,
-    title: Option<Box<[u8]>>,
-    text: Option<(skein_fake_person::Find, Box<[u8]>, bool)>,
-}
-impl Script {
-    #[must_use]
-    pub fn new(steps: Box<[Step]>) -> Self {
-        Self { steps: steps.into_vec().into(), person: None, at: 0, action: None, title: None, text: None }
-    }
-}
-impl Play for Script {
-    fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
-        if let Some((find, words, compose)) = self.text.take() {
-            match skein_fake_person::Face::find(face, &find) {
-                skein_fake_person::Found::Pending => self.text = Some((find, words, compose)),
-                skein_fake_person::Found::Absent => {
-                    return Next::Failed { step: self.at, why: skein_fake_person::Why::Missing { find } };
-                }
-                skein_fake_person::Found::Node(node) => {
-                    if let Err(why) = face.text(node, words, compose) {
-                        face.fail(why);
-                    }
-                    self.at += 1;
-                }
-            }
-            return Next::Wait { until: None };
-        }
-        if let Some(title) = self.title.take() {
-            match face.title(&title) {
-                skein_fake_person::Found::Pending => {
-                    self.title = Some(title);
-                    return Next::Wait { until: None };
-                }
-                skein_fake_person::Found::Absent => {
-                    return Next::Failed {
-                        step: self.at,
-                        why: skein_fake_person::Why::Missing {
-                            find: skein_fake_person::Find::exactly_named(skein_ui::Role::Page, &title),
-                        },
-                    };
-                }
-                skein_fake_person::Found::Node(_) => {
-                    self.at += 1;
-                }
-            }
-        }
-        if let Some(person) = &mut self.person {
-            let next = person.next(face, now);
-            match next {
-                Next::Done => {
-                    self.at += person.at();
-                    self.person = None;
-                }
-                Next::Failed { step, why } => return Next::Failed { step: self.at + step, why },
-                other @ (Next::Do(_) | Next::Wait { .. }) => return other,
-            }
-        }
-        let Some(step) = self.steps.pop_front() else {
-            return Next::Done;
-        };
-        match step {
-            Step::Compose { find, words } => self.text = Some((find, words, true)),
-            Step::Type { find, words } => self.text = Some((find, words, false)),
-            Step::Back | Step::Forward => {
-                face.history(matches!(step, Step::Forward));
-                self.at += 1;
-            }
-            Step::Person(step) => {
-                let mut steps = vec![step];
-                while matches!(self.steps.front(), Some(Step::Person(_))) {
-                    let Some(Step::Person(step)) = self.steps.pop_front() else { unreachable!("person step") };
-                    steps.push(step);
-                }
-                self.person = Some(Person::new(steps.into()));
-            }
-            Step::Warned(expected) => {
-                let warned = face.warned();
-                if warned != expected {
-                    face.fail(format!("last go warned {warned}, expected {expected}"));
-                }
-                self.at += 1;
-            }
-            Step::Title(words) => {
-                self.title = Some(words);
-            }
-            Step::StopServer => {
-                self.action = Some(ServerAction::Stop);
-                self.at += 1;
-            }
-            Step::StartServer => {
-                self.action = Some(ServerAction::Start);
-                self.at += 1;
-            }
-        }
-        Next::Wait { until: None }
-    }
-    fn at(&self) -> u32 {
-        self.at + self.person.as_ref().map_or(0, Person::at)
-    }
-    fn server_action(&mut self) -> Option<ServerAction> {
-        self.action.take()
-    }
 }
 #[derive(PartialEq, Eq, Debug)]
 pub enum Outcome {

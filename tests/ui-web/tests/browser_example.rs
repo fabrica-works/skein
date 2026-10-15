@@ -174,3 +174,25 @@ fn a_person_chooses_a_label_by_its_option() {
     ]));
     assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
 }
+
+#[test]
+fn escape_in_the_dialog_keeps_the_draft() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::TextField, b"Title"), within: SECOND }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"Groceries".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Clear") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Dialog, b"Discard draft?"), within: SECOND }),
+        harness::Step::Key(skein_browser::boundary::Key::Escape),
+        harness::Step::Person(Step::Gone {
+            find: Find::exactly_named(Role::Dialog, b"Discard draft?"),
+            within: SECOND,
+        }),
+        harness::Step::Focused(Find::exactly_named(Role::TextField, b"Title")),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"Groceries"), within: SECOND }),
+    ]));
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}

@@ -90,11 +90,12 @@ fn the_views_worst_case_fits_its_limits() {
             .push(crate::records::Note::new(&crate::records::CEILINGS, parts).expect("ceiling fits"))
             .expect("64 notes fit");
     }
+    state.draft = crate::state::DraftMode::Discarding;
     state.notes = crate::records::Notes::new(&crate::records::CEILINGS, crate::records::NotesParts { notes })
         .expect("64 notes fit");
     let mut view = View::new(&limits::limits());
     state.build(&mut view, &mut Queue::with_capacity(1200));
-    assert_eq!(view.tree().len(), 469);
+    assert_eq!(view.tree().len(), 472);
     assert!(limits::worst_case().expect("worst case fits u64") < 100_000_000, "view fits its 100 MB memory bound");
 }
 

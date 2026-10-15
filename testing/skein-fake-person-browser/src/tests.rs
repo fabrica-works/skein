@@ -6,10 +6,10 @@ use skein_ui::{Act, NodeId, Role};
 
 const FOUND_TARGET: NodeId = NodeId(0); // first node in browser discovery order
 
-fn face() -> BrowserFace<'static> {
+pub(crate) fn face() -> BrowserFace<'static> {
     BrowserFace::new(Token::new(7), "127.0.0.1:9000")
 }
-fn seen(value: &[u8]) -> Seen {
+pub(crate) fn seen(value: &[u8]) -> Seen {
     Seen {
         node: 9_000_000_000,
         role: b"textbox".as_slice().into(),
@@ -19,7 +19,7 @@ fn seen(value: &[u8]) -> Seen {
         rect: None,
     }
 }
-fn found(face: &mut BrowserFace<'_>, seen: Option<Seen>) {
+pub(crate) fn found(face: &mut BrowserFace<'_>, seen: Option<Seen>) {
     let Request::Find { op, .. } = face.requests().next().expect("request") else {
         panic!("expected find");
     };
