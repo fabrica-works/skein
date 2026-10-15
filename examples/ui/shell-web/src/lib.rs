@@ -14,11 +14,13 @@ use skein_ui_web::{
     wasm_bindgen,
 };
 use std::{cell::RefCell, rc::Rc};
+use wasm_bindgen::{JsCast, closure::Closure};
 
 const NAMES: &[Names<'_>] = &[Names { owner: Owner { number: 1 }, prefix: b"notes", styles: &[], regions: &[] }];
 // Each part wraps its happening in the application's report type.
 enum Report {
     Start,
+    Due,
     Act(NodeId, Act),
     Fetch(fetch::Report),
     Carried(Carried),
@@ -30,6 +32,8 @@ struct Shell {
     dom: Dom,
     platform: platform::Browser<Report>,
     store: Store,
+    timer: Option<i32>,
+    timer_callback: Closure<dyn FnMut()>,
 }
 
 #[wasm_bindgen(start)]
@@ -42,8 +46,8 @@ pub fn start() {
     let location = window.location();
     let path = location.pathname().expect("page path") + &location.search().expect("page query");
     let inbox = Inbox::new();
-    let fetch = fetch::web::Fetch::new(8, Rc::clone(&inbox), Report::Fetch);
-    let platform = platform::Browser { fetch };
+    let fetch = fetch::web::Fetch::new(9, Rc::clone(&inbox), Report::Fetch);
+    let platform = platform::Browser::new(fetch);
     let store = Store::new(b"notes-", None);
     let records: Vec<_> = store
         .read_all(&platform)
@@ -59,7 +63,9 @@ pub fn start() {
         facts.primary,
     )));
     let dom = Dom::new(mount, &page, &inbox, Report::Act);
-    let mut shell = Shell { state, view: View::new(&limits), page, dom, platform, store };
+    let reports = Rc::clone(&inbox);
+    let timer_callback = Closure::new(move || reports.raise(Report::Due));
+    let mut shell = Shell { state, view: View::new(&limits), page, dom, platform, store, timer: None, timer_callback };
     // The inbox keeps the shell and its listeners alive and forbids a turn inside a turn.
     inbox.start(Box::new(move |inbox| shell.turn(inbox)));
     inbox.raise(Report::Start);
@@ -68,8 +74,9 @@ impl Shell {
     fn turn(&mut self, inbox: &Inbox<Report>) {
         let (now, wall) = platform::clocks();
         while let Some(report) = inbox.next() {
+            let mut read_on = false;
             let report = match report {
-                Report::Start => Some(ViewReport::Due),
+                Report::Start | Report::Due => Some(ViewReport::Due),
                 Report::Act(node, act) => self.view.act(node, act).map(ViewReport::Act),
                 Report::Fetch(fetch::Report::Answered { exchange, status, body }) => {
                     Some(ViewReport::Answered { exchange, status, body })
@@ -77,6 +84,15 @@ impl Shell {
                 Report::Fetch(fetch::Report::Failed { exchange }) | Report::Carried(Carried::Failed { exchange }) => {
                     Some(ViewReport::Failed { exchange })
                 }
+                Report::Fetch(fetch::Report::StreamOpened) => {
+                    read_on = true;
+                    Some(ViewReport::StreamOpened)
+                }
+                Report::Fetch(fetch::Report::StreamPiece { bytes }) => {
+                    read_on = true;
+                    Some(ViewReport::StreamPiece { bytes })
+                }
+                Report::Fetch(fetch::Report::StreamEnded) => Some(ViewReport::StreamEnded),
                 Report::Carried(Carried::Written { .. }) => None,
                 Report::Carried(Carried::Refused { .. }) => Some(ViewReport::Failed { exchange: 0 }),
             };
@@ -86,6 +102,7 @@ impl Shell {
                 removes: Queue::with_capacity(8),
                 exchanges: Queue::with_capacity(8),
                 show: None,
+                stream: None,
             };
             self.state.step(report, now, wall, &mut duties);
             let mut requests = Requests::default();
@@ -105,10 +122,19 @@ impl Shell {
                     bound: exchange.bound,
                 });
             }
+            requests.stream = duties.stream.map(|duty| match duty {
+                skein_ui_example_view::StreamDuty::Open { path, headers, bound } => {
+                    transport::StreamDuty::Open { path, headers: headers.into_vec(), bound }
+                }
+                skein_ui_example_view::StreamDuty::Close => transport::StreamDuty::Close,
+            });
             let mut carried = Vec::new();
             transport::carry(requests, &mut self.store, &mut self.platform, &mut carried);
             for report in carried {
                 inbox.raise(Report::Carried(report));
+            }
+            if read_on {
+                self.platform.fetch.read_on();
             }
         }
         // Build once after all waiting reports; document work can raise the next turn's reports.
@@ -125,6 +151,21 @@ impl Shell {
             }
         }
         self.dom.apply(&ops);
+        let window = web_sys::window().expect("browser window");
+        if let Some(timer) = self.timer.take() {
+            window.clear_timeout_with_handle(timer);
+        }
+        if let Some(deadline) = self.state.deadline() {
+            let millis = deadline.as_nanos().saturating_sub(now.as_nanos()).div_ceil(1_000_000);
+            self.timer = Some(
+                window
+                    .set_timeout_with_callback_and_timeout_and_arguments_0(
+                        self.timer_callback.as_ref().unchecked_ref(),
+                        i32::try_from(millis).unwrap_or(i32::MAX),
+                    )
+                    .expect("view deadline"),
+            );
+        }
     }
 }
 fn no_drawing(_: skein_ui::DrawingKind, _: &[u8], _: u16, _: u16, _: &mut skein_ui::scene::Scene) -> bool {

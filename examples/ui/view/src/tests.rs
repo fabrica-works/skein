@@ -3,6 +3,7 @@ mod adds;
 mod drift;
 mod fixtures;
 mod person;
+mod stream;
 mod text;
 use crate::{Place, State, limits, places};
 use skein_lib::{Queue, Writer};

@@ -15,6 +15,18 @@ struct Shared<R> {
     controllers: RefCell<BTreeMap<u64, AbortController>>,
     inbox: Rc<Inbox<R>>,
     wrap: fn(Report) -> R,
+    stream: RefCell<Option<WebStream>>,
+}
+struct WebStream {
+    ticket: u64,
+    controller: AbortController,
+    reader: Option<ReadableStreamDefaultReader>,
+    reading: bool,
+}
+impl<R> Clone for Fetch<R> {
+    fn clone(&self) -> Self {
+        Self { shared: Rc::clone(&self.shared) }
+    }
 }
 impl<R: 'static> Fetch<R> {
     #[must_use]
@@ -25,6 +37,7 @@ impl<R: 'static> Fetch<R> {
                 controllers: RefCell::new(BTreeMap::new()),
                 inbox,
                 wrap,
+                stream: RefCell::new(None),
             }),
         }
     }
@@ -67,6 +80,72 @@ impl<R: 'static> Fetch<R> {
             move |_| failed.fail(ticket),
         );
     }
+    pub fn open_stream(&self, path: &[u8], headers: &[crate::transport::Header], bound: u32) {
+        self.close_stream();
+        let ticket = self.shared.fetch.borrow_mut().open_stream(bound);
+        let Ok(controller) = AbortController::new() else {
+            self.shared.end_stream(ticket);
+            return;
+        };
+        self.shared.stream.replace(Some(WebStream {
+            ticket,
+            controller: controller.clone(),
+            reader: None,
+            reading: false,
+        }));
+        let headers = headers
+            .iter()
+            .map(|(name, value)| Ok((std::str::from_utf8(name)?.into(), std::str::from_utf8(value)?.into())))
+            .collect::<Result<Vec<_>, std::str::Utf8Error>>();
+        let Ok(headers) = headers else {
+            self.shared.end_stream(ticket);
+            return;
+        };
+        let exchange = Exchange { id: 0, path: path.into(), method: "GET".into(), headers, body: Box::from([]), bound };
+        let Ok(request) = request(&exchange, &controller) else {
+            self.shared.end_stream(ticket);
+            return;
+        };
+        let promise = web_sys::window().expect("browser window").fetch_with_request(&request);
+        let (shared, failed) = (Rc::clone(&self.shared), Rc::clone(&self.shared));
+        listen(
+            &promise,
+            move |value| {
+                let reader = value
+                    .dyn_into::<Response>()
+                    .ok()
+                    .filter(|response| response.status() == 200)
+                    .and_then(|response| response.body())
+                    .and_then(|body| body.get_reader().dyn_into::<ReadableStreamDefaultReader>().ok());
+                let Some(reader) = reader else {
+                    shared.end_stream(ticket);
+                    return;
+                };
+                let opened = {
+                    let mut stream = shared.stream.borrow_mut();
+                    if let Some(stream) = stream.as_mut().filter(|stream| stream.ticket == ticket) {
+                        stream.reader = Some(reader);
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if opened {
+                    shared.inbox.raise((shared.wrap)(Report::StreamOpened));
+                }
+            },
+            move |_| failed.end_stream(ticket),
+        );
+    }
+    pub fn close_stream(&self) {
+        let ticket = self.shared.fetch.borrow().stream_ticket();
+        if let Some(ticket) = ticket {
+            self.shared.end_stream(ticket);
+        }
+    }
+    pub fn read_on(&self) {
+        read_stream(&self.shared);
+    }
     pub fn abandon(&self, id: u32) {
         let ticket = self.shared.fetch.borrow_mut().abandon(id);
         if let Some(ticket) = ticket
@@ -77,6 +156,16 @@ impl<R: 'static> Fetch<R> {
     }
 }
 impl<R: 'static> Shared<R> {
+    fn end_stream(&self, ticket: u64) {
+        let report = self.fetch.borrow_mut().end_stream(ticket);
+        if let Some(report) = report {
+            let stream = self.stream.borrow_mut().take();
+            if let Some(stream) = stream {
+                stream.controller.abort();
+            }
+            self.inbox.raise((self.wrap)(report));
+        }
+    }
     fn report(&self, ticket: u64, report: Option<Report>) {
         if let Some(report) = report {
             self.controllers.borrow_mut().remove(&ticket);
@@ -155,4 +244,57 @@ fn listen(promise: &js_sys::Promise, resolve: impl FnMut(JsValue) + 'static, rej
     // The promise holds the functions; browser GC frees both captures after settlement.
     let _resolve = resolve.into_js_value();
     let _reject = reject.into_js_value();
+}
+
+fn read_stream<R: 'static>(shared: &Rc<Shared<R>>) {
+    let report = shared.fetch.borrow_mut().read_on();
+    if let Some(report) = report {
+        shared.inbox.raise((shared.wrap)(report));
+        return;
+    }
+    let next = {
+        let mut slot = shared.stream.borrow_mut();
+        let Some(stream) = slot.as_mut() else {
+            return;
+        };
+        if stream.reading {
+            return;
+        }
+        let Some(reader) = stream.reader.clone() else {
+            return;
+        };
+        stream.reading = true;
+        (stream.ticket, reader)
+    };
+    let (ticket, reader) = next;
+    let (shared, failed) = (Rc::clone(shared), Rc::clone(shared));
+    listen(
+        &reader.read(),
+        move |result| {
+            if shared.fetch.borrow().stream_ticket() != Some(ticket) {
+                return;
+            }
+            if js_sys::Reflect::get(&result, &JsValue::from_str("done")).ok().and_then(|v| v.as_bool()) == Some(true) {
+                shared.end_stream(ticket);
+                return;
+            }
+            let bytes = js_sys::Reflect::get(&result, &JsValue::from_str("value"))
+                .ok()
+                .and_then(|value| value.dyn_into::<js_sys::Uint8Array>().ok());
+            let Some(bytes) = bytes else {
+                shared.end_stream(ticket);
+                return;
+            };
+            if let Some(stream) = shared.stream.borrow_mut().as_mut() {
+                stream.reading = false;
+            }
+            let report = shared.fetch.borrow_mut().stream_piece(ticket, bytes.to_vec().into());
+            if let Some(report) = report {
+                shared.inbox.raise((shared.wrap)(report));
+            } else {
+                read_stream(&shared);
+            }
+        },
+        move |_| failed.end_stream(ticket),
+    );
 }

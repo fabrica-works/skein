@@ -3,11 +3,21 @@ use skein_lib::{Time, Wall};
 
 pub struct Browser<R> {
     pub fetch: crate::fetch::web::Fetch<R>,
+    hidden: crate::hidden::web::Hidden<R>,
+}
+impl<R: 'static> Browser<R> {
+    #[must_use]
+    pub fn new(fetch: crate::fetch::web::Fetch<R>) -> Self {
+        Self { hidden: crate::hidden::web::Hidden::new(fetch.clone()), fetch }
+    }
 }
 fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.session_storage().ok().flatten()
 }
 impl<R: 'static> super::Platform for Browser<R> {
+    fn stream(&mut self, duty: crate::transport::StreamDuty) {
+        self.hidden.carry(duty);
+    }
     fn read_all(&self) -> Vec<crate::store::Record> {
         let Some(storage) = storage() else { return Vec::new() };
         (0..storage.length().unwrap_or(0))

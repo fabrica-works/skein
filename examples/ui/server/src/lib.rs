@@ -10,18 +10,21 @@ pub mod routes;
 pub struct State {
     notes: Notes,
     adds: BTreeMap<u64, Note>,
+    made: Option<Box<[u8]>>,
 }
 impl State {
     #[must_use]
     pub fn new() -> State {
         State {
             adds: BTreeMap::new(),
+            made: None,
             notes: Notes::new(&CEILINGS, NotesParts { notes: List::with_capacity(CEILINGS.notes_notes) })
                 .expect("empty notes fit"),
         }
     }
     pub fn add(&mut self, body: &[u8]) -> Result<Box<[u8]>, u16> {
         let add = Add::decode(&CEILINGS, &mut Reader::new(body)).map_err(|_| 400_u16)?;
+        let mut made = false;
         let note = if let Some(note) = self.adds.get(&add.key()) {
             note.clone()
         } else {
@@ -46,11 +49,19 @@ impl State {
             notes.notes.push(note.clone()).expect("note capacity checked");
             self.notes = Notes::new(&CEILINGS, notes).expect("bounded notes");
             self.adds.insert(parts.key, note.clone());
+            made = true;
             note
         };
         let mut writer = Writer::new(usize::try_from(note.measure()).expect("note fits"));
         note.encode(&mut writer).expect("measured note fits");
-        Ok(writer.finish())
+        let bytes = writer.finish();
+        if made {
+            self.made = Some(bytes.clone());
+        }
+        Ok(bytes)
+    }
+    pub fn take_made(&mut self) -> Option<Box<[u8]>> {
+        self.made.take()
     }
     #[must_use]
     pub fn list(&self) -> Box<[u8]> {

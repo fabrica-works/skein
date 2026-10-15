@@ -51,6 +51,7 @@ fn reports_keep_their_order() {
 }
 
 mod fetch;
+mod hidden;
 mod platform;
 mod store;
 mod transport;

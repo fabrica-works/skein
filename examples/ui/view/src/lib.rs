@@ -11,7 +11,7 @@ pub mod places;
 mod state;
 mod view;
 pub use places::Place;
-pub use state::{Duties, Exchange, Record, Report, State};
+pub use state::{Duties, Exchange, Record, Report, State, StreamDuty};
 
 #[cfg(test)]
 mod tests;

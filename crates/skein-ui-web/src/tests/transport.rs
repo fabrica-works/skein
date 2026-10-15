@@ -68,3 +68,27 @@ fn a_written_record_is_reported() {
     carry(requests, &mut Store::new(b"notes-", None), &mut FakePlatform::default(), &mut reports);
     assert_eq!(reports, vec![Carried::Written { key: b"key".as_slice().into() }]);
 }
+
+#[test]
+fn the_stream_goes_after_the_writes() {
+    let mut platform = FakePlatform::default();
+    let requests =
+        Requests { writes: writes(), stream: Some(crate::transport::StreamDuty::Close), ..Requests::default() };
+    carry(requests, &mut Store::new(b"notes-", None), &mut platform, &mut Vec::new());
+    assert_eq!(
+        platform.calls,
+        vec![
+            Call::Write(b"notes-a2V5".to_vec(), b"cmVjb3Jk".to_vec()),
+            Call::Stream(crate::transport::StreamDuty::Close)
+        ]
+    );
+}
+
+#[test]
+fn a_refused_write_cancels_the_stream() {
+    let mut platform = FakePlatform::default();
+    let requests =
+        Requests { writes: writes(), stream: Some(crate::transport::StreamDuty::Close), ..Requests::default() };
+    carry(requests, &mut Store::new(b"notes-", Some(0)), &mut platform, &mut Vec::new());
+    assert_eq!(platform.calls, vec![]);
+}

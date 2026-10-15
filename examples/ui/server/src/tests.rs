@@ -123,3 +123,27 @@ fn a_second_add_with_one_key_answers_the_first_note() {
     let answer = routes::route(&mut state, &bundle, &call, b"\0\0\0\0\0\0\0\x01\0\0\0\x01B\0\0\0\0\0\0\0\0\0\0\0\0\0");
     assert_eq!(answer.body.as_ref(), b"\0\0\0\0\0\0\0\x01\0\0\0\x01A\0\0\0\0\0\0\0\0\0\0\0\0\0");
 }
+
+#[test]
+fn the_event_stream_stays_open() {
+    let answer = routes::route(&mut State::new(), &bundle(), &get(b"/api/events"), &[]);
+    assert_eq!((answer.head.body, answer.head.close), (Body::Chunked, false));
+}
+
+#[test]
+fn the_event_stream_declares_its_type() {
+    let answer = routes::route(&mut State::new(), &bundle(), &get(b"/api/events"), &[]);
+    let kind =
+        answer.head.headers.iter().find(|header| header.name.as_ref() == b"Content-Type").expect("event stream type");
+    assert_eq!(kind.value.as_ref(), b"text/event-stream");
+}
+
+#[test]
+fn a_replayed_add_is_not_broadcast_again() {
+    let mut state = State::new();
+    let add = b"\0\0\0\0\0\0\0\x01\0\0\0\x01A\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    state.add(add).expect("fixture add accepted");
+    state.take_made();
+    state.add(add).expect("fixture add accepted");
+    assert_eq!(state.take_made(), None);
+}

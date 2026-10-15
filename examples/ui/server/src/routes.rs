@@ -48,6 +48,12 @@ pub fn route(state: &mut State, bundle: &Bundle, call: &Call, body: &[u8]) -> An
     if call.method != Method::Get {
         return answer(405, Box::from(&b"method not allowed"[..]), "text/plain; charset=utf-8", None);
     }
+    if target == b"/api/events" {
+        let mut result = answer(200, Box::from([]), "text/event-stream", Some(("Cache-Control", "no-cache")));
+        result.head.body = Body::Chunked;
+        result.head.close = false;
+        return result;
+    }
     if target == b"/api/notes" {
         return answer(200, state.list(), "application/octet-stream", None);
     }
@@ -75,4 +81,9 @@ pub fn route(state: &mut State, bundle: &Bundle, call: &Call, body: &[u8]) -> An
     headers.push(header("ETag", &bundle.etag));
     result.head.headers = headers.into_boxed_slice();
     result
+}
+
+#[must_use]
+pub fn stream_refused() -> Answer {
+    answer(429, Box::from(&b"too many streams"[..]), "text/plain; charset=utf-8", None)
 }

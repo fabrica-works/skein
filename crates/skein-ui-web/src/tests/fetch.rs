@@ -30,3 +30,25 @@ fn an_abandoned_tickets_answer_cannot_finish_a_reused_id() {
     fetch.begin(7, 3).expect("room");
     assert_eq!(fetch.finish(old, 200), None);
 }
+#[test]
+fn a_piece_past_its_bound_comes_in_parts() {
+    let mut fetch = crate::fetch::Fetch::new(1);
+    let ticket = fetch.open_stream(2);
+    let reports = vec![fetch.stream_piece(ticket, b"abcde".as_slice().into()), fetch.read_on(), fetch.read_on()];
+    assert_eq!(
+        reports,
+        vec![
+            Some(crate::fetch::Report::StreamPiece { bytes: b"ab".as_slice().into() }),
+            Some(crate::fetch::Report::StreamPiece { bytes: b"cd".as_slice().into() }),
+            Some(crate::fetch::Report::StreamPiece { bytes: b"e".as_slice().into() }),
+        ]
+    );
+}
+
+#[test]
+fn an_old_streams_end_cannot_end_its_replacement() {
+    let mut fetch = crate::fetch::Fetch::new(1);
+    let old = fetch.open_stream(2);
+    fetch.open_stream(2);
+    assert_eq!(fetch.end_stream(old), None);
+}

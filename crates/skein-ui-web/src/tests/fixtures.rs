@@ -9,6 +9,7 @@ pub enum Call {
     Remove(Vec<u8>),
     Send(u32),
     Navigate(Vec<u8>),
+    Stream(crate::transport::StreamDuty),
 }
 #[derive(Default)]
 pub struct FakePlatform {
@@ -41,6 +42,9 @@ impl crate::platform::Platform for FakePlatform {
     }
     fn send(&mut self, exchange: &crate::fetch::Exchange) {
         self.calls.push(Call::Send(exchange.id));
+    }
+    fn stream(&mut self, duty: crate::transport::StreamDuty) {
+        self.calls.push(Call::Stream(duty));
     }
     fn navigate(&mut self, to: &[u8]) {
         self.calls.push(Call::Navigate(to.into()));

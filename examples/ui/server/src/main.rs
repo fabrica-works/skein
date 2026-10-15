@@ -1,5 +1,6 @@
 //! Startup and a single drive loop on the HTTP and io machines (examples.md, 9.3).
 use skein_http::server::{self, Server};
+use skein_http::sse::writer as sse;
 use skein_io::kernel::{Complete, Exit, Submit};
 use skein_io::{self as io, Addr, Io, Request};
 use skein_lib::stream::{self, Read};
@@ -10,13 +11,18 @@ use skein_ui_example_server::{
     bundle::{BUNDLE_BYTES, Bundle, FILE_BYTES},
     routes,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
 const LISTENER: Token = Token::new(1);
 const CONNECTIONS: usize = 32;
 const QUEUE: u32 = 1024;
+const STREAMS: usize = 8;
+const EVENT_BYTES: u32 = 8192;
+fn sse_limits() -> sse::Limits {
+    sse::Limits { event: EVENT_BYTES, chunk: 4096 }
+}
 fn io_limits() -> io::Limits {
     io::Limits {
         sockets: 40,
@@ -46,7 +52,9 @@ fn worst_case() -> Option<u64> {
         .checked_add(Queue::<io::Event>::worst_case(QUEUE)?)?
         .checked_add(Queue::<server::Event>::worst_case(32)?)?
         .checked_add(Queue::<stream::Down>::worst_case(32)?)?
-        .checked_add(4 << 20)
+        .checked_add(4 << 20)?
+        .checked_add(sse::worst_case(&sse_limits())?.checked_mul(u64::try_from(STREAMS).ok()?)?)?
+        .checked_add(u64::from(EVENT_BYTES).checked_mul(64)?.checked_mul(u64::try_from(STREAMS).ok()?)?)
 }
 fn main() -> ExitCode {
     match run() {
@@ -105,6 +113,8 @@ struct Connection {
     reply: Box<[u8]>,
     call: Option<server::Call>,
     body: Vec<u8>,
+    writer: Option<sse::Writer>,
+    events: VecDeque<Box<[u8]>>,
     sent: usize,
     deadline: Time,
 }
@@ -195,6 +205,8 @@ impl Web {
                         reply: Box::from([]),
                         call: None,
                         body: Vec::new(),
+                        writer: None,
+                        events: VecDeque::new(),
                         sent: 0,
                         deadline: self.env.now.checked_add(Duration::from_secs(30)).expect("deadline fits"),
                     },
@@ -256,6 +268,10 @@ impl Web {
                 server::Event::Body(stream::Up::End) => self.respond(owner),
                 server::Event::Body(stream::Up::Room) => unreachable!("body reads only"),
                 server::Event::Reply(stream::Up::Room) => {
+                    if self.connections.get(&owner).expect("live connection").writer.is_some() {
+                        self.sse_up(owner, stream::Up::Room);
+                        continue;
+                    }
                     let conn = self.connections.get_mut(&owner).expect("live connection");
                     let end = conn
                         .sent
@@ -279,7 +295,12 @@ impl Web {
                     self.down(owner, server::Request::Close);
                     self.requests.push(Request::Close { entity: socket });
                 }
-                server::Event::Closed | server::Event::Reply(stream::Up::Failed(_)) => {}
+                server::Event::Reply(stream::Up::Failed(fault)) => {
+                    if self.connections.get(&owner).expect("live connection").writer.is_some() {
+                        self.sse_up(owner, stream::Up::Failed(fault));
+                    }
+                }
+                server::Event::Closed => {}
                 server::Event::Reply(stream::Up::Bytes(_) | stream::Up::End) => unreachable!("reply writes only"),
                 server::Event::Refused(why) => unreachable!("bounded response is valid: {why:?}"),
             }
@@ -292,14 +313,91 @@ impl Web {
         );
     }
     fn respond(&mut self, owner: Token) {
+        let streams = self.connections.values().filter(|conn| conn.writer.is_some()).count();
         let conn = self.connections.get_mut(&owner).expect("live connection");
         let call = conn.call.take().expect("request head before body");
-        let answer = routes::route(&mut self.state, &self.bundle, &call, &conn.body);
+        let opening = call.method == skein_http::Method::Get && call.target.as_ref() == b"/api/events";
+        let answer = if opening && streams >= STREAMS {
+            routes::stream_refused()
+        } else {
+            routes::route(&mut self.state, &self.bundle, &call, &conn.body)
+        };
         conn.body.clear();
         conn.reply = answer.body;
         conn.sent = 0;
-        self.down(owner, server::Request::Respond(answer.head));
-        self.ask_reply(owner);
+        if opening && answer.head.status == 200 {
+            conn.writer = Some(sse::Writer::new(&sse_limits()));
+            conn.deadline = Time::from_nanos(u64::MAX);
+            self.down(owner, server::Request::Respond(answer.head));
+            self.sse_down(owner, sse::Request::Comment(Box::from([])));
+        } else {
+            self.down(owner, server::Request::Respond(answer.head));
+            self.ask_reply(owner);
+        }
+        if let Some(note) = self.state.take_made() {
+            self.broadcast(&note);
+        }
+    }
+    fn broadcast(&mut self, note: &[u8]) {
+        use skein_lib::{
+            Writer,
+            base64::{self, Alphabet},
+        };
+        let len = base64::encoded_len(Alphabet::Standard, u32::try_from(note.len()).expect("note bounded"))
+            .expect("event fits");
+        let mut writer = Writer::new(usize::try_from(len).expect("event fits"));
+        base64::encode(Alphabet::Standard, note, &mut writer).expect("event measured");
+        let data = writer.finish();
+        let owners: Vec<_> =
+            self.connections.iter().filter_map(|(owner, conn)| conn.writer.as_ref().map(|_| *owner)).collect();
+        for owner in owners {
+            let conn = self.connections.get_mut(&owner).expect("live stream");
+            assert!(conn.events.len() < 64, "at most 64 new notes per server");
+            conn.events.push_back(data.clone());
+            self.pump_stream(owner);
+        }
+    }
+    fn pump_stream(&mut self, owner: Token) {
+        let conn = self.connections.get_mut(&owner).expect("live stream");
+        if conn.writer.as_ref().expect("stream writer").waiting() == sse::Waiting::Above
+            && let Some(data) = conn.events.pop_front()
+        {
+            self.sse_down(
+                owner,
+                sse::Request::Event(sse::Outgoing { name: Box::from([]), data, id: None, retry: None }),
+            );
+        }
+    }
+    fn sse_down(&mut self, owner: Token, request: sse::Request) {
+        let mut above = Queue::with_capacity(4);
+        let mut below = Queue::with_capacity(4);
+        let env = Env { now: self.env.now, wall: self.env.wall, limits: sse_limits() };
+        let conn = self.connections.get_mut(&owner).expect("live stream");
+        sse::down(conn.writer.as_mut().expect("stream writer"), &env, request, &mut above, &mut below);
+        self.drain_sse(owner, &mut above, &mut below);
+    }
+    fn sse_up(&mut self, owner: Token, up: stream::Up) {
+        let mut above = Queue::with_capacity(4);
+        let mut below = Queue::with_capacity(4);
+        let env = Env { now: self.env.now, wall: self.env.wall, limits: sse_limits() };
+        let conn = self.connections.get_mut(&owner).expect("live stream");
+        sse::up(conn.writer.as_mut().expect("stream writer"), &env, up, &mut above, &mut below);
+        self.drain_sse(owner, &mut above, &mut below);
+    }
+    fn drain_sse(&mut self, owner: Token, above: &mut Queue<sse::Event>, below: &mut Queue<stream::Down>) {
+        while let Some(down) = below.pop() {
+            self.down(owner, server::Request::Reply(down));
+        }
+        while let Some(event) = above.pop() {
+            match event {
+                sse::Event::Sent => self.pump_stream(owner),
+                sse::Event::Refused(_) | sse::Event::Failed(_) => {
+                    let socket = self.connections.get(&owner).expect("live stream").socket;
+                    self.requests.push(Request::Abort { entity: socket });
+                }
+                sse::Event::Closed => {}
+            }
+        }
     }
     fn ask_reply(&mut self, owner: Token) {
         let conn = self.connections.get(&owner).expect("live connection");

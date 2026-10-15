@@ -14,6 +14,7 @@ pub struct Requests {
     pub navigate: Option<Box<[u8]>>,
 }
 pub type Header = (Box<[u8]>, Box<[u8]>);
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StreamDuty {
     Open { path: Box<[u8]>, headers: Vec<Header>, bound: u32 },
     Close,
@@ -38,6 +39,9 @@ pub fn carry<P: Platform>(requests: Requests, store: &mut Store, platform: &mut 
     }
     for exchange in requests.exchanges {
         platform.send(&exchange);
+    }
+    if let Some(stream) = requests.stream {
+        platform.stream(stream);
     }
     if let Some(to) = requests.navigate {
         platform.navigate(&to);

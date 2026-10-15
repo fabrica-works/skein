@@ -25,5 +25,6 @@ pub fn worst_case() -> Option<u64> {
         .checked_add(records::Notes::worst_case_heap(&records::CEILINGS)?)?
         .checked_add(crate::view::words_worst_case()?)?
         .checked_add(records::Add::worst_case_heap(&records::CEILINGS)?.checked_mul(8)?)?
-        .checked_add(256)
+        .checked_add(256)?
+        .checked_add(crate::state::events_worst_case()?)
 }

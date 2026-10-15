@@ -1,5 +1,6 @@
 //! The page's facts and platform reports (examples.md, 9.2).
 use crate::{Place, places, records};
+mod events;
 use alloc::boxed::Box;
 use skein_lib::{List, Queue, Reader, Time, Wall, Writer};
 use skein_ui::{Act, Binding, BoundAct, Patch, View};
@@ -16,6 +17,9 @@ pub enum Report {
     Answered { exchange: u32, status: u16, body: Box<[u8]> },
     Failed { exchange: u32 },
     Due,
+    StreamOpened,
+    StreamPiece { bytes: Box<[u8]> },
+    StreamEnded,
 }
 #[derive(Debug)]
 pub struct Exchange {
@@ -25,12 +29,19 @@ pub struct Exchange {
     pub body: Box<[u8]>,
     pub bound: u32,
 }
+pub type Header = (Box<[u8]>, Box<[u8]>);
+#[derive(Debug)]
+pub enum StreamDuty {
+    Open { path: Box<[u8]>, headers: Box<[Header]>, bound: u32 },
+    Close,
+}
 #[derive(Debug)]
 pub struct Duties {
     pub writes: Queue<Record>,
     pub removes: Queue<Box<[u8]>>,
     pub exchanges: Queue<Exchange>,
     pub show: Option<(Place, bool)>,
+    pub stream: Option<StreamDuty>,
 }
 #[derive(Debug)]
 pub struct State {
@@ -44,6 +55,10 @@ pub struct State {
     seed: u64,
     serial: u64,
     pending: List<Option<records::Add>>,
+    events: events::Events,
+    stream_open: bool,
+    starting: bool,
+    retry: Option<Time>,
 }
 impl State {
     #[must_use]
@@ -70,9 +85,13 @@ impl State {
             seed,
             serial: 0,
             pending,
+            events: events::Events::new(),
+            stream_open: false,
+            starting: true,
+            retry: None,
         }
     }
-    pub fn step(&mut self, report: Report, _now: Time, _wall: Wall, duties: &mut Duties) {
+    pub fn step(&mut self, report: Report, now: Time, _wall: Wall, duties: &mut Duties) {
         match report {
             Report::Place(place) => self.place = place,
             Report::Act(bound) => match bound.act {
@@ -104,21 +123,36 @@ impl State {
                         for note in notes.notes() {
                             self.accept(note.clone());
                         }
+                        self.live = self.stream_open;
                     }
                 } else if status == 200 {
                     self.add_answered(exchange, &body, duties);
                 }
             }
-            Report::Failed { .. } => self.live = false,
+            Report::Failed { .. } => {}
             Report::Due => {
-                for (index, add) in self.pending.iter().enumerate() {
-                    if let Some(add) = add {
-                        duties.exchanges.push(add_exchange(
-                            u32::try_from(index).expect("eight slots").checked_add(1).expect("eight slots"),
-                            add,
-                        ));
+                if self.starting {
+                    for (index, add) in self.pending.iter().enumerate() {
+                        if let Some(add) = add {
+                            duties.exchanges.push(add_exchange(
+                                u32::try_from(index).expect("eight slots").checked_add(1).expect("eight slots"),
+                                add,
+                            ));
+                        }
                     }
+                    self.starting = false;
                 }
+                self.retry = None;
+                duties.stream = Some(StreamDuty::Open {
+                    path: Box::from(&b"/api/events"[..]),
+                    headers: Box::from([]),
+                    bound: 4096,
+                });
+            }
+            Report::StreamOpened => {
+                self.retry = None;
+                self.stream_open = true;
+                self.events = events::Events::new();
                 let bound =
                     u32::try_from(records::Notes::worst_case_bytes(&records::CEILINGS).expect("record bound fits"))
                         .expect("record bound fits u32");
@@ -129,6 +163,19 @@ impl State {
                     body: Box::from([]),
                     bound,
                 });
+            }
+            Report::StreamPiece { bytes } => {
+                for note in &self.events.piece(&bytes) {
+                    self.accept(note.clone());
+                }
+                if self.events.failed() {
+                    duties.stream = Some(StreamDuty::Close);
+                }
+            }
+            Report::StreamEnded => {
+                self.stream_open = false;
+                self.live = false;
+                self.retry = Some(now.saturating_add(skein_lib::Duration::from_secs(1)));
             }
         }
         self.shown = self.shown.checked_add(1).expect("shown count cannot exhaust");
@@ -155,7 +202,7 @@ impl State {
     }
     #[must_use]
     pub fn deadline(&self) -> Option<Time> {
-        None
+        self.retry
     }
     #[must_use]
     pub fn closing_loses(&self) -> bool {
@@ -257,4 +304,8 @@ fn add_exchange(id: u32, add: &records::Add) -> Exchange {
         bound: u32::try_from(records::Note::worst_case_bytes(&records::CEILINGS).expect("record bound fits"))
             .expect("record bound fits u32"),
     }
+}
+
+pub(crate) fn events_worst_case() -> Option<u64> {
+    events::worst_case()
 }

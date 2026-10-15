@@ -47,6 +47,7 @@ pub fn duties() -> Duties {
         removes: Queue::with_capacity(8),
         exchanges: Queue::with_capacity(8),
         show: None,
+        stream: None,
     }
 }
 pub fn state() -> State {

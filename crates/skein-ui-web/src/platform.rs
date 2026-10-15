@@ -11,6 +11,7 @@ pub trait Platform {
     fn remove(&mut self, key: &[u8]);
     fn send(&mut self, exchange: &crate::fetch::Exchange);
     fn navigate(&mut self, to: &[u8]);
+    fn stream(&mut self, duty: crate::transport::StreamDuty);
 }
 
 pub struct Facts {

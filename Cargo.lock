@@ -989,6 +989,7 @@ dependencies = [
  "skein-codec",
  "skein-codegen",
  "skein-fake-person",
+ "skein-http",
  "skein-lib",
  "skein-ui",
  "skein-ui-text",

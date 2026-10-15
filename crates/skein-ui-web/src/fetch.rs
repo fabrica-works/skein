@@ -16,6 +16,15 @@ pub struct Exchange {
 pub enum Report {
     Answered { exchange: u32, status: u16, body: Box<[u8]> },
     Failed { exchange: u32 },
+    StreamOpened,
+    StreamPiece { bytes: Box<[u8]> },
+    StreamEnded,
+}
+struct Stream {
+    ticket: u64,
+    bound: usize,
+    held: Box<[u8]>,
+    at: usize,
 }
 struct Flight {
     id: u32,
@@ -26,11 +35,17 @@ pub struct Fetch {
     flights: BTreeMap<u64, Flight>,
     capacity: usize,
     serial: u64,
+    stream: Option<Stream>,
 }
 impl Fetch {
     #[must_use]
     pub fn new(capacity: u32) -> Self {
-        Self { flights: BTreeMap::new(), capacity: usize::try_from(capacity).expect("capacity fits"), serial: 0 }
+        Self {
+            flights: BTreeMap::new(),
+            capacity: usize::try_from(capacity).expect("capacity fits"),
+            serial: 0,
+            stream: None,
+        }
     }
     /// A ticket remains unique after the application abandons and reuses an id.
     pub fn begin(&mut self, id: u32, bound: u32) -> Option<u64> {
@@ -68,5 +83,48 @@ impl Fetch {
         let ticket = self.flights.iter().find_map(|(ticket, flight)| (flight.id == id).then_some(*ticket))?;
         self.flights.remove(&ticket);
         Some(ticket)
+    }
+    pub fn open_stream(&mut self, bound: u32) -> u64 {
+        assert!(bound > 0, "a stream piece holds a byte");
+        self.serial = self.serial.checked_add(1).expect("stream tickets fit");
+        self.stream = Some(Stream {
+            ticket: self.serial,
+            bound: usize::try_from(bound).expect("bound fits"),
+            held: Box::from([]),
+            at: 0,
+        });
+        self.serial
+    }
+    #[must_use]
+    pub fn stream_ticket(&self) -> Option<u64> {
+        self.stream.as_ref().map(|stream| stream.ticket)
+    }
+    pub fn stream_piece(&mut self, ticket: u64, bytes: Box<[u8]>) -> Option<Report> {
+        let stream = self.stream.as_mut().filter(|stream| stream.ticket == ticket)?;
+        assert!(stream.at == stream.held.len(), "read on after the last piece");
+        stream.held = bytes;
+        stream.at = 0;
+        self.read_on()
+    }
+    pub fn read_on(&mut self) -> Option<Report> {
+        let stream = self.stream.as_mut()?;
+        if stream.at == stream.held.len() {
+            return None;
+        }
+        let end = stream.at.saturating_add(stream.bound).min(stream.held.len());
+        let bytes = stream.held.get(stream.at..end).expect("part within held piece").into();
+        stream.at = end;
+        if end == stream.held.len() {
+            stream.held = Box::from([]);
+            stream.at = 0;
+        }
+        Some(Report::StreamPiece { bytes })
+    }
+    pub fn end_stream(&mut self, ticket: u64) -> Option<Report> {
+        if self.stream_ticket() != Some(ticket) {
+            return None;
+        }
+        self.stream = None;
+        Some(Report::StreamEnded)
     }
 }
