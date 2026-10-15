@@ -25,13 +25,17 @@ example's browser tier through it, are others (ui-web.md, section 14).
 - **Actions check what a person would.** A press lands only on something
   on screen, enabled and not covered by something else. Otherwise it is
   refused, saying why, and the test can wait and try again.
+- **A go answers the page's closing warning.** A person who navigates,
+  reloads or moves through the history has chosen to leave, so the kit
+  accepts the page's `beforeunload` prompt then, and says that it did.
+  It dismisses any other native dialog, and reports it as trouble.
 - **Waiting is a deadline, never a sleep.** An expectation is looked for
   again at a short interval until it is met or its deadline passes. A
   missed expectation reports what was there instead.
 - **Trouble is reported, never judged.** The kit reports the page's
   exceptions, console errors, log errors (a content security policy
-  violation among them) and crashes. Whether one fails the test is the
-  test's call.
+  violation among them), crashes and the native dialogs it dismissed.
+  Whether one fails the test is the test's call.
 - **Bounded like the rest of skein.** Persons, pages, operations,
   commands in flight and each message are counted under limits, and
   `worst_case` covers them.
@@ -165,11 +169,12 @@ pub enum Event {                                         // to the test
     Found   { op: Token, seen: List<Seen>, more: u32 },  // more: matches past the limit, counted
     Met     { op: Token, seen: List<Seen> },
     Missed  { op: Token, seen: List<Seen>, more: u32 },  // what was there when the deadline passed
+    Warned  { op: Token },                               // a go accepted its page's closing warning
     Done    { op: Token },                               // a navigation, a press, typing, a key
     Refused { op: Token, why: Refusal },                 // Gone, Hidden, Covered, Disabled, Crashed
     Snapshot   { op: Token, text: Box<[u8]> },
     Screenshot { op: Token, png: Box<[u8]> },
-    Trouble { page: Token, trouble: Trouble, text: Box<[u8]> },  // an exception, a console or log error, a crash
+    Trouble { page: Token, trouble: Trouble, text: Box<[u8]> },  // an exception, a console or log error, a crash, a dialog
     Closed  { owner: Token },                            // terminal
 }
 
@@ -207,7 +212,8 @@ pub enum Expect  { Present, Count(u32), Absent }
   that holds it.
 - **Every operation has one terminal event:** `Found`, `Met`, `Missed`,
   `Done`, `Refused`, `Snapshot` or `Screenshot`. Every person, page and
-  the browser itself ends with one `Closed`.
+  the browser itself ends with one `Closed`. `Warned` is not terminal: a
+  go reports it at most once, before its terminal (section 6).
 
 ## 6. The operations
 
@@ -217,7 +223,7 @@ to the next command, never a closure waiting on a reply:
 | Operation | Its steps |
 |---|---|
 | opening a page | create a target in the person's context, attach to it, enable the domains it reports on, set the viewport, navigate; `Opened` once the load event fires |
-| go | navigate, reload, or move through the history; `Done` once the navigation commits: the load event for a new document, the same-document event for one that stays |
+| go | navigate, reload, or move through the history; the page's `beforeunload` prompt, if it opens meanwhile, accepted, and `Warned`; `Done` once the navigation commits: the load event for a new document, the same-document event for one that stays |
 | find | the accessibility nodes matching the role and the name, under the scope or the document: exactly, both asked of CDP; by words, the role's nodes asked without a name, their names compared in the kit; at most `Limits::matches` kept, the rest counted in `more`; their properties; their boxes, if asked |
 | await | a find, again every `Limits::poll`, until the expectation holds (`Met`) or `within` passes (`Missed`) |
 | press | the node scrolled into view, its named point with it; its box's centre, or the named point in the box; layout metrics turn the viewport point into document coordinates for the hit test; refused `Hidden` without a box or with a point outside it, `Disabled` if its accessibility node says so, `Covered` unless the hit test at that point lands on the node or inside it; then the mouse moved, pressed and released at the viewport point |
@@ -244,6 +250,21 @@ to the next command, never a closure waiting on a reply:
 - **Covered is not a failure.** A dialog that has not closed yet, or a
   toast over a button, covers it for a moment. The test decides whether
   to wait and press again.
+- **A go answers its page's closing warning.** A person who navigates,
+  reloads or moves back or forward has chosen to leave the document. So
+  the kit accepts a `beforeunload` prompt that opens on the page while a
+  go of it is in flight (CDP's `Page.javascriptDialogOpening`, answered
+  by `Page.handleJavaScriptDialog`), and reports `Warned` before the
+  go's `Done`.
+  - A test sees by `Warned`, or by its absence, whether the page warned
+    when the person left it.
+  - Chromium shows the prompt only on a page that has had a person's
+    input since it loaded. A test that looks for no warning acts on the
+    page first.
+  - Closing a page closes its target, which runs no `beforeunload`
+    handler, so a close is never warned.
+  - No request answers a dialog. A person who stays on a page that
+    warns, or who answers a confirm, waits for a test that needs one.
 - **Every command has a deadline,** `Limits::answer`. A browser that does
   not answer in time fails the operation with what was pending, so a
   hung browser fails a test rather than holding it up.
@@ -259,7 +280,17 @@ wrong, and reports each as `Trouble` with its text, cut to
 - a log entry at error level, which is how a content security policy
   violation, a failed load or a blocked request shows;
 - the page crashing, which also fails its operations in flight with
-  `Crashed`.
+  `Crashed`;
+- a native dialog, other than the closing warning a go accepts (section
+  6): an alert, a confirm, a prompt, or a `beforeunload` prompt with no
+  go of its page in flight. The kit dismisses it at once. Its text is
+  the dialog's type, `: `, and its message (`confirm: Delete it?`).
+
+A dismissed dialog commits the page to nothing: a confirm answers no, a
+prompt gives nothing, and a `beforeunload` prompt keeps the page where
+it is. The page goes on, and the test sees it as it stayed. Left open,
+the dialog would hold every operation on the page until its deadline,
+and no request would answer it.
 
 The kit judges none of them. A test fails on any `Trouble` it did not
 expect, and a scenario that provokes one (a page made to fail, for
@@ -302,13 +333,16 @@ allocator's high water against `worst_case`.
   loop: a button that changes a heading, a form, a dialog that covers a
   button, a button far down a long page, a script that throws, a
   resource the content security policy blocks, a sentence whose text is
-  found by a few of its words, and a named figure holding an inline SVG
+  found by a few of its words, a named figure holding an inline SVG
   hidden from assistive technology, whose shape, pressed through the
-  figure at a point, changes a heading. These tests check the facts the
-  fake browser assumes: the framing, flattened sessions, what the
-  accessibility queries match, with a name and without one, boxes and
-  the hit test, on an element and on a shape of an SVG, and the events
-  each step waits for. A new Chromium version is a run of these, and a
+  figure at a point, changes a heading, and a page that holds a closing
+  warning once a button is pressed and asks a confirm at another's
+  press. These tests check the facts the fake browser assumes: the
+  framing, flattened sessions, what the accessibility queries match,
+  with a name and without one, boxes and the hit test, on an element and
+  on a shape of an SVG, the events each step waits for, and the dialogs
+  (a reload accepting the closing warning, a close meeting none, a
+  confirm dismissed). A new Chromium version is a run of these, and a
   fact that changed is fixed in the fake first. They need Chromium and
   do not replay, so they form a suite of their own, beside the focused
   and fuzzy suites (`--profile browser`, within two minutes, which the

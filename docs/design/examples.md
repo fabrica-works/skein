@@ -531,6 +531,8 @@ and for `wasm32-unknown-unknown`:
   the seed, then sent, in the transport's order (ui-web.md, section 10).
   The server makes an add once per key, so an add a reload sends again
   makes one note; its record leaves the small store once answered.
+  Closing loses requests while an add is pending, so the page holds its
+  closing warning then, and only then (ui-web.md, 5.1).
 - **Live:** at start, and when a hidden tab comes back (ui-web.md, 5.1),
   the view opens the stream, then reads the list, and applies each note
   by its number, so a note made between the two shows once. The page
@@ -645,4 +647,6 @@ a service copies that.
   beside it does, and the chart's fallback read by its name; the
   component growing with its words and reporting them; a note added in
   one person's page showing in another's, through the stream; a reload
-  keeping a pending add, which the server makes once.
+  keeping a pending add, which the server makes once; a reload while an
+  add is pending meeting the closing warning, and one after the add is
+  made, by a person who added it on that page, meeting none.

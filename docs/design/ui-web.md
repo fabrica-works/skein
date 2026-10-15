@@ -295,7 +295,11 @@ reference's order (5.2) or its own, within 5.3.
   key outside the small store's prefix (the reference's:
   `skein-ui-restarts`). Past it, the page says the application failed,
   in the words the shell gives (3.2), starts nothing and keeps the small
-  store; a reload past the minute starts it again.
+  store; a reload past the minute starts it again. Before either, the
+  restart part clears the closing warning (5.1). A page that panicked
+  can send nothing more, so the warning would ask the person to stay for
+  nothing; the small store keeps what the application kept, for its next
+  start.
 
 ### 5.1 The parts
 
@@ -315,8 +319,8 @@ the plan's.
 | history | a path to show, as a new entry or in place | the path and query the page opened at; a place gone to by back or forward, as a path; the scroll kept per entry, given back after patches |
 | the timer | a deadline | one timer, reported due |
 | the platform's facts | nothing | the monotonic clock, wall time, a seed from the cryptographic generator, the person's offset and languages, the primary modifier |
-| title and closing | a title, the language; whether closing loses requests | the document's title and `lang`; `beforeunload` registered only while it would |
-| restart | the words for "the application failed"; its limit, three reloads in a minute by default; its key | the panic hook: a reload within the limit; past it, the page says so and starts nothing |
+| title and closing | a title, the language; whether closing loses requests | the document's title and `lang`; `beforeunload` registered only while it would, as the window's `onbeforeunload` |
+| restart | the words for "the application failed"; its limit, three reloads in a minute by default; its key | the panic hook: the window's `onbeforeunload` cleared; a reload within the limit; past it, the page says so and starts nothing |
 | the hidden tab | its delay, a minute by default; the tab hidden or shown; an opening of the stream while hidden | a deadline, past which fetch closes the stream; the opening held until shown, then made through fetch |
 
 - **A report** is one platform happening, as data, in the type of the
@@ -328,6 +332,12 @@ the plan's.
   and gives it to the page part when it makes it; the page part writes
   shortcuts (section 6) and matches keys (section 7) by it, its pure half
   reading no platform.
+- **The closing warning** is the window's `onbeforeunload` handler. The
+  title and closing part sets it while the state machine says closing
+  would lose requests, and clears it otherwise. Because it is the
+  window's one handler, the restart part clears it without holding the
+  title and closing part. The browser asks the person whether to leave
+  only on a page they have acted on since it loaded.
 - **The inbox is generic over the application's report type,** `R`:
   each part that reports is given, when it is made, the inbox and a
   function wrapping its report into `R`, the application's variant for
@@ -848,21 +858,31 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
 - **Its acts:** press; type, an input's whole value (the field cleared,
   then the words); Enter for a send; an option chosen with the kit's
   keys, as a keyboard chooses one; `Go`, a navigation to the path the
-  application's codec prints for the address; a reload.
+  application's codec prints for the address; a reload. A go and a
+  reload accept the page's closing warning, as a person who chose to go
+  answers it (browser.md, section 6).
 - **The harness,** in the same crate, ordinary Rust, runs the
   application's server binary and Chromium as children of one loop,
   through skein's io (testing-strategy.md, 2.9); opens the address the
   test gives, or one the binary prints, found by a prefix the test
   gives; runs each person's script through the face; fails a test on
   any trouble the kit reports that the story did not expect, a policy
-  violation or an exception (browser.md, section 7); and writes the
-  accessibility snapshot, a screenshot, and Chromium's and the binary's
-  stderr's tails on a failure (browser.md, section 10). At a story's
-  step it also presses a drawing's mark, which the person cannot: the
-  kit's press at the mark's point on the drawing's figure (section 8;
-  browser.md, sections 5 and 6); and **stops the server binary and
-  starts it again** at the address it had, which its arguments name, so
-  that a page sees its server go and come back.
+  violation, an exception or a native dialog (browser.md, section 7);
+  and writes the accessibility snapshot, a screenshot, and Chromium's
+  and the binary's stderr's tails on a failure (browser.md, section 10).
+  At a story's step it also:
+  - presses a drawing's mark, which the person cannot: the kit's press
+    at the mark's point on the drawing's figure (section 8; browser.md,
+    sections 5 and 6);
+  - **stops the server binary and starts it again** at the address it
+    had, which its arguments name, so that a page sees its server go and
+    come back;
+  - **checks whether the person's last go met its page's closing
+    warning** (browser.md, section 6), so that a story sees the warning
+    come while closing would lose requests, and not otherwise (5.1). A
+    story that looks for no warning has its person act on the page
+    first, since the browser warns only on a page acted on since it
+    loaded.
 - **skein's stories for a browser shell,** functions of the harness an
   application's tier calls with its binary, its bundle and its codec,
   and what each story names of its pages, to check its wiring, since
@@ -912,7 +932,9 @@ parts carry, so that its tier tests each once.
   its name, and a bar's mark pressed through the harness, acting as the
   choice beside it does; the component growing with its words; a note
   added in one person's page showing in another's; a reload keeping a
-  pending add, which the server makes once (examples.md, 9.5).
+  pending add, which the server makes once; and the closing warning met
+  by a reload while an add is pending, and by none once it is made
+  (examples.md, 9.2 and 9.5).
 - **Its shell takes 3.3's steps,** each once: it is the reference shell
   (step 1); its stylesheet, after `skein-ui.css` (step 2); its codec,
   its notes under `/notes/`, and `/bundle/` its bundle's prefix (step
