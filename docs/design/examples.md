@@ -601,12 +601,15 @@ a service copies that.
   is kept beside the shell as a guide; past it, what grew is reported
   (ui-web.md, 4.2).
 - **What it gives skein's stories for a browser shell** (ui-web.md,
-  14.2): its title field, typed in while a second person adds a note;
-  `/` and a note's address; and, in its test build alone (debug
-  assertions on, as in the browser tier's module, never in one built
-  with `web`), an address that makes its module panic at start, and one
-  that bounds its small store below an add's record, so that the add's
-  write is refused. Those addresses are the plan's.
+  14.2): its title field, typed in while a second person adds a note,
+  and that note, which the first person's list then shows; `/` and a
+  note's address, and what each shows; and, in its test build alone
+  (debug assertions on, as in the browser tier's module, never in one
+  built with `web`), an address that makes its module panic at start,
+  with its phrasebook's words for "the application failed", which its
+  page shows past the restart limit, and one that bounds its small
+  store below an add's record, so that the add's write is refused, with
+  the note that add would have made. Those addresses are the plan's.
 
 ### 9.5 How it is tested
 

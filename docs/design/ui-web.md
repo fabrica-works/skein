@@ -870,11 +870,20 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
 
   | Story | What it checks | What the application names |
   |---|---|---|
-  | typing while a patch arrives | the field keeps its focus, its caret and its words | a field, and a second person's script whose act patches the first person's page |
+  | typing while a patch arrives | the field keeps its focus, its caret and its words | a field; a second person's script whose act patches the first person's page; and what that patch shows there, which the page does not show before it |
   | back and forward | they move between pages, and an address opened directly shows its page | two addresses, and what each page shows |
-  | a panic | the page reloads within the restart limit, and past it says the application failed | a script that makes its module panic, as its test build allows |
-  | a write refused | a write the small store refuses fails the step's exchanges, and none leaves | the small store's bound for the test, and a script whose step writes past it |
+  | a panic | the page reloads within the restart limit, and past it says the application failed | an address at which its module panics at start, as its test build allows; and its words for "the application failed" (5.1), which its page then shows |
+  | a write refused | a write the small store refuses fails the step's exchanges, and none leaves | an address at which its small store is bounded below a step's write, as its test build allows; a script making that step there; and what the step would have made, which no page then shows |
 
+- **What the application names is what a story takes,** and nothing
+  else. What a story must see on a person's page is named as what a
+  person looks for (ui.md, 17.1), and the story awaits it: never for a
+  fixed time, and never by skein's words where the page shows the
+  application's, as the restart part does (5.1). Seeing the patch is
+  also what shows that one came: with no patch, a field keeps its
+  focus, its caret and its words anyway. The panic's module panics at
+  start, so that each reload panics again and the page reaches the
+  limit with no person acting; a script's act, made once, would not.
 - **An application's tier** calls them, and adds its own over the same
   harness and face: its pages, drawings, components and effects, and
   what its server does past the parts (its sign-in).
@@ -884,10 +893,13 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
 The UI example (examples.md, section 9) carries one of each thing the
 parts carry, so that its tier tests each once.
 
-- **Its tier** calls skein's stories, giving them its title field and a
-  second person adding a note; `/` and a note's address; and, in its
-  test build alone, a module that panics and a small store bound below
-  an add's record (examples.md, 9.4). It adds: a person opens the
+- **Its tier** calls skein's stories, giving them its title field, a
+  second person adding a note, and that note in the first person's
+  list; `/` and a note's address, and what each shows; and, in its test
+  build alone, an address that makes its module panic, with its words
+  for "the application failed", and one that bounds its small store
+  below an add's record, with the note the refused add would have made
+  (examples.md, 9.4). It adds: a person opens the
   example and sees its notes, under the strict policy, with no trouble;
   a field of each entry kind it uses, and a label chosen from its
   select; Escape in its dialog pressing the button naming it, and a
