@@ -2,12 +2,14 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 mod digest;
 mod page;
 mod sha256;
+pub mod types;
 pub use digest::Digest;
 
 /// What the application gives the bundler.
@@ -35,6 +37,10 @@ pub struct Glue {
 /// An input that could not be bundled.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Refusal {
+    Type { file: PathBuf },
+    ReservedName { file: PathBuf },
+    SameName { file: PathBuf },
+    Glue,
     NoMarker { page: PathBuf },
     Io { path: PathBuf },
 }
@@ -48,14 +54,17 @@ pub fn bundle(inputs: &Inputs, glue: &Glue, out: &Path) -> Result<Digest, Refusa
     let mut files = BTreeMap::new();
     files.insert("boot.js".into(), page::starter(&inputs.name));
     files.insert("skein-ui.css".into(), include_bytes!("../skein-ui.css").to_vec());
-    files.insert(format!("{}.js", inputs.name), glue.js.clone());
-    files.insert(format!("{}_bg.wasm", inputs.name), glue.wasm.clone());
+    insert(&mut files, format!("{}.js", inputs.name), glue.js.clone(), Path::new(&inputs.name))?;
+    insert(&mut files, format!("{}_bg.wasm", inputs.name), glue.wasm.clone(), Path::new(&inputs.name))?;
     for (path, bytes) in &glue.snippets {
-        files.insert(format!("snippets/{path}"), bytes.clone());
+        insert(&mut files, format!("snippets/{path}"), bytes.clone(), Path::new(path))?;
     }
     for path in &inputs.stylesheets {
         let name = path.file_name().and_then(|name| name.to_str()).ok_or_else(|| Refusal::Io { path: path.clone() })?;
-        files.insert(name.to_owned(), io(path, fs::read(path))?);
+        if name == "skein-ui.css" {
+            return Err(Refusal::ReservedName { file: path.clone() });
+        }
+        insert(&mut files, name.to_owned(), io(path, fs::read(path))?, path)?;
     }
     for (owner, directory) in &inputs.pictures {
         collect(directory, &format!("pictures/{owner}"), &mut files)?;
@@ -64,6 +73,11 @@ pub fn bundle(inputs: &Inputs, glue: &Glue, out: &Path) -> Result<Digest, Refusa
         collect(directory, "files", &mut files)?;
     }
     let digest = digest::of(&files);
+    if let Some(path) = &inputs.page
+        && types::of(path).is_none()
+    {
+        return Err(Refusal::Type { file: path.clone() });
+    }
     let page = page::render(inputs, digest)?;
     if out.exists() {
         io(out, fs::remove_dir_all(out))?;
@@ -91,13 +105,42 @@ fn collect(directory: &Path, prefix: &str, files: &mut BTreeMap<String, Vec<u8>>
         if kind.is_dir() {
             collect(&path, &name, files)?;
         } else if kind.is_file() {
-            files.insert(name, io(&path, fs::read(&path))?);
+            insert(files, name, io(&path, fs::read(&path))?, &path)?;
         } else {
             return Err(Refusal::Io { path });
         }
     }
     Ok(())
 }
+
+fn insert(files: &mut BTreeMap<String, Vec<u8>>, name: String, bytes: Vec<u8>, source: &Path) -> Result<(), Refusal> {
+    if !Path::new(&name).components().all(|part| matches!(part, std::path::Component::Normal(_))) {
+        return Err(Refusal::Io { path: source.to_owned() });
+    }
+    if types::of(Path::new(&name)).is_none() {
+        return Err(Refusal::Type { file: source.to_owned() });
+    }
+    if files.contains_key(&name) {
+        return Err(Refusal::SameName { file: source.to_owned() });
+    }
+    files.insert(name, bytes);
+    Ok(())
+}
+
+impl fmt::Display for Refusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Type { file } => write!(f, "unsupported bundle type: {}", file.display()),
+            Self::ReservedName { file } => write!(f, "reserved stylesheet name: {}", file.display()),
+            Self::SameName { file } => write!(f, "duplicate bundle name: {}", file.display()),
+            Self::NoMarker { page } => write!(f, "page has no {{bundle}} marker: {}", page.display()),
+            Self::Io { path } => write!(f, "cannot read or write: {}", path.display()),
+            Self::Glue => f.write_str("cannot generate module glue"),
+        }
+    }
+}
+
+impl std::error::Error for Refusal {}
 
 #[cfg(test)]
 mod tests;

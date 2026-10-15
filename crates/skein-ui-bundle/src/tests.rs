@@ -182,3 +182,47 @@ fn skein_ui_css_comes_first_in_the_page() {
         include_bytes!("../skein-ui.css")
     );
 }
+
+#[test]
+fn each_refusal_names_its_file() {
+    let scratch = Scratch::new("bundle-refusals");
+    let base = inputs(&scratch);
+    let paths =
+        [scratch.path().join("bad.xml"), scratch.path().join("skein-ui.css"), scratch.path().join("other/a.css")];
+    fs::create_dir(scratch.path().join("other")).expect("other directory");
+    for path in &paths {
+        fs::write(path, b"input").expect("input file");
+    }
+    let expected = [
+        Refusal::Type { file: paths[0].clone() },
+        Refusal::ReservedName { file: paths[1].clone() },
+        Refusal::SameName { file: paths[2].clone() },
+    ];
+    for (path, expected) in paths.iter().zip(expected) {
+        let mut inputs = base.clone();
+        inputs.stylesheets.push(path.clone());
+        assert_eq!(bundle(&inputs, &glue(), &scratch.path().join("out")), Err(expected), "{}", path.display());
+    }
+}
+
+#[test]
+fn each_extension_has_its_type() {
+    const CASES: &[(&str, Option<&str>)] = &[
+        ("index.html", Some("text/html; charset=utf-8")),
+        ("boot.js", Some("text/javascript")),
+        ("notes.wasm", Some("application/wasm")),
+        ("a.css", Some("text/css")),
+        ("a.svg", Some("image/svg+xml")),
+        ("a.png", Some("image/png")),
+        ("a.webp", Some("image/webp")),
+        ("a.ico", Some("image/x-icon")),
+        ("a.woff2", Some("font/woff2")),
+        ("about.txt", Some("text/plain; charset=utf-8")),
+        ("app.webmanifest", Some("application/manifest+json")),
+        ("a.xml", None),
+        ("no-extension", None),
+    ];
+    for (name, expected) in CASES {
+        assert_eq!(super::types::of(Path::new(name)), *expected, "{name}");
+    }
+}
