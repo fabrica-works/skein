@@ -1,5 +1,5 @@
 //! Role-based text, independent of styles (ui-text.md, 5).
-use skein_ui::{Limits, Node, NodeId, Region, Role, Run, State, Tree};
+use skein_ui::{EntryKind, Limits, Node, NodeId, Region, Role, Run, State, Tree};
 
 use skein_lib::{Decimal, List, Stack};
 /// One page's lines and its numbered node identities, beginning with `[1]`.
@@ -39,6 +39,12 @@ pub fn worst_case(limits: &Limits) -> Option<(u32, u64)> {
 #[derive(Debug)]
 struct Parent {
     end: u32,
+    indent: u32,
+}
+#[derive(Debug)]
+struct PendingItem {
+    at: u32,
+    line: u32,
     indent: u32,
 }
 fn header(tree: &Tree, name: &[u8], status: Option<Region>, out: &mut List<u8>) -> (Option<u32>, Option<u32>) {
@@ -90,7 +96,14 @@ pub fn render(tree: &Tree, name: &[u8], status: Option<Region>, print: &mut Prin
     print.text.clear();
     print.numbers.clear();
     let (title, link) = header(tree, name, status, &mut print.text);
+    for at in 0..tree.len() {
+        if title == Some(at) || link == Some(at) {
+            let n = tree.get(at).expect("header node exists");
+            descriptions(tree, at, at.saturating_add(n.size), 2, &mut print.text);
+        }
+    }
     let mut parents: Stack<Parent> = Stack::with_capacity(tree.len());
+    let mut pending: List<PendingItem> = List::with_capacity(tree.len());
     let mut skip = 0;
     for index in 0..tree.len() {
         if index < skip {
@@ -104,6 +117,7 @@ pub fn render(tree: &Tree, name: &[u8], status: Option<Region>, print: &mut Prin
             if print.text.last() != Some(&b'\n') {
                 raw(&mut print.text, b"\n");
             }
+            finish_items(tree, &mut pending, &mut print.text);
         }
         let indent = match parents.top() {
             Some(p) => p.indent,
@@ -115,10 +129,40 @@ pub fn render(tree: &Tree, name: &[u8], status: Option<Region>, print: &mut Prin
             skip = end;
             continue;
         }
+        let offset = print.text.len();
+        let within_item = !pending.is_empty();
+        let description_indent = match pending.last() {
+            Some(item) => item.indent,
+            None => indent.saturating_add(2),
+        };
         match node(tree, index, indent, print) {
-            Some(indent) => parents.push(Parent { end, indent }).expect("parents fit tree nodes"),
-            None => skip = end,
+            Some(indent) => {
+                if n.role == Role::Item || n.role == Role::TreeItem {
+                    pending
+                        .push(PendingItem { at: index, line: offset, indent })
+                        .expect("pending items fit tree nodes");
+                    finish_items(tree, &mut pending, &mut print.text);
+                } else {
+                    finish_items(tree, &mut pending, &mut print.text);
+                    let described_indent = if within_item { description_indent } else { indent };
+                    descriptions(tree, index, index.saturating_add(1), described_indent, &mut print.text);
+                    finish_items(tree, &mut pending, &mut print.text);
+                }
+                parents.push(Parent { end, indent }).expect("parents fit tree nodes");
+            }
+            None => {
+                position(tree, index, offset, &mut print.text);
+                finish_items(tree, &mut pending, &mut print.text);
+                descriptions(tree, index, end, description_indent, &mut print.text);
+                skip = end;
+            }
         }
+    }
+    while parents.pop().is_some() {
+        if print.text.last() != Some(&b'\n') {
+            raw(&mut print.text, b"\n");
+        }
+        finish_items(tree, &mut pending, &mut print.text);
     }
     if print.text.last() != Some(&b'\n') {
         raw(&mut print.text, b"\n");
@@ -241,11 +285,100 @@ fn control(tree: &Tree, at: u32, indent: u32, print: &mut Print) {
     if n.role == Role::TextField || n.role == Role::TextArea {
         raw(&mut print.text, b": ");
         match &n.value {
-            Some(v) if !v.text.is_empty() => safe(&mut print.text, &v.text, indent, false),
+            Some(v) if !v.text.is_empty() => {
+                if n.entry == Some(EntryKind::Secret) {
+                    raw(&mut print.text, b"(hidden)");
+                } else {
+                    safe(&mut print.text, &v.text, indent, false);
+                }
+            }
             Some(_) | None => raw(&mut print.text, b"(empty)"),
         }
+        entry(n, &mut print.text);
     }
     finish(n, &mut print.text);
+}
+fn entry(n: &Node, out: &mut List<u8>) {
+    let word = match n.entry {
+        None | Some(EntryKind::Text | EntryKind::Secret) => b"".as_slice(),
+        Some(EntryKind::Number) => b" (number)",
+        Some(EntryKind::Email) => b" (email)",
+        Some(EntryKind::Telephone) => b" (telephone)",
+        Some(EntryKind::Url) => b" (url)",
+        Some(EntryKind::Date) => b" (date, YYYY-MM-DD)",
+        Some(EntryKind::Time) => b" (time, HH:MM)",
+    };
+    raw(out, word);
+}
+fn descriptions(tree: &Tree, begin: u32, end: u32, indent: u32, out: &mut List<u8>) {
+    for at in begin..end {
+        let n = tree.get(at).expect("described node exists");
+        if let Some(text) = &n.description {
+            start(out, indent);
+            safe(out, text, indent, false);
+            raw(out, b"\n");
+        }
+    }
+}
+fn finish_items(tree: &Tree, pending: &mut List<PendingItem>, out: &mut List<u8>) {
+    if out.last() != Some(&b'\n') {
+        return;
+    }
+    for item in pending.iter() {
+        position(tree, item.at, item.line, out);
+    }
+    for item in pending.iter() {
+        descriptions(tree, item.at, item.at.saturating_add(1), item.indent, out);
+    }
+    pending.clear();
+}
+fn first_line_end(out: &List<u8>, begin: u32) -> u32 {
+    for at in begin..out.len() {
+        if out.get(at) == Some(&b'\n') {
+            return at;
+        }
+    }
+    out.len()
+}
+fn position(tree: &Tree, at: u32, line: u32, out: &mut List<u8>) {
+    let n = tree.get(at).expect("positioned node exists");
+    if ![Role::Item, Role::Row, Role::TreeItem].contains(&n.role) {
+        return;
+    }
+    let Some(position) = n.position else { return };
+    let mut count = None;
+    for ancestor in 0..at {
+        let parent = tree.get(ancestor).expect("ancestor exists");
+        if ancestor.saturating_add(parent.size) > at && [Role::List, Role::Table, Role::Tree].contains(&parent.role) {
+            count = parent.count;
+        }
+    }
+    let end = first_line_end(out, line);
+    let old_end = out.len();
+    raw(out, b" (");
+    raw(out, Decimal::of(u64::from(position)).as_bytes());
+    if let Some(count) = count {
+        raw(out, b" of ");
+        raw(out, Decimal::of(u64::from(count)).as_bytes());
+    }
+    raw(out, b")");
+    insert_tail(out, end, old_end);
+}
+// Move the newly appended annotation before the existing suffix, in place.
+fn insert_tail(out: &mut List<u8>, at: u32, old_end: u32) {
+    let end = out.len();
+    reverse(out, at, old_end);
+    reverse(out, old_end, end);
+    reverse(out, at, end);
+}
+fn reverse(out: &mut List<u8>, begin: u32, end: u32) {
+    for offset in 0..end.saturating_sub(begin) / 2 {
+        let left = begin.saturating_add(offset);
+        let right = end.saturating_sub(offset).saturating_sub(1);
+        let byte = *out.get(left).expect("annotation byte exists");
+        *out.get_mut(left).expect("annotation byte exists") = *out.get(right).expect("annotation byte exists");
+        *out.get_mut(right).expect("annotation byte exists") = byte;
+    }
 }
 fn line(tree: &Tree, at: u32, mut indent: u32, out: &mut List<u8>) {
     let n = tree.get(at).expect("line node exists");

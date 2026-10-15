@@ -231,3 +231,100 @@ pub fn nested_item(b: &mut Builder) {
     b.close();
     b.close();
 }
+
+pub fn properties(b: &mut Builder) {
+    b.description(b"Main description");
+    b.open(Role::Region);
+    b.name(b"Fields");
+    b.description(b"Field descriptions");
+    property_fields(b);
+    b.close();
+    b.open(Role::Heading { level: 2 });
+    b.description(b"Heading description");
+    b.open(Role::Text);
+    b.text(Run::Plain, b"Collections");
+    b.description(b"Heading text description");
+    b.close();
+    b.close();
+    property_collections(b);
+}
+fn property_fields(b: &mut Builder) {
+    use skein_ui::EntryKind;
+    for (kind, name, value) in [
+        (EntryKind::Text, b"Text".as_slice(), b"hello".as_slice()),
+        (EntryKind::Number, b"Number", b"42"),
+        (EntryKind::Email, b"Email", b"person@example.test"),
+        (EntryKind::Telephone, b"Telephone", b"+123"),
+        (EntryKind::Url, b"URL", b"https://example.test/"),
+        (EntryKind::Date, b"Date", b"2026-10-15"),
+        (EntryKind::Time, b"Time", b"13:00"),
+        (EntryKind::Secret, b"Secret", b"private-token"),
+        (EntryKind::Secret, b"Empty secret", b""),
+    ] {
+        b.open(Role::TextField);
+        b.name(name);
+        b.entry(kind);
+        b.value(value, 1);
+        b.bind(binding());
+        if kind == EntryKind::Text {
+            b.description(b"Text field description");
+        }
+        if kind == EntryKind::Email {
+            b.state(State::Invalid);
+        }
+        b.close();
+    }
+}
+fn property_collections(b: &mut Builder) {
+    b.open(Role::List);
+    b.name(b"Results");
+    b.count(5);
+    b.open(Role::Item);
+    b.position(2);
+    b.description(b"Item description");
+    b.open(Role::Paragraph);
+    b.description(b"Paragraph description");
+    b.open(Role::Text);
+    b.text(Run::Plain, b"first\ncontinued");
+    b.description(b"Inline description");
+    b.close();
+    b.close();
+    leaf(b, Role::Paragraph, b"second paragraph");
+    b.close();
+    b.open(Role::Item);
+    b.position(5);
+    b.description(b"Card item description");
+    b.open(Role::Region);
+    b.name(b"Card");
+    b.description(b"Card description");
+    leaf(b, Role::Paragraph, b"child");
+    b.close();
+    b.close();
+    b.open(Role::List);
+    b.open(Role::Item);
+    b.position(3);
+    b.text(Run::Plain, b"Nested item");
+    b.close();
+    b.close();
+    b.close();
+    b.open(Role::Table);
+    b.count(9);
+    b.description(b"Table description");
+    b.open(Role::Row);
+    b.position(4);
+    b.state(State::Selected);
+    b.description(b"Row description");
+    b.open(Role::Cell);
+    b.text(Run::Plain, b"left");
+    b.description(b"Left cell description");
+    b.close();
+    leaf(b, Role::Cell, b"right");
+    b.close();
+    b.close();
+    b.open(Role::Tree);
+    b.open(Role::TreeItem);
+    b.position(7);
+    b.text(Run::Plain, b"Tree item");
+    b.close();
+    b.close();
+}

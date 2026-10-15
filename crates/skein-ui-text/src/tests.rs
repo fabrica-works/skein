@@ -65,3 +65,43 @@ fn no_status_region_ends_the_first_line_after_its_space() {
     render(&tree, b"ops", None, &mut print);
     assert_eq!(print.text.as_slice(), b"== Inbox == \n* Connected\n");
 }
+
+#[test]
+fn the_properties_print_their_words() {
+    let tree = fixtures::page(fixtures::properties);
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    let expected = std::fs::read("src/tests/golden/properties.txt").expect("hand-written property words");
+    assert_eq!(print.text.as_slice(), expected.as_slice());
+}
+
+#[test]
+fn a_secret_never_prints_its_bytes() {
+    let tree = fixtures::page(|b| {
+        b.open(Role::TextField);
+        b.name(b"Password");
+        b.entry(skein_ui::EntryKind::Secret);
+        b.value(b"private-token", 1);
+        b.bind(fixtures::binding());
+        b.close();
+    });
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    assert_eq!(print.text.as_slice(), b"== ops == \n[1] Password: (hidden)\n");
+}
+
+#[test]
+fn the_first_line_is_followed_by_its_descriptions() {
+    let tree = fixtures::page(|b| {
+        b.open(Role::Heading { level: 1 });
+        b.description(b"Heading description");
+        b.open(Role::Text);
+        b.text(Run::Plain, b"Inbox");
+        b.description(b"Inline description");
+        b.close();
+        b.close();
+    });
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    assert_eq!(print.text.as_slice(), b"== Inbox == \n  Heading description\n  Inline description\n");
+}
