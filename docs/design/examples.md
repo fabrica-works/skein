@@ -1,12 +1,13 @@
 # The examples
 
-Provisional, 2026-10-04. The design of skein's example services
-(testing.md, 3): what each one is, the steps README.md asks for before
-code (the wire protocol, the limits, the entities, the state machines),
-its fakes, the harness its worlds run on, and how it is tested. The
-examples exist to be tested and to be copied: a service starts from
-them. The echo server is built; the HTTP server and its client are not
-(section 8).
+Provisional, 2026-10-04, revised 2026-10-15. The design of skein's
+example services (testing.md, 3): what each one is, the steps README.md
+asks for before code (the wire protocol, the limits, the entities, the
+state machines), its fakes, the harness its worlds run on, and how it is
+tested; and of the UI example, an application on skein-ui (section 9).
+The examples exist to be tested and to be copied: a service starts from
+them. The echo server is built; the HTTP server and its client are not,
+nor is the UI example (section 8).
 
 ## 1. In one page
 
@@ -21,6 +22,11 @@ them. The echo server is built; the HTTP server and its client are not
   referee; and the same loop over the shell's kernels, on the real clock.
 - **Tested in simulated worlds and on the real loop,** under tiny limits
   and every fault the simulator injects.
+- **An application with a face, too.** The UI example (section 9), a
+  small notes application on skein-ui, with its browser shell and a
+  server on skein's HTTP, is the reference an application's browser
+  shell is copied from, and is tested in the browser tier (ui-web.md,
+  section 14).
 
 ## 2. Layout
 
@@ -44,6 +50,22 @@ one but the domain's may name io, as the role graph has it
 reaches the domain and the protocol layer only through the service. The
 fake client shares no type with the echo (testing-strategy.md, 4): it
 depends on lib and io only.
+
+The UI example's crates (section 9):
+
+```
+examples/ui/view        skein-ui-example-view       the notes' state, view, drawing code, phrasebook, codec for places and records: step code
+examples/ui/shell-web   skein-ui-example-shell-web  the reference shell: its start, its loop, its look and stylesheet, its component and its snippet; wasm32 only
+examples/ui/server      skein-ui-example-server     its server on skein's HTTP: the bundle, its exchanges, its stream; the binary skein-ui-example
+tests/ui-web            skein-ui-web-tests          the browser parts' host tests, and the UI example's browser tier
+```
+
+The view depends on lib, the codec and skein-ui, and builds for the host
+and for `wasm32-unknown-unknown`; the browser shell on the view and
+`skein-ui-web`, with the glue; the server on lib, io, HTTP, the shell
+kit and the view, whose records it exchanges. Neither the view nor the
+server depends on the browser shell, which the server serves as bytes in
+the bundle.
 
 ## 3. The echo, before code
 
@@ -441,3 +463,175 @@ processes, each a host of an `iterate` (a service, or a fake client):
   rather than running to their end (section 3.3).
 - **Domain worlds** for the echo's domain: it is one slab and a counter,
   and its step tests cover it.
+- **The UI example** (section 9): its three crates and its browser
+  tier.
+
+## 9. The UI example
+
+A small notes application on skein-ui: the reference an application
+with a face starts from, as the echo is a service's. It is an
+application's three pieces, a crate each: its view (step code), its
+browser shell (the **reference shell**, which applications copy), and a
+server on skein's HTTP. It carries one of each thing ui.md and ui-web.md
+let an application write, so that the browser tier tests each once: a
+form with entry kinds and a select, a dialog, a focus request, a drawing
+acted on, an element of its own, a component, one JavaScript snippet,
+two places, the small store, exchanges and a stream.
+
+### 9.1 What a person sees
+
+- **One owner,** the example's (ui.md, 3.3), with the look's prefix
+  `notes`: its style tokens and region names start with `notes-` (ui.md,
+  section 8). Its words are English, from its phrasebook (ui.md,
+  section 9).
+- **The list's page,** at `/`, under the outline (ui.md, section 14):
+  - *the banner:* the example's name, and a status saying whether the
+    page is live with its server;
+  - *the main:* a level-1 heading; the notes, a list keyed by note, each
+    item its title, its due date as a time, its label, and a link to the
+    note's page; and **the form for a new note**: a title (a text field,
+    required, submitting on enter), a body (a text area, the
+    component's: 9.4), a due date (the date entry kind), the minutes it
+    takes (the number entry kind), a label (a select of three options:
+    idea, task, reference), a button that adds it, and one that clears
+    it. A field the view finds wrong is invalid, its description saying
+    why (ui.md, 3.2). Adding a note, or discarding a draft, moves the
+    focus to the title by a focus request (ui.md, 3.2);
+  - *a complementary landmark:* the chart (9.4), and beside it a choice
+    group showing all notes or one label's;
+  - *a dialog,* while the person clears a form holding words: whether to
+    discard the draft, with a button that discards it and one that keeps
+    it, which names Escape (ui.md, 6.1).
+- **A note's page,** at `/notes/<n>`: in the main, a region named by the
+  note's title and carrying `notes-card` (9.4), holding its title as the
+  level-1 heading, its body, its due date, its minutes and its label;
+  and a link back to the list. Any other path shows a page saying there
+  is no such note.
+- **Its places** are printed and parsed by its own codec, in its view
+  (9.2; ui-web.md, section 9).
+
+### 9.2 Its view
+
+`skein-ui-example-view`, step code under the subset, built for the host
+and for `wasm32-unknown-unknown`:
+
+- **Its state:** the notes the page knows, the form's values with the
+  view's count of its own writes to each (ui.md, 3.4), the label shown,
+  the place, the adds pending, and whether the stream is live.
+- **Its view,** built through skein-ui's builder from the state, with
+  its bindings decoded into its actions (ui.md, sections 5 and 6), its
+  drawing code (ui.md, 11.1), its codec for places, its limits from
+  skein-ui's and its worst case (ui.md, section 15).
+- **Its records** are a codec family of its own (codec.md), a note, an
+  add and the list, which the server names too. An exchange carries one
+  record as `application/octet-stream`; the stream carries one in each
+  event's data, as base64 (lib.md, 6.1), read with HTTP's event-stream
+  reader (http.md, section 4).
+- **An add is written to the small store first,** under a key drawn from
+  the seed, then sent, in the transport's order (ui-web.md, section 10).
+  The server makes an add once per key, so an add a reload sends again
+  makes one note; its record leaves the small store once answered.
+- **Live:** at start, and when a hidden tab comes back (ui-web.md, 5.1),
+  the view opens the stream, then reads the list, and applies each note
+  by its number, so a note made between the two shows once.
+
+### 9.3 Its server
+
+`skein-ui-example-server`, the binary `skein-ui-example`: one process, a
+loop over `drive` (shell.md, 12), on skein's HTTP server and its
+event-stream writer (http.md, sections 4.3 and 5). Its notes are kept in
+memory, and its modules keep the domain, which names no io, apart from
+the routes; the echo shows a service's layers as crates (section 2), and
+a service copies that.
+
+| Request | Answer |
+|---|---|
+| `GET /api/notes` | the list, one record |
+| `POST /api/notes` | an add, one record with its key: the note made, or the one made before under the same key |
+| `GET /api/events` | the stream: an event for each note made while it is open |
+| `GET /bundle/<digest>/<file>` | the bundle's file, as ui-web.md, 4.4, serves it; a digest not the bundle's, not found |
+| any other `GET` | the page |
+
+- **The bundle,** written by `skein-ui-bundle` with `/bundle/` as the
+  bundle's prefix (ui-web.md, 4.2), is read from the directory its
+  arguments name, at startup (shell.md, 6.1), and served under
+  ui-web.md, 4.4: the digest directory immutable, the page with an
+  `ETag` and `no-cache`.
+- **The strict content security policy** of ui-web.md, 4.4, on every
+  answer, so the browser tier sees any violation of it.
+- **Bounded:** the notes it keeps, a record's bytes, and the streams
+  open at once are limits; past one, it refuses at the entrance
+  (programming-model.md, section 7), and the page says so in words.
+- **It listens at the address its arguments name,** and says where,
+  once, from its hook (shell.md, 12): the line the harness finds by its
+  prefix (ui-web.md, 14.2), which can stop it and start it again there.
+
+### 9.4 Its browser shell, its component and its drawing
+
+- **The reference shell,** `skein-ui-example-shell-web`, built for
+  wasm32 only: its start makes skein's browser parts with its look and
+  starts its view, and its loop is the turn (ui-web.md, 3.1 and 5.2).
+  About 200 lines (a guide), commented to be copied: an application's
+  browser shell starts as a copy of it.
+- **Its look** (ui-web.md, 3.2): the prefix `notes`, its tokens' and
+  region names' names, its drawing code and its component table; and
+  its stylesheet, loaded after `skein-ui.css`, styling its tokens and
+  placing its regions (ui-web.md, section 12). Its page is the
+  bundler's or its own, the plan's choice (ui-web.md, 4.3).
+- **An element of its own** (ui-web.md, 6.1): a region carrying
+  `notes-card` is an `<article>`, which keeps the region's role and
+  name.
+- **A component** (ui.md, section 12; ui-web.md, 6.1): the body's text
+  area carries the token `notes-grow`, which the look's component table
+  maps, for a text area, to a text area that grows with its words. It
+  keeps its node's role and name, reports only the input acts a text
+  area takes, on its node, and is removed with it. Its one JavaScript
+  snippet, at most 10 lines, sets the element's height from its
+  content's, through `wasm-bindgen`'s snippets, so the bundle and the
+  policy carry an application's JavaScript. The text shell, the fake
+  person and a screen reader see the text area.
+- **A drawing acted on** (ui.md, section 11): a bar chart of the notes
+  by label, of the example's one drawing kind, its data the counts and
+  their words. Its drawing code draws a bar and a text per label, with
+  the token `notes-bar`, as SVG in a browser by default (ui-web.md,
+  section 8). Its fallback is a list saying each label's count in
+  words. Each bar's mark carries the act that shows its label's notes,
+  which the choice group beside the chart does too (ui.md, 11.3).
+- **Its module's size,** built with the `web` profile (ui-web.md, 4.1),
+  is kept beside the shell as a guide; past it, what grew is reported
+  (ui-web.md, 4.2).
+- **What it gives skein's stories for a browser shell** (ui-web.md,
+  14.2): its title field, typed in while a second person adds a note;
+  `/` and a note's address; and, in its test build alone (debug
+  assertions on, as in the browser tier's module, never in one built
+  with `web`), an address that makes its module panic at start, and one
+  that bounds its small store below an add's record, so that the add's
+  write is refused. Those addresses are the plan's.
+
+### 9.5 How it is tested
+
+- **Step tests** of the view: its pages printed through skein-ui-text
+  and kept as golden text (ui-text.md, section 8); the fake person's
+  tree face adding a note, a required title refused in words, a label
+  chosen, a note opened and left (ui.md, 17.1); golden scenes of the
+  chart (ui.md, section 11); its places printed and parsed back; its
+  limits and worst case.
+- **Step tests** of the server: each route, an add made once per key,
+  the bundle's headers and the policy on every answer, the page at any
+  other path, a digest not the bundle's not found, a limit refused.
+- **The wasm32 builds** of the view and the browser shell, with clippy's
+  lints as errors, in skein's gate (testing.md, section 6).
+- **The browser tier** (ui-web.md, 14.1 and 14.3), in `tests/ui-web`:
+  the server's binary and Chromium through `skein-fake-person-browser`'s
+  harness and face, failing on any trouble a story did not expect, a
+  policy violation among it. It calls skein's stories for a browser
+  shell with the example's binary, bundle and codec (9.4; ui-web.md,
+  14.2), and adds its own: a person opens the example and sees its
+  notes, with no trouble; a field of each entry kind it uses, and a
+  label chosen from its select; Escape in its dialog pressing the keep
+  button, and a focus request moving the focus to the title; a press on
+  a bar, through the harness, showing its label's notes, as the choice
+  beside it does, and the chart's fallback read by its name; the
+  component growing with its words and reporting them; a note added in
+  one person's page showing in another's, through the stream; a reload
+  keeping a pending add, which the server makes once.

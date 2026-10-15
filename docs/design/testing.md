@@ -1,6 +1,6 @@
 # Testing skein
 
-Provisional, 2026-10-03, revised 2026-10-10. How testing-strategy.md
+Provisional, 2026-10-03, revised 2026-10-15. How testing-strategy.md
 applies to skein itself: which tiers skein has, what they run, the
 example services and the minimal fake machine they need, where the tests
 live, what skein supplies for a service's own tiers, and where things
@@ -10,7 +10,8 @@ document.
 ## 1. In one page
 
 - **skein tests the kit.** Its tiers stop at io under small example
-  services: an echo server, an HTTP server, and a client of it. A
+  services: an echo server, an HTTP server, and a client of it; and at a
+  browser under the UI example, a small application on skein-ui. A
   service's domain, protocol layer and fakes are tested in the service's
   own tiers, which stand on skein's and do not retest them.
 - **Each part has its tier:** lib in step tests, each machine in machine
@@ -35,6 +36,7 @@ document.
 | beside them | the conformance suite, against the simulator and the ring | kernel.md, 8 |
 | beside them | the simulator's own tests; the ring's own tests | simulator.md, 6; shell.md, 9 |
 | durable store | `skein-kv` step tests; `tests/kv` over the crashing fake disk and the real ring | kv.md, 9 |
+| browser tier | the browser kit against real Chromium; the UI example's bundle in Chromium, through the person's browser face and harness | browser.md, 9; ui-web.md, 14.1 |
 
 TLS is tested on its own (tls.md, 5), and the replaying tiers run in
 plaintext.
@@ -55,6 +57,11 @@ client of it. They exist to be tested, and to be copied.
   can: the ring adapter's `unsafe`, the probe at startup, signals read
   from a signalfd, and a process tree that ends.
 - **As a template,** a service's simulated worlds start from theirs.
+
+The UI example (examples.md, section 9) is an application's rather than
+a service's: a view on skein-ui, its browser shell and its server. Its
+view and its server are tested in step tests, and the three together in
+the browser tier (ui-web.md, section 14).
 
 Their design, the steps before code of each, their fakes and the harness
 their worlds run on are examples.md. The echo is built: a domain, a
@@ -102,11 +109,11 @@ stay beside the crate in `testing/skein-fake-checkout/tests`.
 | Service tier | Real | What skein supplies |
 |---|---|---|
 | step tests | one of its step functions | lib |
-| domain worlds | one domain or child domain | lib, the counting allocator |
+| domain worlds | one domain or child domain | lib, the counting allocator; for an application on skein-ui, the fake person (ui.md, 17.1) |
 | system worlds | several of its domains, or several services' domains | lib, the counting allocator |
 | protocol worlds | its protocol layer, over skein's machines | the machines, tested in skein's tiers; the counting allocator |
 | simulated worlds | every layer, `iterate` per process | the simulator, the world harness, the counting allocator, the examples as a template |
-| real loop | the service as it ships | the shell kit, the world harness's real loop; for a service with a web, the browser kit (browser.md) |
+| real loop | the service as it ships | the shell kit, the world harness's real loop; for a service with a web, the browser kit (browser.md); for an application on skein-ui, the person's browser face and harness (ui-web.md, 14.2) |
 | end to end | the service's binaries as they ship | the world harness's end-to-end kit: binaries started on pipes or a pseudo-terminal, and each binary's process tree settled and counted, its CPU and peak memory (examples.md, 6) |
 
 The service supplies its fakes, the fake machine that plugs into the
@@ -163,6 +170,10 @@ second, which is why it is skein's (testing-strategy.md, 7).
 
 ```
 crates/*/src/tests.rs           step tests; lib's, io's, JSON's, HTTP's and TLS's in a module per area, under src/tests/
+crates/skein-ui                 the UI kit (ui.md): its step tests, and its golden scenes beside them
+crates/skein-ui-text            the text shell (ui-text.md): its step tests, and its golden text beside them in src/tests/golden/
+crates/skein-ui-web             the browser parts (ui-web.md): each part's pure half tested on the host in its step tests
+crates/skein-ui-bundle          the bundler, a tool built optimized (ui-web.md, 4.2)
 testing/skein-conformance       the conformance suite: the backend interface, the scenarios, the driver, the checks
 testing/skein-heap              the counting allocator, the meter that checks a step against its worst case, and the span a world meters its processes with
 testing/skein-scratch           a scratch directory beneath the system's temporary one, removed when dropped, for tests of files on the real kernel
@@ -176,6 +187,8 @@ testing/skein-fake-peers        the LLM and OAuth peers hosted on loopback io
 testing/skein-fake-channel      a scripted framed peer for a service's protocol worlds (channel.md)
 testing/skein-codegen           the codec generator, run by a consumer's tests (codec.md)
 testing/skein-browser           the browser kit, a step machine: headless Chromium over the DevTools protocol on a pipe (browser.md)
+testing/skein-fake-person       the person: targets by role, name and text, steps, the tree face, the random person (ui.md, 17.1)
+testing/skein-fake-person-browser the person's face over the browser kit, and the harness: an application's server binary and Chromium in one loop; skein's stories for a browser shell (ui-web.md, 14.2)
 tests/heap                      the counting allocator's own tests, skein-heap-tests
 tests/echo                      the echo's simulated worlds and its real loop, skein-echo-world
 tests/io                        io worlds: io over the simulator, a scripted owner, a referee, skein-io-world
@@ -199,10 +212,14 @@ tests/kv                        the store over file io, the simulated kernel and
 tests/browser                   the browser kit's machine world against a fake browser, its tests against real Chromium, and its worst case against the counting allocator, skein-browser-world
 tests/tls                       the TLS client's machine worlds against a rustls server in memory, the HTTP client stacked on it, and its worst case against the counting allocator, skein-tls-world
 tests/tls/fixtures              its certificates and key, and the script that makes them
+tests/ui                        skein-ui's worst cases against the counting allocator, and its comparisons with naive functions, skein-ui-tests (ui.md, 17)
+tests/ui-text                   the text shell's terminal on the simulated machine, skein-ui-text-tests (ui-text.md, 8)
+tests/ui-web                    the browser parts' host tests that need more than a crate's step tests, and the UI example's browser tier, skein-ui-web-tests (ui-web.md, 14)
 tests/**/tests/*.rs             a crate's focused tests
 tests/**/tests/fuzzy_*.rs       its fuzzy tests: sweeps over many seeds
 tests/clippy.toml               what the crates under tests/ may not use
 examples/echo/*                 the echo: its domain, protocol layer, service and shell, a crate each (examples.md, 2)
+examples/ui/*                   the UI example: its view, its browser shell and its server, a crate each (examples.md, 9)
 ```
 
 No crate under `crates/` has a `tests/` directory: its step tests are
@@ -243,9 +260,17 @@ the io worlds with files and processes; the protocol worlds are a crate
 of their own, `tests/protocol`. `scripts/check.sh` runs what CI runs:
 formatting, the lints as errors, a build of `skein-lib`, `skein-codec`
 and `skein-http` alone for `wasm32-unknown-unknown` (lib.md, section 2),
-then the focused suite and the fuzzy suite, with nextest (section 7). The
-build for that target needs only the target installed: it runs nothing,
-since the three hold no io and their tests run on the host.
+and clippy's lints as errors on that target for `skein-ui`,
+`skein-ui-web` and the UI example's view and browser shell, since the
+parts' platform halves compile only there (ui-web.md, section 14); then
+the focused suite and the fuzzy suite, with nextest (section 7); then
+the UI example's bundle, made with `skein-ui-bundle` from a module built
+with the dev profile (ui-web.md, 4.1), and the browser suite, which runs
+the browser kit's tests against Chromium and the UI example's tier on
+that bundle (ui-web.md, 14.1). The builds for that target need only the
+target installed: they run nothing, since lib, the codec, HTTP,
+skein-ui and the example's view hold no io and their tests run on the
+host, and skein-ui-web's platform half runs in the browser tier.
 
 ## 7. Where things stand
 
@@ -257,7 +282,9 @@ The two suites of testing-strategy.md, section 8, are
 timeout: the focused suite by default, within 15 seconds, and the fuzzy
 suite, the `fuzzy_*` binaries, with `--profile fuzzy`, within a minute.
 Two profiles stay out of both: `browser`, the browser kit against real
-Chromium (`cargo nextest run --workspace --profile browser`), and `live`,
+Chromium and the UI example's browser tier, within two minutes for both
+(`cargo nextest run --workspace --profile browser`; browser.md, section
+9; ui-web.md, 14.1), and `live`,
 skein-llm against real subscription endpoints, with credentials from the
 environment. `measure` runs a suite with no budget, to time each test.
 
@@ -295,7 +322,13 @@ worst case, so that it keeps reaching the limits.
   (examples.md, 8).
 - **The referee's purity** in the echo's simulated worlds: it reads
   `svc.listening()` and calls `svc.shutdown()` (examples.md, 6).
-- **The gate's build for `wasm32-unknown-unknown`** (section 6).
+- **skein-ui's crates and their tests:** `crates/skein-ui*`,
+  `testing/skein-fake-person*`, `tests/ui`, `tests/ui-text`,
+  `tests/ui-web` and the UI example (section 6).
+- **The gate's build for `wasm32-unknown-unknown`,** with clippy on that
+  target for `skein-ui`, `skein-ui-web` and the UI example's view and
+  browser shell; the UI example's bundle and its browser tier in the
+  gate (section 6).
 
 By check: state digests for replay, transition coverage (it needs
 `cargo llvm-cov`), fuzzing.

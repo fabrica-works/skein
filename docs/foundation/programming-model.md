@@ -1,6 +1,6 @@
 # Programming model (Rust)
 
-Provisional, 2026-10-03, revised 2026-10-14. How code is written in skein
+Provisional, 2026-10-03, revised 2026-10-15. How code is written in skein
 and in every service built on it. Read this first, before writing or
 reviewing any of it.
 
@@ -157,12 +157,13 @@ to a file.
 - **In a client compiled to WebAssembly, the glue crates are the only
   `unsafe` code,** since they make every platform call: `wasm-bindgen`,
   `js-sys` and `web-sys`, pinned to exact versions, their dependencies,
-  and the code their macros generate. Such a client, as jig's in a
-  browser (jig's `protocol/browser.md`), has no kernel and no ring. No
-  crate of it writes `unsafe` of its own: a kit of the platform's parts
-  forbids it, and the application's own shell holds only what the glue's
-  macros generate, for its start and for bindings to its own
-  JavaScript. Its step code runs there unchanged (lib.md, section 2).
+  and the code their macros generate. Such a client, as an
+  application's in a browser over skein's browser parts (skein's
+  ui-web.md, 4.1), has no kernel and no ring. No crate of it
+  writes `unsafe` of its own: a kit of the platform's parts forbids it,
+  and the application's own shell holds only what the glue's macros
+  generate, for its start and for bindings to its own JavaScript. Its
+  step code runs there unchanged (lib.md, section 2).
 - **No std handle types that close on drop.** `OwnedFd`, `File`,
   `TcpStream`, `TcpListener` and `std::process::Child` release kernel
   resources in their destructors, at a moment the lifecycle did not

@@ -1,6 +1,6 @@
 # lib
 
-Provisional, 2026-10-03, revised 2026-10-13. The design of `skein-lib`:
+Provisional, 2026-10-03, revised 2026-10-15. The design of `skein-lib`:
 the building blocks every step crate shares, in skein and in every
 service built on it. The mechanics are those of programming-model.md;
 this document says what lib holds and what each part promises.
@@ -30,15 +30,17 @@ this document says what lib holds and what each part promises.
 lib depends on nothing. Every other crate, in skein and in a service,
 depends on it. It is the only part of skein a service's domain uses.
 
-**Built for WebAssembly too.** lib, `skein-codec` and `skein-http` build
-for `wasm32-unknown-unknown` as well as for the host: none of them
-depends on io, the shell or a platform's API. A client compiled to
-WebAssembly, such as jig's in a browser, links lib's containers and
-base64, the generated codecs, HTTP's client and the event-stream reader
-(http.md, section 2), and its shell hands them what its platform streams.
-Nothing in them assumes a 64-bit `usize`: a conversion that could fail on
-a 32-bit target is checked. skein's gate builds the three for that target
-(testing.md, section 6).
+**Built for WebAssembly too.** lib, `skein-codec`, `skein-http` and
+`skein-ui` build for `wasm32-unknown-unknown` as well as for the host:
+none of them depends on io, the shell or a platform's API. A client
+compiled to WebAssembly, an application's in a browser over skein's
+browser parts (ui-web.md), links lib's containers and base64, the
+generated codecs, HTTP's client and the event-stream reader (http.md,
+section 2), and skein-ui's tree, view and words (ui.md), and its shell
+hands them what its platform streams. Nothing in them assumes a 64-bit
+`usize`: a conversion that could fail on a 32-bit target is checked.
+skein's gate builds the four for that target, and `skein-ui-web` beside
+them (testing.md, section 6).
 
 ## 3. Handles and slabs
 

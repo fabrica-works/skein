@@ -1,12 +1,13 @@
 # Browser
 
-Implemented, 2026-10-06, revised 2026-10-14. The design of
+Implemented, 2026-10-06, revised 2026-10-15. The design of
 `skein-browser`: a testing kit that drives a real, headless Chromium from
 a service's loop, so that a service with a web can test it as a person
 uses it. It is a step machine over the child's pipes, speaking the
 DevTools protocol (CDP), with no dependency beyond skein. Its first user
-is temper's web (temper's `docs/design/web/architecture.md`, 7.3); jig's
-browser tier is another (jig's `protocol/browser.md`, section 15).
+is temper's web (temper's `docs/design/web/architecture.md`, 7.3); the
+person's browser face in `skein-fake-person-browser`, and the UI
+example's browser tier through it, are others (ui-web.md, section 14).
 
 ## 1. In one page
 
@@ -310,8 +311,9 @@ allocator's high water against `worst_case`.
   each step waits for. A new Chromium version is a run of these, and a
   fact that changed is fixed in the fake first. They need Chromium and
   do not replay, so they form a suite of their own, beside the focused
-  and fuzzy suites (`--profile browser`, within two minutes). A missing
-  Chromium fails that suite, naming what is missing; it is never a skip.
+  and fuzzy suites (`--profile browser`, within two minutes, which the
+  browser parts' tier shares: ui-web.md, 14.1). A missing Chromium
+  fails that suite, naming what is missing; it is never a skip.
 
 The kit's tests are a crate of their own, `tests/browser`
 (`skein-browser-world`) (testing.md, 6).
@@ -327,6 +329,9 @@ The kit's tests are a crate of their own, `tests/browser`
   - a face that turns its person's actions into the kit's requests;
   - a harness that fails a test on unexpected `Trouble` and writes the
     snapshot, the screenshot and stderr's tail into the failure report.
+
+  An application on skein-ui takes the face and the harness from
+  `skein-fake-person-browser` (ui-web.md, 14.2).
 
 ## 11. Open questions
 

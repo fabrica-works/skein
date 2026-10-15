@@ -43,6 +43,10 @@ starts from.
 | LLM connections | `skein-llm-connection` | a protocol layer's component that runs LLM calls end to end: connecting, TLS, deadlines, reuse | [llm-connection.md](docs/design/llm-connection.md) |
 | OAuth | `skein-oauth`, `skein-fake-oauth` | bounded sign-in and refresh client, with an independent rotating issuer for worlds | [oauth.md](docs/design/oauth.md) |
 | the browser kit | `skein-browser` | for tests: a headless Chromium driven over the DevTools protocol on a pipe, by role and name, from the loop | [browser.md](docs/design/browser.md) |
+| the UI kit | `skein-ui` | a semantic tree of an application's state, by accessibility roles, built, diffed into patches, its acts bound to their owners; words, Markdown, scenes | [ui.md](docs/design/ui.md) |
+| the text shell | `skein-ui-text` | the tree printed as lines, a typed line read as an act, for a terminal or a pipe | [ui-text.md](docs/design/ui-text.md) |
+| the browser parts | `skein-ui-web`, `skein-ui-bundle` | parts an application's browser shell wires into its own loop, compiled to WebAssembly; the bundler | [ui-web.md](docs/design/ui-web.md) |
+| the fake person | `skein-fake-person`, `skein-fake-person-browser` | for tests: a person who finds nodes by role, name and text and acts on them, on the tree or in Chromium | [ui.md](docs/design/ui.md), [ui-web.md](docs/design/ui-web.md) |
 
 ```
 crate          depends on
@@ -59,6 +63,12 @@ skein-llm-connection lib, io, tls, llm
 skein-oauth    lib, json
 skein-fake-oauth lib, json, oauth
 skein-browser  lib, json
+skein-ui       lib
+skein-ui-text  lib, io, ui
+skein-ui-web   lib, ui; on wasm32, wasm-bindgen, js-sys, web-sys
+skein-ui-bundle nothing from skein (a tool), wasm-bindgen-cli-support
+skein-fake-person lib, ui
+skein-fake-person-browser lib, io, ui-web, fake-person, browser
 skein-shell    lib, io, io-uring, libc
 skein-sim      lib, io
 skein-kv       lib, io
@@ -67,7 +77,9 @@ skein-kv       lib, io
 The crates from outside skein are few, and each is an exception the
 programming model names (its 2.1 and 3): `io-uring` and `libc`, the
 shell's, for the ring adapter; and `rustls` and its dependencies, `ring`
-among them for its cryptography, the TLS client's.
+among them for its cryptography, the TLS client's; and the browser
+parts' glue, `wasm-bindgen`, `js-sys` and `web-sys`, with the bundler's
+`wasm-bindgen-cli-support`, pinned to exact versions (ui-web.md, 4.1).
 
 - **A kit, not a framework.** skein has no service trait, no generic loop,
   no scheduler and no callbacks. A service calls the parts by name, in
