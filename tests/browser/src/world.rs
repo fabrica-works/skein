@@ -13,6 +13,7 @@ pub enum Fault {
     Delay,
     Error,
     ContextGone,
+    ScopeGone,
     Oversize,
     Crash,
     PageCrash,
@@ -162,6 +163,7 @@ impl World {
                         match fault {
                             Some(Fault::Drop) => {}
                             Some(Fault::Delay) => self.delayed.push_back(reply),
+                            Some(Fault::ScopeGone) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Node with given id does not belong to the document\"}}}}\0").into_bytes()),
                             Some(Fault::ContextGone) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Cannot find context with specified id\"}}}}\0").into_bytes()),
                             Some(Fault::Error) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"No node found for given backend id\"}}}}\0").into_bytes()),
                             Some(Fault::Oversize) => replies.push_back(vec![b'x'; usize::try_from(self.env.limits.message).expect("message fits usize") + 2]),
@@ -232,6 +234,7 @@ impl World {
             b"Target.createBrowserContext" => r#"{"browserContextId":"ctx1"}"#,
             b"Target.createTarget" => r#"{"targetId":"t1"}"#,
             b"Target.attachToTarget" => r#"{"sessionId":"s1"}"#,
+            b"DOM.resolveNode" => r#"{"object":{"type":"object","objectId":"scope-7"}}"#,
             b"Runtime.evaluate" => r#"{"result":{"type":"object","objectId":"document-1"}}"#,
             b"Accessibility.queryAXTree"
                 if self.ax_visible

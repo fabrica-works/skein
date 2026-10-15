@@ -688,19 +688,8 @@ impl Browser {
         let OpKind::Find { query, .. } = &op_state.kind else {
             return;
         };
-        let query = query.clone();
-        let name = match query.matching {
-            Match::Exact => Some(query.name.as_ref()),
-            Match::Words => None,
-        };
         match query.within {
-            Some(root) => self.issue_step(
-                env,
-                op,
-                b"Accessibility.queryAXTree",
-                &Params::Query { root: Some(root), object: None, role: &query.role, name },
-                Step::Query,
-            ),
+            Some(root) => self.issue_step(env, op, b"DOM.resolveNode", &Params::Backend(root), Step::Query),
             None => self.issue_step(env, op, b"Runtime.evaluate", &Params::Document, Step::Query),
         }
     }
@@ -1269,6 +1258,12 @@ impl Browser {
     fn command_error(&mut self, env: &Env<Limits>, kind: PendingKind, error: Value<'_>) {
         let message = field_text(error, b"message").unwrap_or_default();
         if let PendingKind::Step(op, Step::Query) = kind
+            && message.as_ref() == b"Node with given id does not belong to the document"
+        {
+            self.finish_refused(op, Refusal::Gone);
+            return;
+        }
+        if let PendingKind::Step(op, Step::Query) = kind
             && (contains(&message, b"context") || contains(&message, b"object"))
         {
             if let Some(op) = self.op_mut(op) {
@@ -1625,7 +1620,11 @@ impl Browser {
 }
 
 fn result_object(value: Value<'_>) -> Option<Box<[u8]>> {
-    field_text(value.get(b"result")?, b"objectId")
+    let object = match value.get(b"result") {
+        Some(object) => object,
+        None => value.get(b"object")?,
+    };
+    field_text(object, b"objectId")
 }
 
 fn frame_id(value: Value<'_>, key: &[u8], limit: u32) -> Option<Box<[u8]>> {
@@ -1676,7 +1675,7 @@ impl Browser {
             env,
             token,
             b"Accessibility.queryAXTree",
-            &Params::Query { root: None, object: Some(object), role: &query.role, name },
+            &Params::Query { object, role: &query.role, name },
             Step::Query,
         );
         if !self.queue_page(env, page, b"Runtime.releaseObject", &Params::Object(object), PendingKind::Release) {

@@ -99,3 +99,13 @@ fn chromium_dismisses_a_confirm_as_trouble() {
     let profile = Profile::fresh();
     Rig::new(&chromium, &profile.0, Scenario::Confirm).run();
 }
+
+#[test]
+fn chromium_refuses_a_scope_found_before_a_reload() {
+    let profile = Profile::fresh();
+    let mut rig = Rig::new(&chromium(), &profile.0, Scenario::ScopeReload);
+    rig.fixed_page(
+        b"<!doctype html><html><body><section aria-label='Scope'><h1>Inside</h1></section></body></html>".to_vec(),
+    );
+    rig.run();
+}

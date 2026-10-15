@@ -1,6 +1,6 @@
 use crate::world::World;
 use skein_browser::{
-    boundary::{Below, Event, Expect, Match, Query, Request},
+    boundary::{Below, Event, Expect, Match, Query, Refusal, Request},
     up,
 };
 use skein_lib::{Duration, Time, Token, stream};
@@ -167,4 +167,95 @@ fn a_cached_history_restore_releases_page_reads() {
         methods(&world),
         [b"Runtime.evaluate".as_slice(), b"Accessibility.queryAXTree", b"Runtime.releaseObject"].map(Box::<[u8]>::from)
     );
+}
+
+// The scripted peer's Save button, used as a find's scope.
+const SCOPE: u64 = 7;
+fn scoped_query() -> Query {
+    Query { within: Some(SCOPE), ..query() }
+}
+fn scoped_world() -> World {
+    let mut world = World::new();
+    world.start();
+    world.open();
+    world.sent.clear();
+    world
+}
+type RootCommand = (Box<[u8]>, Option<u64>, Option<Box<[u8]>>);
+fn root_commands(world: &World) -> Vec<RootCommand> {
+    world
+        .sent
+        .iter()
+        .map(|bytes| {
+            let document = skein_browser::wire::decode::Document::parse(
+                bytes.strip_suffix(&[0]).expect("NUL"),
+                world.env.limits.command,
+            )
+            .expect("command");
+            let root = document.root();
+            let params = root.get(b"params").expect("params");
+            (
+                root.get(b"method").expect("method").text().expect("method text"),
+                params.get(b"backendNodeId").and_then(|value| value.u64()),
+                params.get(b"objectId").and_then(|value| value.text()),
+            )
+        })
+        .collect()
+}
+#[test]
+fn a_scoped_find_asks_under_its_scopes_object() {
+    let mut world = scoped_world();
+    world.ask(Request::Find { page: PAGE, op: READ, query: scoped_query() });
+    assert_eq!(
+        root_commands(&world),
+        vec![
+            (Box::from(b"DOM.resolveNode".as_slice()), Some(SCOPE), None),
+            (Box::from(b"Accessibility.queryAXTree".as_slice()), None, Some(Box::from(b"scope-7".as_slice()))),
+            (Box::from(b"Runtime.releaseObject".as_slice()), None, Some(Box::from(b"scope-7".as_slice()))),
+        ]
+    );
+}
+#[test]
+fn a_scope_of_an_earlier_document_is_gone() {
+    let mut world = scoped_world();
+    world.fault(b"DOM.resolveNode", crate::world::Fault::ScopeGone);
+    world.ask(Request::Find { page: PAGE, op: READ, query: scoped_query() });
+    world.tick(Time::from_nanos(50_000_000));
+    match world.above.pop() {
+        Some(Event::Refused { op, why }) => assert_eq!(
+            (op, why, methods(&world)),
+            (READ, Refusal::Gone, vec![Box::from(b"DOM.resolveNode".as_slice())])
+        ),
+        other => panic!("expected a stale scope to be Gone, got {other:?}"),
+    }
+}
+#[test]
+fn a_late_resolved_scope_object_is_released() {
+    let mut world = scoped_world();
+    world.fault(b"DOM.resolveNode", crate::world::Fault::Delay);
+    world.ask(Request::Find { page: PAGE, op: READ, query: scoped_query() });
+    notify(
+        &mut world,
+        b"{\"method\":\"Page.frameStartedLoading\",\"sessionId\":\"s1\",\"params\":{\"frameId\":\"f1\"}}\0",
+    );
+    world.release_delayed();
+    assert_eq!(
+        root_commands(&world),
+        vec![
+            (Box::from(b"DOM.resolveNode".as_slice()), Some(SCOPE), None),
+            (Box::from(b"Runtime.releaseObject".as_slice()), None, Some(Box::from(b"scope-7".as_slice()))),
+        ]
+    );
+}
+#[test]
+fn a_discarded_scope_context_resolves_the_scope_again() {
+    let mut world = scoped_world();
+    world.fault(b"Accessibility.queryAXTree", crate::world::Fault::ContextGone);
+    world.ask(Request::Find { page: PAGE, op: READ, query: scoped_query() });
+    world.fault(b"DOM.resolveNode", crate::world::Fault::ScopeGone);
+    world.tick(Time::from_nanos(50_000_000));
+    match world.above.pop() {
+        Some(Event::Refused { op, why }) => assert_eq!((op, why), (READ, Refusal::Gone)),
+        other => panic!("expected the retried scope to be Gone, got {other:?}"),
+    }
 }

@@ -2,6 +2,8 @@
 
 #[path = "real/dialogs.rs"]
 mod dialogs;
+#[path = "real/scope.rs"]
+mod scope;
 #[path = "../../src/serve.rs"]
 mod serve;
 
@@ -117,6 +119,7 @@ enum Stage {
     Context,
     Opening,
     Finding,
+    Reloading,
     Pressing,
     Typing,
     Keying,
@@ -141,6 +144,7 @@ pub enum Scenario {
     Select,
     Dates,
     Reduction,
+    ScopeReload,
     Leave,
     Confirm,
 }
@@ -157,7 +161,12 @@ impl Scenario {
             Scenario::Csp => "/csp",
             Scenario::Words => "/words",
             Scenario::Figure => "/figure",
-            Scenario::Facts | Scenario::Choose | Scenario::Select | Scenario::Dates | Scenario::Reduction => "/facts",
+            Scenario::Facts
+            | Scenario::Choose
+            | Scenario::Select
+            | Scenario::Dates
+            | Scenario::Reduction
+            | Scenario::ScopeReload => "/facts",
         }
     }
 }
@@ -192,6 +201,7 @@ pub struct Rig {
     stderr: Vec<u8>,
     pub snapshot: Box<[u8]>,
     dialog: dialogs::State,
+    scope: Option<u64>,
 }
 
 impl Rig {
@@ -229,6 +239,7 @@ impl Rig {
             stage: Stage::Starting,
             scenario,
             dialog: dialogs::State::new(scenario),
+            scope: None,
             context_ready: false,
             exception_seen: false,
             csp_log_seen: false,
@@ -429,6 +440,14 @@ impl Rig {
     }
 
     fn browser_event(&mut self, event: Event) {
+        let event = if matches!(self.scenario, Scenario::ScopeReload) {
+            match self.scope_event(event) {
+                Ok(()) => return,
+                Err(event) => event,
+            }
+        } else {
+            event
+        };
         let event = if matches!(self.scenario, Scenario::Leave | Scenario::Confirm) {
             match self.dialog_event(event) {
                 Ok(()) => return,
@@ -450,7 +469,9 @@ impl Rig {
                 assert_eq!(self.stage, Stage::Opening);
                 self.stage = Stage::Finding;
                 match self.scenario {
-                    Scenario::Leave | Scenario::Confirm => unreachable!("dialog scenario handled above"),
+                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload => {
+                        unreachable!("dialog scenario handled above")
+                    }
                     Scenario::Reduction => {
                         self.stage = Stage::Expecting;
                         self.ask(Request::Await {
@@ -524,7 +545,9 @@ impl Rig {
                 assert_eq!(seen.len(), 1, "one accessible target for {:?}", self.scenario);
                 let node = seen.get(0).expect("target").node;
                 match self.scenario {
-                    Scenario::Leave | Scenario::Confirm => unreachable!("dialog scenario handled above"),
+                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload => {
+                        unreachable!("dialog scenario handled above")
+                    }
                     Scenario::Choose => {
                         self.stage = Stage::Pressing;
                         self.ask(Request::Type { page: PAGE, op: PRESS, node, text: Box::default() });
@@ -623,7 +646,8 @@ impl Rig {
                         | Scenario::Choose
                         | Scenario::Select
                         | Scenario::Dates
-                        | Scenario::Reduction => {
+                        | Scenario::Reduction
+                        | Scenario::ScopeReload => {
                             panic!("no action should complete for {:?}", self.scenario)
                         }
                     };
