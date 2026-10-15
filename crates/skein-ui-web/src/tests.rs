@@ -1,4 +1,5 @@
 mod fixtures;
+mod svg;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

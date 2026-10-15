@@ -1,7 +1,11 @@
 //! Browser parts, usable independently (ui-web.md, 5.1).
 #![forbid(unsafe_code)]
 
+pub mod dom;
 pub mod inbox;
+mod look;
+pub mod svg;
+pub use look::Look;
 
 #[cfg(target_arch = "wasm32")]
 pub use wasm_bindgen::prelude::wasm_bindgen;
