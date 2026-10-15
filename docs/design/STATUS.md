@@ -27,15 +27,15 @@ Section 2 names an increment of smith's reliability plan as
 
 | Document | Built | Left |
 |---|---|---|
-| `foundation/programming-model.md` | partly | 4.3: a read of what has arrived (jig's test-budgets, skein 01); 2.1: a client compiled to WebAssembly over skein's browser parts, the glue crates its only `unsafe` (skein-ui, section 3), 10.3: rules held in review only, with no checker: not planned |
+| `foundation/programming-model.md` | partly | 4.3: a read of what has arrived (jig's test-budgets, skein 01); 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 2.4: machine worlds reading what has arrived (jig's test-budgets, skein 01.2); 8: nextest without its double spawn in the gates and the queue, the suites back within 15 s on carbon-forge (jig's test-budgets); 6: state digests, transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 7: `Read::Arrived`, met by the intake and `Held`, and skein's readers of unframed bytes on it (jig's test-budgets, skein 01.1, 01.3); 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, `skein-ui` among it (skein-ui, section 3), 13: `Slab::get2_mut`, the state digest: not planned |
+| `lib.md` | partly | 7: `Read::Arrived`, met by the intake and `Held`, and skein's readers of unframed bytes on it (jig's test-budgets, skein 01.1, 01.3); 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it (jig's jig-protocol); 13: `Slab::get2_mut`, the state digest: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 9: fixed files, 10: the ring's descriptor limit: not planned |
 | `io.md` | partly | 2, 3.3: a read of what has arrived on sockets, joined ends and pipes (jig's test-budgets, skein 01.1); 5: `Remove` of an empty directory (smith's reliability plan, a step its supervisor names); 5.1: a write pipe's stated write deadline (smith's reliability plan, a step its supervisor names); 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut`, and a made directory synced into its parent, with a world that cuts after each make (jig's jig-protocol, skein-03.s1); 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 3.1: a cut kept until synced (jig's jig-protocol); 5: the state digest: not planned |
 | `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol); 6: `make_root` (jig's jig-protocol, skein-03.s1); 6.1: `directory_access` (smith's reliability plan, a step its supervisor names); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
-| `examples.md` | partly | 8: the HTTP example, the echo's domain worlds; 9: the UI example, its three crates and its browser tier (skein-ui, section 3): not planned |
-| `testing.md` | partly | 6: the gate's build for `wasm32-unknown-unknown`, with clippy on that target for `skein-ui`, `skein-ui-web` and the UI example's view and browser shell; skein-ui's crates, `testing/skein-fake-person*`, `tests/ui`, `tests/ui-text`, `tests/ui-web` and `examples/ui/*`; the UI example's bundle and browser tier in the gate (skein-ui, section 3); 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
+| `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
+| `testing.md` | partly | 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
 | `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
 | `http.md` | partly | 3.3, 4: a body and an event's data read as they arrive; 6: the worlds reading so (jig's test-budgets, skein 01.1, 01.2); 2: the build for `wasm32-unknown-unknown`: not built; 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
 | `tls.md` | partly | 3.1: a read of what has arrived from the plaintext intake (jig's test-budgets, skein 01.1); 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
@@ -46,11 +46,11 @@ Section 2 names an increment of smith's reliability plan as
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
 | `fake-llm.md` | partly | 2.1: a changed tool choice keeps an automatic query's prefix (smith's parity); 7: providers' cache granularity: not planned |
 | `oauth.md` | partly | 6.4: a record dropped when its refresh fails as sign in again (jig's jig-protocol); 7: IPv6 loopback, device authorization, a credential helper: not planned |
-| `browser.md` | partly | 5, 6, 9: a name matched by words and a press at a point, with the real browser's checks of both; 1, 5, 6, 7, 9: a go accepting its page's closing warning and reporting `Warned`, any other native dialog dismissed as `Trouble`, with the real browser's checks; 3, 5, 6, 9: `keys`, which types a native date or time field a key at a time, under the locale the kit's environment fixes; 1, 4, 6, 9: a find's roots in the current document, the document's object and a scope resolved in it, with the real browser's checks; 9, 10: the browser profile shared with the UI example's tier, and the face and the harness an application on skein-ui takes from `skein-fake-person-browser` (skein-ui, section 3), 11: open questions: not planned |
+| `browser.md` | partly | 6, 7: a test answering a native dialog itself, and the kit's `browser.rs` split by concern (jig's skein-ui `later.md`); 11: open questions: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
-| `ui.md` | no | 3: the tree, its roles, states and properties, owners, text, values, images and drawings; 5: the builder, slots and splicing; 6: bindings and acts, the act refusal, shortcuts with Escape, addresses; 7: the diff and the view; 8: style tokens, region names and the look; 9: words and the reference hole; 10: Markdown; 11: scenes; 12: components; 13: effects and reports; 14: the outline; 15: limits and the worst case; 17: testing, the fake person (`skein-fake-person`), the worst case in `tests/ui`: not planned (skein-ui, section 3). jig's `jig-view` holds most of 3, 5–11 and 14–15 for jig's tree, and `jig-fake-person` most of 17.1 |
-| `ui-text.md` | no | 3: the renderer, the command reader, the terminal and its settings with a status region; 5: the lines of select and option, headers in rows, entry kinds and a secret's value hidden, required, descriptions, counts and positions, sorts; 6: options numbered, an option of a disabled select refused; 7: effects answered refused; 8: golden text and `tests/ui-text`: not planned (skein-ui, section 3). jig's `jig-shell-text` holds the rest of 3–8 for jig's tree |
-| `ui-web.md` | no | 3: an application's browser shell and its look; 4: the toolchain, the bundler (`skein-ui-bundle`), the bundle and its digest directory, serving a bundle; 5: the parts (`skein-ui-web`), the turn, the invariants; 6: the mapping and components; 7: patches and acts; 8: scenes as SVG; 9: addresses and history; 10: fetch, the small store and the transport; 11: effects and the inbox's reports; 12: `skein-ui.css`; 13: limits; 14: the browser tier and the facts the face assumes, the face and the harness (`skein-fake-person-browser`), skein's stories for a browser shell, the UI example's tier: not planned (skein-ui, section 3) |
+| `ui.md` | partly | 4.2, 18, 19: the vocabulary that waits (a combo box, a slider and a meter, a switch, media, a feed, a list box choosing several, a tree grid) and right-to-left text, each by the light path (4.3) when an application needs it; 19: a markup macro for the builder, a server keeping the previous bundle's digest directory; 16, 18: parts for a phone or a desktop: not planned (jig's skein-ui `later.md`) |
+| `ui-text.md` | partly | 9: the text shell's own words in another language, a secret typed without echo: not planned (jig's skein-ui `later.md`) |
+| `ui-web.md` | partly | 11, 15: the file picker, and parts for other effects; 15: the bundle served compressed, tabs of one person sharing one stream, HTTP/2; 16: a server keeping the previous bundle's digest directory; 14.2: the face typing into a field holding words: not planned (jig's skein-ui `later.md`) |
 
 Several "Not built yet" sections still list parts that `main` has:
 `io.md`, 9 (group signals, reaping at close, append streams);
@@ -144,43 +144,23 @@ process trees in the end-to-end kit).
 - **The browser's open questions** (`browser.md`, section 11): Chromium's
   sandbox under containment, other browsers, text by a pattern beyond
   words. The first waits for contained trees.
-- **skein-ui** (`ui.md`, `ui-text.md`, `ui-web.md`; `examples.md`,
-  section 9; `testing.md`, section 6; `lib.md`, section 2; `browser.md`,
-  sections 9 and 10; `programming-model.md`, 2.1): the UI kit, the text shell, the browser
-  parts and the bundler, the fake person and its browser face, the UI
-  example and its browser tier. Waits for its plan, which spans skein
-  and jig (jig's `STATUS.md`, "jig on skein-ui"). The user's rule for
-  that plan: refactor jig's code in place until the generic parts can
-  be extracted by a mechanical rename and crate move, never rewrite them
-  in skein. In order:
-  1. *generalize in jig, under jig's gate:* the owner made opaque, with
-     jig's mapping; the provisional state dropped; `Value.written` and
-     the view's count named generically; `binding.rs` split (`Act`,
-     `Binding`, `BoundAct`, `number` apart from jig's meanings);
-     `limits.rs` split (the struct and `worst_case` apart from jig's
-     constructors and jig's page scratch); `outline.rs` split (the
-     generic rules apart from jig's, which then go); `phrases.rs` apart
-     from jig's tables, its chip hole the reference hole;
-     `jig-shell-text`'s `JigRegion::Link` a setting, its output byte
-     for byte as before; the roles jig's view binds checked against
-     `ui.md`'s act table (section 6) before the builder asserts it;
-  2. *move as is, a rename and a crate move:* `tree`, `builder`, `diff`,
-     `render`, `markdown` and the generic halves above, with their
-     tests, into `skein-ui`; `jig-shell-text` into `skein-ui-text`;
-     `jig-fake-person` into `skein-fake-person`; skein lands first, then
-     jig repins;
-  3. *new, in skein:* the vocabulary added, the act refusal, scenes, the
-     browser parts, the bundler, the face and the harness, the UI
-     example and its browser tier, the gate's wasm32 builds; then in
-     jig: jig's frame and `after_page` primitives, `jig_view::facts` and
-     `check`, `jig-shell-web`'s sign-in part and link adapter,
-     `jig-test-shell-web`, jig's browser tier.
-
-  Measured sizes (2026-10-15): jig-view's generic core about 2,700
-  production lines (tree 405, builder 447, diff 352, render 96,
-  markdown 506, phrases 597, and parts of binding, limits and outline);
-  `jig-shell-text` 992 lines; `jig-fake-person` 645; their tests about
-  2,400.
+- **skein-ui's later work** (`ui.md`, 4.2, 16, 18 and 19;
+  `ui-text.md`, section 9; `ui-web.md`, sections 11, 14.2, 15 and 16;
+  `browser.md`, sections 6 and 7; jig's
+  `docs/development/plans/skein-ui/later.md`): the vocabulary that
+  waits, right-to-left text, parts for a phone or a desktop, the file
+  picker and other effects' parts, the bundle served compressed, a
+  server keeping the previous digest directory, a markup macro, the text
+  shell's words in another language and a secret typed without echo, the
+  face typing into a field holding words, a test answering a native
+  dialog, the kit's `browser.rs` split. Each waits for the application
+  or the plan its row names.
+- **The client's generic half** (jig's `README.md`, section 10, and
+  `client/domain/client.md`, section 18): keyed requests sent again
+  until durable, level-triggered watches, the link and generic guards,
+  which jig's `jig-client` holds, may move to skein, as skein-ui moved,
+  by a rename and a crate move. Waits for a second user, such as
+  hearth's wire.
 
 ## 4. Drafts
 
