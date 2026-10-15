@@ -11,3 +11,60 @@ pub fn get(path: &[u8]) -> Call {
         body: Body::None,
     }
 }
+
+/// The binary built by the browser suite's setup.
+#[must_use]
+pub fn server_binary() -> std::path::PathBuf {
+    let exe = std::env::current_exe().expect("test executable");
+    let binary = exe.parent().and_then(std::path::Path::parent).expect("target directory").join("skein-ui-example");
+    assert!(
+        binary.is_file(),
+        "build the browser server with cargo build -p skein-ui-example-server: {}",
+        binary.display()
+    );
+    binary
+}
+#[must_use]
+pub fn chromium() -> std::path::PathBuf {
+    use std::path::PathBuf;
+    if let Some(configured) = std::env::var_os("SKEIN_TEST_CHROMIUM") {
+        let path = PathBuf::from(configured);
+        assert!(path.is_file(), "SKEIN_TEST_CHROMIUM does not name a file: {}", path.display());
+        return path.canonicalize().expect("resolve configured Chromium path");
+    }
+    let path = std::env::var_os("PATH").expect("PATH locates chromium");
+    for directory in std::env::split_paths(&path) {
+        let candidate = directory.join("chromium");
+        if candidate.is_file() {
+            return candidate.canonicalize().expect("resolve Chromium on PATH");
+        }
+    }
+    panic!("Chromium is required for the browser suite: set SKEIN_TEST_CHROMIUM or put chromium on PATH");
+}
+/// A module literal carried through the real bundle and strict policy.
+#[must_use]
+pub fn fixture_bundle(scratch: &skein_scratch::Scratch, module: &[u8]) -> std::path::PathBuf {
+    let out = scratch.path().join("bundle");
+    let inputs = skein_ui_bundle::Inputs {
+        name: "fixture".into(),
+        prefix: "/bundle/".into(),
+        stylesheets: vec![],
+        pictures: vec![],
+        page: None,
+        files: None,
+        noscript: "Scripts required.".into(),
+    };
+    let glue = skein_ui_bundle::Glue { js: module.to_vec(), wasm: b"\0asm".to_vec(), snippets: vec![] };
+    skein_ui_bundle::bundle(&inputs, &glue, &out).expect("fixture bundle");
+    out
+}
+#[must_use]
+pub fn fixture_harness(bundle: &std::path::Path) -> skein_fake_person_browser::Harness {
+    skein_fake_person_browser::Harness::new(skein_fake_person_browser::Setup {
+        server: server_binary(),
+        args: vec!["127.0.0.1:0".into(), "--bundle".into(), bundle.as_os_str().into()],
+        listening: b"skein-ui-example: listening at ",
+        chromium: chromium(),
+        expected: vec![],
+    })
+}

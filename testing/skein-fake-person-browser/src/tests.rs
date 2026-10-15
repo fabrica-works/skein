@@ -42,7 +42,7 @@ fn a_find_asks_each_accessible_role_of_the_person_role() {
         requests,
         vec![Request::Find {
             page: Token::new(7),
-            op: Token::new(1),
+            op: Token::new(7_000_001),
             query: Query {
                 role: b"image".as_slice().into(),
                 name: b"Logo".as_slice().into(),
@@ -52,7 +52,7 @@ fn a_find_asks_each_accessible_role_of_the_person_role() {
             }
         }]
     );
-    face.event(&Event::Found { op: Token::new(1), seen: List::with_capacity(0), more: 0 });
+    face.event(&Event::Found { op: Token::new(7_000_001), seen: List::with_capacity(0), more: 0 });
     assert_eq!(
         query(&mut face),
         Query {
@@ -98,7 +98,7 @@ fn a_press_becomes_the_kits_press_at_the_centre() {
     face.perform(Doing::Act { node: NodeId(0), act: Act::Press }).expect("press");
     assert_eq!(
         face.requests().collect::<Vec<_>>(),
-        vec![Request::Press { page: Token::new(7), op: Token::new(2), node: 9_000_000_000, at: None }]
+        vec![Request::Press { page: Token::new(7), op: Token::new(7_000_002), node: 9_000_000_000, at: None }]
     );
 }
 #[test]
@@ -152,8 +152,19 @@ fn a_go_uses_the_servers_origin() {
         face.requests().collect::<Vec<_>>(),
         vec![Request::Go {
             page: Token::new(7),
-            op: Token::new(1),
+            op: Token::new(7_000_001),
             to: skein_browser::boundary::Go::Address(b"http://127.0.0.1:9000/notes/4".as_slice().into())
         }]
     );
+}
+
+#[test]
+fn the_listening_line_gives_the_address() {
+    for (stderr, expected) in [
+        (b"starting\nserver at 127.0.0.1:44327\n".as_slice(), Some("127.0.0.1:44327".to_owned())),
+        (b"server at 127.0.0.1:44327".as_slice(), None),
+        (b"other line\n".as_slice(), None),
+    ] {
+        assert_eq!(crate::harness::listening_address(stderr, b"server at "), expected);
+    }
 }

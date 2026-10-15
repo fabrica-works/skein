@@ -641,7 +641,10 @@ version = "0.0.0"
 dependencies = [
  "skein-browser",
  "skein-fake-person",
+ "skein-io",
  "skein-lib",
+ "skein-scratch",
+ "skein-shell",
  "skein-ui",
  "skein-ui-web",
 ]
@@ -1021,9 +1024,12 @@ dependencies = [
 name = "skein-ui-web-tests"
 version = "0.0.0"
 dependencies = [
+ "skein-fake-person",
+ "skein-fake-person-browser",
  "skein-http",
  "skein-lib",
  "skein-scratch",
+ "skein-ui",
  "skein-ui-bundle",
  "skein-ui-example-server",
  "skein-ui-example-view",

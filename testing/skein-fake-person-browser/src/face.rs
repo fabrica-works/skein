@@ -16,7 +16,7 @@ struct Search {
 /// One page's asynchronous semantic face. Nodes are numbered locally.
 pub struct BrowserFace<'a> {
     page: Token,
-    address: &'a str,
+    address: std::borrow::Cow<'a, str>,
     serial: u64,
     requests: Vec<Request>,
     search: Option<Search>,
@@ -28,11 +28,11 @@ pub struct BrowserFace<'a> {
 
 impl<'a> BrowserFace<'a> {
     #[must_use]
-    pub fn new(page: Token, address: &'a str) -> Self {
+    pub fn new(page: Token, address: impl Into<std::borrow::Cow<'a, str>>) -> Self {
         Self {
             page,
-            address,
-            serial: 0,
+            address: address.into(),
+            serial: page.raw().checked_mul(1_000_000).expect("page operation range fits"),
             requests: Vec::new(),
             search: None,
             answer: None,
