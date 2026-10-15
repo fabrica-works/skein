@@ -157,3 +157,14 @@ fn a_find_asks_cdp_for_the_role_and_exact_name() {
         .collect();
     assert_eq!(values, [b"document-1".as_slice(), b"button", b"Save"].map(Box::<[u8]>::from));
 }
+
+#[test]
+fn a_cached_history_restore_releases_page_reads() {
+    let mut world = navigating();
+    world.ask(Request::Find { page: PAGE, op: READ, query: query() });
+    notify(&mut world, b"{\"method\":\"Page.frameNavigated\",\"sessionId\":\"s1\",\"params\":{\"type\":\"BackForwardCacheRestore\",\"frame\":{\"id\":\"f1\"}}}\0");
+    assert_eq!(
+        methods(&world),
+        [b"Runtime.evaluate".as_slice(), b"Accessibility.queryAXTree", b"Runtime.releaseObject"].map(Box::<[u8]>::from)
+    );
+}

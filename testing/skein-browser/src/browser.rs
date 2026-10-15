@@ -1428,14 +1428,7 @@ impl Browser {
                     }
                 }
             }
-            b"Page.frameNavigated" => {
-                if let (Some(page), Some(frame)) = (page, opt_field(params, b"frame"))
-                    && frame.get(b"parentId").is_none()
-                    && let Some(page) = self.page_mut(page)
-                {
-                    page.frame = frame_id(frame, b"id", env.limits.text);
-                }
-            }
+            b"Page.frameNavigated" => self.frame_navigated(env, page, params),
             b"Page.loadEventFired" | b"Page.navigatedWithinDocument" => {
                 if let Some(page) = page {
                     self.loaded(page);
@@ -1498,6 +1491,21 @@ impl Browser {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn frame_navigated(&mut self, env: &Env<Limits>, page: Option<Token>, params: Option<Value<'_>>) {
+        if let (Some(page), Some(frame)) = (page, opt_field(params, b"frame"))
+            && frame.get(b"parentId").is_none()
+            && let Some(page) = self.page_mut(page)
+        {
+            page.frame = frame_id(frame, b"id", env.limits.text);
+        }
+        if let Some(page) = page
+            && opt_text(opt_field(params, b"type")).as_deref() == Some(b"BackForwardCacheRestore")
+            && opt_field(opt_field(params, b"frame"), b"parentId").is_none()
+        {
+            self.loaded(page);
         }
     }
 

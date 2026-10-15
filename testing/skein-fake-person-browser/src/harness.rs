@@ -43,6 +43,10 @@ pub enum Step {
     StartServer,
     Title(Box<[u8]>),
     Warned(bool),
+    Compose { find: skein_fake_person::Find, words: Box<[u8]> },
+    Type { find: skein_fake_person::Find, words: Box<[u8]> },
+    Back,
+    Forward,
 }
 #[derive(Clone, Copy)]
 pub enum ServerAction {
@@ -55,15 +59,31 @@ pub struct Script {
     at: u32,
     action: Option<ServerAction>,
     title: Option<Box<[u8]>>,
+    text: Option<(skein_fake_person::Find, Box<[u8]>, bool)>,
 }
 impl Script {
     #[must_use]
     pub fn new(steps: Box<[Step]>) -> Self {
-        Self { steps: steps.into_vec().into(), person: None, at: 0, action: None, title: None }
+        Self { steps: steps.into_vec().into(), person: None, at: 0, action: None, title: None, text: None }
     }
 }
 impl Play for Script {
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
+        if let Some((find, words, compose)) = self.text.take() {
+            match skein_fake_person::Face::find(face, &find) {
+                skein_fake_person::Found::Pending => self.text = Some((find, words, compose)),
+                skein_fake_person::Found::Absent => {
+                    return Next::Failed { step: self.at, why: skein_fake_person::Why::Missing { find } };
+                }
+                skein_fake_person::Found::Node(node) => {
+                    if let Err(why) = face.text(node, words, compose) {
+                        face.fail(why);
+                    }
+                    self.at += 1;
+                }
+            }
+            return Next::Wait { until: None };
+        }
         if let Some(title) = self.title.take() {
             match face.title(&title) {
                 skein_fake_person::Found::Pending => {
@@ -98,6 +118,12 @@ impl Play for Script {
             return Next::Done;
         };
         match step {
+            Step::Compose { find, words } => self.text = Some((find, words, true)),
+            Step::Type { find, words } => self.text = Some((find, words, false)),
+            Step::Back | Step::Forward => {
+                face.history(matches!(step, Step::Forward));
+                self.at += 1;
+            }
             Step::Person(step) => {
                 let mut steps = vec![step];
                 while matches!(self.steps.front(), Some(Step::Person(_))) {

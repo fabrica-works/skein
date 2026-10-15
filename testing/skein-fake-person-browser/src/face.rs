@@ -84,6 +84,31 @@ impl<'a> BrowserFace<'a> {
     pub fn failure(&mut self) -> Option<String> {
         self.failure.take()
     }
+    pub(crate) fn text(&mut self, node: NodeId, words: Box<[u8]>, compose: bool) -> Result<(), String> {
+        let seen = &self.seen.get(usize::try_from(node.0).expect("node fits")).ok_or("unknown field")?.0;
+        let node = seen.node;
+        let op = self.token();
+        let request = if compose {
+            Request::Compose { page: self.page, op, node, text: words }
+        } else {
+            Request::Type { page: self.page, op, node, text: words }
+        };
+        self.acting = Some(op);
+        self.requests.push(request);
+        Ok(())
+    }
+    pub(crate) fn field_is(&self, node: NodeId, words: &[u8]) -> bool {
+        self.seen
+            .get(usize::try_from(node.0).expect("node fits"))
+            .is_some_and(|(seen, _)| seen.states.focused && seen.value.as_ref() == words)
+    }
+    pub(crate) fn history(&mut self, forward: bool) {
+        let op = self.token();
+        self.warned = false;
+        self.go = Some(op);
+        self.acting = Some(op);
+        self.requests.push(Request::Go { page: self.page, op, to: if forward { Go::Forward } else { Go::Back } });
+    }
     fn ask(&mut self, mut search: Search) {
         let target = search.find.within.get(search.depth).unwrap_or(&search.find.target);
         let (mut roles, name, matching) = query_parts(target);
