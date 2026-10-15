@@ -437,3 +437,55 @@ fn a_changed_description_updates_its_companion() {
         r#"<div><main data-node="2"><input data-node="3" type="text" aria-describedby="skein-ui-description-3"><span id="skein-ui-description-3">Help &amp; &lt;b&gt;</span></main></div>"#
     );
 }
+
+const COUNTED_FIRST: NodeId = NodeId(4); // page, main, list, first item
+const COUNTED_SECOND: NodeId = NodeId(5); // page, main, list, first item, second item
+fn counted_items(b: &mut Builder, count: Option<u32>) {
+    main(b);
+    b.open(Role::List);
+    if let Some(count) = count {
+        b.count(count);
+    }
+    for position in [1, 2] {
+        b.open(Role::Item);
+        b.position(position);
+        b.close();
+    }
+    b.close();
+    end(b);
+}
+
+#[test]
+fn a_changed_count_sets_each_items_setsize_again() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(&fixtures::patches(&mut view, 0, |b| counted_items(b, Some(10))), &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| counted_items(b, Some(20))), &mut ops);
+    let sizes: Vec<_> = ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Attributes { node, element } => element.attribute("aria-setsize").map(|size| (*node, size)),
+            Op::Insert { .. }
+            | Op::Remove { .. }
+            | Op::Move { .. }
+            | Op::Replace { .. }
+            | Op::Text { .. }
+            | Op::Value { .. }
+            | Op::Choice { .. }
+            | Op::Href { .. }
+            | Op::Focus { .. }
+            | Op::ScrollEnd { .. } => None,
+        })
+        .collect();
+    assert_eq!(sizes, [(COUNTED_FIRST, "20"), (COUNTED_SECOND, "20")]);
+}
+
+#[test]
+fn a_removed_count_removes_each_items_setsize() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| counted_items(b, Some(10))), &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| counted_items(b, None)), &mut Vec::new());
+    assert_eq!(
+        page.html(),
+        r#"<div><main data-node="2"><ul data-node="3"><li data-node="4" aria-posinset="1"></li><li data-node="5" aria-posinset="2"></li></ul></main></div>"#
+    );
+}

@@ -135,6 +135,7 @@ impl<'a> Page<'a> {
                 }
             }
         }
+        self.collection_sizes(ops);
         self.links.clear();
         let mut order = Vec::new();
         for root in &self.roots {
@@ -198,6 +199,39 @@ impl<'a> Page<'a> {
         self.nodes.get_mut(&node).expect("held node").href = Some(path.into());
         self.remap(node);
         ops.push(Op::Href { node, path: path.into() });
+    }
+
+    fn collection_sizes(&mut self, ops: &mut Vec<Op>) {
+        let items: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(node, held)| {
+                [Role::Item, Role::TreeItem].contains(&held.made.attribute.role).then_some(*node)
+            })
+            .collect();
+        for node in items {
+            let mut parent = self.held(node).parent;
+            let mut count = None;
+            while parent != NodeId(0) {
+                let held = self.held(parent);
+                if [Role::List, Role::Tree].contains(&held.made.attribute.role) {
+                    count = held.made.attribute.count.map(|count| count.to_string());
+                    break;
+                }
+                parent = held.parent;
+            }
+            let held = self.nodes.get_mut(&node).expect("held item");
+            let element = semantic_mut(&mut held.element);
+            if element.attribute("aria-setsize") == count.as_deref() {
+                continue;
+            }
+            if let Some(count) = count {
+                element.set("aria-setsize", &count);
+            } else {
+                element.remove("aria-setsize");
+            }
+            ops.push(Op::Attributes { node, element: self.own_element(node) });
+        }
     }
 
     fn held(&self, node: NodeId) -> &Held {

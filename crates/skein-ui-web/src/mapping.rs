@@ -40,6 +40,7 @@ fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -
     let mut e = base(a.role, made.id.0);
     name(&mut e, made);
     properties(&mut e, made);
+    collection(&mut e, made);
     if a.role == Role::Disclosure && a.name.is_none() {
         e.append(Element::new("summary"));
     }
@@ -129,6 +130,26 @@ fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -
         return pair;
     }
     e
+}
+
+fn collection(e: &mut Element, made: &Made) {
+    let a = &made.attribute;
+    if let Some(count) = a.count
+        && a.role == Role::Table
+    {
+        e.set("aria-rowcount", &count.to_string());
+    }
+    if let Some(position) = a.position {
+        e.set(if a.role == Role::Row { "aria-rowindex" } else { "aria-posinset" }, &position.to_string());
+    }
+    if let Some(spans) = a.spans {
+        if spans.rows > 1 {
+            e.set("rowspan", &spans.rows.to_string());
+        }
+        if spans.columns > 1 {
+            e.set("colspan", &spans.columns.to_string());
+        }
+    }
 }
 
 fn properties(e: &mut Element, made: &Made) {

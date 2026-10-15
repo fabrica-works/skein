@@ -8,8 +8,8 @@ use crate::Binding;
 use crate::Limits;
 use crate::tree::length;
 use crate::{
-    Drawing, DrawingKind, EntryKind, Key, Node, Picture, Region, Role, Run, Shortcut, SlotRef, Source, State, Style,
-    TextRun, Tree, Value,
+    Drawing, DrawingKind, EntryKind, Key, Node, Picture, Region, Role, Run, Shortcut, SlotRef, Source, Spans, State,
+    Style, TextRun, Tree, Value,
 };
 
 use alloc::boxed::Box;
@@ -181,6 +181,27 @@ impl Builder {
         assert!(!self.focused, "at most one focus request per tree");
         self.node_mut().focus = Some(count);
         self.focused = true;
+    }
+
+    /// Count the whole collection when only part of it is shown.
+    pub fn count(&mut self, count: u32) {
+        assert!([Role::List, Role::Table, Role::Tree].contains(&self.node().role), "counts belong to collections");
+        self.node_mut().count = Some(count);
+    }
+    /// Place an item in its whole collection, starting at one.
+    pub fn position(&mut self, position: u32) {
+        assert!(
+            [Role::Item, Role::Row, Role::TreeItem].contains(&self.node().role),
+            "positions belong to items or rows"
+        );
+        assert!(position > 0, "positions start at one");
+        self.node_mut().position = Some(position);
+    }
+    /// Span rows and columns from a cell.
+    pub fn spans(&mut self, spans: Spans) {
+        assert!(self.node().role == Role::Cell, "spans belong to cells");
+        assert!(spans.rows > 0 && spans.columns > 0, "spans start at one");
+        self.node_mut().spans = Some(spans);
     }
 
     /// Add a semantic state once.

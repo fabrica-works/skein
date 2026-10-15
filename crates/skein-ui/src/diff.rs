@@ -8,7 +8,9 @@
 //! Bindings stay in the view: the shell sees only their presence and node ids.
 
 use crate::Limits;
-use crate::{Drawing, EntryKind, Node, NodeId, Region, Role, Shortcut, Source, State, Style, TextRun, Tree, Value};
+use crate::{
+    Drawing, EntryKind, Node, NodeId, Region, Role, Shortcut, Source, Spans, State, Style, TextRun, Tree, Value,
+};
 use alloc::boxed::Box;
 use skein_lib::{List, Queue, Stack};
 
@@ -25,6 +27,9 @@ pub struct Attribute {
     pub description: Option<Box<[u8]>>,
     pub entry: Option<EntryKind>,
     pub focus: Option<u64>,
+    pub count: Option<u32>,
+    pub position: Option<u32>,
+    pub spans: Option<Spans>,
     /// The shell asks the view root for this node's address when this is set.
     pub linked: bool,
     pub external: Option<Box<[u8]>>,
@@ -45,6 +50,9 @@ impl Attribute {
             description: node.description.clone(),
             entry: node.entry,
             focus: node.focus,
+            count: node.count,
+            position: node.position,
+            spans: node.spans,
             linked: node.link.is_some(),
             external: node.external.clone(),
             bound: node.binding.is_some() || node.link.is_some(),
@@ -268,6 +276,9 @@ fn attributes(old: &Node, new: &Node, out: &mut Queue<Patch>) {
         || old.description != new.description
         || old.entry != new.entry
         || old.focus != new.focus
+        || old.count != new.count
+        || old.position != new.position
+        || old.spans != new.spans
         || old.link != new.link
         || old.external != new.external
         || was_bound != bound

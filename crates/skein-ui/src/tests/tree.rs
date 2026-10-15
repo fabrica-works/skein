@@ -359,3 +359,39 @@ fn a_spliced_second_focus_request_is_an_assertion() {
     fragment.close();
     b.splice(slot, fragment);
 }
+
+#[test]
+#[should_panic(expected = "counts belong to collections")]
+fn a_count_on_an_item_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Item);
+    b.count(20);
+}
+
+#[test]
+#[should_panic(expected = "positions start at one")]
+fn a_position_of_zero_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Item);
+    b.position(0);
+}
+
+#[test]
+#[should_panic(expected = "spans belong to cells")]
+fn spans_on_a_paragraph_are_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Paragraph);
+    b.spans(crate::Spans { rows: 1, columns: 1 });
+}
+
+#[test]
+fn spans_of_zero_are_an_assertion() {
+    for spans in [crate::Spans { rows: 0, columns: 1 }, crate::Spans { rows: 1, columns: 0 }] {
+        let outcome = std::panic::catch_unwind(|| {
+            let mut b = Builder::new(&LIMITS);
+            b.open(Role::Cell);
+            b.spans(spans);
+        });
+        assert!(outcome.is_err(), "{spans:?}");
+    }
+}

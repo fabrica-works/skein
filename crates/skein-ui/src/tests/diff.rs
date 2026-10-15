@@ -349,3 +349,28 @@ fn a_moved_focus_request_is_an_attribute_patch() {
         | Patch::Value { .. }) => panic!("expected focus attribute, got {patch:?}"),
     }
 }
+
+const POSITIONED_ITEM: NodeId = NodeId(1); // item
+
+#[test]
+fn a_changed_position_is_one_attribute_patch() {
+    let mut view = View::new(&LIMITS);
+    let mut out = Queue::with_capacity(LIMITS.patches);
+    for position in [1, 2] {
+        let mut b = view.builder();
+        b.open(Role::Item);
+        b.position(position);
+        b.close();
+        view.finish(b, u64::from(position), &mut out);
+        if position == 1 {
+            while out.pop().is_some() {}
+        }
+    }
+    assert_eq!(out.len(), 1);
+    match out.pop().unwrap() {
+        Patch::Attribute { node, attribute } => assert_eq!((node, attribute.position), (POSITIONED_ITEM, Some(2))),
+        Patch::Insert { .. } | Patch::Remove { .. } | Patch::Move { .. } | Patch::Text { .. } | Patch::Value { .. } => {
+            panic!("only position changed")
+        }
+    }
+}

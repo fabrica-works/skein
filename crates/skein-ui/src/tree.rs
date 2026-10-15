@@ -167,6 +167,12 @@ pub enum EntryKind {
     Time,
     Secret,
 }
+/// The rows and columns a cell spans, each at least one (ui.md, 3.2).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Spans {
+    pub rows: u16,
+    pub columns: u16,
+}
 /// An image's owner picture or checked address (ui.md, 3.5).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Source {
@@ -261,6 +267,9 @@ pub struct Node {
     pub description: Option<Box<[u8]>>,
     pub entry: Option<EntryKind>,
     pub focus: Option<u64>,
+    pub count: Option<u32>,
+    pub position: Option<u32>,
+    pub spans: Option<Spans>,
     pub text: List<TextRun>,
     pub value: Option<Value>,
     pub link: Option<crate::Binding>,
@@ -287,6 +296,9 @@ impl Node {
             description: None,
             entry: None,
             focus: None,
+            count: None,
+            position: None,
+            spans: None,
             text: List::with_capacity(0),
             value: None,
             link: None,
@@ -312,6 +324,9 @@ impl Node {
             description: None,
             entry: None,
             focus: None,
+            count: None,
+            position: None,
+            spans: None,
             text: List::with_capacity(runs),
             value: None,
             link: None,

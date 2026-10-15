@@ -97,6 +97,9 @@ fn each_role_has_its_accessible_roles() {
 #[derive(Clone, Copy, Debug)]
 enum Property {
     State(State),
+    Count,
+    Position,
+    Spans(skein_ui::Spans),
     Description,
     Entry(skein_ui::EntryKind),
     Focus,
@@ -116,6 +119,16 @@ enum Property {
 const LINK: Run = Run::Link { to: skein_lib::Token::new(1) };
 
 const PROPERTIES: &[(Role, Property, &str)] = &[
+    (Role::Table, Property::Count, r#"<table data-node="1" aria-rowcount="20"></table>"#),
+    (Role::Item, Property::Position, r#"<li data-node="1" aria-posinset="7"></li>"#),
+    (Role::TreeItem, Property::Position, r#"<div data-node="1" role="treeitem" aria-posinset="7"></div>"#),
+    (Role::Row, Property::Position, r#"<tr data-node="1" aria-rowindex="7"></tr>"#),
+    (
+        Role::Cell,
+        Property::Spans(skein_ui::Spans { rows: 2, columns: 3 }),
+        r#"<td data-node="1" rowspan="2" colspan="3"></td>"#,
+    ),
+    (Role::Cell, Property::Spans(skein_ui::Spans { rows: 1, columns: 1 }), r#"<td data-node="1"></td>"#),
     (
         Role::Region,
         Property::Description,
@@ -216,6 +229,9 @@ fn property(made: &mut Made, property: Property) {
         Property::State(state) => {
             made.attribute.states.push(state).expect("fixture state capacity");
         }
+        Property::Count => made.attribute.count = Some(20),
+        Property::Position => made.attribute.position = Some(7),
+        Property::Spans(spans) => made.attribute.spans = Some(spans),
         Property::Description => made.attribute.description = Some(b"Help & <b>".to_vec().into_boxed_slice()),
         Property::Entry(kind) => made.attribute.entry = Some(kind),
         Property::Focus => made.attribute.focus = Some(1),
