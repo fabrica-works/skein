@@ -1,4 +1,5 @@
 //! The list, addresses and capacities (examples.md, 9.5).
+mod adds;
 mod drift;
 mod fixtures;
 mod person;
@@ -28,6 +29,13 @@ fn places_print_and_parse_back() {
         let bytes = out.finish();
         assert_eq!(bytes.as_ref(), printed, "path {path:?}");
         assert_eq!(places::parse(&bytes), expected, "printed {path:?}");
+    }
+}
+
+#[test]
+fn a_paths_box_holds_exactly_its_printed_bytes() {
+    for &(_, place, printed) in PATHS {
+        assert_eq!(places::bytes(place).as_ref(), printed, "place {place:?}");
     }
 }
 #[test]
@@ -76,6 +84,6 @@ fn the_views_worst_case_fits_its_limits() {
         .expect("64 notes fit");
     let mut view = View::new(&limits::limits());
     state.build(&mut view, &mut Queue::with_capacity(1200));
-    assert_eq!(view.tree().len(), 458);
+    assert_eq!(view.tree().len(), 461);
     assert!(limits::worst_case().expect("worst case fits u64") < 100_000_000, "view fits its 100 MB memory bound");
 }

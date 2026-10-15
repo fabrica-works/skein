@@ -21,7 +21,7 @@ const POLICY: &[u8] = b"default-src 'none'; script-src 'self' 'wasm-unsafe-eval'
 #[test]
 fn each_answer_carries_the_policy_and_nosniff() {
     let bundle = bundle();
-    let state = State::new();
+    let mut state = State::new();
     for (method, path) in [
         (Method::Get, b"/".as_slice()),
         (Method::Get, b"/api/notes"),
@@ -31,7 +31,7 @@ fn each_answer_carries_the_policy_and_nosniff() {
     ] {
         let mut call = get(path);
         call.method = method;
-        let answer = routes::route(&state, &bundle, &call);
+        let answer = routes::route(&mut state, &bundle, &call, &[]);
         for (name, expected) in
             [(b"Content-Security-Policy".as_slice(), POLICY), (b"X-Content-Type-Options", b"nosniff")]
         {
@@ -53,14 +53,14 @@ fn another_digest_is_not_found() {
         b"/bundle/0123456789abcdef/no.js",
         b"/bundle/0123456789abcdef/../index.html",
     ] {
-        assert_eq!(routes::route(&State::new(), &bundle, &get(path)).head.status, 404, "path {path:?}");
+        assert_eq!(routes::route(&mut State::new(), &bundle, &get(path), &[]).head.status, 404, "path {path:?}");
     }
 }
 #[test]
 fn the_page_answers_any_other_path() {
     let bundle = bundle();
     for path in [b"/".as_slice(), b"/notes/7", b"/unknown?x=1"] {
-        let answer = routes::route(&State::new(), &bundle, &get(path));
+        let answer = routes::route(&mut State::new(), &bundle, &get(path), &[]);
         assert_eq!(answer.head.status, 200, "path {path:?}");
         assert_eq!(answer.body.as_ref(), b"<html></html>", "path {path:?}");
         let cache = answer
@@ -78,7 +78,7 @@ fn a_matching_etag_is_not_modified() {
     let mut call = get(b"/notes/7");
     call.headers =
         Box::from([Header { name: Box::from(&b"If-None-Match"[..]), value: Box::from(bundle.etag.as_bytes()) }]);
-    let answer = routes::route(&State::new(), &bundle, &call);
+    let answer = routes::route(&mut State::new(), &bundle, &call, &[]);
     assert_eq!(answer.head.status, 304);
     assert_eq!(answer.head.body, Body::None);
     assert!(answer.body.is_empty());
@@ -96,4 +96,30 @@ fn a_matching_etag_is_not_modified() {
 #[test]
 fn the_page_etag_is_its_fnv_digest() {
     assert_eq!(bundle().etag, "\"52ea7bb227177076\"");
+}
+
+#[test]
+fn a_second_add_with_one_key_makes_no_second_note() {
+    use skein_lib::Reader;
+    use skein_ui_example_view::records::{CEILINGS, Notes};
+    let mut state = State::new();
+    let bundle = bundle();
+    let mut call = get(b"/api/notes");
+    call.method = Method::Post;
+    let add = b"\0\0\0\0\0\0\0\x01\0\0\0\x01A\0\0\0\0\0\0\0\0\0\0\0\0\0";
+    let _answer = routes::route(&mut state, &bundle, &call, add);
+    let _answer = routes::route(&mut state, &bundle, &call, add);
+    let notes = Notes::decode(&CEILINGS, &mut Reader::new(&state.list())).expect("notes decode");
+    assert_eq!(notes.notes().len(), 1);
+}
+
+#[test]
+fn a_second_add_with_one_key_answers_the_first_note() {
+    let mut state = State::new();
+    let bundle = bundle();
+    let mut call = get(b"/api/notes");
+    call.method = Method::Post;
+    let _answer = routes::route(&mut state, &bundle, &call, b"\0\0\0\0\0\0\0\x01\0\0\0\x01A\0\0\0\0\0\0\0\0\0\0\0\0\0");
+    let answer = routes::route(&mut state, &bundle, &call, b"\0\0\0\0\0\0\0\x01\0\0\0\x01B\0\0\0\0\0\0\0\0\0\0\0\0\0");
+    assert_eq!(answer.body.as_ref(), b"\0\0\0\0\0\0\0\x01\0\0\0\x01A\0\0\0\0\0\0\0\0\0\0\0\0\0");
 }

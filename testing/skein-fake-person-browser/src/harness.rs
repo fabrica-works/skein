@@ -33,26 +33,73 @@ pub trait Play {
     fn at(&self) -> u32 {
         0
     }
+    fn server_action(&mut self) -> Option<ServerAction> {
+        None
+    }
 }
 pub enum Step {
     Person(skein_fake_person::Step<Box<[u8]>>),
+    StopServer,
+    StartServer,
+}
+#[derive(Clone, Copy)]
+pub enum ServerAction {
+    Stop,
+    Start,
 }
 pub struct Script {
-    person: Person<Box<[u8]>>,
+    steps: VecDeque<Step>,
+    person: Option<Person<Box<[u8]>>>,
+    at: u32,
+    action: Option<ServerAction>,
 }
 impl Script {
     #[must_use]
     pub fn new(steps: Box<[Step]>) -> Self {
-        let steps = steps.into_vec().into_iter().map(|Step::Person(step)| step).collect();
-        Self { person: Person::new(steps) }
+        Self { steps: steps.into_vec().into(), person: None, at: 0, action: None }
     }
 }
 impl Play for Script {
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
-        self.person.next(face, now)
+        if let Some(person) = &mut self.person {
+            let next = person.next(face, now);
+            match next {
+                Next::Done => {
+                    self.at += person.at();
+                    self.person = None;
+                }
+                Next::Failed { step, why } => return Next::Failed { step: self.at + step, why },
+                other @ (Next::Do(_) | Next::Wait { .. }) => return other,
+            }
+        }
+        let Some(step) = self.steps.pop_front() else {
+            return Next::Done;
+        };
+        match step {
+            Step::Person(step) => {
+                let mut steps = vec![step];
+                while matches!(self.steps.front(), Some(Step::Person(_))) {
+                    let Some(Step::Person(step)) = self.steps.pop_front() else { unreachable!("person step") };
+                    steps.push(step);
+                }
+                self.person = Some(Person::new(steps.into()));
+            }
+            Step::StopServer => {
+                self.action = Some(ServerAction::Stop);
+                self.at += 1;
+            }
+            Step::StartServer => {
+                self.action = Some(ServerAction::Start);
+                self.at += 1;
+            }
+        }
+        Next::Wait { until: None }
     }
     fn at(&self) -> u32 {
-        self.person.at()
+        self.at + self.person.as_ref().map_or(0, Person::at)
+    }
+    fn server_action(&mut self) -> Option<ServerAction> {
+        self.action.take()
     }
 }
 #[derive(PartialEq, Eq, Debug)]
@@ -93,6 +140,13 @@ pub fn listening_address(stderr: &[u8], prefix: &[u8]) -> Option<String> {
         .and_then(|address| std::str::from_utf8(address).ok())
         .map(|address| address.trim().to_owned())
 }
+#[derive(PartialEq, Eq)]
+enum ServerState {
+    Running,
+    Stopping,
+    Stopped,
+    Starting,
+}
 struct Runtime {
     browser: Browser,
     io: Io,
@@ -111,6 +165,9 @@ struct Runtime {
     server_pipe: Option<Token>,
     children: Vec<Token>,
     closed: u32,
+    spawned: u32,
+    server_child: Option<Token>,
+    server_state: ServerState,
     stderr: Vec<u8>,
     server_stderr: Vec<u8>,
     address: Option<String>,
@@ -202,6 +259,9 @@ impl Runtime {
             server_pipe: None,
             children: Vec::new(),
             closed: 0,
+            spawned: 0,
+            server_child: None,
+            server_state: ServerState::Running,
             stderr: Vec::new(),
             server_stderr: Vec::new(),
             address: None,
@@ -234,8 +294,9 @@ impl Runtime {
         match event {
             io::Event::Spawned { owner, child, pipes } => {
                 self.children.push(child);
+                self.spawned += 1;
                 if owner == SERVER {
-                    self.submits.push(Submit { op: SERVER_ROOT, kind: Op::Close { fd: self.roots[0] } });
+                    self.server_child = Some(child);
                     self.server_pipe = pipes.first().copied();
                     self.read_server();
                 } else {
@@ -248,7 +309,10 @@ impl Runtime {
                 if Some(owner) == self.server_pipe {
                     if let stream::Up::Bytes(bytes) = up {
                         tail(&mut self.server_stderr, &bytes);
-                        self.address = listening_address(&self.server_stderr, &setup.listening);
+                        if let Some(address) = listening_address(&self.server_stderr, &setup.listening) {
+                            self.address = Some(address);
+                            self.server_state = ServerState::Running;
+                        }
                         self.read_server();
                     }
                     return;
@@ -272,8 +336,11 @@ impl Runtime {
                 browser::up(&mut self.browser, &self.benv, below, &mut self.events, &mut self.down);
             }
             io::Event::Exited { owner, exit } => {
-                if !self.closing {
+                if !(self.closing || owner == SERVER && self.server_state == ServerState::Stopping) {
                     self.fail(0, 0, format!("child {owner:?} exited: {exit:?}"));
+                }
+                if owner == SERVER {
+                    self.children.retain(|child| Some(*child) != self.server_child);
                 }
                 if owner == PROCESS {
                     if let Some(pipes) = self.pipes {
@@ -288,6 +355,10 @@ impl Runtime {
             io::Event::Closed { owner } => {
                 if owner == PROCESS || owner == SERVER {
                     self.closed += 1;
+                    if owner == SERVER {
+                        self.server_child = None;
+                        self.server_state = ServerState::Stopped;
+                    }
                 }
             }
             io::Event::Failed { owner, error } => self.fail(0, 0, format!("io {owner:?}: {error:?}")),
@@ -370,6 +441,7 @@ impl Runtime {
     }
     fn close(&mut self) {
         self.closing = true;
+        self.submits.push(Submit { op: SERVER_ROOT, kind: Op::Close { fd: self.roots[0] } });
         self.ask(Request::Close { entity: BROWSER });
         for child in &self.children {
             self.requests.push_back(io::Request::Signal {
@@ -379,7 +451,49 @@ impl Runtime {
             });
         }
     }
-    fn play(&mut self, people: &mut [&mut dyn Play], faces: &mut [BrowserFace<'_>], done: &mut [bool], now: Time) {
+    fn server_action(&mut self, action: ServerAction, setup: &Harness) {
+        match action {
+            ServerAction::Stop => {
+                assert!(self.server_state == ServerState::Running, "server running before stop");
+                self.server_state = ServerState::Stopping;
+                self.requests.push_back(io::Request::Signal {
+                    child: self.server_child.expect("server is running"),
+                    signal: kernel::Signal::Terminate,
+                    to: kernel::Target::Child,
+                });
+            }
+            ServerAction::Start => {
+                assert!(self.server_state == ServerState::Stopped, "server stopped before start");
+                self.server_state = ServerState::Starting;
+                self.server_stderr.clear();
+                let mut args = setup.args.clone();
+                *args.first_mut().expect("server address argument") =
+                    self.address.as_ref().expect("listening address").into();
+                self.requests.push_back(io::Request::Spawn {
+                    owner: SERVER,
+                    spawn: Spawn {
+                        program: setup.server.as_os_str().as_bytes().into(),
+                        args: args.iter().map(|arg| arg.as_bytes().into()).collect(),
+                        env: Box::new([]),
+                        root: self.roots[0],
+                        dir: b".".as_slice().into(),
+                        pipes: Box::new([Pipe { child: 2, way: Way::Out, parent: None }]),
+                    },
+                });
+            }
+        }
+    }
+    fn play(
+        &mut self,
+        people: &mut [&mut dyn Play],
+        faces: &mut [BrowserFace<'_>],
+        done: &mut [bool],
+        now: Time,
+        setup: &Harness,
+    ) {
+        if matches!(self.server_state, ServerState::Stopping | ServerState::Starting) {
+            return;
+        }
         for (index, (play, face)) in people.iter_mut().zip(faces).enumerate() {
             if !self.opened[index] || done[index] {
                 continue;
@@ -405,8 +519,14 @@ impl Runtime {
                     break;
                 }
             }
+            if let Some(action) = play.server_action() {
+                self.server_action(action, setup);
+            }
             for request in face.requests() {
                 self.ask(request);
+            }
+            if matches!(self.server_state, ServerState::Stopping | ServerState::Starting) {
+                break;
             }
         }
         if done.iter().all(|done| *done) {
@@ -490,7 +610,7 @@ impl Runtime {
                 });
             }
             if self.outcome.is_none() {
-                self.play(people, &mut faces, &mut done, time.now);
+                self.play(people, &mut faces, &mut done, time.now, setup);
             }
             if self.outcome.is_some() && !self.closing {
                 if matches!(self.outcome, Some(Outcome::Failed { .. }))
@@ -517,7 +637,7 @@ impl Runtime {
                 io::down(&mut self.io, &self.ienv, request, &mut self.submits);
             }
             self.io.reclaim();
-            if self.closing && self.closed == 2 && self.io.is_empty() && self.kernel.in_flight() == 0 {
+            if self.closing && self.closed == self.spawned && self.io.is_empty() && self.kernel.in_flight() == 0 {
                 break;
             }
             let pending = self.io.is_ready()

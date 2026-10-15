@@ -44,8 +44,8 @@ fn the_server_serves_a_bundle_it_did_not_make() {
     let digest = skein_ui_bundle::bundle(&inputs, &glue, &out).expect("bundle written");
     let bundle = Bundle::read(&out).expect("server reads startup files");
     assert_eq!(bundle.digest, digest.to_string());
-    let state = State::new();
-    let answer = routes::route(&state, &bundle, &skein_ui_web_tests::get(b"/notes/7"));
+    let mut state = State::new();
+    let answer = routes::route(&mut state, &bundle, &skein_ui_web_tests::get(b"/notes/7"), &[]);
     assert_eq!(answer.head.status, 200);
     assert_eq!(answer.body.as_ref(), std::fs::read(out.join("index.html")).expect("page").as_slice());
     for (name, expected, kind) in [
@@ -53,7 +53,7 @@ fn the_server_serves_a_bundle_it_did_not_make() {
         ("notes_bg.wasm", glue.wasm.as_slice(), "application/wasm"),
     ] {
         let path = format!("/bundle/{digest}/{name}");
-        let answer = routes::route(&state, &bundle, &skein_ui_web_tests::get(path.as_bytes()));
+        let answer = routes::route(&mut state, &bundle, &skein_ui_web_tests::get(path.as_bytes()), &[]);
         assert_eq!(answer.head.status, 200, "{name}");
         assert_eq!(answer.body.as_ref(), expected, "{name}");
         for (name, expected) in

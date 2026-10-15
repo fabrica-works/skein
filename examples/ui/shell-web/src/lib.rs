@@ -1,14 +1,17 @@
 //! The reference shell: start the parts, carry reports, apply the view's patches.
 #![cfg(target_arch = "wasm32")]
 #![forbid(unsafe_code)]
-use skein_lib::{Queue, Writer};
+use skein_lib::Queue;
 use skein_ui::{Act, NodeId, Owner, View, look::Names};
 use skein_ui_example_view::{Duties, Report as ViewReport, State, limits, places};
 use skein_ui_web::{
     Look, fetch,
     inbox::Inbox,
     page::{Page, web::Dom},
-    platform, wasm_bindgen,
+    platform,
+    store::Store,
+    transport::{self, Carried, Requests},
+    wasm_bindgen,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -18,13 +21,15 @@ enum Report {
     Start,
     Act(NodeId, Act),
     Fetch(fetch::Report),
+    Carried(Carried),
 }
 struct Shell {
     state: State,
     view: View,
     page: Rc<RefCell<Page<'static>>>,
     dom: Dom,
-    fetch: fetch::web::Fetch<Report>,
+    platform: platform::Browser<Report>,
+    store: Store,
 }
 
 #[wasm_bindgen(start)]
@@ -36,9 +41,17 @@ pub fn start() {
     let facts = platform::facts();
     let location = window.location();
     let path = location.pathname().expect("page path") + &location.search().expect("page query");
-    let state = State::start(facts.seed, path.as_bytes(), &[], facts.offset, &facts.languages);
-    let limits = limits::limits();
     let inbox = Inbox::new();
+    let fetch = fetch::web::Fetch::new(8, Rc::clone(&inbox), Report::Fetch);
+    let platform = platform::Browser { fetch };
+    let store = Store::new(b"notes-", None);
+    let records: Vec<_> = store
+        .read_all(&platform)
+        .into_iter()
+        .map(|record| skein_ui_example_view::Record { key: record.key, value: record.value })
+        .collect();
+    let state = State::start(facts.seed, path.as_bytes(), &records, facts.offset, &facts.languages);
+    let limits = limits::limits();
     let page = Rc::new(RefCell::new(Page::new(
         Look { names: NAMES, pictures: &[], draw: no_drawing },
         &limits,
@@ -46,8 +59,7 @@ pub fn start() {
         facts.primary,
     )));
     let dom = Dom::new(mount, &page, &inbox, Report::Act);
-    let fetch = fetch::web::Fetch::new(8, Rc::clone(&inbox), Report::Fetch);
-    let mut shell = Shell { state, view: View::new(&limits), page, dom, fetch };
+    let mut shell = Shell { state, view: View::new(&limits), page, dom, platform, store };
     // The inbox keeps the shell and its listeners alive and forbids a turn inside a turn.
     inbox.start(Box::new(move |inbox| shell.turn(inbox)));
     inbox.raise(Report::Start);
@@ -62,7 +74,11 @@ impl Shell {
                 Report::Fetch(fetch::Report::Answered { exchange, status, body }) => {
                     Some(ViewReport::Answered { exchange, status, body })
                 }
-                Report::Fetch(fetch::Report::Failed { exchange }) => Some(ViewReport::Failed { exchange }),
+                Report::Fetch(fetch::Report::Failed { exchange }) | Report::Carried(Carried::Failed { exchange }) => {
+                    Some(ViewReport::Failed { exchange })
+                }
+                Report::Carried(Carried::Written { .. }) => None,
+                Report::Carried(Carried::Refused { .. }) => Some(ViewReport::Failed { exchange: 0 }),
             };
             let Some(report) = report else { continue };
             let mut duties = Duties {
@@ -72,17 +88,27 @@ impl Shell {
                 show: None,
             };
             self.state.step(report, now, wall, &mut duties);
-            // This thin view emits exchanges. The transport will carry its stored requests.
-            assert!(duties.writes.is_empty() && duties.removes.is_empty(), "the thin view has no store duties");
+            let mut requests = Requests::default();
+            while let Some(record) = duties.writes.pop() {
+                requests.writes.push(skein_ui_web::store::Record { key: record.key, value: record.value });
+            }
+            while let Some(key) = duties.removes.pop() {
+                requests.removes.push(key);
+            }
             while let Some(exchange) = duties.exchanges.pop() {
-                self.fetch.exchange(&fetch::Exchange {
+                requests.exchanges.push(fetch::Exchange {
                     id: exchange.id,
                     path: exchange.path,
                     method: if exchange.post { "POST" } else { "GET" }.into(),
-                    headers: vec![],
+                    headers: vec![("Content-Type".into(), "application/octet-stream".into())],
                     body: exchange.body,
                     bound: exchange.bound,
                 });
+            }
+            let mut carried = Vec::new();
+            transport::carry(requests, &mut self.store, &mut self.platform, &mut carried);
+            for report in carried {
+                inbox.raise(Report::Carried(report));
             }
         }
         // Build once after all waiting reports; document work can raise the next turn's reports.
@@ -95,9 +121,7 @@ impl Shell {
         let links = self.page.borrow().links().to_vec();
         for node in links {
             if let Some(place) = self.view.address(node).and_then(|binding| self.state.address(binding)) {
-                let mut path = Writer::new(27);
-                places::print(place, &mut path);
-                self.page.borrow_mut().set_href(node, &path.finish(), &mut ops);
+                self.page.borrow_mut().set_href(node, &places::bytes(place), &mut ops);
             }
         }
         self.dom.apply(&ops);

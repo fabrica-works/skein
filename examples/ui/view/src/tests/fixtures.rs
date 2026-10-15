@@ -7,6 +7,17 @@ use alloc::boxed::Box;
 use skein_lib::{List, Queue, Time, Wall, Writer};
 pub const GROCERIES: &[u8] = b"Groceries";
 pub const DENTIST: &[u8] = b"Dentist";
+pub const ADD_RECORD: &[u8] = b"\0\0\0\0\0\0\0\x01\0\0\0\x01A\0\0\0\0\0\0\0\0\0\0\0\0\0";
+pub fn added(state: &mut State) -> Duties {
+    let mut out = duties();
+    for (binding, act) in [
+        (crate::view::TITLE, skein_ui::Act::Input { value: b"A".as_slice().into() }),
+        (crate::view::ADD, skein_ui::Act::Press),
+    ] {
+        state.step(Report::Act(skein_ui::BoundAct { binding, act }), Time::ZERO, Wall::EPOCH, &mut out);
+    }
+    out
+}
 
 pub fn notes() -> Notes {
     let mut notes = List::with_capacity(64);

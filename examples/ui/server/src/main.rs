@@ -103,6 +103,8 @@ struct Connection {
     socket: Token,
     server: Server,
     reply: Box<[u8]>,
+    call: Option<server::Call>,
+    body: Vec<u8>,
     sent: usize,
     deadline: Time,
 }
@@ -191,6 +193,8 @@ impl Web {
                         socket,
                         server: Server::new(&self.env.limits),
                         reply: Box::from([]),
+                        call: None,
+                        body: Vec::new(),
                         sent: 0,
                         deadline: self.env.now.checked_add(Duration::from_secs(30)).expect("deadline fits"),
                     },
@@ -241,14 +245,16 @@ impl Web {
         while let Some(event) = self.above.pop() {
             match event {
                 server::Event::Call(call) => {
-                    let answer = routes::route(&self.state, &self.bundle, &call);
                     let conn = self.connections.get_mut(&owner).expect("live connection");
-                    conn.reply = answer.body;
-                    conn.sent = 0;
-                    self.down(owner, server::Request::Discard);
-                    self.down(owner, server::Request::Respond(answer.head));
-                    self.ask_reply(owner);
+                    conn.call = Some(call);
+                    self.read_body(owner);
                 }
+                server::Event::Body(stream::Up::Bytes(bytes)) => {
+                    self.connections.get_mut(&owner).expect("live connection").body.extend_from_slice(&bytes);
+                    self.read_body(owner);
+                }
+                server::Event::Body(stream::Up::End) => self.respond(owner),
+                server::Event::Body(stream::Up::Room) => unreachable!("body reads only"),
                 server::Event::Reply(stream::Up::Room) => {
                     let conn = self.connections.get_mut(&owner).expect("live connection");
                     let end = conn
@@ -266,15 +272,34 @@ impl Web {
                         self.ask_reply(owner);
                     }
                 }
-                server::Event::Done(_) | server::Event::Ended | server::Event::Failed(_) => {
+                server::Event::Body(stream::Up::Failed(_))
+                | server::Event::Done(_)
+                | server::Event::Ended
+                | server::Event::Failed(_) => {
                     self.down(owner, server::Request::Close);
                     self.requests.push(Request::Close { entity: socket });
                 }
-                server::Event::Closed | server::Event::Body(_) | server::Event::Reply(stream::Up::Failed(_)) => {}
+                server::Event::Closed | server::Event::Reply(stream::Up::Failed(_)) => {}
                 server::Event::Reply(stream::Up::Bytes(_) | stream::Up::End) => unreachable!("reply writes only"),
                 server::Event::Refused(why) => unreachable!("bounded response is valid: {why:?}"),
             }
         }
+    }
+    fn read_body(&mut self, owner: Token) {
+        self.down(
+            owner,
+            server::Request::Body(stream::Down::Demand { read: Read::Arrived { max: self.env.limits.read }, room: 0 }),
+        );
+    }
+    fn respond(&mut self, owner: Token) {
+        let conn = self.connections.get_mut(&owner).expect("live connection");
+        let call = conn.call.take().expect("request head before body");
+        let answer = routes::route(&mut self.state, &self.bundle, &call, &conn.body);
+        conn.body.clear();
+        conn.reply = answer.body;
+        conn.sent = 0;
+        self.down(owner, server::Request::Respond(answer.head));
+        self.ask_reply(owner);
     }
     fn ask_reply(&mut self, owner: Token) {
         let conn = self.connections.get(&owner).expect("live connection");

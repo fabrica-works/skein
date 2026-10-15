@@ -7,3 +7,6 @@ Notes
 - [2] Dentist
   2026-10-15
   task
+Add:
+  [3] Title: (empty) (enter sends)
+  [4] Add

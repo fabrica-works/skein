@@ -2,3 +2,6 @@
 Notes
 * Offline
 No notes yet.
+Add:
+  [1] Title: (empty) (enter sends)
+  [2] Add

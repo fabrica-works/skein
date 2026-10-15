@@ -37,11 +37,17 @@ fn answer(status: u16, body: Box<[u8]>, kind: &str, cache: Option<(&str, &str)>)
     }
 }
 #[must_use]
-pub fn route(state: &State, bundle: &Bundle, call: &Call) -> Answer {
+pub fn route(state: &mut State, bundle: &Bundle, call: &Call, body: &[u8]) -> Answer {
+    let target = call.target.split(|byte| *byte == b'?').next().expect("split has first part");
+    if call.method == Method::Post && target == b"/api/notes" {
+        return match state.add(body) {
+            Ok(note) => answer(200, note, "application/octet-stream", None),
+            Err(status) => answer(status, Box::from(&b"add refused"[..]), "text/plain; charset=utf-8", None),
+        };
+    }
     if call.method != Method::Get {
         return answer(405, Box::from(&b"method not allowed"[..]), "text/plain; charset=utf-8", None);
     }
-    let target = call.target.split(|byte| *byte == b'?').next().expect("split has first part");
     if target == b"/api/notes" {
         return answer(200, state.list(), "application/octet-stream", None);
     }

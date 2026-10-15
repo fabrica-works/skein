@@ -1,4 +1,5 @@
 //! Total, bounded paths (ui-web.md, 9).
+use alloc::boxed::Box;
 use skein_lib::{Decimal, Writer};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,4 +42,16 @@ pub fn print(place: Place, out: &mut Writer) {
         Place::Note { number } => out.put(Decimal::of(number).as_bytes()).expect("path output reserves 27 bytes"),
         Place::List | Place::Missing => {}
     }
+}
+
+#[must_use]
+pub fn bytes(place: Place) -> Box<[u8]> {
+    let length = match place {
+        Place::List => 1,
+        Place::Missing => 8,
+        Place::Note { number } => 7_usize.checked_add(Decimal::of(number).as_bytes().len()).expect("path fits"),
+    };
+    let mut out = Writer::new(length);
+    print(place, &mut out);
+    out.finish()
 }
