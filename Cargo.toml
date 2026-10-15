@@ -89,6 +89,7 @@ skein-world = { path = "testing/skein-world" }
 # one exception of programming-model.md, section 3 (tls.md, 4). rustls is
 # pinned and built without std, with ring for its cryptography (0.17.14,
 # pinned by Cargo.lock): no default features, which would bring aws-lc-rs.
+wasm-bindgen-cli-support = "=0.2.126"
 io-uring = "0.7.15"
 libc = "0.2.186"
 rustls = { version = "=0.23.41", default-features = false, features = ["ring", "tls12"] }

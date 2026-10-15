@@ -7,6 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod digest;
+mod glue;
+pub use glue::glue;
 mod page;
 mod sha256;
 pub mod types;
