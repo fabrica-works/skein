@@ -58,7 +58,10 @@ pub fn start() {
     let inbox = Inbox::new();
     let fetch = fetch::web::Fetch::new(9, Rc::clone(&inbox), Report::Fetch);
     let platform = platform::Browser::new(fetch);
-    let store = Store::new(b"notes-", None);
+    let bound = None;
+    #[cfg(debug_assertions)]
+    let bound = if path.split('?').next() == Some("/test/small-store") { Some(0) } else { bound };
+    let store = Store::new(b"notes-", bound);
     let records: Vec<_> = store
         .read_all(&platform)
         .into_iter()

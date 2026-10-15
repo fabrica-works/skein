@@ -24,6 +24,10 @@ pub fn parse(path: &[u8]) -> Place {
     if path == b"/test/panic" {
         return Place::Panic;
     }
+    #[cfg(debug_assertions)]
+    if path == b"/test/small-store" {
+        return Place::List;
+    }
     if path == b"/" {
         return Place::List;
     }

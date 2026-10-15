@@ -1,6 +1,8 @@
 //! The example supplies its names to the kit's browser-shell stories.
-use skein_fake_person::Find;
-use skein_fake_person_browser::{Outcome, Setup, stories};
+use skein_fake_person::{Find, Step};
+use skein_fake_person_browser::{Outcome, Script, Setup, harness, stories};
+use skein_lib::Duration;
+use skein_ui::Role;
 use skein_ui_web_tests::{chromium, example_bundle, server_binary};
 
 fn setup() -> Setup<'static> {
@@ -16,4 +18,26 @@ fn setup() -> Setup<'static> {
 #[test]
 fn a_panic_reloads_then_says_it_failed() {
     assert_eq!(stories::panic(&setup(), b"/test/panic", Find::text(b"The application failed.")), Outcome::Done);
+}
+
+#[test]
+fn a_refused_write_makes_no_note() {
+    let mut writer = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::text(b"Live"), within: Duration::from_secs(5) }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"Groceries".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+    ]));
+    assert_eq!(
+        stories::write_refused(
+            &setup(),
+            b"/test/small-store",
+            &mut writer,
+            Find::exactly_named(Role::Link, b"Groceries"),
+            Find::text(b"Live")
+        ),
+        Outcome::Done
+    );
 }
