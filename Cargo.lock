@@ -891,6 +891,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-ui-example-view"
+version = "0.0.0"
+dependencies = [
+ "skein-codec",
+ "skein-codegen",
+ "skein-lib",
+ "skein-ui",
+]
+
+[[package]]
 name = "skein-ui-text"
 version = "0.0.0"
 dependencies = [

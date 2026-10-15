@@ -4,6 +4,7 @@
 resolver = "3"
 members = [
     "crates/*",
+    "examples/ui/view",
     "examples/echo/domain",
     "examples/echo/protocol",
     "examples/echo/service",
@@ -54,6 +55,7 @@ publish = false
 
 [workspace.dependencies]
 skein-fake-person = { path = "testing/skein-fake-person" }
+skein-ui-example-view = { path = "examples/ui/view" }
 skein-ui-text = { path = "crates/skein-ui-text" }
 skein-ui = { path = "crates/skein-ui" }
 skein-ui-bundle = { path = "crates/skein-ui-bundle" }

@@ -1,0 +1,44 @@
+//! Total, bounded paths (ui-web.md, 9).
+use skein_lib::{Decimal, Writer};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Place {
+    List,
+    Note { number: u64 },
+    Missing,
+}
+
+#[must_use]
+pub fn parse(path: &[u8]) -> Place {
+    let end = match skein_lib::bytes::find(path, b"?") {
+        Some(end) => end,
+        None => path.len(),
+    };
+    let path = path.get(..end).expect("query begins within path");
+    if path == b"/" {
+        return Place::List;
+    }
+    let Some(digits) = path.strip_prefix(b"/notes/") else {
+        return Place::Missing;
+    };
+    if digits.len() > 20 || (digits.len() > 1 && digits.first() == Some(&b'0')) {
+        return Place::Missing;
+    }
+    match skein_ui::number(digits) {
+        Some(number) => Place::Note { number },
+        None => Place::Missing,
+    }
+}
+
+pub fn print(place: Place, out: &mut Writer) {
+    let path: &[u8] = match place {
+        Place::List => b"/",
+        Place::Note { .. } => b"/notes/",
+        Place::Missing => b"/missing",
+    };
+    out.put(path).expect("path output reserves 27 bytes");
+    match place {
+        Place::Note { number } => out.put(Decimal::of(number).as_bytes()).expect("path output reserves 27 bytes"),
+        Place::List | Place::Missing => {}
+    }
+}

@@ -1,0 +1,23 @@
+family notes 1
+
+enum Label { idea, task, reference }
+
+record Note {
+    number: u64
+    title: text 256
+    body: text 4096
+    due: text 32
+    minutes: u32
+    label: Label
+}
+
+record Add {
+    key: u64
+    title: text 256
+    body: text 4096
+    due: text 32
+    minutes: u32
+    label: Label
+}
+
+record Notes { notes: list 64 Note }
