@@ -8,13 +8,15 @@ use skein_json::writer::{Encoder, Limits as JsonLimits};
 #[derive(Debug)]
 pub(crate) enum Params<'a> {
     Empty,
+    Document,
+    Object(&'a [u8]),
     Context(&'a [u8]),
     Target { url: &'a [u8], context: &'a [u8] },
     TargetId(&'a [u8]),
     AttachTarget(&'a [u8]),
     Url(&'a [u8]),
     Backend(u64),
-    Query { root: u64, role: &'a [u8], name: Option<&'a [u8]> },
+    Query { root: Option<u64>, object: Option<&'a [u8]>, role: &'a [u8], name: Option<&'a [u8]> },
     Quads(u64),
     Point { x: i64, y: i64 },
     Mouse { kind: &'static [u8], x: i64, y: i64, pressed: bool },
@@ -42,6 +44,14 @@ impl Params<'_> {
         json.object_start();
         match self {
             Params::Empty => {}
+            Params::Document => {
+                json.key(b"expression");
+                json.string(b"document");
+            }
+            Params::Object(object) => {
+                json.key(b"objectId");
+                json.string(object);
+            }
             Params::Context(context) => {
                 json.key(b"browserContextId");
                 json.string(context);
@@ -70,9 +80,15 @@ impl Params<'_> {
                 json.key(b"backendNodeId");
                 json.unsigned(*backend);
             }
-            Params::Query { root, role, name } => {
-                json.key(b"backendNodeId");
-                json.unsigned(*root);
+            Params::Query { root, object, role, name } => {
+                if let Some(root) = root {
+                    json.key(b"backendNodeId");
+                    json.unsigned(*root);
+                }
+                if let Some(object) = object {
+                    json.key(b"objectId");
+                    json.string(object);
+                }
                 json.key(b"role");
                 json.string(role);
                 if let Some(name) = name {

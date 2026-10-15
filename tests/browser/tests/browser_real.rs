@@ -61,3 +61,28 @@ fn chromium_presses_an_svg_shape_through_its_figure_at_a_point() {
     let profile = Profile::fresh();
     Rig::new(&chromium, &profile.0, Scenario::Figure).run();
 }
+
+// A reload after either kind of exception must not race the kit's DOM/AX reads.
+const RELOAD_SOURCES: &[(&str, &str)] = &[
+    (
+        "JavaScript",
+        "Promise.resolve().then(() => { try { throw Error('reduction'); } finally { setTimeout(() => location.reload(), 0); } });",
+    ),
+    (
+        "Wasm",
+        "WebAssembly.instantiate(new Uint8Array([0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,7,8,1,4,116,114,97,112,0,0,10,5,1,3,0,0,11])).then(({instance}) => { try { instance.exports.trap(); } finally { setTimeout(() => location.reload(), 0); } });",
+    ),
+];
+#[test]
+fn chromium_survives_a_page_that_reloads_itself() {
+    for (name, source) in RELOAD_SOURCES {
+        let page = format!(
+            "<!doctype html><html><body><h1>Reloaded</h1><script>if (!sessionStorage.getItem('reload-fact')) {{ sessionStorage.setItem('reload-fact', '1'); document.querySelector('h1').textContent='Before'; {source} }}</script></body></html>"
+        );
+        let profile = Profile::fresh();
+        let mut rig = Rig::new(&chromium(), &profile.0, Scenario::Reduction);
+        rig.fixed_page(page.into_bytes());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| rig.run()));
+        assert!(result.is_ok(), "reload case {name} failed: {result:?}");
+    }
+}

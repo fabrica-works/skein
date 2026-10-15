@@ -69,7 +69,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let report = matches.checked_add(u64::from(limits.snapshot))?.checked_add(u64::from(limits.screenshot))?;
     let persons = u64::from(limits.persons).checked_mul(512_u64.checked_add(text)?)?;
     let pages =
-        u64::from(limits.pages).checked_mul(1024_u64.checked_add(command)?.checked_add(text.checked_mul(2)?)?)?;
+        u64::from(limits.pages).checked_mul(1024_u64.checked_add(command)?.checked_add(text.checked_mul(3)?)?)?;
     let ops = u64::from(limits.ops).checked_mul(1024_u64.checked_add(report)?.checked_add(command)?)?;
     let commands = u64::from(limits.commands).checked_mul(512_u64.checked_add(command.checked_mul(2)?)?)?;
     let events = u64::from(limits.persons)

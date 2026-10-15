@@ -29,3 +29,14 @@ fn the_harness_reads_the_listening_line() {
     })]));
     assert_eq!(fixture_harness(&bundle).run(&mut [&mut person]), Outcome::Done);
 }
+
+#[test]
+fn the_harness_searches_the_next_accessible_role() {
+    let scratch = Scratch::new("harness-next-role");
+    let bundle = fixture_bundle(&scratch, b"export default function init() { const e = document.createElement('input'); e.type = 'number'; e.setAttribute('aria-label', 'Count'); document.querySelector('#app').append(e); }");
+    let mut person = Script::new(Box::new([harness::Step::Person(Step::See {
+        find: Find::exactly_named(Role::TextField, b"Count"),
+        within: Duration::from_secs(1),
+    })]));
+    assert_eq!(fixture_harness(&bundle).run(&mut [&mut person]), Outcome::Done);
+}

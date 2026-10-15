@@ -12,6 +12,7 @@ pub enum Fault {
     Drop,
     Delay,
     Error,
+    ContextGone,
     Oversize,
     Crash,
     PageCrash,
@@ -161,6 +162,7 @@ impl World {
                         match fault {
                             Some(Fault::Drop) => {}
                             Some(Fault::Delay) => self.delayed.push_back(reply),
+                            Some(Fault::ContextGone) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Cannot find context with specified id\"}}}}\0").into_bytes()),
                             Some(Fault::Error) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"No node found for given backend id\"}}}}\0").into_bytes()),
                             Some(Fault::Oversize) => replies.push_back(vec![b'x'; usize::try_from(self.env.limits.message).expect("message fits usize") + 2]),
                             Some(Fault::Crash) => {
@@ -230,7 +232,7 @@ impl World {
             b"Target.createBrowserContext" => r#"{"browserContextId":"ctx1"}"#,
             b"Target.createTarget" => r#"{"targetId":"t1"}"#,
             b"Target.attachToTarget" => r#"{"sessionId":"s1"}"#,
-            b"DOM.getDocument" => r#"{"root":{"backendNodeId":1}}"#,
+            b"Runtime.evaluate" => r#"{"result":{"type":"object","objectId":"document-1"}}"#,
             b"Accessibility.queryAXTree"
                 if self.ax_visible
                     && params.is_some_and(|params| {

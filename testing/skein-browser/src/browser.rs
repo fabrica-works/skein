@@ -54,7 +54,8 @@ struct Page {
     target: Option<Box<[u8]>>,
     session: Option<Box<[u8]>>,
     initial_url: Box<[u8]>,
-    root: Option<u64>,
+    frame: Option<Box<[u8]>>,
+    navigating: bool,
     opening: bool,
     load: Option<Load>,
     load_due: Option<Time>,
@@ -87,6 +88,13 @@ enum OpKind {
 }
 
 #[derive(Debug)]
+struct Queued {
+    read: Option<Token>,
+    id: u64,
+    bytes: Box<[u8]>,
+}
+
+#[derive(Debug)]
 struct Pending {
     id: u64,
     due: Time,
@@ -104,6 +112,7 @@ enum PendingKind {
     Navigate(Token),
     Step(Token, Step),
     CloseBrowser,
+    Release,
     ClosePage(Token),
     ClosePerson(Token),
 }
@@ -144,7 +153,7 @@ pub struct Browser {
     pending: Vec<Pending>,
     next_id: u64,
     framing: Framer,
-    outgoing: VecDeque<Box<[u8]>>,
+    outgoing: VecDeque<Queued>,
     events: VecDeque<Event>,
     room: bool,
     command_demanded: bool,
@@ -191,7 +200,7 @@ impl Browser {
     pub fn work_pending(&self) -> bool {
         !self.events.is_empty()
             || (self.phase == Phase::Starting && self.pending.is_empty())
-            || (self.room && !self.outgoing.is_empty())
+            || (self.room && self.sendable().is_some())
     }
 
     #[must_use]
@@ -376,8 +385,9 @@ impl Browser {
             return false;
         };
         self.pending.push(Pending { id: self.next_id, due: env.now.saturating_add(env.limits.answer), kind });
+        let command = Queued { read: None, id: self.next_id, bytes };
         self.next_id = id;
-        self.outgoing.push_back(bytes);
+        self.outgoing.push_back(command);
         true
     }
 
@@ -393,14 +403,44 @@ impl Browser {
             Some(page) => page.session.clone(),
             None => None,
         };
-        self.queue_command(env, method, session.as_deref(), args, kind)
+        let queued = self.queue_command(env, method, session.as_deref(), args, kind);
+        if queued
+            && (method.starts_with(b"Accessibility.") || method.starts_with(b"DOM.") || method == b"Runtime.evaluate")
+        {
+            if let Some(command) = self.outgoing.back_mut() {
+                command.read = Some(page);
+            }
+            if let PendingKind::Step(op, _) = kind
+                && let Some(Operation { kind: OpKind::Find { expect: Some((_, until)), .. }, .. }) = self.op(op)
+            {
+                let until = *until;
+                if let Some(pending) = self.pending.last_mut() {
+                    pending.due = pending.due.min(until);
+                }
+            }
+        }
+        queued
+    }
+
+    fn sendable(&self) -> Option<usize> {
+        for (index, command) in self.outgoing.iter().enumerate() {
+            if let Some(page) = command.read
+                && let Some(page) = self.page(page)
+                && page.navigating
+            {
+                continue;
+            }
+            return Some(index);
+        }
+        None
     }
 
     fn flush(&mut self, below: &mut Queue<Down>, limit: u32) {
         if self.room
-            && let Some(bytes) = self.outgoing.pop_front()
+            && let Some(index) = self.sendable()
+            && let Some(command) = self.outgoing.remove(index)
         {
-            below.push(Down::Commands(stream::Down::Send(bytes)));
+            below.push(Down::Commands(stream::Down::Send(command.bytes)));
             self.room = false;
             below.push(Down::Commands(stream::Down::Demand { read: Read::Nothing, room: limit.saturating_add(1) }));
             self.command_demanded = true;
@@ -485,7 +525,8 @@ impl Browser {
                         target: None,
                         session: None,
                         initial_url: url,
-                        root: None,
+                        frame: None,
+                        navigating: false,
                         opening: true,
                         load: None,
                         load_due: None,
@@ -606,12 +647,11 @@ impl Browser {
         };
         let page = op_state.page;
         let to = to.clone();
-        if let Some(page_state) = self.page_mut(page) {
-            page_state.root = None;
-            if let Go::Address(_) | Go::Reload = to {
-                page_state.load = Some(Load::Go(op));
-                page_state.load_due = Some(env.now.saturating_add(env.limits.answer));
-            }
+        if let Some(page_state) = self.page_mut(page)
+            && let Go::Address(_) | Go::Reload = to
+        {
+            page_state.load = Some(Load::Go(op));
+            page_state.load_due = Some(env.now.saturating_add(env.limits.answer));
         }
         if let Some(op_state) = self.op_mut(op) {
             op_state.due = Some(env.now.saturating_add(env.limits.answer));
@@ -629,31 +669,23 @@ impl Browser {
         let Some(op_state) = self.op(op) else {
             return;
         };
-        let page_token = op_state.page;
         let OpKind::Find { query, .. } = &op_state.kind else {
             return;
         };
         let query = query.clone();
-        let root = match query.within {
-            Some(root) => Some(root),
-            None => match self.page(page_token) {
-                Some(page) => page.root,
-                None => None,
-            },
-        };
         let name = match query.matching {
             Match::Exact => Some(query.name.as_ref()),
             Match::Words => None,
         };
-        match root {
+        match query.within {
             Some(root) => self.issue_step(
                 env,
                 op,
                 b"Accessibility.queryAXTree",
-                &Params::Query { root, role: &query.role, name },
+                &Params::Query { root: Some(root), object: None, role: &query.role, name },
                 Step::Query,
             ),
-            None => self.issue_step(env, op, b"DOM.getDocument", &Params::Empty, Step::Query),
+            None => self.issue_step(env, op, b"Runtime.evaluate", &Params::Document, Step::Query),
         }
     }
 
@@ -1038,8 +1070,20 @@ pub fn fire(browser: &mut Browser, env: &Env<Limits>, now: Time, above: &mut Que
     }
     if let Some(index) = expired {
         let pending = browser.pending.swap_remove(index);
+        browser.outgoing.retain(|command| command.id != pending.id);
         match pending.kind {
-            PendingKind::Step(op, _) => browser.finish_refused(op, Refusal::Timeout),
+            PendingKind::Step(op, _) => {
+                if let Some(Operation { kind: OpKind::Find { expect: Some((_, until)), .. }, .. }) = browser.op(op)
+                    && *until <= now
+                {
+                    if let Some(Operation { kind: OpKind::Find { seen, more, .. }, .. }) = browser.remove_op(op) {
+                        browser.events.push_back(Event::Missed { op, seen, more });
+                    }
+                } else {
+                    browser.finish_refused(op, Refusal::Timeout);
+                }
+            }
+            PendingKind::Release => {}
             PendingKind::Version | PendingKind::CloseBrowser => browser.crash(),
             PendingKind::Context(person) | PendingKind::ClosePerson(person) => browser.close_person_local(person),
             PendingKind::Target(page)
@@ -1136,16 +1180,27 @@ impl Browser {
                 // closed may still answer later. Its id is never reused.
                 if id >= self.next_id {
                     self.crash();
+                } else if let Some(result) = root.get(b"result")
+                    && let Some(object) = result_object(result)
+                {
+                    let session = field_text(root, b"sessionId");
+                    self.queue_command(
+                        env,
+                        b"Runtime.releaseObject",
+                        session.as_deref(),
+                        &Params::Object(&object),
+                        PendingKind::Release,
+                    );
                 }
                 return;
             };
             let pending = self.pending.swap_remove(at);
             if let Some(error) = root.get(b"error") {
-                self.command_error(pending.kind, error);
+                self.command_error(env, pending.kind, error);
                 return;
             }
             let Some(result) = root.get(b"result") else {
-                self.command_error(pending.kind, root);
+                self.command_error(env, pending.kind, root);
                 return;
             };
             self.reply(env, pending.kind, result);
@@ -1156,8 +1211,16 @@ impl Browser {
         }
     }
 
-    fn command_error(&mut self, kind: PendingKind, error: Value<'_>) {
+    fn command_error(&mut self, env: &Env<Limits>, kind: PendingKind, error: Value<'_>) {
         let message = field_text(error, b"message").unwrap_or_default();
+        if let PendingKind::Step(op, Step::Query) = kind
+            && (contains(&message, b"context") || contains(&message, b"object"))
+        {
+            if let Some(op) = self.op_mut(op) {
+                op.due = Some(env.now.saturating_add(env.limits.poll));
+            }
+            return;
+        }
         let why = if contains(&message, b"No node found at given location") {
             Refusal::Covered
         } else if contains(&message, b"No node found") {
@@ -1166,6 +1229,7 @@ impl Browser {
             Refusal::Protocol
         };
         match kind {
+            PendingKind::Release => {}
             PendingKind::Version | PendingKind::CloseBrowser => self.crash(),
             PendingKind::Context(person) | PendingKind::ClosePerson(person) => self.close_person_local(person),
             PendingKind::Target(page)
@@ -1183,6 +1247,7 @@ impl Browser {
 
     fn reply(&mut self, env: &Env<Limits>, kind: PendingKind, result: Value<'_>) {
         match kind {
+            PendingKind::Release => {}
             PendingKind::Version => {
                 let version = field_text(result, b"product").unwrap_or_default();
                 self.phase = Phase::Ready;
@@ -1289,6 +1354,30 @@ impl Browser {
         }
         let params = root.get(b"params");
         match method {
+            b"Page.frameRequestedNavigation" | b"Page.frameStartedLoading" => {
+                if let (Some(page), Some(params)) = (page, params) {
+                    let frame = frame_id(params, b"frameId", env.limits.text);
+                    let mut began = false;
+                    if let Some(page) = self.page_mut(page)
+                        && (page.frame.is_none() || page.frame == frame)
+                        && !page.navigating
+                    {
+                        page.navigating = true;
+                        began = true;
+                    }
+                    if began {
+                        self.restart_finds(env, page);
+                    }
+                }
+            }
+            b"Page.frameNavigated" => {
+                if let (Some(page), Some(frame)) = (page, opt_field(params, b"frame"))
+                    && frame.get(b"parentId").is_none()
+                    && let Some(page) = self.page_mut(page)
+                {
+                    page.frame = frame_id(frame, b"id", env.limits.text);
+                }
+            }
             b"Page.loadEventFired" | b"Page.navigatedWithinDocument" => {
                 if let Some(page) = page {
                     self.loaded(page);
@@ -1362,9 +1451,36 @@ impl Browser {
         self.events.push_back(Event::Trouble { page, trouble, text });
     }
 
+    fn restart_finds(&mut self, env: &Env<Limits>, page: Token) {
+        for op in self.ops.iter_mut().flatten() {
+            if op.page == page
+                && let OpKind::Find { .. } = &op.kind
+            {
+                op.due = Some(env.now);
+            }
+        }
+        let ops = &self.ops;
+        let outgoing = &mut self.outgoing;
+        self.pending.retain(|pending| {
+            if let PendingKind::Step(token, _) = pending.kind {
+                for op in ops.iter().flatten() {
+                    if op.token == token
+                        && op.page == page
+                        && let OpKind::Find { .. } = &op.kind
+                    {
+                        outgoing.retain(|command| command.id != pending.id);
+                        return false;
+                    }
+                }
+            }
+            true
+        });
+    }
+
     fn loaded(&mut self, page: Token) {
         let load = match self.page_mut(page) {
             Some(page) => {
+                page.navigating = false;
                 page.load_due = None;
                 page.load.take()
             }
@@ -1387,6 +1503,16 @@ impl Browser {
         self.outgoing.clear();
         self.close_browser_local();
     }
+}
+
+fn result_object(value: Value<'_>) -> Option<Box<[u8]>> {
+    field_text(value.get(b"result")?, b"objectId")
+}
+
+fn frame_id(value: Value<'_>, key: &[u8], limit: u32) -> Option<Box<[u8]>> {
+    let text = field_text(value, key)?;
+    let length = text.len().min(usize::try_from(limit).expect("u32 fits usize"));
+    Some(Box::from(text.get(..length).expect("length is within frame identity")))
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -1417,6 +1543,26 @@ impl Browser {
 
     fn key_state(&self, token: Token) -> Option<Key> {
         if let OpKind::Key(key) = &self.op(token)?.kind { Some(*key) } else { None }
+    }
+
+    fn query_document(&mut self, env: &Env<Limits>, token: Token, object: &[u8]) {
+        let Some(Operation { page, kind: OpKind::Find { query, .. }, .. }) = self.op(token) else { return };
+        let page = *page;
+        let query = query.clone();
+        let name = match query.matching {
+            Match::Exact => Some(query.name.as_ref()),
+            Match::Words => None,
+        };
+        self.issue_step(
+            env,
+            token,
+            b"Accessibility.queryAXTree",
+            &Params::Query { root: None, object: Some(object), role: &query.role, name },
+            Step::Query,
+        );
+        if !self.queue_page(env, page, b"Runtime.releaseObject", &Params::Object(object), PendingKind::Release) {
+            self.close_page_local(page);
+        }
     }
 
     #[expect(clippy::too_many_lines, reason = "one match lists the reply transition for each operation step")]
@@ -1480,17 +1626,8 @@ impl Browser {
                 }
             }
             Step::Query => {
-                if let Some(root) = result.get(b"root") {
-                    let backend = field_u64(root, b"backendNodeId");
-                    let page = self.op_page(token);
-                    if let (Some(page), Some(backend)) = (page, backend) {
-                        if let Some(page_state) = self.page_mut(page) {
-                            page_state.root = Some(backend);
-                        }
-                        self.start_find(env, token);
-                    } else {
-                        self.finish_refused(token, Refusal::Protocol);
-                    }
+                if let Some(object) = result_object(result) {
+                    self.query_document(env, token, &object);
                     return;
                 }
                 let Some(nodes) = field_array(result, b"nodes") else {

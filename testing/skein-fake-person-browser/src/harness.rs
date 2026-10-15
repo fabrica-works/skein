@@ -502,6 +502,9 @@ impl Runtime {
                 self.fail(index, play.at().saturating_sub(1), why);
                 break;
             }
+            for request in face.requests() {
+                self.ask(request);
+            }
             if face.pending() {
                 continue;
             }

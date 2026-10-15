@@ -347,3 +347,5 @@ fn page_crash_mid_operation_reports_trouble_and_one_refusal() {
     assert_eq!((trouble, refused), (1, 1));
     world.assert_commands_settled();
 }
+
+mod navigation;

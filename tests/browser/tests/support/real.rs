@@ -136,6 +136,7 @@ pub enum Scenario {
     Figure,
     Facts,
     Choose,
+    Reduction,
 }
 
 impl Scenario {
@@ -149,7 +150,7 @@ impl Scenario {
             Scenario::Csp => "/csp",
             Scenario::Words => "/words",
             Scenario::Figure => "/figure",
-            Scenario::Facts | Scenario::Choose => "/facts",
+            Scenario::Facts | Scenario::Choose | Scenario::Reduction => "/facts",
         }
     }
 }
@@ -432,6 +433,16 @@ impl Rig {
                 assert_eq!(self.stage, Stage::Opening);
                 self.stage = Stage::Finding;
                 match self.scenario {
+                    Scenario::Reduction => {
+                        self.stage = Stage::Expecting;
+                        self.ask(Request::Await {
+                            page: PAGE,
+                            op: EXPECT,
+                            query: query(b"heading", b"Reloaded"),
+                            expect: Expect::Present,
+                            within: Duration::from_secs(2),
+                        });
+                    }
                     Scenario::Facts => {
                         self.stage = Stage::Capturing;
                         self.ask(Request::Snapshot { page: PAGE, op: SNAPSHOT });
@@ -478,7 +489,7 @@ impl Rig {
                         self.stage = Stage::Pressing;
                         self.ask(Request::Type { page: PAGE, op: PRESS, node, text: Box::default() });
                     }
-                    Scenario::Facts => panic!("facts take a snapshot"),
+                    Scenario::Reduction | Scenario::Facts => panic!("facts take a snapshot"),
                     Scenario::Form => {
                         self.stage = Stage::Typing;
                         self.ask(Request::Type { page: PAGE, op: PRESS, node, text: Box::from(&b"Ada"[..]) });
@@ -537,7 +548,12 @@ impl Rig {
                         Scenario::Scroll => b"Scrolled".as_slice(),
                         Scenario::Throw => b"Before".as_slice(),
                         Scenario::Figure => b"Pressed shape".as_slice(),
-                        Scenario::Covered | Scenario::Csp | Scenario::Words | Scenario::Facts | Scenario::Choose => {
+                        Scenario::Covered
+                        | Scenario::Csp
+                        | Scenario::Words
+                        | Scenario::Facts
+                        | Scenario::Choose
+                        | Scenario::Reduction => {
                             panic!("no action should complete for {:?}", self.scenario)
                         }
                     };
@@ -555,9 +571,9 @@ impl Rig {
                 assert_eq!(op, EXPECT);
                 assert_eq!(self.stage, Stage::Expecting);
                 assert_eq!(seen.len(), if matches!(self.scenario, Scenario::Csp) { 0 } else { 1 });
-                if matches!(self.scenario, Scenario::Throw | Scenario::Csp) {
+                if matches!(self.scenario, Scenario::Throw | Scenario::Csp | Scenario::Reduction) {
                     self.await_met = true;
-                    if (matches!(self.scenario, Scenario::Throw) && self.exception_seen)
+                    if (matches!(self.scenario, Scenario::Throw | Scenario::Reduction) && self.exception_seen)
                         || (matches!(self.scenario, Scenario::Csp) && self.csp_log_seen)
                     {
                         self.close_browser();
@@ -598,7 +614,9 @@ impl Rig {
                     self.close_browser();
                 }
             }
-            Event::Trouble { trouble: Trouble::Exception, text, .. } if matches!(self.scenario, Scenario::Throw) => {
+            Event::Trouble { trouble: Trouble::Exception, text, .. }
+                if matches!(self.scenario, Scenario::Throw | Scenario::Reduction) =>
+            {
                 assert!(!text.is_empty(), "exception has a message");
                 self.exception_seen = true;
                 if self.await_met && self.stage == Stage::Expecting {
