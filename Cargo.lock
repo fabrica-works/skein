@@ -868,6 +868,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-ui"
+version = "0.0.0"
+dependencies = [
+ "skein-lib",
+]
+
+[[package]]
 name = "skein-ui-bundle"
 version = "0.0.0"
 dependencies = [

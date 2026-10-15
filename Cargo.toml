@@ -52,6 +52,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-ui = { path = "crates/skein-ui" }
 skein-ui-bundle = { path = "crates/skein-ui-bundle" }
 skein-lib = { path = "crates/skein-lib" }
 skein-channel = { path = "crates/skein-channel" }
