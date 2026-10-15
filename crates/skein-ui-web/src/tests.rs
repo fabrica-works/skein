@@ -49,3 +49,6 @@ fn reports_keep_their_order() {
     }));
     assert_eq!(*seen.borrow(), vec![3, 1, 2]);
 }
+
+mod fetch;
+mod platform;

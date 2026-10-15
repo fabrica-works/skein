@@ -4,6 +4,8 @@ use skein_fake_person::{Doing, Face, Find, Found};
 use skein_lib::{List, Token};
 use skein_ui::{Act, NodeId, Role};
 
+const FOUND_TARGET: NodeId = NodeId(0); // first node in browser discovery order
+
 fn face() -> BrowserFace<'static> {
     BrowserFace::new(Token::new(7), "127.0.0.1:9000")
 }
@@ -71,7 +73,7 @@ fn the_face_is_pending_until_the_kit_answers() {
     assert_eq!(face.find(&find), Found::Pending);
     assert_eq!(face.find(&find), Found::Pending);
     found(&mut face, Some(seen(b"")));
-    assert_eq!(face.find(&find), Found::Node(NodeId(0)));
+    assert_eq!(face.find(&find), Found::Node(FOUND_TARGET));
 }
 #[test]
 fn text_is_found_by_words_within_one_run() {
@@ -95,7 +97,7 @@ fn a_press_becomes_the_kits_press_at_the_centre() {
     face.find(&find);
     found(&mut face, Some(seen(b"")));
     face.find(&find);
-    face.perform(Doing::Act { node: NodeId(0), act: Act::Press }).expect("press");
+    face.perform(Doing::Act { node: FOUND_TARGET, act: Act::Press }).expect("press");
     assert_eq!(
         face.requests().collect::<Vec<_>>(),
         vec![Request::Press { page: Token::new(7), op: Token::new(7_000_002), node: 9_000_000_000, at: None }]
@@ -109,7 +111,7 @@ fn an_input_into_a_field_holding_words_fails_naming_it() {
     found(&mut face, Some(seen(b"Words")));
     face.find(&find);
     assert_eq!(
-        face.perform(Doing::Act { node: NodeId(0), act: Act::Input { value: b"New".as_slice().into() } }),
+        face.perform(Doing::Act { node: FOUND_TARGET, act: Act::Input { value: b"New".as_slice().into() } }),
         Err("field 'Title' holds words; the kit cannot replace them".into())
     );
 }
@@ -121,7 +123,7 @@ fn a_disabled_node_refuses_acts() {
     let mut node = seen(b"");
     node.states.disabled = true;
     found(&mut face, Some(node));
-    assert!(!face.allows(NodeId(0), &Act::Press));
+    assert!(!face.allows(FOUND_TARGET, &Act::Press));
 }
 #[test]
 fn a_target_is_scoped_under_its_ancestor() {

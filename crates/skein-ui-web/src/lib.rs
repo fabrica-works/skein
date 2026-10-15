@@ -14,3 +14,6 @@ pub use wasm_bindgen::prelude::wasm_bindgen;
 
 #[cfg(test)]
 mod tests;
+
+pub mod fetch;
+pub mod platform;

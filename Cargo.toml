@@ -5,6 +5,7 @@ resolver = "3"
 members = [
     "crates/*",
     "examples/ui/view",
+    "examples/ui/shell-web",
     "examples/ui/server",
     "tests/ui-web",
     "examples/echo/domain",

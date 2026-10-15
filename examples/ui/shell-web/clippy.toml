@@ -1,0 +1,10 @@
+# The browser shell is ordinary Rust (ui-web.md, 3.1), with one thread.
+disallowed-types = [
+    { path = "std::time::Instant", reason = "the platform part supplies clocks" },
+    { path = "std::time::SystemTime", reason = "the platform part supplies clocks" },
+    { path = "std::collections::HashMap", reason = "ordered maps" },
+    { path = "std::collections::HashSet", reason = "ordered sets" },
+]
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "one thread, one inbox" },
+]

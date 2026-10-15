@@ -969,6 +969,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-ui-example-shell-web"
+version = "0.0.0"
+dependencies = [
+ "skein-lib",
+ "skein-ui",
+ "skein-ui-example-view",
+ "skein-ui-web",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "skein-ui-example-view"
 version = "0.0.0"
 dependencies = [
