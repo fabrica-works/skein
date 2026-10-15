@@ -142,7 +142,8 @@ the implementers.
   trailer, so that the metrics count it (section 15.2).
 - **Does not change the design while planning.** A gap the plan exposes is
   closed by the designer, under the designer's rules, before the plan
-  relies on it.
+  relies on it. The planner finds such gaps with the design trace
+  (section 5.4), before the plan lands.
 - **Writes for the executor** (section 4.5). The coordinator and the
   implementers follow the plan's words as written.
 - **Runs what it prescribes** before the plan lands (section 5.4), through
@@ -641,6 +642,11 @@ user only what they and the design leave open, and asks before writing.
   probes. A plan never restates this document;
 - **Live services:** each one the plan uses, with its budget of calls or
   tokens;
+- **One test of a suite that needs a built artifact:** for each suite
+  whose tests need what the gate builds first (skein's browser suite,
+  `SKEIN_UI_EXAMPLE_BUNDLE`), the build-lane command that builds it once,
+  and the one that then runs a single test against it, each through
+  `heavy` (section 5.5);
 - **Repin:** nothing, when the plan repins every repository downstream of
   it (section 5.7); otherwise "none", with the reason;
 - **Pulse:** what `plan pulse` looks for in this plan's diffs (section
@@ -685,11 +691,13 @@ user only what they and the design leave open, and asks before writing.
 - **size limits:** a file of at most 800 lines and a test function of at
   most 40, unless an increment says otherwise. An increment's size is
   counted in hand-written production lines (tests, generated code,
-  goldens and transcripts aside), by a command the document gives. It
-  lands within twice its Size without asking, a codec or document
-  increment (a schema, translations, decoders) within 2.5 times it, and
-  a split increment's parts count together against its Size. Past that,
-  it asks before landing, with the count by file.
+  goldens and transcripts aside), by the command the document gives,
+  written out with the paths it counts; each landing's report gives that
+  count (implementer.md, 8.6). An increment lands within twice its Size
+  without asking, a codec or document increment (a schema, translations,
+  decoders) within 2.5 times it, and a split increment's parts count
+  together against its Size. Past that, it asks before landing, with the
+  count by file.
 
 **A session file, `<repository>/NN-<name>.md`:**
 - **Title and summary:** "Session NN: …", with one paragraph.
@@ -723,11 +731,13 @@ user only what they and the design leave open, and asks before writing.
   Removes: <what goes, or nothing>.
   ```
 
-  A Size is at most about 300 lines, and an increment that needs more is
-  split. Increments land at about twice their Size: 1.85 to 2.35 times
+  Every Size is at most about 300 lines, and an increment that needs more
+  is split. Increments land at about twice their Size: 1.85 to 2.35 times
   in protocol, 2.4 in jig-protocol, 1.6 in reliability. In protocol, 11
   of the 13 increments planned at 600 lines, the old threshold, were
-  split by their sessions, and six rulings were about sizes.
+  split by their sessions, and six rulings were about sizes. In skein-ui,
+  with no count given, six Sizes were above 300, and two increments
+  landed at 2.2 times theirs without asking.
 - **Interface sketches:** in Rust, the shape of the interfaces another
   crate or session depends on, or that are easy to get wrong.
   - Signatures only, with no bodies. The exception is an algorithm that
@@ -848,7 +858,10 @@ may veto.
     increment's, or whose "Needs at start" in the README is not its first
     increment's (section 5.3);
   - proofs no higher than their increment's tests without a reason, and
-    sides that run ahead of what they meet (sections 5.3 and 5.5).
+    sides that run ahead of what they meet (sections 5.3 and 5.5);
+  - a `code-organization.md` without the command that counts an
+    increment's hand-written production lines, and each Size above about
+    300 (section 5.2).
 
   The planner fixes what it finds.
 - **A literal reading.** A second sub-agent reads the plan as the executor
@@ -859,6 +872,16 @@ may veto.
     runs.
 
   The planner fixes what it lists.
+- **A design trace.** A third sub-agent reads, for each session, the
+  design sections its "Read first" cites against its increments' Shapes,
+  Test shapes and stories, and lists each observable rule that no
+  increment builds or tests and no line names as open (a session's
+  "Questions to raise when reached", `later.md`): a key, an event, a
+  dialog, the order of two answers. The designer answers each before the
+  run, and the planner fixes the plan to the answer. In skein-ui, four of
+  the seven design questions were in such text: `ui-web.md`, section 6,
+  gives `Control+K` or `Meta+K` by platform, and 09.3's Shape took no
+  platform.
 - **The plan's commands, run once.** At the plan's base, the planner runs,
   through `heavy` (section 11.1):
   - every command the plan prescribes: each Proof, each count, each "Done
@@ -925,7 +948,13 @@ balancing confidence against the run's pace and its tokens.
     script the implementer writes and keeps in the run's
     `logs/<repository>-<NN>/`, with its output. A script is for what the
     suite cannot hold: live services, real binaries, a browser, a one-off
-    run of commands against a running server;
+    run of commands against a running server. A Proof that is the
+    repository's gate is `land`'s own gate: the implementer runs no gate
+    of its own for it, and runs a story that fails there alone in the
+    build lane, with the README's command that builds the story's artifact
+    once (section 5.2). In skein-ui, 33 gates run as proofs, 17 of them
+    failing, took 2,340 seconds alone on the machine, and `land` gated
+    each passing tree again;
   - **what it shows,** as something observable: "the person sees the task
     that needs them first", not "the inbox works";
   - **its bound:** wall time, and for a live service the number of calls
@@ -1051,6 +1080,13 @@ commits behind smith.
   more, or a decision, is a question: the step lands nothing, and the gap
   goes to the downstream repository's `STATUS.md`, under "Not planned",
   and to the plan's `later.md`.
+- **Work left downstream.** What a plan leaves for a repository
+  downstream of it, by its own decision, a ruling or an answer, goes the
+  same way, whether or not the plan repins it: a row in the plan's
+  `later.md`, and the item in that repository's `STATUS.md`, under "Not
+  planned", in the designer's next landing (section 10.4). In skein-ui,
+  three `later.md` rows for temper's next repin never reached temper's
+  `STATUS.md`.
 - **When it starts.** A closing repin starts once every step of the plan
   upstream of its repository has landed, and the repin before it in the
   order. The supervisor may add one earlier, `<repository>-repin.s<k>`
@@ -1061,7 +1097,10 @@ commits behind smith.
   `origin/main`'s, and run the step's `cargo update` again.
 - **Names.** A repin of a repository that the plan's own repository never
   names (jig never names temper, section 3.1) appears only in the run's
-  files: the ledger, the log and the step's report.
+  files: the ledger, the log and the step's report. The plan's own files,
+  `decisions.md` with the rulings and answers appended to it and
+  `later.md` included, name such a repository as the plan's README does
+  ("the repository downstream of jig").
 - **Another machine's run** in the downstream repository sees a repin as
   `main` moving (section 12).
 
@@ -1157,17 +1196,18 @@ started it, which record it themselves.
   the claim start at once: the planner checked their files at the plan's
   base (section 5.4).
 - **The ready check.** Any other session waits for the supervisor to
-  check its file against `main`. As soon as the increments it needs at its
-  start have landed, or all but one, which is running, `plan set <its
-  first step> state=check`, and go on with everything else: the
-  supervisor checks it while that increment runs, and once it lands
-  re-checks only what `main` moved since. When the supervisor has checked
-  it, it runs `plan ready <step>`, which sets the step `ready` and rings:
+  check its file against `main`. As soon as every session it needs at its
+  start is running, or has landed what it needs, `plan set <its first
+  step> state=check`, and go on with everything else: the supervisor
+  checks it while they run, and once its needs have landed re-checks
+  only what `main` moved since. When the supervisor has checked it, it
+  runs `plan ready <step>`, which sets the step `ready` and rings:
   "ready: <step>". Start it then. Repins (section 5.7), restarts,
   handovers and steps added by an unblock or a steer start without a
   check. In client-composition, checks started only after the landing
   held sessions 103 minutes in all, about 70 of them on the chain that
-  set the run's length.
+  set the run's length. In skein-ui, checks set once all but one need had
+  landed still ended after it landed 11 times in 16.
 - **When there are fewer slots than sessions,** start first the sessions
   others wait on, in the README's order. Never hold a slot idle to keep
   the order.
@@ -1266,14 +1306,17 @@ and the question in one line, or "none". After each:
      increment in a fresh thread, as for a restarted session (section
      7.2), with its checkpoint.
 
-   A session that yielded is checked the same way before it is resumed:
-   past the limit, its next step goes to a fresh thread instead of a
-   `followup_task`. So does a session that has stood idle for over an
-   hour since its last report, whatever its context, since its cache has
-   gone: the fresh thread starts from its checkpoint, as after a
-   handover. In protocol, w26 was resumed at 171K after 4 hours idle, and
-   became the run's dearest thread, and w45 grew from 122K to 252K in 14
-   minutes after 3 hours idle.
+   A session that ended its turn, on a question or a yield, is checked
+   before it is resumed, and its limit is 150,000 tokens: when its
+   context, the first number `plan contexts` prints for it, is past 150K,
+   flagged or not, its answer or its next step goes to a fresh thread
+   instead of a `followup_task`. So does a session that has stood idle
+   for over an hour since its last report, whatever its context, since
+   its cache has gone. The fresh thread starts from its checkpoint, as
+   after a handover. In protocol, w26 was resumed at 171K after 4 hours
+   idle, and became the run's dearest thread, and w45 grew from 122K to
+   252K in 14 minutes after 3 hours idle. In skein-ui, twelve turns
+   resumed at 123K to 184K took 28% of the implementers' input.
 5. Start what the plan now allows, and resume the sessions waiting for
    what landed.
 
@@ -1297,9 +1340,9 @@ dependency lands.
 
 **A step's state** in the ledger is one of:
 - `waiting`: something it needs has not landed;
-- `check`: what it needs has landed, or all of it but one running
-  increment, and its session file waits for the supervisor's ready check
-  (section 7.2);
+- `check`: every session it needs at its start is running, or has landed
+  what it needs, and its session file waits for the supervisor's ready
+  check (section 7.2);
 - `ready`: it can start;
 - `running`: its session is on it, with the slot and the branch;
 - `blocked`: on an escalation, named in the note;
@@ -1566,7 +1609,8 @@ Amends: <the plan or design text this changes, by file and section>, or nothing.
 ## Decision
 
 <The decision, quoting the design or plan text it rests on: the ruling's
-whole text, written once.>
+whole text, written once; for a designer's answer, only its decision
+part, at most 40 lines (section 10.4).>
 
 ## Checked
 
@@ -1603,9 +1647,11 @@ lines each.>
   2. it deletes `unblock.md`, and removes from `blocked.md` the headings
      the answer names, deleting the file when none is left;
   3. it gives each session the answer concerns its Decision and
-     Instructions, word for word (`send_message`, or `followup_task` if
-     the session has ended its turn, or a fresh thread when section 7.3
-     asks for one), and `plan set`s its step back to `running`;
+     Instructions, word for word (`send_message`; or `followup_task` if
+     the session has ended its turn; or a fresh thread, from its
+     checkpoint, if it ended its turn past 150,000 tokens or has stood
+     idle for over an hour, as section 7.3, step 4, says), and `plan
+     set`s its step back to `running`;
   4. it follows the instructions, which take precedence over the plan
      where they differ;
   5. it updates `context.md`.
@@ -1685,13 +1731,28 @@ lines each.>
   2. amends the design with `land --docs`, then the session files that
      mention the point, and, for each thing the answer defers, adds its
      row to the plan's `later.md` in the same landing. In protocol, two
-     of the designer's three deferrals left no row;
-  3. writes `answer.md`, naming the commits.
+     of the designer's three deferrals left no row. Each `later.md` row
+     that leaves work for a repository downstream of the plan, and is not
+     yet in that repository's `STATUS.md`, goes there too, under "Not
+     planned", with this answer's landings (section 5.7);
+  3. writes `answer.md`, naming the commits: first, under `## Decision`,
+     the session's decision in at most 40 lines, quoting the design text
+     it rests on; then, under `## Reasoning`, the reasoning, which stays
+     there and in the design commit's body.
 
-  The supervisor then writes the unblock, whose Decision appends
-  `answer.md`'s text rather than typing it again, lands it with `plan
-  ruling`, appends both files to `supervision.md` under "Question and
-  answer, <time>", and deletes them.
+  The supervisor then writes the unblock, whose Decision appends only
+  `answer.md`'s decision part (`sed '/^## Reasoning/,$d' answer.md`)
+  rather than typing it again, lands it with `plan ruling`, appends both
+  files to `supervision.md` under "Question and answer, <time>", and
+  deletes them. In skein-ui, ruling 131's Decision, a whole answer,
+  became a 19.6K-character prompt.
+- **What a ready check finds goes on before its session starts.** A suite
+  the check sees fail, or a rule the design must settle, goes to the
+  designer as a question, or becomes a supplement step
+  (`<repository>-<NN>.s<k>`), before `plan ready`: never "a question to
+  raise when reached". In skein-ui, a seed that jig 05's check saw fail
+  at 17:05 was ruled such a question, and reached the designer at 17:28,
+  once the session had met it.
 - **Before an answer is sent,** its author checks it against the code
   (the code graph indexes `main`) and quotes the text it rests on.
   - An answer keeps the plan's relative checks ("62 less the removed"). A

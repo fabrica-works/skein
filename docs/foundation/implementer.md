@@ -280,6 +280,8 @@ Step: <step>, <landed | question | blocked | done | yielded>
 Commit: <full hash> on origin/main, parent <full hash>
 Gate: <the Gate-Result trailer>
 Proof: <the commit's Proof line>
+Size: <for a landing, its count by code-organization.md's command, and
+  the increment's Size; otherwise none>
 Evidence: <what the repository asks beyond the gate, or "none">
 Next: <the next step, or what it waits for, by capability>
 Questions: <none, or each question with the design text quoted, the
@@ -303,7 +305,10 @@ as your final answer.
 
 **The checkpoint.** After each report, overwrite your checkpoint,
 `sessions/<repository>-<NN>.md`, with the same facts and with what is in
-progress. A restarted implementer continues from it.
+progress. A restarted implementer continues from it. When you stop on a
+question, or yield, write it as for a handover, below, before you end
+your turn: past 150,000 tokens, the answer or your next step goes to a
+fresh thread that starts from it (development.md, section 7.3).
 
 **Hand over** when the coordinator says so, after a landing: overwrite
 your checkpoint, then end your turn with your report. The checkpoint adds,
@@ -338,6 +343,13 @@ it instead of finding them again.
 
 - **Run the increment's proof once,** when the increment is done and its
   focused tests pass: the test, or the script, its Proof line names.
+- **A Proof that is the repository's gate is `land`'s own gate.** Run no
+  gate of your own for it (`heavy --gate`, a whole suite): `land` runs
+  it, and its `Gate-Result` is the proof's result. Your `Proof:` line
+  gives the layer, the story's test, and "land's gate". When a story
+  fails there, run that test alone in the build lane, with the command
+  the plan's README gives to build its artifact once, and `land` again
+  only after a change aimed at its cause.
 - **A script** goes in `<run>/logs/<repository>-<NN>/`. Aim for at most
   about 100 lines. It stays within the Proof line's bound: wall time, and
   for a live service its calls or tokens.

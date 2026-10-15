@@ -78,7 +78,10 @@ carried by every later request.
      with a prohibition.
 4. **Edit the plan** where the ruling changes it (a session file's Files
    or Shape, a new step's short file, a README rule, a `later.md` row for
-   work it defers), in your worktree: `plan docs` prints its path.
+   work it defers), in your worktree: `plan docs` prints its path. A row
+   for a repository downstream of the plan names it as the plan's README
+   does, and the designer's next landing adds it to that repository's
+   `STATUS.md` (development.md, section 5.7).
 5. **Write the unblock once,** to `<run>/unblock.draft.md`, in development.md
    section 10.3's shape, with its `## Landed` section empty. Its Decision
    is the ruling's whole text. Write `{ruling}` where it names its own
@@ -117,8 +120,9 @@ a rule that would serve every plan, a proposal for the retrospective
    unblock lets the step go on only with work that does not rest on the
    answer, and says so. A step that cannot go on without the answer waits.
 4. **When `answer.md` comes:** write the draft's Decision as one line that
-   names the answer's commits, followed by `answer.md`'s text, appended
-   with a shell command (`cat`), never typed again. Then `plan ruling`, as
+   names the answer's commits, followed by `answer.md`'s decision part,
+   appended with a shell command (`sed '/^## Reasoning/,$d' answer.md`),
+   never typed again. Then `plan ruling`, as
    in section 3. Append `question.md` and `answer.md` to `supervision.md`
    under `## Question and answer, <UTC time>`, with a shell command, and
    delete them: a fresh designer reads earlier answers there.
@@ -128,9 +132,9 @@ a rule that would serve every plan, a proposal for the retrospective
 The coordinator holds each session that did not start at the claim, at its
 first step, in the state `check`, until you have checked its session file
 against `main` (development.md, section 7.2). It sets `check` as soon as
-the last increment the session needs at its start is running, so that
-your check is done while that increment runs, off the run's chain. Most
-plan defects are a session file written before the code it names: in
+every session the held session needs at its start is running, so that
+your check is done while they run, off the run's chain. Most plan
+defects are a session file written before the code it names: in
 jig-protocol, about 55 of 69. In client-composition, all three plan
 defects came from increments no check had read.
 
@@ -160,27 +164,32 @@ defects came from increments no check had read.
 
 2. **Correct what it reports** in your worktree, and land the corrections
    with `plan ruling --text <file> "<session>'s Shapes against main"
-   "ready check of <step>"`.
-3. **Re-check what moved since.** When the increment the session waited
-   for has not landed yet, wait for it with a second background command
-   beside the watch:
+   "ready check of <step>"`. A suite it saw fail, or a rule the design
+   must settle, goes on before the session starts: to the designer as a
+   question (section 4), or as a supplement step in a steer (section 3);
+   never as a question to raise when reached (development.md, section
+   10.4).
+3. **Re-check what moved since.** When the steps the session needs at
+   its start have not all landed, wait for them with a second background
+   command beside the watch:
 
    ```
-   until awk -F'\t' '$1 == "<that step>" && $4 == "landed" { f = 1 } END { exit !f }' <run>/ledger.tsv; do sleep 60; done
+   for s in <those steps>; do until awk -F'\t' -v s="$s" '$1 == s && $4 == "landed" { f = 1 } END { exit !f }' <run>/ledger.tsv; do sleep 60; done; done
    ```
 
-   Once it has landed, list what `main` moved since the check: `git diff
-   --stat <the commit checked> origin/main`, after a fetch, in each
+   Once they have landed, list what `main` moved since the check: `git
+   diff --stat <the commit checked> origin/main`, after a fetch, in each
    repository the session names. Grep the session file's names in the
    files it lists, and correct what moved as in step 2. A moved file that
    a sketch or a suite of the check reads goes to a fresh sub-agent with
    step 1's prompt, for those alone. In client-composition, re-checking
    08.1 after 08.2 had landed took 43 seconds (ruling 119).
-4. **Let it start:** `plan ready <step> "<ruling N, or no change>"`. It sets
-   the step `ready` and rings the coordinator, who starts it.
+4. **Let it start,** once its needs have landed: `plan ready <step>
+   "<ruling N, or no change>"`. It sets the step `ready` and rings the
+   coordinator, who starts it.
 
-With nothing to correct, and nothing moved since the check, `plan ready
-<step>` at once.
+With nothing to correct, its needs landed, and nothing moved since the
+check, `plan ready <step>` at once.
 
 **A check left open** by a handover or a restart is started again by the
 session that goes on, from the handover entry and the ledger's steps in
