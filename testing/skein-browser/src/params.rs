@@ -14,7 +14,7 @@ pub(crate) enum Params<'a> {
     AttachTarget(&'a [u8]),
     Url(&'a [u8]),
     Backend(u64),
-    Query { root: u64, role: &'a [u8], name: &'a [u8] },
+    Query { root: u64, role: &'a [u8], name: Option<&'a [u8]> },
     Quads(u64),
     Point { x: i64, y: i64 },
     Mouse { kind: &'static [u8], x: i64, y: i64, pressed: bool },
@@ -75,8 +75,10 @@ impl Params<'_> {
                 json.unsigned(*root);
                 json.key(b"role");
                 json.string(role);
-                json.key(b"accessibleName");
-                json.string(name);
+                if let Some(name) = name {
+                    json.key(b"accessibleName");
+                    json.string(name);
+                }
             }
             Params::Point { x, y } => {
                 json.key(b"x");

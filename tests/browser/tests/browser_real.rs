@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use skein_browser::boundary::{Below, Down, Event, Expect, Key, Query, Refusal, Request, Trouble};
+use skein_browser::boundary::{Below, Down, Event, Expect, Key, Match, Query, Refusal, Request, Trouble};
 use skein_browser::{self as browser, Browser};
 use skein_io::kernel::{self, Complete, Done, Op, Pipe, Spawn, Submit, Way};
 use skein_io::{self as io, Io};
@@ -583,7 +583,7 @@ impl Rig {
 }
 
 fn query(role: &[u8], name: &[u8]) -> Query {
-    Query { role: Box::from(role), name: Box::from(name), within: None, boxes: false }
+    Query { role: Box::from(role), name: Box::from(name), matching: Match::Exact, within: None, boxes: false }
 }
 
 #[test]

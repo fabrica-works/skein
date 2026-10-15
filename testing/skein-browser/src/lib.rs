@@ -8,6 +8,7 @@ extern crate alloc;
 pub mod boundary;
 mod browser;
 pub mod command;
+mod find;
 pub mod limits;
 mod params;
 pub mod wire;

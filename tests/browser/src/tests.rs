@@ -1,10 +1,56 @@
-use skein_browser::boundary::{Below, Down, Event, Expect, Query, Refusal, Request, Trouble};
+use skein_browser::boundary::{Below, Down, Event, Expect, Match, Query, Refusal, Request, Trouble};
 use skein_browser::wire::decode::Document;
 use skein_browser::{down, fire, up};
 use skein_lib::stream;
 use skein_lib::{Time, Token};
 
 use crate::world::{Fault, World};
+
+#[test]
+fn a_find_by_words_asks_without_a_name() {
+    let mut world = World::with_limits(skein_browser::Limits { text: 1, ..skein_browser::Limits::default() });
+    world.start();
+    world.open();
+    for (name, count) in [(b"av".as_slice(), 1), (b"save", 0), (b"", 1)] {
+        world.ask(Request::Find {
+            page: Token::new(3),
+            op: Token::new(4),
+            query: Query {
+                role: Box::from(b"button".as_slice()),
+                name: Box::from(name),
+                matching: Match::Words,
+                within: None,
+                boxes: false,
+            },
+        });
+        match world.above.pop() {
+            Some(Event::Found { seen, more, .. }) => {
+                assert_eq!(seen.len(), count, "query {name:?}");
+                assert_eq!(more, 0);
+                if let Some(node) = seen.get(0) {
+                    assert_eq!(node.name.as_ref(), b"S");
+                }
+            }
+            event => panic!("expected Found for {name:?}, got {event:?}"),
+        }
+    }
+    assert_query_without_name(&world);
+}
+
+fn assert_query_without_name(world: &World) {
+    let command = world
+        .sent
+        .iter()
+        .rev()
+        .find(|bytes| {
+            bytes.windows(b"Accessibility.queryAXTree".len()).any(|part| part == b"Accessibility.queryAXTree")
+        })
+        .expect("query command");
+    let document = Document::parse(&command[..command.len() - 1], world.env.limits.command).expect("command");
+    let params = document.root().get(b"params").expect("params");
+    assert_eq!(params.get(b"role").and_then(|value| value.text()).as_deref(), Some(b"button".as_slice()));
+    assert!(params.get(b"accessibleName").is_none());
+}
 
 #[test]
 fn lifecycle_find_and_press() {
@@ -17,6 +63,7 @@ fn lifecycle_find_and_press() {
         query: Query {
             role: b"button".to_vec().into_boxed_slice(),
             name: b"Save".to_vec().into_boxed_slice(),
+            matching: Match::Exact,
             within: None,
             boxes: true,
         },
@@ -53,6 +100,7 @@ fn await_polls_until_present() {
         query: Query {
             role: b"button".to_vec().into_boxed_slice(),
             name: b"Save".to_vec().into_boxed_slice(),
+            matching: Match::Exact,
             within: None,
             boxes: false,
         },
@@ -79,6 +127,7 @@ fn crash_fails_operation_and_closes_entities() {
         query: Query {
             role: b"missing".to_vec().into_boxed_slice(),
             name: b"No".to_vec().into_boxed_slice(),
+            matching: Match::Exact,
             within: None,
             boxes: false,
         },
@@ -116,6 +165,7 @@ fn await_misses_at_its_deadline() {
         query: Query {
             role: b"button".to_vec().into_boxed_slice(),
             name: b"Save".to_vec().into_boxed_slice(),
+            matching: Match::Exact,
             within: None,
             boxes: false,
         },

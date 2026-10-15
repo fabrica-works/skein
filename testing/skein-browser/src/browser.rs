@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use skein_lib::stream::{self, Delimiter, Read};
 use skein_lib::{Env, List, Queue, Time, Token};
 
-use crate::boundary::{Below, Down, Event, Expect, Go, Key, Query, Rect, Refusal, Seen, States, Trouble};
+use crate::boundary::{Below, Down, Event, Expect, Go, Key, Match, Query, Rect, Refusal, Seen, States, Trouble};
 use crate::limits::Limits;
 use crate::params::Params;
 use crate::wire::decode::{Document, Value};
@@ -641,12 +641,16 @@ impl Browser {
                 None => None,
             },
         };
+        let name = match query.matching {
+            Match::Exact => Some(query.name.as_ref()),
+            Match::Words => None,
+        };
         match root {
             Some(root) => self.issue_step(
                 env,
                 op,
                 b"Accessibility.queryAXTree",
-                &Params::Query { root, role: &query.role, name: &query.name },
+                &Params::Query { root, role: &query.role, name },
                 Step::Query,
             ),
             None => self.issue_step(env, op, b"DOM.getDocument", &Params::Empty, Step::Query),
@@ -1494,12 +1498,15 @@ impl Browser {
                     return;
                 };
                 if let Some(op) = self.op_mut(token)
-                    && let OpKind::Find { seen, more, next, .. } = &mut op.kind
+                    && let OpKind::Find { query, seen, more, next, .. } = &mut op.kind
                 {
                     seen.clear();
                     *more = 0;
                     *next = 0;
                     for node in nodes {
+                        if !crate::find::accepts(node, query) {
+                            continue;
+                        }
                         let Some(seen_node) = parse_seen(node, env.limits.text) else {
                             continue;
                         };

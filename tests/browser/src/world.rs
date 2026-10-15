@@ -139,7 +139,7 @@ impl World {
                         self.outstanding.insert(id, self.env.now.saturating_add(self.env.limits.answer));
                         let method = root.get(b"method").and_then(|method| method.text()).expect("method");
                         let session = root.get(b"sessionId").and_then(|session| session.text());
-                        let result = self.reply(&method);
+                        let result = self.reply(&method, root.get(b"params"));
                         let session_field = session
                             .as_deref()
                             .map(|session| format!(",\"sessionId\":\"{}\"", String::from_utf8_lossy(session)))
@@ -216,14 +216,20 @@ impl World {
         panic!("world did not settle");
     }
 
-    fn reply(&self, method: &[u8]) -> &'static str {
+    fn reply(&self, method: &[u8], params: Option<skein_browser::wire::decode::Value<'_>>) -> &'static str {
         match method {
             b"Browser.getVersion" => r#"{"product":"Chrome/153"}"#,
             b"Target.createBrowserContext" => r#"{"browserContextId":"ctx1"}"#,
             b"Target.createTarget" => r#"{"targetId":"t1"}"#,
             b"Target.attachToTarget" => r#"{"sessionId":"s1"}"#,
             b"DOM.getDocument" => r#"{"root":{"backendNodeId":1}}"#,
-            b"Accessibility.queryAXTree" if self.ax_visible => {
+            b"Accessibility.queryAXTree"
+                if self.ax_visible
+                    && params.is_some_and(|params| {
+                        params.get(b"role").and_then(|role| role.text()).as_deref() == Some(b"button")
+                            && params.get(b"accessibleName").is_none_or(|name| name.text().as_deref() == Some(b"Save"))
+                    }) =>
+            {
                 r#"{"nodes":[{"backendDOMNodeId":7,"role":{"value":"button"},"name":{"value":"Save"},"value":{"value":""},"properties":[]}]}"#
             }
             b"Accessibility.queryAXTree" => r#"{"nodes":[]}"#,

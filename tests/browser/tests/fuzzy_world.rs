@@ -1,6 +1,6 @@
 //! Seeded scenarios against a faulting in-memory CDP peer.
 
-use skein_browser::boundary::{Event, Expect, Query, Refusal, Request};
+use skein_browser::boundary::{Event, Expect, Match, Query, Refusal, Request};
 use skein_browser_world::referee::Referee;
 use skein_browser_world::world::{Fault, World};
 use skein_lib::{Time, Token};
@@ -45,6 +45,7 @@ fn varied_pages_and_faults_hold_the_contract() {
                     query: Query {
                         role: b"button".to_vec().into_boxed_slice(),
                         name: b"Save".to_vec().into_boxed_slice(),
+                        matching: Match::Exact,
                         within: None,
                         boxes: false,
                     },

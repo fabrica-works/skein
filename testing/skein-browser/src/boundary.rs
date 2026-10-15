@@ -79,13 +79,21 @@ pub enum Key {
     ArrowRight,
 }
 
-/// An exact accessible role and name, optionally scoped beneath a node.
+/// An accessible role and name, optionally scoped beneath a node.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Query {
     pub role: Box<[u8]>,
     pub name: Box<[u8]>,
+    pub matching: Match,
     pub within: Option<Node>,
     pub boxes: bool,
+}
+
+/// How an accessible name matches the query.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Match {
+    Exact,
+    Words,
 }
 
 /// What an expectation asks of the query's result.
