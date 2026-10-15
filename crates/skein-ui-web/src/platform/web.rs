@@ -1,11 +1,13 @@
 use super::Facts;
 use skein_lib::{Time, Wall};
 
-pub struct Browser;
+pub struct Browser<R> {
+    pub fetch: crate::fetch::web::Fetch<R>,
+}
 fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.session_storage().ok().flatten()
 }
-impl super::Platform for Browser {
+impl<R: 'static> super::Platform for Browser<R> {
     fn read_all(&self) -> Vec<crate::store::Record> {
         let Some(storage) = storage() else { return Vec::new() };
         (0..storage.length().unwrap_or(0))
@@ -24,6 +26,17 @@ impl super::Platform for Browser {
         if let (Some(storage), Ok(key)) = (storage(), std::str::from_utf8(key)) {
             let _removed = storage.remove_item(key);
         }
+    }
+    fn send(&mut self, exchange: &crate::fetch::Exchange) {
+        self.fetch.exchange(exchange);
+    }
+    fn navigate(&mut self, to: &[u8]) {
+        let to = std::str::from_utf8(to).expect("navigation is UTF-8");
+        assert!(
+            (to.starts_with('/') && !to.starts_with("//") && !to.contains('\\')) || to.starts_with("https://"),
+            "navigation is an origin path or HTTPS address"
+        );
+        web_sys::window().expect("browser window").location().set_href(to).expect("navigation address");
     }
 }
 

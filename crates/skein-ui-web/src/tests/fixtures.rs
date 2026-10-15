@@ -7,6 +7,8 @@ use crate::inbox::Inbox;
 pub enum Call {
     Write(Vec<u8>, Vec<u8>),
     Remove(Vec<u8>),
+    Send(u32),
+    Navigate(Vec<u8>),
 }
 #[derive(Default)]
 pub struct FakePlatform {
@@ -36,6 +38,23 @@ impl crate::platform::Platform for FakePlatform {
     fn remove(&mut self, key: &[u8]) {
         self.calls.push(Call::Remove(key.into()));
         self.records.retain(|record| record.key.as_ref() != key);
+    }
+    fn send(&mut self, exchange: &crate::fetch::Exchange) {
+        self.calls.push(Call::Send(exchange.id));
+    }
+    fn navigate(&mut self, to: &[u8]) {
+        self.calls.push(Call::Navigate(to.into()));
+    }
+}
+
+pub fn exchange(id: u32) -> crate::fetch::Exchange {
+    crate::fetch::Exchange {
+        id,
+        path: b"/api/notes".as_slice().into(),
+        method: "POST".into(),
+        headers: Vec::new(),
+        body: b"record".as_slice().into(),
+        bound: 1024,
     }
 }
 

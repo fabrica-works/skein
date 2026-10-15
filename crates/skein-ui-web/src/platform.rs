@@ -9,6 +9,8 @@ pub trait Platform {
     fn read_all(&self) -> Vec<crate::store::Record>;
     fn write(&mut self, key: &[u8], value: &[u8]) -> bool;
     fn remove(&mut self, key: &[u8]);
+    fn send(&mut self, exchange: &crate::fetch::Exchange);
+    fn navigate(&mut self, to: &[u8]);
 }
 
 pub struct Facts {
