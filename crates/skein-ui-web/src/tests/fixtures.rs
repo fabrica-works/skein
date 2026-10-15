@@ -48,3 +48,36 @@ pub fn look() -> crate::Look<'static> {
 fn no_drawing(_: skein_ui::DrawingKind, _: &[u8], _: u16, _: u16, _: &mut skein_ui::scene::Scene) -> bool {
     false
 }
+
+pub fn patches(
+    view: &mut skein_ui::View,
+    shown: u64,
+    build: impl FnOnce(&mut skein_ui::Builder),
+) -> Vec<skein_ui::Patch> {
+    let mut builder = view.builder();
+    build(&mut builder);
+    let mut out = skein_lib::Queue::with_capacity(LIMITS.patches);
+    view.finish(builder, shown, &mut out);
+    let mut patches = Vec::new();
+    while let Some(patch) = out.pop() {
+        patches.push(patch);
+    }
+    patches
+}
+
+pub fn binding(number: u64) -> skein_ui::Binding {
+    skein_ui::Binding { owner: OWNER, token: skein_lib::Token::new(number) }
+}
+
+pub fn drawing_look() -> crate::Look<'static> {
+    crate::Look { draw: drawing, ..look() }
+}
+fn drawing(_: skein_ui::DrawingKind, data: &[u8], width: u16, height: u16, scene: &mut skein_ui::scene::Scene) -> bool {
+    use skein_ui::scene::{Anchor, Point};
+    if data == b"refuse" {
+        scene.text(Point { x: 0, y: 0 }, Anchor::Start, &[b'x'; 300], &[]);
+        return true;
+    }
+    let radius = if data == b"two" { 2 } else { 1 };
+    scene.rect(Point { x: 0, y: 0 }, Point { x: width, y: height }, radius, &[])
+}

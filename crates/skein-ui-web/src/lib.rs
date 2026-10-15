@@ -5,6 +5,7 @@ pub mod dom;
 pub mod inbox;
 mod look;
 pub mod mapping;
+pub mod page;
 pub mod svg;
 pub use look::Look;
 

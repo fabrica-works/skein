@@ -1,0 +1,350 @@
+use skein_ui::{Builder, DrawingKind, Key, NodeId, Patch, Role, Run, State, View};
+
+use super::fixtures::{self, LIMITS, OWNER};
+use crate::{
+    mapping::Primary,
+    page::{Op, Page},
+};
+
+fn page() -> Page<'static> {
+    Page::new(fixtures::look(), &LIMITS, b"/bundle/digest/", Primary::Control)
+}
+fn main(builder: &mut Builder) {
+    builder.open(Role::Page);
+    builder.open(Role::Main);
+}
+fn end(builder: &mut Builder) {
+    builder.close();
+    builder.close();
+}
+fn field(builder: &mut Builder, value: &[u8], written: u64) {
+    builder.open(Role::TextField);
+    builder.name(b"Title");
+    builder.value(value, written);
+    builder.close();
+}
+fn button(builder: &mut Builder, name: &[u8]) {
+    builder.open(Role::Button);
+    builder.name(name);
+    builder.bind(fixtures::binding(1));
+    builder.close();
+}
+fn list(builder: &mut Builder, keys: &[u64]) {
+    main(builder);
+    builder.open(Role::List);
+    for key in keys {
+        builder.open(Role::Item);
+        builder.key(Key { owner: OWNER, kind: 0, a: *key, b: 0 });
+        builder.text(Run::Plain, if *key == 1 { b"One" } else { b"Two" });
+        builder.close();
+    }
+    builder.close();
+    end(builder);
+}
+fn drawing(builder: &mut Builder, data: &[u8]) {
+    main(builder);
+    builder.drawing(DrawingKind { owner: OWNER, kind: 0 }, b"Chart", data, 128);
+    builder.text(Run::Plain, b"Fallback");
+    builder.close();
+    end(builder);
+}
+
+#[test]
+fn an_insert_builds_the_golden_page() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            button(b, b"Go");
+            field(b, b"Old", 0);
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html(), include_str!("golden/insert.html").trim_end());
+}
+
+#[test]
+fn a_remove_takes_its_subtree() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.open(Role::Region);
+            button(b, b"Go");
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            main(b);
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html(), include_str!("golden/remove.html").trim_end());
+}
+
+#[test]
+fn a_move_keeps_the_element() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| list(b, &[1, 2])), &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| list(b, &[2, 1])), &mut Vec::new());
+    assert_eq!(page.html(), include_str!("golden/move.html").trim_end());
+}
+
+#[test]
+fn a_value_patch_writes_the_field() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            field(b, b"Old", 0);
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            main(b);
+            field(b, b"New", 1);
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html(), include_str!("golden/value.html").trim_end());
+}
+
+#[test]
+fn a_text_patch_replaces_the_runs() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.text(Run::Plain, b"Old");
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            main(b);
+            b.text(Run::Strong, b"New");
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html(), include_str!("golden/text.html").trim_end());
+}
+
+#[test]
+fn an_attribute_patch_updates_the_element() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            button(b, b"Old");
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            main(b);
+            b.open(Role::Button);
+            b.name(b"New");
+            b.state(State::Disabled);
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.html(), include_str!("golden/attribute.html").trim_end());
+}
+
+#[test]
+fn an_attribute_patch_keeps_a_tag_it_can_update() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            button(b, b"Old");
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            main(b);
+            button(b, b"New");
+            end(b);
+        }),
+        &mut ops,
+    );
+    let kinds: Vec<_> = ops
+        .iter()
+        .map(|op| match op {
+            Op::Attributes { .. } => "attributes",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(kinds, ["attributes"]);
+}
+
+#[test]
+fn a_changed_tag_replaces_the_element() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            b.open(Role::Region);
+            b.open(Role::Main);
+            b.close();
+            b.close();
+        }),
+        &mut ops,
+    );
+    let kinds: Vec<_> = ops
+        .iter()
+        .map(|op| match op {
+            Op::Replace { .. } => "replace",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(kinds, ["replace"]);
+}
+
+#[test]
+fn a_removal_taking_the_focus_moves_it_to_an_ancestor() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.open(Role::Dialog);
+            b.open(Role::Region);
+            button(b, b"Go");
+            b.close();
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.focused(NodeId(5));
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            main(b);
+            b.open(Role::Dialog);
+            b.close();
+            end(b);
+        }),
+        &mut ops,
+    );
+    assert_eq!(ops, vec![Op::Remove { node: NodeId(4) }, Op::Focus { node: NodeId(3) }]);
+}
+
+#[test]
+fn a_removal_taking_the_focus_falls_back_to_the_main() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            button(b, b"Go");
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.focused(NodeId(3));
+    page.apply(
+        &fixtures::patches(&mut view, 1, |b| {
+            main(b);
+            end(b);
+        }),
+        &mut ops,
+    );
+    assert_eq!(ops, vec![Op::Remove { node: NodeId(3) }, Op::Focus { node: NodeId(2) }]);
+}
+
+#[test]
+#[should_panic(expected = "patch names a held node")]
+fn a_patch_naming_no_held_node_panics() {
+    page().apply(&[Patch::Remove { node: NodeId(99) }], &mut Vec::new());
+}
+
+#[test]
+fn a_drawing_shows_its_fallback_before_its_first_resize() {
+    let (mut page, mut view) =
+        (Page::new(fixtures::drawing_look(), &LIMITS, b"/", Primary::Control), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, b"one")), &mut Vec::new());
+    assert_eq!(page.html(), include_str!("golden/fallback.html").trim_end());
+}
+
+#[test]
+fn a_resize_draws_the_scene_and_keeps_the_fallback() {
+    let (mut page, mut view) =
+        (Page::new(fixtures::drawing_look(), &LIMITS, b"/", Primary::Control), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, b"one")), &mut Vec::new());
+    page.resized(NodeId(3), 100, 50, &mut Vec::new());
+    assert_eq!(page.html(), include_str!("golden/drawing.html").trim_end());
+}
+
+#[test]
+fn changed_drawing_data_draws_again_at_its_last_size() {
+    let (mut page, mut view) =
+        (Page::new(fixtures::drawing_look(), &LIMITS, b"/", Primary::Control), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, b"one")), &mut Vec::new());
+    page.resized(NodeId(3), 100, 50, &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| drawing(b, b"two")), &mut Vec::new());
+    assert_eq!(page.html(), include_str!("golden/drawing-changed.html").trim_end());
+}
+
+#[test]
+fn a_refused_drawing_keeps_its_fallback_visible() {
+    let (mut page, mut view) =
+        (Page::new(fixtures::drawing_look(), &LIMITS, b"/", Primary::Control), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, b"refuse")), &mut Vec::new());
+    page.resized(NodeId(3), 100, 50, &mut Vec::new());
+    assert_eq!(page.html(), include_str!("golden/fallback.html").trim_end());
+}
+
+#[test]
+fn links_are_reported_in_preorder() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            for n in 1..=2 {
+                b.open(Role::Link);
+                b.link(fixtures::binding(n));
+                b.close();
+            }
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(page.links(), &[NodeId(3), NodeId(4)]);
+}
+
+#[test]
+fn a_links_href_is_the_owners_path() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.open(Role::Link);
+            b.link(fixtures::binding(1));
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    page.set_href(NodeId(3), b"/notes/1", &mut Vec::new());
+    assert_eq!(page.html(), include_str!("golden/href.html").trim_end());
+}

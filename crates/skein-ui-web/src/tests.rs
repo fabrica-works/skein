@@ -1,5 +1,6 @@
 mod fixtures;
 mod mapping;
+mod page;
 mod svg;
 
 use std::cell::{Cell, RefCell};
