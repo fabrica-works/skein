@@ -533,7 +533,13 @@ and for `wasm32-unknown-unknown`:
   makes one note; its record leaves the small store once answered.
 - **Live:** at start, and when a hidden tab comes back (ui-web.md, 5.1),
   the view opens the stream, then reads the list, and applies each note
-  by its number, so a note made between the two shows once.
+  by its number, so a note made between the two shows once. The page
+  is live from the list's answer, read after the stream opened, until
+  the stream ends: the banner's status says Live then, and Offline
+  otherwise; an add's exchange failing leaves it as it is. A page that
+  says Live holds the server's notes as of its read, and each made
+  since, which skein's stories see before they look for a note that is
+  not there (9.4).
 
 ### 9.3 Its server
 
@@ -609,7 +615,9 @@ a service copies that.
   with its phrasebook's words for "the application failed", which its
   page shows past the restart limit, and one that bounds its small
   store below an add's record, so that the add's write is refused, with
-  the note that add would have made. Those addresses are the plan's.
+  the note that add would have made; and, to the stories that look for
+  something absent, its status saying Live (9.2). Those addresses are
+  the plan's.
 
 ### 9.5 How it is tested
 

@@ -870,16 +870,20 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
 
   | Story | What it checks | What the application names |
   |---|---|---|
-  | typing while a patch arrives | the field keeps its focus, its caret and its words | a field; a second person's script whose act patches the first person's page; and what that patch shows there, which the page does not show before it |
+  | typing while a patch arrives | the field keeps its focus, its caret and its words | a field; a second person's script whose act patches the first person's page; what that patch shows there, which the page does not show before it; and what a page shows once it holds its server's state |
   | back and forward | they move between pages, and an address opened directly shows its page | two addresses, and what each page shows |
   | a panic | the page reloads within the restart limit, and past it says the application failed | an address at which its module panics at start, as its test build allows; and its words for "the application failed" (5.1), which its page then shows |
-  | a write refused | a write the small store refuses fails the step's exchanges, and none leaves | an address at which its small store is bounded below a step's write, as its test build allows; a script making that step there; and what the step would have made, which no page then shows |
+  | a write refused | a write the small store refuses fails the step's exchanges, and none leaves | an address at which its small store is bounded below a step's write, as its test build allows; a script making that step there; what the step would have made, which no page then shows; and what a page shows once it holds its server's state |
 
 - **What the application names is what a story takes,** and nothing
   else. What a story must see on a person's page is named as what a
   person looks for (ui.md, 17.1), and the story awaits it: never for a
   fixed time, and never by skein's words where the page shows the
-  application's, as the restart part does (5.1). Seeing the patch is
+  application's, as the restart part does (5.1). A story looks for
+  something absent only once its page shows that it holds its server's
+  state, which the application names too: what a page has not read yet
+  is absent as well, and the page's load, which the kit sees, comes
+  before its first read is answered. Seeing the patch is
   also what shows that one came: with no patch, a field keeps its
   focus, its caret and its words anyway. The panic's module panics at
   start, so that each reload panics again and the page reaches the
@@ -898,8 +902,9 @@ parts carry, so that its tier tests each once.
   list; `/` and a note's address, and what each shows; and, in its test
   build alone, an address that makes its module panic, with its words
   for "the application failed", and one that bounds its small store
-  below an add's record, with the note the refused add would have made
-  (examples.md, 9.4). It adds: a person opens the
+  below an add's record, with the note the refused add would have made;
+  and, to the two that look for something absent, its status saying
+  the page is live (examples.md, 9.2 and 9.4). It adds: a person opens the
   example and sees its notes, under the strict policy, with no trouble;
   a field of each entry kind it uses, and a label chosen from its
   select; Escape in its dialog pressing the button naming it, and a
