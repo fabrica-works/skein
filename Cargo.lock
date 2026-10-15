@@ -906,8 +906,18 @@ version = "0.0.0"
 dependencies = [
  "skein-io",
  "skein-lib",
+ "skein-ui",
+]
+
+[[package]]
+name = "skein-ui-text-tests"
+version = "0.0.0"
+dependencies = [
+ "skein-io",
+ "skein-lib",
  "skein-sim",
  "skein-ui",
+ "skein-ui-text",
 ]
 
 [[package]]

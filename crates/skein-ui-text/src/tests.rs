@@ -52,8 +52,6 @@ fn the_first_line_is_the_main_heading_and_the_link() {
     assert_eq!(print.text.as_slice(), b"== Inbox == Connected; Behind\n# Again\n");
 }
 
-mod terminal;
-
 #[test]
 fn no_status_region_ends_the_first_line_after_its_space() {
     let tree = fixtures::page(|b| {

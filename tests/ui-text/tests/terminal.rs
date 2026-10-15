@@ -1,10 +1,10 @@
-use super::fixtures;
-use crate::{Command, Settings, Terminal};
 use skein_io::kernel::Fd;
 use skein_lib::{Duration, Time};
 use skein_sim::{Config, Pid, Sim};
 use skein_ui::Act;
 use skein_ui::Tree;
+use skein_ui_text::{Command, Settings, Terminal};
+use skein_ui_text_tests as fixtures;
 
 struct Pipes {
     sim: Sim,
@@ -24,8 +24,8 @@ fn start(longest: u32, buffer: u32) -> Pipes {
     let pid = sim.spawn_process();
     let input = sim.open_inherited_read(pid);
     let output = sim.open_inherited_write(pid);
-    let mut terminal = Terminal::new(settings(longest), &fixtures::LIMITS).unwrap();
-    terminal.adopt(input, output).unwrap();
+    let mut terminal = Terminal::new(settings(longest), &fixtures::LIMITS).expect("the settings fit the limits");
+    terminal.adopt(input, output).expect("a terminal adopts its pipes once");
     let tree = fixtures::page(|b| fixtures::button(b, b"Accept", true));
     let mut p = Pipes { sim, pid, input, output, terminal, tree };
     p.drive(Time::ZERO, false);
