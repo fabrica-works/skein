@@ -18,6 +18,7 @@ members = [
     "testing/skein-fake-machine",
     "testing/skein-fake-channel",
     "testing/skein-fake-person",
+    "testing/skein-fake-person-browser",
     "testing/skein-fake-oauth",
     "testing/skein-fake-checkout",
     "testing/skein-fake-llm-domain",
@@ -58,6 +59,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-fake-person-browser = { path = "testing/skein-fake-person-browser" }
 skein-ui-example-server = { path = "examples/ui/server" }
 skein-ui-web = { path = "crates/skein-ui-web" }
 wasm-bindgen = "=0.2.126"
