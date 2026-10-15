@@ -21,7 +21,9 @@ example's browser tier through it, are others (ui-web.md, section 14).
 - **A test sees what a person sees.** It finds things by role and
   accessible name in the browser's accessibility tree, the name exactly
   or by words in it, presses them, types into them, and waits for what
-  should show. It runs no script in the page and reads no page state.
+  should show. It reads no page state, and the one script it runs in the
+  page is the expression `document`, which names the page's current
+  document as a find's root (sections 4 and 6).
 - **Actions check what a person would.** A press lands only on something
   on screen, enabled and not covered by something else. Otherwise it is
   refused, saying why, and the test can wait and try again.
@@ -138,12 +140,20 @@ caps, as for any machine stacked on a stream (io.md, 2).
 - **The domains used:** `Browser` and `Target` (contexts, pages,
   sessions); `Page` (navigation and its lifecycle, screenshots);
   `Emulation` (a fixed viewport); `Accessibility` and `DOM` (finding
-  nodes, their boxes, the hit test, focus, scrolling into view); `Input`
-  (mouse, keys, text, composition); and `Runtime`, `Log` and `Inspector`
-  (exceptions, console and log entries, crashes). The kit never sends
-  `Runtime.evaluate` or `Runtime.callFunctionOn` to run script. Several
-  of these commands are experimental in CDP, which is why the real
-  browser is checked (section 9).
+  nodes, a scope's object, their boxes, the hit test, focus, scrolling
+  into view); `Input` (mouse, keys, text, composition); and `Runtime`,
+  `Log` and `Inspector` (the document's object, exceptions, console and
+  log entries, crashes). Several of these commands are experimental in
+  CDP, which is why the real browser is checked (section 9).
+- **The one expression the kit evaluates is `document`.** It sends
+  `Runtime.evaluate` with that expression alone, for a find's root
+  (section 6), and it never sends `Runtime.callFunctionOn`.
+  - The expression calls nothing and reads no page state. A page cannot
+    change what it names: a window's `document` can be neither redefined
+    nor shadowed.
+  - Its result is a handle, as a node id is: an object of the execution
+    context that holds the page's current document. The kit releases it
+    (`Runtime.releaseObject`) after its find's query.
 
 ## 5. The vocabulary
 
@@ -228,7 +238,7 @@ to the next command, never a closure waiting on a reply:
 |---|---|
 | opening a page | create a target in the person's context, attach to it, enable the domains it reports on, set the viewport, navigate; `Opened` once the load event fires |
 | go | navigate, reload, or move through the history; the page's `beforeunload` prompt, if it opens meanwhile, accepted, and `Warned`; `Done` once the navigation commits: the load event for a new document, the same-document event for one that stays |
-| find | the accessibility nodes matching the role and the name, under the scope or the document: exactly, both asked of CDP; by words, the role's nodes asked without a name, their names compared in the kit; at most `Limits::matches` kept, the rest counted in `more`; their properties; their boxes, if asked |
+| find | the accessibility nodes matching the role and the name, under the scope or the page's current document, either asked by its object in that document (below): exactly, both asked of CDP; by words, the role's nodes asked without a name, their names compared in the kit; at most `Limits::matches` kept, the rest counted in `more`; their properties; their boxes, if asked |
 | await | a find, again every `Limits::poll`, until the expectation holds (`Met`) or `within` passes (`Missed`) |
 | press | the node scrolled into view, its named point with it; its box's centre, or the named point in the box; layout metrics turn the viewport point into document coordinates for the hit test; refused `Hidden` without a box or with a point outside it, `Disabled` if its accessibility node says so, `Covered` unless the hit test at that point lands on the node or inside it; then the mouse moved, pressed and released at the viewport point |
 | type | the node focused; the text inserted |
@@ -243,6 +253,24 @@ to the next command, never a closure waiting on a reply:
   of the role under its scope, and a reply past `Limits::message` fails
   the browser (section 4): a test scopes a find by words `within` a node,
   or raises the limit.
+- **A find asks only under the current document.** Its root is never a
+  node id, whose document the query does not check, but an object that
+  Chromium checks against the document that holds it:
+  - without a scope, the object of `document`, evaluated in the page's
+    current execution context (section 4);
+  - with a scope, the scope's object, resolved in the current document
+    (`DOM.resolveNode`). Chromium refuses a node of an earlier document,
+    and the find is refused `Gone` (section 5).
+
+  The kit releases the object after the query. Chromium refuses an
+  object once its execution context is gone, as when the page navigates
+  by itself between the object's command and the query: the find then
+  looks again at its next poll, and an `Await` keeps its deadline.
+- **A find waits out a navigation.** While a navigation of the page is
+  in flight, the kit's go or the page's own, the kit holds its DOM and
+  accessibility commands to the page, and the evaluation of `document`,
+  until the navigation commits, as a go's does. A find in flight when the
+  navigation begins starts again, and asks once it has committed.
 - **A press at a point reaches a shape of an inline SVG.** The hit test
   there lands on the shape, inside the node that holds it, and the mouse
   goes down on the shape; something over the shape covers it, as it would
@@ -354,12 +382,14 @@ allocator's high water against `worst_case`.
   hidden from assistive technology, whose shape, pressed through the
   figure at a point, changes a heading, and a page that holds a closing
   warning once a button is pressed and asks a confirm at another's
-  press. These tests check the facts the fake browser assumes: the
-  framing, flattened sessions, what the accessibility queries match,
-  with a name and without one, boxes and the hit test, on an element and
-  on a shape of an SVG, the events each step waits for, and the dialogs
-  (a reload accepting the closing warning, a close meeting none, a
-  confirm dismissed). The keys a native date or time field takes, and
+  press, and a page that reloads itself. These tests check the facts the
+  fake browser assumes: the framing, flattened sessions, what the
+  accessibility queries match, with a name and without one, boxes and
+  the hit test, on an element and on a shape of an SVG, the events each
+  step waits for, the dialogs (a reload accepting the closing warning, a
+  close meeting none, a confirm dismissed), and a find across a reload
+  (a page that reloads itself found again after it, a scope found before
+  it `Gone`). The keys a native date or time field takes, and
   their order, are the face's facts, checked with its others in this
   suite (ui-web.md, 14.1). A new Chromium version is a run of these,
   and a fact that changed is fixed in the fake first. They need
