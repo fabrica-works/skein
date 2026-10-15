@@ -440,7 +440,37 @@ impl Tree {
     #[must_use]
     pub fn act(&self, id: NodeId, act: crate::Act) -> Option<crate::BoundAct> {
         let binding = self.bound(id)?;
+        let node = self.find(id)?;
+        if self.disabled(id) || !crate::takes(node.role, node.states.as_slice().contains(&State::SubmitsOnEnter), &act)
+        {
+            return None;
+        }
         Some(crate::BoundAct { binding, act })
+    }
+
+    /// A disabled node, including an option of its nearest disabled select.
+    #[must_use]
+    pub fn disabled(&self, id: NodeId) -> bool {
+        let Some(node) = self.find(id) else { return false };
+        if node.states.as_slice().contains(&State::Disabled) {
+            return true;
+        }
+        if node.role != Role::Option {
+            return false;
+        }
+        let mut option = None;
+        for index in (0..self.len()).rev() {
+            let ancestor = self.get(index).expect("preorder index exists");
+            if ancestor.id == id {
+                option = Some(index);
+            } else if let Some(at) = option {
+                let end = index.checked_add(ancestor.size).expect("subtree end fits u32");
+                if end > at && ancestor.role == Role::Select {
+                    return ancestor.states.as_slice().contains(&State::Disabled);
+                }
+            }
+        }
+        false
     }
 
     /// Ask the view root to translate this link owner's address for the shell.

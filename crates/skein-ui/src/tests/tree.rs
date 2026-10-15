@@ -85,14 +85,6 @@ fn a_drawing_past_the_trees_bound_asserts() {
     builder.drawing(DrawingKind { owner: Owner { number: 65_536 }, kind: 1 }, b"name", b"123456789", 16);
 }
 
-#[test]
-#[should_panic(expected = "a drawing is shown and never bound")]
-fn a_drawing_cannot_be_bound() {
-    let mut builder = Builder::new(&LIMITS);
-    builder.drawing(DrawingKind { owner: Owner { number: 65_536 }, kind: 1 }, b"name", b"", 0);
-    builder.bind(Binding { owner: Owner { number: 65_536 }, token: Token::new(1) });
-}
-
 const BINDING_ROLES: &[(Role, bool)] = &[
     (Role::Page, false),
     (Role::Banner, false),
@@ -143,7 +135,7 @@ const BINDING_ROLES: &[(Role, bool)] = &[
     (Role::Image, false),
     (Role::Figure, false),
     (Role::Slot, false),
-    (Role::Drawing, false),
+    (Role::Drawing, true),
 ];
 
 #[test]

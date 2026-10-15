@@ -16,7 +16,7 @@ pub mod scene;
 pub(crate) mod tree;
 mod view;
 
-pub use binding::{Act, Binding, BoundAct, number};
+pub use binding::{Act, Binding, BoundAct, number, takes};
 pub use builder::{Builder, Slot, SlotId};
 pub use diff::{Attribute, Made, Patch, diff};
 pub use limits::{Limits, worst_case};

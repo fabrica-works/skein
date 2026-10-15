@@ -1,5 +1,6 @@
 //! Bindings and acts (skein's ui.md, section 6).
 
+use crate::Role;
 use alloc::boxed::Box;
 use skein_lib::Token;
 
@@ -30,6 +31,70 @@ pub enum Act {
 pub struct BoundAct {
     pub binding: Binding,
     pub act: Act,
+}
+
+/// Whether a bound role takes this act (ui.md, section 6).
+#[must_use]
+pub fn takes(role: Role, submits_on_enter: bool, act: &Act) -> bool {
+    match role {
+        Role::TextField | Role::TextArea => match act {
+            Act::Input { .. } => true,
+            Act::Submit => submits_on_enter,
+            Act::Press | Act::Toggle | Act::Drawing { .. } => false,
+        },
+        Role::Check | Role::Choice => match act {
+            Act::Toggle => true,
+            Act::Press | Act::Input { .. } | Act::Submit | Act::Drawing { .. } => false,
+        },
+        Role::Drawing => match act {
+            Act::Drawing { .. } => true,
+            Act::Press | Act::Input { .. } | Act::Submit | Act::Toggle => false,
+        },
+        Role::Button | Role::Link | Role::Tab | Role::MenuItem | Role::Option => match act {
+            Act::Press => true,
+            Act::Input { .. } | Act::Submit | Act::Toggle | Act::Drawing { .. } => false,
+        },
+        Role::Page
+        | Role::Banner
+        | Role::Navigation
+        | Role::Main
+        | Role::Complementary
+        | Role::ContentInfo
+        | Role::Form
+        | Role::Search
+        | Role::Region
+        | Role::Heading { .. }
+        | Role::Paragraph
+        | Role::Text
+        | Role::List
+        | Role::Item
+        | Role::Table
+        | Role::Row
+        | Role::Cell
+        | Role::ColumnHeader
+        | Role::RowHeader
+        | Role::Select
+        | Role::Term
+        | Role::Description
+        | Role::ChoiceGroup
+        | Role::Dialog
+        | Role::Status
+        | Role::Alert
+        | Role::Log
+        | Role::Tree
+        | Role::TreeItem
+        | Role::Tabs
+        | Role::Progress
+        | Role::Time
+        | Role::Code
+        | Role::Quote
+        | Role::Separator
+        | Role::Menu
+        | Role::Disclosure
+        | Role::Image
+        | Role::Figure
+        | Role::Slot => false,
+    }
 }
 
 /// A field's ASCII digits as a count; empty, non-digits and overflow are absent.

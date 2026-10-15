@@ -335,7 +335,6 @@ impl Builder {
 
     /// Bind an actable node to its owner's token.
     pub fn bind(&mut self, binding: Binding) {
-        assert!(self.node().role != Role::Drawing, "a drawing is shown and never bound");
         assert!(acted_on(self.node().role), "a binding belongs to a role a person acts on");
         if self.node().binding.is_none() && self.node().link.is_none() {
             self.reserve_binding();
@@ -546,7 +545,8 @@ fn acted_on(role: Role) -> bool {
         | Role::Check
         | Role::Tab
         | Role::Option
-        | Role::MenuItem => true,
+        | Role::MenuItem
+        | Role::Drawing => true,
         Role::Page
         | Role::Banner
         | Role::Navigation
@@ -586,7 +586,6 @@ fn acted_on(role: Role) -> bool {
         | Role::Disclosure
         | Role::Image
         | Role::Figure
-        | Role::Slot
-        | Role::Drawing => false,
+        | Role::Slot => false,
     }
 }
