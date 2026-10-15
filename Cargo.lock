@@ -428,6 +428,8 @@ dependencies = [
  "skein-io",
  "skein-lib",
  "skein-shell",
+ "skein-ui",
+ "skein-ui-web",
 ]
 
 [[package]]

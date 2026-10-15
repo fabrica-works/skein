@@ -11,6 +11,8 @@ skein-browser.workspace = true
 skein-lib.workspace = true
 
 [dev-dependencies]
+skein-ui.workspace = true
+skein-ui-web.workspace = true
 skein-io.workspace = true
 skein-shell.workspace = true
 skein-heap.workspace = true

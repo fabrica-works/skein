@@ -45,7 +45,7 @@ fn limits() -> server::Limits {
 struct Connection {
     socket: Token,
     server: Server,
-    reply: &'static [u8],
+    reply: Vec<u8>,
     sent: usize,
 }
 
@@ -59,6 +59,7 @@ pub struct Pages {
     below: Queue<stream::Down>,
     requests: VecDeque<Request>,
     stopping: bool,
+    pub fixed: Option<Vec<u8>>,
 }
 
 impl Pages {
@@ -78,6 +79,7 @@ impl Pages {
             below: Queue::with_capacity(16),
             requests,
             stopping: false,
+            fixed: None,
         }
     }
 
@@ -129,8 +131,10 @@ impl Pages {
                 }
                 let owner = Token::new(self.next_owner);
                 self.next_owner += 1;
-                self.connections
-                    .insert(owner, Connection { socket, server: Server::new(&self.env.limits), reply: b"", sent: 0 });
+                self.connections.insert(
+                    owner,
+                    Connection { socket, server: Server::new(&self.env.limits), reply: Vec::new(), sent: 0 },
+                );
                 self.requests.push_back(Request::Bind { socket, owner });
                 self.down(owner, server::Request::Next);
             }
@@ -165,9 +169,14 @@ impl Pages {
         while let Some(event) = self.above.pop() {
             match event {
                 server::Event::Call(call) => {
-                    let (status, body, csp) = page(&call.target);
+                    let (status, body, csp) = if call.target.as_ref() == b"/facts" {
+                        (200, self.fixed.as_deref().expect("fixed page supplied"), false)
+                    } else {
+                        page(&call.target)
+                    };
+                    let body = body.to_vec();
                     let conn = self.connections.get_mut(&owner).expect("page connection");
-                    conn.reply = body;
+                    conn.reply = body.clone();
                     conn.sent = 0;
                     self.down(owner, server::Request::Discard);
                     let mut headers = if status == 204 {
@@ -202,7 +211,7 @@ impl Pages {
                             owner,
                             server::Request::Reply(stream::Down::Demand {
                                 read: Read::Nothing,
-                                room: body.len() as u32,
+                                room: (body.len() as u32).min(self.env.limits.send),
                             }),
                         );
                     }
