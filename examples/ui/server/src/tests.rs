@@ -1,0 +1,99 @@
+//! Step checks of route policy, caching and fallback paths.
+use super::{State, bundle::Bundle, routes};
+use skein_http::server::{Body, Call};
+use skein_http::{Header, Method, Version};
+use std::collections::BTreeMap;
+fn bundle() -> Bundle {
+    let mut files = BTreeMap::new();
+    files.insert("boot.js".into(), Box::from(&b"export {};"[..]));
+    Bundle::new(Box::from(&b"<html></html>"[..]), "0123456789abcdef".into(), files).expect("fixture bundle fits")
+}
+fn get(path: &[u8]) -> Call {
+    Call {
+        method: Method::Get,
+        target: Box::from(path),
+        version: Version::Http11,
+        headers: Box::from([]),
+        body: Body::None,
+    }
+}
+const POLICY: &[u8] = b"default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+#[test]
+fn each_answer_carries_the_policy_and_nosniff() {
+    let bundle = bundle();
+    let state = State::new();
+    for (method, path) in [
+        (Method::Get, b"/".as_slice()),
+        (Method::Get, b"/api/notes"),
+        (Method::Get, b"/bundle/0123456789abcdef/boot.js"),
+        (Method::Get, b"/bundle/wrong/file.js"),
+        (Method::Post, b"/api/notes"),
+    ] {
+        let mut call = get(path);
+        call.method = method;
+        let answer = routes::route(&state, &bundle, &call);
+        for (name, expected) in
+            [(b"Content-Security-Policy".as_slice(), POLICY), (b"X-Content-Type-Options", b"nosniff")]
+        {
+            let header = answer
+                .head
+                .headers
+                .iter()
+                .find(|header| header.name.eq_ignore_ascii_case(name))
+                .expect("required header");
+            assert_eq!(header.value.as_ref(), expected, "path {path:?}, header {name:?}");
+        }
+    }
+}
+#[test]
+fn another_digest_is_not_found() {
+    let bundle = bundle();
+    for path in [
+        b"/bundle/ffffffffffffffff/boot.js".as_slice(),
+        b"/bundle/0123456789abcdef/no.js",
+        b"/bundle/0123456789abcdef/../index.html",
+    ] {
+        assert_eq!(routes::route(&State::new(), &bundle, &get(path)).head.status, 404, "path {path:?}");
+    }
+}
+#[test]
+fn the_page_answers_any_other_path() {
+    let bundle = bundle();
+    for path in [b"/".as_slice(), b"/notes/7", b"/unknown?x=1"] {
+        let answer = routes::route(&State::new(), &bundle, &get(path));
+        assert_eq!(answer.head.status, 200, "path {path:?}");
+        assert_eq!(answer.body.as_ref(), b"<html></html>", "path {path:?}");
+        let cache = answer
+            .head
+            .headers
+            .iter()
+            .find(|header| header.name.eq_ignore_ascii_case(b"Cache-Control"))
+            .expect("page cache header");
+        assert_eq!(cache.value.as_ref(), b"no-cache");
+    }
+}
+#[test]
+fn a_matching_etag_is_not_modified() {
+    let bundle = bundle();
+    let mut call = get(b"/notes/7");
+    call.headers =
+        Box::from([Header { name: Box::from(&b"If-None-Match"[..]), value: Box::from(bundle.etag.as_bytes()) }]);
+    let answer = routes::route(&State::new(), &bundle, &call);
+    assert_eq!(answer.head.status, 304);
+    assert_eq!(answer.head.body, Body::None);
+    assert!(answer.body.is_empty());
+    for (name, value) in [
+        (b"Content-Security-Policy".as_slice(), POLICY),
+        (b"X-Content-Type-Options", b"nosniff"),
+        (b"Cache-Control", b"no-cache"),
+    ] {
+        let header =
+            answer.head.headers.iter().find(|header| header.name.eq_ignore_ascii_case(name)).expect("header on 304");
+        assert_eq!(header.value.as_ref(), value);
+    }
+}
+
+#[test]
+fn the_page_etag_is_its_fnv_digest() {
+    assert_eq!(bundle().etag, "\"52ea7bb227177076\"");
+}

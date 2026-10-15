@@ -1,0 +1,17 @@
+[package]
+name = "skein-ui-web-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-ui-example-server.workspace = true
+skein-ui-bundle.workspace = true
+skein-ui-example-view.workspace = true
+skein-lib.workspace = true
+skein-http.workspace = true
+skein-scratch.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

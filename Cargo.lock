@@ -891,6 +891,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-ui-example-server"
+version = "0.0.0"
+dependencies = [
+ "skein-http",
+ "skein-io",
+ "skein-lib",
+ "skein-shell",
+ "skein-ui-example-view",
+]
+
+[[package]]
 name = "skein-ui-example-view"
 version = "0.0.0"
 dependencies = [
@@ -918,6 +929,18 @@ dependencies = [
  "skein-sim",
  "skein-ui",
  "skein-ui-text",
+]
+
+[[package]]
+name = "skein-ui-web-tests"
+version = "0.0.0"
+dependencies = [
+ "skein-http",
+ "skein-lib",
+ "skein-scratch",
+ "skein-ui-bundle",
+ "skein-ui-example-server",
+ "skein-ui-example-view",
 ]
 
 [[package]]

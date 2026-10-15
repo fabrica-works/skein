@@ -5,6 +5,8 @@ resolver = "3"
 members = [
     "crates/*",
     "examples/ui/view",
+    "examples/ui/server",
+    "tests/ui-web",
     "examples/echo/domain",
     "examples/echo/protocol",
     "examples/echo/service",
@@ -55,6 +57,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-ui-example-server = { path = "examples/ui/server" }
 skein-fake-person = { path = "testing/skein-fake-person" }
 skein-ui-example-view = { path = "examples/ui/view" }
 skein-ui-text = { path = "crates/skein-ui-text" }
