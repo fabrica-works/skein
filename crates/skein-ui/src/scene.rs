@@ -366,3 +366,121 @@ fn emit_act(bytes: &[u8], point: Option<Point>, out: &mut List<u8>) -> bool {
     }
     true
 }
+
+impl core::fmt::Display for Scene {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for (index, mark) in self.marks.iter().enumerate() {
+            let index = u32::try_from(index).expect("mark index fits u32");
+            for (parent, ancestor) in
+                self.marks.iter().enumerate().take(usize::try_from(index).expect("u32 fits usize"))
+            {
+                match ancestor {
+                    Mark::Group { marks, offset: _ } => {
+                        let parent = u32::try_from(parent).expect("mark index fits u32");
+                        if index <= parent.saturating_add(*marks) {
+                            f.write_str("  ")?;
+                        }
+                    }
+                    Mark::Line { .. }
+                    | Mark::Polyline { .. }
+                    | Mark::Path { .. }
+                    | Mark::Rectangle { .. }
+                    | Mark::Circle { .. }
+                    | Mark::Text { .. } => {}
+                }
+            }
+            print_mark(*mark, self.data(index), f)?;
+            let styles = self.styles(index);
+            if !styles.is_empty() {
+                f.write_str(" [")?;
+                for (position, style) in styles.iter().enumerate() {
+                    if position != 0 {
+                        f.write_str(" ")?;
+                    }
+                    f.write_fmt(format_args!("{}:{}", style.owner.number, style.token))?;
+                }
+                f.write_str("]")?;
+            }
+            if let Some(hint) = self.mark_hint(index) {
+                f.write_str(" hint=")?;
+                print_bytes(hint, f)?;
+            }
+            if let Some(act) = self.mark_act(index) {
+                f.write_str(" act=")?;
+                for byte in act {
+                    f.write_fmt(format_args!("{byte:02X}"))?;
+                }
+            }
+            f.write_str("\n")?;
+        }
+        Ok(())
+    }
+}
+fn print_mark(mark: Mark, data: &[u8], f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    match mark {
+        Mark::Group { offset, marks: _ } => f.write_fmt(format_args!("group +{},{}", offset.x, offset.y)),
+        Mark::Line { from, to } => f.write_fmt(format_args!("line {},{} {},{}", from.x, from.y, to.x, to.y)),
+        Mark::Polyline { points } => {
+            f.write_str("polyline")?;
+            let mut reader = skein_lib::Reader::new(data);
+            for _ in 0..points {
+                print_point(&mut reader, f)?;
+            }
+            Ok(())
+        }
+        Mark::Path { commands } => {
+            f.write_str("path")?;
+            let mut reader = skein_lib::Reader::new(data);
+            for _ in 0..commands {
+                let command = reader.u8().expect("stored command tag");
+                f.write_fmt(format_args!(" {}", char::from(command)))?;
+                let points = match command {
+                    b'M' | b'L' => 1_u32,
+                    b'Q' => 2,
+                    b'C' => 3,
+                    b'Z' => 0,
+                    _ => unreachable!("stored command tag"),
+                };
+                for _ in 0..points {
+                    print_point(&mut reader, f)?;
+                }
+            }
+            Ok(())
+        }
+        Mark::Rectangle { corner, size, radius } => {
+            f.write_fmt(format_args!("rect {},{} {}x{} r{}", corner.x, corner.y, size.x, size.y, radius))
+        }
+        Mark::Circle { centre, radius } => f.write_fmt(format_args!("circle {},{} r{}", centre.x, centre.y, radius)),
+        Mark::Text { at, anchor } => {
+            let anchor = match anchor {
+                Anchor::Start => "start",
+                Anchor::Middle => "middle",
+                Anchor::End => "end",
+            };
+            f.write_fmt(format_args!("text {},{} {} ", at.x, at.y, anchor))?;
+            print_bytes(data, f)
+        }
+    }
+}
+fn print_point(reader: &mut skein_lib::Reader<'_>, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let x = read_coordinate(reader);
+    let y = read_coordinate(reader);
+    f.write_fmt(format_args!(" {x},{y}"))
+}
+fn print_bytes(bytes: &[u8], f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    f.write_str("\"")?;
+    for byte in bytes {
+        if (0x20..=0x7e).contains(byte) {
+            f.write_fmt(format_args!("{}", char::from(*byte)))?;
+        } else {
+            f.write_fmt(format_args!("\\x{byte:02X}"))?;
+        }
+    }
+    f.write_str("\"")
+}
+
+fn read_coordinate(reader: &mut skein_lib::Reader<'_>) -> u16 {
+    let low = reader.u8().expect("stored coordinate low byte");
+    let high = reader.u8().expect("stored coordinate high byte");
+    u16::from_le_bytes([low, high])
+}

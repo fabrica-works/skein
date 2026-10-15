@@ -130,3 +130,29 @@ fn an_act_past_the_output_capacity_is_refused_whole() {
     assert!(!scene.act_at(&[], ZERO, &mut out));
     assert_eq!(out.as_slice(), b"");
 }
+
+#[test]
+fn a_scene_prints_one_line_per_mark() {
+    let mut scene = Scene::new(&LIMITS);
+    let a = Point { x: 1, y: 2 };
+    let b = Point { x: 3, y: 4 };
+    let styles = [Style { owner: Owner { number: 7 }, token: 9 }, Style { owner: Owner { number: 8 }, token: 10 }];
+    assert!(scene.group(a, 9, &styles));
+    assert!(scene.hint(b"group\x00"));
+    assert!(scene.act(&[0, 255]));
+    assert!(scene.line(a, b, &[]));
+    assert!(scene.polyline(&[ZERO, a, b], &[]));
+    assert!(scene.path(
+        &[Command::Move(ZERO), Command::Line(a), Command::Quadratic(a, b), Command::Cubic(ZERO, a, b), Command::Close],
+        &[]
+    ));
+    assert!(scene.rect(a, b, 5, &[]));
+    assert!(scene.circle(b, 6, &[]));
+    assert!(scene.text(a, Anchor::Start, b"hello\n\xC3\xA9", &[]));
+    assert!(scene.group(b, 2, &[]));
+    assert!(scene.text(ZERO, Anchor::Middle, b"middle", &[]));
+    assert!(scene.text(b, Anchor::End, b"end", &[]));
+    assert!(scene.line(b, ZERO, &[]));
+    let expected = std::fs::read_to_string("src/tests/golden/scene.txt").expect("hand-written golden scene");
+    assert_eq!(alloc::fmt::format(format_args!("{scene}")), expected);
+}
