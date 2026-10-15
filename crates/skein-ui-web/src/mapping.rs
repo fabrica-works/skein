@@ -557,7 +557,7 @@ fn shortcut(e: &mut Element, shortcut: Option<Shortcut>, primary: Primary) {
             },
             Modifier::Alt => "Alt+",
         };
-        let key = if shortcut.key == 27 {
+        let key = if shortcut == Shortcut::ESCAPE {
             "Escape".into()
         } else {
             char::from(shortcut.key.to_ascii_uppercase()).to_string()

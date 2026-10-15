@@ -245,7 +245,7 @@ fn property(made: &mut Made, property: Property) {
         Property::Region => made.attribute.region = Some(Region { owner: OWNER, number: 0 }),
         Property::Shortcut(modifier) => made.attribute.shortcut = Some(Shortcut { key: b'k', modifier }),
         Property::Primary(_) => made.attribute.shortcut = Some(Shortcut { key: b'k', modifier: Modifier::Primary }),
-        Property::Escape => made.attribute.shortcut = Some(Shortcut { key: 27, modifier: Modifier::Plain }),
+        Property::Escape => made.attribute.shortcut = Some(Shortcut::ESCAPE),
         Property::Value => made.value = Some(Value { text: b"<value>".to_vec().into_boxed_slice(), written: 1 }),
         Property::Picture => {
             made.attribute.source = Some(skein_ui::Source::Picture(Picture { owner: OWNER, number: 0 }));

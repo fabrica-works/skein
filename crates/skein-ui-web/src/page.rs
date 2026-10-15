@@ -521,7 +521,22 @@ impl Page<'_> {
                     None
                 }
             }
-            Event::Cancel { dialog } | Event::Closed { dialog } => {
+            Event::Cancel { dialog } => {
+                self.held(dialog);
+                ops.push(Op::Attributes { node: dialog, element: self.own_element(dialog) });
+                if self.menu.is_some() {
+                    self.close_menu(ops);
+                    return None;
+                }
+                let mut order = Vec::new();
+                self.preorder(dialog, &mut order);
+                order.into_iter().find_map(|node| {
+                    let a = &self.held(node).made.attribute;
+                    (enabled(a) && a.bound && a.shortcut == Some(skein_ui::Shortcut::ESCAPE))
+                        .then_some((node, Act::Press))
+                })
+            }
+            Event::Closed { dialog } => {
                 self.held(dialog);
                 ops.push(Op::Attributes { node: dialog, element: self.own_element(dialog) });
                 None

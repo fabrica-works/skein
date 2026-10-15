@@ -24,6 +24,8 @@ pub enum Rule {
     OneContentInfo,
     /// A shortcut already named by an earlier node.
     ShortcutOnce,
+    /// Escape named by a node outside every dialog.
+    EscapeInDialog,
 }
 
 /// Check roles, region names and shortcuts, without reading words.
@@ -32,9 +34,21 @@ pub fn check(tree: &Tree) -> Option<Fault> {
     let fault = landmarks(tree);
     let length = u32::try_from(tree.nodes().len()).expect("tree length fits u32");
     let mut seen: List<Shortcut> = List::with_capacity(length);
+    let mut dialog_end = 0;
     for index in 0..length {
         let node = tree.get(index).expect("index within tree");
+        if node.role == Role::Dialog {
+            dialog_end = dialog_end.max(index.checked_add(node.size).expect("dialog end fits u32"));
+        }
         if let Some(shortcut) = node.shortcut {
+            if shortcut == Shortcut::ESCAPE && index >= dialog_end {
+                if let Some(earlier) = fault
+                    && earlier.node <= index
+                {
+                    return Some(earlier);
+                }
+                return Some(Fault { rule: Rule::EscapeInDialog, node: index });
+            }
             for previous in &seen {
                 if *previous == shortcut {
                     if let Some(earlier) = fault

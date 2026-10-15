@@ -449,3 +449,28 @@ fn an_enter_keeps_its_input_after_a_composition() {
         Some((EVENT_FIELD, Act::Input { value: Box::from(b"Typed".as_slice()) }))
     );
 }
+
+const ESCAPE_DIALOG: NodeId = NodeId(3); // page, main, dialog
+const ESCAPE_BUTTON: NodeId = NodeId(5); // page, main, dialog, disabled escape button, escape button
+fn dialog_escape(b: &mut Builder) {
+    main(b);
+    b.open(Role::Dialog);
+    for disabled in [true, false] {
+        b.open(Role::Button);
+        b.bind(fixtures::binding(1));
+        b.shortcut(Shortcut::ESCAPE);
+        if disabled {
+            b.state(State::Disabled);
+        }
+        b.close();
+    }
+    b.close();
+    end(b);
+}
+
+#[test]
+fn escape_presses_the_dialogs_escape_button() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, dialog_escape), &mut Vec::new());
+    assert_eq!(page.act(Event::Cancel { dialog: ESCAPE_DIALOG }, &mut Vec::new()), Some((ESCAPE_BUTTON, Act::Press)));
+}

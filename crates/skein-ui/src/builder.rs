@@ -240,8 +240,8 @@ impl Builder {
     }
     pub fn shortcut(&mut self, shortcut: Shortcut) {
         assert!(
-            shortcut.key.is_ascii_lowercase() || shortcut.key.is_ascii_digit(),
-            "shortcut keys are letters or digits"
+            shortcut.key.is_ascii_lowercase() || shortcut.key.is_ascii_digit() || shortcut == Shortcut::ESCAPE,
+            "shortcut keys are letters or digits, or Escape"
         );
         assert!(self.node().binding.is_some() || self.node().link.is_some(), "shortcut nodes are bound");
         self.node_mut().shortcut = Some(shortcut);

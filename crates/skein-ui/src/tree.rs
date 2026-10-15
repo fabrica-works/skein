@@ -185,6 +185,10 @@ pub struct Shortcut {
     pub key: u8,
     pub modifier: Modifier,
 }
+impl Shortcut {
+    /// Escape is named only inside a dialog (ui.md, 6.1 and 14).
+    pub const ESCAPE: Shortcut = Shortcut { key: 0x1b, modifier: Modifier::Plain };
+}
 /// The modifier pressed with a shortcut's key.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Modifier {
