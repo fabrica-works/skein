@@ -295,6 +295,74 @@ impl Scene {
         self.background = Some(span);
         true
     }
+    /// Resolve platform hit-test indices, topmost first (ui.md, 11.3).
+    /// Replaces `out` whole, returning false when no act or insufficient room.
+    pub fn act_at(&self, under: &[u32], point: Point, out: &mut List<u8>) -> bool {
+        out.clear();
+        for index in under {
+            if let Some(bytes) = self.mark_act(*index) {
+                return emit_act(bytes, None, out);
+            }
+        }
+        if let Some(topmost) = under.first() {
+            let mut nearest = None;
+            for (index, mark) in self.marks.iter().enumerate() {
+                let index = u32::try_from(index).expect("mark index fits u32");
+                match mark {
+                    Mark::Group { marks, offset: _ } => {
+                        if index < *topmost
+                            && *topmost <= index.saturating_add(*marks)
+                            && *topmost < self.marks.len()
+                            && let Some(bytes) = self.mark_act(index)
+                        {
+                            nearest = Some(bytes);
+                        }
+                    }
+                    Mark::Line { .. }
+                    | Mark::Polyline { .. }
+                    | Mark::Path { .. }
+                    | Mark::Rectangle { .. }
+                    | Mark::Circle { .. }
+                    | Mark::Text { .. } => {}
+                }
+            }
+            if let Some(bytes) = nearest {
+                return emit_act(bytes, None, out);
+            }
+        }
+        match self.background {
+            Some(span) => emit_act(self.slice(span), Some(point), out),
+            None => false,
+        }
+    }
 }
 /// Drawing code, routed by the kind's owner (ui.md, 11.1).
 pub type Draw = fn(kind: DrawingKind, data: &[u8], width: u16, height: u16, scene: &mut Scene) -> bool;
+
+fn emit_act(bytes: &[u8], point: Option<Point>, out: &mut List<u8>) -> bool {
+    let extra = match point {
+        Some(_) => 4,
+        None => 0,
+    };
+    let Ok(count) = u32::try_from(bytes.len()) else {
+        return false;
+    };
+    let Some(total) = count.checked_add(extra) else {
+        return false;
+    };
+    if total > out.room() {
+        return false;
+    }
+    for byte in bytes {
+        out.push(*byte).expect("checked act capacity");
+    }
+    if let Some(point) = point {
+        for byte in point.x.to_le_bytes() {
+            out.push(byte).expect("checked point capacity");
+        }
+        for byte in point.y.to_le_bytes() {
+            out.push(byte).expect("checked point capacity");
+        }
+    }
+    true
+}
