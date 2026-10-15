@@ -9,6 +9,7 @@ use crate::{
 fn page() -> Page<'static> {
     Page::new(fixtures::look(), &LIMITS, b"/bundle/digest/", Primary::Control)
 }
+const MAIN: NodeId = NodeId(2); // page, main
 fn main(builder: &mut Builder) {
     builder.open(Role::Page);
     builder.open(Role::Main);
@@ -23,6 +24,7 @@ fn field(builder: &mut Builder, value: &[u8], written: u64) {
     builder.value(value, written);
     builder.close();
 }
+const BUTTON: NodeId = NodeId(3); // page, main, button
 fn button(builder: &mut Builder, name: &[u8]) {
     builder.open(Role::Button);
     builder.name(name);
@@ -41,6 +43,7 @@ fn list(builder: &mut Builder, keys: &[u64]) {
     builder.close();
     end(builder);
 }
+const DRAWING: NodeId = NodeId(3); // page, main, drawing
 fn drawing(builder: &mut Builder, data: &[u8]) {
     main(builder);
     builder.drawing(DrawingKind { owner: OWNER, kind: 0 }, b"Chart", data, 128);
@@ -222,6 +225,11 @@ fn a_changed_tag_replaces_the_element() {
     assert_eq!(kinds, ["replace"]);
 }
 
+// Preorder: page, main, dialog, region, button.
+const FOCUS_DIALOG: NodeId = NodeId(3);
+const FOCUS_SUBTREE: NodeId = NodeId(4);
+const FOCUS_BUTTON: NodeId = NodeId(5);
+
 #[test]
 fn a_removal_taking_the_focus_moves_it_to_an_ancestor() {
     let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
@@ -237,7 +245,7 @@ fn a_removal_taking_the_focus_moves_it_to_an_ancestor() {
         }),
         &mut Vec::new(),
     );
-    page.focused(NodeId(5));
+    page.focused(FOCUS_BUTTON);
     page.apply(
         &fixtures::patches(&mut view, 1, |b| {
             main(b);
@@ -247,7 +255,7 @@ fn a_removal_taking_the_focus_moves_it_to_an_ancestor() {
         }),
         &mut ops,
     );
-    assert_eq!(ops, vec![Op::Remove { node: NodeId(4) }, Op::Focus { node: NodeId(3) }]);
+    assert_eq!(ops, vec![Op::Remove { node: FOCUS_SUBTREE }, Op::Focus { node: FOCUS_DIALOG }]);
 }
 
 #[test]
@@ -261,7 +269,7 @@ fn a_removal_taking_the_focus_falls_back_to_the_main() {
         }),
         &mut Vec::new(),
     );
-    page.focused(NodeId(3));
+    page.focused(BUTTON);
     page.apply(
         &fixtures::patches(&mut view, 1, |b| {
             main(b);
@@ -269,13 +277,15 @@ fn a_removal_taking_the_focus_falls_back_to_the_main() {
         }),
         &mut ops,
     );
-    assert_eq!(ops, vec![Op::Remove { node: NodeId(3) }, Op::Focus { node: NodeId(2) }]);
+    assert_eq!(ops, vec![Op::Remove { node: BUTTON }, Op::Focus { node: MAIN }]);
 }
+
+const MISSING_NODE: NodeId = NodeId(99); // never allocated in the fixture
 
 #[test]
 #[should_panic(expected = "patch names a held node")]
 fn a_patch_naming_no_held_node_panics() {
-    page().apply(&[Patch::Remove { node: NodeId(99) }], &mut Vec::new());
+    page().apply(&[Patch::Remove { node: MISSING_NODE }], &mut Vec::new());
 }
 
 #[test]
@@ -291,7 +301,7 @@ fn a_resize_draws_the_scene_and_keeps_the_fallback() {
     let (mut page, mut view) =
         (Page::new(fixtures::drawing_look(), &LIMITS, b"/", Primary::Control), View::new(&LIMITS));
     page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, b"one")), &mut Vec::new());
-    page.resized(NodeId(3), 100, 50, &mut Vec::new());
+    page.resized(DRAWING, 100, 50, &mut Vec::new());
     assert_eq!(page.html(), include_str!("golden/drawing.html").trim_end());
 }
 
@@ -300,7 +310,7 @@ fn changed_drawing_data_draws_again_at_its_last_size() {
     let (mut page, mut view) =
         (Page::new(fixtures::drawing_look(), &LIMITS, b"/", Primary::Control), View::new(&LIMITS));
     page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, b"one")), &mut Vec::new());
-    page.resized(NodeId(3), 100, 50, &mut Vec::new());
+    page.resized(DRAWING, 100, 50, &mut Vec::new());
     page.apply(&fixtures::patches(&mut view, 1, |b| drawing(b, b"two")), &mut Vec::new());
     assert_eq!(page.html(), include_str!("golden/drawing-changed.html").trim_end());
 }
@@ -310,9 +320,13 @@ fn a_refused_drawing_keeps_its_fallback_visible() {
     let (mut page, mut view) =
         (Page::new(fixtures::drawing_look(), &LIMITS, b"/", Primary::Control), View::new(&LIMITS));
     page.apply(&fixtures::patches(&mut view, 0, |b| drawing(b, b"refuse")), &mut Vec::new());
-    page.resized(NodeId(3), 100, 50, &mut Vec::new());
+    page.resized(DRAWING, 100, 50, &mut Vec::new());
     assert_eq!(page.html(), include_str!("golden/fallback.html").trim_end());
 }
+
+// Preorder: page, main, first link, second link.
+const FIRST_LINK: NodeId = NodeId(3);
+const SECOND_LINK: NodeId = NodeId(4);
 
 #[test]
 fn links_are_reported_in_preorder() {
@@ -329,7 +343,7 @@ fn links_are_reported_in_preorder() {
         }),
         &mut Vec::new(),
     );
-    assert_eq!(page.links(), &[NodeId(3), NodeId(4)]);
+    assert_eq!(page.links(), &[FIRST_LINK, SECOND_LINK]);
 }
 
 #[test]
@@ -345,6 +359,8 @@ fn a_links_href_is_the_owners_path() {
         }),
         &mut Vec::new(),
     );
-    page.set_href(NodeId(3), b"/notes/1", &mut Vec::new());
+    page.set_href(FIRST_LINK, b"/notes/1", &mut Vec::new());
     assert_eq!(page.html(), include_str!("golden/href.html").trim_end());
 }
+
+mod events;

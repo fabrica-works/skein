@@ -15,4 +15,6 @@ cargo check -p skein-tls
 export NEXTEST_DOUBLE_SPAWN=0
 cargo nextest run --workspace
 cargo nextest run --workspace --profile fuzzy
+# The browser harness starts the example's binary.
+cargo build -p skein-ui-example-server
 cargo nextest run --workspace --profile browser

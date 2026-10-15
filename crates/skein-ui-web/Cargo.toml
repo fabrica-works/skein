@@ -8,14 +8,12 @@ publish.workspace = true
 
 [dependencies]
 skein-ui.workspace = true
+skein-lib.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true
 js-sys.workspace = true
-web-sys.workspace = true
-
-[dev-dependencies]
-skein-lib.workspace = true
+web-sys = { workspace = true, features = ["Document", "Element", "Node", "NodeList", "Text", "HtmlCollection", "HtmlElement", "HtmlInputElement", "HtmlTextAreaElement", "HtmlDialogElement", "Event", "EventTarget", "MouseEvent", "KeyboardEvent", "InputEvent", "ResizeObserver", "ResizeObserverEntry", "DomRect", "DomRectReadOnly"] }
 
 # Browser parts are ordinary Rust (ui-web.md, 5.1).
 [lints.rust]
