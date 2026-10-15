@@ -3,7 +3,13 @@ use crate::mapping::Primary;
 #[cfg(target_arch = "wasm32")]
 mod web;
 #[cfg(target_arch = "wasm32")]
-pub use web::{clocks, facts};
+pub use web::{Browser, clocks, facts};
+
+pub trait Platform {
+    fn read_all(&self) -> Vec<crate::store::Record>;
+    fn write(&mut self, key: &[u8], value: &[u8]) -> bool;
+    fn remove(&mut self, key: &[u8]);
+}
 
 pub struct Facts {
     pub now: skein_lib::Time,

@@ -3,6 +3,42 @@ use std::rc::Rc;
 
 use crate::inbox::Inbox;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Call {
+    Write(Vec<u8>, Vec<u8>),
+    Remove(Vec<u8>),
+}
+#[derive(Default)]
+pub struct FakePlatform {
+    pub records: Vec<crate::store::Record>,
+    pub calls: Vec<Call>,
+    pub quota: Option<usize>,
+}
+impl crate::platform::Platform for FakePlatform {
+    fn read_all(&self) -> Vec<crate::store::Record> {
+        self.records.clone()
+    }
+    fn write(&mut self, key: &[u8], value: &[u8]) -> bool {
+        self.calls.push(Call::Write(key.into(), value.into()));
+        let held: usize = self
+            .records
+            .iter()
+            .filter(|record| record.key.as_ref() != key)
+            .map(|record| record.key.len() + record.value.len())
+            .sum();
+        if self.quota.is_some_and(|quota| held + key.len() + value.len() > quota) {
+            return false;
+        }
+        self.records.retain(|record| record.key.as_ref() != key);
+        self.records.push(crate::store::Record { key: key.into(), value: value.into() });
+        true
+    }
+    fn remove(&mut self, key: &[u8]) {
+        self.calls.push(Call::Remove(key.into()));
+        self.records.retain(|record| record.key.as_ref() != key);
+    }
+}
+
 pub fn collecting() -> (Rc<Inbox<u8>>, Rc<RefCell<Vec<u8>>>) {
     let inbox = Inbox::new();
     let seen = Rc::new(RefCell::new(Vec::new()));

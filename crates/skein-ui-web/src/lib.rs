@@ -17,3 +17,4 @@ mod tests;
 
 pub mod fetch;
 pub mod platform;
+pub mod store;

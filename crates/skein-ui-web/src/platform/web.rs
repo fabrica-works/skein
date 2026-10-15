@@ -1,6 +1,32 @@
 use super::Facts;
 use skein_lib::{Time, Wall};
 
+pub struct Browser;
+fn storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.session_storage().ok().flatten()
+}
+impl super::Platform for Browser {
+    fn read_all(&self) -> Vec<crate::store::Record> {
+        let Some(storage) = storage() else { return Vec::new() };
+        (0..storage.length().unwrap_or(0))
+            .filter_map(|index| {
+                let key = storage.key(index).ok().flatten()?;
+                let value = storage.get_item(&key).ok().flatten()?;
+                Some(crate::store::Record { key: key.into_bytes().into(), value: value.into_bytes().into() })
+            })
+            .collect()
+    }
+    fn write(&mut self, key: &[u8], value: &[u8]) -> bool {
+        let (Ok(key), Ok(value)) = (std::str::from_utf8(key), std::str::from_utf8(value)) else { return false };
+        storage().is_some_and(|storage| storage.set_item(key, value).is_ok())
+    }
+    fn remove(&mut self, key: &[u8]) {
+        if let (Some(storage), Ok(key)) = (storage(), std::str::from_utf8(key)) {
+            let _removed = storage.remove_item(key);
+        }
+    }
+}
+
 // Browser clocks have millisecond precision and finite nonnegative values.
 #[expect(
     clippy::cast_possible_truncation,
