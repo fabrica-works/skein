@@ -97,6 +97,10 @@ fn each_role_has_its_accessible_roles() {
 #[derive(Clone, Copy, Debug)]
 enum Property {
     State(State),
+    Description,
+    Entry(skein_ui::EntryKind),
+    Focus,
+    Address,
     Name,
     Style,
     Region,
@@ -112,6 +116,26 @@ enum Property {
 const LINK: Run = Run::Link { to: skein_lib::Token::new(1) };
 
 const PROPERTIES: &[(Role, Property, &str)] = &[
+    (
+        Role::Region,
+        Property::Description,
+        r#"<section data-node="1" aria-describedby="skein-ui-description-1"></section><span id="skein-ui-description-1">Help &amp; &lt;b&gt;</span>"#,
+    ),
+    (
+        Role::Cell,
+        Property::Description,
+        r#"<td data-node="1" aria-describedby="skein-ui-description-1"><span id="skein-ui-description-1">Help &amp; &lt;b&gt;</span></td>"#,
+    ),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Text), r#"<input data-node="1" type="text">"#),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Number), r#"<input data-node="1" type="number">"#),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Email), r#"<input data-node="1" type="email">"#),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Telephone), r#"<input data-node="1" type="tel">"#),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Url), r#"<input data-node="1" type="url">"#),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Date), r#"<input data-node="1" type="date">"#),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Time), r#"<input data-node="1" type="time">"#),
+    (Role::TextField, Property::Entry(skein_ui::EntryKind::Secret), r#"<input data-node="1" type="password">"#),
+    (Role::Heading { level: 1 }, Property::Focus, r#"<h1 data-node="1" tabindex="-1"></h1>"#),
+    (Role::Image, Property::Address, r#"<img data-node="1" alt="" src="/a.png">"#),
     (Role::Button, Property::State(State::Disabled), r#"<button data-node="1" type="button" disabled=""></button>"#),
     (Role::Region, Property::State(State::Disabled), r#"<section data-node="1" aria-disabled="true"></section>"#),
     (Role::Region, Property::State(State::Expanded), r#"<section data-node="1" aria-expanded="true"></section>"#),
@@ -192,6 +216,12 @@ fn property(made: &mut Made, property: Property) {
         Property::State(state) => {
             made.attribute.states.push(state).expect("fixture state capacity");
         }
+        Property::Description => made.attribute.description = Some(b"Help & <b>".to_vec().into_boxed_slice()),
+        Property::Entry(kind) => made.attribute.entry = Some(kind),
+        Property::Focus => made.attribute.focus = Some(1),
+        Property::Address => {
+            made.attribute.source = Some(skein_ui::Source::Address(b"/a.png".to_vec().into_boxed_slice()));
+        }
         Property::Name => made.attribute.name = Some(b"Words & <b>".to_vec().into_boxed_slice()),
         Property::Style => {
             made.attribute.styles.push(Style { owner: OWNER, token: 0 }).expect("fixture style capacity");
@@ -201,7 +231,9 @@ fn property(made: &mut Made, property: Property) {
         Property::Primary(_) => made.attribute.shortcut = Some(Shortcut { key: b'k', modifier: Modifier::Primary }),
         Property::Escape => made.attribute.shortcut = Some(Shortcut { key: 27, modifier: Modifier::Plain }),
         Property::Value => made.value = Some(Value { text: b"<value>".to_vec().into_boxed_slice(), written: 1 }),
-        Property::Picture => made.attribute.picture = Some(Picture { owner: OWNER, number: 0 }),
+        Property::Picture => {
+            made.attribute.source = Some(skein_ui::Source::Picture(Picture { owner: OWNER, number: 0 }));
+        }
         Property::External => made.attribute.external = Some(b"https://example.com/".to_vec().into_boxed_slice()),
         Property::Run(run) => {
             made.text = vec![TextRun { run, text: b"<run>".to_vec().into_boxed_slice() }].into_boxed_slice();

@@ -81,7 +81,23 @@ impl<'a> Page<'a> {
     }
 
     pub fn apply(&mut self, patches: &[Patch], ops: &mut Vec<Op>) {
+        let mut focus = None;
         for patch in patches {
+            match patch {
+                Patch::Insert { nodes, .. } => {
+                    for made in nodes {
+                        if made.attribute.focus.is_some() {
+                            focus = Some(made.id);
+                        }
+                    }
+                }
+                Patch::Attribute { node, attribute } => {
+                    if attribute.focus.is_some() && attribute.focus != self.held(*node).made.attribute.focus {
+                        focus = Some(*node);
+                    }
+                }
+                Patch::Remove { .. } | Patch::Move { .. } | Patch::Text { .. } | Patch::Value { .. } => {}
+            }
             match patch {
                 Patch::Insert { parent, before, nodes } => self.insert(*parent, *before, nodes, ops),
                 Patch::Remove { node } => self.remove(*node, ops),
@@ -136,6 +152,10 @@ impl<'a> Page<'a> {
                     ops.push(Op::ScrollEnd { node: *node });
                 }
             }
+        }
+        if let Some(node) = focus.filter(|node| self.nodes.contains_key(node)) {
+            self.focused = Some(node);
+            ops.push(Op::Focus { node });
         }
     }
 
@@ -336,8 +356,18 @@ impl<'a> Page<'a> {
         } else {
             core
         };
+        let description = if [Role::Item, Role::Cell].contains(&self.held(node).made.attribute.role)
+            && self.held(node).made.attribute.description.is_some()
+        {
+            destination.children.pop()
+        } else {
+            None
+        };
         for child in &self.held(node).children {
             destination.append(self.render(*child));
+        }
+        if let Some(description) = description {
+            destination.children.push(description);
         }
         element
     }
@@ -352,21 +382,28 @@ fn semantic(element: &Element) -> &Element {
                 return child;
             }
         }
+        if let Some(Child::Element(first)) = element.children.first() {
+            return first;
+        }
         unreachable!("node fragment has its semantic element");
     }
     element
 }
 
-fn semantic_mut(element: &mut Element) -> &mut Element {
+pub(crate) fn semantic_mut(element: &mut Element) -> &mut Element {
     if element.tag.is_empty() {
-        for child in &mut element.children {
-            if let Child::Element(child) = child
-                && child.attribute("data-node").is_some()
-            {
-                return child;
-            }
+        let index = element
+            .children
+            .iter()
+            .position(|child| match child {
+                Child::Element(child) => child.attribute("data-node").is_some(),
+                Child::Text(_) => false,
+            })
+            .unwrap_or(0);
+        match element.children.get_mut(index).expect("fragment has its semantic element") {
+            Child::Element(child) => return child,
+            Child::Text(_) => unreachable!("semantic element is an element"),
         }
-        unreachable!("node fragment has its semantic element");
     }
     element
 }

@@ -21,8 +21,8 @@ pub use builder::{Builder, Slot, SlotId};
 pub use diff::{Attribute, Made, Patch, diff};
 pub use limits::{Limits, worst_case};
 pub use tree::{
-    Drawing, DrawingKind, Key, Modifier, Node, NodeId, Owner, Picture, Region, Role, Run, Shortcut, SlotRef, State,
-    Style, TextRun, Tree, Value,
+    Drawing, DrawingKind, EntryKind, Key, Modifier, Node, NodeId, Owner, Picture, Region, Role, Run, Shortcut, SlotRef,
+    Source, State, Style, TextRun, Tree, Value,
 };
 pub use view::View;
 

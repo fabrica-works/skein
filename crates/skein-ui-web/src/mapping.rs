@@ -1,6 +1,6 @@
 //! The default semantic tree mapping (ui-web.md, 6).
 
-use skein_ui::{Made, Modifier, Role, Run, Shortcut, State, TextRun};
+use skein_ui::{EntryKind, Made, Modifier, Role, Run, Shortcut, Source, State, TextRun};
 
 use crate::{Look, dom::Element};
 
@@ -13,9 +13,33 @@ pub enum Primary {
 
 #[must_use]
 pub fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -> Element {
+    let mut e = core_element(made, look, prefix, primary);
+    if let Some(description) = &made.attribute.description {
+        let id = format!("skein-ui-description-{}", made.id.0);
+        let core = crate::page::semantic_mut(&mut e);
+        core.set("aria-describedby", &id);
+        let mut words = Element::new("span");
+        words.set("id", &id);
+        words.text(description);
+        if [Role::Item, Role::Cell].contains(&made.attribute.role) {
+            core.append(words);
+        } else if e.tag.is_empty() {
+            e.append(words);
+        } else {
+            let mut pair = Element::new("");
+            pair.append(e);
+            pair.append(words);
+            e = pair;
+        }
+    }
+    e
+}
+
+fn core_element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) -> Element {
     let a = &made.attribute;
     let mut e = base(a.role, made.id.0);
     name(&mut e, made);
+    properties(&mut e, made);
     if a.role == Role::Disclosure && a.name.is_none() {
         e.append(Element::new("summary"));
     }
@@ -105,6 +129,41 @@ pub fn element(made: &Made, look: &Look<'_>, prefix: &[u8], primary: Primary) ->
         return pair;
     }
     e
+}
+
+fn properties(e: &mut Element, made: &Made) {
+    let a = &made.attribute;
+    if let Some(kind) = a.entry {
+        e.set(
+            "type",
+            match kind {
+                EntryKind::Text => "text",
+                EntryKind::Number => "number",
+                EntryKind::Email => "email",
+                EntryKind::Telephone => "tel",
+                EntryKind::Url => "url",
+                EntryKind::Date => "date",
+                EntryKind::Time => "time",
+                EntryKind::Secret => "password",
+            },
+        );
+    }
+    if a.focus.is_some()
+        && ![
+            Role::Button,
+            Role::Link,
+            Role::TextField,
+            Role::TextArea,
+            Role::Choice,
+            Role::Check,
+            Role::Dialog,
+            Role::Tab,
+            Role::Disclosure,
+        ]
+        .contains(&a.role)
+    {
+        e.set("tabindex", "-1");
+    }
 }
 
 fn base(role: Role, id: u32) -> Element {
@@ -334,12 +393,11 @@ fn name(e: &mut Element, made: &Made) {
 fn image(e: &mut Element, made: &Made, look: &Look<'_>, prefix: &[u8]) {
     let a = &made.attribute;
     if a.role == Role::Image {
-        let source = a.picture.and_then(|picture| {
-            let owner = look.names.iter().find(|names| names.owner == picture.owner)?;
-            let (_, files) = look.pictures.iter().find(|(owner, _)| *owner == picture.owner)?;
-            let file = files.get(usize::from(picture.number))?;
-            Some(format!("{}pictures/{}/{}", words(prefix), words(owner.prefix), words(file)))
-        });
+        let source = match &a.source {
+            Some(Source::Address(address)) => Some(words(address)),
+            Some(Source::Picture(picture)) => picture_source(*picture, look, prefix),
+            None => None,
+        };
         if let Some(source) = source {
             e.set("src", &source);
         } else {
@@ -350,6 +408,13 @@ fn image(e: &mut Element, made: &Made, look: &Look<'_>, prefix: &[u8]) {
             }
         }
     }
+}
+
+fn picture_source(picture: skein_ui::Picture, look: &Look<'_>, prefix: &[u8]) -> Option<String> {
+    let owner = look.names.iter().find(|names| names.owner == picture.owner)?;
+    let (_, files) = look.pictures.iter().find(|(owner, _)| *owner == picture.owner)?;
+    let file = files.get(usize::from(picture.number))?;
+    Some(format!("{}pictures/{}/{}", words(prefix), words(owner.prefix), words(file)))
 }
 
 fn value(e: &mut Element, made: &Made) {

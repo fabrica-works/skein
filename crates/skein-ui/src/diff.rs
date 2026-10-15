@@ -8,7 +8,7 @@
 //! Bindings stay in the view: the shell sees only their presence and node ids.
 
 use crate::Limits;
-use crate::{Drawing, Node, NodeId, Picture, Region, Role, Shortcut, State, Style, TextRun, Tree, Value};
+use crate::{Drawing, EntryKind, Node, NodeId, Region, Role, Shortcut, Source, State, Style, TextRun, Tree, Value};
 use alloc::boxed::Box;
 use skein_lib::{List, Queue, Stack};
 
@@ -21,7 +21,10 @@ pub struct Attribute {
     pub styles: List<Style>,
     pub region: Option<Region>,
     pub shortcut: Option<Shortcut>,
-    pub picture: Option<Picture>,
+    pub source: Option<Source>,
+    pub description: Option<Box<[u8]>>,
+    pub entry: Option<EntryKind>,
+    pub focus: Option<u64>,
     /// The shell asks the view root for this node's address when this is set.
     pub linked: bool,
     pub external: Option<Box<[u8]>>,
@@ -38,7 +41,10 @@ impl Attribute {
             styles: node.styles.clone(),
             region: node.region,
             shortcut: node.shortcut,
-            picture: node.picture,
+            source: node.source.clone(),
+            description: node.description.clone(),
+            entry: node.entry,
+            focus: node.focus,
             linked: node.link.is_some(),
             external: node.external.clone(),
             bound: node.binding.is_some() || node.link.is_some(),
@@ -258,7 +264,10 @@ fn attributes(old: &Node, new: &Node, out: &mut Queue<Patch>) {
         || old.styles != new.styles
         || old.region != new.region
         || old.shortcut != new.shortcut
-        || old.picture != new.picture
+        || old.source != new.source
+        || old.description != new.description
+        || old.entry != new.entry
+        || old.focus != new.focus
         || old.link != new.link
         || old.external != new.external
         || was_bound != bound

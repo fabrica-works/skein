@@ -322,3 +322,30 @@ fn a_changed_region_name_is_one_attribute_patch() {
         }
     }
 }
+
+const FOCUSED_ROOT: NodeId = NodeId(1); // main
+
+#[test]
+fn a_moved_focus_request_is_an_attribute_patch() {
+    let mut view = View::new(&LIMITS);
+    let mut out = Queue::with_capacity(LIMITS.patches);
+    for count in [1, 2] {
+        let mut b = view.builder();
+        b.open(Role::Main);
+        b.focus(count);
+        b.close();
+        view.finish(b, count, &mut out);
+        if count == 1 {
+            while out.pop().is_some() {}
+        }
+    }
+    assert_eq!(out.len(), 1);
+    match out.pop().unwrap() {
+        Patch::Attribute { node, attribute } => assert_eq!((node, attribute.focus), (FOCUSED_ROOT, Some(2))),
+        patch @ (Patch::Insert { .. }
+        | Patch::Remove { .. }
+        | Patch::Move { .. }
+        | Patch::Text { .. }
+        | Patch::Value { .. }) => panic!("expected focus attribute, got {patch:?}"),
+    }
+}

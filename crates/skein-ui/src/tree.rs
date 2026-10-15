@@ -155,6 +155,24 @@ pub struct Picture {
     pub owner: Owner,
     pub number: u16,
 }
+/// A field's keyboard or control (ui.md, 3.4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum EntryKind {
+    Text,
+    Number,
+    Email,
+    Telephone,
+    Url,
+    Date,
+    Time,
+    Secret,
+}
+/// An image's owner picture or checked address (ui.md, 3.5).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Source {
+    Picture(Picture),
+    Address(Box<[u8]>),
+}
 /// A key a bound node answers to as a press (ui.md, 6.1).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Shortcut {
@@ -239,7 +257,10 @@ pub struct Node {
     pub styles: List<Style>,
     pub region: Option<Region>,
     pub shortcut: Option<Shortcut>,
-    pub picture: Option<Picture>,
+    pub source: Option<Source>,
+    pub description: Option<Box<[u8]>>,
+    pub entry: Option<EntryKind>,
+    pub focus: Option<u64>,
     pub text: List<TextRun>,
     pub value: Option<Value>,
     pub link: Option<crate::Binding>,
@@ -262,7 +283,10 @@ impl Node {
             styles: List::with_capacity(0),
             region: None,
             shortcut: None,
-            picture: None,
+            source: None,
+            description: None,
+            entry: None,
+            focus: None,
             text: List::with_capacity(0),
             value: None,
             link: None,
@@ -284,7 +308,10 @@ impl Node {
             styles: List::with_capacity(limits.styles_per_node),
             region: None,
             shortcut: None,
-            picture: None,
+            source: None,
+            description: None,
+            entry: None,
+            focus: None,
             text: List::with_capacity(runs),
             value: None,
             link: None,
@@ -300,6 +327,15 @@ impl Node {
         let mut bytes = 0_u32;
         if let Some(name) = &self.name {
             bytes = length(name);
+        }
+        if let Some(description) = &self.description {
+            bytes = bytes.checked_add(length(description)).expect("node bytes fit u32");
+        }
+        if let Some(source) = &self.source {
+            match source {
+                Source::Picture(_) => {}
+                Source::Address(address) => bytes = bytes.checked_add(length(address)).expect("node bytes fit u32"),
+            }
         }
         if let Some(value) = &self.value {
             bytes = bytes.checked_add(length(&value.text)).expect("node bytes fit u32");

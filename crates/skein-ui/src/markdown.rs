@@ -361,6 +361,27 @@ pub fn safe_url(url: &[u8]) -> bool {
     true
 }
 
+/// Image addresses stay on the origin or use https with a nonempty host.
+#[must_use]
+pub fn safe_image_address(address: &[u8]) -> bool {
+    let valid = if address.starts_with(b"/") && !address.starts_with(b"//") {
+        true
+    } else if let Some(host) = address.strip_prefix(b"https://") {
+        !host.is_empty() && host.first() != Some(&b'/') && host.first() != Some(&b'?') && host.first() != Some(&b'#')
+    } else {
+        false
+    };
+    if !valid {
+        return false;
+    }
+    for byte in address {
+        if *byte <= b' ' || *byte == 0x7f || *byte == b'"' || *byte == b'\'' || *byte == b'<' || *byte == b'>' {
+            return false;
+        }
+    }
+    true
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Marker {
     at: usize,

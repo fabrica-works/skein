@@ -252,6 +252,110 @@ fn an_image_keeps_its_owners_picture() {
     builder.picture(picture);
     builder.close();
     let tree = builder.finish();
-    assert_eq!(tree.get(0).unwrap().picture, Some(picture));
-    assert_eq!(crate::Made::of(tree.get(0).unwrap()).attribute.picture, Some(picture));
+    assert_eq!(tree.get(0).unwrap().source, Some(crate::Source::Picture(picture)));
+    assert_eq!(crate::Made::of(tree.get(0).unwrap()).attribute.source, Some(crate::Source::Picture(picture)));
+}
+
+#[test]
+fn a_second_focus_request_in_one_tree_is_an_assertion() {
+    let result = std::panic::catch_unwind(|| {
+        let mut b = Builder::new(&LIMITS);
+        b.open(Role::Page);
+        b.focus(1);
+        b.open(Role::Main);
+        b.focus(1);
+    });
+    assert!(result.is_err());
+}
+
+#[test]
+fn a_description_counts_in_the_nodes_text_bytes() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::TextField);
+    b.name(b"Name");
+    b.description(b"Help");
+    b.close();
+    assert_eq!(b.finish().get(0).unwrap().text_bytes(), 8);
+}
+
+#[test]
+#[should_panic(expected = "node fits its text capacity")]
+fn a_description_shares_the_nodes_byte_bound() {
+    let mut b = Builder::new(&Limits { text_per_node: 5, ..LIMITS });
+    b.open(Role::TextField);
+    b.name(b"Name");
+    b.description(b"Help");
+}
+
+#[test]
+#[should_panic(expected = "entry kinds belong to text fields")]
+fn an_entry_kind_on_a_button_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Button);
+    b.entry(crate::EntryKind::Secret);
+}
+
+const IMAGE_ADDRESSES: &[(&[u8], bool)] = &[
+    (b"/a.png", true),
+    (b"//x/a.png", false),
+    (b"https://x/a.png", true),
+    (b"http://x/a.png", false),
+    (b"/a b.png", false),
+    (b"https://", false),
+    (b"https://?x", false),
+    (b"https:///x", false),
+    (b"/a\x7f.png", false),
+    (b"/a\".png", false),
+    (b"/a'.png", false),
+    (b"/a<.png", false),
+];
+
+#[test]
+fn an_image_address_must_be_a_path_or_https() {
+    for &(address, expected) in IMAGE_ADDRESSES {
+        let outcome = std::panic::catch_unwind(|| {
+            let mut b = Builder::new(&LIMITS);
+            b.open(Role::Image);
+            b.image_address(address);
+        });
+        assert_eq!(outcome.is_ok(), expected, "{address:?}");
+    }
+}
+
+#[test]
+fn an_image_address_counts_in_the_nodes_text_bytes() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Image);
+    b.image_address(b"/a.png");
+    b.close();
+    assert_eq!(b.finish().get(0).unwrap().text_bytes(), 6);
+}
+
+#[test]
+fn a_reused_builder_accepts_a_focus_request() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Main);
+    b.focus(1);
+    b.close();
+    let mut b = Builder::reuse(b.finish(), &LIMITS);
+    b.open(Role::Main);
+    b.focus(2);
+    b.close();
+    assert_eq!(b.finish().get(0).unwrap().focus, Some(2));
+}
+
+#[test]
+#[should_panic(expected = "at most one focus request per tree")]
+fn a_spliced_second_focus_request_is_an_assertion() {
+    let mut b = Builder::new(&LIMITS);
+    b.open(Role::Main);
+    b.focus(1);
+    b.slot(crate::SlotRef { owner: Owner { number: 1 }, token: Token::new(1) }, b"Loading");
+    b.close();
+    let slot = b.slots(0)[0].id;
+    let mut fragment = Builder::new(&LIMITS);
+    fragment.open(Role::Paragraph);
+    fragment.focus(2);
+    fragment.close();
+    b.splice(slot, fragment);
 }

@@ -8,7 +8,8 @@ use crate::Binding;
 use crate::Limits;
 use crate::tree::length;
 use crate::{
-    Drawing, DrawingKind, Key, Node, Picture, Region, Role, Run, Shortcut, SlotRef, State, Style, TextRun, Tree, Value,
+    Drawing, DrawingKind, EntryKind, Key, Node, Picture, Region, Role, Run, Shortcut, SlotRef, Source, State, Style,
+    TextRun, Tree, Value,
 };
 
 use alloc::boxed::Box;
@@ -42,6 +43,7 @@ pub struct Builder {
     open: Stack<u32>,
     text_bytes: u32,
     bindings: u32,
+    focused: bool,
     slots: List<PlacedSlot>,
     next_slot: u32,
     spare: List<Node>,
@@ -57,6 +59,7 @@ impl Builder {
             open: Stack::with_capacity(limits.depth),
             text_bytes: 0,
             bindings: 0,
+            focused: false,
             slots: List::with_capacity(limits.slots),
             next_slot: 0,
             spare: List::with_capacity(limits.nodes),
@@ -74,6 +77,7 @@ impl Builder {
             open: Stack::with_capacity(limits.depth),
             text_bytes: 0,
             bindings: 0,
+            focused: false,
             slots: List::with_capacity(limits.slots),
             next_slot: 0,
             spare: List::with_capacity(limits.nodes),
@@ -157,6 +161,28 @@ impl Builder {
         self.node_mut().name = Some(name);
     }
 
+    /// Describe the open node beyond its name, within its text bound.
+    pub fn description(&mut self, bytes: &[u8]) {
+        let old = match &self.node().description {
+            Some(description) => length(description),
+            None => 0,
+        };
+        self.charge(old, length(bytes));
+        let description = copy_of(bytes);
+        self.node_mut().description = Some(description);
+    }
+    /// Offer the keyboard or control for a text field.
+    pub fn entry(&mut self, kind: EntryKind) {
+        assert!(self.node().role == Role::TextField, "entry kinds belong to text fields");
+        self.node_mut().entry = Some(kind);
+    }
+    /// Request focus after the shell applies the turn's patches.
+    pub fn focus(&mut self, count: u64) {
+        assert!(!self.focused, "at most one focus request per tree");
+        self.node_mut().focus = Some(count);
+        self.focused = true;
+    }
+
     /// Add a semantic state once.
     pub fn state(&mut self, state: State) {
         if !self.node().states.as_slice().contains(&state) {
@@ -201,7 +227,28 @@ impl Builder {
     }
     pub fn picture(&mut self, picture: Picture) {
         assert!(self.node().role == Role::Image, "pictures belong to images");
-        self.node_mut().picture = Some(picture);
+        let old = self.image_bytes();
+        self.charge(old, 0);
+        self.node_mut().source = Some(Source::Picture(picture));
+    }
+
+    /// Set a checked path or https image address, charged as text bytes.
+    pub fn image_address(&mut self, address: &[u8]) {
+        assert!(self.node().role == Role::Image, "image addresses belong to images");
+        assert!(crate::markdown::safe_image_address(address), "image address is a checked path or https URL");
+        let old = self.image_bytes();
+        self.charge(old, length(address));
+        let address = copy_of(address);
+        self.node_mut().source = Some(Source::Address(address));
+    }
+    fn image_bytes(&self) -> u32 {
+        match &self.node().source {
+            Some(source) => match source {
+                Source::Picture(_) => 0,
+                Source::Address(address) => length(address),
+            },
+            None => 0,
+        }
     }
 
     /// Identify a list item by its object.
@@ -315,6 +362,8 @@ impl Builder {
         assert!(self.open.is_empty() && fragment.open.is_empty(), "splice only complete trees");
         assert!(self.limits == fragment.limits, "fragments use the whole tree limits");
         assert!(fragment.next_slot == fragment.slots.len(), "fragments are built before their slots are filled");
+        assert!(!(self.focused && fragment.focused), "at most one focus request per tree");
+        self.focused = self.focused || fragment.focused;
         let mut target = None;
         for placed in &self.slots {
             if placed.slot.id == id {

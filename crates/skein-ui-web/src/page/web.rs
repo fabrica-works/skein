@@ -420,8 +420,13 @@ impl Mounted {
                 std::slice::from_ref(child),
                 element.namespace_uri().as_deref() == Some("http://www.w3.org/2000/svg"),
             ) {
-                element.insert_before(&node, anchor.as_ref()).expect("own content goes before semantic children");
-                anchor = node.next_sibling();
+                let description =
+                    node.dyn_ref::<Element>().is_some_and(|e| e.id().starts_with("skein-ui-description-"));
+                let before = if description { None } else { anchor.as_ref() };
+                element.insert_before(&node, before).expect("own content surrounds semantic children");
+                if !description {
+                    anchor = node.next_sibling();
+                }
             }
         }
     }

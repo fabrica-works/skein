@@ -364,3 +364,76 @@ fn a_links_href_is_the_owners_path() {
 }
 
 mod events;
+
+const FOCUS_HEADING: NodeId = NodeId(3); // page, main, heading
+fn focus_heading(b: &mut Builder, count: u64) {
+    main(b);
+    b.open(Role::Heading { level: 1 });
+    b.focus(count);
+    b.close();
+    end(b);
+}
+
+#[test]
+fn a_focus_request_focuses_its_node() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(&fixtures::patches(&mut view, 0, |b| focus_heading(b, 1)), &mut ops);
+    assert_eq!(ops.last(), Some(&Op::Focus { node: FOCUS_HEADING }));
+}
+
+#[test]
+fn a_moved_focus_count_focuses_again() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(&fixtures::patches(&mut view, 0, |b| focus_heading(b, 1)), &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| focus_heading(b, 2)), &mut ops);
+    assert_eq!(ops.last(), Some(&Op::Focus { node: FOCUS_HEADING }));
+}
+
+#[test]
+fn an_unchanged_focus_count_does_not_focus_again() {
+    let (mut page, mut view, mut ops) = (page(), View::new(&LIMITS), Vec::new());
+    page.apply(&fixtures::patches(&mut view, 0, |b| focus_heading(b, 1)), &mut Vec::new());
+    page.apply(&fixtures::patches(&mut view, 1, |b| focus_heading(b, 1)), &mut ops);
+    assert_eq!(ops, []);
+}
+
+#[test]
+fn a_described_cell_keeps_its_description_after_its_children() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(
+        &fixtures::patches(&mut view, 0, |b| {
+            main(b);
+            b.open(Role::Cell);
+            b.description(b"Help");
+            b.text(Run::Plain, b"Value");
+            b.close();
+            end(b);
+        }),
+        &mut Vec::new(),
+    );
+    assert_eq!(
+        page.html(),
+        r#"<div><main data-node="2"><td data-node="3" aria-describedby="skein-ui-description-3"><span data-node="4">Value</span><span id="skein-ui-description-3">Help</span></td></main></div>"#
+    );
+}
+
+#[test]
+fn a_changed_description_updates_its_companion() {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    for (count, words) in [(0, b"Old".as_slice()), (1, b"Help & <b>")] {
+        page.apply(
+            &fixtures::patches(&mut view, count, |b| {
+                main(b);
+                b.open(Role::TextField);
+                b.description(words);
+                b.close();
+                end(b);
+            }),
+            &mut Vec::new(),
+        );
+    }
+    assert_eq!(
+        page.html(),
+        r#"<div><main data-node="2"><input data-node="3" type="text" aria-describedby="skein-ui-description-3"><span id="skein-ui-description-3">Help &amp; &lt;b&gt;</span></main></div>"#
+    );
+}
