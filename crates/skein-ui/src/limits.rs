@@ -1,7 +1,7 @@
 //! Configured UI storage (skein's ui.md, section 15).
 //! The caller derives these capacities from the domain and its own fragments.
 //! `worst_case` counts owned heap, excluding allocator overhead, for the visible
-//! tree, builders and their splice scratch, diff scratch and output patches.
+//! tree, builders and their splice scratch, diff scratch, output patches and a scene.
 
 use crate::builder::PlacedSlot;
 use crate::diff::Open;
@@ -27,7 +27,7 @@ pub struct Limits {
     pub scene_bytes: u32,
 }
 
-/// Heap for rendering, splicing, diff scratch and the largest patch payloads.
+/// Heap for rendering, splicing, diff scratch, patch payloads and one scene.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     let nodes = List::<Node>::worst_case(limits.nodes)?;
@@ -49,6 +49,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let ancestry = Stack::<Open>::worst_case(limits.depth)?.checked_mul(2)?;
     let markdown = crate::markdown::worst_case(limits.text_bytes, limits.markdown_depth)?;
     trees
+        .checked_add(crate::scene::worst_case(limits)?)?
         .checked_add(markdown)?
         .checked_add(stacks)?
         .checked_add(slots)?

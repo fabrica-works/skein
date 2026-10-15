@@ -47,6 +47,7 @@ members = [
     "tests/sim",
     "tests/tls",
     "tests/ui-text",
+    "tests/ui",
     "tests/world",
 ]
 
