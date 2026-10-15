@@ -13,6 +13,8 @@ const LIMITS: Limits = Limits {
     bindings: 8,
     slots: 8,
     markdown_depth: 2,
+    scene_marks: 16,
+    scene_bytes: 256,
 };
 
 fn reference(number: u64) -> SlotRef {

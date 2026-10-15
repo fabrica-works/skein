@@ -42,6 +42,8 @@ const LIMITS: Limits = Limits {
     bindings: 8,
     slots: 0,
     markdown_depth: 2,
+    scene_marks: 16,
+    scene_bytes: 256,
 };
 fn build(fill: impl FnOnce(&mut Builder)) -> View {
     let mut view = View::new(&LIMITS);

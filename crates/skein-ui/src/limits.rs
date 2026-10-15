@@ -23,6 +23,8 @@ pub struct Limits {
     pub bindings: u32,
     pub slots: u32,
     pub markdown_depth: u32,
+    pub scene_marks: u32,
+    pub scene_bytes: u32,
 }
 
 /// Heap for rendering, splicing, diff scratch and the largest patch payloads.

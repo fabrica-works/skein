@@ -11,6 +11,8 @@ pub(crate) const LIMITS: Limits = Limits {
     bindings: 4,
     slots: 4,
     markdown_depth: 2,
+    scene_marks: 16,
+    scene_bytes: 256,
 };
 
 /// Start a generic page with a single-node banner.

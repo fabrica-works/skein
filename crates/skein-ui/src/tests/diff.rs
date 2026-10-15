@@ -21,6 +21,8 @@ const LIMITS: Limits = Limits {
     bindings: 32,
     slots: 8,
     markdown_depth: 2,
+    scene_marks: 16,
+    scene_bytes: 256,
 };
 
 #[derive(Debug)]

@@ -14,6 +14,8 @@ pub fn limits() -> skein_ui::Limits {
         bindings: 64,
         slots: 0,
         markdown_depth: 0,
+        scene_marks: 0,
+        scene_bytes: 0,
     }
 }
 

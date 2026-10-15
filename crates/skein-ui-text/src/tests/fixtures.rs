@@ -13,6 +13,8 @@ pub const LIMITS: Limits = Limits {
     bindings: 32,
     slots: 2,
     markdown_depth: 2,
+    scene_marks: 16,
+    scene_bytes: 256,
 };
 pub const STATUS: Region = Region { owner: Owner { number: 1 }, number: 1 };
 

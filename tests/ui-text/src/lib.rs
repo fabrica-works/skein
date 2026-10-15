@@ -12,6 +12,8 @@ pub const LIMITS: Limits = Limits {
     bindings: 32,
     slots: 2,
     markdown_depth: 2,
+    scene_marks: 16,
+    scene_bytes: 256,
 };
 #[must_use]
 pub fn binding() -> Binding {

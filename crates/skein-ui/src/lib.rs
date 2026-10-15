@@ -12,6 +12,7 @@ pub mod look;
 pub mod markdown;
 pub mod outline;
 pub mod phrases;
+pub mod scene;
 pub(crate) mod tree;
 mod view;
 
