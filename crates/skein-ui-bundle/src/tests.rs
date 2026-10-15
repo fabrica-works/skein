@@ -99,7 +99,7 @@ fn the_same_inputs_give_the_same_bundle() {
     assert_eq!(first, second);
     let files = contents(&a);
     assert_eq!(files, contents(&b));
-    assert_eq!(files.len(), 8);
+    assert_eq!(files.len(), 9);
     assert_eq!(files.get(&format!("{first}/files/about.txt")), Some(&b"About".to_vec()));
 }
 
@@ -152,5 +152,33 @@ fn references_go_under_the_prefix() {
     assert_eq!(
         fs::read(out.join(digest.to_string()).join("boot.js")).expect("starter"),
         b"import init from \"./notes.js\";\ninit();\n"
+    );
+}
+
+#[test]
+fn the_stylesheet_names_no_class() {
+    let stylesheet = include_str!("../skein-ui.css");
+    let mut remaining = stylesheet;
+    let mut without_comments = String::new();
+    while let Some(start) = remaining.find("/*") {
+        without_comments.push_str(&remaining[..start]);
+        let comment = &remaining[start + 2..];
+        remaining = &comment[comment.find("*/").expect("comment closes") + 2..];
+    }
+    without_comments.push_str(remaining);
+    assert!(!without_comments.contains('.'), "the stylesheet uses no class selector");
+}
+
+#[test]
+fn skein_ui_css_comes_first_in_the_page() {
+    let scratch = Scratch::new("bundle-css");
+    let inputs = inputs(&scratch);
+    let out = scratch.path().join("out");
+    let digest = bundle(&inputs, &glue(), &out).expect("bundle");
+    let page = fs::read_to_string(out.join("index.html")).expect("page");
+    assert!(page.find("/skein-ui.css").expect("kit stylesheet") < page.find("/a.css").expect("owner stylesheet"));
+    assert_eq!(
+        fs::read(out.join(digest.to_string()).join("skein-ui.css")).expect("stylesheet"),
+        include_bytes!("../skein-ui.css")
     );
 }

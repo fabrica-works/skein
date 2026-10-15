@@ -47,6 +47,7 @@ fn io<T>(path: &Path, result: std::io::Result<T>) -> Result<T, Refusal> {
 pub fn bundle(inputs: &Inputs, glue: &Glue, out: &Path) -> Result<Digest, Refusal> {
     let mut files = BTreeMap::new();
     files.insert("boot.js".into(), page::starter(&inputs.name));
+    files.insert("skein-ui.css".into(), include_bytes!("../skein-ui.css").to_vec());
     files.insert(format!("{}.js", inputs.name), glue.js.clone());
     files.insert(format!("{}_bg.wasm", inputs.name), glue.wasm.clone());
     for (path, bytes) in &glue.snippets {
