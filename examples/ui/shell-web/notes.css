@@ -1,3 +1,5 @@
 body { margin: 2rem; font-family: sans-serif; }
 .notes-card { border: 1px solid currentColor; padding: 1rem; }
 form { display: grid; gap: .5rem; max-width: 32rem; }
+aside figure { height: 144px; max-width: 32rem; margin: 1rem 0; }
+.notes-bar { fill: currentColor; }

@@ -18,3 +18,13 @@ Add:
     [9] ( ) reference
   [10] Clear
   [11] Add
+Notes by label:
+  Notes by label:
+    - idea: 0
+    - task: 2
+    - reference: 0
+  Label:
+    [12] (*) All notes
+    [13] ( ) Ideas
+    [14] ( ) Tasks
+    [15] ( ) References

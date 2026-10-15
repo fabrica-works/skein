@@ -196,3 +196,43 @@ fn escape_in_the_dialog_keeps_the_draft() {
     ]));
     assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
 }
+
+#[test]
+fn a_press_on_a_bar_shows_its_labels_notes() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See { find: Find::text(b"Live"), within: SECOND }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"An idea".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"An idea"), within: SECOND }),
+        harness::Step::Person(Step::Type {
+            find: Find::exactly_named(Role::TextField, b"Title"),
+            words: b"A task".as_slice().into(),
+        }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Option, b"task") }),
+        harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Button, b"Add") }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"A task"), within: SECOND }),
+        harness::Step::PressAt {
+            find: Find::exactly_named(Role::Drawing, b"Notes by label"),
+            at: skein_browser::boundary::Point { x: 128, y: 60 },
+        },
+        harness::Step::Person(Step::Gone { find: Find::exactly_named(Role::Link, b"An idea"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::exactly_named(Role::Link, b"A task"), within: SECOND }),
+    ]));
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}
+#[test]
+fn the_charts_fallback_is_read_by_its_name() {
+    let mut person = Script::new(Box::new([
+        harness::Step::Person(Step::See {
+            find: Find::exactly_named(Role::Drawing, b"Notes by label"),
+            within: SECOND,
+        }),
+        harness::Step::Person(Step::See { find: Find::text(b"idea: 0"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::text(b"task: 0"), within: SECOND }),
+        harness::Step::Person(Step::See { find: Find::text(b"reference: 0"), within: SECOND }),
+    ]));
+    assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
+}

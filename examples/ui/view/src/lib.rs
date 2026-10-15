@@ -6,6 +6,7 @@ extern crate alloc;
 #[rustfmt::skip]
 #[path = "generated/v1.rs"]
 pub mod records;
+pub mod draw;
 pub mod limits;
 pub mod places;
 mod state;

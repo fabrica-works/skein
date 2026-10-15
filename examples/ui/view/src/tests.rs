@@ -1,5 +1,6 @@
 //! The list, addresses and capacities (examples.md, 9.5).
 mod adds;
+mod chart;
 mod drift;
 mod fixtures;
 mod form;
@@ -55,8 +56,10 @@ fn the_list_shows_each_note_by_its_key() {
     state.build(&mut view, &mut Queue::with_capacity(1200));
     let mut keys = skein_lib::List::with_capacity(2);
     for node in view.tree().nodes() {
-        if node.role == Role::Item {
-            keys.push(node.key.expect("item keyed").a).expect("two items fit");
+        if node.role == Role::Item
+            && let Some(key) = node.key
+        {
+            keys.push(key.a).expect("two items fit");
         }
     }
     assert_eq!(keys.as_slice(), &[7, 9]);
@@ -95,7 +98,7 @@ fn the_views_worst_case_fits_its_limits() {
         .expect("64 notes fit");
     let mut view = View::new(&limits::limits());
     state.build(&mut view, &mut Queue::with_capacity(1200));
-    assert_eq!(view.tree().len(), 472);
+    assert_eq!(view.tree().len(), 486);
     assert!(limits::worst_case().expect("worst case fits u64") < 100_000_000, "view fits its 100 MB memory bound");
 }
 

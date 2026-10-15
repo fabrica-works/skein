@@ -8,14 +8,14 @@ pub fn limits() -> skein_ui::Limits {
         depth: 6,
         text_per_node: 512,
         text_bytes: 24_000,
-        drawing_bytes: 0,
+        drawing_bytes: 64,
         styles_per_node: 1,
         patches: 1200,
-        bindings: 76,
+        bindings: 81,
         slots: 0,
         markdown_depth: 0,
-        scene_marks: 0,
-        scene_bytes: 0,
+        scene_marks: 6,
+        scene_bytes: 256,
     }
 }
 

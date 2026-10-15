@@ -22,8 +22,15 @@ pub(crate) const LABELS: [(Label, Binding); 3] = [
     (Label::Task, Binding { owner: OWNER, token: Token::new(u64::MAX - 8) }),
     (Label::Reference, Binding { owner: OWNER, token: Token::new(u64::MAX - 9) }),
 ];
+pub(crate) const CHART: Binding = Binding { owner: OWNER, token: Token::new(u64::MAX - 12) };
+pub(crate) const FILTERS: [(Option<Label>, Binding); 4] = [
+    (None, Binding { owner: OWNER, token: Token::new(u64::MAX - 13) }),
+    (Some(Label::Idea), Binding { owner: OWNER, token: Token::new(u64::MAX - 14) }),
+    (Some(Label::Task), Binding { owner: OWNER, token: Token::new(u64::MAX - 15) }),
+    (Some(Label::Reference), Binding { owner: OWNER, token: Token::new(u64::MAX - 16) }),
+];
 pub(crate) const CARD: Style = Style { owner: OWNER, token: 0 };
-const WORDS: [&[u8]; 22] = [
+const WORDS: [&[u8]; 27] = [
     b"Notes",
     b"Live",
     b"Offline",
@@ -46,13 +53,18 @@ const WORDS: [&[u8]; 22] = [
     b"Discard draft?",
     b"Discard",
     b"Keep",
+    b"All notes",
+    b"Ideas",
+    b"Tasks",
+    b"References",
+    b"Notes by label",
 ];
 const WORD_LIMITS: PhraseLimits =
-    PhraseLimits { languages: 1, phrases: 22, holes: 0, segments: 22, text_bytes: 320, hole_bytes: 0 };
+    PhraseLimits { languages: 1, phrases: 27, holes: 0, segments: 27, text_bytes: 384, hole_bytes: 0 };
 
 pub(crate) fn words() -> Phrasebook {
-    let mut shapes = List::with_capacity(22);
-    let mut phrases = List::with_capacity(22);
+    let mut shapes = List::with_capacity(27);
+    let mut phrases = List::with_capacity(27);
     for (number, text) in WORDS.iter().enumerate() {
         let id = PhraseId { owner: OWNER, number: u16::try_from(number).expect("declared phrases fit") };
         shapes.push(PhraseShape { id, holes: Box::from([]), plural: None }).expect("declared shapes fit");
@@ -99,6 +111,9 @@ pub(crate) fn page(state: &State, builder: &mut Builder) {
         Place::Missing => text(builder, Role::Heading { level: 1 }, &phrase(state, 7)),
     }
     builder.close();
+    if state.place == Place::List {
+        chart(state, builder);
+    }
     if state.draft == crate::state::DraftMode::Discarding {
         dialog(state, builder);
     }
@@ -119,12 +134,21 @@ fn dialog(state: &State, builder: &mut Builder) {
     builder.close();
 }
 fn list(state: &State, builder: &mut Builder) {
-    if state.notes.notes().is_empty() {
+    let mut any = false;
+    for note in state.notes.notes() {
+        if state.shows(note.label()) {
+            any = true;
+        }
+    }
+    if !any {
         text(builder, Role::Paragraph, &phrase(state, 3));
         return;
     }
     builder.open(Role::List);
     for note in state.notes.notes() {
+        if !state.shows(note.label()) {
+            continue;
+        }
         builder.open(Role::Item);
         builder.key(Key { owner: OWNER, kind: 0, a: note.number(), b: 0 });
         builder.open(Role::Link);
@@ -239,5 +263,52 @@ fn note(state: &State, number: u64, builder: &mut Builder) {
     builder.open(Role::Link);
     builder.text(Run::Plain, &phrase(state, 10));
     builder.link(BACK);
+    builder.close();
+}
+
+fn chart(state: &State, builder: &mut Builder) {
+    let mut counts = [0_u8; 3];
+    for note in state.notes.notes() {
+        let index = match note.label() {
+            Label::Idea => 0,
+            Label::Task => 1,
+            Label::Reference => 2,
+        };
+        let count = counts.get_mut(index).expect("three label indices");
+        *count = count.checked_add(1).expect("64 notes");
+    }
+    let labels = [phrase(state, 4), phrase(state, 5), phrase(state, 6)];
+    let mut data = List::with_capacity(64);
+    for (count, label) in counts.into_iter().zip(&labels) {
+        data.push(count).expect("three label counts fit");
+        data.push(u8::try_from(label.len()).expect("label word fits")).expect("label lengths fit");
+        for byte in label {
+            data.push(*byte).expect("label words fit");
+        }
+    }
+    builder.open(Role::Complementary);
+    builder.name(&phrase(state, 26));
+    builder.drawing(crate::draw::KIND, &phrase(state, 26), data.as_slice(), 64);
+    builder.bind(CHART);
+    builder.open(Role::List);
+    for (count, label) in counts.into_iter().zip(&labels) {
+        builder.open(Role::Item);
+        builder.text(Run::Plain, crate::draw::caption(label, count).as_slice());
+        builder.close();
+    }
+    builder.close();
+    builder.close();
+    builder.open(Role::ChoiceGroup);
+    builder.name(&phrase(state, 14));
+    for ((filter, binding), name) in FILTERS.into_iter().zip(22..26) {
+        builder.open(Role::Choice);
+        builder.name(&phrase(state, name));
+        builder.bind(binding);
+        if state.filter == filter {
+            builder.state(skein_ui::State::Selected);
+        }
+        builder.close();
+    }
+    builder.close();
     builder.close();
 }

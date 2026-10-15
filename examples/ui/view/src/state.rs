@@ -63,6 +63,7 @@ pub struct State {
     pub(crate) due: Box<[u8]>,
     pub(crate) minutes: Box<[u8]>,
     pub(crate) label: records::Label,
+    pub(crate) filter: Option<records::Label>,
     pub(crate) title_error: Option<u16>,
     seed: u64,
     serial: u64,
@@ -102,6 +103,7 @@ impl State {
             due: Box::from([]),
             minutes: Box::from([]),
             label: records::Label::Idea,
+            filter: None,
             title_error: None,
             seed,
             serial: 0,
@@ -125,7 +127,23 @@ impl State {
                         self.add(duties);
                     }
                 }
-                Act::Toggle | Act::Drawing { .. } => {}
+                Act::Toggle => {
+                    for (filter, binding) in crate::view::FILTERS {
+                        if bound.binding == binding {
+                            self.filter = filter;
+                        }
+                    }
+                }
+                Act::Drawing { data } => {
+                    if bound.binding == crate::view::CHART {
+                        self.filter = match data.as_ref() {
+                            [0] => Some(records::Label::Idea),
+                            [1] => Some(records::Label::Task),
+                            [2] => Some(records::Label::Reference),
+                            _ => self.filter.clone(),
+                        };
+                    }
+                }
             },
             Report::Answered { exchange, status, body } => {
                 if exchange == 0 && status == 200 {
@@ -226,6 +244,12 @@ impl State {
             }
         }
         false
+    }
+    pub(crate) fn shows(&self, label: &records::Label) -> bool {
+        match &self.filter {
+            Some(filter) => label == filter,
+            None => true,
+        }
     }
     fn press(&mut self, binding: Binding, duties: &mut Duties) {
         if binding == crate::view::ADD {

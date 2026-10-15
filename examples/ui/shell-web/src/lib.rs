@@ -17,7 +17,7 @@ use skein_ui_web::{
 use std::{cell::RefCell, rc::Rc};
 
 const NAMES: &[Names<'_>] =
-    &[Names { owner: Owner { number: 1 }, prefix: b"notes", styles: &[b"notes-card"], regions: &[] }];
+    &[Names { owner: Owner { number: 1 }, prefix: b"notes", styles: &[b"notes-card", b"notes-bar"], regions: &[] }];
 // Each part wraps its happening in the application's report type.
 enum Report {
     Start,
@@ -76,7 +76,7 @@ pub fn start() {
         Look {
             names: NAMES,
             pictures: &[],
-            draw: no_drawing,
+            draw: skein_ui_example_view::draw::draw,
             elements: &[(Owner { number: 1 }, Role::Region, Style { owner: Owner { number: 1 }, token: 0 }, "article")],
         },
         &limits,
@@ -204,7 +204,4 @@ impl Shell {
         self.history.restore();
         self.timer.set(self.state.deadline(), now);
     }
-}
-fn no_drawing(_: skein_ui::DrawingKind, _: &[u8], _: u16, _: u16, _: &mut skein_ui::scene::Scene) -> bool {
-    false
 }

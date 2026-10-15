@@ -106,6 +106,14 @@ impl<'a> BrowserFace<'a> {
         self.requests.push(request);
         Ok(())
     }
+    pub(crate) fn press_at(&mut self, node: NodeId, at: skein_browser::boundary::Point) -> Result<(), String> {
+        let seen = &self.seen.get(usize::try_from(node.0).expect("node fits")).ok_or("unknown drawing")?.0;
+        let node = seen.node;
+        let op = self.token();
+        self.acting = Some(op);
+        self.requests.push(Request::Press { page: self.page, op, node, at: Some(at) });
+        Ok(())
+    }
     pub(crate) fn key(&mut self, key: Key) {
         let op = self.token();
         self.acting = Some(op);

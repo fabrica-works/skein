@@ -1,0 +1,6 @@
+rect 112,0 288x40 r0 [1:1] act=00
+text 0,20 start "idea: 1" [1:1]
+rect 112,48 288x40 r0 [1:1] act=01
+text 0,68 start "task: 1" [1:1]
+rect 112,96 288x40 r0 [1:1] act=02
+text 0,116 start "reference: 1" [1:1]
