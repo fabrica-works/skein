@@ -106,3 +106,30 @@ fn the_first_line_is_followed_by_its_descriptions() {
     render(&tree, b"ops", None, &mut print);
     assert_eq!(print.text.as_slice(), b"== Inbox == \n  Heading description\n  Inline description\n");
 }
+
+#[test]
+fn every_role_state_and_property_prints() {
+    let tree = fixtures::page_with_limits(fixtures::every_node, &fixtures::EVERY_LIMITS);
+    let mut print = Print::new(&fixtures::EVERY_LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    let expected = std::fs::read("src/tests/golden/every.txt").expect("hand-written complete tree");
+    assert_eq!(print.text.as_slice(), expected.as_slice());
+}
+
+#[test]
+fn the_first_line_without_its_status_region() {
+    let tree = fixtures::page(fixtures::first_lines);
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", Some(fixtures::STATUS), &mut print);
+    let expected = std::fs::read("src/tests/golden/first-line.txt").expect("hand-written absent status region");
+    assert_eq!(print.text.as_slice(), expected.as_slice());
+}
+
+#[test]
+fn control_bytes_print_as_replacements_everywhere() {
+    let tree = fixtures::page(fixtures::control_bytes);
+    let mut print = Print::new(&fixtures::LIMITS).unwrap();
+    render(&tree, b"ops", None, &mut print);
+    let expected = std::fs::read("src/tests/golden/bytes-everywhere.txt").expect("hand-written replacement characters");
+    assert_eq!(print.text.as_slice(), expected.as_slice());
+}

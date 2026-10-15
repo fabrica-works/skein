@@ -22,7 +22,10 @@ pub fn binding() -> Binding {
     Binding { owner: Owner { number: 1 }, token: Token::new(1) }
 }
 pub fn page(main: fn(&mut Builder)) -> Tree {
-    let mut b = Builder::new(&LIMITS);
+    page_with_limits(main, &LIMITS)
+}
+pub fn page_with_limits(main: fn(&mut Builder), limits: &Limits) -> Tree {
+    let mut b = Builder::new(limits);
     b.open(Role::Page);
     b.open(Role::Banner);
     b.close();
@@ -31,8 +34,8 @@ pub fn page(main: fn(&mut Builder)) -> Tree {
     b.close();
     b.close();
     let mut tree = b.finish();
-    let mut patches = Queue::with_capacity(LIMITS.patches);
-    skein_ui::diff(&Tree::new(LIMITS.nodes), &mut tree, &LIMITS, &mut 1, &mut patches);
+    let mut patches = Queue::with_capacity(limits.patches);
+    skein_ui::diff(&Tree::new(limits.nodes), &mut tree, limits, &mut 1, &mut patches);
     tree
 }
 pub fn button(b: &mut Builder, name: &[u8], enabled: bool) {
@@ -333,6 +336,61 @@ fn property_collections(b: &mut Builder) {
     b.open(Role::TreeItem);
     b.position(7);
     b.text(Run::Plain, b"Tree item");
+    b.close();
+    b.close();
+}
+
+pub const EVERY_LIMITS: Limits = Limits { nodes: 256, text_bytes: 4096, bindings: 64, ..LIMITS };
+pub fn every_node(b: &mut Builder) {
+    roles(b);
+    properties(b);
+    b.open(Role::TextField);
+    b.name(b"Required");
+    b.value(b"present", 1);
+    b.state(State::Required);
+    b.bind(binding());
+    b.focus(1);
+    b.close();
+    b.open(Role::Table);
+    b.open(Role::Row);
+    b.open(Role::ColumnHeader);
+    b.sort(skein_ui::Sort::Descending);
+    b.spans(skein_ui::Spans { rows: 2, columns: 3 });
+    b.text(Run::Plain, b"Descending");
+    b.close();
+    b.open(Role::Cell);
+    b.spans(skein_ui::Spans { rows: 3, columns: 4 });
+    b.text(Run::Plain, b"spanning");
+    b.close();
+    b.close();
+    b.close();
+    b.open(Role::Image);
+    b.name(b"Remote picture");
+    b.image_address(b"https://example.test/picture.png");
+    b.close();
+    b.open(Role::Dialog);
+    b.name(b"Dismiss");
+    b.open(Role::Button);
+    b.name(b"Close");
+    b.bind(binding());
+    b.shortcut(skein_ui::Shortcut::ESCAPE);
+    b.close();
+    b.close();
+}
+pub fn first_lines(b: &mut Builder) {
+    leaf(b, Role::Heading { level: 1 }, b"Inbox");
+    leaf(b, Role::Paragraph, b"No status region");
+}
+pub fn control_bytes(b: &mut Builder) {
+    b.open(Role::Region);
+    b.name(b"Name\x1b");
+    b.description(b"Description\x00");
+    leaf(b, Role::Paragraph, b"Run\x7f");
+    b.open(Role::TextField);
+    b.name(b"Field");
+    b.value(b"Value\xc2\x80", 1);
+    b.description(b"Detail\xff");
+    b.bind(binding());
     b.close();
     b.close();
 }
