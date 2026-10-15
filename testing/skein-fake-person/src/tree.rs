@@ -79,6 +79,9 @@ fn matches(nodes: &[Node], index: usize, target: &Target) -> bool {
 }
 
 impl Face for TreeFace<'_> {
+    fn role(&self, id: NodeId) -> Option<Role> {
+        self.tree.nodes()[self.start..self.end].iter().find(|node| node.id == id).map(|node| node.role)
+    }
     fn find(&mut self, find: &Find) -> Found {
         let nodes = self.tree.nodes();
         let mut start = self.start;

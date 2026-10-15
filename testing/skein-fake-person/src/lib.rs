@@ -154,6 +154,10 @@ pub trait Face {
     fn allows(&self, _node: NodeId, _act: &Act) -> bool {
         true
     }
+    /// The node's role, when the face can tell which act a press makes.
+    fn role(&self, _node: NodeId) -> Option<Role> {
+        None
+    }
 }
 
 impl<A: Clone> Person<A> {
@@ -200,7 +204,14 @@ impl<A: Clone> Person<A> {
             Step::Press { find } | Step::Type { find, .. } | Step::Send { find } => match face.find(find) {
                 Found::Node(node) => {
                     let act = match step {
-                        Step::Press { .. } => Act::Press,
+                        Step::Press { .. } => {
+                            let role = face.role(node);
+                            if role == Some(Role::Check) || role == Some(Role::Choice) {
+                                Act::Toggle
+                            } else {
+                                Act::Press
+                            }
+                        }
                         Step::Type { words, .. } => Act::Input { value: words.clone() },
                         Step::Send { .. } => Act::Submit,
                         Step::Go { .. } | Step::See { .. } | Step::Gone { .. } | Step::Reload | Step::Pause { .. } => {

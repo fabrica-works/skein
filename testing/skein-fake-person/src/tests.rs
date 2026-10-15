@@ -56,6 +56,40 @@ fn build(fill: impl FnOnce(&mut Builder)) -> View {
 fn binding(n: u64) -> Binding {
     Binding { owner: Owner { number: 1 }, token: Token::new(n) }
 }
+fn page_with_control(role: Role, name: &[u8]) -> View {
+    build(|b| {
+        b.open(Role::Page);
+        b.open(role);
+        b.name(name);
+        b.bind(binding(1));
+        b.close();
+        b.close();
+    })
+}
+
+#[test]
+fn a_press_on_a_check_is_a_toggle() {
+    let view = page_with_control(Role::Check, b"Notify me");
+    let mut person: Person<u8> = Person::new(Box::new([Step::Press { find: Find::named(Role::Check, b"Notify") }]));
+    let next = person.next(&mut TreeFace::new(view.tree()), Time::ZERO);
+    assert_eq!(next, Next::Do(Doing::Act { node: NodeId(2), act: Act::Toggle }));
+}
+
+#[test]
+fn a_press_on_a_choice_is_a_toggle() {
+    let view = page_with_control(Role::Choice, b"Daily");
+    let mut person: Person<u8> = Person::new(Box::new([Step::Press { find: Find::named(Role::Choice, b"Daily") }]));
+    let next = person.next(&mut TreeFace::new(view.tree()), Time::ZERO);
+    assert_eq!(next, Next::Do(Doing::Act { node: NodeId(2), act: Act::Toggle }));
+}
+
+#[test]
+fn a_press_on_a_button_stays_a_press() {
+    let view = page_with_control(Role::Button, b"Save");
+    let mut person: Person<u8> = Person::new(Box::new([Step::Press { find: Find::named(Role::Button, b"Save") }]));
+    let next = person.next(&mut TreeFace::new(view.tree()), Time::ZERO);
+    assert_eq!(next, Next::Do(Doing::Act { node: NodeId(2), act: Act::Press }));
+}
 fn region(name: &[u8]) -> Target {
     Target::Role { role: Role::Region, name: Box::from(name) }
 }
