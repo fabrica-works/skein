@@ -16,6 +16,7 @@
 //! | in flight | again or lost, eligible | retrying | retry deadline, retrying progress |
 //! | in flight | again or lost, ineligible | parked | parked progress |
 //! | in flight | signed out | parked | clear confirmation, parked progress |
+//! | parked, ready, in flight, retrying | not kept | retired | owner value, erase |
 //! | retrying | retry deadline fires | ready | eligible send |
 //! | ready, in flight, retrying | link down or scope changes away | parked | invalidate attempt, parked progress |
 //! | any live state | retention cutoff passes | retired | erase, unknown progress |
@@ -302,6 +303,20 @@ impl<O: Copy, R> RequestTable<O, R> {
             }
         }
         RequestAnswered::Pending
+    }
+
+    /// Retire a request whose store record was not kept, returning its owner once.
+    pub fn not_kept(&mut self, key: RequestKey) -> Option<O> {
+        let id = *self.index.get(&key)?;
+        let entry = self.entries.get_mut(id).expect("index names a held entry");
+        match entry.state {
+            State::Retired { .. } => return None,
+            State::Parked | State::Ready | State::InFlight(_) | State::Retrying(_) => {}
+        }
+        entry.state = State::Retired { erase: true };
+        entry.save = false;
+        entry.changed = false;
+        Some(entry.owner)
     }
 
     /// Expire retry and retention deadlines using the supplied clocks.

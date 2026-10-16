@@ -24,6 +24,9 @@ fn limits() -> RequestLimits {
     }
 }
 
+const FIRST_OWNER: u64 = 1;
+const SECOND_OWNER: u64 = 2;
+
 #[test]
 fn seeded_keys_are_unique_across_thousands_of_asks() {
     let limits = RequestLimits { requests: 5_000, bytes: 5_000, ..limits() };
@@ -240,6 +243,64 @@ fn final_hands_back_owner_once_and_erases_before_reclaiming() {
     assert_eq!(table.bytes(), 0);
     assert_eq!(table.owner(key), None);
     assert_ne!(table.ask(owner(2), 7, 10, 6).expect("room freed"), key);
+}
+
+#[test]
+fn not_kept_retires_a_parked_request_and_erases_it() {
+    let mut table = RequestTable::<Owner, u64>::new(&limits(), 1);
+    let key = table.ask(owner(FIRST_OWNER), 7, 1, 10).expect("fits");
+    match table.take(Time::ZERO, Wall::EPOCH).next_out().expect("record") {
+        RequestOut::Save(record) => assert_eq!(record.first_sent, None),
+        RequestOut::Erase(_) | RequestOut::Send { .. } => unreachable!("parked"),
+    }
+    assert_eq!(table.not_kept(key), Some(owner(FIRST_OWNER)));
+    assert_eq!(table.not_kept(key), None);
+    assert_eq!(table.progress(), None);
+    {
+        let mut visit = table.take(Time::ZERO, Wall::EPOCH);
+        match visit.next_out().expect("erase") {
+            RequestOut::Erase(erased) => assert_eq!(erased, key),
+            RequestOut::Save(_) | RequestOut::Send { .. } => unreachable!("retired"),
+        }
+        assert!(visit.next_out().is_none());
+    }
+    let unsaved = table.ask(owner(SECOND_OWNER), 7, 1, 20).expect("fits");
+    assert_eq!(table.not_kept(unsaved), Some(owner(SECOND_OWNER)));
+    {
+        let mut visit = table.take(Time::ZERO, Wall::EPOCH);
+        match visit.next_out().expect("erase without save") {
+            RequestOut::Erase(erased) => assert_eq!(erased, unsaved),
+            RequestOut::Save(_) | RequestOut::Send { .. } => unreachable!("retired"),
+        }
+        assert!(visit.next_out().is_none());
+    }
+    table.link(true);
+    table.confirmed(Some(7));
+    assert!(table.take(Time::ZERO, Wall::EPOCH).next_out().is_none());
+    table.reclaim();
+    assert!(table.is_empty());
+    assert_eq!(table.bytes(), 0);
+    assert_eq!(table.not_kept(key), None);
+}
+
+#[test]
+fn not_kept_makes_a_held_attempt_stale() {
+    let mut table = live();
+    let key = table.ask(owner(FIRST_OWNER), 7, 1, 10).expect("fits");
+    let attempt = sent(&mut table, Time::ZERO, Wall::EPOCH).expect("send");
+    assert_eq!(table.not_kept(key), Some(owner(FIRST_OWNER)));
+    assert_eq!(table.answered(Time::ZERO, attempt, RequestEnvelope::Final), RequestAnswered::Stale);
+    match table.take(Time::ZERO, Wall::EPOCH).next_out().expect("erase") {
+        RequestOut::Erase(erased) => assert_eq!(erased, key),
+        RequestOut::Save(_) | RequestOut::Send { .. } => unreachable!("retired"),
+    }
+    let final_key = table.ask(owner(SECOND_OWNER), 7, 1, 20).expect("fits");
+    let attempt = sent(&mut table, Time::ZERO, Wall::EPOCH).expect("send");
+    assert_eq!(
+        table.answered(Time::ZERO, attempt, RequestEnvelope::Final),
+        RequestAnswered::Final(owner(SECOND_OWNER))
+    );
+    assert_eq!(table.not_kept(final_key), None);
 }
 
 #[test]
