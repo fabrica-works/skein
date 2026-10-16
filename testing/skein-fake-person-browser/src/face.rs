@@ -35,6 +35,7 @@ pub struct BrowserFace<'a> {
     seen: Vec<(Seen, Option<Role>)>,
     acting: Option<Token>,
     failure: Option<String>,
+    trouble: Vec<Box<[u8]>>,
     warned: bool,
     go: Option<Token>,
     choice: Option<Choice>,
@@ -55,6 +56,7 @@ impl<'a> BrowserFace<'a> {
             seen: Vec::new(),
             acting: None,
             failure: None,
+            trouble: Vec::new(),
             warned: false,
             go: None,
             choice: None,
@@ -80,6 +82,10 @@ impl<'a> BrowserFace<'a> {
     #[must_use]
     pub fn warned(&self) -> bool {
         self.warned
+    }
+    #[must_use]
+    pub fn trouble(&self) -> &[Box<[u8]>] {
+        &self.trouble
     }
     fn token(&mut self) -> Token {
         self.serial = self.serial.checked_add(1).expect("operation numbers fit");
@@ -259,13 +265,17 @@ impl<'a> BrowserFace<'a> {
                     self.failure = Some(format!("browser refused act: {why:?}"));
                 }
             }
+            Event::Trouble { page, text, .. } => {
+                if *page == self.page {
+                    self.trouble.push(text.clone());
+                }
+            }
             Event::Ready { .. }
             | Event::Opened { .. }
             | Event::Met { .. }
             | Event::Missed { .. }
             | Event::Snapshot { .. }
             | Event::Screenshot { .. }
-            | Event::Trouble { .. }
             | Event::Closed { .. } => {}
         }
     }

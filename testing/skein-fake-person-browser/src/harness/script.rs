@@ -2,7 +2,7 @@
 use super::{Play, ServerAction};
 use crate::BrowserFace;
 use skein_fake_person::{Next, Person};
-use skein_lib::Time;
+use skein_lib::{Duration, Time};
 use std::collections::VecDeque;
 mod growth;
 
@@ -14,14 +14,46 @@ pub enum Step {
     Warned(bool),
     Key(skein_browser::boundary::Key),
     Focused(skein_fake_person::Find),
-    Taller { find: skein_fake_person::Find, words: Box<[u8]> },
-    PressAt { find: skein_fake_person::Find, at: skein_browser::boundary::Point },
-    Compose { find: skein_fake_person::Find, words: Box<[u8]> },
-    Type { find: skein_fake_person::Find, words: Box<[u8]> },
+    Taller {
+        find: skein_fake_person::Find,
+        words: Box<[u8]>,
+    },
+    PressAt {
+        find: skein_fake_person::Find,
+        at: skein_browser::boundary::Point,
+    },
+    Compose {
+        find: skein_fake_person::Find,
+        words: Box<[u8]>,
+    },
+    Type {
+        find: skein_fake_person::Find,
+        words: Box<[u8]>,
+    },
+    Trouble {
+        words: Box<[u8]>,
+        within: Duration,
+    },
+    Request {
+        method: skein_http::Method,
+        path: Box<[u8]>,
+        host: Box<[u8]>,
+        headers: Vec<skein_ui_web::transport::Header>,
+        body: Box<[u8]>,
+        status: u16,
+        within: Duration,
+    },
     Reopen,
-    Visit { origin: u32, path: Box<[u8]> },
+    Visit {
+        origin: u32,
+        path: Box<[u8]>,
+    },
     Back,
     Forward,
+}
+enum Awaited {
+    Trouble(Box<[u8]>),
+    Status(u16),
 }
 pub struct Script {
     steps: VecDeque<Step>,
@@ -32,6 +64,9 @@ pub struct Script {
     focused: Option<skein_fake_person::Find>,
     growth: Option<growth::Growth>,
     press: Option<(skein_fake_person::Find, skein_browser::boundary::Point)>,
+    awaited: Option<(Time, Awaited)>,
+    request: Option<super::Asked>,
+    status: Option<u16>,
     text: Option<(skein_fake_person::Find, Box<[u8]>, bool)>,
 }
 impl Script {
@@ -47,7 +82,36 @@ impl Script {
             press: None,
             growth: None,
             text: None,
+            awaited: None,
+            request: None,
+            status: None,
         }
+    }
+    fn await_step(&mut self, face: &mut BrowserFace<'_>, now: Time) -> bool {
+        let Some((until, awaited)) = self.awaited.take() else {
+            return false;
+        };
+        let (met, words) = match &awaited {
+            Awaited::Trouble(words) => (
+                face.trouble()
+                    .iter()
+                    .any(|text| !words.is_empty() && text.windows(words.len()).any(|part| part == words.as_ref())),
+                format!("trouble containing {}", String::from_utf8_lossy(words)),
+            ),
+            Awaited::Status(status) => {
+                (self.status == Some(*status), format!("status {status}, saw {:?}", self.status))
+            }
+        };
+        if met {
+            self.at += 1;
+            self.status = None;
+        } else if now >= until {
+            face.fail(format!("did not receive {words} within its bound"));
+            self.at += 1;
+        } else {
+            self.awaited = Some((until, awaited));
+        }
+        true
     }
     fn check_title(&mut self, face: &mut BrowserFace<'_>) -> Option<Next<Box<[u8]>>> {
         if let Some(title) = self.title.take() {
@@ -122,6 +186,9 @@ impl Script {
 }
 impl Play for Script {
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
+        if self.await_step(face, now) {
+            return Next::Wait { until: None };
+        }
         if let Some(next) = self.grow(face, now) {
             return next;
         }
@@ -173,6 +240,13 @@ impl Play for Script {
             Step::Focused(find) => self.focused = Some(find),
             Step::Compose { find, words } => self.text = Some((find, words, true)),
             Step::Type { find, words } => self.text = Some((find, words, false)),
+            Step::Trouble { words, within } => {
+                self.awaited = Some((now.saturating_add(within), Awaited::Trouble(words)));
+            }
+            Step::Request { method, path, host, headers, body, status, within } => {
+                self.request = Some(super::Asked { method, path, host, headers, body });
+                self.awaited = Some((now.saturating_add(within), Awaited::Status(status)));
+            }
             Step::Visit { origin, path } => {
                 face.visit(origin, &path);
                 self.at += 1;
@@ -200,9 +274,7 @@ impl Play for Script {
                 }
                 self.at += 1;
             }
-            Step::Title(words) => {
-                self.title = Some(words);
-            }
+            Step::Title(words) => self.title = Some(words),
             Step::StopServer => {
                 self.action = Some(ServerAction::Stop);
                 self.at += 1;
@@ -214,10 +286,25 @@ impl Play for Script {
         }
         Next::Wait { until: None }
     }
+    fn expected(&self) -> Vec<Box<[u8]>> {
+        self.steps
+            .iter()
+            .filter_map(|step| if let Step::Trouble { words, .. } = step { Some(words.clone()) } else { None })
+            .collect()
+    }
+    fn request(&mut self) -> Option<super::Asked> {
+        self.request.take()
+    }
+    fn answered(&mut self, status: u16) {
+        self.status = Some(status);
+    }
     fn at(&self) -> u32 {
         self.at + self.person.as_ref().map_or(0, Person::at)
     }
     fn check_deadline(&mut self, face: &mut BrowserFace<'_>, now: Time) {
+        if self.awaited.as_ref().is_some_and(|(until, _)| now >= *until) {
+            self.await_step(face, now);
+        }
         if let Some(why) = self.growth.as_ref().and_then(|growth| growth.expired(now)) {
             face.fail(why);
             self.growth = None;
@@ -230,66 +317,4 @@ impl Play for Script {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Play, Script, Step};
-    use crate::tests::{face, found, seen};
-    use skein_browser::boundary::{Key, Request};
-    use skein_fake_person::Find;
-    use skein_lib::{Time, Token};
-    use skein_ui::Role;
-
-    #[test]
-    fn a_key_step_sends_the_kits_key() {
-        let mut script = Script::new(Box::new([Step::Key(Key::Escape)]));
-        let mut face = face();
-        script.next(&mut face, Time::ZERO);
-        assert_eq!(
-            face.requests().collect::<Vec<_>>(),
-            vec![Request::Key { page: Token::new(7), op: Token::new(7_000_001), key: Key::Escape }]
-        );
-    }
-    #[test]
-    fn a_point_press_uses_the_found_figures_node() {
-        let mut script = Script::new(Box::new([Step::PressAt {
-            find: Find::exactly_named(Role::Drawing, b"Notes by label"),
-            at: skein_browser::boundary::Point { x: 128, y: 60 },
-        }]));
-        let mut face = face();
-        script.next(&mut face, Time::ZERO);
-        script.next(&mut face, Time::ZERO);
-        found(&mut face, Some(seen(b"")));
-        script.next(&mut face, Time::ZERO);
-        assert_eq!(
-            face.requests().collect::<Vec<_>>(),
-            vec![Request::Press {
-                page: Token::new(7),
-                op: Token::new(7_000_002),
-                node: 9_000_000_000,
-                at: Some(skein_browser::boundary::Point { x: 128, y: 60 }),
-            }]
-        );
-    }
-    const FOCUS: &[(bool, Option<&str>)] = &[
-        (true, None),
-        (
-            false,
-            Some(
-                "node Find { within: [], target: ExactRole { role: TextField, name: [84, 105, 116, 108, 101] } } is not focused",
-            ),
-        ),
-    ];
-    #[test]
-    fn the_focus_step_checks_the_found_nodes_focus() {
-        for &(focused, expected) in FOCUS {
-            let mut script = Script::new(Box::new([Step::Focused(Find::exactly_named(Role::TextField, b"Title"))]));
-            let mut face = face();
-            script.next(&mut face, Time::ZERO);
-            script.next(&mut face, Time::ZERO);
-            let mut target = seen(b"");
-            target.states.focused = focused;
-            found(&mut face, Some(target));
-            script.next(&mut face, Time::ZERO);
-            assert_eq!(face.failure().as_deref(), expected, "focused {focused}");
-        }
-    }
-}
+mod tests;

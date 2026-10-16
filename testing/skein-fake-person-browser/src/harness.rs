@@ -53,9 +53,23 @@ pub struct Setup<'a> {
     pub expected: Vec<Box<[u8]>>,
     pub origins: Vec<Origin>,
 }
+pub struct Asked {
+    pub method: skein_http::Method,
+    pub path: Box<[u8]>,
+    pub host: Box<[u8]>,
+    pub headers: Vec<skein_ui_web::transport::Header>,
+    pub body: Box<[u8]>,
+}
 pub trait Play {
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>>;
     /// Current zero-based script position, for diagnostics.
+    fn expected(&self) -> Vec<Box<[u8]>> {
+        Vec::new()
+    }
+    fn request(&mut self) -> Option<Asked> {
+        None
+    }
+    fn answered(&mut self, _status: u16) {}
     fn at(&self) -> u32 {
         0
     }
@@ -64,6 +78,7 @@ pub trait Play {
         None
     }
 }
+mod request;
 mod script;
 pub use script::{Script, Step};
 #[derive(Clone, Copy)]
@@ -104,7 +119,7 @@ impl Harness {
     }
     pub fn run(&mut self, people: &mut [&mut dyn Play]) -> Outcome {
         let profile = skein_scratch::Scratch::new("ui-browser");
-        Runtime::new(self, profile.path(), people.len()).run(self, people)
+        Runtime::new(self, profile.path(), people).run(self, people)
     }
 }
 mod lines;
@@ -118,6 +133,9 @@ enum ServerState {
     Starting,
 }
 struct Runtime {
+    request_serial: u64,
+    exchanges: Vec<request::Exchange>,
+    expected: Vec<Vec<Box<[u8]>>>,
     origins: Vec<crate::origins::Pages>,
     browser: Browser,
     io: Io,
@@ -170,7 +188,7 @@ impl Runtime {
             })
             .collect()
     }
-    fn new(setup: &Harness, profile: &std::path::Path, players: usize) -> Self {
+    fn new(setup: &Harness, profile: &std::path::Path, people: &[&mut dyn Play]) -> Self {
         let bl = browser::Limits::default();
         let il = io::Limits {
             sockets: 12,
@@ -227,6 +245,9 @@ impl Runtime {
             pipes: server_pipes(setup.output),
         };
         Self {
+            request_serial: 0,
+            exchanges: Vec::new(),
+            expected: people.iter().map(|play| play.expected()).collect(),
             origins: Self::origins(setup),
             browser: Browser::new(BROWSER, &bl),
             io: Io::new(&il),
@@ -259,7 +280,7 @@ impl Runtime {
             ready: false,
             context: false,
             opening: 0,
-            opened: vec![false; players],
+            opened: vec![false; people.len()],
             outcome: None,
             capturing: 0,
             snapshot: String::new(),
@@ -327,7 +348,7 @@ impl Runtime {
         }
     }
     fn io_event(&mut self, event: io::Event, setup: &Harness) {
-        let Some(event) = self.origin_event(event) else {
+        let Some(event) = request::route(&mut self.exchanges, event).and_then(|event| self.origin_event(event)) else {
             return;
         };
         match event {
@@ -432,7 +453,8 @@ impl Runtime {
                 }
             }
             Event::Trouble { page, trouble, text } => {
-                if !setup.expected.iter().any(|expected| {
+                let person = usize::try_from(page.raw().saturating_sub(100)).unwrap_or(0);
+                if !setup.expected.iter().chain(self.expected.get(person).into_iter().flatten()).any(|expected| {
                     !expected.is_empty() && text.windows(expected.len()).any(|part| part == expected.as_ref())
                 }) {
                     self.fail(
@@ -487,6 +509,9 @@ impl Runtime {
         for pages in &mut self.origins {
             pages.stop();
         }
+        for exchange in &mut self.exchanges {
+            exchange.stop();
+        }
         self.submits.push(Submit { op: SERVER_ROOT, kind: Op::Close { fd: self.roots[0] } });
         self.ask(Request::Close { entity: BROWSER });
         for child in &self.children {
@@ -540,6 +565,12 @@ impl Runtime {
         if matches!(self.server_state, ServerState::Stopping | ServerState::Starting) {
             return;
         }
+        for exchange in &mut self.exchanges {
+            if let Some(status) = exchange.status.take() {
+                people[exchange.person].answered(status);
+            }
+        }
+        self.exchanges.retain(|exchange| !exchange.closed);
         for (index, (play, face)) in people.iter_mut().zip(faces).enumerate() {
             if !self.opened[index] || done[index] {
                 continue;
@@ -568,6 +599,16 @@ impl Runtime {
                     self.fail(index, step, format!("{why:?}"));
                     break;
                 }
+            }
+            if let Some(asked) = play.request() {
+                self.exchanges.push(request::Exchange::new(
+                    index,
+                    self.request_serial,
+                    asked,
+                    self.address.as_ref().expect("server address"),
+                    now,
+                ));
+                self.request_serial += 1;
             }
             if let Some(action) = play.server_action() {
                 self.server_action(action, setup);
@@ -655,6 +696,10 @@ impl Runtime {
             .collect()
     }
     fn origin_requests(&mut self, now: Time, wall: Wall) {
+        for exchange in &mut self.exchanges {
+            exchange.update(now, wall);
+            self.requests.extend(exchange.requests.drain(..));
+        }
         for pages in &mut self.origins {
             pages.update_time(now, wall);
             while let Some(request) = pages.take() {
