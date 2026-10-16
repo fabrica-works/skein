@@ -93,6 +93,70 @@ pub fn digest(message: &[u8]) -> [u8; 32] {
     state.finish()
 }
 
+/// HMAC-SHA256 (RFC 2104) over pieces cut anywhere (lib.md, 6.2).
+#[derive(Clone)]
+pub struct Hmac {
+    /// Seeded with the key's block XOR 0x36; takes the message.
+    inner: Sha256,
+    /// Seeded with the key's block XOR 0x5c; takes `inner`'s digest.
+    outer: Sha256,
+}
+
+impl Hmac {
+    /// A MAC keyed by `key`; a key longer than 64 bytes is hashed first.
+    #[must_use]
+    pub fn new(key: &[u8]) -> Hmac {
+        let hashed;
+        let key = if key.len() > 64 {
+            hashed = digest(key);
+            &hashed
+        } else {
+            key
+        };
+        let mut inner_pad = [0x36; 64];
+        let mut outer_pad = [0x5c; 64];
+        for ((inner, outer), byte) in inner_pad.iter_mut().zip(&mut outer_pad).zip(key) {
+            *inner ^= *byte;
+            *outer ^= *byte;
+        }
+        let mut inner = Sha256::new();
+        let mut outer = Sha256::new();
+        inner.update(&inner_pad);
+        outer.update(&outer_pad);
+        Hmac { inner, outer }
+    }
+
+    /// Authenticates the next piece.
+    pub fn update(&mut self, piece: &[u8]) {
+        self.inner.update(piece);
+    }
+
+    /// Ends the MAC: its 32 bytes.
+    #[must_use]
+    pub fn finish(mut self) -> [u8; 32] {
+        self.outer.update(&self.inner.finish());
+        self.outer.finish()
+    }
+}
+
+#[expect(clippy::missing_fields_in_debug, reason = "lib.md, 6.2: the count of bytes hashed, never the key or its pads")]
+impl core::fmt::Debug for Hmac {
+    /// `Hmac { hashed: N }`, counting the message's bytes alone.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Hmac").field("hashed", &self.inner.hashed.saturating_sub(64)).finish()
+    }
+}
+
+/// Whether the bytes agree, in a time that depends on their lengths alone.
+#[must_use]
+pub fn equal(a: &[u8], b: &[u8]) -> bool {
+    let mut difference = 0_u8;
+    for (left, right) in a.iter().zip(b) {
+        difference |= left ^ right;
+    }
+    a.len() == b.len() && core::hint::black_box(difference) == 0
+}
+
 const INITIAL: [u32; 8] =
     [0x6a09_e667, 0xbb67_ae85, 0x3c6e_f372, 0xa54f_f53a, 0x510e_527f, 0x9b05_688c, 0x1f83_d9ab, 0x5be0_cd19];
 

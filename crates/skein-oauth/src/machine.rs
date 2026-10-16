@@ -314,8 +314,7 @@ impl Client {
         };
         if now >= exchange.deadline
             || uri != exchange.registration.redirect_uri.as_ref()
-            || state.len() != exchange.state.len()
-            || !constant_time_equal(state, &exchange.state)
+            || !skein_lib::sha256::equal(state, &exchange.state)
         {
             self.finish(Failure::InvalidRedirect, out);
             return;
@@ -663,17 +662,6 @@ pub fn redirect_address(uri: &[u8]) -> Result<SocketAddr, Failure> {
         Some(port) => Ok(SocketAddr::new(address, port)),
         None => Err(Failure::InvalidRedirect),
     }
-}
-
-fn constant_time_equal(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0_u8;
-    for (&left, &right) in a.iter().zip(b) {
-        diff |= left ^ right;
-    }
-    diff == 0
 }
 
 fn authorization_url(
