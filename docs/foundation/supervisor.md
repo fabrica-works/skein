@@ -19,8 +19,9 @@ and a steer) and 10.4 (who decides what). Then:
    prints, and another repository's from a worktree of its own at
    `origin/main`. Then record the process the run keeps: append
    `## Process, <UTC time>: skein <commit>` to `supervision.md`, the
-   commit as `git -C ~/src/rust/skein rev-parse --short HEAD` prints it
-   (development.md, section 4.4). A successor skips this step.
+   commit of the run's kit, as `git -C <run>/kit rev-parse --short HEAD`
+   prints it (development.md, sections 3.6 and 4.4). A successor skips
+   this step.
 2. **Start the watch:** `plan watch`, as a background command (in Claude
    Code, a Bash command with `run_in_background`).
 3. **Start the hourly check:** a cron job, every hour, with this prompt,
@@ -168,9 +169,10 @@ defects are a session file written before the code it names: in
 jig-protocol, about 55 of 69. In client-composition, all three plan
 defects came from increments no check had read.
 
-1. **Start a read-only sub-agent in the background,** a fresh one, never
-   a fork, with this prompt, its blanks filled. Then run the watch again
-   at once: the sub-agent's notification wakes you when it ends.
+1. **Start a read-only sub-agent in the background,** a fresh one on
+   Sonnet, never a fork, with this prompt, its blanks filled. Then run the
+   watch again at once: the sub-agent's notification wakes you when it
+   ends.
 
    ```
    Check <session file> against origin/main of <the plan's repositories>,
@@ -199,9 +201,13 @@ defects came from increments no check had read.
    question (section 4), or as a supplement step in a steer (section 3);
    never as a question to raise when reached (development.md, section
    10.4).
-3. **Re-check what moved since.** When the steps the session needs at
-   its start have not all landed, wait for them with a second background
-   command beside the watch:
+3. **Let it start:** `plan ready <step> "<ruling N, or no change>"`, at
+   once, whether its needs have landed or not. It sets the step `ready`
+   and rings the coordinator, who starts it once they have: a re-check
+   never holds a start (development.md, section 7.2).
+4. **Re-check what moved since, as a steer.** When the steps the session
+   needs at its start have not all landed, wait for them with a second
+   background command beside the watch:
 
    ```
    for s in <those steps>; do until awk -F'\t' -v s="$s" '$1 == s && $4 == "landed" { f = 1 } END { exit !f }' <run>/ledger.tsv; do sleep 60; done; done
@@ -210,20 +216,16 @@ defects came from increments no check had read.
    Once they have landed, list what `main` moved since the check: `git
    diff --stat <the commit checked> origin/main`, after a fetch, in each
    repository the session names. Grep the session file's names in the
-   files it lists, and correct what moved as in step 2. A moved file that
-   a sketch or a suite of the check reads goes to a fresh sub-agent with
-   step 1's prompt, for those alone. In client-composition, re-checking
-   08.1 after 08.2 had landed took 43 seconds (ruling 119).
-4. **Let it start,** once its needs have landed: `plan ready <step>
-   "<ruling N, or no change>"`. It sets the step `ready` and rings the
-   coordinator, who starts it.
-
-With nothing to correct, its needs landed, and nothing moved since the
-check, `plan ready <step>` at once.
+   files it lists. A moved file that a sketch or a suite of the check
+   reads goes to a fresh sub-agent with step 1's prompt, for those alone.
+   Land each correction as in step 2, and send it to the session as a
+   steer (section 3), which reaches it at work. In client-composition,
+   re-checking 08.1 after 08.2 had landed took 43 seconds (ruling 119).
 
 **A check left open** by a handover or a restart is started again by the
-session that goes on, from the handover entry and the ledger's steps in
-`check` (`awk -F'\t' '$4 == "check"' <run>/ledger.tsv`): its background
+session that goes on, from the handover entry, which names the re-checks
+still waiting (step 4), and the ledger's steps in `check` (`awk -F'\t'
+'$4 == "check"' <run>/ledger.tsv`): its background
 commands ended with the session before it, and the watch does not show a
 step twice.
 
@@ -231,7 +233,8 @@ step twice.
 
 The cron job's prompt brings you here, once an hour.
 
-1. **Start a sub-agent,** a fresh one, never a fork, with this prompt:
+1. **Start a sub-agent,** a fresh one on Sonnet, never a fork, with this
+   prompt:
 
    ```
    Run the hourly check of the run in <run>, as skein's
@@ -247,8 +250,10 @@ The cron job's prompt brings you here, once an hour.
    Its reading stays in its own context; only its entry reaches yours.
 2. **Append the entry** to `supervision.md`, under `## Check, <UTC time>`.
 3. **If it returned steer points,** land what they rest on, and send the
-   steer (section 3). A point you do not send gets one line in the
-   entry: why not.
+   steer (section 3). For a change to `scripts/dev` that the run takes,
+   first move the run's kit to its commit: `git -C <run>/kit checkout
+   --detach <commit>` (development.md, section 3.6). A point you do not
+   send gets one line in the entry: why not.
 
 **A quiet hour.** While no session is running and the run waits only on
 queue tasks (a live suite), skip the sub-agent: run `plan pulse`
@@ -262,9 +267,9 @@ When the watch prints that your context is past 300,000 tokens
 
 1. Finish the event in hand.
 2. Append to `supervision.md`, under `## Handover, <UTC time>`, at most 30
-   lines: what is open (blocks, questions, steps to check), the steers
-   whose points you still follow up, the rulings in force that the plan
-   does not yet say, and the next check's focus.
+   lines: what is open (blocks, questions, steps to check or re-check),
+   the steers whose points you still follow up, the rulings in force that
+   the plan does not yet say, and the next check's focus.
 3. Stop your watch, and each ready check's sub-agent and wait (section 5;
    in Claude Code, stop their background tasks), and delete your cron
    job.
@@ -275,25 +280,45 @@ When the watch prints that your context is past 300,000 tokens
 A supervisor's checks thin as its context grows: in jig-protocol, half its
 answers read code under 200K tokens, and none above 800K.
 
+**A usage limit is no handover** (development.md, section 10.5). A usage
+notice changes nothing: go on, and write no handover. You stop only when
+a request is refused. If you can still write then, as when the refusal
+is a sub-agent's, append `## Stopped, <UTC time>: usage limit, resets
+<the time the refusal gives>` to `supervision.md`, and end your turn. The
+user, or the director, resumes you at that time.
+
 ## 8. The end
 
 When the watch prints `done:` (development.md, section 7.6):
 
 1. Add to each decision in `done.md` the design commit that took it in,
-   or "not in the design yet". Then run each "Done when" command of the
-   plan's README once, as written, through `heavy` where it compiles or
-   runs tests, and append each command with its output to `done.md`,
-   under `## Done when, run <UTC time>`.
+   or "not in the design yet". Then have a sub-agent on Sonnet run each
+   "Done when" command of the plan's README once, as written, through
+   `heavy` where it compiles or runs tests, and return each command with
+   its output; append them to `done.md`, under `## Done when, run <UTC
+   time>`.
 2. Mark the plan `done <date>` in each `STATUS.md` that has its row, with
    `land --docs`.
-3. Stop your watch and delete your cron job.
-4. Start the retrospective: `plan retro`.
+3. **Watch until the release.** After `done.md`, the coordinator removes
+   the worktrees and runs `plan release`. Start the watch again, and
+   beside it, in the background, `until [[ ! -f ~/src/rust/tmp/active-plan
+   ]]; do sleep 60; done`. What holds the release reaches you as any
+   event (section 2). In forgejo-17, the release waited 24 minutes, 8 of
+   them unattended, behind a `done:` watch that was not started again.
+4. Once the run is released, stop your watch and delete your cron job.
+5. Start the retrospective: `plan retro`.
 
 ## 9. What the supervisor does not do
 
 - **No code and no review in depth.** A question that needs more than the
   hourly check goes to a read-only sub-agent with a bounded question, or
   waits for the retrospective.
+- **No sub-agent on your model.** Each sub-agent runs on Sonnet (in
+  Claude Code, `model: "sonnet"`): the ready checks, the hourly checks,
+  diagnoses and the "Done when" run. Their work is greps, compiles and
+  test runs, against a written prompt; you stay on Opus. In forgejo-17,
+  all ten ran on Opus: the ready checks alone took about $19 of the
+  supervisor's $37.
 - **No reading of what a sub-agent can read for you:** `log.md`, whole
   reports, the code beyond a ruling's checks.
 - **No text that nobody reads:** the terminal gets at most one line a turn.

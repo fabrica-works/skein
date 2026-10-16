@@ -219,10 +219,14 @@ it.
 from a sketch, how and why. The evidence the repository asks for beyond
 the gate.>
 
-Proof: <layer>, <test name or script path>, <result in one line>
+Proof: <the layer's word>, <test name or script path>, <result in one line>
 Plan: <plan>
 Step: <repository>-<NN>.<item>
 ```
+
+The `Proof:` line starts with its layer's word: unit, world, joint,
+process or live. A second layer follows a semicolon, with its own word
+(development.md, section 5.5).
 
 The last paragraph is the trailers, and nothing else: no blank line
 inside it, and no key with a space. `land` adds the trailers `Gate-Tree`
@@ -305,6 +309,14 @@ Question: <none, or the question in one line>
 After a landing, send them and go on. When the session is done, or
 nothing is left that does not wait (it yields), end your turn with them
 as your final answer.
+
+**The Size's tolerance.** An increment lands within twice its Size
+without asking, a codec or document increment (a schema, translations,
+decoders) within 2.5 times it, and a split increment's parts count
+together against its Size. Past that, stop on a question before landing,
+with the count by file. Never trim a doc comment, a test or
+the formatting to meet a Size. In forgejo-17, 04.2 deleted two doc
+comments to land at 140 of 140.
 
 **The checkpoint.** After each report, overwrite your checkpoint,
 `sessions/<repository>-<NN>.md`, with the same facts and with what is in

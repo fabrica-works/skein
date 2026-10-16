@@ -20,7 +20,7 @@ the implementers.
 
 ## 1. In one page
 
-- **Six roles, two agent programs.**
+- **Six roles, two agent programs, and an optional director.**
   - The designer and the planner (Claude Code, Opus 5.5 at xhigh effort,
     interactive with the user) turn an idea into design documents and a
     plan. The planner works in a fresh session, from the landed design.
@@ -31,6 +31,8 @@ the implementers.
     the coordinator's only counterpart.
   - The retrospective's author (Claude Code, Opus 5.5 at xhigh), a fresh
     session after the run, writes the run's retrospective.
+  - A director, if the user appoints one (Claude Code), acts for the user
+    across machines while they are away (section 2.7).
 - **The design is the contract.** It lives in each repository's
   `docs/design/`, and only the designer edits it. Drafts live in
   `docs/design/draft/`. `docs/design/STATUS.md` says how far the code is
@@ -92,9 +94,9 @@ the implementers.
   - An idle coordinator ends its turn, and the doorbell starts the next.
 - **A retrospective ends every run** (section 15). It lands as
   `retrospective.md` beside the plan, with the changes it proposes to this
-  document. The user decides each before the next run starts: `plan
-  check` refuses a plan while a proposal of the last retrospective is
-  open.
+  document. The user, or the director, decides each before the next run
+  starts: `plan check` refuses a plan while a proposal of the last
+  retrospective is open.
 - **Everything else is decided where it arises,** and reported:
   implementation choices by the implementer, the run's rulings by the
   supervisor, design gaps by the designer.
@@ -105,10 +107,11 @@ the implementers.
 |---|---|---|---|
 | Designer | Claude Code, Opus 5.5, xhigh | the design, within the user's delegation | `docs/design/**` in any repository, `STATUS.md` included; during a run, the session files that mention a point it changed, the plan's `later.md` rows for what it defers, and the run's `answer.md` |
 | Planner | the same, in a fresh session of its own (section 2.2) | how the design is cut into sessions and increments | `docs/development/plans/<plan>/` |
-| Supervisor | Claude Code, Opus 5.5, xhigh; started with the run | the run's rulings within the design: the plan's scope, order and increments, steps not in the plan, process, infrastructure | the run's `unblock.md`, `steer.md`, `question.md` and `supervision.md`; the plan, during its run; a plan's state in `STATUS.md` |
+| Supervisor | Claude Code, Opus 5.5, xhigh, its sub-agents on Sonnet; started with the run | the run's rulings within the design: the plan's scope, order and increments, steps not in the plan, process, infrastructure | the run's `unblock.md`, `steer.md`, `question.md` and `supervision.md`; the plan, during its run; a plan's state in `STATUS.md` |
 | Coordinator | Codex `-p coordinator` (gpt-6.1-sol, high) | what starts when, within the plan's dependencies and the machine | the run's directory |
 | Implementer | Codex sub-agent, same model and effort | implementation choices within the design and the plan | code and tests in its session's worktree |
 | Retrospective's author | Claude Code, Opus 5.5, xhigh; a fresh session after the run | nothing: it proposes | `docs/development/plans/<plan>/retrospective.md` |
+| Director (optional) | Claude Code, one long-running session the user appoints | for the user, with the user's authority (section 2.7) | `~/src/rust/tmp/director/` |
 
 ### 2.1 The designer
 
@@ -237,9 +240,30 @@ the implementers.
 
 - **A fresh session after the run** (section 15). It took no part in the
   run, so it reads the record with fresh eyes.
-- **Proposes, and decides nothing.** The user decides each of its
-  proposals, before the next run starts (section 15.1), and the designer
-  applies them.
+- **Proposes, and decides nothing.** The user, or the director, decides
+  each of its proposals, before the next run starts (section 15.1), and
+  the designer applies them.
+
+### 2.7 The director
+
+An optional role: one long-running Claude Code session that the user
+appoints to act for them across machines, with their authority, while
+they are away. Its working files are in `~/src/rust/tmp/director/`.
+
+- **Drives the designers and planners.** It starts their sessions with
+  their briefs. They send it their questions with SendMessage, each with
+  its recommendation, and end their turn; a session on another machine,
+  which SendMessage does not reach, ends its turn with them, and the
+  director reads them there.
+- **Answers what a role writes for the user** (section 10.4), within
+  minutes of its writing. It relays to the user only the decisions with
+  long-term consequences that would be hard to change, and records each
+  call it makes, which the user may overturn.
+- **Resumes the roles a usage limit stopped,** at the reset time they
+  gave (section 10.5).
+- **Decides the retrospectives' proposals** (section 15.1), and asks the
+  user when in doubt. The designer applies them.
+- **Speaks for the user.** Every role treats its messages as the user's.
 
 ## 3. Where things live
 
@@ -373,6 +397,7 @@ machine's run. Nothing here is versioned.
 | `blocked.md` | the coordinator | open escalations (section 10.2) |
 | `unblock.draft.md`, `unblock.md` | the supervisor; `plan ruling` | the answer, written once as a draft, then landed and moved into place (section 10.3) |
 | `docs/` | `plan docs` | the supervisor's worktree of the plan's repository, for its plan edits; removed by `plan release` |
+| `kit/` | `plan claim` | the run's kit: a worktree of skein at the commit the run was claimed at (section 3.6); removed by `plan release` |
 | `steer.md` | the supervisor | an instruction nobody asked for (section 10.3) |
 | `question.md`, `answer.md` | the supervisor; the designer | a design question, and its answer (section 10.4) |
 | `supervision.md` | the supervisor; `plan handover` | one entry per hourly check (section 14), each handover, and each design question with its answer; appended only |
@@ -388,8 +413,8 @@ there adds its new headings to it.
 
 Nothing in the run's directory is removed before the run's retrospective
 has landed (section 15), except:
-- the worktrees (section 7.6), and the supervisor's `docs/`, which `plan
-  release` removes;
+- the worktrees (section 7.6), and the supervisor's `docs/` and the
+  run's `kit/`, which `plan release` removes;
 - sessions' `target/` directories (section 11.4);
 - escalation files, once they have been appended to `log.md` or
   `supervision.md`.
@@ -405,6 +430,19 @@ are on every agent's `PATH`, and the files into place. The tools read
 `DEV_REPOS`: the repositories `plan check` checks, by default the plan's
 and those upstream of it, or all of them without a plan.
 
+**A run takes its kit from its claim,** as it takes its process (section
+4.4). `plan claim`, which `plan start` runs, adds `kit/` to the run's
+directory: a worktree of the workspace's skein at its checkout's commit,
+which `plan check` found equal to `origin/main`. While the run is the
+machine's, `plan`, `land` and `heavy`, wherever they are run from, hand
+over to `kit/`'s copies: every role, and `plan resume`, runs the claim's
+kit, and `plan check` still links the tools to the copy on `PATH`. So a
+kit change lands as soon as it is decided, and reaches the runs claimed
+after it. A run that must take it sooner does so by its supervisor's
+ruling, which moves `kit/` to the commit that landed it (`git -C
+<run>/kit checkout --detach <commit>`). A run claimed without `kit/`,
+before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
+
 | Tool | Does |
 |---|---|
 | `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes |
@@ -417,7 +455,7 @@ and those upstream of it, or all of them without a plan.
 | `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief past `PLAN_DESIGNER_LIMIT` (150,000 tokens) or `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
 | `plan handover supervisor` | from the supervisor's session, starts its successor, and records it (section 10.5) |
 | `plan retro [PLAN_DIR]` | starts the run's retrospective, by default the last run's, released or not (section 15) |
-| `plan claim PLAN_DIR`, `plan release` | start and end the machine's run; `plan start` claims |
+| `plan claim PLAN_DIR`, `plan release` | start and end the machine's run, adding and removing its `kit/`; `plan start` claims |
 | `plan worktree [--remove] REPOSITORY NAME` | a session's worktree, at `origin/main` |
 | `plan set STEP KEY=VALUE…` | adds or changes a ledger row |
 | `plan log REPOSITORY NN [FILE]` | logs an implementer's report, from FILE or its standard input, in `log.md` and `reports/`, and prints the report's file (section 8.6) |
@@ -535,14 +573,15 @@ can be counted. `plan metrics` does not read them yet: that waits for the
 kit, after smith's parity run. In client-composition, $28.13 of design and
 orchestration went uncounted.
 
-**A change during another run.** A run keeps the process of its claim:
-development.md and its cards as its machine's skein checkout held them
-when the run was claimed. A change to them that lands while a plan's row
-in a `STATUS.md` reads `active on` says in its commit body, for each such
-run, whether that run takes it ("<plan>'s run takes this") or keeps its
-process. The run's supervisor passes on, as a steer, each change its run
-takes, once its hourly check finds it (section 14.1, step 2); the others
-wait for the run's end. In smith's parity run, five adoptions landed on
+**A change during another run.** A run keeps the process and the kit of
+its claim: development.md, its cards and `scripts/dev` at the skein
+commit of its `kit/` (section 3.6). A change to them that lands while a
+plan's row in a `STATUS.md` reads `active on` says in its commit body,
+for each such run, whether that run takes it ("<plan>'s run takes this")
+or keeps its process. The run's supervisor passes on, as a steer, each
+change its run takes, once its hourly check finds it (section 14.1, step
+2), and moves the run's `kit/` to a kit change it takes; the others wait
+for the run's end. In smith's parity run, five adoptions landed on
 other machines and none reached it; the run found three of their rules
 again, hours later, by its own steers and rulings.
 
@@ -589,6 +628,9 @@ everything those agents read: plans, prompts, unblocks and steers.
 - **Repeat what matters where it applies.** Rules buried in a long README
   are missed. A session file repeats the two or three that bind its
   increments.
+- **Name the rest; do not restate it.** What the reader can open, the
+  design, the code, the findings, is named by section and symbol. A
+  restatement is read as well as its source, and drifts from it.
 - **Read every time from the clock.** A time written into a run's files,
   a heading, a ledger note or a `Reverses:` line, is read from `date -u`
   when it is written, never estimated.
@@ -727,13 +769,17 @@ user only what they and the design leave open, and asks before writing.
   counted in hand-written production lines (tests, generated code,
   goldens and transcripts aside), by the command the document gives,
   written out with the paths it counts; each landing's report gives that
-  count (implementer.md, 8.6). An increment lands within twice its Size
-  without asking, a codec or document increment (a schema, translations,
-  decoders) within 2.5 times it, and a split increment's parts count
-  together against its Size. Past that, it asks before landing, with the
-  count by file.
+  count, against the tolerance of implementer.md, 8.6, which the document
+  does not repeat.
 
-**A session file, `<repository>/NN-<name>.md`:**
+**A session file, `<repository>/NN-<name>.md`,** gives each increment at
+most about 100 lines, and is read in one read: at most about 400 lines.
+A session that needs more is split. It names the design, the code and
+the findings by section and symbol, and restates none of them (section
+4.5). In forgejo-17, the session files held about 400 lines an
+increment, against 55 to 80 in jig's, smith's and skein's plans: they
+brought no fewer defects, three of them were too long for one Codex
+read, and their writers cost $42. It holds:
 - **Title and summary:** "Session NN: …", with one paragraph.
 - **Read first:** the design sections, decisions and findings it builds
   on, and, by number, the sections of skein's `programming-model.md` and
@@ -741,7 +787,8 @@ user only what they and the design leave open, and asks before writing.
   those two documents by these sections only: in client-composition,
   each of the 13 threads read both whole, 14K to 23K tokens that every
   later request carried.
-- **What the design asks:** a short restatement, with section references.
+- **What the design asks:** its sections, by number, each with a line on
+  what this session takes from it.
 - **Choices this plan makes,** within the design's latitude.
 - **Rules that bind it:** the two or three rules of the README and
   `code-organization.md` that matter most here, repeated (section 4.5).
@@ -758,8 +805,8 @@ user only what they and the design leave open, and asks before writing.
     file:line; where its worlds' and fixtures' limits come from; one
     reference test written out for each new test file or new kind of
     test; the tests' names; their ceilings (section 5.6)>.
-  Proof: <the layer, the test or the script, what it shows, its bound
-    (section 5.5)>.
+  Proof: <the layer's word, then the test or the script, what it shows,
+    its bound (section 5.5)>.
   Don't: <what this increment must not do, beyond the plan's list>.
   Size: <at most N lines of production code>.
   Removes: <what goes, or nothing>.
@@ -895,6 +942,7 @@ may veto.
     increment's (section 5.3);
   - proofs no higher than their increment's tests without a reason, and
     sides that run ahead of what they meet (sections 5.3 and 5.5);
+  - Proof lines that do not start with their layer's word (section 5.5);
   - a `code-organization.md` without the command that counts an
     increment's hand-written production lines, and each Size above about
     300 (section 5.2).
@@ -914,10 +962,10 @@ may veto.
   increment builds or tests and no line names as open (a session's
   "Questions to raise when reached", `later.md`): a key, an event, a
   dialog, the order of two answers. The designer answers each before the
-  run, and the planner fixes the plan to the answer. In skein-ui, four of
-  the seven design questions were in such text: `ui-web.md`, section 6,
-  gives `Control+K` or `Meta+K` by platform, and 09.3's Shape took no
-  platform.
+  plan lands, and the planner fixes the plan to the answer. In skein-ui,
+  four of the seven design questions were in such text: `ui-web.md`,
+  section 6, gives `Control+K` or `Meta+K` by platform, and 09.3's Shape
+  took no platform.
 - **The plan's commands, run once.** At the plan's base, the planner runs,
   through `heavy` (section 11.1):
   - every command the plan prescribes: each Proof, each count, each "Done
@@ -940,12 +988,22 @@ may veto.
 
   A command that fails, a count that is not what the plan says, or a
   sketch that does not compile is a plan defect, fixed before the plan
-  lands. The fixes of the reviews above get the same run.
+  lands. The fixes of the reviews above get the same run. Each command's
+  output goes in the plan's `findings/`, with the command. `plan check`
+  does not refuse a plan without them yet: that waits for the kit.
 
   What cannot run at the base, because it names code an earlier session
   lands, is checked when its session becomes ready: the supervisor's
   ready check (section 7.2) greps its names and compiles its sketches
   against `main` before the session starts.
+- **A plan lands finished:** its design questions answered, and its
+  commands run. When planning must be lighter, the writing is cut, never
+  these runs. In forgejo-17, they were what the planner cut: the process
+  tier, a "Done when" item, would have shown at the base the panic that
+  cost a ruling, a design question and two supplements; uncompiled
+  sketches cost three rulings of corrections and about 28 failed build
+  rounds; and questions answered after the claim held 02.1 for 9.5
+  minutes. The runs would have taken minutes.
 - **The plan lands** with `land --docs`, and `STATUS.md` gets the plan's
   row, `ready`. The landing commit carries the trailer `Planner-Session:
   <the planner's $CLAUDE_CODE_SESSION_ID>`, which the metrics read
@@ -982,8 +1040,13 @@ balancing confidence against the run's pace and its tokens.
   5.3). In jig-protocol, 163 of the 180 landed proofs were at the unit or
   world layer.
 - **The Proof line** of an increment (section 5.2) gives:
-  - **the layer,** and, when it is not the highest one that exists or is
-    no higher than the increment's tests, why, in one line;
+  - **the layer,** first, by its word in the table above: unit, world,
+    joint, process or live, which `plan metrics` reads. A second layer
+    follows a semicolon, with its own word (`joint, …; live, …`). When
+    the layer is not the highest one that exists, or is no higher than
+    the increment's tests, the line says why, in one line. In forgejo-17,
+    Proofs that began "the real Forgejo" or "the fake service" left 9 of
+    11 uncounted;
   - **what runs:** a test by name, in the suite, which is preferred, or a
     script the implementer writes and keeps in the run's
     `logs/<repository>-<NN>/`, with its output. A script is for what the
@@ -1170,11 +1233,11 @@ commits behind smith.
 2. **The machine is ready.** `plan check --fix <plan-dir>` passes. It
    checks:
    - the plan and its `STATUS.md` row;
-   - that the user has decided each proposal of the last retrospective:
-     the one added last to any repository's `origin/main` has a row for
-     each of its proposals in its section 10, and none of them open
-     (section 15.1). A retrospective's proposals left undecided recur:
-     six of jig-protocol's did, in test-budgets;
+   - that the user, or the director, has decided each proposal of the last
+     retrospective: the one added last to any repository's `origin/main`
+     has a row for each of its proposals in its section 10, and none of
+     them open (section 15.1). A retrospective's proposals left undecided
+     recur: six of jig-protocol's did, in test-budgets;
    - the primary checkouts of the plan's repository and of those upstream
      of it: on `main`, clean, equal to `origin/main`, with an `origin` that
      takes a push (`git push --dry-run`);
@@ -1198,7 +1261,7 @@ commits behind smith.
    choice.
 3. **`plan start <plan-dir>`** does the rest, and returns:
    - it runs `plan check`, and claims the run, naming it in
-     `~/src/rust/tmp/active-plan`;
+     `~/src/rust/tmp/active-plan` and adding its kit (section 3.6);
    - it starts the supervisor, a background Claude Code session (Opus 5.5,
      xhigh) in the workspace, named `<plan> supervisor`, with "Supervise the
      run of `<plan-dir>` as skein's docs/foundation/supervisor.md says.";
@@ -1255,19 +1318,23 @@ started it, which record it themselves.
   memory or disk is short (section 11.4). The sessions that can start at
   the claim start at once: the planner checked their files at the plan's
   base (section 5.4).
-- **The ready check.** Any other session waits for the supervisor to
-  check its file against `main`. As soon as every session it needs at its
-  start is running, or has landed what it needs, `plan set <its first
-  step> state=check`, and go on with everything else: the supervisor
-  checks it while they run, and once its needs have landed re-checks
-  only what `main` moved since. When the supervisor has checked it, it
-  runs `plan ready <step>`, which sets the step `ready` and rings:
-  "ready: <step>". Start it then. Repins (section 5.7), restarts,
-  handovers and steps added by an unblock or a steer start without a
-  check. In client-composition, checks started only after the landing
-  held sessions 103 minutes in all, about 70 of them on the chain that
-  set the run's length. In skein-ui, checks set once all but one need had
-  landed still ended after it landed 11 times in 16.
+- **The ready check.** Any other session waits for the supervisor to check
+  its file against `main`. As soon as every session it needs at its start
+  is running, or has landed what it needs, `plan set <its first step>
+  state=check`, and go on with everything else: the supervisor checks it
+  while they run. When it has checked it, it runs `plan ready <step>`,
+  which sets the step `ready` and rings: "ready: <step>". Start it as soon
+  as its needs have landed, then or later: a re-check never holds a start.
+  The supervisor re-checks what `main` moved after its check, and sends
+  what it finds as a steer. Repins (section 5.7), restarts, handovers and
+  steps added by an unblock or a steer start without a check. In
+  forgejo-17, re-checks held 02.1 for 9.5 minutes after its need landed,
+  and 04.1 for 11, for a compile error and line numbers that an
+  implementer's first build finds in seconds. In client-composition,
+  checks started only after the landing held sessions 103 minutes in all,
+  about 70 of them on the chain that set the run's length. In skein-ui,
+  checks set once all but one need had landed still ended after it landed
+  11 times in 16.
 - **When there are fewer slots than sessions,** start first the sessions
   others wait on, in the README's order. Never hold a slot idle to keep
   the order.
@@ -1508,14 +1575,15 @@ dependency lands.
        lists them.
 
      The supervisor adds to each decision the design commit that took it
-     in, or "not in the design yet". It then runs each "Done when"
-     command once, and appends each command, with its output, to
-     `done.md` (section 5.2).
+     in, or "not in the design yet". It then has a sub-agent run each
+     "Done when" command once, and appends each command, with its
+     output, to `done.md` (section 5.2).
   2. Remove the worktrees.
   3. `plan release`. The run's directory stays.
 
-  The supervisor then marks the plan `done <date>` in `STATUS.md`, and the
-  retrospective follows (section 15).
+  The supervisor marks the plan `done <date>` in `STATUS.md`, and watches
+  until the release, which reaches it as any event does (supervisor.md,
+  section 8); the retrospective follows (section 15).
 
 ## 8. Implementing: the implementer's card
 
@@ -1846,8 +1914,9 @@ lines each.>
 
   A question for the user goes into `decisions.md`, under "For the user",
   and reaches the user at once in a push notification, in one line with
-  the choice and the default. The run blocks on it only if no work can
-  continue without it.
+  the choice and the default. While a director is appointed, it reads them
+  within minutes, and every push to the user is optional (section 2.7).
+  The run blocks on it only if no work can continue without it.
 - **No role of a run asks the user through a tool that waits for the
   answer** (in Claude Code, AskUserQuestion): its session waits inside
   the tool, and sees no event until the user answers. It writes the
@@ -1895,6 +1964,16 @@ lines each.>
   supervisors loaded it so ten times. If the heartbeat is still old ten
   minutes later, the supervisor alerts the user (in Claude Code, a push
   notification). The alert gives the restart command, `plan resume`.
+- **A usage limit.** A usage notice changes nothing: the role goes on,
+  and writes no handover. A role stops only when a request is refused.
+  If it can still write, as when the refusal is a sub-agent's, its last
+  line in `supervision.md`, or its last message for a designer or a
+  planner, is `Stopped, <UTC time>: usage limit, resets <the time the
+  refusal gives>`. The user, or the director (section 2.7), resumes it
+  then: `plan resume` for the supervisor. In forgejo-17, the supervisor
+  took a notice for a stop: it wrote a handover, and told the user that
+  its watch and cron job would die, and neither did. The refusal came
+  half an hour later, with no line saying when it would end.
 - **The designer has no watch.** After `plan join designer` it ends its
   turn; `plan wake` brings it back with each question (section 6, step 5).
 - **When the supervisor's context passes 300,000 tokens,** it hands over
@@ -2053,6 +2132,10 @@ that machine.
   share one, the second plan's README names the first.
 - **Another machine landing on the same repository** is, to `land`, main
   moving: rebase, gate again, push.
+- **A kit change from another machine** reaches a run only by its
+  supervisor's ruling (section 3.6): each run keeps its claim's kit. This
+  holds for the runs claimed after skein e6fd9fb, through their resumes;
+  a run claimed before it runs main's kit to its end, resumed or not.
 
 ## 13. Open questions
 
@@ -2114,12 +2197,12 @@ tests that stay cheap and readable. It is a light check of about ten
 minutes. Problems are cheaper to fix the hour they appear.
 
 **A sub-agent runs steps 1 to 4** (`supervisor.md`, section 6): a fresh
-one, never a fork, which returns the entry of step 5 and any steer's
-points, and changes no file itself. What it reads stays in its own
-context: in jig-protocol's second supervisor session, the checks run in
-the supervisor's own context cost about a fifth of it, and each added 7K
-to 23K tokens that every later request carried. The supervisor appends
-the entry, and sends the steer.
+one on Sonnet (`supervisor.md`, section 9), never a fork, which returns
+the entry of step 5 and any steer's points, and changes no file itself.
+What it reads stays in its own context: in jig-protocol's second
+supervisor session, the checks run in the supervisor's own context cost
+about a fifth of it, and each added 7K to 23K tokens that every later
+request carried. The supervisor appends the entry, and sends the steer.
 
 **A quiet hour needs no sub-agent.** While no session is running and the
 run waits only on queue tasks (a live suite), the supervisor runs `plan
@@ -2140,7 +2223,8 @@ eight checks while one suite ran cost about $21, and led to nothing.
    last steer. Then list the process changes since the run's claim:
    `git -C ~/src/rust/skein fetch -q origin && git -C ~/src/rust/skein
    log --format='%h %s%n%b' <the claim's skein commit, from
-   supervision.md's Process line>..origin/main -- docs/foundation`. Each
+   supervision.md's Process line>..origin/main -- docs/foundation
+   scripts/dev`. Each
    commit whose body says the run takes it, and that no steer has passed
    on, is a steer point (section 4.4).
 3. **Sample two files, about 300 lines in all:**
@@ -2310,8 +2394,9 @@ question and its own budget, or waits for the retrospective.
       |`, for the user. Each row's decision becomes `adopted`, `adopted in
       part: <what>`, `rejected: <why>` or `deferred: <until when>`, and its
       last column where it was applied.
-- **The user decides each proposal before the next run starts,** and the
-  designer applies what is adopted and records each decision in section
+- **The user, or the director, decides each proposal before the next run
+  starts,** and the designer applies what is adopted and records each
+  decision in section
   10. `plan check` refuses a plan while the last retrospective lacks
   section 10 or has a proposal still open (section 6). In test-budgets,
   six of jig-protocol's seventeen undecided proposals recurred.
