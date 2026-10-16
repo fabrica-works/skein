@@ -52,7 +52,10 @@ impl Exchange {
         self.env.wall = wall;
     }
     pub fn stop(&mut self) {
-        client::down(&mut self.client, &self.env, client::Request::Close, &mut self.above, &mut self.below);
+        // The client can be closed while the socket's terminal event is pending.
+        if self.client.waiting() != client::Waiting::Nothing {
+            client::down(&mut self.client, &self.env, client::Request::Close, &mut self.above, &mut self.below);
+        }
         while self.below.pop().is_some() {}
         if let Some(entity) = self.socket.take() {
             self.requests.push_back(Request::Abort { entity });
@@ -139,3 +142,6 @@ pub(super) fn route(exchanges: &mut [Exchange], event: io::Event) -> Option<io::
     }
     Some(event)
 }
+
+#[cfg(test)]
+mod tests;
