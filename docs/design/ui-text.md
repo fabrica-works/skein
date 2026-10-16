@@ -16,8 +16,8 @@ how it is tested. What is open is in section 9.
   terminal client is its state and its view, composed with this shell
   under its own host, with whatever lines it prints of its own. Its
   settings carry what is the application's: its name, the longest line
-  it reads, its print interval, and the region whose text the first
-  line carries.
+  it reads, its print interval, the region whose text the first line
+  carries, and how many of its own lines may wait for the output.
 - **The whole page, never a diff:** at most once per interval while the
   tree changes, and at once after the person's own command.
 - **By role, not by look.** Each role prints one way; states and
@@ -53,7 +53,7 @@ with `alloc`; its terminal is ordinary Rust, as shells are
 a person at a terminal, or a pipe
   ▲ lines out                    ▼ lines in
 skein_ui_text::Terminal          the input as a read pipe, the output as a write pipe, on skein's io
-  ▲ trees, the application's lines  ▼ commands: an act on a node, print, close
+  ▲ trees, the application's lines  ▼ commands: an act on a node, print, close; the room for its lines
 the application's host           its loop over skein-shell's drive: its steps, its view (ui.md, section 7)
 ```
 
@@ -88,8 +88,9 @@ this shell's text (ui.md, 17.1).
   of their own, so its host routes their completions to it. It knows no
   application: the host gives it each completion of its operations, each
   tree the view builds and whether the view patched since the last, and
-  the lines the application prints of its own; it gives the host each
-  command and its submissions.
+  the lines the application prints of its own, each within the room the
+  terminal gives (section 4); it gives the host each command, its
+  submissions, and that room (`Terminal::room`).
 - **Its settings,** `skein_ui_text::Settings`, which the application
   gives whole, with no defaults:
   - *the name* its own lines start with: the application's, at most the
@@ -100,7 +101,10 @@ this shell's text (ui.md, 17.1).
   - *its print interval*, a guide (section 4);
   - *its status region*: one of the application's region names (ui.md,
     section 8), whose node's text the first line carries (section 5), or
-    none.
+    none;
+  - *its lines*: the most of the application's own lines the terminal
+    holds that the output has not taken (section 4); 0 for an
+    application that prints none.
 
 ## 4. When it prints
 
@@ -117,6 +121,20 @@ this shell's text (ui.md, 17.1).
   go on) are written before the next print of the page, in the order
   they came, each starting with the shell's name and `: `, so they are
   never taken for the page's.
+- **The application's lines have a room of their own.** The terminal
+  holds at most the settings' lines of the application's that the
+  output has not taken, and gives the host the room left
+  (`Terminal::room`): the settings' lines less those waiting, and none
+  once it is closing (section 7). The host says a line only within that
+  room. A line said beyond it is the host's defect: the terminal stops,
+  as a full queue does (a panic, fail-stop). What has no room waits in
+  the host, which bounds it as the application's design says, holding
+  the person's commands if it must (section 7).
+- **Its own lines keep their room.** Beside the application's lines,
+  the terminal keeps room for its own: a whole read's refusals and its
+  `closed`. It asks to read only while that room holds a whole read's
+  refusals, whatever the application has said, so the application's
+  lines never take a refusal's room nor stop the reading.
 
 ## 5. How it prints
 
@@ -261,6 +279,12 @@ this shell's text (ui.md, 17.1).
   view built; each whole line read made into one command and done; a
   print, when one is due; the output written. Time is the host's clock,
   read once per iteration.
+- **The host's pace.** The terminal asks to read only once the host has
+  taken every command it gave (`Terminal::commands`), at most a read's
+  worth at once. A host that takes none holds the person's lines unread
+  in the input, `q` and the input's end among them, so an application
+  can make the person wait, as one whose lines have no room may (section
+  4); a termination signal, which the host hears, still closes.
 - **Effects.** The text shell carries out none. Each effect the
   application's steps emit that its host does not carry out with code of
   its own, the host answers with that effect's one report, refused,
@@ -274,7 +298,9 @@ this shell's text (ui.md, 17.1).
 - **Closing:** `q`, the end of the input, or a termination signal, which
   the host hears. The terminal starts no new print, writes what it has
   begun, and says it is closed (`NAME: closed`); the host then closes
-  its application, which ends as its own design says.
+  its application, which ends as its own design says. The application's
+  lines said before are written before `closed`; from `closed` on its
+  room is none, and the host says no more.
 
 ## 8. Its tests
 
@@ -303,8 +329,11 @@ this shell's text (ui.md, 17.1).
 - **The terminal** on skein's simulated machine, in `tests/ui-text`
   (testing.md, section 6): lines split and joined across reads, a line
   too long refused through its newline, prints paced and one at a time,
-  the application's lines before the next print, the input's end
-  closing without a new print, a print begun finished at closing, a
+  the application's lines before the next print, the application's
+  lines within their room while the output is held, a read's refusals
+  still read and written after them, no room once closing, the input
+  left unread while the host has not taken its commands, the input's
+  end closing without a new print, a print begun finished at closing, a
   name longer than a node's text refused.
 - **An application's terminal client** is tested in its own tiers: its
   worlds play this shell, and its end-to-end tests run lines in on a
