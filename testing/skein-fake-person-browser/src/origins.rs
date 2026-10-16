@@ -180,9 +180,11 @@ impl Pages {
             match event {
                 server::Event::Call(call) => {
                     let page = self.pages.iter().find(|page| page.path == call.target);
-                    let status = page.map_or(404, |page| if page.kind.is_empty() { 204 } else { 200 });
+                    let favicon = call.target.as_ref() == b"/favicon.ico";
+                    let status = page
+                        .map_or(if favicon { 204 } else { 404 }, |page| if page.kind.is_empty() { 204 } else { 200 });
                     let body = page.map_or_else(
-                        || b"not found".to_vec(),
+                        || if favicon { Vec::new() } else { b"not found".to_vec() },
                         |page| super::harness::replace_address(&page.body, &self.address).into_vec(),
                     );
                     let mut headers = Vec::new();

@@ -438,3 +438,9 @@ fn an_unknown_origin_path_is_404() {
     let wire = origins::response("/missing");
     assert!(wire.starts_with(b"HTTP/1.1 404 Not Found\r\n"), "{}", String::from_utf8_lossy(&wire));
 }
+#[test]
+fn an_origins_favicon_is_204() {
+    let wire = origins::response("/favicon.ico");
+    assert!(wire.starts_with(b"HTTP/1.1 204 No Content\r\n"), "{}", String::from_utf8_lossy(&wire));
+    assert!(wire.ends_with(b"\r\n\r\n"), "{}", String::from_utf8_lossy(&wire));
+}
