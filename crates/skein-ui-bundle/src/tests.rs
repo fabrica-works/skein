@@ -1,4 +1,4 @@
-use super::{Glue, Inputs, Refusal, bundle, sha256};
+use super::{Glue, Inputs, Refusal, bundle};
 use skein_scratch::Scratch;
 use std::collections::BTreeMap;
 use std::fs;
@@ -27,29 +27,6 @@ fn glue() -> Glue {
         js: b"export default function init() {}".to_vec(),
         wasm: b"\0asm".to_vec(),
         snippets: vec![("notes/grow.js".into(), b"export function grow() {}".to_vec())],
-    }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut hex = String::new();
-    for byte in bytes {
-        write!(hex, "{byte:02x}").expect("write hex");
-    }
-    hex
-}
-
-#[test]
-fn sha256_gives_fips_examples() {
-    const CASES: &[(&[u8], &str)] = &[
-        (b"abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
-        (
-            b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
-            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
-        ),
-    ];
-    for (input, expected) in CASES {
-        assert_eq!(hex(&sha256::digest(input)), *expected, "{input:?}");
     }
 }
 

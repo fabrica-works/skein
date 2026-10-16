@@ -15,14 +15,14 @@ impl fmt::Display for Digest {
 }
 
 pub(crate) fn of(files: &BTreeMap<String, Vec<u8>>) -> Digest {
-    let mut encoded = Vec::new();
+    let mut state = skein_lib::sha256::Sha256::new();
     for (path, bytes) in files {
-        encoded.extend_from_slice(path.as_bytes());
-        encoded.push(0);
-        encoded.extend_from_slice(&u64::try_from(bytes.len()).expect("file length fits u64").to_le_bytes());
-        encoded.extend_from_slice(bytes);
+        state.update(path.as_bytes());
+        state.update(&[0]);
+        state.update(&u64::try_from(bytes.len()).expect("file length fits u64").to_le_bytes());
+        state.update(bytes);
     }
-    let hash = crate::sha256::digest(&encoded);
+    let hash = state.finish();
     let mut name = [0; 16];
     for (pair, byte) in name.chunks_exact_mut(2).zip(hash) {
         const HEX: &[u8; 16] = b"0123456789abcdef";
