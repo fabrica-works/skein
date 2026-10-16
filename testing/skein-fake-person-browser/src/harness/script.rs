@@ -18,6 +18,7 @@ pub enum Step {
     PressAt { find: skein_fake_person::Find, at: skein_browser::boundary::Point },
     Compose { find: skein_fake_person::Find, words: Box<[u8]> },
     Type { find: skein_fake_person::Find, words: Box<[u8]> },
+    Reopen,
     Back,
     Forward,
 }
@@ -46,6 +47,28 @@ impl Script {
             growth: None,
             text: None,
         }
+    }
+    fn check_title(&mut self, face: &mut BrowserFace<'_>) -> Option<Next<Box<[u8]>>> {
+        if let Some(title) = self.title.take() {
+            match face.title(&title) {
+                skein_fake_person::Found::Pending => {
+                    self.title = Some(title);
+                    return Some(Next::Wait { until: None });
+                }
+                skein_fake_person::Found::Absent => {
+                    return Some(Next::Failed {
+                        step: self.at,
+                        why: skein_fake_person::Why::Missing {
+                            find: skein_fake_person::Find::exactly_named(skein_ui::Role::Page, &title),
+                        },
+                    });
+                }
+                skein_fake_person::Found::Node(_) => {
+                    self.at += 1;
+                }
+            }
+        }
+        None
     }
     fn grow(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Option<Next<Box<[u8]>>> {
         if let Some(mut growth) = self.growth.take() {
@@ -122,24 +145,8 @@ impl Play for Script {
         if let Some(next) = self.check_focus(face) {
             return next;
         }
-        if let Some(title) = self.title.take() {
-            match face.title(&title) {
-                skein_fake_person::Found::Pending => {
-                    self.title = Some(title);
-                    return Next::Wait { until: None };
-                }
-                skein_fake_person::Found::Absent => {
-                    return Next::Failed {
-                        step: self.at,
-                        why: skein_fake_person::Why::Missing {
-                            find: skein_fake_person::Find::exactly_named(skein_ui::Role::Page, &title),
-                        },
-                    };
-                }
-                skein_fake_person::Found::Node(_) => {
-                    self.at += 1;
-                }
-            }
+        if let Some(next) = self.check_title(face) {
+            return next;
         }
         if let Some(person) = &mut self.person {
             let next = person.next(face, now);
@@ -165,6 +172,10 @@ impl Play for Script {
             Step::Focused(find) => self.focused = Some(find),
             Step::Compose { find, words } => self.text = Some((find, words, true)),
             Step::Type { find, words } => self.text = Some((find, words, false)),
+            Step::Reopen => {
+                face.reopen();
+                self.at += 1;
+            }
             Step::Back | Step::Forward => {
                 face.history(matches!(step, Step::Forward));
                 self.at += 1;

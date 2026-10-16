@@ -160,15 +160,74 @@ fn a_go_uses_the_servers_origin() {
     );
 }
 
+use crate::harness::{Names, Output, Printed};
+type PrintedRow = (&'static [u8], Names, &'static [(&'static str, &'static str)]);
+const PRINTED: &[PrintedRow] = &[
+    (b"starting\nserver at 127.0.0.1:44327\n", Names::Address, &[("http://127.0.0.1:44327/", "127.0.0.1:44327")]),
+    (b"server at 127.0.0.1:44327", Names::Address, &[]),
+    (b"other line\n", Names::Address, &[]),
+    (
+        b"http://127.0.0.1:7100/a/link?secret=x\n",
+        Names::Url,
+        &[("http://127.0.0.1:7100/a/link?secret=x", "127.0.0.1:7100")],
+    ),
+    (
+        b"http://127.0.0.1:7100/a?s=1\nhttp://127.0.0.1:7100/a?s=2\n",
+        Names::Url,
+        &[("http://127.0.0.1:7100/a?s=1", "127.0.0.1:7100"), ("http://127.0.0.1:7100/a?s=2", "127.0.0.1:7100")],
+    ),
+];
 #[test]
-fn the_listening_line_gives_the_address() {
-    for (stderr, expected) in [
-        (b"starting\nserver at 127.0.0.1:44327\n".as_slice(), Some("127.0.0.1:44327".to_owned())),
-        (b"server at 127.0.0.1:44327".as_slice(), None),
-        (b"other line\n".as_slice(), None),
-    ] {
-        assert_eq!(crate::harness::listening_address(stderr, b"server at "), expected);
+fn a_printed_line_names_the_url_to_open_and_its_address() {
+    for (output, names, expected) in PRINTED {
+        let prefix: &[u8] = if *names == Names::Url { b"http://" } else { b"server at " };
+        let found = crate::harness::printed(output, &Printed { prefix, on: Output::Stderr, names: *names });
+        let found: Vec<_> = found.iter().map(|o| (o.url.as_str(), o.address.as_str())).collect();
+        assert_eq!(found, *expected, "{}", String::from_utf8_lossy(output));
     }
+}
+#[test]
+fn a_restart_replaces_each_address_placeholder() {
+    let args = ["serve".into(), "--at={address}/{address}".into()];
+    assert_eq!(
+        crate::harness::restart(&args, "127.0.0.1:9"),
+        vec![Box::from(b"serve".as_slice()), Box::from(b"--at=127.0.0.1:9/127.0.0.1:9".as_slice())]
+    );
+}
+#[test]
+fn a_second_person_opens_a_line_the_first_did_not() {
+    let lines = crate::harness::printed(
+        b"http://a:1/one\nhttp://a:1/two\n",
+        &Printed { prefix: b"http://", on: Output::Stdout, names: Names::Url },
+    );
+    assert_eq!(crate::harness::opening(&lines, Names::Url, 0).unwrap().url, "http://a:1/one");
+    assert_eq!(crate::harness::opening(&lines, Names::Url, 1).unwrap().url, "http://a:1/two");
+    assert_eq!(crate::harness::opening(&lines, Names::Url, 2), None);
+}
+#[test]
+fn stdout_is_piped_only_when_the_line_comes_on_it() {
+    for (on, expected) in [(Output::Stderr, vec![2]), (Output::Stdout, vec![2, 1])] {
+        assert_eq!(
+            crate::harness::server_pipes(on).iter().map(|pipe| pipe.child).collect::<Vec<_>>(),
+            expected,
+            "{on:?}"
+        );
+    }
+}
+#[test]
+fn reopen_goes_to_the_url_the_person_first_opened() {
+    let mut face = face();
+    face.first_url = "http://127.0.0.1:9000/link?s=one".into();
+    let mut script = crate::Script::new(Box::new([crate::Step::Reopen]));
+    crate::Play::next(&mut script, &mut face, skein_lib::Time::ZERO);
+    assert_eq!(
+        face.requests().collect::<Vec<_>>(),
+        vec![Request::Go {
+            page: Token::new(7),
+            op: Token::new(7_000_001),
+            to: skein_browser::boundary::Go::Address(b"http://127.0.0.1:9000/link?s=one".as_slice().into())
+        }]
+    );
 }
 
 fn warn_go(face: &mut BrowserFace<'_>) {

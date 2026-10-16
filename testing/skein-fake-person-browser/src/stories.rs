@@ -9,7 +9,8 @@ fn harness(setup: &Setup<'_>, expected: Vec<Box<[u8]>>) -> Harness {
     Harness::new(Setup {
         server: setup.server.clone(),
         args: setup.args.clone(),
-        listening: setup.listening,
+        printed: setup.printed,
+        restart: setup.restart.clone(),
         chromium: setup.chromium.clone(),
         expected,
     })

@@ -21,10 +21,33 @@ const IMAGE: Token = Token::new(u64::MAX - 2);
 const ROOT: Token = Token::new(u64::MAX - 1);
 const SERVER_ROOT: Token = Token::new(u64::MAX);
 
+#[derive(Clone, Copy)]
+pub struct Printed<'a> {
+    pub prefix: &'a [u8],
+    pub on: Output,
+    pub names: Names,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Output {
+    Stdout,
+    Stderr,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Names {
+    Address,
+    Url,
+}
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Opened {
+    pub url: String,
+    pub address: String,
+}
+
 pub struct Setup<'a> {
     pub server: PathBuf,
     pub args: Vec<OsString>,
-    pub listening: &'a [u8],
+    pub printed: Printed<'a>,
+    pub restart: Vec<OsString>,
     pub chromium: PathBuf,
     pub expected: Vec<Box<[u8]>>,
 }
@@ -54,7 +77,10 @@ pub enum Outcome {
 pub struct Harness {
     server: PathBuf,
     args: Vec<OsString>,
-    listening: Box<[u8]>,
+    prefix: Box<[u8]>,
+    output: Output,
+    names: Names,
+    restart: Vec<OsString>,
     chromium: PathBuf,
     expected: Vec<Box<[u8]>>,
 }
@@ -64,7 +90,10 @@ impl Harness {
         Self {
             server: setup.server,
             args: setup.args,
-            listening: setup.listening.into(),
+            prefix: setup.printed.prefix.into(),
+            output: setup.printed.on,
+            names: setup.printed.names,
+            restart: setup.restart,
             chromium: setup.chromium,
             expected: setup.expected,
         }
@@ -74,15 +103,47 @@ impl Harness {
         Runtime::new(self, profile.path(), people.len()).run(self, people)
     }
 }
-/// Accept only a complete listening line, including one split across reads.
+/// Each complete matching line, as a URL and its authority.
 #[must_use]
-pub fn listening_address(stderr: &[u8], prefix: &[u8]) -> Option<String> {
-    stderr
+pub fn printed(output: &[u8], printed: &Printed<'_>) -> Vec<Opened> {
+    output
         .split_inclusive(|b| *b == b'\n')
         .filter(|line| line.ends_with(b"\n"))
-        .find_map(|line| line.strip_prefix(prefix))
-        .and_then(|address| std::str::from_utf8(address).ok())
-        .map(|address| address.trim().to_owned())
+        .filter_map(|line| {
+            let rest = line.strip_prefix(printed.prefix)?;
+            let line = std::str::from_utf8(line).ok()?.trim();
+            let address = std::str::from_utf8(rest).ok()?.trim();
+            let (url, address) = match printed.names {
+                Names::Address => (format!("http://{address}/"), address.to_owned()),
+                Names::Url => (line.to_owned(), line.split_once("://")?.1.split(['/', '?', '#']).next()?.to_owned()),
+            };
+            Some(Opened { url, address })
+        })
+        .collect()
+}
+pub(crate) fn restart(args: &[OsString], address: &str) -> Vec<Box<[u8]>> {
+    args.iter().map(|arg| replace_address(arg.as_bytes(), address)).collect()
+}
+fn replace_address(bytes: &[u8], address: &str) -> Box<[u8]> {
+    let mut out = Vec::new();
+    let mut rest = bytes;
+    while let Some(at) = rest.windows(9).position(|part| part == b"{address}") {
+        out.extend_from_slice(&rest[..at]);
+        out.extend_from_slice(address.as_bytes());
+        rest = &rest[at + 9..];
+    }
+    out.extend_from_slice(rest);
+    out.into()
+}
+pub(crate) fn server_pipes(on: Output) -> Box<[Pipe]> {
+    let mut pipes = vec![Pipe { child: 2, way: Way::Out, parent: None }];
+    if on == Output::Stdout {
+        pipes.push(Pipe { child: 1, way: Way::Out, parent: None });
+    }
+    pipes.into()
+}
+pub(crate) fn opening(lines: &[Opened], names: Names, index: usize) -> Option<&Opened> {
+    lines.get(if names == Names::Url { index } else { 0 })
 }
 #[derive(PartialEq, Eq)]
 enum ServerState {
@@ -106,7 +167,9 @@ struct Runtime {
     requests: VecDeque<io::Request>,
     roots: [kernel::Fd; 2],
     pipes: Option<[Token; 3]>,
-    server_pipe: Option<Token>,
+    server_pipes: Vec<Token>,
+    output: Vec<u8>,
+    lines: Vec<Opened>,
     children: Vec<Token>,
     closed: u32,
     spawned: u32,
@@ -180,7 +243,7 @@ impl Runtime {
             env: Box::new([]),
             root: server_root,
             dir: b".".as_slice().into(),
-            pipes: Box::new([Pipe { child: 2, way: Way::Out, parent: None }]),
+            pipes: server_pipes(setup.output),
         };
         Self {
             browser: Browser::new(BROWSER, &bl),
@@ -200,7 +263,9 @@ impl Runtime {
             ]),
             roots: [server_root, root],
             pipes: None,
-            server_pipe: None,
+            server_pipes: Vec::new(),
+            output: Vec::new(),
+            lines: Vec::new(),
             children: Vec::new(),
             closed: 0,
             spawned: 0,
@@ -223,9 +288,9 @@ impl Runtime {
     fn ask(&mut self, request: Request) {
         browser::down(&mut self.browser, &self.benv, request, &mut self.events, &mut self.down);
     }
-    fn read_server(&mut self) {
+    fn read_server(&mut self, pipe: Token) {
         self.requests.push_back(io::Request::Stream {
-            stream: self.server_pipe.expect("server pipe"),
+            stream: pipe,
             down: stream::Down::Demand { read: stream::Read::Arrived { max: 32768 }, room: 0 },
         });
     }
@@ -241,8 +306,10 @@ impl Runtime {
                 self.spawned += 1;
                 if owner == SERVER {
                     self.server_child = Some(child);
-                    self.server_pipe = pipes.first().copied();
-                    self.read_server();
+                    self.server_pipes = pipes.into_vec();
+                    for pipe in self.server_pipes.clone() {
+                        self.read_server(pipe);
+                    }
                 } else {
                     let [commands, replies, errors] = pipes.as_ref() else { panic!("Chromium pipes") };
                     self.pipes = Some([*commands, *replies, *errors]);
@@ -250,14 +317,27 @@ impl Runtime {
                 }
             }
             io::Event::Stream { owner, up } => {
-                if Some(owner) == self.server_pipe {
+                if self.server_pipes.contains(&owner) {
                     if let stream::Up::Bytes(bytes) = up {
-                        tail(&mut self.server_stderr, &bytes);
-                        if let Some(address) = listening_address(&self.server_stderr, &setup.listening) {
-                            self.address = Some(address);
-                            self.server_state = ServerState::Running;
+                        if self.server_pipes.first() == Some(&owner) {
+                            tail(&mut self.server_stderr, &bytes);
                         }
-                        self.read_server();
+                        let selected = usize::from(setup.output == Output::Stdout);
+                        if self.server_pipes.get(selected) == Some(&owner) {
+                            self.output.extend_from_slice(&bytes);
+                            self.lines.extend(printed(
+                                &self.output,
+                                &Printed { prefix: &setup.prefix, on: setup.output, names: setup.names },
+                            ));
+                            if let Some(end) = self.output.iter().rposition(|b| *b == b'\n') {
+                                self.output.drain(..=end);
+                            }
+                            if let Some(line) = self.lines.last() {
+                                self.address = Some(line.address.clone());
+                                self.server_state = ServerState::Running;
+                            }
+                        }
+                        self.read_server(owner);
                     }
                     return;
                 }
@@ -292,8 +372,10 @@ impl Runtime {
                             self.requests.push_back(io::Request::Close { entity });
                         }
                     }
-                } else if let Some(entity) = self.server_pipe {
-                    self.requests.push_back(io::Request::Close { entity });
+                } else {
+                    for entity in &self.server_pipes {
+                        self.requests.push_back(io::Request::Close { entity: *entity });
+                    }
                 }
             }
             io::Event::Closed { owner } => {
@@ -411,18 +493,18 @@ impl Runtime {
                 assert!(self.server_state == ServerState::Stopped, "server stopped before start");
                 self.server_state = ServerState::Starting;
                 self.server_stderr.clear();
-                let mut args = setup.args.clone();
-                *args.first_mut().expect("server address argument") =
-                    self.address.as_ref().expect("listening address").into();
+                self.output.clear();
+                self.lines.clear();
+                let args = restart(&setup.restart, self.address.as_ref().expect("server address"));
                 self.requests.push_back(io::Request::Spawn {
                     owner: SERVER,
                     spawn: Spawn {
                         program: setup.server.as_os_str().as_bytes().into(),
-                        args: args.iter().map(|arg| arg.as_bytes().into()).collect(),
+                        args: args.into(),
                         env: Box::new([]),
                         root: self.roots[0],
                         dir: b".".as_slice().into(),
-                        pipes: Box::new([Pipe { child: 2, way: Way::Out, parent: None }]),
+                        pipes: server_pipes(setup.output),
                     },
                 });
             }
@@ -517,6 +599,22 @@ impl Runtime {
         }
         opened
     }
+    fn open_page(&mut self, setup: &Harness, faces: &mut [BrowserFace<'_>], pending: bool) -> bool {
+        if self.context
+            && !pending
+            && self.opening < faces.len()
+            && let Some(line) = opening(&self.lines, setup.names, self.opening)
+        {
+            faces[self.opening].first_url.clone_from(&line.url);
+            self.ask(Request::Page {
+                person: person(self.opening),
+                page: page(self.opening),
+                url: line.url.as_bytes().into(),
+            });
+            return true;
+        }
+        false
+    }
     fn run(mut self, setup: &Harness, people: &mut [&mut dyn Play]) -> Outcome {
         let deadline = self.clock.now().now.saturating_add(Duration::from_secs(20));
         let mut faces = Vec::new();
@@ -550,13 +648,8 @@ impl Runtime {
                     self.ask(Request::Person { person: person(0) });
                 }
             }
-            if began && self.context && !opening_page && self.opening < people.len() {
-                opening_page = true;
-                self.ask(Request::Page {
-                    person: person(self.opening),
-                    page: page(self.opening),
-                    url: format!("http://{}/", self.address.as_ref().expect("listening")).into_bytes().into(),
-                });
+            if began {
+                opening_page |= self.open_page(setup, &mut faces, opening_page);
             }
             if self.outcome.is_none() {
                 self.play(people, &mut faces, &mut done, time.now, setup);

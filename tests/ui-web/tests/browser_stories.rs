@@ -9,7 +9,12 @@ fn setup() -> Setup<'static> {
     Setup {
         server: server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), example_bundle().into_os_string()],
-        listening: b"skein-ui-example: listening at ",
+        printed: skein_fake_person_browser::harness::Printed {
+            prefix: b"skein-ui-example: listening at ",
+            on: skein_fake_person_browser::harness::Output::Stderr,
+            names: skein_fake_person_browser::harness::Names::Address,
+        },
+        restart: vec!["{address}".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         chromium: chromium(),
         expected: vec![],
     }

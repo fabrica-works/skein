@@ -37,7 +37,12 @@ fn a_reload_keeps_a_pending_add_made_once() {
     let mut harness = harness::Harness::new(harness::Setup {
         server: skein_ui_web_tests::server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
-        listening: b"skein-ui-example: listening at ",
+        printed: skein_fake_person_browser::harness::Printed {
+            prefix: b"skein-ui-example: listening at ",
+            on: skein_fake_person_browser::harness::Output::Stderr,
+            names: skein_fake_person_browser::harness::Names::Address,
+        },
+        restart: vec!["{address}".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         chromium: skein_ui_web_tests::chromium(),
         expected: vec![
             b"Failed to load resource: net::ERR_CONNECTION_REFUSED".as_slice().into(),
@@ -109,7 +114,12 @@ fn a_reload_with_an_add_pending_meets_the_closing_warning() {
     let mut harness = harness::Harness::new(harness::Setup {
         server: skein_ui_web_tests::server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
-        listening: b"skein-ui-example: listening at ",
+        printed: skein_fake_person_browser::harness::Printed {
+            prefix: b"skein-ui-example: listening at ",
+            on: skein_fake_person_browser::harness::Output::Stderr,
+            names: skein_fake_person_browser::harness::Names::Address,
+        },
+        restart: vec!["{address}".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         chromium: skein_ui_web_tests::chromium(),
         expected: vec![
             b"Failed to load resource: net::ERR_CONNECTION_REFUSED".as_slice().into(),

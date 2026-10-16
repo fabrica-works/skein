@@ -63,7 +63,12 @@ pub fn fixture_harness(bundle: &std::path::Path) -> skein_fake_person_browser::H
     skein_fake_person_browser::Harness::new(skein_fake_person_browser::Setup {
         server: server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), bundle.as_os_str().into()],
-        listening: b"skein-ui-example: listening at ",
+        printed: skein_fake_person_browser::harness::Printed {
+            prefix: b"skein-ui-example: listening at ",
+            on: skein_fake_person_browser::harness::Output::Stderr,
+            names: skein_fake_person_browser::harness::Names::Address,
+        },
+        restart: vec!["{address}".into(), "--bundle".into(), bundle.as_os_str().into()],
         chromium: chromium(),
         expected: vec![],
     })
