@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-15. How far skein's code is from its design, and which
+Updated 2026-10-16. How far skein's code is from its design, and which
 plans take it there. The designer keeps this file (development.md,
 section 3.3).
 
@@ -50,7 +50,7 @@ Section 2 names an increment of smith's reliability plan as
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
 | `ui.md` | partly | 4.2, 18, 19: the vocabulary that waits (a combo box, a slider and a meter, a switch, media, a feed, a list box choosing several, a tree grid) and right-to-left text, each by the light path (4.3) when an application needs it; 19: a markup macro for the builder, a server keeping the previous bundle's digest directory; 16, 18: parts for a phone or a desktop: not planned (jig's skein-ui `later.md`) |
 | `ui-text.md` | partly | 9: the text shell's own words in another language, a secret typed without echo: not planned (jig's skein-ui `later.md`) |
-| `ui-web.md` | partly | 11, 15: the file picker, and parts for other effects; 15: the bundle served compressed, tabs of one person sharing one stream, HTTP/2; 16: a server keeping the previous bundle's digest directory; 14.2: the face typing into a field holding words: not planned (jig's skein-ui `later.md`) |
+| `ui-web.md` | partly | 11, 15: the file picker, and parts for other effects; 15: the bundle served compressed, tabs of one person sharing one stream, HTTP/2; 16: a server keeping the previous bundle's digest directory; 14.2: the face typing into a field holding words: not planned (jig's skein-ui `later.md`); 14.2: the harness opening a printed line as a whole URL from either output, a page of another origin it serves, a printed URL again, and awaiting trouble and a request's status with its own `Host`: wait for jig's client API (jig's `STATUS.md`, "jig's client API") |
 
 Several "Not built yet" sections still list parts that `main` has:
 `io.md`, 9 (group signals, reaping at close, append streams);

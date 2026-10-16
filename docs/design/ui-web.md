@@ -1,10 +1,11 @@
 # The browser parts
 
-Provisional, 2026-10-15. The design of `skein-ui-web`, skein's browser
-parts; of `skein-ui-bundle`, their bundler; of the face and the harness
-in `skein-fake-person-browser`; and of the UI example's browser tier.
-The tree the parts map is ui.md's. What waits is in section 15, what is
-open in section 16, and what stays fixed in section 17.
+Provisional, 2026-10-15, revised 2026-10-16. The design of
+`skein-ui-web`, skein's browser parts; of `skein-ui-bundle`, their
+bundler; of the face and the harness in `skein-fake-person-browser`;
+and of the UI example's browser tier. The tree the parts map is
+ui.md's. What waits is in section 15, what is open in section 16, and
+what stays fixed in section 17.
 
 ## 1. In one page
 
@@ -887,12 +888,16 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
 - **The harness,** in the same crate, ordinary Rust, runs the
   application's server binary and Chromium as children of one loop,
   through skein's io (testing-strategy.md, 2.9); opens the address the
-  test gives, or one the binary prints, found by a prefix the test
-  gives; runs each person's script through the face; fails a test on
-  any trouble the kit reports that the story did not expect, a policy
-  violation, an exception or a native dialog (browser.md, section 7);
-  and writes the accessibility snapshot, a screenshot, and Chromium's
-  and the binary's stderr's tails on a failure (browser.md, section 10).
+  test gives, or the line the binary prints on its standard output or
+  error, as the test says, found by a prefix the test gives: an address,
+  opened at its root, or a whole URL, opened as printed, each person
+  after the first at a line no earlier person opened, since a printed
+  URL may be good once; runs each person's script through the face;
+  fails a test on any trouble the kit reports that the story did not
+  expect, a policy violation, an exception or a native dialog
+  (browser.md, section 7); and writes the accessibility snapshot, a
+  screenshot, and Chromium's and the binary's stderr's tails on a
+  failure (browser.md, section 10).
   At a story's step it also:
   - presses a drawing's mark, which the person cannot: the kit's press
     at the mark's point on the drawing's figure (section 8; browser.md,
@@ -900,6 +905,18 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   - **stops the server binary and starts it again** at the address it
     had, which its arguments name, so that a page sees its server go and
     come back;
+  - **opens a page of another origin,** which the harness serves itself:
+    fixed pages the test gives, on listeners of its own in its loop, at
+    a host name the test gives (another port of the server's host, or
+    another host name), each naming the server's address where the page
+    asks, so that a story checks the server against other sites;
+  - **sends a request of its own** to the server, through skein's HTTP
+    client, with the method, path, `Host`, headers and body the test
+    gives, and awaits its status;
+  - **awaits trouble** with given words, which the person's pages then
+    expect from the script's start, so that it fails no story;
+  - **opens again the URL** the person's page first opened, so that a
+    story sees a printed URL spent;
   - **checks whether the person's last go met its page's closing
     warning** (browser.md, section 6), so that a story sees the warning
     come while closing would lose requests, and not otherwise (5.1). A
