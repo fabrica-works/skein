@@ -9,6 +9,7 @@ section 3.3).
 | Plan | State | Takes the design to | Where |
 |---|---|---|---|
 | temper's client-api | active on carbon-forge since 2026-10-16 | ui-web.md 14.2: the harness opens the printed URL whole, serves other origins, awaits trouble (skein 01); ui-text.md 3 and 4: the application's lines setting and `Terminal::room`, its own lines' room kept (skein-01.s1); the line bytes setting, `Terminal::worst_case` and `Terminal::operations` (skein-01.s2) | temper's `docs/development/plans/client-api/` |
+| temper's forge-setup | ready | lib.md 6.2: SHA-256, `sha256::Hmac` and `sha256::equal`, with skein's three copies (io's digest, PKCE, the bundler) moved onto it (skein 01) | temper's `docs/development/plans/forge-setup/` |
 | temper's forgejo-17 | done 2026-10-16 | ui-text.md 3 and 4: a print's room from its own tree, never the limits' worst case; the output in pieces | temper's `docs/development/plans/forgejo-17/` |
 | jig's skein-ui | done 2026-10-15 | `ui.md`, `ui-text.md`, `ui-web.md`; `examples.md` 9; `testing.md` 6 (the wasm32 builds, `tests/ui`, `tests/ui-text`, `tests/ui-web`, the example's bundle and browser tier in the gate); `browser.md` 1, 3, 4, 5, 6, 7 and 9 (a name matched by words, a press at a point, a go's closing warning and the native dialogs, `keys` for a native date or time field, a find's roots in the current document); `lib.md` 2 and `programming-model.md` 2.1 (the wasm32 build, the glue the only `unsafe`): this file's "skein-ui" in section 3, steps (1) to (3) but jig's new primitives | jig's `docs/development/plans/skein-ui/` |
 | jig's test-budgets | done 2026-10-14 | lib.md 7, io.md 2 and 3.3, http.md 3.3, 4 and 6, tls.md 3.1, programming-model.md 4.3, testing-strategy.md 2.4: a read of what has arrived; testing-strategy.md 8: nextest without its double spawn, the focused suite back within 15 s; codec.md 4: generated worst cases checked once | jig's `docs/development/plans/test-budgets/` |
@@ -31,7 +32,7 @@ Section 2 names an increment of smith's reliability plan as
 |---|---|---|
 | `foundation/programming-model.md` | partly | 4.3: a read of what has arrived (jig's test-budgets, skein 01); 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 2.4: machine worlds reading what has arrived (jig's test-budgets, skein 01.2); 8: nextest without its double spawn in the gates and the queue, the suites back within 15 s on carbon-forge (jig's test-budgets); 6: state digests, transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 6.2: SHA-256, with skein's copies moved onto it, its HMAC and its comparison in constant time; 5.1: state digests, the hasher and lib's types' `Hash`: not planned, hearth's M1 plan (being written) takes both; 13: `Slab::get2_mut`: not planned |
+| `lib.md` | partly | 6.2: SHA-256, with skein's copies moved onto it, its HMAC and its comparison in constant time: temper's forge-setup; 5.1: state digests, the hasher and lib's types' `Hash`: not planned, hearth's M1 plan (being written) takes it; 13: `Slab::get2_mut`: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 6.1: `Lock`, and its conformance scenario: not planned, hearth's M1 plan (being written) takes it; 9: fixed files, 10: the ring's descriptor limit: not planned |
 | `io.md` | partly | 2, 3.3: a read of what has arrived on sockets, joined ends and pipes (jig's test-budgets, skein 01.1); 5: `Remove` of an empty directory (smith's reliability plan, a step its supervisor names); 5.1: a write pipe's stated write deadline (smith's reliability plan, a step its supervisor names); 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut`, and a made directory synced into its parent, with a world that cuts after each make (jig's jig-protocol, skein-03.s1); 5: `Lock`, `ListPage` and `Rename` between two directories: not planned, hearth's M1 plan (being written) takes them; 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
 | `simulator.md` | partly | 7: the state digest in the trace (lib.md, 5.1; testing.md, 5); 3.1: locks, and 3.3: a rename between two directories in the crash model: not planned, hearth's M1 plan (being written) takes them |
@@ -84,15 +85,12 @@ process trees in the end-to-end kit).
   without io_uring, and for measurements.
 - **The ring's descriptor limit** (`kernel.md`, section 10): waits for a
   way to lower it without `unsafe` outside the ring adapter.
-- **SHA-256 in lib, positions on JSON's tokens, and state digests for
-  replay** (`lib.md`, 6.2 and 5.1; `json.md`, 3.6; `testing.md`, section
+- **Positions on JSON's tokens, and state digests for replay**
+  (`lib.md`, 5.1; `json.md`, 3.6; `testing.md`, section
   5; `simulator.md`, section 7; `testing-strategy.md`, section 6): hearth's
   M1 plan, being written, takes them, each before its first hearth user
   (hearth's README.md, 8.1). smith's worlds take state digests after
   skein's harness.
-- **HMAC-SHA256 and the comparison in constant time** (`lib.md`, 6.2):
-  temper's next plan for its forge's setup takes them, with lib's SHA-256
-  if hearth's M1 plan has not built it by then.
 - **Transition coverage and fuzz targets** (`testing-strategy.md`,
   section 6; the "Not built yet" sections of `json.md`, `http.md` and
   `tls.md`): wait for `cargo llvm-cov` and a nightly toolchain.
