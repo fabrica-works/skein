@@ -17,7 +17,9 @@ how it is tested. What is open is in section 9.
   under its own host, with whatever lines it prints of its own. Its
   settings carry what is the application's: its name, the longest line
   it reads, its print interval, the region whose text the first line
-  carries, and how many of its own lines may wait for the output.
+  carries, and how many of its own lines may wait for the output, and
+  of how many bytes each. It gives its host its worst case and its
+  operations, which the host adds to its own.
 - **The whole page, never a diff:** at most once per interval while the
   tree changes, and at once after the person's own command.
 - **By role, not by look.** Each role prints one way; states and
@@ -117,7 +119,31 @@ this shell's text (ui.md, 17.1).
     none;
   - *its lines*: the most of the application's own lines the terminal
     holds that the output has not taken (section 4); 0 for an
-    application that prints none.
+    application that prints none;
+  - *its line bytes*: the most bytes of each of the application's own
+    lines, without the name, `: ` and the newline the terminal adds
+    (section 4); 0 for an application that prints none.
+- **Its worst case and its operations,** which its host adds to its own
+  (programming-model.md, 6.3), each from the settings and skein-ui's
+  limits, before the terminal is made: `Terminal::worst_case`, the most
+  heap the terminal holds, and `Terminal::operations`, the most
+  operations it has in flight at once, which the host's ring holds
+  beside its own. Each is none for settings or limits the terminal
+  refuses, and none past its integer (checked arithmetic). The worst
+  case counts each container as it reports itself, and reserves nothing
+  (a print's room is its own tree's, above):
+  - its io, under the limits the terminal gives it (`skein_io::worst_case`),
+    and its queues of completions, submissions, events, commands and
+    lines;
+  - what those queues hold at their most: each of the application's
+    lines at the settings' line bytes, with the name, `: ` and the
+    newline; each of its own lines at its longest, a refusal's; each
+    command's words at the longest line; a read at its most bytes;
+  - the line being read, at the longest line; what the output has not
+    yet taken of a line being written, at the longest of the lines; the
+    print's numbers, one for each node of the limits; and the page, at
+    `worst_case`'s bytes (above), which the print holds until the output
+    has taken it.
 
 ## 4. When it prints
 
@@ -142,8 +168,9 @@ this shell's text (ui.md, 17.1).
   output has not taken, and gives the host the room left
   (`Terminal::room`): the settings' lines less those waiting, and none
   once it is closing (section 7). The host says a line only within that
-  room. A line said beyond it is the host's defect: the terminal stops,
-  as a full queue does (a panic, fail-stop). What has no room waits in
+  room, and of at most the settings' line bytes. A line said beyond the
+  room, or longer, is the host's defect: the terminal stops, as a full
+  queue does (a panic, fail-stop). What has no room waits in
   the host, which bounds it as the application's design says, holding
   the person's commands if it must (section 7).
 - **Its own lines keep their room.** Beside the application's lines,
@@ -344,7 +371,10 @@ this shell's text (ui.md, 17.1).
   `worst_case` and within the room its own tree gives; a print and a
   terminal made from limits whose `worst_case` passes a u32, printing a
   small tree; a tree whose own room passes a u32, printed as `NAME: page
-  too long to print`, with no number acting.
+  too long to print`, with no number acting. The terminal's worst case
+  grown, by one more of the application's lines or by one more byte of
+  each, by what that line or byte holds; its operations skein-io's for
+  its two pipes; neither for settings it refuses.
 - **The terminal** on skein's simulated machine, in `tests/ui-text`
   (testing.md, section 6): lines split and joined across reads, a line
   too long refused through its newline, prints paced and one at a time,
@@ -354,7 +384,8 @@ this shell's text (ui.md, 17.1).
   left unread while the host has not taken its commands, the input's
   end closing without a new print, a print begun finished at closing, a
   print longer than the output room written whole, in pieces, before the
-  next, a name longer than a node's text refused.
+  next, a name longer than a node's text refused, an application's line
+  longer than the settings' line bytes stopping the terminal.
 - **An application's terminal client** is tested in its own tiers: its
   worlds play this shell, and its end-to-end tests run lines in on a
   pipe and pages out on another (testing-strategy.md, 2.9).
