@@ -15,7 +15,14 @@ struct Pipes {
     tree: Tree,
 }
 fn settings(longest: u32) -> Settings {
-    Settings { name: b"test".as_slice().into(), longest, interval: Duration::from_secs(1), status: None, lines: 2 }
+    Settings {
+        name: b"test".as_slice().into(),
+        longest,
+        interval: Duration::from_secs(1),
+        status: None,
+        lines: 2,
+        line_bytes: 64,
+    }
 }
 fn start(longest: u32, buffer: u32) -> Pipes {
     start_with_limits(longest, buffer, &fixtures::LIMITS)
@@ -182,6 +189,25 @@ fn a_name_longer_than_a_nodes_text_is_refused() {
         config.name = skein_lib::bytes::zeroed(usize::try_from(fixtures::LIMITS.text_per_node).unwrap() + extra);
         assert_eq!(Terminal::new(config, &fixtures::LIMITS).is_some(), accepted);
     }
+}
+
+#[test]
+fn the_worst_case_counts_each_application_line_at_its_bytes() {
+    let mut config = settings(32);
+    let bytes = Terminal::worst_case(&config, &fixtures::LIMITS).unwrap();
+    config.line_bytes = 65;
+    assert_eq!(Terminal::worst_case(&config, &fixtures::LIMITS), Some(bytes + 3));
+    assert_eq!(Terminal::operations(&config, &fixtures::LIMITS), Some(10));
+    config.name = skein_lib::bytes::zeroed(129);
+    assert_eq!(Terminal::worst_case(&config, &fixtures::LIMITS), None);
+    assert_eq!(Terminal::operations(&config, &fixtures::LIMITS), None);
+}
+
+#[test]
+#[should_panic(expected = "application line within its bytes")]
+fn a_line_past_its_bytes_stops_the_terminal() {
+    let mut terminal = Terminal::new(settings(32), &fixtures::LIMITS).unwrap();
+    terminal.say(&[b'x'; 65]);
 }
 
 #[test]

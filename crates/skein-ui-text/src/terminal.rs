@@ -19,6 +19,7 @@ pub struct Settings {
     pub interval: Duration,
     pub status: Option<Region>,
     pub lines: u32,
+    pub line_bytes: u32,
 }
 #[derive(Debug, PartialEq, Eq)]
 enum Phase {
@@ -68,15 +69,14 @@ pub struct Terminal {
     phase: Phase,
 }
 impl Terminal {
-    #[must_use]
-    pub fn new(settings: Settings, view: &skein_ui::Limits) -> Option<Self> {
+    fn io_limits(settings: &Settings, view: &skein_ui::Limits) -> Option<skein_io::Limits> {
         if settings.name.len() > usize::try_from(view.text_per_node).ok()? || settings.longest == 0 {
             return None;
         }
-        let print = Print::new(view)?;
-        let lines = Queue::with_capacity(settings.lines.checked_add(BATCH)?.checked_add(1)?);
+        settings.lines.checked_add(BATCH)?.checked_add(1)?;
+        settings.longest.checked_add(1)?;
         let output = 65536_u32.max(settings.longest.checked_add(view.text_per_node)?.checked_add(64)?);
-        let limits = skein_io::Limits {
+        Some(skein_io::Limits {
             sockets: 2,
             names: 0,
             refusals: 1,
@@ -88,7 +88,42 @@ impl Terminal {
             backlog: 1,
             close_timeout: Duration::from_secs(30),
             retry: Duration::from_millis(1),
-        };
+        })
+    }
+    /// The most heap the terminal holds, with each container's own bound (ui-text.md, 3).
+    #[must_use]
+    pub fn worst_case(settings: &Settings, view: &skein_ui::Limits) -> Option<u64> {
+        let limits = Self::io_limits(settings, view)?;
+        let name = u64::try_from(settings.name.len()).ok()?;
+        let application = name.checked_add(3)?.checked_add(u64::from(settings.line_bytes))?;
+        let refusal = name.checked_add(40)?;
+        let batch = u64::from(BATCH);
+        skein_io::worst_case(&limits)?
+            .checked_add(name)?
+            .checked_add(Queue::<Complete>::worst_case(32)?)?
+            .checked_add(Queue::<Submit>::worst_case(256)?.checked_mul(2)?)?
+            .checked_add(Queue::<Event>::worst_case(32)?)?
+            .checked_add(Queue::<Command>::worst_case(BATCH)?)?
+            .checked_add(Queue::<Line>::worst_case(settings.lines.checked_add(BATCH)?.checked_add(1)?)?)?
+            .checked_add(u64::from(settings.lines).checked_mul(application)?)?
+            .checked_add(batch.checked_add(1)?.checked_mul(refusal)?)?
+            .checked_add(batch.checked_mul(u64::from(settings.longest))?)?
+            .checked_add(batch)?
+            .checked_add(List::<u8>::worst_case(settings.longest.checked_add(1)?)?)?
+            .checked_add(application.max(refusal))?
+            .checked_add(List::<skein_ui::NodeId>::worst_case(view.nodes)?)?
+            .checked_add(render::worst_case(view)?.1)
+    }
+    /// The most io operations in flight at once, cancels included (ui-text.md, 3).
+    #[must_use]
+    pub fn operations(settings: &Settings, view: &skein_ui::Limits) -> Option<u32> {
+        skein_io::operations(&Self::io_limits(settings, view)?)
+    }
+    #[must_use]
+    pub fn new(settings: Settings, view: &skein_ui::Limits) -> Option<Self> {
+        let limits = Self::io_limits(&settings, view)?;
+        let print = Print::new(view)?;
+        let lines = Queue::with_capacity(settings.lines.checked_add(BATCH)?.checked_add(1)?);
         Some(Self {
             intake: Input {
                 line: List::with_capacity(settings.longest.checked_add(1)?),
@@ -157,6 +192,10 @@ impl Terminal {
     /// Queue an application line within its room.
     pub fn say(&mut self, line: &[u8]) {
         assert!(self.room() > 0, "application line needs room");
+        assert!(
+            line.len() <= usize::try_from(self.settings.line_bytes).expect("a u32 fits in a usize"),
+            "application line within its bytes"
+        );
         self.line(line, true);
     }
     fn line(&mut self, line: &[u8], application: bool) {
