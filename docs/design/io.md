@@ -1,6 +1,6 @@
 # io
 
-Provisional, 2026-10-03, revised 2026-10-14. The design of `skein-io`'s
+Provisional, 2026-10-03, revised 2026-10-16. The design of `skein-io`'s
 step layer: the lowest step layer of every service. It owns sockets,
 pipes, files and child processes, the operations in flight on them, and
 the receive and send queues, and it is the only layer that sees a
@@ -565,7 +565,11 @@ pub enum Request {
     Stat { owner, file }, Sync { owner, file }, Close { owner, file },
     // the entries of a directory
     SyncDirectory { owner, root: Fd }, List { owner, root: Fd },
-    Rename { owner, root: Fd, from, to }, Remove { owner, root: Fd, name, directory },
+    ListPage { owner, directory: Token, max: u32 },                                // Listed
+    Rename { owner, from_root: Fd, from, to_root: Fd, to },
+    Remove { owner, root: Fd, name, directory },
+    // a lock
+    Lock { owner, root: Token },                                                   // Locked, Busy
 }
 // each request ends in one event: its own, Failed { error } or Cancelled
 ```
@@ -605,6 +609,37 @@ pub enum Request {
   beneath a root it holds open (`Create`, `Rename`, `Remove`, and the
   entries of a directory io made) is durable once it syncs that root
   (`SyncDirectory`), as kv's segments are.
+- **Listing** comes whole or by pages. `List` reads a whole directory,
+  and fails with `NoBufferSpace` past the driver's `max_entries`. A
+  directory that may hold more is listed by pages: the owner opens it
+  with `OpenDirectory`, and each `ListPage` answers `Listed` with at most
+  `max` of its entries (at most `max_entries`; more is `InvalidArgument`),
+  from where the last page of that open directory stopped. io fills each
+  page until `max` or the directory's end, so a page shorter than `max`
+  is the last, and an empty one says the end was reached already. The
+  position is the open directory's own (kernel.md, 6.1's `List`), so the
+  open directory is the cursor: two owners listing one directory each
+  open it, and the owner closes it when done. Entries come in the
+  directory's order, `.` and `..` left out, each once while the
+  directory is unchanged; one added or removed between pages may appear
+  or not, as `readdir` allows. A page's entries are counted in
+  `worst_case` as a `List`'s are.
+- **Renaming** moves one name: `Rename` takes the directory the entry
+  leaves and the one it lands in, each a root, the same one for a rename
+  in place, and a single name in each. Both lie on one filesystem;
+  across two, the kernel's error is `Other(EXDEV)`. A rename between two
+  directories survives a crash once the owner has synced the directory it
+  lands in (kernel.md, 6.1).
+- **Locking** is `Lock` on a root: an exclusive lock, taken without
+  waiting (kernel.md, 6.1). It answers `Locked` when the lock is taken or
+  already held through this root, or `Busy` when another open of the
+  directory holds it, in this process or another; `Failed` with the
+  kernel's error otherwise. io never waits for a lock and keeps no
+  timer for one: an owner that must wait asks again on a timer of its
+  own, at the interval it chooses. The lock lasts as long as the root's
+  descriptor: until its `Close`, for a root `OpenDirectory` made, and
+  until the process ends, for one the shell opened. There is no unlock.
+  A spawned child never holds it.
 - **Removing** takes one name. `Remove` removes a file, or, with
   `directory`, an empty directory, never what lies inside one: a
   directory that is not empty fails with the kernel's error, as
@@ -636,8 +671,11 @@ pub enum Request {
   rechecks the target against the stated expectation (5.2); a recheck is
   not a lock, so an outside writer could still race with the rename.
   `Stored` carries the new content's digest.
-  - The temporary is named from the target's name and a suffix drawn
-    from io's seeded randomness; a `Create` that finds the name taken
+  - The temporary is named `<target>.skein-<16 hex>`: the target's name
+    (its first 230 bytes), `.skein-`, and 16 lowercase hex digits drawn
+    from io's seeded randomness. The name's shape is part of the
+    contract, so that an owner's scan can tell io's temporaries from its
+    own names (5.2). A `Create` that finds the name taken
     (`Exists`) draws another.
   - The old file's permission bits are kept. A target that does not
     exist, or cannot be opened to read, is made with `0o666` less the
@@ -1029,6 +1067,9 @@ built. What remains:
   descriptor, which the owner reads from `FileIo::descriptor`, though io
   is the only layer that should see one. They are to take its token, as
   `Load`, `Scan` and `Store` do.
+- **For hearth's store** (hearth's `README.md`, 8.1): `Lock`,
+  `ListPage`, and `Rename` between two directories (section 5), each with
+  io's step tests and a world of files that meets it.
 - **`OpenWrite` and `Cut`** (section 5), for kv.md's payload logs
   (section 6) and an application's transcript files.
 - **io worlds for files,** beyond the step tests and kv's.

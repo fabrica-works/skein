@@ -1,6 +1,6 @@
 # Programming model (Rust)
 
-Provisional, 2026-10-03, revised 2026-10-15. How code is written in skein
+Provisional, 2026-10-03, revised 2026-10-16. How code is written in skein
 and in every service built on it. Read this first, before writing or
 reviewing any of it.
 
@@ -136,8 +136,9 @@ Properties the rest of this document relies on:
 The shell is the only impure code: the service's loop above, and skein's
 kernel, clock and seed. The kernel is the ring adapter: the ring, and a
 small closed list of syscalls that are not ring operations (spawning a
-process, sending a signal, reading the clock, drawing the seed, reading
-the process's resource usage). Shell
+process, sending a signal, listing a directory, locking a file without
+waiting, reading the clock, drawing the seed, reading the process's
+resource usage and its terminal's size). Shell
 effects use the same request and event shapes as ring operations, so step
 code cannot tell them apart. Anything that can be a ring operation is one:
 accept, connect, read, write, open, close, waiting for a child, appending

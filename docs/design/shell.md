@@ -71,8 +71,9 @@ on the service's own `iterate`.
   freed with the slot, beside the `open_how` an `Open` hands over and the
   `statx` buffer a `Stat` reads back.
 - **Synchronous operations run at submit.** A record that is not a ring
-  operation (listing a directory: `getdents64` has none; spawning;
-  signalling; reading the process's resource usage) is performed when it
+  operation (listing a directory: `getdents64` has none; locking a file:
+  `flock` has none, and `Lock` never waits; spawning; signalling;
+  reading the process's resource usage) is performed when it
   is submitted, and its completion waits in the table's ready list for
   the next reap, so io cannot tell it from a ring operation (kernel.md,
   6). A `List` reads with `getdents64` into one buffer of the table's,

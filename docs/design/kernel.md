@@ -1,6 +1,6 @@
 # The kernel boundary
 
-Provisional, 2026-10-03, revised 2026-10-12. The design of the boundary
+Provisional, 2026-10-03, revised 2026-10-16. The design of the boundary
 below io: the records io submits to a backend, the completions the
 backend hands back, and what every backend promises. The records live in
 `skein-io`'s `kernel` module, whose module documentation states each rule
@@ -82,6 +82,7 @@ pub enum Op {
     Remove        { dir: Fd, name: Box<[u8]>, directory: bool },
     MakeDirectory { dir: Fd, name: Box<[u8]>, mode: u32 },     // less the umask (io.md, 5.3)
     List          { fd: Fd, entries: Box<[Entry]>, names: Box<[u8]> },  // synchronous
+    Lock          { fd: Fd },                                    // exclusive, without waiting; synchronous
     // processes (section 6.2)
     Spawn     { spawn: Box<Spawn> },                         // synchronous
     Wait      { pidfd: Fd, reap: bool },
@@ -183,9 +184,10 @@ error means the operation did nothing usable: a failed `Socket` or
     resets the peer; closing a listener resets the connections waiting on
     it.
 - **Some operations are synchronous:** spawning, signalling, listing a
-  directory, reading the process's resource usage and its terminal's
-  size. None of these is a ring operation at the kernel floor (shell.md),
-  and some are not ring operations at all. The backend performs them when
+  directory, locking a file without waiting, reading the process's
+  resource usage and its terminal's size. None of these is a ring
+  operation at the kernel floor (shell.md), and some are not ring
+  operations at all. The backend performs them when
   they are submitted and completes them at the next reap, in the same
   records, so io cannot tell the difference.
 - **Timers are not operations.** The shell waits for completions with one
@@ -283,7 +285,12 @@ documentation, with each operation's errors; the decisions behind it:
   bits, `Create` a temporary in the same directory with them, `Write` it,
   `Sync` it, `Close` it, `Rename` it over the old name, `Sync` the
   directory. A reader sees the old file or the new, and after the last
-  `Sync` the new one survives a crash. Its pieces are io's decisions
+  `Sync` the new one survives a crash. A `Rename` between two
+  directories is the same step: the entry leaves one and lands in the
+  other whole, both on one filesystem (`Other(EXDEV)` otherwise), and
+  it survives a crash once the directory it lands in is synced; until
+  then, a crash keeps it in one or the other, never both or neither.
+  Its pieces are io's decisions
   (io.md, 5): the temporary's name drawn from the seed, drawn again on
   `Exists`; the old file's bits kept, which is why `Create` takes a mode
   and `Stat` answers one (and why `MakeDirectory` takes one too: a private
@@ -302,6 +309,20 @@ documentation, with each operation's errors; the decisions behind it:
   name fits in none of `names`, rather than answer the end; entries a
   `List` took are handed back even if the directory's position could not
   be set back after them.
+- **`Lock` takes an exclusive lock without waiting.** It is `flock` with
+  `LOCK_EX | LOCK_NB` on a descriptor `Open` made of a file or a
+  directory (a root among them), never a path-only one. It completes
+  with `Nothing` when the lock is taken, or already held through the
+  same open; or fails with the error `Busy` (`EWOULDBLOCK`) when another
+  open of the same file holds it, in this process or another. It never waits, so the
+  loop never blocks on it: an owner that must wait asks again on a timer
+  of its own (io.md, 5). The lock belongs to the open, not the process:
+  it goes with the descriptor's close, or with the process's end, and
+  never passes to a child, every descriptor being close-on-exec. There
+  is no unlock and no shared lock until a user pulls one. `flock` is not
+  a ring operation, so `Lock` runs at submit and completes at the next
+  reap, as `List` does. A filesystem with no `flock` (some network
+  filesystems) fails it with its error, as `Other`.
 - **An `Open`, `Read`, `Write`, `Append` or `Sync` may be cancelled.**
   None waits on a peer, but on a filesystem that can stall (NFS whose
   server went away, a FUSE daemon that hangs) one may wait for good, and
@@ -312,8 +333,9 @@ documentation, with each operation's errors; the decisions behind it:
   conformance run sees its `Cancel` stop it in some runs and come too late
   in others. The ring reads `ECANCELED` and `EINTR` as `Cancelled` on an
   operation a `Cancel` was submitted for. A `Stat`, `Rename`, `Remove`,
-  `MakeDirectory` or `List` completes without one: a `Cancel` of one is a
-  broken invariant, until a filesystem that stalls them pulls it.
+  `MakeDirectory`, `List` or `Lock` completes without one: a `Cancel` of
+  one is a broken invariant, until a filesystem that stalls them pulls
+  it.
 - **Only files and directories open.** A FIFO beneath a root opened to
   read opens at once, and its first `Read` then waits for a writer's
   bytes for good, which nothing above can stop. So every `Open` goes down
@@ -398,7 +420,9 @@ Some mistakes io never makes, so a backend may assume they never happen:
 - an operation on files on a socket's descriptor, or one on sockets on a
   file's; a read on a descriptor not opened to read, a write on one not
   opened to create, a list on one opened to create;
-- a cancel of a stat, a rename, a removal, a new directory or a listing;
+- a cancel of a stat, a rename, a removal, a new directory, a listing or
+  a lock;
+- a lock on a socket, a pipe or a path-only descriptor;
 - a close with anything else in flight on its descriptor, an operation on
   files being on every descriptor it names;
 - an `Append` beside another in flight on its descriptor, or on one not
@@ -455,7 +479,9 @@ for its backend.
   open; new directories, and one removed while open; listings whole, one
   entry at a time, and cut short by long names; a root beneath a root;
   forty-four paths that leave their root, stay beneath it, or name a FIFO,
-  which opens as no file; and what the
+  which opens as no file; locks: a directory locked through one open,
+  `Busy` through a second open of it, locked again through the first,
+  and taken through the second once the first is closed; and what the
   owner may not do. Each names every error its operations can be made to
   answer on a healthy scratch directory, and, where two could answer, the
   one Linux checks first: a removed directory before a name's length, a
@@ -507,6 +533,8 @@ for its backend.
 - **The descriptor limit on the ring.** The simulator checks it; lowering
   a process's limit on the real kernel takes `unsafe` outside the ring
   adapter, or a child process, and neither is allowed.
+- **`Lock`** (6.1), with its conformance scenario on both backends, for
+  hearth's store (io.md, 9).
 - **The records io's next parts pull** (io.md, 9): `Append`; `Stat`'s
   owner and links; the path-only open (`PathNoFollow`); a `Wait` that does not reap, and `Signal`'s target,
   the group; `Usage` and `Window`. Today a `Wait` reaps, and a `Signal`

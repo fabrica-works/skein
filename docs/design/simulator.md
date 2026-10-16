@@ -100,6 +100,13 @@ processes and the simulator.
   write at the file's end at the moment the simulator delivers it, so
   appends from two descriptors interleave whole, as the kernel's do. It
   meets the faults of a `Write` (section 4), `hung` among them.
+- **Locks are the machine's,** as the files are: a `Lock` goes to the
+  machine with the handle it names, and the machine answers it taken, or
+  `Busy` while another handle of the same file holds it. A handle's lock
+  goes when the handle does: at its `Close`, and when a process ends,
+  killed or cut, with the handles the world takes back from the
+  simulator and gives the machine to forget (3.3). A power loss frees
+  every lock.
 - **`Stat`** answers the owner and the links the machine keeps for what is
   open: every file of the minimal machine has one owner, and a second
   name made in a scenario's tree gives a file two links (kernel.md, 6.1).
@@ -149,7 +156,9 @@ would: to show that what a service keeps durably survives (io.md, 5.2).
   a power loss, what a crash keeps: what was synced; unsynced writes
   landed or not, in any order, the last one torn at any byte; a
   directory's entries changed by a rename or a create only once the
-  directory was synced, and a rename whole or not at all (kv.md, 8); a
+  directory was synced, and a rename whole or not at all (kv.md, 8), a
+  rename between two directories once the directory it lands in was
+  synced, in one directory or the other until then (kernel.md, 6.1); a
   file's length cut (kernel.md, 6.1) only once the file was synced, the
   old length kept until then. The choices are drawn from the seed.
 - **After the cut** the world starts the process again over what the
@@ -240,5 +249,7 @@ was metered as its own, which also finds a leak.
 
 ## 7. Not built yet
 
+- **Locks** (3.1), for hearth's store: the seam's `Lock`, the minimal
+  machine's answer, and the handles of an ended process freeing theirs.
 - **A state digest** in the trace, beside the records (lib.md, 5.1),
   which the world harness writes there (testing.md, section 5).

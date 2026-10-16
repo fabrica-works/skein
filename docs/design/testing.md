@@ -94,7 +94,8 @@ simulator, to the real kernel in a scratch directory. It keeps a step
 machine's shape, a call in and an answer out, in a vocabulary of its own
 that a face translates to and from the simulator's. Its programs are
 built too, the fixture of the conformance suite's processes, and so is
-its crash model, which keeps what a crash keeps (simulator.md, 3.3).
+its crash model, which keeps what a crash keeps (simulator.md, 3.3). It
+keeps each file's lock with the handle that took it (simulator.md, 3.1).
 
 A separate dependency-free kit, `skein-fake-checkout`, supplies generic
 byte-path files, scripted commands and local git mechanics for domain
