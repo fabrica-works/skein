@@ -10,6 +10,7 @@ mod handles;
 mod held;
 mod journal;
 mod requests;
+mod sha256;
 mod streams;
 mod time;
 

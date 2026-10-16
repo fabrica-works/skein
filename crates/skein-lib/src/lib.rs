@@ -33,6 +33,7 @@ mod requests;
 mod rng;
 mod secret;
 mod set;
+pub mod sha256;
 mod slab;
 mod stack;
 pub mod stream;

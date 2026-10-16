@@ -1,5 +1,5 @@
 //! The byte search against a naive one (lib.md, 6), over many random
-//! haystacks and needles.
+//! haystacks and needles, and streaming SHA-256 across every cut (lib.md, 6.2).
 
 use skein_lib::Rng;
 use skein_lib::bytes::{count, find_from};
@@ -52,5 +52,66 @@ fn random_bytes_round_trip_through_both_alphabets() {
             base64::encode(alphabet, &buffer[..len], &mut writer).expect("measured");
             assert_eq!(base64::decode(alphabet, &writer.finish(), 64).expect("canonical").as_ref(), &buffer[..len]);
         }
+    }
+}
+
+/// The digest's 64 lowercase hexadecimal digits.
+fn printed_digest(bytes: [u8; 32]) -> String {
+    use std::fmt::Write;
+    let mut printed = String::with_capacity(64);
+    for byte in bytes {
+        write!(printed, "{byte:02x}").expect("writing into a string");
+    }
+    printed
+}
+
+#[test]
+fn a_million_as_digest_to_the_fips_180_4_value() {
+    let mut state = skein_lib::sha256::Sha256::new();
+    for _ in 0..1_000 {
+        state.update(&[b'a'; 1_000]);
+    }
+    assert_eq!(printed_digest(state.finish()), "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+}
+
+#[test]
+fn every_message_to_200_bytes_digests_alike_cut_at_any_point() {
+    let mut buffer = [0_u8; 200];
+    for (byte, value) in buffer.iter_mut().zip(0_u8..) {
+        *byte = value;
+    }
+    for length in 0..=200 {
+        let message = &buffer[..length];
+        let whole = printed_digest(skein_lib::sha256::digest(message));
+        for cut in 0..=length {
+            let mut state = skein_lib::sha256::Sha256::new();
+            state.update(&message[..cut]);
+            state.update(&message[cut..]);
+            assert_eq!(printed_digest(state.finish()), whole, "{length} bytes, cut at {cut}");
+        }
+    }
+}
+
+#[test]
+fn random_messages_cut_at_two_random_points_digest_alike() {
+    let mut rng = Rng::new(0x5A26_0001);
+    let mut buffer = [0_u8; 200];
+    for round in 0..20_000 {
+        let length = up_to(&mut rng, buffer.len());
+        let message = &mut buffer[..length];
+        for byte in message.iter_mut() {
+            *byte = u8::try_from(rng.below(256)).expect("one byte");
+        }
+        let first = up_to(&mut rng, length);
+        let second = first + up_to(&mut rng, length - first);
+        let mut state = skein_lib::sha256::Sha256::new();
+        state.update(&message[..first]);
+        state.update(&message[first..second]);
+        state.update(&message[second..]);
+        assert_eq!(
+            printed_digest(state.finish()),
+            printed_digest(skein_lib::sha256::digest(message)),
+            "round {round}, cuts {first}, {second}"
+        );
     }
 }

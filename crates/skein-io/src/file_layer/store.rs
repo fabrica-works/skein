@@ -12,9 +12,10 @@ use alloc::vec::Vec;
 use skein_lib::{Queue, Token};
 
 use super::{FileIo, Pending};
-use crate::digest::{Digest, DigestState, digest};
+use crate::digest::{Digest, digest};
 use crate::file::{Event, Expect, Residue};
 use crate::kernel::{Complete, Done, Error, Fd, Kind, Op, OpenHow, Submit, is_name};
+use skein_lib::sha256::Sha256;
 
 const ATTEMPTS: u8 = 8;
 
@@ -71,7 +72,7 @@ pub(super) struct Store {
     mode: u32,
     attempts: u8,
     seen_bytes: u64,
-    seen_digest: DigestState,
+    seen_digest: Sha256,
     failure: Option<Failure>,
 }
 
@@ -208,7 +209,7 @@ pub(super) fn start(
         mode: if private { 0o600 } else { 0o666 },
         attempts: 0,
         seen_bytes: 0,
-        seen_digest: DigestState::new(),
+        seen_digest: Sha256::new(),
         failure: None,
     };
     let how = if no_follow { OpenHow::DirectoryNoFollow } else { OpenHow::Directory };
@@ -850,7 +851,7 @@ fn success(
             store.seen_digest.update(buf.get(..n).expect("read count within buffer"));
             store.seen_bytes = store.seen_bytes.checked_add(u64::from(count)).expect("file length fits u64");
             if count == 0 {
-                let now = core::mem::replace(&mut store.seen_digest, DigestState::new()).finish();
+                let now = Digest::from_bytes(core::mem::replace(&mut store.seen_digest, Sha256::new()).finish());
                 match store.expected {
                     Expect::Any => unreachable!("unconditional stores do not read a version"),
                     Expect::Absent => unreachable!("expected absence is checked without a read"),
