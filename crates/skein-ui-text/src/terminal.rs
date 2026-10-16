@@ -18,6 +18,7 @@ pub struct Settings {
     pub longest: u32,
     pub interval: Duration,
     pub status: Option<Region>,
+    pub lines: u32,
 }
 #[derive(Debug, PartialEq, Eq)]
 enum Phase {
@@ -36,6 +37,11 @@ struct Input {
     overflow: bool,
     reading: bool,
 }
+#[derive(Debug)]
+struct Line {
+    bytes: Box<[u8]>,
+    application: bool,
+}
 /// A terminal with tagged io; its host drains commands after iteration.
 #[derive(Debug)]
 pub struct Terminal {
@@ -49,7 +55,7 @@ pub struct Terminal {
     raw: Queue<Submit>,
     events: Queue<Event>,
     commands: Queue<Command>,
-    lines: Queue<Box<[u8]>>,
+    lines: Queue<Line>,
     pending: Option<Box<[u8]>>,
     intake: Input,
     writing: Output,
@@ -67,6 +73,7 @@ impl Terminal {
             return None;
         }
         let print = Print::new(view)?;
+        let lines = Queue::with_capacity(settings.lines.checked_add(BATCH)?.checked_add(1)?);
         let output = u32::try_from(crate::worst_case(view)?.1)
             .ok()?
             .max(settings.longest.checked_add(view.text_per_node)?.checked_add(64)?);
@@ -99,7 +106,7 @@ impl Terminal {
             raw: Queue::with_capacity(256),
             events: Queue::with_capacity(32),
             commands: Queue::with_capacity(BATCH),
-            lines: Queue::with_capacity(BATCH.checked_add(1)?),
+            lines,
             pending: None,
             writing: Output::Waiting,
             print,
@@ -130,8 +137,29 @@ impl Terminal {
     pub fn commands(&mut self) -> &mut Queue<Command> {
         &mut self.commands
     }
-    /// Queue a bounded application line; the host supplies room before saying it.
+    /// The room left for application lines, or none once closing.
+    #[must_use]
+    pub fn room(&self) -> u32 {
+        if self.phase != Phase::Open {
+            return 0;
+        }
+        self.settings.lines.checked_sub(self.waiting(true)).expect("application lines stay within their room")
+    }
+    fn waiting(&self, application: bool) -> u32 {
+        let mut count = 0_u32;
+        for line in &self.lines {
+            if line.application == application {
+                count = count.checked_add(1).expect("bounded lines");
+            }
+        }
+        count
+    }
+    /// Queue an application line within its room.
     pub fn say(&mut self, line: &[u8]) {
+        assert!(self.room() > 0, "application line needs room");
+        self.line(line, true);
+    }
+    fn line(&mut self, line: &[u8], application: bool) {
         let prefix = self.settings.name.len().checked_add(3).expect("bounded prefix");
         let length = prefix.checked_add(line.len()).expect("bounded application line");
         let mut out = Writer::new(length);
@@ -139,11 +167,11 @@ impl Terminal {
         out.put(b": ").expect("prefix fits");
         out.put(line).expect("line fits");
         out.put(b"\n").expect("newline fits");
-        self.lines.push(out.finish());
+        self.lines.push(Line { bytes: out.finish(), application });
     }
     pub fn close(&mut self) {
         if self.phase == Phase::Open {
-            self.say(b"closed");
+            self.line(b"closed", false);
             self.phase = Phase::Closing;
         }
     }
@@ -228,7 +256,7 @@ impl Terminal {
             if let Some(bytes) = self.pending.take() {
                 self.write(now, bytes);
             } else if let Some(line) = self.lines.pop() {
-                self.write(now, line);
+                self.write(now, line.bytes);
             } else if self.phase != Phase::Open {
                 self.phase = Phase::Drained;
                 if let Some(input) = self.input {
@@ -249,7 +277,7 @@ impl Terminal {
         if self.phase == Phase::Open
             && !self.intake.reading
             && self.commands.is_empty()
-            && self.lines.room() >= BATCH
+            && self.waiting(false) <= 1
             && let Some(input) = self.input
         {
             self.intake.reading = true;
@@ -363,7 +391,7 @@ impl Terminal {
             Command::Close => self.close(),
             Command::Nothing => {}
             Command::Refused { refusal, number } => {
-                self.lines.push(refusal_line(&self.settings.name, refusal, number));
+                self.lines.push(Line { bytes: refusal_line(&self.settings.name, refusal, number), application: false });
                 match refusal {
                     Refusal::NoNumber | Refusal::Gone => self.immediate = true,
                     Refusal::TakesNoWords | Refusal::NoPage | Refusal::TooLong | Refusal::Unknown => {}

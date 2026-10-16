@@ -15,7 +15,7 @@ struct Pipes {
     tree: Tree,
 }
 fn settings(longest: u32) -> Settings {
-    Settings { name: b"test".as_slice().into(), longest, interval: Duration::from_secs(1), status: None }
+    Settings { name: b"test".as_slice().into(), longest, interval: Duration::from_secs(1), status: None, lines: 2 }
 }
 fn start(longest: u32, buffer: u32) -> Pipes {
     let mut config = Config::calm();
@@ -114,6 +114,45 @@ fn a_print_waits_for_the_last_to_be_written() {
         p.drive(Time::ZERO, false);
     }
     assert_eq!(text.as_slice(), b"== test == \n[1] Accept\n== test == \n[1] Accept\n");
+}
+#[test]
+fn the_applications_lines_keep_their_room_while_the_output_is_held() {
+    let mut p = start(32, 1);
+    assert_eq!(p.terminal.room(), 2);
+    p.terminal.say(b"one");
+    p.terminal.say(b"two");
+    assert_eq!(p.terminal.room(), 0);
+    for byte in b"x\ny\n" {
+        p.feed(&[*byte]);
+    }
+    let mut text = skein_lib::List::with_capacity(256);
+    for _ in 0_u32..160 {
+        for byte in &p.drain() {
+            text.push(*byte).unwrap();
+        }
+        p.drive(Time::ZERO, false);
+    }
+    assert_eq!(
+        text.as_slice(),
+        b"== test == \n[1] Accept\ntest: one\ntest: two\ntest: commands: n, n words, p, q\ntest: commands: n, n words, p, q\n"
+    );
+    assert_eq!(p.terminal.room(), 2);
+    p.terminal.close();
+    assert_eq!(p.terminal.room(), 0);
+}
+#[test]
+fn untaken_commands_hold_the_input() {
+    let mut p = start(32, 1);
+    p.feed(b"1");
+    p.feed(b"\n");
+    for _ in 0..64 {
+        p.feed(b"p");
+    }
+    assert_eq!(p.sim.peer_feed(p.pid, p.input, b"p"), 1);
+    assert_eq!(p.sim.peer_feed(p.pid, p.input, b"\n"), 0);
+    assert_eq!(p.act(), p.expected());
+    p.drive(Time::ZERO, false);
+    assert_eq!(p.sim.peer_feed(p.pid, p.input, b"\n"), 1);
 }
 #[test]
 fn the_applications_line_comes_before_the_next_print() {
