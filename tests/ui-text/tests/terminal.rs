@@ -18,13 +18,16 @@ fn settings(longest: u32) -> Settings {
     Settings { name: b"test".as_slice().into(), longest, interval: Duration::from_secs(1), status: None, lines: 2 }
 }
 fn start(longest: u32, buffer: u32) -> Pipes {
+    start_with_limits(longest, buffer, &fixtures::LIMITS)
+}
+fn start_with_limits(longest: u32, buffer: u32, limits: &skein_ui::Limits) -> Pipes {
     let mut config = Config::calm();
     config.buffer = buffer;
     let mut sim = Sim::new(3, config);
     let pid = sim.spawn_process();
     let input = sim.open_inherited_read(pid);
     let output = sim.open_inherited_write(pid);
-    let mut terminal = Terminal::new(settings(longest), &fixtures::LIMITS).expect("the settings fit the limits");
+    let mut terminal = Terminal::new(settings(longest), limits).expect("The settings fit the limits");
     terminal.adopt(input, output).expect("a terminal adopts its pipes once");
     let tree = fixtures::page(|b| fixtures::button(b, b"Accept", true));
     let mut p = Pipes { sim, pid, input, output, terminal, tree };
@@ -202,4 +205,50 @@ fn closing_finishes_the_print_it_began() {
         assert!(p.terminal.closed());
         p.sim.assert_no_open_fds(p.pid);
     }
+}
+
+#[test]
+fn large_limits_print_a_small_page_on_the_terminal() {
+    let limits = skein_ui::Limits { depth: 100_000, text_bytes: 100_000, ..fixtures::LIMITS };
+    assert!(skein_ui_text::worst_case(&limits).unwrap().1 > u64::from(u32::MAX));
+    let mut p = start_with_limits(32, 4096, &limits);
+    assert_eq!(p.drain().as_ref(), b"== test == \n[1] Accept\n");
+    p.feed(b"1\n");
+    assert_eq!(p.act(), p.expected());
+}
+
+#[test]
+fn a_print_longer_than_the_output_room_finishes_before_the_next() {
+    let limits = skein_ui::Limits { nodes: 1204, text_bytes: 153_600, ..fixtures::LIMITS };
+    let mut p = start_with_limits(32, 65536, &limits);
+    p.drain();
+    let mut builder = skein_ui::Builder::new(&limits);
+    builder.open(skein_ui::Role::Page);
+    for _ in 0..1200 {
+        builder.open(skein_ui::Role::Text);
+        builder.run(skein_ui::Run::Plain, &[b'x'; 128]);
+        builder.close();
+    }
+    builder.close();
+    p.tree = builder.finish();
+    p.feed(b"p\n");
+    p.tree = fixtures::page(|b| fixtures::button(b, b"Accept", true));
+    p.terminal.say(b"between");
+    p.feed(b"p\n");
+    let mut text = skein_lib::List::with_capacity(160_000);
+    for _ in 0..8 {
+        for byte in &p.drain() {
+            text.push(*byte).unwrap();
+        }
+        p.drive(Time::ZERO, false);
+    }
+    let suffix = b"test: between\n== test == \n[1] Accept\n";
+    let mut expected = skein_lib::Writer::new(1200 * 129 + b"== test == \n".len() + suffix.len());
+    expected.put(b"== test == \n").unwrap();
+    for _ in 0..1200 {
+        expected.put(&[b'x'; 128]).unwrap();
+        expected.put(b"\n").unwrap();
+    }
+    expected.put(suffix).unwrap();
+    assert_eq!(text.as_slice(), expected.finish().as_ref());
 }

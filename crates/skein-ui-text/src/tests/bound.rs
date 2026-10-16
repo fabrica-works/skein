@@ -102,5 +102,46 @@ fn the_print_of_a_full_page_fits_its_worst_case() {
         }
         assert!(actual_lines <= lines, "{name}: {actual_lines} > {lines}");
         assert!(u64::from(print.text.len()) <= bytes, "{name}: {} > {bytes}", print.text.len());
+        assert!(print.text.len() <= print.text.capacity(), "{name}: The tree fits its own room");
+        assert!(u64::from(print.text.capacity()) <= bytes, "{name}: The tree's room fits its worst case");
     }
+}
+
+#[test]
+fn a_small_print_takes_its_room_from_its_tree() {
+    let large = Limits { depth: 100_000, text_bytes: 100_000, ..fixtures::LIMITS };
+    assert!(worst_case(&large).unwrap().1 > u64::from(u32::MAX));
+    let tree = fixtures::page(|b| fixtures::button(b, b"Accept", true));
+    let mut small = Print::new(&fixtures::LIMITS).unwrap();
+    let mut print = Print::new(&large).unwrap();
+    assert_eq!(print.text.capacity(), 0);
+    render(&tree, b"test", None, &mut small);
+    render(&tree, b"test", None, &mut print);
+    assert_eq!(print.text.as_slice(), b"== test == \n[1] Accept\n");
+    assert_eq!(print.text.capacity(), small.text.capacity());
+    assert_eq!(print.numbers.as_slice(), small.numbers.as_slice());
+}
+
+#[test]
+fn a_page_past_a_u32_prints_no_numbers() {
+    let limits = Limits { nodes: 33_000, depth: 33_000, text_bytes: 4, text_per_node: 4, ..fixtures::LIMITS };
+    let mut builder = Builder::new(&limits);
+    for _ in 0_u32..33_000 {
+        builder.open(Role::Page);
+    }
+    for _ in 0_u32..33_000 {
+        builder.close();
+    }
+    let tree = builder.finish();
+    let mut print = Print::new(&limits).unwrap();
+    let small = fixtures::page(|b| fixtures::button(b, b"Go", true));
+    render(&small, b"test", None, &mut print);
+    assert_eq!(print.numbers.len(), 1);
+    render(&tree, b"test", None, &mut print);
+    assert_eq!(print.text.as_slice(), b"test: page too long to print\n");
+    assert!(print.numbers.is_empty());
+    assert_eq!(
+        crate::command(b"1", Some(print.numbers.as_slice()), &tree, 32),
+        crate::Command::Refused { refusal: crate::Refusal::NoNumber, number: 1 }
+    );
 }

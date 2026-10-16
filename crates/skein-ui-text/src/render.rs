@@ -13,9 +13,8 @@ pub struct Print {
 impl Print {
     #[must_use]
     pub fn new(limits: &Limits) -> Option<Print> {
-        let (_, bytes) = worst_case(limits)?;
         Some(Print {
-            text: List::with_capacity(u32::try_from(bytes).ok()?),
+            text: List::with_capacity(0),
             numbers: List::with_capacity(limits.nodes),
             name_bytes: limits.text_per_node,
         })
@@ -25,17 +24,46 @@ impl Print {
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<(u32, u64)> {
     let text = u64::from(limits.text_bytes).checked_add(u64::from(limits.text_per_node))?;
-    let lines = u64::from(limits.nodes).checked_mul(2)?.checked_add(text)?.checked_add(1)?;
+    room(limits.nodes, limits.depth, text)
+}
+fn room(nodes: u32, depth: u32, text: u64) -> Option<(u32, u64)> {
+    let lines = u64::from(nodes).checked_mul(2)?.checked_add(text)?.checked_add(1)?;
     // Each input byte can be a newline, with every ancestor named; code adds four.
     // Three replacement bytes and two code delimiters cover each nonempty run.
-    let width = u64::from(limits.depth).checked_mul(2)?.checked_add(6)?;
+    let width = u64::from(depth).checked_mul(2)?.checked_add(6)?;
     let bytes = lines
         .checked_mul(width)?
         .checked_add(text.checked_mul(5)?)?
         // Base words, longest entry kind, required, and two u32 positions.
-        .checked_add(u64::from(limits.nodes).checked_mul(400 + 19 + 11 + 27)?)?
+        .checked_add(u64::from(nodes).checked_mul(400 + 19 + 11 + 27)?)?
         .checked_add(16)?;
     Some((u32::try_from(lines).ok()?, bytes))
+}
+fn tree_room(tree: &Tree, name: &[u8]) -> Option<u32> {
+    let mut text = u64::try_from(name.len()).ok()?;
+    let mut ends = Stack::with_capacity(tree.len());
+    let mut depth = 0;
+    for at in 0..tree.len() {
+        while let Some(end) = ends.top() {
+            if *end > at {
+                break;
+            }
+            let _end = ends.pop();
+        }
+        let n = tree.get(at).expect("Preorder node exists");
+        ends.push(at.saturating_add(n.size)).expect("Ancestors fit tree nodes");
+        depth = depth.max(ends.len());
+        if let Some(value) = &n.value {
+            text = text.checked_add(u64::try_from(value.text.len()).ok()?)?;
+        }
+        for bytes in [n.name.as_deref(), n.description.as_deref(), n.external.as_deref()].into_iter().flatten() {
+            text = text.checked_add(u64::try_from(bytes.len()).ok()?)?;
+        }
+        for run in &n.text {
+            text = text.checked_add(u64::try_from(run.text.len()).ok()?)?;
+        }
+    }
+    u32::try_from(room(tree.len(), depth, text)?.1).ok()
 }
 #[derive(Debug)]
 struct Parent {
@@ -94,8 +122,14 @@ fn header(tree: &Tree, name: &[u8], status: Option<Region>, out: &mut List<u8>) 
 pub fn render(tree: &Tree, name: &[u8], status: Option<Region>, print: &mut Print) {
     let name_bytes = u32::try_from(name.len()).expect("shell name fits its configured node text bound");
     assert!(name_bytes <= print.name_bytes, "shell name fits its configured node text bound");
-    print.text.clear();
     print.numbers.clear();
+    let Some(bytes) = tree_room(tree, name) else {
+        print.text = List::with_capacity(name_bytes.saturating_mul(3).saturating_add(26));
+        safe(&mut print.text, name, 0, false);
+        raw(&mut print.text, b": page too long to print\n");
+        return;
+    };
+    print.text = List::with_capacity(bytes);
     let (title, link) = header(tree, name, status, &mut print.text);
     for at in 0..tree.len() {
         if title == Some(at) || link == Some(at) {

@@ -60,6 +60,7 @@ pub struct Terminal {
     intake: Input,
     writing: Output,
     print: Print,
+    print_offset: Option<u32>,
     printed: Option<Time>,
     dirty: bool,
     immediate: bool,
@@ -74,9 +75,7 @@ impl Terminal {
         }
         let print = Print::new(view)?;
         let lines = Queue::with_capacity(settings.lines.checked_add(BATCH)?.checked_add(1)?);
-        let output = u32::try_from(crate::worst_case(view)?.1)
-            .ok()?
-            .max(settings.longest.checked_add(view.text_per_node)?.checked_add(64)?);
+        let output = 65536_u32.max(settings.longest.checked_add(view.text_per_node)?.checked_add(64)?);
         let limits = skein_io::Limits {
             sockets: 2,
             names: 0,
@@ -110,6 +109,7 @@ impl Terminal {
             pending: None,
             writing: Output::Waiting,
             print,
+            print_offset: None,
             printed: None,
             dirty: true,
             immediate: false,
@@ -198,7 +198,11 @@ impl Terminal {
             || self.io.is_ready()
             || self.io.is_due(now)
             || (self.writing == Output::Writable
-                && (self.pending.is_some() || !self.lines.is_empty() || self.due(now) || self.phase == Phase::Closing))
+                && (self.pending.is_some()
+                    || self.print_offset.is_some()
+                    || !self.lines.is_empty()
+                    || self.due(now)
+                    || self.phase == Phase::Closing))
             || self.after_act
     }
     fn due(&self, now: Time) -> bool {
@@ -255,6 +259,8 @@ impl Terminal {
         if self.writing == Output::Writable && self.phase != Phase::Drained {
             if let Some(bytes) = self.pending.take() {
                 self.write(now, bytes);
+            } else if let Some(offset) = self.print_offset {
+                self.write_print(now, offset);
             } else if let Some(line) = self.lines.pop() {
                 self.write(now, line.bytes);
             } else if self.phase != Phase::Open {
@@ -270,8 +276,7 @@ impl Terminal {
                 self.printed = Some(now);
                 self.dirty = false;
                 self.immediate = false;
-                let bytes = self.print.text.to_boxed();
-                self.write(now, bytes);
+                self.write_print(now, 0);
             }
         }
         if self.phase == Phase::Open
@@ -316,6 +321,14 @@ impl Terminal {
         };
         self.request(now, Request::Stream { stream: self.output.expect("adopted output"), down: Down::Send(bytes) });
         self.demand_output(now);
+    }
+    fn write_print(&mut self, now: Time, offset: u32) {
+        let end = offset.saturating_add(self.limits.output).min(self.print.text.len());
+        let range = usize::try_from(offset).expect("Print offset fits memory")
+            ..usize::try_from(end).expect("Print end fits memory");
+        let bytes = skein_lib::bytes::copy_of(self.print.text.as_slice().get(range).expect("Print piece exists"));
+        self.print_offset = (end < self.print.text.len()).then_some(end);
+        self.write(now, bytes);
     }
     fn events(&mut self, now: Time, tree: &Tree) {
         for _ in 0..self.events.len() {
