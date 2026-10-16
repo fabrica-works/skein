@@ -49,6 +49,12 @@ workspace() {
 }
 root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
+# A run's own kit, if it has one (kit.sh).
+if [[ -f $kit/kit.sh ]]; then
+    # shellcheck source=kit.sh
+    source "$kit/kit.sh"
+    run_kit land "$@"
+fi
 start_dir=$PWD
 
 docs=0 local=0 gate=scripts/check.sh tries=5

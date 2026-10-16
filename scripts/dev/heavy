@@ -26,6 +26,12 @@ workspace() {
 }
 root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
+# A run's own kit, if it has one (kit.sh).
+if [[ -f $kit/kit.sh ]]; then
+    # shellcheck source=kit.sh
+    source "$kit/kit.sh"
+    run_kit heavy "$@"
+fi
 build_jobs=${HEAVY_BUILD_JOBS:-4}
 
 usage() {

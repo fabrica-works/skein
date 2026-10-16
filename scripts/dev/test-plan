@@ -85,8 +85,27 @@ planner=99999999-8888-7777-6666-555555555555
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "Plan the demo" -m "Planner-Session: $planner"
 
+# The workspace's skein, whose commit a claim takes as the run's kit
+# (development.md, section 3.6): this kit as it stands, its plan marked so
+# that a test sees which copy ran.
+mkdir -p "$DEV_ROOT/skein/scripts"
+cp -r "$kit" "$DEV_ROOT/skein/scripts/dev"
+sed -i '2i [[ -z ${PLAN_TEST_KIT:-} ]] || echo "the run'\''s kit" >&2' "$DEV_ROOT/skein/scripts/dev/plan"
+git -C "$DEV_ROOT/skein" init -q -b main
+git -C "$DEV_ROOT/skein" add -A
+git -C "$DEV_ROOT/skein" -c user.email=test@example.com -c user.name=test commit -q -m "The kit"
+
 run=$("$plan" claim "$dir")
 expect claim "$run" "$DEV_TMP/alpha/demo"
+expect "the claim's kit" "$(git -C "$run/kit" rev-parse HEAD)" "$(git -C "$DEV_ROOT/skein" rev-parse HEAD)"
+expect "the kit hands over" "$(PLAN_TEST_KIT=1 "$plan" status 2>&1 >/dev/null)" "the run's kit"
+expect "the kit's own runs" "$(PLAN_TEST_KIT=1 timeout 10 "$run/kit/scripts/dev/plan" status 2>&1 >/dev/null)" "the run's kit"
+mkdir -p "$t/bin" && ln -s "$plan" "$t/bin/plan"
+expect "the kit hands over from a link" "$(PLAN_TEST_KIT=1 "$t/bin/plan" status 2>&1 >/dev/null)" "the run's kit"
+# A run claimed without kit/ runs the copy it is run from.
+mv "$run/kit" "$run/kit.aside"
+[[ -z $(PLAN_TEST_KIT=1 "$plan" status 2>&1 >/dev/null) ]] || { echo "FAIL a run without kit/ ran another copy"; failed=1; }
+mv "$run/kit.aside" "$run/kit"
 # The pulse counts what happened after a check's second: the fixture's
 # commits and queue statistics come a second after the claim.
 sleep 1
@@ -297,6 +316,7 @@ expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "w
 
 # After the run's release, metrics and retro find it as the last run.
 "$plan" release >/dev/null
+[[ ! -e $run/kit ]] || { echo "FAIL release: $run/kit is left"; failed=1; }
 expect "metrics after release" "$("$plan" metrics)" $'steps_planned\t2\t'
 
 if ((live)); then

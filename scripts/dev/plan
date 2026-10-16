@@ -47,6 +47,12 @@ workspace() {
 }
 root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
+# A run's own kit, if it has one (kit.sh).
+if [[ -f $kit/kit.sh ]]; then
+    # shellcheck source=kit.sh
+    source "$kit/kit.sh"
+    run_kit plan "$@"
+fi
 # The workspace's repositories, each after those it builds on (development.md,
 # section 3.1), and what each builds on.
 all_repos="skein smith jig hearth temper"
@@ -312,14 +318,16 @@ check_machine() {
         command -v "$tool" >/dev/null && ok "has $tool" || fail "no $tool"
     done
     cargo nextest --version >/dev/null 2>&1 && ok "has cargo-nextest" || fail "no cargo-nextest"
-    local bin=$HOME/.local/bin
+    # The tools and files link to the kit on PATH, never to a run's (kit.sh).
+    local bin=$HOME/.local/bin home=${DEV_KIT_HOME:-$kit}
+    [[ $home != "$(readlink -f "$tmp")"/*/*/kit/scripts/dev ]] || home=$root/skein/scripts/dev
     for tool in heavy land plan test-plan; do
-        if [[ $(readlink -f "$bin/$tool" 2>/dev/null) == "$kit/$tool" ]]; then
+        if [[ $(readlink -f "$bin/$tool" 2>/dev/null) == "$home/$tool" ]]; then
             ok "$tool is on PATH"
         elif ((fix)); then
-            mkdir -p "$bin" && ln -sfn "$kit/$tool" "$bin/$tool" && ok "linked $bin/$tool"
+            mkdir -p "$bin" && ln -sfn "$home/$tool" "$bin/$tool" && ok "linked $bin/$tool"
         else
-            fail "$bin/$tool does not link to $kit/$tool (--fix links it)"
+            fail "$bin/$tool does not link to $home/$tool (--fix links it)"
         fi
     done
 
@@ -328,7 +336,7 @@ check_machine() {
     for pair in "$root/AGENTS.md=AGENTS.md" "$root/CLAUDE.md=CLAUDE.md" \
         "${CODEX_HOME:-$HOME/.codex}/coordinator.config.toml=coordinator.config.toml"; do
         link=${pair%%=*}
-        target=$kit/workspace/${pair#*=}
+        target=$home/workspace/${pair#*=}
         if [[ $(readlink -f "$link" 2>/dev/null) == "$target" ]]; then
             ok "$link is skein's"
         elif [[ -e $link && ! -L $link ]]; then
@@ -464,6 +472,15 @@ claim() {
         die "another run is active: $(sed -n 1p "$active")"
     fi
     mkdir -p "$run"/{logs,sessions,wt}
+    if [[ ! -f $active ]]; then
+        # The run takes its kit from its claim (development.md, section
+        # 3.6): a worktree of the workspace's skein at its checkout's commit.
+        git -C "$root/skein" worktree prune
+        [[ ! -e $run/kit ]] ||
+            die "$run/kit is left from an earlier claim: git -C $root/skein worktree remove --force $run/kit"
+        git -C "$root/skein" worktree add --quiet --detach "$run/kit" HEAD ||
+            die "cannot add the run's kit, a worktree of $root/skein, in $run/kit"
+    fi
     [[ -f $run/ledger.tsv ]] || printf '%s\n' "$columns" >"$run/ledger.tsv"
     [[ -f $run/log.md ]] || printf '# %s on %s\n\n' "$name" "$(host)" >"$run/log.md"
     if [[ -f $active ]]; then
@@ -471,7 +488,8 @@ claim() {
         return
     fi
     printf '%s\n%s\n%s\n%s\n' "$name" "$plan_dir" "$(host)" "$(now)" >"$active"
-    printf '## Claimed, %s\n\nThe run of %s started on %s.\n\n' "$(now)" "$plan_dir" "$(host)" >>"$run/log.md"
+    printf '## Claimed, %s\n\nThe run of %s started on %s.\nIts kit is skein %s, in kit/.\n\n' \
+        "$(now)" "$plan_dir" "$(host)" "$(git -C "$run/kit" rev-parse --short HEAD)" >>"$run/log.md"
     touch "$run/heartbeat"
     echo "$run"
 }
@@ -485,6 +503,11 @@ release() {
         [[ -z $(git -C "$run/docs" status --porcelain) ]] ||
             die "the supervisor's worktree $run/docs has changes: land or discard them first"
         git -C "$root/${name%%/*}" worktree remove "$run/docs"
+    fi
+    # The run's kit is skein at a commit: nothing in it is the run's own.
+    if [[ -d $run/kit ]]; then
+        git -C "$root/skein" worktree remove --force "$run/kit" ||
+            echo "plan: $run/kit is left: git -C $root/skein worktree remove --force $run/kit" >&2
     fi
     printf '## Released, %s\n\n' "$(now)" >>"$run/log.md"
     rm -f "$active"
@@ -953,6 +976,7 @@ start() {
     sleep "${PLAN_RING_DELAY:-5}"
     ring "Doorbell test: log it as development.md, section 7.4, says, and go on." ||
         echo "plan: the doorbell did not ring; steers wait for the coordinator's next wake-up" >&2
+    [[ ! -d $run/kit ]] || echo "kit: skein $(git -C "$run/kit" rev-parse --short HEAD), the claim's"
     echo "started $name: plan status, plan attach supervisor, plan attach coordinator"
 }
 
@@ -981,6 +1005,7 @@ attach() {
 resume() {
     load
     [[ ! -f $run/done.md ]] || die "the run is done"
+    [[ ! -d $run/kit ]] || echo "kit: skein $(git -C "$run/kit" rev-parse --short HEAD), the claim's"
     pueue status >/dev/null 2>&1 ||
         { systemctl --user start pueued 2>/dev/null || pueued --daemonize >/dev/null 2>&1 || true; }
     codex app-server daemon version >/dev/null 2>&1 || codex_daemon_start || true
