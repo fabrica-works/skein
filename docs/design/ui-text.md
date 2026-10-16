@@ -74,6 +74,19 @@ this shell's text (ui.md, 17.1).
   property it may carry. The shell's name, which the first line prints
   when the main has no level-1 heading, is at most a node's text, so the
   same limits count it.
+- **A print takes its room from its own tree.** `worst_case` is what the
+  host counts in its memory (ui.md, section 15; programming-model.md,
+  6.3), never what the shell reserves: neither the print (`Print::new`)
+  nor the terminal (`Terminal::new`) refuses limits for it, and only the
+  print's numbers, one per node, are held at the limits' nodes. Each
+  print's bytes are reserved as it is made, by `worst_case`'s formula
+  over that tree alone: its nodes, its deepest nesting, and its text with
+  the shell's name. An application's limits hold every window full and
+  every text at its most at once, so their worst case can pass a page it
+  builds by orders of magnitude, and pass a u32. A print holds at most
+  what a list holds, a u32 of bytes: a tree whose own room passes it
+  prints, in place of the page, the shell's line `NAME: page too long to
+  print`, and numbers no node.
 - **The command reader,** `skein_ui_text::command`: from one line, the
   last print's numbers, the view's last tree and the longest line, one
   command (section 6): an act on a node (a press, a toggle, or a field's
@@ -117,6 +130,9 @@ this shell's text (ui.md, 17.1).
   it have built the tree; and at once on `p`.
 - **One print at a time:** while the output has not taken the last
   print, a due print waits, then shows the tree as it is when it starts.
+  A print goes to the output in pieces, each at most the terminal's
+  output room: 64 KiB, or the longest line with a node's text and 64
+  bytes when that is more. No write is a page's size.
 - **Its own lines and the application's** (a value shown once, how to
   go on) are written before the next print of the page, in the order
   they came, each starting with the shell's name and `: `, so they are
@@ -325,7 +341,10 @@ this shell's text (ui.md, 17.1).
   gone once its select is disabled after the print.
 - **Its bound:** the renderer's output for trees at a fixture's limits,
   every text at its most bytes and of the bytes that grow most, within
-  `worst_case`.
+  `worst_case` and within the room its own tree gives; a print and a
+  terminal made from limits whose `worst_case` passes a u32, printing a
+  small tree; a tree whose own room passes a u32, printed as `NAME: page
+  too long to print`, with no number acting.
 - **The terminal** on skein's simulated machine, in `tests/ui-text`
   (testing.md, section 6): lines split and joined across reads, a line
   too long refused through its newline, prints paced and one at a time,
@@ -334,7 +353,8 @@ this shell's text (ui.md, 17.1).
   still read and written after them, no room once closing, the input
   left unread while the host has not taken its commands, the input's
   end closing without a new print, a print begun finished at closing, a
-  name longer than a node's text refused.
+  print longer than the output room written whole, in pieces, before the
+  next, a name longer than a node's text refused.
 - **An application's terminal client** is tested in its own tiers: its
   worlds play this shell, and its end-to-end tests run lines in on a
   pipe and pages out on another (testing-strategy.md, 2.9).
