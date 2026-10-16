@@ -214,9 +214,11 @@ and keep no copy of their own.
   each piece as it arrives, then `finish(self) -> [u8; 32]`, is
   HMAC-SHA256 (RFC 2104), for a service that checks a signed message as
   it streams. A key longer than a block is hashed first, as the standard
-  says. Its state is two SHA-256 states and the padded key's block, with
-  no heap. `Clone` as `Sha256`'s; its `Debug` shows the count of bytes
-  hashed alone, never the key or its pads.
+  says. Its state is two SHA-256 states, the inner seeded with the key's
+  inner pad and the outer with its outer pad, with no heap. `Clone` as
+  `Sha256`'s; its `Debug` shows the count of the message's bytes hashed
+  alone (`Hmac { hashed: N }`), the pads not counted, never the key or
+  its pads.
 - **Comparing in constant time.** `sha256::equal(a: &[u8], b: &[u8]) ->
   bool` takes a time that depends on the lengths alone, never on where
   the bytes differ, for comparing a signature, a state or a token with
@@ -459,18 +461,20 @@ plain reference, over random cases drawn from a seed: a few hundred in
 the step tests, and 20,000 from the same seeds in the fuzzy suite, in
 `tests/lib` (testing-strategy.md, 8).
 
-SHA-256 is held to FIPS 180-4's examples (the empty message, `abc`, the
-448-bit and 896-bit messages, a million `a`s) and to messages of every
-length from 0 to 200 bytes against the one-shot form, each fed whole and
-split at every point; the fuzzy suite adds 20,000 random messages, each
-split at a pair of points drawn at random. HMAC is held to RFC 4231's
-test cases, each fed whole and split at every point; `equal` to equal
-and unequal inputs of the same and of different lengths. State digests
-are held to their contents: two containers that reach the same contents
-by different histories (a map filled in two orders, a queue that
-wrapped, a slab whose slots were reused in the same order) digest
-alike, a change to one entry changes the digest, and an integer written
-as `usize` digests as the same `u64`.
+SHA-256 is held, in the step tests, to FIPS 180-4's short examples (the
+empty message, `abc`, the 448-bit and 896-bit messages) and to messages
+at a block's edges (55, 56, 63, 64 and 65 bytes) against the one-shot
+form, each fed whole and at a few splits. The fuzzy suite adds the
+million `a`s, sweeps every length from 0 to 200 bytes, each split at
+every point, and adds 20,000 random messages, each split at a pair of
+points drawn at random. HMAC is held to RFC 4231's test cases, each fed
+whole and at a few splits in the step tests, and split at every point in
+the fuzzy suite; `equal` to equal and unequal inputs of the same and of
+different lengths. State digests are held to their contents: two
+containers that reach the same contents by different histories (a map
+filled in two orders, a queue that wrapped, a slab whose slots were
+reused in the same order) digest alike, a change to one entry changes
+the digest, and an integer written as `usize` digests as the same `u64`.
 Their step tests are `src/tests/sha256.rs` and `src/tests/digest.rs`.
 
 The request table's step tests are `src/tests/requests.rs`; its independent
