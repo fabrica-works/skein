@@ -573,6 +573,15 @@ lib because it is a data structure with a lifecycle, like a queue or the journal
   if it has been sent. Its first sending updates that record. Records
   leave before the sends they cover, in order; each take emits at most
   its configured count. Retiring a request emits its erase.
+- **Not kept:** a request whose record the asker's store did not write
+  is retired by its key (`not_kept`), whatever its state: parked, ready,
+  in flight or retrying. The asker hands a send over only once the
+  records taken before it are stored, so such a request was never sent.
+  It is never sent; an answer for its attempt changes nothing. Its erase
+  is emitted, as any retired request's, since an earlier write may hold
+  its record. Its owner value is handed back, as a final answer's, with
+  no progress, and the asker answers it itself. A key that names no
+  request, or a retired one, hands back nothing.
 - **One attempt:** a request has at most one attempt in flight. Each
   attempt has its own fresh token, independent of the owner value.
   An answer for a superseded or retired attempt changes nothing.
