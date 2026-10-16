@@ -1,6 +1,6 @@
 # Testing skein
 
-Provisional, 2026-10-03, revised 2026-10-15. How testing-strategy.md
+Provisional, 2026-10-03, revised 2026-10-16. How testing-strategy.md
 applies to skein itself: which tiers skein has, what they run, the
 example services and the minimal fake machine they need, where the tests
 live, what skein supplies for a service's own tiers, and where things
@@ -165,6 +165,20 @@ second, which is why it is skein's (testing-strategy.md, 7).
   the world settles, naming the process and the deadline. In the
   replaying tiers that is a jump of the clock to it; in the real loop, a
   wake for it. No service writes the check, and none opts out.
+- **It carries state digests** (lib.md, 5.1). `Host` (shell.md, 12) and
+  `Machine`, the seam a world's fake machine plugs into, each give
+  `state_digest() -> Option<[u8; 32]>`, `None` unless the process or the
+  fake gives one. What a host hashes is its own choice, its domains'
+  state at least; a fake machine hashes its own state.
+  - **At the end of a run:** a world reads them from its `Outcome`'s
+    processes and machine, and returns them beside its trace, so
+    `assert_replays` compares them with the rest of what must come out
+    the same. Its signature is unchanged.
+  - **After each iteration, on request:** with the world's `digests`
+    option, the harness writes each process's and the machine's digest
+    into the trace after each iteration, so two runs that part are found
+    at the first iteration whose digests differ, before anything crosses
+    a boundary. Without it, the trace is as before.
 
 ## 6. Layout
 
@@ -291,7 +305,7 @@ environment. `measure` runs a suite with no budget, to time each test.
 Replay: a seed replays to the same trace of submissions and completions,
 and a JSON world, an HTTP world, an io world and an echo world to the
 same run; a TLS world does not, as rustls draws from the kernel. No state
-digest yet.
+digest yet: designed in lib.md, 5.1 and section 5, not built (section 8).
 
 Memory: each part's worst case is checked against the counting allocator
 in its own tier, a call of an entry point at a time; the echo's simulated
@@ -329,6 +343,8 @@ worst case, so that it keeps reaching the limits.
   target for `skein-ui`, `skein-ui-web` and the UI example's view and
   browser shell; the UI example's bundle and its browser tier in the
   gate (section 6).
+- **State digests** (lib.md, 5.1; section 5): `Host`'s and `Machine`'s
+  `state_digest`, and the trace's digests after each iteration.
 
 By check: state digests for replay, transition coverage (it needs
 `cargo llvm-cov`), fuzzing.

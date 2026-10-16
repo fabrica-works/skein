@@ -1,6 +1,6 @@
 # The shell kit
 
-Provisional, 2026-10-03, revised 2026-10-13. The design of
+Provisional, 2026-10-03, revised 2026-10-16. The design of
 `skein-shell`: what a service's `main` runs its loop on. The kernel (the
 io_uring backend of the kernel boundary, kernel.md), the clock and the
 seed; the loop itself, over a service's `Host`, and how it ends; what
@@ -420,7 +420,10 @@ every service's `main`.
     once it does;
   - `worst_case()`, and `operations()`, the size of its ring;
   - `drain()`, the hook below, which does nothing unless the service
-    gives it something to do.
+    gives it something to do;
+  - `state_digest()`, a digest of what it holds, for replay (lib.md,
+    5.1): `None` unless the service gives one. Only a world reads it
+    (testing.md, 5); `drive` never calls it.
 - **`drive(kernel, clock, host)`** is the loop: reap, read the clock,
   iterate, drain; then return the host's exit once it holds nothing
   (section 13), or else submit, waiting not at all while work is pending,

@@ -1,6 +1,6 @@
 # The simulator
 
-Provisional, 2026-10-03, revised 2026-10-13. The design of `skein-sim`:
+Provisional, 2026-10-03, revised 2026-10-16. The design of `skein-sim`:
 the simulated kernel that every world from io worlds up runs on
 (testing-strategy.md, 2). It is a backend of the kernel boundary
 (kernel.md), for every process of one world, with every choice drawn from
@@ -240,4 +240,5 @@ was metered as its own, which also finds a leak.
 
 ## 7. Not built yet
 
-- **A state digest** in the trace, beside the records (lib.md, 12).
+- **A state digest** in the trace, beside the records (lib.md, 5.1),
+  which the world harness writes there (testing.md, section 5).

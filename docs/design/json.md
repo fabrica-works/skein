@@ -1,6 +1,6 @@
 # JSON
 
-Provisional, 2026-10-03; revised 2026-10-09. The design of `skein-json`:
+Provisional, 2026-10-03; revised 2026-10-16. The design of `skein-json`:
 a bounded JSON tokenizer, pulled by demand, a selective collector over it,
 and a sized writer. The tokenizer and the collector are step machines of
 a connection's stack (programming-model.md, 4), and the crate depends on
@@ -23,6 +23,9 @@ lib only.
   under maximum lengths.
 - **No floats.** Numbers go up as validated text; the consumer parses the
   integers it expects, with checks.
+- **Positions on request.** The tokenizer says where its last token or
+  its error is: the byte offset, the line and the column, for a consumer
+  that reports where a document is wrong.
 - **The writer is sized:** measure the document first, then write it,
   escaped, into a box of exactly its length.
 
@@ -39,6 +42,7 @@ pub fn up(tokenizer: &mut Tokenizer, env: &Env<Limits>, ev: stream::Up,
           above: &mut Queue<Event>, below: &mut Queue<stream::Down>)
 pub fn down(tokenizer: &mut Tokenizer, env: &Env<Limits>, rq: Request,
             above: &mut Queue<Event>, below: &mut Queue<stream::Down>)
+tokenizer.position() -> Position                  // where its last answer is (3.6)
 
 // skein_json::collector, the machine: the tokenizer's shape, over the same stream
 pub fn up(collector: &mut Collector, env: &Env<collector::Limits>, ev: stream::Up,
@@ -223,6 +227,50 @@ A number's text is checked against RFC 8259, 6, a byte at a time. A
 digit, `.`, `e`, `E`, `+` or `-` where the grammar allows none of them
 makes it `Number` at once (`01`, `1.e5`, `2-1`); any other byte ends it.
 Nothing converts it: the consumer parses the integers it expects.
+
+### 3.6 Positions
+
+`tokenizer.position()` says where the tokenizer's last answer is in the
+document, for a consumer that reports where a document is wrong, as
+hearth reports a configuration's file, line and column (hearth's
+render.md, section 7).
+
+```rust
+pub struct Position {
+    pub offset: u32,   // the bytes delivered before it, from 0
+    pub line: u32,     // from 1: one more than the line feeds before it
+    pub column: u32,   // from 1, in bytes: one more than the bytes since the last line feed
+}
+```
+
+- **After a `Token`, a `Long` or a `Skipped`,** it is the first byte of
+  the token or the value: a bracket, a key's or a string's opening quote,
+  a number's first byte, a literal's first letter.
+- **After `Failed`,** it is where what is at fault starts:
+
+  | Error | Its position |
+  |---|---|
+  | `Unexpected`, `Trailing` | the byte refused |
+  | `TooDeep` | the bracket that opens past the depth |
+  | `Escape`, `Surrogate`, `Utf8`, `Control`, `StringTooLong` | in a string or a key, the first byte of the character or the escape at fault: for `Surrogate`, the lone half's backslash; for `StringTooLong`, the character or escape that passes the limit |
+  | `Number`, `NumberTooLong` | the number's first byte |
+  | `TooLong`, `Truncated`, `Stream` | the end of what was read: the position the next byte would have |
+
+- **It holds from an answer until the next demand.** The tokenizer reads
+  only while a `Next`, a `Text` or a `Skip` is pending, so the position
+  of its answer stays put until the side above asks again. Before the
+  first answer, and after `restart`, it is offset 0, line 1, column 1.
+- **Only a line feed ends a line.** A `\r` is a byte of its line, so in a
+  document with CRLF line ends a column counts it. A raw line feed can
+  appear only between tokens (in a string it is `Control`), so no token
+  spans two lines.
+- **`u32` throughout,** as `Limits::length` is: no position passes the
+  document's end.
+- **Three counters, no heap.** The tokenizer counts as it reads, and its
+  `worst_case` is unchanged. `Token`, `Event` and `Error` are unchanged
+  (section 7).
+- **The collector's events and documents carry no positions.** A
+  consumer that needs them reads through the tokenizer.
 
 ## 4. The writer
 
@@ -452,8 +500,12 @@ pub enum Kind {
   bytes, the writer's escapes, refusals and assertions, and its output
   read back. The tokenizer's `Skip` over every kind of value at every
   place one may come, its count, and where it may not be asked; `Text`
-  at, below and one past its cap, and the `Long` it answers. The
-  collector: each disposition, a key named and one not, a duplicate named
+  at, below and one past its cap, and the `Long` it answers. Positions
+  (3.6), each written out by hand: a token at the start, after spaces,
+  after line feeds and after CRLF line ends, after a character of two,
+  three and four bytes; each row of 3.6's table; `TooLong` at a refused
+  delivery and `Truncated` at the end; and offset 0, line 1, column 1
+  after `restart`. The collector: each disposition, a key named and one not, a duplicate named
   and unnamed, each count at its limit and one past it, a `Long` kept, a
   close in each state, and a restart that keeps its buffers. A compact
   document read by index and written back.
@@ -487,9 +539,12 @@ pub enum Kind {
   whole document, sharing no code with the tokenizer: the standard
   library judges UTF-8 and surrogate pairs, and a plain reading of the
   grammar judges numbers. It mirrors only what the tokenizer promises:
-  which bytes its scans see, and the order of errors at one byte. Every
-  run is checked against it: the same tokens in order, and the same
-  outcome, unless the stream failed or the side above closed first.
+  which bytes its scans see, the order of errors at one byte, and where
+  each token and each error is (3.6), which it computes on its own by
+  counting the document's bytes and line feeds. Every run is checked
+  against it: the same tokens in order, each at the same position, and
+  the same outcome at the same position, unless the stream failed or the
+  side above closed first.
 - **Transcripts** in `tests/json/transcripts/`, each `<name>.json` beside
   `<name>.expect`, what it must decode to:
   - realistic: an Anthropic Messages API response ending in tool calls,
@@ -511,7 +566,8 @@ pub enum Kind {
   Each decodes to its expectation under several seeds and scan maximums,
   and cut anywhere, as the reference reads the prefix. A transcript
   without an expectation fails, printing the reference's reading as a
-  draft to check.
+  draft to check. Expectations record no positions: the reference
+  checks them in every run, transcripts included.
 - **The writer against the tokenizer:** every transcript read whole, and
   generated documents, written and read back the same through the world;
   every byte a string may hold; and what the tokenizer refuses, the writer
@@ -594,6 +650,15 @@ pub enum Kind {
   outcome does not depend on how the bytes were cut: a delivery's length
   before its bytes, a byte's validity before the limit it would pass, and
   a character's room at its first byte.
+- **A position is asked for, not carried** (3.6). An accessor leaves
+  `Token`, `Event` and `Error` as they are, so no consumer changes, and a
+  consumer that never asks pays three counters. A position in every
+  token or error would grow each event and change every decoder that
+  matches on one or builds one.
+- **A position says where what is at fault starts,** not the byte at
+  which it was found: an editor and a person look for a string's bad
+  escape at its backslash, and for a number that is not one at its
+  start.
 
 ## 8. Open questions
 
@@ -609,6 +674,8 @@ pub enum Kind {
 
 ## 9. Not built yet
 
+- **Positions** (3.6), the tokenizer's, and the reference's (section 6).
+  Their first user is hearth's configuration (hearth's README.md, 8.1).
 - **The selective collector, the tokenizer's `Text` and `Skip`, and
   compact documents** (sections 3.1, 5.1 and 5.2). Their first user is
   skein's LLM client, whose events they decode as they stream (llm.md,

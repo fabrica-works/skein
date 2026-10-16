@@ -1,6 +1,6 @@
 # lib
 
-Provisional, 2026-10-03, revised 2026-10-15. The design of `skein-lib`:
+Provisional, 2026-10-03, revised 2026-10-16. The design of `skein-lib`:
 the building blocks every step crate shares, in skein and in every
 service built on it. The mechanics are those of programming-model.md;
 this document says what lib holds and what each part promises.
@@ -9,8 +9,9 @@ this document says what lib holds and what each part promises.
 
 - **Everything step code needs and the subset does not give it.** Typed
   handles and the slabs that issue them, bounded containers, cursors over
-  owned bytes, secrets' bytes and base64, the stream vocabulary and its
-  intake, deadlines, time, randomness, and the environment a step reads.
+  owned bytes, secrets' bytes, base64 and SHA-256, the stream vocabulary
+  and its intake, deadlines, time, randomness, the environment a step
+  reads, and the digest of a state that replay compares.
 - **Bounded, and priced.** Every container has a capacity fixed when it
   is made, refuses past it, and reports its own `worst_case(capacity)`,
   bookkeeping included, so a layer adds up what its containers report.
@@ -85,6 +86,49 @@ bug, asserted; `Queue::try_push` is the refusing form. A B-tree allocates
 as it fills, so its worst case counts its nodes at capacity, not its
 entries.
 
+### 5.1 State digests
+
+A seed replays to the same trace, and to the same digest of each
+process's state (testing-strategy.md, section 6). lib gives the hasher,
+and every type of its own that a state holds hashes what it holds, never
+where it holds it.
+
+- **`StateHasher`** is a `core::hash::Hasher` over SHA-256 (6.2), with
+  no key: a digest is a function of the values hashed alone, the same in
+  every run, on every machine and every target.
+  - `write` hashes the bytes given; `write_u8` to `write_u128` and
+    `write_i8` to `write_i128` hash the integer's little-endian bytes at
+    its own width; `write_usize` and `write_isize` hash 8 bytes, so a
+    32-bit build (section 2) and a 64-bit one digest one state alike.
+  - `digest(self) -> [u8; 32]` ends it. `finish()`, which `Hasher`
+    requires, gives the digest's first 8 bytes as a big-endian `u64`,
+    without ending it.
+  - `state_digest(&value) -> [u8; 32]` hashes one value whole.
+- **A state is digested through its types' derived `Hash`.** A service's
+  state types derive it, as they derive `Debug`. A field that no later
+  step reads, such as a measurement kept for display, may be left out by
+  a hand-written impl whose comment says why.
+- **lib's types hash what their later answers depend on:**
+
+  | Type | Its `Hash` covers |
+  |---|---|
+  | `Slab<T>` | each slot in index order: free, with its generation; occupied, with its generation, whether it is retired, and its value; or spent. Then the order in which its free and retired slots will be handed out again |
+  | `Map<K, V>`, `Set<K>` | the count, then each entry in key order |
+  | `Queue<T>`, `List<T>`, `Stack<T>` | the count, then each item: a queue front to back, a list in order, a stack bottom to top |
+  | `Deadlines<K>` | the count, then each armed deadline, its time and its key, in the order `expire` takes them |
+  | `Journal<W, O>`, `RequestTable<O, R>` | their entries in their own order, and the counters, keys and attempts that decide what they emit next |
+  | `Intake` | the bytes it holds, in order |
+  | `Id<T>`, `Token`, `Time`, `Duration`, `Wall`, `Secret`, `Rng` | their value |
+  | `CryptoRng` | its stream number and how many bytes it has drawn, never its key |
+
+- **Never hashed:** a container's capacity, which its owner fixed, and
+  its layout in memory: a B-tree's nodes, a ring's head, a buffer's spare
+  room, an address. Two states that would answer every later step alike
+  digest alike, however each was reached.
+- **A digest reads the whole state,** so a world asks for one at the end
+  of a run, and after each iteration only when it chooses to (testing.md,
+  section 5). No step code calls it.
+
 ## 6. Bytes
 
 - **Owned bytes** are a `Box<[u8]>` allocated at its final length.
@@ -134,6 +178,38 @@ crates use it and keep no copy of their own.
   reader that skips what surrounds the text (PEM's line breaks) or
   receives it in chunks (an event's data) decodes it without copying it
   whole first.
+
+### 6.2 SHA-256
+
+`lib::sha256` is SHA-256 (FIPS 180-4), for every crate that names bytes
+by their content: io's content versions (io.md, section 5), PKCE's
+challenge (oauth.md), a browser bundle's digest directory (ui-web.md),
+replay's state digests (5.1), and a service's own, such as hearth's,
+whose domains name every input and output by it. skein's crates use it
+and keep no copy of their own.
+
+- **Streaming.** `Sha256::new()`, then `update(&[u8])` with each piece as
+  it arrives, cut anywhere, then `finish(self) -> [u8; 32]`.
+  `sha256::digest(&[u8]) -> [u8; 32]` is the one-shot form. The digest is
+  its 32 bytes in the standard's order, as `sha256sum` prints them in
+  hex.
+- **No heap, no copy.** The state is eight words, one 64-byte block and
+  the count of bytes hashed, so a step keeps one in its state and its
+  worst case counts nothing more. `update` compresses each whole block
+  straight from the caller's slice, and copies only the part of a block a
+  piece leaves: hashing costs the compression, not a copy.
+- **`Clone`,** so a prefix common to several digests is hashed once and
+  each goes on from its own copy. Its `Debug` shows the count of bytes
+  hashed, not the state.
+- **The standard's bound,** 2^64 − 1 bits, is asserted: no bounded step
+  hashes that much.
+- **The users move onto it.** skein-io's `digest` module keeps its public
+  API, `Digest([u64; 4])` and `digest(&[u8])`, as a thin layer over lib's
+  (io.md, section 5): its words are the digest's 32 bytes read as four
+  big-endian `u64`s, so no user of skein-io changes. `skein-oauth`'s PKCE
+  and `skein-ui-bundle`'s digests use lib's and keep no copy;
+  `skein-ui-bundle`, a build tool in ordinary Rust (ui.md, section 2),
+  depends on lib for it.
 
 ## 7. Streams
 
@@ -371,6 +447,17 @@ plain reference, over random cases drawn from a seed: a few hundred in
 the step tests, and 20,000 from the same seeds in the fuzzy suite, in
 `tests/lib` (testing-strategy.md, 8).
 
+SHA-256 is held to FIPS 180-4's examples (the empty message, `abc`, the
+448-bit and 896-bit messages, a million `a`s) and to messages of every
+length from 0 to 200 bytes against the one-shot form, each fed whole and
+split at every pair of points; the fuzzy suite adds 20,000 random
+messages cut at random. State digests are held to their contents: two
+containers that reach the same contents by different histories (a map
+filled in two orders, a queue that wrapped, a slab whose slots were
+reused in the same order) digest alike, a change to one entry changes the
+digest, and an integer written as `usize` digests as the same `u64`.
+Their step tests are `src/tests/sha256.rs` and `src/tests/digest.rs`.
+
 The request table's step tests are `src/tests/requests.rs`; its independent
 obligation model, replay and seeded sweep are in `tests/lib/src/request_table.rs`
 and `tests/lib/tests/{request_table,fuzzy_request_table}.rs`.
@@ -516,10 +603,9 @@ traits, takes no closures, and uses no `dyn` (programming-model.md,
 
 - **`Slab::get2_mut`,** which looks up two entities at once and fails on
   equal handles (programming-model.md, 5.1).
-- **A state digest** for replay: a fixed-key hasher over the state types'
-  derived `Hash`, independent of their layout in memory
-  (testing-strategy.md, 6).
-- **The build for `wasm32-unknown-unknown`** (section 2), **`Secret`**
-  (section 6) and **`base64`** (6.1), with skein's own copies moved onto
-  it: `skein-oauth`'s PKCE and claims, `skein-shell`'s PEM and
-  `skein-browser`'s screenshots.
+- **SHA-256** (6.2), with skein's copies moved onto it: skein-io's
+  content digests over it, `skein-oauth`'s PKCE and `skein-ui-bundle`'s.
+  Its first new user is hearth's M1 (hearth's README.md, 8.1).
+- **State digests** (5.1): the hasher, and the `Hash` of lib's types as
+  5.1's table gives it; the world harness carries them (testing.md,
+  section 5).

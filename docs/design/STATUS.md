@@ -30,14 +30,14 @@ Section 2 names an increment of smith's reliability plan as
 |---|---|---|
 | `foundation/programming-model.md` | partly | 4.3: a read of what has arrived (jig's test-budgets, skein 01); 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 2.4: machine worlds reading what has arrived (jig's test-budgets, skein 01.2); 8: nextest without its double spawn in the gates and the queue, the suites back within 15 s on carbon-forge (jig's test-budgets); 6: state digests, transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 7: `Read::Arrived`, met by the intake and `Held`, and skein's readers of unframed bytes on it (jig's test-budgets, skein 01.1, 01.3); 6: `Secret`, 6.1: `base64`, with skein's copies moved onto it, 8: `CryptoRng`, with OAuth's states and verifiers drawn from it (jig's jig-protocol); 13: `Slab::get2_mut`, the state digest: not planned |
+| `lib.md` | partly | 6.2: SHA-256, with skein's copies moved onto it; 5.1: state digests, the hasher and lib's types' `Hash`: not planned, hearth's M1 plan (being written) takes both; 13: `Slab::get2_mut`: not planned |
 | `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 9: fixed files, 10: the ring's descriptor limit: not planned |
 | `io.md` | partly | 2, 3.3: a read of what has arrived on sockets, joined ends and pipes (jig's test-budgets, skein 01.1); 5: `Remove` of an empty directory (smith's reliability plan, a step its supervisor names); 5.1: a write pipe's stated write deadline (smith's reliability plan, a step its supervisor names); 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut`, and a made directory synced into its parent, with a world that cuts after each make (jig's jig-protocol, skein-03.s1); 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
-| `simulator.md` | partly | 3.1: a cut kept until synced (jig's jig-protocol); 5: the state digest: not planned |
+| `simulator.md` | partly | 7: the state digest in the trace (lib.md, 5.1; testing.md, 5): not planned, hearth's M1 plan (being written) takes it |
 | `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol); 6: `make_root` (jig's jig-protocol, skein-03.s1); 6.1: `directory_access` (smith's reliability plan, a step its supervisor names); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
-| `testing.md` | partly | 8: TLS in the real loop, the HTTP example's worlds, digests, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
-| `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
+| `testing.md` | partly | 5, 8: state digests in the world harness: not planned, hearth's M1 plan (being written) takes them; 8: TLS in the real loop, the HTTP example's worlds, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
+| `json.md` | partly | 3.6: positions, and the reference's (section 6): not planned, hearth's M1 plan (being written) takes them; 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
 | `http.md` | partly | 3.3, 4: a body and an event's data read as they arrive; 6: the worlds reading so (jig's test-budgets, skein 01.1, 01.2); 2: the build for `wasm32-unknown-unknown`: not built; 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
 | `tls.md` | partly | 3.1: a read of what has arrived from the plaintext intake (jig's test-budgets, skein 01.1); 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
 | `codec.md` | partly | 4: generated worst cases that check a family's limits once (jig's test-budgets, skein 02.2); 2–4: `secret N`, `boxed` variants, pieces; 6: generated files that pass the lints with no allowances, table tests, bounds at small test limits, a generator linear in its schema (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
@@ -83,9 +83,12 @@ process trees in the end-to-end kit).
   without io_uring, and for measurements.
 - **The ring's descriptor limit** (`kernel.md`, section 10): waits for a
   way to lower it without `unsafe` outside the ring adapter.
-- **State digests for replay** (`lib.md`, section 13; `simulator.md`,
-  section 5; `testing-strategy.md`, section 6): waits for a plan. smith's
-  worlds take them after skein's harness.
+- **SHA-256 in lib, positions on JSON's tokens, and state digests for
+  replay** (`lib.md`, 6.2 and 5.1; `json.md`, 3.6; `testing.md`, section
+  5; `simulator.md`, section 7; `testing-strategy.md`, section 6): hearth's
+  M1 plan, being written, takes them, each before its first hearth user
+  (hearth's README.md, 8.1). smith's worlds take state digests after
+  skein's harness.
 - **Transition coverage and fuzz targets** (`testing-strategy.md`,
   section 6; the "Not built yet" sections of `json.md`, `http.md` and
   `tls.md`): wait for `cargo llvm-cov` and a nightly toolchain.
