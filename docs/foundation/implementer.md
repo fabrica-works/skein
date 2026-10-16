@@ -1,6 +1,6 @@
 # The implementer's card
 
-Provisional, 2026-10-14, revised 2026-10-15. What an implementing agent
+Provisional, 2026-10-14, revised 2026-10-16. What an implementing agent
 reads of the development process: development.md's section 8, in a file
 of its own, so that an implementer reads this card and not the whole
 process. Its sections keep their numbers, 8.1 to 8.8, so that
@@ -47,7 +47,10 @@ first edit, and every request after carried them.
    crate you changed> --all-targets -- -D warnings`, and fix what it
    prints. A plan's "run nothing before `land`" means no proof run and no
    suite, not no clippy.
-6. **Land it** with `land` (section 8.5), then report (section 8.6).
+6. **Land it** with `land` (section 8.5). Once it has landed, remove
+   your worktree's `target/` (`rm -rf target`): kache refills it from its
+   store for your next increment (development.md, section 11.4), and you
+   do not wait for a warm one. Then report (section 8.6).
 
 **The code graph** indexes the primary checkouts, which are on `main`.
 Use it as `~/src/rust/AGENTS.md` says: name your repository's project in
@@ -310,7 +313,8 @@ question, or yield, write it as for a handover, below, before you end
 your turn: past 150,000 tokens, the answer or your next step goes to a
 fresh thread that starts from it (development.md, section 7.3).
 
-**Hand over** when the coordinator says so, after a landing: overwrite
+**Hand over** when the coordinator says so, after a landing, once your
+context passes 150,000 tokens (development.md, section 7.3): overwrite
 your checkpoint, then end your turn with your report. The checkpoint adds,
 in at most 15 lines, what the next increment needs from what you learned
 and the session file does not say: the files and fixtures it touches, the

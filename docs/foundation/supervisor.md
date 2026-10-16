@@ -1,6 +1,6 @@
 # The supervisor's card
 
-Provisional, 2026-10-14, revised 2026-10-15. What a run's supervisor
+Provisional, 2026-10-14, revised 2026-10-16. What a run's supervisor
 does, step by step: all it reads of the process at its start.
 development.md's sections 2.5, 10 and 14 are the policy behind it. The
 sections of development.md this card names are read when a case needs
@@ -17,7 +17,10 @@ and a steer) and 10.4 (who decides what). Then:
    that has its row, with `land --docs` (development.md, sections 3.3 and
    6): the plan's repository's from your worktree, whose path `plan docs`
    prints, and another repository's from a worktree of its own at
-   `origin/main`. A successor skips this step.
+   `origin/main`. Then record the process the run keeps: append
+   `## Process, <UTC time>: skein <commit>` to `supervision.md`, the
+   commit as `git -C ~/src/rust/skein rev-parse --short HEAD` prints it
+   (development.md, section 4.4). A successor skips this step.
 2. **Start the watch:** `plan watch`, as a background command (in Claude
    Code, a Bash command with `run_in_background`).
 3. **Start the hourly check:** a cron job, every hour, with this prompt,
@@ -32,6 +35,12 @@ entry of the run's `supervision.md`, and `blocked.md`, `question.md` and
 
 **After a restart** (`plan resume`), steps 2 to 4 again, after reading the
 end of `supervision.md`.
+
+**A check overdue.** A successor, or a session after a restart, whose
+`supervision.md` has no `## Check` entry in the last 45 minutes runs the
+hourly check at once (section 6), then starts its cron job: a new cron
+job's first run is up to an hour away. In smith's parity run, a handover
+left two hours between checks.
 
 ## 2. The watch's events
 
@@ -53,6 +62,20 @@ context. Handle the event, then start the watch again:
 An idle coordinator (`idle.md`, development.md, section 7.4) has ended its
 turn on purpose: its silence is no event, and a ring starts its next turn.
 
+**A thread not loaded.** Codex's daemon unloads an idle coordinator's
+thread. Until the kit loads it itself, when a ring (`plan ring`, or the
+ring of `plan ruling` or `plan ready`) or `plan resume` says the thread
+is not loaded, or "thread not found", load it by hand, then ring again
+with the same message:
+
+```
+source ~/src/rust/skein/scripts/dev/codex.sh && codex_open && codex_call thread/resume "{\"threadId\":\"$(cat <run>/thread)\",\"sandbox\":\"danger-full-access\",\"approvalPolicy\":\"never\"}" >/dev/null; codex_close
+```
+
+Append `## Loaded, <UTC time>: <what the ring said>` to `supervision.md`.
+In smith's parity run, the supervisors loaded it so ten times
+(development.md, section 10.5).
+
 **End every turn with at most one line of text.** Nobody reads the
 terminal: the record is the run's files. A summary written there is
 carried by every later request.
@@ -62,7 +85,10 @@ carried by every later request.
 1. **Read the block.** `blocked.md`'s entry names the implementer's report
    by its file (`Report: <run>/reports/…`): read that file, not `log.md`.
 2. **Decide** within development.md, section 10.4. A design gap is a
-   question for the designer (section 4).
+   question for the designer (section 4). A block on what a term of the
+   design means (what decides, what counts, whose failure a miss is) is
+   a design gap, unless your ruling quotes design text that answers the
+   block's question in its own words.
 3. **Check before you answer** (development.md, section 10.4):
    - grep `main` for every symbol, file, field and signature that your
      ruling or a new step names, and quote what you find in the draft's
@@ -126,6 +152,10 @@ a rule that would serve every plan, a proposal for the retrospective
    in section 3. Append `question.md` and `answer.md` to `supervision.md`
    under `## Question and answer, <UTC time>`, with a shell command, and
    delete them: a fresh designer reads earlier answers there.
+
+**A measured aim's baseline** that misses a criterion is a question too,
+at once: whether the steps left aim at it (development.md, sections 5.1
+and 10.4).
 
 ## 5. The ready check
 
@@ -206,15 +236,24 @@ The cron job's prompt brings you here, once an hour.
    ```
    Run the hourly check of the run in <run>, as skein's
    docs/foundation/development.md, section 14.1, steps 1 to 4, say,
-   with sections 14.2 and 14.3. Return only: the check's entry (at most
-   15 lines, section 14.1, step 5), and, if something needs action, the
-   steer's points in section 10.3's shape. Change no file yourself.
+   with sections 14.2 and 14.3; the claim's skein commit is <the
+   Process line's commit>. Return only: the check's entry (at most 15
+   lines, section 14.1, step 5), and the steer's points in section
+   10.3's shape: one for each finding not yet steered (section 14.4),
+   and one for each process change the run takes. Change no file
+   yourself.
    ```
 
    Its reading stays in its own context; only its entry reaches yours.
 2. **Append the entry** to `supervision.md`, under `## Check, <UTC time>`.
 3. **If it returned steer points,** land what they rest on, and send the
-   steer (section 3).
+   steer (section 3). A point you do not send gets one line in the
+   entry: why not.
+
+**A quiet hour.** While no session is running and the run waits only on
+queue tasks (a live suite), skip the sub-agent: run `plan pulse`
+yourself, read it unfiltered, and append an entry of at most five lines
+(development.md, section 14.1).
 
 ## 7. Handing over
 
@@ -258,3 +297,10 @@ When the watch prints `done:` (development.md, section 7.6):
 - **No reading of what a sub-agent can read for you:** `log.md`, whole
   reports, the code beyond a ruling's checks.
 - **No text that nobody reads:** the terminal gets at most one line a turn.
+- **No question that waits for its answer.** Never ask the user through a
+  tool that waits (AskUserQuestion): you would see no event until the
+  user answers. A question for the user goes into `decisions.md`, under
+  "For the user", with a push notification in one line with the choice
+  and the default, and you go on (development.md, section 10.4). In
+  smith's parity run, one such question held the supervisor for 4 h 54
+  min, the dead queue behind it.

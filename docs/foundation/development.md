@@ -1,6 +1,6 @@
 # Development process
 
-Provisional, 2026-10-09, revised 2026-10-15. How work goes from an idea
+Provisional, 2026-10-09, revised 2026-10-16. How work goes from an idea
 to `main` in skein and in every project built on it (smith, temper, jig):
 who designs, who plans, who builds, who supervises, where each of them
 writes, and how they talk to each other. Read it before starting a design,
@@ -71,7 +71,8 @@ the implementers.
   - The supervisor answers in `unblock.md`. Where the design must change,
     it asks the designer first, through `question.md`.
   - Only decisions with long-term consequences that are hard to change
-    reach the user.
+    reach the user, in a push notification, never through a tool that
+    waits for the answer (section 10.4).
 - **The supervisor checks the run once an hour** (section 14), through a
   sub-agent. It uses numbers from `plan pulse`, reads what changed, and
   samples one test and one diff. It steers through `steer.md`, and adjusts
@@ -82,8 +83,9 @@ the implementers.
   - The supervisor hands over to a fresh session past 300,000 tokens.
   - A designer past 150,000 tokens, or idle for an hour, is woken fresh,
     from a brief.
-  - An implementer's session idle for an hour goes on in a fresh thread,
-    from its checkpoint.
+  - An implementer hands over between increments past 150,000 tokens,
+    and a session idle for an hour goes on in a fresh thread, from its
+    checkpoint.
   - Implementers log their own reports, so that the coordinator does not
     type them again.
   - A ruling is written once, and `plan ruling` lands it.
@@ -102,7 +104,7 @@ the implementers.
 | Role | Runs as | Decides | Writes |
 |---|---|---|---|
 | Designer | Claude Code, Opus 5.5, xhigh | the design, within the user's delegation | `docs/design/**` in any repository, `STATUS.md` included; during a run, the session files that mention a point it changed, the plan's `later.md` rows for what it defers, and the run's `answer.md` |
-| Planner | the same, in the designer's session or a fresh one | how the design is cut into sessions and increments | `docs/development/plans/<plan>/` |
+| Planner | the same, in a fresh session of its own (section 2.2) | how the design is cut into sessions and increments | `docs/development/plans/<plan>/` |
 | Supervisor | Claude Code, Opus 5.5, xhigh; started with the run | the run's rulings within the design: the plan's scope, order and increments, steps not in the plan, process, infrastructure | the run's `unblock.md`, `steer.md`, `question.md` and `supervision.md`; the plan, during its run; a plan's state in `STATUS.md` |
 | Coordinator | Codex `-p coordinator` (gpt-6.1-sol, high) | what starts when, within the plan's dependencies and the machine | the run's directory |
 | Implementer | Codex sub-agent, same model and effort | implementation choices within the design and the plan | code and tests in its session's worktree |
@@ -123,6 +125,11 @@ the implementers.
   the session files that mention the point, with Markdown-only landings.
 - **Decides within the user's delegation.** What stays with the user is in
   section 10.4.
+- **Writes a design in a session of its own,** as the planner writes a
+  plan (section 2.2). A bounded task of the designer's, with one report,
+  such as deciding a retrospective's proposals, may run as a fresh
+  sub-agent of the session the user works in; its landing names both
+  sessions in `Designer-Session:` trailers (section 4.4).
 - **Waits for its sub-agents' notifications,** and never polls their
   files or sleeps: a sub-agent in the background notifies when it ends,
   and each request in between re-reads the whole context. Past about
@@ -140,6 +147,11 @@ the implementers.
   request (test-budgets was planned in one that reached 709K tokens). The
   plan's landing commit names the session in a `Planner-Session:`
   trailer, so that the metrics count it (section 15.2).
+- **Runs as a session of its own:** started by the user, or with `claude
+  --bg` in the workspace; never as a sub-agent of another session, which
+  can neither end its turn and be woken, nor hand over. In smith's parity
+  plan, a planner run as a sub-agent reached 572K tokens, with 136 of its
+  193 requests past 300K, and waited in polling loops.
 - **Does not change the design while planning.** A gap the plan exposes is
   closed by the designer, under the designer's rules, before the plan
   relies on it. The planner finds such gaps with the design trace
@@ -177,7 +189,7 @@ the implementers.
   worktree, as its card says (section 8, `implementer.md`). It lands its
   own increments and resolves its own rebase conflicts. It logs its own
   reports with `plan log`, and sends the coordinator a pointer.
-- **Hands over between increments** when its context grows past 200,000
+- **Hands over between increments** when its context grows past 150,000
   tokens: a fresh implementer goes on from its checkpoint (section 7.3).
 - **Escalates to the coordinator,** and only on real gaps (section 8.7).
 
@@ -521,6 +533,17 @@ can be counted. `plan metrics` does not read them yet: that waits for the
 kit, after smith's parity run. In client-composition, $28.13 of design and
 orchestration went uncounted.
 
+**A change during another run.** A run keeps the process of its claim:
+development.md and its cards as its machine's skein checkout held them
+when the run was claimed. A change to them that lands while a plan's row
+in a `STATUS.md` reads `active on` says in its commit body, for each such
+run, whether that run takes it ("<plan>'s run takes this") or keeps its
+process. The run's supervisor passes on, as a steer, each change its run
+takes, once its hourly check finds it (section 14.1, step 2); the others
+wait for the run's end. In smith's parity run, five adoptions landed on
+other machines and none reached it; the run found three of their rules
+again, hours later, by its own steers and rulings.
+
 ### 4.5 Writing for the executor
 
 The coordinator and the implementers follow the words they are given as
@@ -621,6 +644,15 @@ user only what they and the design leave open, and asks before writing.
 - **Proofs.** Each increment proves itself at the highest layer within
   reach (section 5.5). The plan also says what the repository asks for
   beyond its gate (smith: benchmark probes, `docs/design/benchmarks.md`).
+- **An aim that can fail by chance.** A plan whose aim is a measured
+  verdict, a statistical comparison such as smith's parity
+  (`benchmarks.md`, section 16), settles before the run how many closing
+  runs it holds, and what it does when the last misses: it ends with the
+  aim unmet, its "Done when" naming the criteria that failed, and a
+  `later.md` row for their answer. Its baseline's miss goes to the
+  designer at once (section 10.4). In smith's parity plan, a truly equal
+  smith passed the whole verdict with a chance of 0.69, and a miss at the
+  closing run was left "a question for the designer".
 - **The executor.** The coordinator and the implementers read the plan as
   written (section 4.5).
 - **Language.** Rust, for everything.
@@ -765,10 +797,10 @@ may veto.
 - **A session holds about four or five increments.** An implementer's
   context is near 105,000 tokens at its first change, from what it reads
   before it, and grows by about 50,000 with each increment (protocol's
-  medians); past 200,000 it hands over (section 7.3), so a thread lands
-  about two increments, and its successor reads less (implementer.md,
-  8.1). An area that needs more is two sessions, the second needing the
-  first.
+  medians); past 150,000 it hands over (section 7.3), so a session's
+  first thread lands about one increment, and each successor, which reads
+  less (implementer.md, 8.1), about two. An area that needs more is two
+  sessions, the second needing the first.
 - **Small, and landed on its own.** Each passes the gate within budget and
   leaves `main` coherent: nothing half-built visible to users, no dead
   code. Prefer several small increments to one large one: parallel
@@ -791,7 +823,9 @@ may veto.
 - **A new test world** costs at most about 1 second focused and 5 seconds
   fuzzy. Anything beyond that is a decision to raise, not one to take.
 - **Each increment proves itself** at the highest layer within reach
-  (section 5.5).
+  (section 5.5). A plan that reads a live suite's verdict places the
+  increment that runs the suite's pipeline whole, at one attempt per
+  task, before the first step that runs the suite in full (section 5.5).
 - **The meeting point comes first.** Where two parts meet, across a wire
   or inside one process (a client and its server, a protocol's two ends,
   a domain and its store, a service and its host):
@@ -896,7 +930,11 @@ may veto.
     generator's output, a fixture, a literal, a count): its name, its
     copies by content and the values derived from it, in its repository
     and every repository downstream. They go in the increment's Files: in
-    test-budgets, nine of the eleven plan defects were such users.
+    test-budgets, nine of the eleven plan defects were such users;
+  - each premise that a bound holds unchanged ("memory needs no
+    change"): the command that computes the bound's margin at the base,
+    with its output in the plan's `findings/`, and the floor the plan
+    names for the margin (section 5.6).
 
   A command that fails, a count that is not what the plan says, or a
   sketch that does not compile is a plan defect, fixed before the plan
@@ -1004,6 +1042,18 @@ balancing confidence against the run's pace and its tokens.
 - **Layers open as early as they can.** The plan schedules the first
   joint, process and live stories as soon as the code can run them. Once
   a layer exists, each later increment that it can prove proves there.
+- **A live pipeline runs whole, small, before it runs in full.** When a
+  plan's aim, or a step's proof, reads the verdict of a live suite
+  through a pipeline (the suite, its summary, its checks, its verdict),
+  the increment that completes the pipeline proves it live at one attempt
+  per task, through each of those parts to the verdict, before any step
+  runs the suite in full. A step before it that a stand-in proved, such
+  as a recorded summary, says so in its Proof line, and names that
+  increment. In smith's parity run, the pipeline first ran live at the
+  baseline, 12 hours in: four runs, 117 attempts against 58, and three
+  added steps, for faults that one attempt per task shows (a provider's
+  answer with no usage, a setup deadline a cold build missed, a summary
+  its check refused).
 
 ### 5.6 Each increment's tests
 
@@ -1045,6 +1095,14 @@ shows them precisely.
   on carbon-forge): a smaller share fires on noise. In client-composition,
   shares of 0.2 s to 0.8 s were checked against single gates that swung
   by 1.3 s, and the whole run added 0.69 s.
+- **A bound the plan holds unchanged has a test.** Where the plan rests
+  on a bound holding without change (a worst case within its declared
+  limit), it names a floor for the margin (section 5.4), and the first
+  increment that adds to what the bound covers adds a test that fails
+  when the margin falls below that floor. In smith's parity plan,
+  "Memory needs no change" was checked by nothing: the worst case passed
+  the shipped limit eight times, six rulings followed, and 28,783 bytes
+  of 2 GiB were left.
 - **Six tests or so per increment are enough to show.** More adds little.
   Production bodies stay out of the plan (section 5.2): they go stale at
   once.
@@ -1296,9 +1354,13 @@ and the question in one line, or "none". After each:
    the command that runs them. In protocol, 34 commands logged "on-main"
    and set the step `landed` before their checks' result was seen.
 4. **Hand over a large context.** After a landing, run `plan contexts`. A
-   session it marks past the limit hands over, between increments, never
-   in one; so does a session whose peak it prints past the limit, since a
-   compaction shrinks the last request but not the peak:
+   session whose context, or whose peak, it prints past 150,000 tokens,
+   flagged or not, hands over, between increments, never in one: a
+   compaction shrinks the last request but not the peak, and `plan
+   contexts` flags only past `PLAN_CONTEXT_LIMIT`. In smith's parity run,
+   handovers past 200K came at up to 329K, and 06.2 started at 164K and
+   cost 24.2M against 06.1's 8.6M; a steer to hand over past 150K brought
+   them to 156K to 186K:
    - send it, with `send_message`: "Hand over: write your checkpoint as
      section 8.6 says, then end your turn with your report.";
    - when it has reported, append `Handover, <UTC time>: <repository>
@@ -1709,11 +1771,17 @@ lines each.>
   meanwhile, the supervisor's interim ruling lets it go on only with work
   that does not rest on the answer, and the question still goes to the
   designer at once: in test-budgets, a gap ruled a fixture defect left
-  recovery's behaviour unchecked against the design. The supervisor writes the
-  question to the run's `question.md`, in `blocked.md`'s shape, with its
-  own reading of the design, and wakes the designer: `plan wake designer
-  "question.md has a question: answer it as development.md, section 10.4,
-  says."` This resumes the designer's own session in the background, with
+  recovery's behaviour unchecked against the design. A block on what a
+  term of the design means (what decides, what counts, whose failure a
+  miss is) is a design gap; it is a plan defect only when the ruling
+  quotes design text that answers the block's question in its own words,
+  not text that only bears on it. In smith's parity run, ruling 112 read
+  whose failure a calibration counts as a plan defect; the designer was
+  asked 87 minutes later, and the area took eight rulings and three added
+  steps. The supervisor writes the question to the run's `question.md`,
+  in `blocked.md`'s shape, with its own reading of the design, and wakes
+  the designer: `plan wake designer "question.md has a question: answer
+  it as development.md, section 10.4, says."` This resumes the designer's own session in the background, with
   its context; a designer session the user has open gets a copy instead.
   - **A fresh designer** starts instead, from a brief (`plan wake`'s
     prompt: the role, `question.md`, and the earlier questions and answers
@@ -1746,6 +1814,15 @@ lines each.>
   files to `supervision.md` under "Question and answer, <time>", and
   deletes them. In skein-ui, ruling 131's Decision, a whole answer,
   became a 19.6K-character prompt.
+- **A measured aim's first miss goes to the designer at once.** When the
+  run that measures a plan's measured aim first (its baseline) misses a
+  criterion (section 5.1), the supervisor asks the designer, in
+  `question.md`, whether the steps left aim at it, and the run goes on
+  meanwhile. The designer answers with a change that names the
+  criterion's cause, or with the plan ending short of it. In smith's
+  parity run, the baseline missed RT at 03:48, a ruling called it "the
+  baseline's finding", no later step aimed at it, and the plan ended
+  short on it.
 - **What a ready check finds goes on before its session starts.** A suite
   the check sees fail, or a rule the design must settle, goes to the
   designer as a question, or becomes a supplement step
@@ -1765,8 +1842,17 @@ lines each.>
   - any language other than Rust;
   - what the user reserved.
 
-  A question for the user goes into `decisions.md`, under "For the user".
-  The run blocks on it only if no work can continue without it.
+  A question for the user goes into `decisions.md`, under "For the user",
+  and reaches the user at once in a push notification, in one line with
+  the choice and the default. The run blocks on it only if no work can
+  continue without it.
+- **No role of a run asks the user through a tool that waits for the
+  answer** (in Claude Code, AskUserQuestion): its session waits inside
+  the tool, and sees no event until the user answers. It writes the
+  question as above, pushes it, and goes on with its work. In smith's
+  parity run, a question asked so held the supervisor from 12:37 to
+  17:31, while the queue's daemon lay dead behind it: 5.0 hours of the
+  line, with nothing waiting on the answer.
 - **A ruling that drops part of the gate reaches the user at once,** in a
   push notification, with the command that would restore it (`sudo
   apt-get install chromium`). Landings without a suite are the exception,
@@ -1798,10 +1884,15 @@ lines each.>
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
   supervisor rings the doorbell. If the ring finds no turn in progress,
   or the thread not loaded (the provider can end a turn), the supervisor
-  runs `plan resume` itself, once, and records it in `supervision.md`. If
-  the heartbeat is still old ten minutes later, the supervisor alerts the
-  user (in Claude Code, a push notification). The alert gives the restart
-  command, `plan resume`.
+  runs `plan resume` itself, once, and records it in `supervision.md`.
+  Codex's daemon unloads an idle coordinator's thread, and until `plan
+  ring` and `plan resume` load it themselves (the kit's, after the parity
+  run's retrospective), a ring or a resume that finds it not loaded
+  ("thread not found") is answered by loading it by hand, then ringing
+  again (supervisor.md, section 2): in smith's parity run, the
+  supervisors loaded it so ten times. If the heartbeat is still old ten
+  minutes later, the supervisor alerts the user (in Claude Code, a push
+  notification). The alert gives the restart command, `plan resume`.
 - **The designer has no watch.** After `plan join designer` it ends its
   turn; `plan wake` brings it back with each question (section 6, step 5).
 - **When the supervisor's context passes 300,000 tokens,** it hands over
@@ -1903,11 +1994,21 @@ be told from a loaded machine.
 
 ### 11.4 Resources
 
-- **Each session's `target/` takes up to 15 GB:** 12 to 15 GB in
-  temper's protocol run.
+- **Each session's `target/` takes up to about 21 GB:** 12 to 15 GB in
+  temper's protocol run; 8 to 9 GB fresh, and 17 to 21 GB after a few
+  increments, in smith's parity run.
+- **A session's `target/` goes after each of its landings.** Its
+  implementer removes it once the step has landed, before its report
+  (implementer.md, 8.1), and the coordinator removes a session's when it
+  yields, hands over or ends. kache refills it from its store (section
+  11.3). In smith's parity run,
+  eight sessions' `target/` filled 29 GB in about five minutes, between
+  two checks, and then the disk; after this rule (ruling 108), no disk
+  event followed.
 - **The coordinator checks** available memory (`free -g`) and disk (`df -h
   ~/src`) before each start, and at every wake-up (section 7.4).
 - **Below 6 GB of memory or 40 GB of disk,** it holds new starts.
+  **Below 60 GB of disk,** at most six sessions run at once.
 - **Below 3 GB of memory,** it narrows the build lane to one task (`pueue
   parallel 1 --group build`), and widens it again above 6 GB. It says so in
   `log.md` each time.
@@ -1915,11 +2016,14 @@ be told from a loaded machine.
 - **To free disk,** it may remove the `target/` of a session that is not
   running. Before it holds starts or blocks on disk, it frees what it
   can, and logs each: first the `target/` of each session that has
-  finished; then, when kache's store is past its cap (`kache stats |
-  head -1`), `kache gc`, once. It holds or blocks only if disk stays
-  below the bound. kache evicts late, past its cap by 11 to 17 GiB
-  between its passes. In protocol, disk blocked five times before this
-  rule (rulings 118 and 128), and never after.
+  finished; then, at every disk check below 80 GB, `kache gc`, once more
+  if it ends with "No such file or directory", with its `Store:` line
+  logged beside the check. It holds or blocks only if disk stays below
+  the bound. kache evicts late, past its cap by 11 to 17 GiB between its
+  passes, and on smith's parity machine not at all: its store reached
+  135 GiB against a 74.5 GiB cap, twice. In protocol, disk blocked five
+  times before freeing first (rulings 118 and 128), and never after; in
+  parity, no disk event followed `kache gc` below 80 GB (ruling 111).
 
 ### 11.5 Budgets
 
@@ -1985,9 +2089,13 @@ that machine.
 - **A coordinator after a reboot.** `plan resume` loads its thread again
   with `thread/resume` only when reading it fails. After protocol's
   reboot the thread read as `notLoaded`, no turn could start, and the
-  supervisor loaded it by hand (ruling 115). Loading an unloaded thread,
-  naming the cause, and resuming by itself at boot wait for the kit after
-  smith's parity run (client-composition's proposal 4, protocol's 8).
+  supervisor loaded it by hand (ruling 115). In smith's parity run, the
+  daemon unloaded the thread at each idle, `plan ring` and `plan resume`
+  read "thread not found" as a thread with no turn, and the supervisors
+  loaded it by hand ten times. Loading an unloaded thread, naming the
+  cause, resuming by itself at boot, and ringing an idle coordinator when
+  the queue tasks it waits on end wait for the kit (client-composition's
+  proposal 4, protocol's 8, parity's 5).
 - **Credentials under load.** Does a run's work that borrows the Codex
   login (benchmarks, probes) put the coordinator's own session at risk?
   A `CODEX_HOME` of their own for such work is a candidate answer.
@@ -2011,6 +2119,12 @@ the supervisor's own context cost about a fifth of it, and each added 7K
 to 23K tokens that every later request carried. The supervisor appends
 the entry, and sends the steer.
 
+**A quiet hour needs no sub-agent.** While no session is running and the
+run waits only on queue tasks (a live suite), the supervisor runs `plan
+pulse` itself, reads it unfiltered, and appends an entry of at most five
+lines: what runs, its progress, the machine. In smith's parity run, the
+eight checks while one suite ran cost about $21, and led to nothing.
+
 1. **Run `plan pulse`** (section 14.2), and read its output unfiltered:
    no `grep`, `head` or `tail`. It prints the numbers since the last
    check, and moves its mark. Once the plan has landed in a repository others build on, also
@@ -2021,7 +2135,12 @@ the entry, and sends the steer.
    (section 5.7).
 2. **Read** the log's headings since the last check, the first five
    lines of each report, and the coordinator's acknowledgement of the
-   last steer.
+   last steer. Then list the process changes since the run's claim:
+   `git -C ~/src/rust/skein fetch -q origin && git -C ~/src/rust/skein
+   log --format='%h %s%n%b' <the claim's skein commit, from
+   supervision.md's Process line>..origin/main -- docs/foundation`. Each
+   commit whose body says the run takes it, and that no steer has passed
+   on, is a steer point (section 4.4).
 3. **Sample two files, about 300 lines in all:**
    - the largest test added since the last check, read against the test
      checklist (section 14.3);
@@ -2045,7 +2164,9 @@ the entry, and sends the steer.
    headline numbers, one line per judgement, the rulings since the last
    check, and the steers to send. When something needs action, the steer's
    points, in section 10.3's shape: the supervisor writes `steer.md` from
-   them, then rings the doorbell.
+   them, then rings the doorbell. Each finding of the checklist (section
+   14.3), or of the pulse's code signals, that no steer has named yet
+   gets a point of its own (section 14.4).
 
 ### 14.2 What `plan pulse` prints
 
@@ -2116,6 +2237,12 @@ easily misread.
   evidence.
 - **The second time,** the point becomes a standing rule in the plan's
   README, or a line of the plan's "Don't" list, and a steer says so.
+- **Every finding gets its steer, or a reason.** The check proposes a
+  steer point for each finding not yet steered, and the supervisor sends
+  it, or writes in the entry, in one line, why not. In smith's parity
+  run, one behaviour per test was steered at its second and third
+  sightings, bare numbers at their sixth, and helpers defined again (a
+  `run` in 19 files) never.
 - **A rule that would serve every plan** becomes a proposal for the
   retrospective (section 15).
 - **The run heading away from "Done when"** calls for a steer that stops
@@ -2152,7 +2279,10 @@ question and its own budget, or waits for the retrospective.
     `claude.tsv`) and of the planner (the plan's `Planner-Session:`
     trailer);
   - the earlier plans' metrics (`plan metrics --history`) and their
-    retrospectives.
+    retrospectives;
+  - the skein commit its run's process came from (`supervision.md`'s
+    `## Process` line), and the changes to development.md and its cards
+    that landed during the run.
 - **It runs `plan metrics --out <its branch's plan directory>/metrics.tsv
   <plan-dir>`** (section 15.2).
 - **It writes `retrospective.md`** beside the plan, and lands it with
@@ -2167,7 +2297,9 @@ question and its own budget, or waits for the retrospective.
   6. **Decisions taken during the run,** and whether each reached the
      design.
   7. **The proposals adopted after the last retrospective:** each with the
-     metric it was to move, and whether it moved.
+     metric it was to move, and whether it moved; and the skein commit
+     the run kept, with each process change that landed during the run
+     and whether the run took it.
   8. **Proposals:** each a one-sentence rule, its evidence, the document
      it changes (this one, a repository's `workflow.md` or `AGENTS.md`,
      the plan's shape), and the metric it should move, and which way.
