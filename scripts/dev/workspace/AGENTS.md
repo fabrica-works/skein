@@ -23,6 +23,7 @@ the implementers' input.
 | `skein` | the io and protocol kit, and the foundation documents | — | `scripts/check.sh` |
 | `smith` | the agent kit | skein | `docs/development/workflow.md`, section 1 |
 | `jig` | the kit for agentic applications | skein, smith | `scripts/check.sh` |
+| `hearth` | the factory's build daemon | skein | `scripts/check.sh` |
 | `temper` | the application | skein, smith, jig | `docs/development/workflow.md`, section 1 |
 
 Dependencies point upstream only: skein names neither smith nor temper,
@@ -56,7 +57,7 @@ and how it ends with a retrospective and its metrics. Its tools are in
 `heavy`, `land` and `plan` are skein's `scripts/dev/` tools, linked into
 `~/.local/bin`.
 
-**A new machine.** Clone skein, smith, jig and temper from
+**A new machine.** Clone skein, smith, jig, hearth and temper from
 `git@github.com:forgetic/` into `~/src/rust/`, then run
 `skein/scripts/dev/plan check --fix`. It links the tools, this file, its
 `CLAUDE.md` and the coordinator's Codex profile, sets up the queue, and

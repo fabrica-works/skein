@@ -1,10 +1,10 @@
 # Development process
 
 Provisional, 2026-10-09, revised 2026-10-16. How work goes from an idea
-to `main` in skein and in every project built on it (smith, temper, jig):
-who designs, who plans, who builds, who supervises, where each of them
-writes, and how they talk to each other. Read it before starting a design,
-a plan or a run.
+to `main` in skein and in every project built on it (smith, jig, hearth,
+temper): who designs, who plans, who builds, who supervises, where each
+of them writes, and how they talk to each other. Read it before starting
+a design, a plan or a run.
 
 **How to read this.** Section 1 is the whole process in one page. Section
 2 names the roles and section 3 says where everything lives. Sections 4 to
@@ -247,7 +247,9 @@ the implementers.
 
 - **Each project is a repository under `~/src/rust/`,** on GitHub under
   `forgetic`: skein, then smith, which builds on skein, then jig, which
-  builds on both, then temper, which builds on all three.
+  builds on both, then hearth, which builds on skein alone, then temper,
+  which builds on skein, smith and jig. That is the workspace's order:
+  each repository after those it builds on.
 - **The workspace is the directory that holds the checkouts:** `~/src/rust/`
   by default. The tools find it as the directory holding the skein
   checkout they come from, so a machine may keep its checkouts elsewhere;
@@ -401,7 +403,7 @@ profile. `plan check --fix` links the tools into `~/.local/bin`, so they
 are on every agent's `PATH`, and the files into place. The tools read
 `DEV_ROOT` (default `~/src/rust`), `DEV_TMP` (`$DEV_ROOT/tmp`) and
 `DEV_REPOS`: the repositories `plan check` checks, by default the plan's
-and those upstream of it, or all four without a plan.
+and those upstream of it, or all of them without a plan.
 
 | Tool | Does |
 |---|---|
@@ -1117,9 +1119,9 @@ commits behind smith.
 
 - **A plan repins what it may have broken.** A plan that lands in a
   repository others build on ends with one repin step for each repository
-  after its own in the workspace's order (section 3.1: skein, smith, jig,
-  temper) that pins one of them. The plan writes no session file for
-  them: this section is theirs.
+  after its own in the workspace's order (section 3.1: skein, smith,
+  jig, hearth, temper) that pins one of them. The plan writes no session
+  file for them: this section is theirs.
 - **The step,** `<repository>-repin`, in a worktree of that repository at
   `origin/main`:
   1. moves each pin on a repository the plan changed, or that a repin

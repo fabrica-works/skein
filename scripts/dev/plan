@@ -47,8 +47,10 @@ workspace() {
 }
 root=${DEV_ROOT:-$(workspace)}
 tmp=${DEV_TMP:-$root/tmp}
-# The workspace's repositories, upstream first (development.md, section 3.1).
-all_repos="skein smith jig temper"
+# The workspace's repositories, each after those it builds on (development.md,
+# section 3.1), and what each builds on.
+all_repos="skein smith jig hearth temper"
+declare -A builds_on=([skein]="" [smith]="skein" [jig]="skein smith" [hearth]="skein" [temper]="skein smith jig")
 repos=${DEV_REPOS:-$all_repos}
 active=$tmp/active-plan
 columns='step	repo	session	state	slot	thread	branch	commit	updated	title	note'
@@ -107,14 +109,14 @@ locate() {
     top_dir=$top
 }
 
-# A repository and those upstream of it: what a plan in it builds on.
+# A repository and those upstream of it: what a plan in it builds on. One the
+# workspace does not know builds on all of them.
 upstream() {
-    local repo out=""
-    for repo in $all_repos; do
-        out+="$repo "
-        [[ $repo == "$1" ]] && { echo "${out% }"; return; }
-    done
-    echo "$all_repos"
+    if [[ -v builds_on[$1] ]]; then
+        echo "${builds_on[$1]:+${builds_on[$1]} }$1"
+    else
+        echo "$all_repos"
+    fi
 }
 
 # The last run on this machine: the active one, or the latest released.
