@@ -210,6 +210,17 @@ and keep no copy of their own.
   and `skein-ui-bundle`'s digests use lib's and keep no copy;
   `skein-ui-bundle`, a build tool in ordinary Rust (ui.md, section 2),
   depends on lib for it.
+- **HMAC.** `sha256::Hmac::new(key: &[u8])`, then `update(&[u8])` with
+  each piece as it arrives, then `finish(self) -> [u8; 32]`, is
+  HMAC-SHA256 (RFC 2104), for a service that checks a signed message as
+  it streams. A key longer than a block is hashed first, as the standard
+  says. Its state is two SHA-256 states and the padded key's block, with
+  no heap; its `Debug` shows neither.
+- **Comparing in constant time.** `sha256::equal(a: &[u8], b: &[u8]) ->
+  bool` takes a time that depends on the lengths alone, never on where
+  the bytes differ, for comparing a signature, a state or a token with
+  the one expected. `skein-oauth`'s comparison of a returned state uses
+  it and keeps no copy.
 
 ## 7. Streams
 
@@ -451,7 +462,9 @@ SHA-256 is held to FIPS 180-4's examples (the empty message, `abc`, the
 448-bit and 896-bit messages, a million `a`s) and to messages of every
 length from 0 to 200 bytes against the one-shot form, each fed whole and
 split at every pair of points; the fuzzy suite adds 20,000 random
-messages cut at random. State digests are held to their contents: two
+messages cut at random. HMAC is held to RFC 4231's test cases, each fed
+whole and split at every point; `equal` to equal and unequal inputs of
+the same and of different lengths. State digests are held to their contents: two
 containers that reach the same contents by different histories (a map
 filled in two orders, a queue that wrapped, a slab whose slots were
 reused in the same order) digest alike, a change to one entry changes the
