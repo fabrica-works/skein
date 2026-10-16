@@ -19,6 +19,7 @@ pub enum Step {
     Compose { find: skein_fake_person::Find, words: Box<[u8]> },
     Type { find: skein_fake_person::Find, words: Box<[u8]> },
     Reopen,
+    Visit { origin: u32, path: Box<[u8]> },
     Back,
     Forward,
 }
@@ -172,6 +173,10 @@ impl Play for Script {
             Step::Focused(find) => self.focused = Some(find),
             Step::Compose { find, words } => self.text = Some((find, words, true)),
             Step::Type { find, words } => self.text = Some((find, words, false)),
+            Step::Visit { origin, path } => {
+                face.visit(origin, &path);
+                self.at += 1;
+            }
             Step::Reopen => {
                 face.reopen();
                 self.at += 1;

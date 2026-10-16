@@ -16,6 +16,7 @@ fn setup() -> Setup<'static> {
         },
         restart: vec!["{address}".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         chromium: chromium(),
+        origins: vec![],
         expected: vec![],
     }
 }

@@ -423,6 +423,7 @@ name = "skein-browser-world"
 version = "0.0.0"
 dependencies = [
  "skein-browser",
+ "skein-fake-person-browser",
  "skein-heap",
  "skein-http",
  "skein-io",
@@ -643,6 +644,7 @@ version = "0.0.0"
 dependencies = [
  "skein-browser",
  "skein-fake-person",
+ "skein-http",
  "skein-io",
  "skein-lib",
  "skein-scratch",

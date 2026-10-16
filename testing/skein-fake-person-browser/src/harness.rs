@@ -43,6 +43,7 @@ pub struct Opened {
     pub address: String,
 }
 
+pub use crate::origins::{Origin, Page};
 pub struct Setup<'a> {
     pub server: PathBuf,
     pub args: Vec<OsString>,
@@ -50,6 +51,7 @@ pub struct Setup<'a> {
     pub restart: Vec<OsString>,
     pub chromium: PathBuf,
     pub expected: Vec<Box<[u8]>>,
+    pub origins: Vec<Origin>,
 }
 pub trait Play {
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>>;
@@ -83,6 +85,7 @@ pub struct Harness {
     restart: Vec<OsString>,
     chromium: PathBuf,
     expected: Vec<Box<[u8]>>,
+    origins: Vec<Origin>,
 }
 impl Harness {
     #[must_use]
@@ -96,6 +99,7 @@ impl Harness {
             restart: setup.restart,
             chromium: setup.chromium,
             expected: setup.expected,
+            origins: setup.origins,
         }
     }
     pub fn run(&mut self, people: &mut [&mut dyn Play]) -> Outcome {
@@ -103,48 +107,9 @@ impl Harness {
         Runtime::new(self, profile.path(), people.len()).run(self, people)
     }
 }
-/// Each complete matching line, as a URL and its authority.
-#[must_use]
-pub fn printed(output: &[u8], printed: &Printed<'_>) -> Vec<Opened> {
-    output
-        .split_inclusive(|b| *b == b'\n')
-        .filter(|line| line.ends_with(b"\n"))
-        .filter_map(|line| {
-            let rest = line.strip_prefix(printed.prefix)?;
-            let line = std::str::from_utf8(line).ok()?.trim();
-            let address = std::str::from_utf8(rest).ok()?.trim();
-            let (url, address) = match printed.names {
-                Names::Address => (format!("http://{address}/"), address.to_owned()),
-                Names::Url => (line.to_owned(), line.split_once("://")?.1.split(['/', '?', '#']).next()?.to_owned()),
-            };
-            Some(Opened { url, address })
-        })
-        .collect()
-}
-pub(crate) fn restart(args: &[OsString], address: &str) -> Vec<Box<[u8]>> {
-    args.iter().map(|arg| replace_address(arg.as_bytes(), address)).collect()
-}
-fn replace_address(bytes: &[u8], address: &str) -> Box<[u8]> {
-    let mut out = Vec::new();
-    let mut rest = bytes;
-    while let Some(at) = rest.windows(9).position(|part| part == b"{address}") {
-        out.extend_from_slice(&rest[..at]);
-        out.extend_from_slice(address.as_bytes());
-        rest = &rest[at + 9..];
-    }
-    out.extend_from_slice(rest);
-    out.into()
-}
-pub(crate) fn server_pipes(on: Output) -> Box<[Pipe]> {
-    let mut pipes = vec![Pipe { child: 2, way: Way::Out, parent: None }];
-    if on == Output::Stdout {
-        pipes.push(Pipe { child: 1, way: Way::Out, parent: None });
-    }
-    pipes.into()
-}
-pub(crate) fn opening(lines: &[Opened], names: Names, index: usize) -> Option<&Opened> {
-    lines.get(if names == Names::Url { index } else { 0 })
-}
+mod lines;
+pub use lines::printed;
+pub(crate) use lines::{opening, replace_address, restart, server_pipes};
 #[derive(PartialEq, Eq)]
 enum ServerState {
     Running,
@@ -153,6 +118,7 @@ enum ServerState {
     Starting,
 }
 struct Runtime {
+    origins: Vec<crate::origins::Pages>,
     browser: Browser,
     io: Io,
     kernel: Kernel,
@@ -189,6 +155,21 @@ struct Runtime {
     closing: bool,
 }
 impl Runtime {
+    fn origins(setup: &Harness) -> Vec<crate::origins::Pages> {
+        setup
+            .origins
+            .iter()
+            .enumerate()
+            .map(|(i, origin)| {
+                crate::origins::Pages::numbered(
+                    origin.pages.clone(),
+                    Time::ZERO,
+                    Wall::EPOCH,
+                    u64::try_from(i).expect("origin fits"),
+                )
+            })
+            .collect()
+    }
     fn new(setup: &Harness, profile: &std::path::Path, players: usize) -> Self {
         let bl = browser::Limits::default();
         let il = io::Limits {
@@ -198,8 +179,8 @@ impl Runtime {
             receive: 65_536,
             output: bl.command + 1,
             sends: 16,
-            accepts: 1,
-            backlog: 1,
+            accepts: 4,
+            backlog: 4,
             close_timeout: Duration::from_secs(2),
             names: 0,
             retry: Duration::from_millis(10),
@@ -246,6 +227,7 @@ impl Runtime {
             pipes: server_pipes(setup.output),
         };
         Self {
+            origins: Self::origins(setup),
             browser: Browser::new(BROWSER, &bl),
             io: Io::new(&il),
             kernel,
@@ -299,7 +281,55 @@ impl Runtime {
             self.outcome = Some(Outcome::Failed { person: u32::try_from(person).expect("person fits"), step, report });
         }
     }
+    fn origin_event(&mut self, event: io::Event) -> Option<io::Event> {
+        for pages in &mut self.origins {
+            let owner = match &event {
+                io::Event::Listening { owner, .. }
+                | io::Event::Accepted { owner, .. }
+                | io::Event::Stream { owner, .. }
+                | io::Event::Closed { owner }
+                | io::Event::Failed { owner, .. } => Some(*owner),
+                io::Event::Spawned { .. }
+                | io::Event::Exited { .. }
+                | io::Event::Connecting { .. }
+                | io::Event::Connected { .. }
+                | io::Event::Output { .. }
+                | io::Event::Usage { .. }
+                | io::Event::Resized
+                | io::Event::Window { .. }
+                | io::Event::Shutdown { .. } => None,
+            };
+            if owner.is_some_and(|owner| pages.owns(owner)) {
+                pages.event(event);
+                return None;
+            }
+        }
+        Some(event)
+    }
+    fn read_output(&mut self, owner: Token, bytes: &[u8], setup: &Harness) {
+        let selected = usize::from(setup.output == Output::Stdout);
+        if self.server_pipes.get(selected) == Some(&owner) {
+            self.output.extend_from_slice(bytes);
+            self.lines.extend(printed(
+                &self.output,
+                &Printed { prefix: &setup.prefix, on: setup.output, names: setup.names },
+            ));
+            if let Some(end) = self.output.iter().rposition(|b| *b == b'\n') {
+                self.output.drain(..=end);
+            }
+            if let Some(line) = self.lines.last() {
+                for pages in &mut self.origins {
+                    pages.address(&line.address);
+                }
+                self.address = Some(line.address.clone());
+                self.server_state = ServerState::Running;
+            }
+        }
+    }
     fn io_event(&mut self, event: io::Event, setup: &Harness) {
+        let Some(event) = self.origin_event(event) else {
+            return;
+        };
         match event {
             io::Event::Spawned { owner, child, pipes } => {
                 self.children.push(child);
@@ -322,21 +352,7 @@ impl Runtime {
                         if self.server_pipes.first() == Some(&owner) {
                             tail(&mut self.server_stderr, &bytes);
                         }
-                        let selected = usize::from(setup.output == Output::Stdout);
-                        if self.server_pipes.get(selected) == Some(&owner) {
-                            self.output.extend_from_slice(&bytes);
-                            self.lines.extend(printed(
-                                &self.output,
-                                &Printed { prefix: &setup.prefix, on: setup.output, names: setup.names },
-                            ));
-                            if let Some(end) = self.output.iter().rposition(|b| *b == b'\n') {
-                                self.output.drain(..=end);
-                            }
-                            if let Some(line) = self.lines.last() {
-                                self.address = Some(line.address.clone());
-                                self.server_state = ServerState::Running;
-                            }
-                        }
+                        self.read_output(owner, &bytes, setup);
                         self.read_server(owner);
                     }
                     return;
@@ -468,6 +484,9 @@ impl Runtime {
     }
     fn close(&mut self) {
         self.closing = true;
+        for pages in &mut self.origins {
+            pages.stop();
+        }
         self.submits.push(Submit { op: SERVER_ROOT, kind: Op::Close { fd: self.roots[0] } });
         self.ask(Request::Close { entity: BROWSER });
         for child in &self.children {
@@ -615,6 +634,34 @@ impl Runtime {
         }
         false
     }
+    fn faces(&self, setup: &Harness, count: usize) -> Vec<BrowserFace<'static>> {
+        (0..count)
+            .map(|index| {
+                let mut face = BrowserFace::new(page(index), self.address.clone().expect("listening"));
+                face.origins = setup
+                    .origins
+                    .iter()
+                    .zip(&self.origins)
+                    .map(|(origin, pages)| {
+                        format!(
+                            "http://{}:{}",
+                            String::from_utf8_lossy(&origin.host),
+                            pages.addr.expect("listening origin").port()
+                        )
+                    })
+                    .collect();
+                face
+            })
+            .collect()
+    }
+    fn origin_requests(&mut self, now: Time, wall: Wall) {
+        for pages in &mut self.origins {
+            pages.update_time(now, wall);
+            while let Some(request) = pages.take() {
+                self.requests.push_back(request);
+            }
+        }
+    }
     fn run(mut self, setup: &Harness, people: &mut [&mut dyn Play]) -> Outcome {
         let deadline = self.clock.now().now.saturating_add(Duration::from_secs(20));
         let mut faces = Vec::new();
@@ -637,11 +684,9 @@ impl Runtime {
             if self.tick(setup, &mut faces, time.now) {
                 opening_page = false;
             }
-            if !began && self.ready && self.address.is_some() {
+            if !began && self.ready && self.address.is_some() && self.origins.iter().all(|pages| pages.addr.is_some()) {
                 began = true;
-                for index in 0..people.len() {
-                    faces.push(BrowserFace::new(page(index), self.address.clone().expect("listening")));
-                }
+                faces = self.faces(setup, people.len());
                 if people.is_empty() {
                     self.outcome = Some(Outcome::Done);
                 } else {
@@ -674,12 +719,18 @@ impl Runtime {
                 };
                 self.requests.push_back(io::Request::Stream { stream: pipe, down });
             }
+            self.origin_requests(time.now, time.wall);
             while self.io.takes() {
                 let Some(request) = self.requests.pop_front() else { break };
                 io::down(&mut self.io, &self.ienv, request, &mut self.submits);
             }
             self.io.reclaim();
-            if self.closing && self.closed == self.spawned && self.io.is_empty() && self.kernel.in_flight() == 0 {
+            if self.closing
+                && self.closed == self.spawned
+                && self.origins.iter().all(crate::origins::Pages::is_closed)
+                && self.io.is_empty()
+                && self.kernel.in_flight() == 0
+            {
                 break;
             }
             let pending = self.io.is_ready()

@@ -4,8 +4,9 @@
 mod dialogs;
 #[path = "real/scope.rs"]
 mod scope;
-#[path = "../../src/serve.rs"]
-mod serve;
+use skein_fake_person_browser::origins as serve;
+#[path = "../../src/pages.rs"]
+mod pages;
 
 use std::collections::VecDeque;
 use std::os::unix::ffi::OsStrExt;
@@ -218,7 +219,7 @@ impl Rig {
         io_requests.push_back(io::Request::Spawn { owner: PROCESS, spawn });
         Rig {
             browser: Browser::new(BROWSER, &browser_limits),
-            pages: serve::Pages::new(Time::ZERO, Wall::EPOCH),
+            pages: serve::Pages::new(pages::pages(), Time::ZERO, Wall::EPOCH),
             io: Io::new(&limits),
             kernel,
             clock: Clock::new(),
@@ -326,7 +327,12 @@ impl Rig {
     }
 
     pub fn fixed_page(&mut self, body: Vec<u8>) {
-        self.pages.fixed = Some(body);
+        self.pages.pages.push(serve::Page {
+            path: b"/facts".as_slice().into(),
+            kind: b"text/html; charset=utf-8".as_slice().into(),
+            body: body.into(),
+            headers: vec![],
+        });
     }
 
     fn browser_steps(&mut self, now: Time) {

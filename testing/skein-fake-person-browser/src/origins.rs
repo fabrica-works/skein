@@ -9,35 +9,20 @@ use skein_io::{self as io, Request};
 use skein_lib::stream::{self, Read};
 use skein_lib::{Env, Queue, Token};
 
-pub const OWNER: Token = Token::new(100);
-
-const BUTTON: &[u8] = br#"<!doctype html><html><body><button onclick="document.querySelector('h1').textContent='Done'">Press</button><h1>Before</h1></body></html>"#;
-const FORM: &[u8] = br#"<!doctype html><html><body><form onsubmit="event.preventDefault();document.querySelector('h1').textContent='Hello '+document.querySelector('input').value"><label>Name <input aria-label="Name"></label><button type="submit">Submit</button></form><h1>Before</h1></body></html>"#;
-const COVERED: &[u8] = br#"<!doctype html><html><body><button onclick="document.querySelector('h1').textContent='Wrong'">Covered</button><h1>Before</h1><div style="position:fixed;inset:0;background:#abc;opacity:.9;z-index:10"></div></body></html>"#;
-const SCROLL: &[u8] = br#"<!doctype html><html><body><div style="height:2200px">Long page</div><button onclick="document.querySelector('h1').textContent='Scrolled'">Far away</button><h1>Before</h1></body></html>"#;
-const THROW: &[u8] = br#"<!doctype html><html><body><button onclick="throw Error('test exception')">Throw</button><h1>Before</h1></body></html>"#;
-const CSP: &[u8] = br#"<!doctype html><html><body><h1>CSP page</h1><script>document.querySelector('h1').textContent='Wrong'</script></body></html>"#;
-
-const LEAVE: &[u8] = br#"<!doctype html><html><body><button onclick="window.onbeforeunload=event=>{event.preventDefault();event.returnValue='';};document.querySelector('h1').textContent='Held'">Hold</button><button onclick="document.querySelector('h1').textContent='Answer: '+confirm('Delete it?')">Ask</button><h1>Before</h1></body></html>"#;
-const WORDS: &[u8] = br#"<!doctype html><html><body><p>Checks: 3 failing, 2 passed</p></body></html>"#;
-const FIGURE: &[u8] = br#"<!doctype html><html><body><figure aria-label="Error rate"><svg aria-hidden="true" width="200" height="100"><rect id="bar" x="20" y="15" width="30" height="25" fill="blue" /></svg></figure><h1>Before</h1><script src="/press.js"></script></body></html>"#;
-const PRESS: &[u8] = br#"document.querySelector('#bar').addEventListener('click', () => { document.querySelector('h1').textContent = 'Pressed shape'; });"#;
-
-fn page(target: &[u8]) -> (u16, &'static [u8], bool) {
-    match target {
-        b"/leave" => (200, LEAVE, false),
-        b"/button" => (200, BUTTON, false),
-        b"/form" => (200, FORM, false),
-        b"/covered" => (200, COVERED, false),
-        b"/scroll" => (200, SCROLL, false),
-        b"/throw" => (200, THROW, false),
-        b"/csp" => (200, CSP, true),
-        b"/words" => (200, WORDS, false),
-        b"/figure" => (200, FIGURE, false),
-        b"/press.js" => (200, PRESS, false),
-        b"/favicon.ico" => (204, b"", false),
-        _ => (404, b"not found", false),
-    }
+/// Separate token space for origin listeners and their connections.
+pub const ORIGINS_FIRST: u64 = 1 << 40;
+pub const OWNER: Token = Token::new(ORIGINS_FIRST);
+#[derive(Clone)]
+pub struct Page {
+    pub path: Box<[u8]>,
+    pub kind: Box<[u8]>,
+    pub body: Box<[u8]>,
+    pub headers: Vec<skein_ui_web::transport::Header>,
+}
+#[derive(Clone)]
+pub struct Origin {
+    pub host: Box<[u8]>,
+    pub pages: Vec<Page>,
 }
 
 fn limits() -> server::Limits {
@@ -61,30 +46,41 @@ pub struct Pages {
     below: Queue<stream::Down>,
     requests: VecDeque<Request>,
     stopping: bool,
-    pub fixed: Option<Vec<u8>>,
+    pub pages: Vec<Page>,
+    owner: Token,
+    address: String,
 }
 
 impl Pages {
-    pub fn new(now: skein_lib::Time, wall: skein_lib::Wall) -> Pages {
+    #[must_use]
+    pub fn new(pages: Vec<Page>, now: skein_lib::Time, wall: skein_lib::Wall) -> Pages {
+        Self::numbered(pages, now, wall, 0)
+    }
+    pub(crate) fn numbered(pages: Vec<Page>, now: skein_lib::Time, wall: skein_lib::Wall, number: u64) -> Pages {
+        let owner = Token::new(ORIGINS_FIRST + number * 1_000_000);
         let mut requests = VecDeque::new();
-        requests.push_back(Request::Listen {
-            owner: OWNER,
-            addr: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
-        });
+        requests
+            .push_back(Request::Listen { owner, addr: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))) });
         Pages {
             addr: None,
             listener: None,
-            next_owner: 101,
+            next_owner: owner.raw() + 1,
             connections: BTreeMap::new(),
             env: Env { now, wall, limits: limits() },
             above: Queue::with_capacity(16),
             below: Queue::with_capacity(16),
             requests,
             stopping: false,
-            fixed: None,
+            pages,
+            owner,
+            address: String::new(),
         }
     }
 
+    pub(crate) fn address(&mut self, address: &str) {
+        self.address.clear();
+        self.address.push_str(address);
+    }
     pub fn update_time(&mut self, now: skein_lib::Time, wall: skein_lib::Wall) {
         self.env.now = now;
         self.env.wall = wall;
@@ -94,14 +90,17 @@ impl Pages {
         self.requests.pop_front()
     }
 
+    #[must_use]
     pub fn pending(&self) -> bool {
         !self.requests.is_empty()
     }
 
+    #[must_use]
     pub fn owns(&self, owner: Token) -> bool {
-        owner == OWNER || self.connections.contains_key(&owner)
+        owner == self.owner || self.connections.contains_key(&owner)
     }
 
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         self.stopping && self.listener.is_none() && self.connections.is_empty() && self.requests.is_empty()
     }
@@ -121,12 +120,12 @@ impl Pages {
 
     pub fn event(&mut self, event: io::Event) {
         match event {
-            io::Event::Listening { owner: OWNER, listener, addr } => {
+            io::Event::Listening { owner, listener, addr } if owner == self.owner => {
                 self.listener = Some(listener);
                 let addr = addr.socket().expect("browser pages listen on loopback");
                 self.addr = Some(addr);
             }
-            io::Event::Accepted { owner: OWNER, socket, .. } => {
+            io::Event::Accepted { owner, socket, .. } if owner == self.owner => {
                 if self.stopping {
                     self.requests.push_back(Request::Reject { socket });
                     return;
@@ -142,12 +141,21 @@ impl Pages {
             }
             io::Event::Output { .. } => panic!("page server requests only classic output"),
             io::Event::Stream { owner, up } => self.up(owner, up),
-            io::Event::Closed { owner: OWNER } => self.listener = None,
+            io::Event::Closed { owner } if owner == self.owner => self.listener = None,
             io::Event::Closed { owner } => {
                 self.connections.remove(&owner);
             }
             io::Event::Failed { owner, error } => panic!("page server {owner:?} failed: {error:?}"),
-            other => panic!("unexpected page server event: {other:?}"),
+            other @ (io::Event::Spawned { .. }
+            | io::Event::Exited { .. }
+            | io::Event::Listening { .. }
+            | io::Event::Accepted { .. }
+            | io::Event::Connecting { .. }
+            | io::Event::Connected { .. }
+            | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
+            | io::Event::Shutdown { .. }) => panic!("unexpected page server event: {other:?}"),
         }
     }
 
@@ -171,40 +179,37 @@ impl Pages {
         while let Some(event) = self.above.pop() {
             match event {
                 server::Event::Call(call) => {
-                    let (status, body, csp) = if call.target.as_ref() == b"/facts" {
-                        (200, self.fixed.as_deref().expect("fixed page supplied"), false)
-                    } else {
-                        page(&call.target)
-                    };
-                    let body = body.to_vec();
+                    let page = self.pages.iter().find(|page| page.path == call.target);
+                    let status = page.map_or(404, |page| if page.kind.is_empty() { 204 } else { 200 });
+                    let body = page.map_or_else(
+                        || b"not found".to_vec(),
+                        |page| super::harness::replace_address(&page.body, &self.address).into_vec(),
+                    );
+                    let mut headers = Vec::new();
+                    if let Some(page) = page {
+                        if !page.kind.is_empty() {
+                            headers.push(Header { name: b"Content-Type".as_slice().into(), value: page.kind.clone() });
+                        }
+                        headers.extend(
+                            page.headers
+                                .iter()
+                                .map(|(name, value)| Header { name: name.clone(), value: value.clone() }),
+                        );
+                    }
                     let conn = self.connections.get_mut(&owner).expect("page connection");
-                    conn.reply = body.clone();
+                    conn.reply.clone_from(&body);
                     conn.sent = 0;
                     self.down(owner, server::Request::Discard);
-                    let mut headers = if status == 204 {
-                        Vec::new()
-                    } else {
-                        vec![Header {
-                            name: Box::from(&b"Content-Type"[..]),
-                            value: Box::from(if call.target.as_ref() == b"/press.js" {
-                                b"text/javascript; charset=utf-8".as_slice()
-                            } else {
-                                b"text/html; charset=utf-8".as_slice()
-                            }),
-                        }]
-                    };
-                    if csp {
-                        headers.push(Header {
-                            name: Box::from(&b"Content-Security-Policy"[..]),
-                            value: Box::from(&b"default-src 'none'"[..]),
-                        });
-                    }
                     self.down(
                         owner,
                         server::Request::Respond(Response {
                             status,
                             headers: headers.into_boxed_slice(),
-                            body: if status == 204 { Body::None } else { Body::Length(body.len() as u64) },
+                            body: if status == 204 {
+                                Body::None
+                            } else {
+                                Body::Length(u64::try_from(body.len()).expect("page length fits"))
+                            },
                             close: true,
                         }),
                     );
@@ -213,14 +218,15 @@ impl Pages {
                             owner,
                             server::Request::Reply(stream::Down::Demand {
                                 read: Read::Nothing,
-                                room: (body.len() as u32).min(self.env.limits.send),
+                                room: (u32::try_from(body.len()).expect("page length fits")).min(self.env.limits.send),
                             }),
                         );
                     }
                 }
                 server::Event::Reply(stream::Up::Room) => {
                     let conn = self.connections.get_mut(&owner).expect("page connection");
-                    let end = (conn.sent + self.env.limits.send as usize).min(conn.reply.len());
+                    let end = (conn.sent + usize::try_from(self.env.limits.send).expect("send size fits"))
+                        .min(conn.reply.len());
                     let bytes = Box::from(&conn.reply[conn.sent..end]);
                     conn.sent = end;
                     self.down(owner, server::Request::Reply(stream::Down::Send(bytes)));
@@ -242,7 +248,9 @@ impl Pages {
                 }
                 server::Event::Closed | server::Event::Body(_) => {}
                 server::Event::Done(Reuse::Keep) => panic!("page responses close their socket"),
-                server::Event::Reply(other) => panic!("unexpected page reply: {other:?}"),
+                server::Event::Reply(other @ (stream::Up::Bytes(_) | stream::Up::End | stream::Up::Failed(_))) => {
+                    panic!("unexpected page reply: {other:?}")
+                }
                 server::Event::Refused(reason) => panic!("page response refused: {reason:?}"),
             }
         }

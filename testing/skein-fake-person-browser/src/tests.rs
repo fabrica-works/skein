@@ -426,3 +426,15 @@ fn native_keys_still_refuse_a_field_holding_words_first() {
         Err("field 'Due date' holds words; the kit cannot replace them".into())
     );
 }
+
+mod origins;
+#[test]
+fn an_origin_page_names_the_server_s_address() {
+    let wire = origins::response("/");
+    assert!(wire.ends_with(b"http://127.0.0.1:9090/"), "{}", String::from_utf8_lossy(&wire));
+}
+#[test]
+fn an_unknown_origin_path_is_404() {
+    let wire = origins::response("/missing");
+    assert!(wire.starts_with(b"HTTP/1.1 404 Not Found\r\n"), "{}", String::from_utf8_lossy(&wire));
+}

@@ -44,6 +44,7 @@ fn a_reload_keeps_a_pending_add_made_once() {
         },
         restart: vec!["{address}".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         chromium: skein_ui_web_tests::chromium(),
+        origins: vec![],
         expected: vec![
             b"Failed to load resource: net::ERR_CONNECTION_REFUSED".as_slice().into(),
             b"Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING".as_slice().into(),
@@ -121,6 +122,7 @@ fn a_reload_with_an_add_pending_meets_the_closing_warning() {
         },
         restart: vec!["{address}".into(), "--bundle".into(), skein_ui_web_tests::example_bundle().into_os_string()],
         chromium: skein_ui_web_tests::chromium(),
+        origins: vec![],
         expected: vec![
             b"Failed to load resource: net::ERR_CONNECTION_REFUSED".as_slice().into(),
             b"Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING".as_slice().into(),

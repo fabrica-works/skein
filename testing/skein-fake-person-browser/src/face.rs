@@ -26,6 +26,7 @@ struct Search {
 pub struct BrowserFace<'a> {
     page: Token,
     pub(crate) first_url: String,
+    pub(crate) origins: Vec<String>,
     address: std::borrow::Cow<'a, str>,
     serial: u64,
     requests: Vec<Request>,
@@ -45,6 +46,7 @@ impl<'a> BrowserFace<'a> {
         Self {
             page,
             first_url: String::new(),
+            origins: Vec::new(),
             address: address.into(),
             serial: page.raw().checked_mul(1_000_000).expect("page operation range fits"),
             requests: Vec::new(),
@@ -159,11 +161,21 @@ impl<'a> BrowserFace<'a> {
         self.requests.push(Request::Go { page: self.page, op, to: if forward { Go::Forward } else { Go::Back } });
     }
     pub(crate) fn reopen(&mut self) {
+        self.absolute(self.first_url.as_bytes().into());
+    }
+    pub(crate) fn visit(&mut self, origin: u32, path: &[u8]) {
+        if let Some(origin) = self.origins.get(usize::try_from(origin).expect("origin fits")) {
+            self.absolute(format!("{origin}{}", String::from_utf8_lossy(path)).into_bytes().into());
+        } else {
+            self.fail(format!("unknown origin {origin}"));
+        }
+    }
+    fn absolute(&mut self, url: Box<[u8]>) {
         let op = self.token();
         self.warned = false;
         self.go = Some(op);
         self.acting = Some(op);
-        self.requests.push(Request::Go { page: self.page, op, to: Go::Address(self.first_url.as_bytes().into()) });
+        self.requests.push(Request::Go { page: self.page, op, to: Go::Address(url) });
     }
     fn ask(&mut self, mut search: Search) {
         let target = search.find.within.get(search.depth).unwrap_or(&search.find.target);

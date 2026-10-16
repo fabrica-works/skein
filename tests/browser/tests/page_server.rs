@@ -1,7 +1,8 @@
 //! The fixed page server's HTTP state flow without sockets or Chromium.
 
-#[path = "../src/serve.rs"]
-mod serve;
+use skein_fake_person_browser::origins as serve;
+#[path = "../src/pages.rs"]
+mod pages;
 
 use std::net::{Ipv4Addr, SocketAddr};
 
@@ -10,14 +11,14 @@ use skein_lib::stream::{self, Held, Read};
 use skein_lib::{Time, Token, Wall};
 
 fn response(path: &str) -> Vec<u8> {
-    let mut pages = serve::Pages::new(Time::ZERO, Wall::EPOCH);
+    let mut pages = serve::Pages::new(pages::pages(), Time::ZERO, Wall::EPOCH);
     assert!(pages.pending());
     assert!(matches!(pages.take(), Some(Request::Listen { owner: serve::OWNER, .. })));
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 33333));
     pages.update_time(Time::ZERO, Wall::EPOCH);
     pages.event(Event::Listening { owner: serve::OWNER, listener: Token::new(200), addr: skein_io::Addr::Ip(addr) });
     assert_eq!(pages.addr, Some(addr));
-    let owner = Token::new(101);
+    let owner = Token::new(serve::ORIGINS_FIRST + 1);
     pages.event(Event::Accepted { owner: serve::OWNER, socket: Token::new(300), peer: skein_io::Addr::Ip(addr) });
     assert!(pages.owns(owner));
 

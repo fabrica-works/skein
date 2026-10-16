@@ -60,6 +60,13 @@ pub fn fixture_bundle(scratch: &skein_scratch::Scratch, module: &[u8]) -> std::p
 }
 #[must_use]
 pub fn fixture_harness(bundle: &std::path::Path) -> skein_fake_person_browser::Harness {
+    fixture_harness_with(bundle, vec![])
+}
+#[must_use]
+pub fn fixture_harness_with(
+    bundle: &std::path::Path,
+    origins: Vec<skein_fake_person_browser::origins::Origin>,
+) -> skein_fake_person_browser::Harness {
     skein_fake_person_browser::Harness::new(skein_fake_person_browser::Setup {
         server: server_binary(),
         args: vec!["127.0.0.1:0".into(), "--bundle".into(), bundle.as_os_str().into()],
@@ -70,6 +77,7 @@ pub fn fixture_harness(bundle: &std::path::Path) -> skein_fake_person_browser::H
         },
         restart: vec!["{address}".into(), "--bundle".into(), bundle.as_os_str().into()],
         chromium: chromium(),
+        origins,
         expected: vec![],
     })
 }
@@ -93,4 +101,14 @@ pub fn example_bundle() -> std::path::PathBuf {
 #[must_use]
 pub fn example_harness() -> skein_fake_person_browser::Harness {
     fixture_harness(&example_bundle())
+}
+
+#[must_use]
+pub fn page(path: &[u8], body: &[u8]) -> skein_fake_person_browser::origins::Page {
+    skein_fake_person_browser::origins::Page {
+        path: path.into(),
+        kind: b"text/html; charset=utf-8".as_slice().into(),
+        body: body.into(),
+        headers: vec![],
+    }
 }

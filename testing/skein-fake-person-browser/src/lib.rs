@@ -3,6 +3,7 @@
 mod face;
 pub mod harness;
 mod keys;
+pub mod origins;
 pub use face::BrowserFace;
 pub use harness::{Harness, Outcome, Play, Script, Setup, Step};
 #[cfg(test)]
