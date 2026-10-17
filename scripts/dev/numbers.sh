@@ -149,6 +149,15 @@ claude_context() {
     echo "${last:-0 0}"
 }
 
+# How many times a Claude Code session's context was compacted, from its
+# transcript's compaction boundaries (development.md, section 10.5).
+claude_compactions() {
+    local file
+    file=$(find "$claude_home/projects" -maxdepth 2 -name "$1.jsonl" 2>/dev/null | head -n1)
+    [[ -n $file ]] || { echo 0; return; }
+    grep -c '"subtype":"compact_boundary"' "$file" || true
+}
+
 # The run's Claude Code sessions, role and session id, each once: the
 # planner's first, named by the Planner-Session trailers of the plan's
 # commits (development.md, section 5.4), then claude.tsv's, in its order.
@@ -230,6 +239,47 @@ claude_cost() {
             for (i = 1; i <= n; i++) printf "%s%s $%.0f", (i == 1 ? ": " : ", "), roles[i], by[roles[i]]
             printf "; cache reads $%.0f, cache writes $%.0f, fresh input $%.0f, output $%.0f\n", reads, writes, fresh, out
         }'
+}
+
+# The supervisor's sessions (development.md, sections 10.5 and 15.2): how
+# many, their hours, each from its first request to its last, their
+# weighted tokens per hour, the share of those in each session's first 40
+# requests (its bootstrap), and their compactions. Weights: fresh input 1,
+# cache reads 0.1, cache writes 1.25, output 5. Sub-agents are left out,
+# and a message counts once, for the first session that has it.
+supervisor_sessions() {
+    local session file
+    awk -F'\t' '$1 == "supervisor" && !seen[$2]++ { print $2 }' "$run/claude.tsv" 2>/dev/null |
+        while read -r session; do
+            file=$(find "$claude_home/projects" -maxdepth 2 -name "$session.jsonl" 2>/dev/null | head -n1)
+            [[ -n $file ]] || continue
+            jq -r --arg s "$session" '
+                if .type == "system" and .subtype == "compact_boundary" then [$s, "compaction", (.uuid // .timestamp // "")]
+                elif .type == "assistant" and .message.usage != null and .message.model != "<synthetic>" then
+                    .message.usage as $u
+                    | [$s, "request", .message.id,
+                       ((.timestamp // "") | if . == "" then "" else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) end),
+                       ($u.input_tokens // 0) + 0.1 * ($u.cache_read_input_tokens // 0)
+                       + 1.25 * ($u.cache_creation_input_tokens // 0) + 5 * ($u.output_tokens // 0)]
+                else empty end | @tsv' "$file" 2>/dev/null || true
+        done | awk -F'\t' '
+            $2 == "compaction" { if (!($3 in boundary)) { boundary[$3]; compactions++ } next }
+            !($3 in owner) { owner[$3] = $1; index_of[$3] = ++requests[$1]; keys[++n] = $3 }
+            owner[$3] != $1 { next }
+            { if ($5 > w[$3]) w[$3] = $5
+              if (!($1 in requests_of)) { requests_of[$1]; sessions++ }
+              if ($4 != "" && (!($1 in t0) || $4 < t0[$1])) t0[$1] = $4
+              if ($4 != "" && $4 > t1[$1]) t1[$1] = $4 }
+            END {
+                for (i = 1; i <= n; i++) {
+                    k = keys[i]; total += w[k]
+                    if (index_of[k] <= 40) boot += w[k]
+                }
+                for (s in t0) seconds += t1[s] - t0[s]
+                hours = seconds / 3600
+                printf "%d sessions, %.1f h, %.1fM weighted tokens per hour, %d%% in their first 40 requests, %d compactions\n",
+                    sessions, hours, (hours > 0 ? total / hours / 1e6 : 0), (total > 0 ? 100 * boot / total : 0), compactions
+            }'
 }
 
 # When the run started: its claim, from log.md.
@@ -622,6 +672,7 @@ metrics_of() {
     m tokens_implementers "$si in ($(share "$sc" "$si") cached), $so out" tokens
     m tokens_claude "$li in ($(share "$lc" "$li") cached), $lo out; in: $bi before the claim, $ri in the run, $xi after" tokens
     m cost_claude "$(claude_cost)" "dollars at list prices"
+    m supervisor "$(supervisor_sessions)" ""
     m tokens_per_step "$(((ci + co + si + so + ri + ro) / (landed ? landed : 1)))" "tokens per step, the run's"
     m coordinator_requests "$requests, $idle after a wait ran out" requests
     m compactions "$compactions" compactions

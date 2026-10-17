@@ -188,6 +188,9 @@ assistant() { printf '{"type":"assistant","message":{"id":"%s","usage":{"input_t
     # Planning, before the claim: counted apart (development.md, section 15.2).
     printf '{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"m0","usage":{"input_tokens":1000,"output_tokens":1}}}\n'
 } >"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
+# The supervisor's context was compacted twice (development.md, section 10.5).
+boundary() { printf '{"type":"system","subtype":"compact_boundary","uuid":"%s","timestamp":"2026-10-17T09:00:00.000Z"}\n' "$1"; }
+{ boundary u1; boundary u2; } >>"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
 assistant s1 3 0 0 3 >"$CLAUDE_CONFIG_DIR/projects/p/$session/subagents/agent-1.jsonl"
 # A forked session copies m1, which counts once, and adds m3.
 fork=22222222-3333-4444-5555-666666666666
@@ -225,6 +228,7 @@ expect metrics "$metrics" \
     $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\treboot 1\t' \
     $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1620 in (6% cached), 20 out; in: 1500 before the claim, 120 in the run, 0 after' \
     $'cost_claude\t$1640: planner $502, supervisor $1132, designer $6; cache reads $100, cache writes $10, fresh input $1510, output $20\t' \
+    $'supervisor\t1 sessions, 0.0 h, 0.0M weighted tokens per hour, 100% in their first 40 requests, 2 compactions' \
     $'coordinator_requests\t4, 1 after a wait ran out' $'compactions\t1\t' \
     $'gates_per_step\t0.3\t' $'gate_lane_other\t1\t' $'queue_wait_ratio\t0.10\t' \
     $'suites\talpha first: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
@@ -250,11 +254,11 @@ expect "watch quiet" "$(PLAN_QUIET=2 watch)" "quiet: no heartbeat"
 expect "watch quiet again" "$(PLAN_QUIET=2 watch)" "quiet again: no heartbeat"
 touch "$run/heartbeat"
 echo "# Paused" >"$run/paused.md"
-expect "watch paused" "$(watch)" "paused: $run/paused.md" "context: the supervisor's is 1K"
+expect "watch paused" "$(PLAN_COMPACTIONS=3 watch)" "paused: $run/paused.md" "context: the supervisor's is 1K (compactions: 2)"
 rm "$run/paused.md"
 "$plan" set alpha-02.1 repo=alpha session=02 state=check title=third
 expect "status check" "$("$plan" status)" "1 to check"
-expect "watch check" "$(PLAN_SUPERVISOR_LIMIT=500 watch)" "check: alpha-02.1, $dir/alpha/02-second.md" "hand over now"
+expect "watch check" "$(watch)" "check: alpha-02.1, $dir/alpha/02-second.md" "(compactions: 2): hand over now"
 expect "ready" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1)" "would ring the coordinator: ready: alpha-02.1"
 expect "ready in the ledger" "$(grep alpha-02.1 "$run/ledger.tsv")" $'\tready\t' "checked "
 expect "ready twice" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1 2>&1 || true)" "is not waiting for its check"
@@ -303,11 +307,14 @@ expect "join outside a session" "$(CLAUDE_CODE_SESSION_ID='' "$plan" join design
 expect "join" "$(CLAUDE_CODE_SESSION_ID=fake-designer "$plan" join designer)" "designer: Claude Code session fake-designer" "End your turn now"
 expect "roles" "$(PLAN_NO_ROLES='' "$plan" status)" "## Roles" "- coordinator: $coordinator" "- supervisor: $session, gone"
 expect "wake resumes" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: would resume fake-designer: question.md"
-# A designer past its context's limit starts fresh.
+# A designer compacted twice starts fresh.
 big=33333333-4444-5555-6666-777777777777
-printf '{"type":"assistant","timestamp":"%s","message":{"id":"b1","usage":{"input_tokens":1,"cache_read_input_tokens":200000,"output_tokens":1}}}\n' "$(date -u +%FT%T.000Z)" >"$CLAUDE_CONFIG_DIR/projects/p/$big.jsonl"
+{
+    printf '{"type":"assistant","timestamp":"%s","message":{"id":"b1","usage":{"input_tokens":1,"cache_read_input_tokens":150000,"output_tokens":1}}}\n' "$(date -u +%FT%T.000Z)"
+    boundary b2; boundary b3
+} >"$CLAUDE_CONFIG_DIR/projects/p/$big.jsonl"
 printf 'designer\t%s\t%s\n' "$big" "$stamp" >>"$run/claude.tsv"
-expect "wake fresh" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: 200K, idle 0 min: a fresh session" "designer: would start a fresh session: You are the designer"
+expect "wake fresh" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: compactions 2, idle 0 min: a fresh session" "designer: would start a fresh session: You are the designer"
 # The supervisor hands over; the old session's watch then shows nothing.
 expect handover "$(CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more"
 expect "handover by another" "$(CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
@@ -317,7 +324,17 @@ expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "w
 # After the run's release, metrics and retro find it as the last run.
 "$plan" release >/dev/null
 [[ ! -e $run/kit ]] || { echo "FAIL release: $run/kit is left"; failed=1; }
-expect "metrics after release" "$("$plan" metrics)" $'steps_planned\t2\t'
+# The successor's 41 requests over an hour, after a copy of the first's
+# compaction and of its message m2, which count once.
+{
+    boundary u1; boundary u3; assistant m2 2 0 0 7
+    for i in $(seq 0 39); do
+        printf '{"type":"assistant","timestamp":"2026-10-17T10:%02d:00.000Z","message":{"id":"n%d","usage":{"input_tokens":100000,"output_tokens":0}}}\n' "$i" "$i"
+    done
+    printf '{"type":"assistant","timestamp":"2026-10-17T11:00:00.000Z","message":{"id":"n40","usage":{"input_tokens":100000,"output_tokens":0}}}\n'
+} >"$CLAUDE_CONFIG_DIR/projects/p/new-supervisor.jsonl"
+expect "metrics after release" "$("$plan" metrics)" $'steps_planned\t2\t' \
+    $'supervisor\t2 sessions, 1.0 h, 4.1M weighted tokens per hour, 97% in their first 40 requests, 3 compactions'
 
 if ((live)); then
     # Real agents, on cheap settings, with the real Codex and Claude Code homes.
