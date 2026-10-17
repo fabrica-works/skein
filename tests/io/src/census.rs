@@ -51,7 +51,7 @@ pub fn cancels(trace: &[Entry]) -> BTreeSet<(Target, Answer)> {
                 };
                 seen.insert((target, answer));
             }
-            Event::Complete { .. } | Event::Fault(_) => {}
+            Event::Complete { .. } | Event::Fault(_) | Event::Digest(_) => {}
         }
     }
     seen
@@ -103,7 +103,7 @@ pub fn discards(trace: &[Entry]) -> u32 {
                     discarded += 1;
                 }
             }
-            Event::Submit { .. } | Event::Complete { .. } | Event::Fault(_) => {}
+            Event::Submit { .. } | Event::Complete { .. } | Event::Fault(_) | Event::Digest(_) => {}
         }
     }
     discarded
@@ -128,7 +128,7 @@ pub fn batched(trace: &[Entry], marks: &[usize]) -> bool {
                     return true;
                 }
             }
-            Event::Submit { .. } | Event::Complete { .. } | Event::Fault(_) => {}
+            Event::Submit { .. } | Event::Complete { .. } | Event::Fault(_) | Event::Digest(_) => {}
         }
     }
     false

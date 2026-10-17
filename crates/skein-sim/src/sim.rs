@@ -2,6 +2,7 @@
 //! sockets and the network between them, the calls to the machine, time,
 //! and the trace.
 
+mod digest;
 mod files;
 mod processes;
 
@@ -32,6 +33,9 @@ use processes::{Child, InheritedPipe, PipeEnd, WaitState};
 pub struct Pid(u32);
 
 impl Pid {
+    /// The fake machine in the trace: no process has this pid.
+    pub const MACHINE: Pid = Pid(u32::MAX);
+
     #[must_use]
     pub const fn raw(self) -> u32 {
         self.0
@@ -40,7 +44,7 @@ impl Pid {
 
 impl fmt::Display for Pid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "pid {}", self.0)
+        if *self == Self::MACHINE { f.write_str("machine") } else { write!(f, "pid {}", self.0) }
     }
 }
 
@@ -202,6 +206,7 @@ impl Sim {
     /// A new process, with no descriptor and nothing in flight.
     pub fn spawn_process(&mut self) -> Pid {
         let pid = Pid(u32::try_from(self.processes.len()).expect("fewer than 2^32 processes"));
+        assert!(pid < Pid::MACHINE, "a process pid is below the machine's");
         self.processes.push(Process {
             parent: None,
             usage: skein_io::kernel::Usage::ZERO,

@@ -25,6 +25,8 @@ pub enum Event {
     Complete { op: Token, kind: Summary, result: Result<Done, Error> },
     /// A fault drawn from the seed, in the process it affects.
     Fault(Fault),
+    /// A process state digest, or the fake machine's under `Pid::MACHINE`.
+    Digest([u8; 32]),
 }
 
 /// The faults of [`crate::Faults`], as the trace names them.

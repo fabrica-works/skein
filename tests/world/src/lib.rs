@@ -12,6 +12,8 @@
 //! The tests are `tests/world.rs`, under the counting allocator, and
 //! `tests/no_allocator.rs`, without it.
 
+pub mod fixtures;
+
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddr};
 

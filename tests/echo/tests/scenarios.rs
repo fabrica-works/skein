@@ -206,3 +206,27 @@ fn a_seed_replays_to_the_same_echo_digest_at_its_end() {
     });
     assert!(!trace.is_empty());
 }
+
+#[test]
+fn a_seed_replays_to_the_same_digests_after_every_iteration() {
+    let mut first = clients(1, Config::calm());
+    first.digests(skein_world::Digests::Traced);
+    let first = first.run();
+    let mut second = clients(1, Config::calm());
+    second.digests(skein_world::Digests::Traced);
+    let second = second.run();
+    assert_eq!(first.trace, second.trace);
+    let digests: std::collections::BTreeSet<_> = first
+        .trace
+        .iter()
+        .filter_map(|entry| {
+            if let skein_sim::Event::Digest(digest) = entry.event {
+                assert_eq!(entry.pid.raw(), 0, "only the echo supplies a digest");
+                Some(digest)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(digests.len() > 1, "sessions coming and going change the echo's state");
+}

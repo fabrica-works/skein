@@ -166,7 +166,7 @@ fn files_under_chaos_keep_the_contract_and_every_fault_falls() {
                     appending = matches!(kind, Summary::Append { .. });
                     locking = matches!(kind, Summary::Lock { .. });
                 }
-                Event::Complete { .. } => {}
+                Event::Complete { .. } | Event::Digest(_) => {}
             }
         }
     }

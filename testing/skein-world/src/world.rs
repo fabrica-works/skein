@@ -10,7 +10,7 @@
 
 mod digests;
 
-pub use digests::StateDigests;
+pub use digests::{Digests, StateDigests};
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -86,6 +86,7 @@ pub struct World<P, R, M = NoMachine> {
     submissions: Vec<u32>,
     cuts: Vec<PlannedCut>,
     machine: M,
+    digests: Digests,
     killed: Vec<Killed>,
     calls: Queue<skein_sim::Call>,
     answers: Queue<Answer>,
@@ -204,6 +205,7 @@ impl<P: Host, R: Referee<P>> World<P, R> {
             submissions: Vec::new(),
             cuts: Vec::new(),
             machine: NoMachine,
+            digests: Digests::Untraced,
             killed: Vec::new(),
             calls: Queue::with_capacity(256),
             answers: Queue::with_capacity(256),
@@ -231,6 +233,7 @@ impl<P: Host, R: Referee<P>> World<P, R> {
             submissions: self.submissions,
             cuts: self.cuts,
             machine,
+            digests: self.digests,
             killed: self.killed,
             calls: self.calls,
             answers: self.answers,
@@ -411,6 +414,7 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
                 }
                 self.referee.observe(now, &self.procs);
             }
+            self.trace_machine_digest();
             if last_word.is_none() && self.referee.passed() {
                 last_word = Some(self.referee.last_word().at(now));
             }
@@ -552,6 +556,11 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
                 proc.iterate(now, wall);
                 proc.drain();
             }
+        }
+        if self.digests == Digests::Traced
+            && let Some(digest) = proc.state_digest()
+        {
+            self.sim.trace_digest(pid, digest);
         }
         if let Some(faults) = faults(at, now, proc.submissions()) {
             self.sim.set_faults(faults);

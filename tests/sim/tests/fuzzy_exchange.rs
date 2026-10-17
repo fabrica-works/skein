@@ -25,7 +25,7 @@ fn reordered(trace: &[Entry]) -> bool {
                 }
                 *last = at;
             }
-            Event::Fault(_) => {}
+            Event::Fault(_) | Event::Digest(_) => {}
         }
     }
     false
@@ -49,7 +49,7 @@ fn a_chaotic_exchange_keeps_every_invariant_for_many_seeds() {
             match entry.event {
                 Event::Fault(fault) => *faults.entry(fault).or_insert(0_u32) += 1,
                 Event::Complete { result: Err(error), .. } => *errors.entry(error).or_insert(0_u32) += 1,
-                Event::Submit { .. } | Event::Complete { .. } => {}
+                Event::Submit { .. } | Event::Complete { .. } | Event::Digest(_) => {}
             }
         }
     }

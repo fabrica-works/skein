@@ -76,7 +76,7 @@ fn assert_clients_settle_before_issuer(outcome: &skein_world::Outcome<sign_in::P
         .iter()
         .find_map(|entry| match entry.event {
             Event::Submit { kind: Summary::Listen { fd, .. }, .. } if entry.pid.raw() == 0 => Some(fd),
-            Event::Submit { .. } | Event::Complete { .. } | Event::Fault(_) => None,
+            Event::Submit { .. } | Event::Complete { .. } | Event::Fault(_) | Event::Digest(_) => None,
         })
         .expect("the issuer listened");
     let clients_closed = outcome
