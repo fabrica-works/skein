@@ -18,7 +18,7 @@ const EDGES: [(usize, &str); 5] = [
 ];
 
 /// A digest as printed: 64 lowercase hex digits.
-fn hex(text: &str) -> [u8; 32] {
+pub(super) fn hex(text: &str) -> [u8; 32] {
     let mut digest = [0_u8; 32];
     for (byte, at) in digest.iter_mut().zip((0_usize..64).step_by(2)) {
         *byte = u8::from_str_radix(&text[at..][..2], 16).expect("two hex digits");

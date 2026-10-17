@@ -5,7 +5,7 @@
 //! a reader and a writer for sized bytes
 //! and the decimal digits of a count to write with them, monotonic and wall
 //! time, randomness, the tokens that cross layer boundaries, and the
-//! environment a step reads.
+//! environment a step reads, and keyless state digests.
 //!
 //! Application code does not hand-roll data structures: what is missing goes
 //! here, written once and tested hard.
@@ -21,6 +21,7 @@ pub mod bytes;
 mod crypto_rng;
 mod deadlines;
 mod decimal;
+mod digest;
 mod env;
 mod id;
 mod intake;
@@ -46,6 +47,7 @@ mod writer;
 pub use crypto_rng::CryptoRng;
 pub use deadlines::Deadlines;
 pub use decimal::Decimal;
+pub use digest::{StateHasher, state_digest};
 pub use env::Env;
 pub use id::Id;
 pub use intake::Intake;

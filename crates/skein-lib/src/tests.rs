@@ -6,6 +6,7 @@ mod base64;
 mod bytes;
 mod containers;
 mod crypto_rng;
+mod digest;
 mod handles;
 mod held;
 mod journal;
