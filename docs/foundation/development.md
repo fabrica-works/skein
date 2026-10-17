@@ -450,6 +450,11 @@ agent's `PATH`, and the files into place. The tools read
 `DEV_REPOS`: the repositories `plan check` checks, by default the plan's
 and those upstream of it, or all of them without a plan.
 
+`plan` holds the command dispatch, settings, ledger and worktree commands.
+It sources `plan-check.sh` for the checks, `plan-watch.sh` for the watch,
+`plan-roles.sh` for the roles and their prompts, and `numbers.sh` for the
+run's numbers, pulse and metrics. These files are part of the same kit.
+
 **A run takes its kit from its claim,** as it takes its process (section
 4.4). `plan claim`, which `plan start` runs, adds `kit/` to the run's
 directory: a worktree of the workspace's skein at its checkout's commit,
