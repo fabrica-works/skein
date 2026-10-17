@@ -22,6 +22,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use skein_lib::{Duration, Map, Queue, Time, Token};
 
+mod directory;
 mod opens;
 mod private;
 mod store;
@@ -79,6 +80,12 @@ enum Pending {
     List {
         owner: Token,
         fd: Fd,
+        entries: Vec<Entry>,
+    },
+    Page {
+        owner: Token,
+        fd: Fd,
+        max: u32,
         entries: Vec<Entry>,
     },
     ListClosing {
@@ -156,6 +163,7 @@ impl Pending {
             | Pending::Remove { owner }
             | Pending::ListOpening { owner }
             | Pending::List { owner, .. }
+            | Pending::Page { owner, .. }
             | Pending::ListClosing { owner, .. }
             | Pending::LoadOpening { owner, .. }
             | Pending::LoadStating { owner, .. }
@@ -190,6 +198,7 @@ impl Pending {
             | Pending::Rename { .. }
             | Pending::Remove { .. }
             | Pending::List { .. }
+            | Pending::Page { .. }
             | Pending::ListClosing { .. }
             | Pending::LoadStating { .. }
             | Pending::LoadClosing { .. }
@@ -589,6 +598,7 @@ fn down_inner(io: &mut FileIo, request: Request, events: &mut Queue<Event>, subs
             io.pending = Some(Pending::Remove { owner });
             io.issue(Op::Remove { dir: root, name, directory }, subs);
         }
+        Request::ListPage { owner, directory, max } => directory::page(io, owner, directory, max, events, subs),
         Request::List { owner, root } => {
             io.pending = Some(Pending::ListOpening { owner });
             io.issue(Op::Open { root, path: Box::from(&b"."[..]), how: OpenHow::Directory }, subs);
@@ -678,6 +688,7 @@ pub fn cancel(io: &mut FileIo, owner: Token, subs: &mut Queue<Submit>) {
         | Pending::Remove { .. }
         | Pending::ListOpening { .. }
         | Pending::List { .. }
+        | Pending::Page { .. }
         | Pending::ListClosing { .. }
         | Pending::LoadOpening { .. }
         | Pending::LoadStating { .. }
@@ -740,6 +751,7 @@ fn cancelled(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, sub
         | Pending::Stat { .. }
         | Pending::ListOpening { .. }
         | Pending::List { .. }
+        | Pending::Page { .. }
         | Pending::LoadOpening { .. }
         | Pending::LoadStating { .. }
         | Pending::LoadReading { .. }
@@ -779,6 +791,7 @@ fn cancelled(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, sub
             | Pending::Remove { .. }
             | Pending::ListOpening { .. }
             | Pending::List { .. }
+            | Pending::Page { .. }
             | Pending::ListClosing { .. }
             | Pending::LoadOpening { .. }
             | Pending::LoadStating { .. }
@@ -860,6 +873,10 @@ fn stopped(io: &mut FileIo, complete: Complete, reason: Error, events: &mut Queu
             store::stopped(io, store, complete, reason, events, subs);
             return;
         }
+        page @ Pending::Page { .. } => {
+            directory::answered(io, page, complete, Some(reason), events, subs);
+            return;
+        }
         other @ (Pending::Create { .. }
         | Pending::OpenRead { .. }
         | Pending::OpenDirectory { .. }
@@ -901,6 +918,7 @@ fn stopped(io: &mut FileIo, complete: Complete, reason: Error, events: &mut Queu
         | Pending::Remove { owner }
         | Pending::ListOpening { owner }
         | Pending::List { owner, .. }
+        | Pending::Page { owner, .. }
         | Pending::ListClosing { owner, .. }
         | Pending::LoadOpening { owner, .. }
         | Pending::LoadStating { owner, .. }
@@ -1002,6 +1020,10 @@ fn up_inner(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, subs
             store::up(io, store, complete, events, subs);
             return;
         }
+        page @ Pending::Page { .. } => {
+            directory::answered(io, page, complete, None, events, subs);
+            return;
+        }
         other @ (Pending::Create { .. }
         | Pending::OpenRead { .. }
         | Pending::OpenDirectory { .. }
@@ -1072,7 +1094,9 @@ fn up_inner(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, subs
             | Pending::LoadTooLargeClosing { owner, .. }
             | Pending::ScanOpening { owner, .. }
             | Pending::ScanClosing { owner, .. } => owner,
-            Pending::Store(_) | Pending::Private(_) => unreachable!("dedicated file completion is handled separately"),
+            Pending::Store(_) | Pending::Private(_) | Pending::Page { .. } => {
+                unreachable!("dedicated file completion is handled separately")
+            }
         };
         events.push(Event::Failed { owner, error, committed: false, residue: None });
         return;

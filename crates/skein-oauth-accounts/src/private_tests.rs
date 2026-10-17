@@ -118,6 +118,7 @@ fn owner_of(request: &file::Request) -> Token {
         | file::Request::SyncDirectory { owner, .. }
         | file::Request::Rename { owner, .. }
         | file::Request::Remove { owner, .. }
+        | file::Request::ListPage { owner, .. }
         | file::Request::List { owner, .. } => *owner,
     }
 }
@@ -373,6 +374,7 @@ fn check_file(request: &file::Request, shape: u32) {
         | file::Request::SyncDirectory { .. }
         | file::Request::Rename { .. }
         | file::Request::Remove { .. }
+        | file::Request::ListPage { .. }
         | file::Request::List { .. } => panic!("one private open, load or close"),
     }
 }

@@ -167,6 +167,12 @@ pub enum Request {
         owner: Token,
         root: Fd,
     },
+    /// Lists at most `max` entries from the owner's open directory (io.md, 5).
+    ListPage {
+        owner: Token,
+        directory: Token,
+        max: u32,
+    },
 }
 
 #[derive(PartialEq, Eq, Debug)]

@@ -34,3 +34,5 @@ pub mod world;
 pub mod joined;
 
 pub mod renames;
+
+pub mod pages;

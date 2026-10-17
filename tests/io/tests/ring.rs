@@ -290,3 +290,21 @@ fn a_rename_across_over_the_ring_lands_the_file_in_its_destination() {
     assert_eq!(std::fs::read(scratch.path().join("cache/index")).unwrap(), b"whole index");
     assert_eq!(std::fs::read_dir(scratch.path().join("staging")).unwrap().count(), 0);
 }
+
+#[test]
+fn a_directory_listed_by_pages_over_the_ring_gives_each_entry_once() {
+    let scratch = skein_scratch::Scratch::new("io-pages");
+    std::fs::create_dir(scratch.path().join("cache")).unwrap();
+    let names = skein_io_world::pages::names(10);
+    for name in &names {
+        std::fs::write(scratch.path().join("cache").join(std::str::from_utf8(name).unwrap()), b"entry").unwrap();
+    }
+    let root = skein_shell::open_root(scratch.path()).unwrap();
+    let mut owner = skein_io_world::pages::Owner::new(root, 4, 10);
+    let mut kernel = Kernel::open(Config { operations: 2 }).expect("ring usable");
+    assert_eq!(skein_shell::drive(&mut kernel, &Clock::new(), &mut owner), skein_io::kernel::Exit::Code(0));
+    assert_eq!(owner.pages.iter().map(|page| page.len()).collect::<Vec<_>>(), [4, 4, 2]);
+    let mut listed: Vec<_> = owner.pages.iter().flatten().map(|entry| entry.name.to_vec()).collect();
+    listed.sort();
+    assert_eq!(listed, names);
+}

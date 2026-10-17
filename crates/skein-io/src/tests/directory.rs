@@ -54,3 +54,137 @@ fn a_rename_of_a_name_holding_a_slash_fails_before_any_record() {
         assert!(subs.is_empty());
     }
 }
+
+use super::file::listed;
+use crate::file::Entry;
+use crate::kernel::{Kind, Submit};
+struct Page {
+    io: FileIo,
+    directory: Token,
+    events: Queue<Event>,
+    subs: Queue<Submit>,
+}
+impl Page {
+    fn new() -> Self {
+        let mut io = FileIo::new(3, 16, 4, Duration::from_secs(1));
+        let directory = io.adopt_root(CACHE).expect("one directory");
+        Self { io, directory, events: Queue::with_capacity(2), subs: Queue::with_capacity(2) }
+    }
+    fn start(&mut self, max: u32) {
+        file_layer::down(
+            &mut self.io,
+            Time::ZERO,
+            Request::ListPage { owner: OWNER, directory: self.directory, max },
+            &mut self.events,
+            &mut self.subs,
+        );
+    }
+    fn answer(&mut self, names: &[&[u8]]) {
+        let submit = self.subs.pop().expect("a list in flight");
+        listed(&mut self.io, submit, names, &mut self.events, &mut self.subs);
+    }
+    fn failed(&mut self, error: Error) {
+        assert_eq!(self.events.pop(), Some(Event::Failed { owner: OWNER, error, committed: false, residue: None }));
+        assert!(self.events.is_empty() && self.subs.is_empty() && self.io.takes());
+        assert_eq!(self.io.descriptor(self.directory), Some(CACHE));
+    }
+}
+
+#[test]
+fn a_page_fills_to_max_across_short_kernel_lists() {
+    let mut page = Page::new();
+    page.start(3);
+    page.answer(&[b"a"]);
+    let Op::List { entries, .. } = &page.subs.iter().next().expect("next list").kind else { panic!("list") };
+    assert_eq!(entries.len(), 2);
+    page.answer(&[b"b", b"c"]);
+    let entries: Box<[Entry]> = Box::new([
+        Entry { name: Box::from(&b"a"[..]), kind: Kind::File },
+        Entry { name: Box::from(&b"b"[..]), kind: Kind::File },
+        Entry { name: Box::from(&b"c"[..]), kind: Kind::File },
+    ]);
+    assert_eq!(page.events.pop(), Some(Event::Listed { owner: OWNER, entries }));
+    assert!(page.subs.is_empty() && page.io.takes());
+    assert_eq!(page.io.descriptor(page.directory), Some(CACHE));
+}
+
+#[test]
+fn a_page_shorter_than_max_is_the_directorys_end() {
+    let mut page = Page::new();
+    page.start(4);
+    page.answer(&[b"last"]);
+    assert!(page.events.is_empty());
+    page.answer(&[]);
+    let entries: Box<[Entry]> = Box::new([Entry { name: Box::from(&b"last"[..]), kind: Kind::File }]);
+    assert_eq!(page.events.pop(), Some(Event::Listed { owner: OWNER, entries }));
+    assert!(page.subs.is_empty() && page.io.takes());
+}
+
+#[test]
+fn a_page_after_the_end_is_empty() {
+    let mut page = Page::new();
+    for _ in 0..2_u32 {
+        page.start(4);
+        page.answer(&[]);
+        assert_eq!(page.events.pop(), Some(Event::Listed { owner: OWNER, entries: Box::new([]) }));
+        assert!(page.subs.is_empty() && page.io.takes());
+    }
+}
+
+#[test]
+fn a_page_past_max_entries_fails_before_any_record() {
+    let mut page = Page::new();
+    page.start(5);
+    page.failed(Error::InvalidArgument);
+}
+#[test]
+fn a_page_of_an_unknown_token_fails_not_found() {
+    let mut page = Page::new();
+    let directory = page.directory;
+    page.directory = Token::new(99);
+    page.start(4);
+    page.directory = directory;
+    page.failed(Error::NotFound);
+}
+#[test]
+fn a_page_of_zero_fails_invalid_argument() {
+    let mut page = Page::new();
+    page.start(0);
+    page.failed(Error::InvalidArgument);
+}
+#[test]
+fn a_page_cut_short_by_a_deadline_fails_timed_out() {
+    let mut page = Page::new();
+    page.start(3);
+    file_layer::expire(&mut page.io, Time::ZERO.saturating_add(Duration::from_secs(2)), &mut page.subs);
+    assert_eq!(page.subs.len(), 1, "no cancel for a synchronous list");
+    page.answer(&[b"lost"]);
+    page.failed(Error::TimedOut);
+}
+#[test]
+fn a_page_cut_short_by_a_cancel_is_cancelled() {
+    let mut page = Page::new();
+    page.start(3);
+    file_layer::cancel(&mut page.io, OWNER, &mut page.subs);
+    assert_eq!(page.subs.len(), 1, "no cancel for a synchronous list");
+    page.answer(&[b"lost"]);
+    assert_eq!(page.events.pop(), Some(Event::Cancelled { owner: OWNER }));
+    assert!(page.subs.is_empty() && page.io.takes());
+    assert_eq!(page.io.descriptor(page.directory), Some(CACHE));
+}
+#[test]
+fn a_page_the_list_in_flight_finishes_is_listed_past_its_deadline() {
+    for names in [&[b"last".as_slice()][..], &[][..]] {
+        let mut page = Page::new();
+        page.start(1);
+        file_layer::expire(&mut page.io, Time::ZERO.saturating_add(Duration::from_secs(2)), &mut page.subs);
+        page.answer(names);
+        let entries: Box<[Entry]> = if names.is_empty() {
+            Box::new([])
+        } else {
+            Box::new([Entry { name: Box::from(&b"last"[..]), kind: Kind::File }])
+        };
+        assert_eq!(page.events.pop(), Some(Event::Listed { owner: OWNER, entries }));
+        assert!(page.subs.is_empty() && page.io.takes());
+    }
+}
