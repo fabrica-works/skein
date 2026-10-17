@@ -95,7 +95,7 @@ pub fn processes<B: Backend>(backend: &mut B, executable: &[u8]) -> Processes {
     Processes { echoed, eof, echo_exit, status_exit, never_waited, signalled, killed_exit }
 }
 
-fn spawned(complete: skein_io::kernel::Complete) -> (Fd, Vec<Fd>) {
+pub(crate) fn spawned(complete: skein_io::kernel::Complete) -> (Fd, Vec<Fd>) {
     match (complete.kind, complete.result) {
         (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd })) => {
             (pidfd, spawn.pipes.iter().map(|pipe| pipe.parent.expect("parent pipe slot filled")).collect())
@@ -104,7 +104,7 @@ fn spawned(complete: skein_io::kernel::Complete) -> (Fd, Vec<Fd>) {
     }
 }
 
-fn command(executable: &[u8], root: Fd, args: &[&[u8]], pipes: &[Pipe]) -> Spawn {
+pub(crate) fn command(executable: &[u8], root: Fd, args: &[&[u8]], pipes: &[Pipe]) -> Spawn {
     Spawn {
         program: Box::from(executable),
         args: args.iter().map(|arg| Box::from(*arg)).collect(),

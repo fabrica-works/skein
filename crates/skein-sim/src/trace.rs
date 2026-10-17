@@ -52,6 +52,9 @@ pub enum Fault {
 /// the start of each path or name for it.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Summary {
+    Lock {
+        fd: Fd,
+    },
     Socket {
         family: Family,
     },
@@ -226,6 +229,7 @@ impl Summary {
             Op::Append { fd, bytes, from } => Summary::Append { fd: *fd, len: bytes.len(), from: *from },
             Op::Truncate { fd, length } => Summary::Truncate { fd: *fd, length: *length },
             Op::Sync { fd } => Summary::Sync { fd: *fd },
+            Op::Lock { fd } => Summary::Lock { fd: *fd },
             Op::Stat { fd } => Summary::Stat { fd: *fd },
             Op::Rename { from_dir, from, to_dir, to } => {
                 Summary::Rename { from_dir: *from_dir, from: Text::of(from), to_dir: *to_dir, to: Text::of(to) }
@@ -276,6 +280,7 @@ impl Summary {
             | Summary::Append { .. }
             | Summary::Truncate { .. }
             | Summary::Sync { .. }
+            | Summary::Lock { .. }
             | Summary::Stat { .. }
             | Summary::Rename { .. }
             | Summary::Remove { .. }
@@ -313,6 +318,7 @@ impl Summary {
             | Summary::Window { .. }
             | Summary::Usage
             | Summary::Signal { .. }
+            | Summary::Lock { .. }
             | Summary::Stat { .. }
             | Summary::Rename { .. }
             | Summary::Remove { .. }
@@ -358,6 +364,7 @@ impl Summary {
             | Summary::Append { fd, .. }
             | Summary::Truncate { fd, .. }
             | Summary::Sync { fd }
+            | Summary::Lock { fd }
             | Summary::Stat { fd }
             | Summary::Remove { dir: fd, .. }
             | Summary::MakeDirectory { dir: fd, .. }

@@ -645,6 +645,7 @@ fn stall(id: Id<Entity>, env: &Env<Limits>, tables: &mut Tables) {
 }
 
 /// What a completion means to the stream.
+#[expect(clippy::too_many_lines, reason = "one exhaustive completion table includes every kernel error")]
 fn decode(landed: Landed) -> Happened {
     let Landed { entity: _, flight, purpose, kind, result } = landed;
     match purpose {
@@ -681,6 +682,7 @@ fn decode(landed: Landed) -> Happened {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
@@ -712,6 +714,7 @@ fn decode(landed: Landed) -> Happened {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }

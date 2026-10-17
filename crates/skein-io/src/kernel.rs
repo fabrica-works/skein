@@ -163,6 +163,11 @@
 //!   all of `names`, and the next `List` meets it again. Entries come in
 //!   no particular order, and one made or removed while a directory is
 //!   listed may or may not be seen.
+//! - **`Lock`** takes an exclusive `flock(LOCK_EX | LOCK_NB)` on a file
+//!   or directory, never a path-only descriptor. It runs at submit and
+//!   completes at the next reap: `Nothing` when taken or already held through
+//!   this open, `Busy` when another open holds it. The lock goes with the
+//!   descriptor, never to a spawned child; only closing frees it.
 //! - **A file removed while open** stays readable and writable through its
 //!   descriptor until its `Close`. A directory removed while open is empty
 //!   for good: any name beneath it fails with `NotFound`, to an `Open`, a
@@ -171,7 +176,7 @@
 //!   operation on sockets may, with the same outcomes (Cancelling, above):
 //!   none waits on a peer, but on a filesystem that can stall (NFS, FUSE)
 //!   one may wait long, and io's deadline gives up on it. A `Stat`,
-//!   `Rename`, `Remove`, `MakeDirectory` or `List` completes without one.
+//!   `Rename`, `Remove`, `MakeDirectory`, `List` or `Lock` completes without one.
 //! - **Only files and directories open.** An `Open` of anything else beneath
 //!   a root (a FIFO, a device, a socket) fails with `NotAFile`: the backend
 //!   opens without blocking and never as a controlling terminal
@@ -211,6 +216,7 @@
 //! | `Truncate` | `Permission`, `NoSpace`, `ReadOnly` |
 //! | `Sync` | `NoSpace` |
 //! | `Stat` | none |
+//! | `Lock` | `Busy` |
 //! | `Rename` | `NotFound`, `NotADirectory`, `IsADirectory`, `NotEmpty`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong` |
 //! | `Remove` | `NotFound`, `NotADirectory`, `IsADirectory`, `NotEmpty`, `Permission`, `ReadOnly`, `NameTooLong` |
 //! | `MakeDirectory` | `NotFound`, `Exists`, `NotADirectory`, `Permission`, `NoSpace`, `ReadOnly`, `TooManyLinks`, `NameTooLong` |
@@ -225,7 +231,7 @@
 //! - a record that is not [`Op::is_valid`];
 //! - a token already in flight;
 //! - a `Cancel` whose target is a `Cancel`, a `Truncate`, a `Stat`, a `Rename`, a
-//!   `Remove`, a `MakeDirectory`, a `List`, a `Spawn`, a `Signal`, a `Usage` or a `Window`;
+//!   `Remove`, a `MakeDirectory`, a `List`, a `Lock`, a `Spawn`, a `Signal`, a `Usage` or a `Window`;
 //! - a `Wait` beside another on its pidfd, or a reap before a reported exit;
 //! - any operation on a pidfd after its reap, except its `Close`;
 //! - an operation on files ([`Op::is_file`]) on a socket's descriptor, or
@@ -234,6 +240,7 @@
 //!   on one not opened with `Create` or `Write`, a `Truncate` on one not
 //!   opened with `Write`, a `List` on one opened
 //!   with `Create`;
+//! - a `Lock` on a socket, pipe or path-only descriptor;
 //! - a `Bind` or `Connect` address of another family than its socket's;
 //! - per descriptor, more than one `Recv`, one `Send` or one `Accept` in
 //!   flight, or anything in flight beside a `Connect`;
@@ -438,6 +445,10 @@ pub enum Op {
     },
     /// Flushes what was written to the file, or to the directory's entries.
     Sync {
+        fd: Fd,
+    },
+    /// Takes an exclusive lock without waiting, at submit: `Done::Nothing`.
+    Lock {
         fd: Fd,
     },
     /// The kind and size of what is open on `fd`.
@@ -779,6 +790,8 @@ pub enum Shape {
 /// which is tabled in the module documentation.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Error {
+    /// `Lock`: another open holds the lock (`EWOULDBLOCK`).
+    Busy,
     /// `Connect`: nothing listened at the address when the connect arrived
     /// (`ECONNREFUSED`). A full accept queue delays a `Connect`, never refuses
     /// it.
@@ -907,6 +920,7 @@ enum Files {
     Truncate,
     Sync,
     Stat,
+    Lock,
     Rename,
     Remove,
     MakeDirectory,
@@ -1013,6 +1027,7 @@ impl Op {
             | Op::Shutdown { .. }
             | Op::Close { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Wait { .. }
             | Op::Signal { .. }
@@ -1057,6 +1072,7 @@ impl Op {
             | Op::Close { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
             | Op::MakeDirectory { .. }
@@ -1073,6 +1089,7 @@ impl Op {
             Op::Write { .. } | Op::Append { .. } => Some(Files::Write),
             Op::Truncate { .. } => Some(Files::Truncate),
             Op::Sync { .. } => Some(Files::Sync),
+            Op::Lock { .. } => Some(Files::Lock),
             Op::Stat { .. } => Some(Files::Stat),
             Op::Rename { .. } => Some(Files::Rename),
             Op::Remove { .. } => Some(Files::Remove),
@@ -1213,6 +1230,7 @@ fn fails_a_cancel(error: Error) -> bool {
         | Error::TooManyLinks
         | Error::NameTooLong
         | Error::Escape
+        | Error::Busy
         | Error::NotAFile => false,
     }
 }
@@ -1243,6 +1261,7 @@ fn fails_a_cancel_only(error: Error) -> bool {
         | Error::TooManyLinks
         | Error::NameTooLong
         | Error::Escape
+        | Error::Busy
         | Error::NotAFile
         | Error::InvalidArgument
         | Error::Other(_) => false,
@@ -1263,6 +1282,7 @@ fn names_a_file(error: Error) -> bool {
         | Error::TooManyLinks
         | Error::NameTooLong
         | Error::Escape
+        | Error::Busy
         | Error::NotAFile => true,
         Error::Refused
         | Error::Reset
@@ -1286,6 +1306,7 @@ fn names_a_file(error: Error) -> bool {
 fn fails_on_files(op: Files, error: Error) -> bool {
     match error {
         Error::NoBufferSpace | Error::InvalidArgument | Error::Other(_) => true,
+        Error::Busy => op == Files::Lock,
         Error::TooManyOpenFiles | Error::Escape | Error::NotAFile => op == Files::Open,
         Error::NotFound | Error::NotADirectory | Error::NameTooLong => {
             among(op, &[Files::Open, Files::Rename, Files::Remove, Files::MakeDirectory, Files::List])
@@ -1377,6 +1398,7 @@ fn fits(op: &Op, done: &Done) -> bool {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
@@ -1426,6 +1448,7 @@ fn binds(op: &Op, bound: &Addr) -> bool {
         | Op::Append { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -1469,6 +1492,7 @@ fn counts(op: &Op, n: usize) -> bool {
         | Op::Open { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -1531,6 +1555,7 @@ fn only_other(error: Error) -> bool {
         | Error::TooManyLinks
         | Error::NameTooLong
         | Error::Escape
+        | Error::Busy
         | Error::NotAFile
         | Error::InvalidArgument => false,
     }

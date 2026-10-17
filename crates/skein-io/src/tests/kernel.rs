@@ -37,7 +37,7 @@ fn complete(kind: Op, result: Result<Done, Error>) -> Complete {
 
 /// One of every operation, valid. A new operation makes the match in
 /// `documented` fail to build until it is added there, and here.
-fn every_op() -> [Op; 28] {
+fn every_op() -> [Op; 29] {
     [
         Op::Socket { family: Family::Ipv4 },
         Op::Bind { fd: FD, addr: v4() },
@@ -67,6 +67,7 @@ fn every_op() -> [Op; 28] {
         Op::Window { fd: FD },
         Op::ReadSignal { fd: FD },
         Op::Cancel { target: Token::new(2) },
+        Op::Lock { fd: FD },
     ]
 }
 
@@ -99,6 +100,7 @@ fn documented(op: &Op) -> Done {
         | Op::Close { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
         | Op::MakeDirectory { .. }
@@ -169,6 +171,7 @@ fn the_shapes_are_as_the_table_on_op_says() {
         window,
         read_signal,
         cancel,
+        lock,
     ] = every_op();
     assert_eq!((socket.shape(), open.shape()), (Shape::Fd, Shape::Fd));
     assert_eq!(accept.shape(), Shape::Accepted);
@@ -184,7 +187,7 @@ fn the_shapes_are_as_the_table_on_op_says() {
     for op in [recv, send, read, write, append, list] {
         assert_eq!(op.shape(), Shape::Count);
     }
-    for op in [listen, connect, shutdown, close, truncate, sync, rename, remove, make_directory, cancel] {
+    for op in [listen, connect, shutdown, close, truncate, sync, rename, remove, make_directory, cancel, lock] {
         assert_eq!(op.shape(), Shape::Nothing);
     }
 }
@@ -289,6 +292,7 @@ fn a_descriptor_is_its_raw_number() {
 /// out again.
 fn named(op: &Op) -> &'static [Error] {
     match op {
+        Op::Lock { .. } => &[Error::Busy],
         Op::Open { .. } => &[
             Error::NotFound,
             Error::Exists,
@@ -375,6 +379,7 @@ const SOCKETS_ERRORS: [Error; 8] = [
 fn cancellable(op: &Op) -> bool {
     match op {
         Op::Truncate { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -406,7 +411,8 @@ fn cancellable(op: &Op) -> bool {
     }
 }
 
-const FILES_ERRORS: [Error; 12] = [
+const FILES_ERRORS: [Error; 13] = [
+    Error::Busy,
     Error::NotFound,
     Error::Exists,
     Error::NotADirectory,
@@ -469,7 +475,7 @@ fn an_operation_on_sockets_never_answers_a_files_error() {
 fn the_operations_on_files_are_those_on_names_beneath_a_root() {
     let files = [
         false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true,
-        true, true, true, false, false, false, false, false, false, false, false,
+        true, true, true, false, false, false, false, false, false, false, false, true,
     ];
     assert_eq!(every_op().len(), files.len(), "the classification table covers every fixture");
     for (op, file) in every_op().into_iter().zip(files) {
@@ -688,4 +694,27 @@ fn an_append_validates_remaining_bytes_and_counts() {
 fn a_truncate_past_i64_max_is_an_invalid_record() {
     let length = u64::try_from(i64::MAX).unwrap() + 1;
     assert!(!Op::Truncate { fd: FD, length }.is_valid(), "a kernel file length is signed");
+}
+
+#[test]
+fn busy_answers_a_lock_and_no_other_operation() {
+    assert!(complete(Op::Lock { fd: FD }, Err(Error::Busy)).is_valid());
+    for kind in [Op::Stat { fd: FD }, Op::Sync { fd: FD }, Op::Close { fd: FD }, Op::Usage] {
+        assert!(!complete(kind, Err(Error::Busy)).is_valid());
+    }
+}
+
+#[test]
+fn a_lock_answers_nothing_and_is_never_cancelled() {
+    assert!(Op::Lock { fd: FD }.is_valid());
+    for (result, valid) in [
+        (Ok(Done::Nothing), true),
+        (Ok(Done::Count(0)), false),
+        (Err(Error::Cancelled), false),
+        (Err(Error::NoBufferSpace), true),
+        (Err(Error::InvalidArgument), true),
+        (Err(Error::Other(5)), true),
+    ] {
+        assert_eq!(complete(Op::Lock { fd: FD }, result.clone()).is_valid(), valid, "{result:?}");
+    }
 }

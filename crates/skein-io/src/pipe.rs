@@ -473,6 +473,7 @@ fn fault(error: kernel::Error) -> Fault {
         | kernel::Error::TooManyLinks
         | kernel::Error::NameTooLong
         | kernel::Error::Escape
+        | kernel::Error::Busy
         | kernel::Error::NotAFile
         | kernel::Error::InvalidArgument
         | kernel::Error::Other(_) => Fault::Other,
@@ -552,6 +553,7 @@ fn written(operation: Op) -> (Box<[u8]>, u32) {
         | Op::Write { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }

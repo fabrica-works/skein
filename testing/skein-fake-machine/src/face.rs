@@ -49,6 +49,7 @@ pub fn step(machine: &mut Machine, call: Call, answers: &mut Queue<Answer>) {
             machine.sync(opened(file));
             Ok(Reply::Done)
         }
+        Ask::Lock { file } => done(machine.lock(opened(file))),
         Ask::Stat { file } => Ok(Reply::Stat(stat(machine.stat(opened(file))))),
         Ask::Rename { from_dir, from, to_dir, to } => {
             done(machine.rename(opened(from_dir), &from, opened(to_dir), &to))
@@ -168,6 +169,7 @@ const fn stat(facts: Facts) -> Stat {
 #[must_use]
 pub const fn kernel_error(refusal: Refusal) -> Error {
     match refusal {
+        Refusal::Held => Error::Busy,
         Refusal::NotFound => Error::NotFound,
         Refusal::Exists => Error::Exists,
         Refusal::NotADirectory => Error::NotADirectory,

@@ -116,6 +116,7 @@ impl Sim {
         let hangs = match op {
             Op::Open { .. } | Op::Read { .. } | Op::Write { .. } | Op::Append { .. } | Op::Sync { .. } => true,
             Op::Truncate { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
@@ -156,6 +157,7 @@ impl Sim {
             | Ask::Append { .. }
             | Ask::Truncate { .. }
             | Ask::Sync { .. }
+            | Ask::Lock { .. }
             | Ask::Stat { .. }
             | Ask::Rename { .. }
             | Ask::Remove { .. }
@@ -186,6 +188,7 @@ impl Sim {
                     | OpenHow::DirectoryNoFollow,
                 ..
             }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::List { .. } => (false, false, false),
             Op::Read { .. } => (false, false, true),
@@ -265,6 +268,7 @@ impl Sim {
             }
             Op::Truncate { fd, length } => (Ask::Truncate { file: self.handle(pid, *fd), length: *length }, 0),
             Op::Sync { fd } => (Ask::Sync { file: self.handle(pid, *fd) }, 0),
+            Op::Lock { fd } => (Ask::Lock { file: self.handle(pid, *fd) }, 0),
             Op::Stat { fd } => (Ask::Stat { file: self.handle(pid, *fd) }, 0),
             Op::Rename { from_dir, from, to_dir, to } => {
                 let (from_dir, to_dir) = (self.handle(pid, *from_dir), self.handle(pid, *to_dir));
@@ -363,7 +367,8 @@ impl Sim {
                 Done::Count(n)
             }
             (
-                Op::Truncate { .. }
+                Op::Lock { .. }
+                | Op::Truncate { .. }
                 | Op::Sync { .. }
                 | Op::Rename { .. }
                 | Op::Remove { .. }

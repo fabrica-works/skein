@@ -472,6 +472,7 @@ fn outcome(io: &mut Io, listener: Id<Entity>, result: Result<Done, kernel::Error
             | kernel::Error::TooManyLinks
             | kernel::Error::NameTooLong
             | kernel::Error::Escape
+            | kernel::Error::Busy
             | kernel::Error::NotAFile,
         ) => unreachable!("an operation on sockets never fails with a file's error (skein_io::kernel)"),
     }

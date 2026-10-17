@@ -235,3 +235,13 @@ fn a_cancel_of_usage_fails_the_world() {
     let target = world.submit(parent, Op::Usage);
     world.submit(parent, Op::Cancel { target });
 }
+
+#[test]
+#[should_panic(expected = "which is not open in this process")]
+fn a_lock_on_a_pipe_fails_the_world() {
+    let mut world = World::calm();
+    let parent = world.spawn();
+    let root = world.root(parent, &[]);
+    let (_, output) = child(&mut world, parent, root, Program::Never, true);
+    world.submit(parent, Op::Lock { fd: output.expect("an output pipe") });
+}

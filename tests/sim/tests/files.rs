@@ -518,3 +518,44 @@ fn path_only_descriptors_cannot_be_roots() {
     let path = world.open(pid, root, b"d", OpenHow::PathNoFollow).unwrap();
     world.submit(pid, Op::Open { root: path, path: Box::from(&b"inner"[..]), how: OpenHow::Read });
 }
+
+#[test]
+#[should_panic(expected = "which io never cancels")]
+fn a_cancel_of_a_lock_fails_the_world() {
+    let (mut world, pid, root) = rooted();
+    world.serving = false;
+    let lock = world.submit(pid, Op::Lock { fd: root });
+    world.submit(pid, Op::Cancel { target: lock });
+}
+
+#[test]
+#[should_panic(expected = "only Stat and Close may use a path-only descriptor")]
+fn a_lock_on_a_path_only_descriptor_fails_the_world() {
+    let (mut world, pid, root) = rooted();
+    let file = world.open(pid, root, b"a.txt", OpenHow::PathNoFollow).unwrap();
+    world.submit(pid, Op::Lock { fd: file });
+}
+
+#[test]
+#[should_panic(expected = "an operation on files on")]
+fn a_lock_on_a_socket_fails_the_world() {
+    let mut world = World::calm();
+    let pid = world.spawn();
+    let socket = world.socket(pid);
+    world.submit(pid, Op::Lock { fd: socket });
+}
+
+#[test]
+fn a_lock_goes_with_the_handles_of_a_cut_process() {
+    let (mut world, holder, first) = rooted();
+    let waiter = world.spawn();
+    let handle = world.machine.reopen_root(0);
+    let second = world.sim.root(waiter, Handle::new(handle.raw()));
+    assert_eq!(world.call(holder, Op::Lock { fd: first }).result, Ok(Done::Nothing));
+    assert_eq!(world.call(waiter, Op::Lock { fd: second }).result, Err(Error::Busy));
+    for handle in world.sim.cut(holder) {
+        world.machine.close(skein_fake_machine::Opened::new(handle.raw()));
+    }
+    assert_eq!(world.call(waiter, Op::Lock { fd: second }).result, Ok(Done::Nothing));
+    close_all(&mut world, waiter, &[second]);
+}

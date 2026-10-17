@@ -610,6 +610,7 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }

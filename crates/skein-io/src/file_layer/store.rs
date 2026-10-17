@@ -677,6 +677,7 @@ fn write_parts(kind: Op) -> (Fd, Box<[u8]>, u32, u64) {
         | Op::Append { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -711,6 +712,7 @@ fn read_buffer(kind: Op) -> Box<[u8]> {
         | Op::Append { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }

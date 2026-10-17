@@ -234,6 +234,7 @@ fn succeed(op: &mut Op, fd: &mut i32) -> Result<Done, Error> {
         | Op::Write { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -266,6 +267,7 @@ fn stopped(op: &mut Op, fd: &mut i32) -> Result<Done, Error> {
         | Op::Write { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }

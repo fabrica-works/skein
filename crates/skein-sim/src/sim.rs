@@ -277,6 +277,7 @@ impl Sim {
                     | Op::Append { .. }
                     | Op::Truncate { .. }
                     | Op::Sync { .. }
+                    | Op::Lock { .. }
                     | Op::Stat { .. }
                     | Op::Rename { .. }
                     | Op::Remove { .. }
@@ -576,6 +577,7 @@ impl Sim {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
@@ -696,6 +698,7 @@ impl Sim {
             | Summary::Append { .. }
             | Summary::Truncate { .. }
             | Summary::Sync { .. }
+            | Summary::Lock { .. }
             | Summary::Stat { .. }
             | Summary::Rename { .. }
             | Summary::Remove { .. }
@@ -1070,6 +1073,7 @@ impl Sim {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }

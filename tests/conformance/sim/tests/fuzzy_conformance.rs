@@ -296,3 +296,8 @@ fn appends_continue_short_counts_and_cancel_meets_every_pairing() {
 fn stat_keeps_the_owner_and_counts_hard_links_through_removal() {
     chaos(file_metadata);
 }
+
+#[test]
+fn a_directory_lock_under_chaos_keeps_the_contract() {
+    chaos(|world| skein_conformance::lock(world, b"process_fixture"));
+}

@@ -83,6 +83,7 @@ pub(crate) fn buffer(op: &Op) -> (&[u8], u32) {
         | Op::Append { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -150,6 +151,7 @@ pub(crate) const fn kind(op: &Op) -> Kind {
         | Op::Write { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }

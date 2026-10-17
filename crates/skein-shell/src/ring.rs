@@ -44,7 +44,7 @@
 //!   `sockaddr_in` or `sockaddr_in6` its family names: the storage is larger
 //!   and at least as aligned as either.
 //! - **The synchronous calls** (`setsockopt`, `getsockname`, `close`,
-//!   `open`, `getdents64`, `lseek`, `fstatat`, `fstat`, `fcntl`,
+//!   `open`, `flock`, `getdents64`, `lseek`, `fstatat`, `fstat`, `fcntl`,
 //!   `faccessat2`, `clock_gettime`, `getrandom`) are given pointers to locals, to strings
 //!   or to the
 //!   table's listing buffer, each of which lives across the call, with their
@@ -846,6 +846,11 @@ fn prepare(
                 Err(errno) => Err(error(kind, errno, false)),
             });
         }
+        Op::Lock { fd } => {
+            // SAFETY: flock takes only the descriptor and integer flags.
+            let result = unsafe { libc::flock(fd.raw(), libc::LOCK_EX | libc::LOCK_NB) };
+            return Prepared::Done(if result == 0 { Ok(Done::Nothing) } else { Err(error(kind, last_errno(), false)) });
+        }
         Op::Spawn { spawn: command } => return Prepared::Done(spawn(command)),
         Op::Signal { pidfd, signal, to } => return Prepared::Done(signal_child(*pidfd, *signal, *to)),
         Op::Window { fd } => return Prepared::Done(terminal::size(*fd).map(Done::Window)),
@@ -974,7 +979,7 @@ fn decode(flight: &mut Flight, res: i32, cancelled: bool) -> Result<Done, Error>
         | Op::Remove { .. }
         | Op::MakeDirectory { .. }
         | Op::Cancel { .. } => Ok(Done::Nothing),
-        Op::Window { .. } | Op::Usage | Op::List { .. } | Op::Spawn { .. } | Op::Signal { .. } => {
+        Op::Lock { .. } | Op::Window { .. } | Op::Usage | Op::List { .. } | Op::Spawn { .. } | Op::Signal { .. } => {
             unreachable!("a synchronous operation completes at its submit")
         }
     }
@@ -998,6 +1003,7 @@ fn error(kind: &Op, errno: i32, cancelled: bool) -> Error {
         | Op::Append { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -1090,6 +1096,7 @@ fn operation_error(kind: &Op, errno: i32) -> Error {
         | Op::Append { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
@@ -1144,6 +1151,10 @@ fn file_error(kind: &Op, errno: i32) -> Error {
         },
         Op::Sync { .. } => match errno {
             libc::ENOSPC | libc::EDQUOT => Some(Error::NoSpace),
+            _ => None,
+        },
+        Op::Lock { .. } => match errno {
+            libc::EWOULDBLOCK => Some(Error::Busy),
             _ => None,
         },
         Op::Stat { .. } => None,
@@ -1241,6 +1252,7 @@ fn check_path_access(operation: &Op) {
         | Op::Append { fd, .. }
         | Op::Truncate { fd, .. }
         | Op::Sync { fd }
+        | Op::Lock { fd }
         | Op::List { fd, .. }
         | Op::ReadSignal { fd }
         | Op::PipeRead { fd, .. }

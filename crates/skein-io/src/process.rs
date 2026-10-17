@@ -327,6 +327,7 @@ fn spawn_error(error: kernel::Error) -> Error {
         | kernel::Error::TooManyLinks
         | kernel::Error::NameTooLong
         | kernel::Error::Escape
+        | kernel::Error::Busy
         | kernel::Error::NotAFile
         | kernel::Error::InvalidArgument
         | kernel::Error::Other(_) => Error::Other,

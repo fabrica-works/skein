@@ -70,6 +70,7 @@ impl Sim {
             | Summary::Append { .. }
             | Summary::Truncate { .. }
             | Summary::Sync { .. }
+            | Summary::Lock { .. }
             | Summary::Stat { .. }
             | Summary::Rename { .. }
             | Summary::Remove { .. }

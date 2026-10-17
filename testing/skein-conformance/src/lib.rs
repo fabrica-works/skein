@@ -30,6 +30,7 @@ extern crate alloc;
 
 mod cuts;
 mod files;
+mod locks;
 mod processes;
 mod run;
 mod scenarios;
@@ -46,6 +47,7 @@ pub use files::{
     file_lifecycle, file_metadata, list, make_directory, nested_roots, open_past_the_descriptor_limit, path_metadata,
     permissions, remove, rename,
 };
+pub use locks::{Locks, lock};
 pub use processes::{Groups, Processes, ResourcesCheck, groups, processes, usage};
 
 pub use scenarios::{

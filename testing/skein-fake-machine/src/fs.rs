@@ -3,6 +3,7 @@
 //! the face translates (testing-strategy.md, 4).
 
 mod cuts;
+mod locks;
 mod moves;
 mod opens;
 
@@ -115,6 +116,8 @@ pub struct Facts {
 /// What the machine refuses, as Linux would beneath a root.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Refusal {
+    /// Another open of this node holds an exclusive lock.
+    Held,
     NotFound,
     Exists,
     NotADirectory,
@@ -244,6 +247,7 @@ struct Handle {
     how: How,
     /// The last name a `list` of this handle handed back.
     listed: Option<Box<[u8]>>,
+    locked: bool,
 }
 
 /// Where a path led: the directory its last name is in, that name and what
@@ -837,7 +841,7 @@ impl Machine {
     fn issue(&mut self, node: NodeId, how: How) -> Opened {
         let handle = self.next_handle;
         self.next_handle = handle.checked_add(1).expect("fewer than 2^64 handles");
-        self.handles.insert(handle, Handle { node, how, listed: None });
+        self.handles.insert(handle, Handle { node, how, listed: None, locked: false });
         Opened(handle)
     }
 

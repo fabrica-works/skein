@@ -403,3 +403,32 @@ fn a_synced_source_alone_leaves_a_rename_across_in_either_directory() {
     let outcomes: Vec<_> = (0..16).map(|seed| moved_after_crash(seed, true, false)).collect();
     assert!(outcomes.contains(&true) && outcomes.contains(&false));
 }
+
+#[test]
+fn a_lock_is_held_through_another_handle_until_it_closes() {
+    let (mut machine, root) = machine(&[Item::directory(b"store")]);
+    let first = machine.open(root, b"store", How::Directory).unwrap();
+    let second = machine.open(root, b"store", How::Directory).unwrap();
+    assert_eq!(machine.lock(first), Ok(()));
+    assert_eq!(machine.lock(second), Err(Refusal::Held));
+    assert_eq!(machine.lock(first), Ok(()));
+    machine.close(first);
+    assert_eq!(machine.lock(second), Ok(()));
+    machine.close(second);
+    machine.close(root);
+    assert_eq!(machine.open_handles(), 0);
+}
+
+#[test]
+fn a_power_loss_frees_every_lock() {
+    let (mut machine, root) = machine(&[]);
+    assert_eq!(machine.lock(root), Ok(()));
+    machine.crash(7);
+    let first = machine.reopen_root(0);
+    let second = machine.reopen_root(0);
+    assert_eq!(machine.lock(first), Ok(()));
+    assert_eq!(machine.lock(second), Err(Refusal::Held));
+    machine.close(first);
+    machine.close(second);
+    assert_eq!(machine.open_handles(), 0);
+}

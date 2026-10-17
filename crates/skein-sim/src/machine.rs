@@ -55,6 +55,8 @@ pub struct Call {
 /// operation may answer (`skein_io::kernel`'s table).
 #[derive(PartialEq, Eq, Debug)]
 pub enum Ask {
+    /// An exclusive lock through this handle, or Busy while another holds it.
+    Lock { file: Handle },
     /// Identify a program beneath `root`, in `dir`, and start its modeled
     /// behavior with exactly the requested child descriptors.
     Spawn {

@@ -269,3 +269,8 @@ fn window_on_a_descriptor_that_is_not_a_terminal_answers_other() {
 fn a_write_open_finds_what_exists_and_truncate_sets_its_length() {
     on_the_ring(skein_conformance::cutting);
 }
+
+#[test]
+fn a_directory_lock_is_busy_through_a_second_open_until_the_first_closes() {
+    skein_conformance::lock(&mut Ring::new(), env!("CARGO_BIN_EXE_process_fixture").as_bytes()).check();
+}

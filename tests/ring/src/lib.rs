@@ -172,6 +172,7 @@ impl World {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }

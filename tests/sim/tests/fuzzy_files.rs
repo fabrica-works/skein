@@ -96,6 +96,7 @@ fn workload(seed: u64) -> World {
     }
     let bytes: Vec<u8> = (0..40_u8).collect();
     for n in 0..4_u8 {
+        let _ = settle(&mut world, pid, Op::Lock { fd: root });
         let open = Op::Open { root, path: name(b'f', n), how: OpenHow::Create { mode: None } };
         let Ok(Done::Fd(file)) = settle(&mut world, pid, open).result else { continue };
         let written = write_all(&mut world, pid, file, &bytes);
@@ -144,9 +145,11 @@ fn files_under_chaos_keep_the_contract_and_every_fault_falls() {
     let mut faults = BTreeSet::new();
     let mut errors = BTreeSet::new();
     let mut append_faults = BTreeSet::new();
+    let mut lock_no_buffer = false;
     for seed in 0..200_u64 {
         let world = workload(seed);
         let mut appending = false;
+        let mut locking = false;
         for entry in world.sim.trace() {
             match entry.event {
                 Event::Fault(fault) => {
@@ -157,12 +160,17 @@ fn files_under_chaos_keep_the_contract_and_every_fault_falls() {
                 }
                 Event::Complete { result: Err(error), .. } => {
                     errors.insert(error);
+                    lock_no_buffer |= locking && error == Error::NoBufferSpace;
                 }
-                Event::Submit { kind, .. } => appending = matches!(kind, Summary::Append { .. }),
+                Event::Submit { kind, .. } => {
+                    appending = matches!(kind, Summary::Append { .. });
+                    locking = matches!(kind, Summary::Lock { .. });
+                }
                 Event::Complete { .. } => {}
             }
         }
     }
+    assert!(lock_no_buffer, "some Lock completed with NoBufferSpace");
     for fault in [
         Fault::Latency,
         Fault::ShortRead,

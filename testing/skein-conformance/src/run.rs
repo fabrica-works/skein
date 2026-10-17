@@ -116,6 +116,7 @@ impl<'b, B: Backend> Run<'b, B> {
             | Op::Append { .. }
             | Op::Truncate { .. }
             | Op::Sync { .. }
+            | Op::Lock { .. }
             | Op::Stat { .. }
             | Op::Rename { .. }
             | Op::Remove { .. }
@@ -607,6 +608,10 @@ impl<B: Backend> Run<'_, B> {
         Ok(shortness)
     }
 
+    pub(crate) fn lock(&mut self, process: B::Process, fd: Fd) -> Result<Done, Error> {
+        self.call(process, Op::Lock { fd }).result
+    }
+
     pub(crate) fn sync(&mut self, process: B::Process, fd: Fd) -> Result<Done, Error> {
         self.call(process, Op::Sync { fd }).result
     }
@@ -731,6 +736,7 @@ enum Summary {
     Truncate { fd: Fd, length: u64 },
     Sync { fd: Fd },
     Stat { fd: Fd },
+    Lock { fd: Fd },
     Rename { from_dir: Fd, from: usize, to_dir: Fd, to: usize },
     Remove { dir: Fd, name: usize, directory: bool },
     MakeDirectory { dir: Fd, name: usize },
@@ -764,6 +770,7 @@ impl Summary {
             Op::Append { fd, bytes, from } => Summary::Append { fd: *fd, len: bytes.len(), from: *from },
             Op::Truncate { fd, length } => Summary::Truncate { fd: *fd, length: *length },
             Op::Sync { fd } => Summary::Sync { fd: *fd },
+            Op::Lock { fd } => Summary::Lock { fd: *fd },
             Op::Stat { fd } => Summary::Stat { fd: *fd },
             Op::Rename { from_dir, from, to_dir, to } => {
                 Summary::Rename { from_dir: *from_dir, from: from.len(), to_dir: *to_dir, to: to.len() }
@@ -830,6 +837,7 @@ fn boxes_of(op: &Op) -> Vec<&[u8]> {
         | Op::Close { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Wait { .. }
         | Op::Signal { .. }
@@ -859,6 +867,7 @@ fn entries_of(op: &Op) -> Option<&[Entry]> {
         | Op::Append { .. }
         | Op::Truncate { .. }
         | Op::Sync { .. }
+        | Op::Lock { .. }
         | Op::Stat { .. }
         | Op::Rename { .. }
         | Op::Remove { .. }
