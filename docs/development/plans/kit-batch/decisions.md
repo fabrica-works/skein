@@ -39,7 +39,8 @@ section 10 (findings/inventory.md); the planner decided what follows
    `plan idle "fence: temper's client-api is active"`; the supervisor's
    hourly check rings it once the row has changed. No session is held
    mid-work for it: an implementer that cannot land would wait hours
-   with its context open.
+   with its context open. Lifted by ruling 101, 2026-10-17: the run's
+   kit is pinned (temper's ruling 295).
 4. **The other runs keep their process.** hearth's render and temper's
    forge-setup were claimed after e6fd9fb and run their claim's `kit/`
    (development.md, 3.6). Each landing's body says, under 4.4: "hearth's
@@ -193,6 +194,17 @@ section 10 (findings/inventory.md); the planner decided what follows
 
 ## Rulings
 
+101. **The fence is lifted** (steer of 2026-10-17T23:46:41Z).
+     The fence (decisions.md, 3; README, "Rules of this plan") is lifted, at the director's word of 2026-10-17T23:45Z: "the fence on temper's client-api can be lifted now. client-api's kit is pinned: on carbon-forge, ~/src/tmp/temper/client-api/kit is a worktree at skein 841f487 (its ruling 295, temper 0e25fc8d1, 23:43Z 10-17). Its plan, land and heavy no longer read carbon's skein checkout, so the kit batch's landings can't reach it. Every other rule of the plan stands."
+
+     Decision 3 rested on "That run claimed before skein e6fd9fb, so it runs main's kit, and it lands in skein: each of its landings brings main's kit into its machine's checkout mid-run." temper's ruling 295 removes that premise: "from now on `plan`, `land` and `heavy`, run from the copy on PATH, hand over to `kit/scripts/dev`'s (`kit.sh`, `run_kit`), as for a run claimed after `e6fd9fb`, and skein's kit batch may land without reaching this run."
+
+     From now until the run's end, the coordinator runs no fence command before a start, and starts sessions as the README's "How many at once, and in what order" says: skein 01 and 02 at once. The README's fence bullet is replaced by "The fence is lifted (decisions.md, 3; ruling 101)"; its "if the fence allows (Rules)" goes, with nothing in its place. Unchanged: every other rule of the plan, the landing body's line under decision 4 among them.
+
+     Checked:
+     - `git -C ~/src/rust/temper show --format='%h %s%n%b' 0e25fc8d1 | head -2` gives `0e25fc8d1 Ruling 295 of client-api` and `the run's kit pinned at skein 841f487 (infrastructure, the director's request of 2026-10-17T23:40Z).`
+     - `git -C ~/src/rust/skein show origin/main:docs/design/STATUS.md | grep -c "^| temper's client-api | active on"` at 23:17Z gave `1`: the row stays, and the fence's own command would hold the run.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner
@@ -216,7 +228,7 @@ under the director's brief.
 - **`plan handover` takes two forms** (decision 7): `supervisor`, and
   a session's line.
 - **The fence** (decision 3): the run idles while temper's client-api is
-  active.
+  active. Lifted by ruling 101, at the director's word.
 - **experiments.md was not read** (decision 1): candidate 7 is planned
   from the brief's words.
 - **Process text the planner wrote as the process designer would,**

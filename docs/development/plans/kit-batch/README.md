@@ -44,8 +44,8 @@ ones before it in its session.
 
 ### How many at once, and in what order
 
-- **At the start:** skein 01 and 02, if the fence allows (Rules); 02
-  lands its Markdown, then waits for 01.1.
+- **At the start:** skein 01 and 02; 02 lands its Markdown, then waits
+  for 01.1.
 - **Then:** skein 03, 04, 05 and 06 once 01.2 has landed. Five at once
   is the most; the build lane runs 2 at once and the gate lane 1.
 - **When slots are short, start first:** skein 04 and 05, the two
@@ -56,13 +56,10 @@ ones before it in its session.
 
 ## Rules of this plan
 
-- **The fence** (decisions.md, 3): before starting any session, the
-  coordinator runs `git -C ~/src/rust/skein fetch -q origin && git -C
-  ~/src/rust/skein show origin/main:docs/design/STATUS.md | grep -c
-  "^| temper's client-api | active on"`. While it prints 1, it starts
-  nothing and runs `plan idle "fence: temper's client-api is active"`.
-  The supervisor's hourly check runs the same command, and rings once it
-  prints 0.
+- **The fence is lifted** (decisions.md, 3; ruling 101): temper's
+  client-api runs its own kit, pinned at skein `841f487` (temper's ruling
+  295), so this run's landings no longer reach it. The coordinator runs
+  no fence command, and starts sessions as the rest of this README says.
 - **The gate** (decisions.md, 5): a step that changes code lands, from
   its worktree, with
 
