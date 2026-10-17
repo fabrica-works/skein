@@ -470,7 +470,7 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 
 | Tool | Does |
 |---|---|
-| `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes |
+| `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes; internal `heavy --task TOKEN -- command…` runs the task and writes its row |
 | `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local`, and `LAND_PREBUILD` the build lane's command before the gate |
 | `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan, the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
@@ -2147,15 +2147,17 @@ the run heading away from its plan's "Done when".
 
 ### 11.2 Logs
 
-`heavy` writes each command's whole output to the run's `logs/` and
+`heavy --task` runs inside the queued task and writes its log and row,
+even if the waiting client is killed. It writes each command's whole output to the run's `logs/` and
 prints only its tail and the log's path. It also appends a line to
 `logs/heavy.tsv`: the task's id, its lane, when it ended, the seconds it
 waited and ran, its exit status, the memory available as it ended (GB),
 its directory, its log, its command and its label (`HEAVY_LABEL`: `land
 <repository>` for `land`'s gates, which the metrics count apart from the
-gate lane's other tasks). Then it removes the task from
-pueue, which keeps the daemon's state small. It does both on every exit,
-even when it cannot read pueue's answer.
+gate lane's other tasks). The client waits, reads the task's row, prints the
+tail and removes the task from pueue, which keeps the daemon's state small.
+If a task dies before writing its row, the client recovers it from pueue's
+record, even when it cannot read pueue's answer.
 
 A gate task's log starts with the machine's load average and its three
 busiest processes as the command starts alone, so that a slow gate can

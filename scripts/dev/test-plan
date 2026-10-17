@@ -17,7 +17,24 @@ live=0
 
 workspace=${DEV_ROOT:-$(dirname "$(dirname "$(git -C "$kit" rev-parse --path-format=absolute --git-common-dir)")")}
 t=$(mktemp -d "$workspace/tmp/test-plan.XXXXXX")
-if [[ ${PLAN_TEST_KEEP:-} == 1 ]]; then echo "test-plan: keeping $t"; else trap 'rm -rf "$t"' EXIT; fi
+cleanup() {
+    pueue shutdown >/dev/null 2>&1 || true
+    if [[ ${PLAN_TEST_KEEP:-} != 1 ]]; then rm -rf "$t"; fi
+}
+[[ ${PLAN_TEST_KEEP:-} != 1 ]] || echo "test-plan: keeping $t"
+export PUEUE_CONFIG_PATH=$t/pueue/pueue.yml
+mkdir -p "$t/pueue"
+cat >"$PUEUE_CONFIG_PATH" <<EOF
+shared:
+  pueue_directory: $t/pueue
+  runtime_directory: $t/pueue
+  use_unix_socket: true
+  unix_socket_path: $t/pueue/pueue.socket
+EOF
+trap cleanup EXIT
+pueued -d
+pueue group add build >/dev/null
+pueue group add gate >/dev/null
 export DEV_ROOT=$t/src DEV_TMP=$t/src/tmp DEV_REPOS=alpha
 export CODEX_HOME=$t/codex CLAUDE_CONFIG_DIR=$t/claude PLAN_NO_ROLES=1 PLAN_POLL=0.1
 plan=$kit/plan
@@ -164,6 +181,28 @@ status=0
 out=$("$plan" set --help state=ready 2>&1) || status=$?
 expect "plan set refuses an option" "$status $out" '2 plan:' 'a step is not an option: --help'
 expect "an option leaves the ledger unchanged" "$(if [[ $(cat "$run/ledger.tsv") == "$before" ]]; then echo unchanged; fi)" unchanged
+
+# heavy owns its row inside a task on this world's queue.
+heavy_run() { HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" "$@"; }
+status=0
+out=$(heavy_run sh -c 'exit 3' 2>&1) || status=$?
+expect "heavy writes a row and passes the status" "$status $out" '3 heavy:' 'exit 3'
+expect "heavy writes one failure row" "$(awk -F'\t' 'END { print NR, $6 }' "$t/heavy-tmp/logs/heavy.tsv")" '1 3'
+HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" sleep 1 >"$t/client.log" 2>&1 &
+client_pid=$!
+for ((poll=0; poll<50; poll++)); do
+    task_id=$(pueue status --json | jq -r '.tasks[] | select(.status | has("Running")) | .id')
+    [[ -z $task_id ]] || break
+    sleep 0.1
+done
+kill "$client_pid"
+wait "$client_pid" 2>/dev/null || true
+pueue wait --quiet "$task_id"
+expect "a killed client loses no row" "$(awk -F'\t' 'END { print NR, $6 }' "$t/heavy-tmp/logs/heavy.tsv")" '2 0'
+pueue remove "$task_id" >/dev/null
+out=$(heavy_run --gate true 2>&1)
+expect "the gate lane writes its row too" "$out" '(gate) exit 0'
+expect "heavy writes one gate row" "$(awk -F'\t' 'END { print NR, $2, $6 }' "$t/heavy-tmp/logs/heavy.tsv")" '3 gate 0'
 
 # Commits with trailers, after the claim.
 commit() {

@@ -3,6 +3,7 @@
 # exit with its status (development.md, section 11).
 #
 #   heavy [--gate] [--tail N] [--] command...
+#   heavy --task TOKEN -- command...  (inside the queued task)
 #
 # Two lanes. The build lane (group `build`, default) runs check, clippy,
 # builds and the tests of a few crates, two at once, each with
@@ -72,12 +73,52 @@ exclusive() {
     return "$status"
 }
 
+# Logs go to the active run's directory, or to the machine's.
+logs=$tmp/logs
+if [[ -f $tmp/active-plan ]]; then
+    logs=$tmp/$(head -n1 "$tmp/active-plan")/logs
+fi
+mkdir -p "$logs"
+
+# One row per task, written inside it, or recovered if it died before
+# its EXIT trap (development.md, section 11.2).
+write_row() {
+    local memory
+    memory=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$lane" \
+        "$(date -u +%FT%TZ)" "$waited" "$ran" "$code" "$memory" "$PWD" "$log" \
+        "${command//$'\t'/ }" "${HEAVY_LABEL:-$(basename "$PWD")}" >>"$logs/heavy.tsv"
+}
+
+run_task() {
+    local token=$1 info start
+    shift
+    [[ ${1:-} != -- ]] || shift
+    info=$(pueue status --json | jq -c --arg token "$token" \
+        '.tasks[] | select(.command | contains("--task " + $token))')
+    id=$(jq -r .id <<<"$info")
+    lane=$(jq -r .group <<<"$info")
+    log=$logs/$(date -u +%Y%m%dT%H%M%S)-$id.log
+    command="$*"
+    if [[ $1 == "$kit/heavy" && ${2:-} == --exclusive ]]; then command="${*:4}"; fi
+    start=$(date +%s)
+    waited=$((start - ${token%-*} / 1000000000))
+    trap 'code=$?; ran=$(($(date +%s) - start)); write_row' EXIT
+    trap 'exit 143' TERM
+    trap 'exit 130' INT
+    trap 'exit 129' HUP
+    code=0
+    "$@" 2>&1 | tee "$log" || code=${PIPESTATUS[0]}
+    exit "$code"
+}
+
 lane=build
 tail_lines=${HEAVY_TAIL:-200}
 while (($#)); do
     case $1 in
     --gate) lane=gate; shift ;;
     --tail) tail_lines=${2:?}; shift 2 ;;
+    --task) shift; run_task "$@" ;;
     --exclusive) shift; [[ ${1:-} == -- ]] && shift; exclusive "$@"; exit ;;
     --) shift; break ;;
     -*) usage ;;
@@ -111,47 +152,40 @@ else
     task=("$kit/heavy" --exclusive -- "$@")
 fi
 
-# Logs go to the active run's directory, or to the machine's.
-logs=$tmp/logs
-if [[ -f $tmp/active-plan ]]; then
-    logs=$tmp/$(head -n1 "$tmp/active-plan")/logs
-fi
-mkdir -p "$logs"
-
+token=$(date +%s%N)-$$
 id=$(pueue add --print-task-id --group "$lane" --working-directory "$PWD" \
-    --label "${HEAVY_LABEL:-$(basename "$PWD")}" --escape -- "${task[@]}")
+    --label "${HEAVY_LABEL:-$(basename "$PWD")}" --escape -- "$kit/heavy" --task "$token" -- "${task[@]}")
 echo "heavy: queued task $id in the $lane lane" >&2
-# From here, every exit records the task and removes it from pueue, even
-# when reading pueue's answer fails (development.md, section 11.2).
+# The task owns its row even if this client is killed while waiting.
 set +e
 pueue wait --quiet "$id" >/dev/null 2>&1
-
-# pueue reuses the ids of removed tasks, so a log is named by time and id.
-log=$logs/$(date -u +%Y%m%dT%H%M%S)-$id.log
-# pueue prints times in the client's zone; the jq below reads only UTC.
-json=$(TZ=UTC0 pueue log --json --full "$id" 2>&1)
-jq -r 'to_entries[0].value.output' <<<"$json" >"$log" 2>/dev/null ||
-    printf 'heavy: cannot read the output of task %s from pueue:\n%s\n' "$id" "$json" >"$log"
-info=$(jq -c 'to_entries[0].value.task' <<<"$json" 2>/dev/null)
-result=$(jq -c '.status.Done.result // "Unfinished"' <<<"$info" 2>/dev/null)
-code=$(jq -r 'if . == "Success" then 0
-    elif type == "object" and has("Failed") then .Failed
-    else 1 end' <<<"${result:-\"Unfinished\"}" 2>/dev/null)
-[[ $code =~ ^[0-9]+$ ]] || code=1
-times=$(jq -r '.status.Done | if . == null then "0 0" else
-    [(.start | sub("\\.[0-9]+Z$"; "Z") | fromdate)
-        - (.enqueued_at | sub("\\.[0-9]+Z$"; "Z") | fromdate),
-     (.end | sub("\\.[0-9]+Z$"; "Z") | fromdate)
-        - (.start | sub("\\.[0-9]+Z$"; "Z") | fromdate)]
-    | map(tostring) | join(" ") end' <<<"$info" 2>/dev/null)
-read -r waited ran <<<"${times:-0 0}"
-memory=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
-
-# One line per task, for the queue's statistics (section 11.2), its label
-# last; then forget the task, so the daemon's state stays small.
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$lane" \
-    "$(date -u +%FT%TZ)" "$waited" "$ran" "$code" "$memory" "$PWD" "$log" \
-    "${*//$'\t'/ }" "${HEAVY_LABEL:-$(basename "$PWD")}" >>"$logs/heavy.tsv"
+row=$(awk -F'\t' -v id="$id" '$1 == id { row = $0 } END { print row }' "$logs/heavy.tsv" 2>/dev/null)
+result='"Success"'
+if [[ -n $row ]]; then
+    IFS=$'\t' read -r _ lane _ waited ran code _ _ log _ <<<"$row"
+else
+    # A task killed before its EXIT trap is recovered from pueue's record.
+    log=$logs/$(date -u +%Y%m%dT%H%M%S)-$id.log
+    # pueue prints times in the client's zone; the jq below reads only UTC.
+    json=$(TZ=UTC0 pueue log --json --full "$id" 2>&1)
+    jq -r 'to_entries[0].value.output' <<<"$json" >"$log" 2>/dev/null ||
+        printf 'heavy: cannot read the output of task %s from pueue:\n%s\n' "$id" "$json" >"$log"
+    info=$(jq -c 'to_entries[0].value.task' <<<"$json" 2>/dev/null)
+    result=$(jq -c '.status.Done.result // "Unfinished"' <<<"$info" 2>/dev/null)
+    code=$(jq -r 'if . == "Success" then 0
+        elif type == "object" and has("Failed") then .Failed
+        else 1 end' <<<"${result:-\"Unfinished\"}" 2>/dev/null)
+    [[ $code =~ ^[0-9]+$ ]] || code=1
+    times=$(jq -r '.status.Done | if . == null then "0 0" else
+        [(.start | sub("\\.[0-9]+Z$"; "Z") | fromdate)
+            - (.enqueued_at | sub("\\.[0-9]+Z$"; "Z") | fromdate),
+         (.end | sub("\\.[0-9]+Z$"; "Z") | fromdate)
+            - (.start | sub("\\.[0-9]+Z$"; "Z") | fromdate)]
+        | map(tostring) | join(" ") end' <<<"$info" 2>/dev/null)
+    read -r waited ran <<<"${times:-0 0}"
+    command="$*"
+    write_row
+fi
 pueue remove "$id" >/dev/null 2>&1 || true
 
 total=$(wc -l <"$log")
