@@ -100,6 +100,10 @@ where it holds it.
     `write_i8` to `write_i128` hash the integer's little-endian bytes at
     its own width; `write_usize` and `write_isize` hash 8 bytes, so a
     32-bit build (section 2) and a 64-bit one digest one state alike.
+    std hashes a slice of `usize` or `isize` whole, through `hash_slice`,
+    at the target's width, which no `Hasher` reaches: a state holds them
+    as fields or in lib's containers, which hash item by item, and a type
+    that keeps a slice of them hashes it item by item, by hand.
   - `digest(self) -> [u8; 32]` ends it. `finish()`, which `Hasher`
     requires, gives the digest's first 8 bytes as a big-endian `u64`,
     without ending it.
@@ -124,7 +128,16 @@ where it holds it.
 - **Never hashed:** a container's capacity, which its owner fixed, and
   its layout in memory: a B-tree's nodes, a ring's head, a buffer's spare
   room, an address. Two states that would answer every later step alike
-  digest alike, however each was reached.
+  digest alike, however each was reached. A `Slab` holds a slot for each
+  of its capacity, so its slots in index order, free ones included, are
+  all of it that is hashed.
+- **Not state, so no `Hash`:** `Env<L>`, which a step is handed and does
+  not keep (programming-model.md, section 3), and `stream::Held`, a buffer
+  served as a stream's side below, which the step that makes it reads. A
+  service that keeps its layers' envs beside them, as the echo's does,
+  digests its domains' state without them: the times are the trace's. A
+  state that keeps a `Held` past its step hashes, by hand, what of it is
+  left to read.
 - **A digest reads the whole state,** so a world asks for one at the end
   of a run, and after each iteration only when it chooses to (testing.md,
   section 5). No step code calls it.

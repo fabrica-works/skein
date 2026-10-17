@@ -194,7 +194,9 @@ pub struct Limits {
   `largest_demand`: a delivery is made to the tokenizer's demand, so it
   counts it, held for the step that reads it (testing.md, 5). A token's
   box is the side above's to count once emitted. `None` for a `chunk` of
-  zero.
+  zero, and for a `length` of `u32::MAX`: a position at the end of such
+  a document would pass `u32` (section 3.6). A tokenizer made with
+  either is its maker's bug, asserted.
 - **`largest_demand(&limits)`** is the larger of `chunk` and 4 (the rest
   of `false`). Whoever stacks the tokenizer checks at startup that it fits
   the cap of the side below: a demand past that cap could never be met,
@@ -252,10 +254,12 @@ pub struct Position {
   |---|---|
   | `Unexpected`, `Trailing` | the byte refused |
   | `TooDeep` | the bracket that opens past the depth |
-  | `Escape`, `Surrogate`, `Utf8`, `Control`, `StringTooLong` | in a string or a key, the first byte of the character or the escape at fault: for `Surrogate`, the lone half's backslash; for `StringTooLong`, the character or escape that passes the limit |
+  | `Escape`, `Surrogate`, `Utf8`, `Control`, `StringTooLong` | in a string or a key, the first byte of the character or the escape at fault: for `Surrogate`, the lone half's backslash; for `StringTooLong`, the character or escape that passes the limit; a surrogate pair is one character (section 3.4), so for an `Escape` in its second half, or a pair that passes the limit, the high half's backslash |
   | `Number`, `NumberTooLong` | the number's first byte |
   | `TooLong`, `Truncated`, `Stream` | the end of what was read: the position the next byte would have |
 
+- **After `Done`,** it is the end of what was read, as for `Truncated`:
+  the document's end, the position its next byte would have.
 - **It holds from an answer until the next demand.** The tokenizer reads
   only while a `Next`, a `Text` or a `Skip` is pending, so the position
   of its answer stays put until the side above asks again. Before the
@@ -265,7 +269,8 @@ pub struct Position {
   appear only between tokens (in a string it is `Control`), so no token
   spans two lines.
 - **`u32` throughout,** as `Limits::length` is: no position passes the
-  document's end.
+  document's end, and a `length` below `u32::MAX` (section 3.3) keeps the
+  end's column and line, at most `length + 1`, within `u32`.
 - **Three counters, no heap.** The tokenizer counts as it reads, and its
   `worst_case` is unchanged. `Token`, `Event` and `Error` are unchanged
   (section 7).

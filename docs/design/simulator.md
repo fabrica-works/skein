@@ -252,4 +252,7 @@ was metered as its own, which also finds a leak.
 - **Locks** (3.1), for hearth's store: the seam's `Lock`, the minimal
   machine's answer, and the handles of an ended process freeing theirs.
 - **A state digest** in the trace, beside the records (lib.md, 5.1),
-  which the world harness writes there (testing.md, section 5).
+  which the world harness writes there (testing.md, section 5): an entry
+  `Event::Digest([u8; 32])`, under the process's pid, or under
+  `Pid::MACHINE`, `Pid(u32::MAX)`, printed `machine`, for the machine's.
+  `spawn_process` never gives that pid. A `None` digest writes no entry.

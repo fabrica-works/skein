@@ -613,17 +613,22 @@ pub enum Request {
   and fails with `NoBufferSpace` past the driver's `max_entries`. A
   directory that may hold more is listed by pages: the owner opens it
   with `OpenDirectory`, and each `ListPage` answers `Listed` with at most
-  `max` of its entries (at most `max_entries`; more is `InvalidArgument`),
-  from where the last page of that open directory stopped. io fills each
-  page until `max` or the directory's end, so a page shorter than `max`
-  is the last, and an empty one says the end was reached already. The
-  position is the open directory's own (kernel.md, 6.1's `List`), so the
-  open directory is the cursor: two owners listing one directory each
-  open it, and the owner closes it when done. Entries come in the
+  `max` of its entries (at least 1 and at most `max_entries`: 0, or
+  more, is `InvalidArgument`, before any record), from where the last
+  page of that open directory stopped. io fills each page until `max` or
+  the directory's end, so a page shorter than `max` is the last, and an
+  empty one says the end was reached already. The position is the open
+  directory's own (kernel.md, 6.1's `List`), so the open directory is
+  the cursor: two owners listing one directory each open it, and the
+  owner closes it when done. Entries come in the
   directory's order, `.` and `..` left out, each once while the
   directory is unchanged; one added or removed between pages may appear
   or not, as `readdir` allows. A page's entries are counted in
-  `worst_case` as a `List`'s are.
+  `worst_case` as a `List`'s are. A page that fails, with a kernel's
+  error or stopped by its deadline or a cancel (below), may have taken
+  entries it never answered: the position is past them. An owner that
+  must see every entry closes the directory and lists it from a new
+  `OpenDirectory`.
 - **Renaming** moves one name: `Rename` takes the directory the entry
   leaves and the one it lands in, each a root, the same one for a rename
   in place, and a single name in each. Both lie on one filesystem;
@@ -690,7 +695,14 @@ pub enum Request {
   `Failed` with `TimedOut`, or `Cancelled`, if the stop won, and the
   request's own if the operation finished first. A store gives up only
   before its rename: once the new file is in place, it runs to the commit
-  terminal described in section 5.2.
+  terminal described in section 5.2. An operation that completes without
+  a `Cancel` (kernel.md, 6.1: a `Stat`, `Rename`, `Remove`,
+  `MakeDirectory`, `List` or `Lock`) always finishes first, so a request
+  whose answer it decides answers its own, whatever its deadline: a
+  `Lock` past it still says `Locked` or `Busy`, and a `Rename` that
+  landed says so. A request with more to do after it, such as a page of
+  a listing with entries still to read, stops at that completion, unless
+  the completion finished it.
 - **Memory:** `FileIo::worst_case` counts the open files' table, the
   driver's own buffers, and an admitted `Load`, `Scan` or `Store` at its
   bounds. The buffers an owner hands in, `WriteAt`'s bytes and paths,

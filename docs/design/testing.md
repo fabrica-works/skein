@@ -179,7 +179,11 @@ second, which is why it is skein's (testing-strategy.md, 7).
     option, the harness writes each process's and the machine's digest
     into the trace after each iteration, so two runs that part are found
     at the first iteration whose digests differ, before anything crosses
-    a boundary. Without it, the trace is as before.
+    a boundary. A process's is taken where its hook runs, after its
+    `iterate` and its drain and before its submit; the machine's once
+    every process has had its turn in the iteration. Each is an entry of
+    the trace that simulator.md, section 7 names. Without it, the trace is
+    as before.
 
 ## 6. Layout
 
