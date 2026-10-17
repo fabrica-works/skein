@@ -214,3 +214,12 @@ fn a_writer_refuses_a_full_capture_and_writes_after_its_pipe_close() {
     assert!(host.is_empty());
     writer.flush().expect("no captured bytes remain");
 }
+
+#[test]
+fn a_pipe_host_gives_the_digest_of_the_host_it_wraps() {
+    let script = skein_world_tests::server().noting(3);
+    let digest = script.state_digest();
+    assert!(digest.is_some());
+    let (_writer, capture) = PipeWriter::new(skein_io::kernel::Fd::new(50), 64);
+    assert_eq!(capture.host(script).state_digest(), digest);
+}

@@ -180,6 +180,12 @@ pub struct Service {
 }
 
 impl Service {
+    /// The domain state a world digests (lib.md, 5.1).
+    #[must_use]
+    pub const fn domain(&self) -> &Domain {
+        &self.domain
+    }
+
     /// The service under `limits`, which must pass [`Limits::check`], to
     /// listen at `addr`; `seed` is the random state of its layers.
     #[must_use]

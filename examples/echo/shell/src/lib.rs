@@ -24,6 +24,9 @@ impl Echo {
 }
 
 impl Host for Echo {
+    fn state_digest(&self) -> Option<[u8; 32]> {
+        Some(skein_lib::state_digest(self.svc.domain()))
+    }
     fn iterate(&mut self, now: Time, wall: Wall) {
         service::iterate(&mut self.svc, now, wall);
     }

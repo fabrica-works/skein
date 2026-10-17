@@ -8,6 +8,10 @@
 //! Once the referee names its last word, a clock advance that requires a
 //! policy deadline fails before the host can fire it (testing-strategy.md, 6).
 
+mod digests;
+
+pub use digests::StateDigests;
+
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;

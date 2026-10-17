@@ -3,6 +3,7 @@
 //! the face translates (testing-strategy.md, 4).
 
 mod cuts;
+mod digest;
 mod locks;
 mod moves;
 mod opens;
@@ -61,7 +62,7 @@ impl Opened {
 }
 
 /// How something is opened.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum How {
     /// The entry itself, without reading it; links are refused only in its parents.
     PathNoFollow,
@@ -88,7 +89,7 @@ pub enum How {
 }
 
 /// What a name names.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum Is {
     File,
     Directory,
@@ -215,7 +216,7 @@ impl Item {
 
 type NodeId = u64;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub(crate) struct Node {
     owner: u32,
     body: Body,
@@ -228,7 +229,7 @@ pub(crate) struct Node {
     links: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 enum Body {
     File(Vec<u8>),
     Directory {
@@ -241,7 +242,7 @@ enum Body {
 }
 
 /// What a handle has open, and where a listing of it stopped.
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 struct Handle {
     node: NodeId,
     how: How,
@@ -263,7 +264,7 @@ struct Found {
 }
 
 /// The fake filesystem. See the crate documentation.
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub struct Machine {
     pub(crate) nodes: BTreeMap<NodeId, Node>,
     durable_nodes: BTreeMap<NodeId, Node>,

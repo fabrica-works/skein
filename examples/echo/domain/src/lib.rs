@@ -73,14 +73,14 @@ pub enum Reply {
 }
 
 /// The domain's state: the sessions, and whether it admits more.
-#[derive(Debug)]
+#[derive(Hash, Debug)]
 pub struct Domain {
     sessions: Slab<Session>,
     admission: Admission,
 }
 
 /// A peer being served.
-#[derive(Debug)]
+#[derive(Hash, Debug)]
 struct Session {
     /// The lines it was answered.
     lines: u64,

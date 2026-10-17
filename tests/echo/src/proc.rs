@@ -49,6 +49,12 @@ impl Proc {
 }
 
 impl Host for Proc {
+    fn state_digest(&self) -> Option<[u8; 32]> {
+        match self {
+            Proc::Echo { svc, .. } => svc.state_digest(),
+            Proc::Client { .. } => None,
+        }
+    }
     fn drain(&mut self) {
         match self {
             Proc::Echo { svc, .. } => svc.drain(),

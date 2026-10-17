@@ -196,3 +196,14 @@ fn private_roots_and_files_refuse_planted_metadata_unread_and_make_secret_modes(
         }
     }
 }
+
+#[test]
+fn a_store_replays_to_the_same_files_digest_at_its_end() {
+    let first = world(7, Config::calm(), Story::Replace, None, 3).run();
+    let second = world(7, Config::calm(), Story::Replace, None, 3).run();
+    assert!(first.procs[0].events.iter().any(|event| matches!(event, Event::Stored { .. })));
+    assert!(!first.procs[0].events.iter().any(|event| matches!(event, Event::Failed { .. })));
+    let digest = first.state_digests().machine;
+    assert!(digest.is_some());
+    assert_eq!(digest, second.state_digests().machine);
+}

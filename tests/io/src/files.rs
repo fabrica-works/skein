@@ -268,6 +268,9 @@ impl FileSystem {
 }
 
 impl Machine for FileSystem {
+    fn state_digest(&self) -> Option<[u8; 32]> {
+        Some(self.files.state_digest())
+    }
     fn step(&mut self, call: Call, answers: &mut Queue<Answer>) {
         let at = self.calls;
         self.calls += 1;

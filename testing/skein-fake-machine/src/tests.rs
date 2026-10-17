@@ -466,3 +466,28 @@ fn a_directory_moved_across_recovers_the_parent_it_lands_in() {
         }
     }
 }
+
+#[test]
+fn machines_laid_with_the_same_items_digest_alike() {
+    let items = [Item::directory(b"dir"), Item::file(b"dir/file", b"bytes")];
+    let (first, _) = machine(&items);
+    let (second, _) = machine(&items);
+    assert_eq!(first.state_digest(), second.state_digest());
+}
+
+#[test]
+fn a_write_to_a_file_changes_the_machine_s_digest() {
+    let (mut machine, root) = machine(&[Item::file(b"file", b"before")]);
+    let file = machine.open(root, b"file", How::Write).unwrap();
+    let before = machine.state_digest();
+    assert_eq!(machine.write(file, 0, b"after!"), Ok(()));
+    assert_ne!(machine.state_digest(), before);
+}
+
+#[test]
+fn a_held_lock_changes_the_machine_s_digest() {
+    let (mut machine, root) = machine(&[]);
+    let before = machine.state_digest();
+    assert_eq!(machine.lock(root), Ok(()));
+    assert_ne!(machine.state_digest(), before);
+}

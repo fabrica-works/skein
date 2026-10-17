@@ -30,7 +30,7 @@ impl Trace {
 
 /// Checks that a world replays from its seed: `run` runs a world of a seed to
 /// its end, and returns its trace and whatever else must come out the same
-/// (its stats, the time it settled at). `seed` run twice comes out the same,
+/// (its stats, the time it settled at, its state digests). `seed` run twice comes out the same,
 /// and `other` takes a course of its own. Returns the trace of `seed`, for the
 /// caller to check that the world did something.
 pub fn assert_replays<T: PartialEq + Debug, F: Fn(u64) -> (Vec<String>, T)>(

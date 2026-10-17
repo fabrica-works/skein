@@ -10,6 +10,11 @@ use skein_lib::{Queue, Time, Wall};
 /// completions into [`Host::completions`], calls [`Host::iterate`], and
 /// submits [`Host::submissions`], as its shell would.
 pub trait Host {
+    /// A digest of held state for replay (lib.md, 5.1); only worlds read it.
+    fn state_digest(&self) -> Option<[u8; 32]> {
+        None
+    }
+
     /// Drain shell diagnostics once, after iteration and before submission.
     fn drain(&mut self) {}
 

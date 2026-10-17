@@ -55,6 +55,7 @@ pub struct Script {
     /// Nothing until this time.
     pause: Option<Time>,
     next: u64,
+    noted: u64,
     completions: Queue<Complete>,
     submissions: Queue<Submit>,
     /// What it received, and when.
@@ -83,6 +84,7 @@ impl Script {
             done: false,
             pause: Some(start),
             next: 1,
+            noted: 0,
             completions: Queue::with_capacity(8),
             submissions: Queue::with_capacity(8),
             received: Vec::with_capacity(8),
@@ -91,6 +93,13 @@ impl Script {
             leak: 0,
             worst: WORST,
         }
+    }
+
+    /// Adds state for a replay test to distinguish.
+    #[must_use]
+    pub fn noting(mut self, noted: u64) -> Script {
+        self.noted = noted;
+        self
     }
 
     /// Allocates and keeps `bytes` in its first turn.
@@ -196,6 +205,9 @@ impl Script {
 }
 
 impl Host for Script {
+    fn state_digest(&self) -> Option<[u8; 32]> {
+        Some(skein_lib::state_digest(&(&self.received, self.next, self.noted)))
+    }
     fn iterate(&mut self, now: Time, _wall: Wall) {
         if self.hog > 0 {
             self.held.push(bytes::zeroed(self.hog));
@@ -356,5 +368,18 @@ impl<P> Referee<P> for Later {
 
     fn last_word(&self) -> skein_world::LastWord {
         self.0
+    }
+}
+
+/// A fake machine whose digest is the stamp its test chose.
+#[derive(Debug)]
+pub struct Stamped(pub [u8; 32]);
+
+impl skein_world::Machine for Stamped {
+    fn state_digest(&self) -> Option<[u8; 32]> {
+        Some(self.0)
+    }
+    fn step(&mut self, call: skein_sim::Call, answers: &mut Queue<skein_sim::Answer>) {
+        skein_world::NoMachine.step(call, answers);
     }
 }

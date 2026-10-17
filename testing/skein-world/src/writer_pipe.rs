@@ -277,6 +277,9 @@ impl<P: Host> PipeHost<P> {
 }
 
 impl<P: Host> Host for PipeHost<P> {
+    fn state_digest(&self) -> Option<[u8; 32]> {
+        self.host.state_digest()
+    }
     fn iterate(&mut self, now: Time, wall: Wall) {
         while self.host.completions().room() > 0 {
             let Some(complete) = self.completions.pop() else {

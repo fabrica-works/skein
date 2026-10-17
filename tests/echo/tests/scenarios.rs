@@ -195,3 +195,14 @@ fn a_second_signal_aborts_a_connection_whose_peer_stopped_reading() {
     }
     chaos(shutdown_abort);
 }
+
+#[test]
+fn a_seed_replays_to_the_same_echo_digest_at_its_end() {
+    let trace = skein_world::domain::assert_replays(11, 12, |seed| {
+        let outcome = closes(seed, Config::chaos()).run();
+        let digests = outcome.state_digests();
+        assert!(digests.procs[0].is_some(), "the echo gives its domain's digest");
+        (outcome.trace.iter().map(|entry| format!("{entry:?}")).collect(), digests)
+    });
+    assert!(!trace.is_empty());
+}
