@@ -255,7 +255,9 @@ process or live. A second layer follows a semicolon, with its own word
 (development.md, section 5.5).
 
 The last paragraph is the trailers, and nothing else: no blank line
-inside it, and no key with a space. `land` adds the trailers `Gate-Tree`
+inside it, and no key with a space. `land` refuses a commit whose
+`Plan:`, `Step:` or `Proof:` line git does not read as a trailer: amend
+it so the plan's record can read it. `land` adds the trailers `Gate-Tree`
 and `Gate-Result`. A step whose proof is live adds two more,
 `Completions: <n>` and `Wall: <seconds>`, each the total of every live
 run of the plan so far, the failed ones and other steps' included, from
@@ -273,11 +275,16 @@ step out.
 
 ### 8.5 Landing
 
-Run `land` from your worktree (development.md, section 9). It builds and
+Run `land` from your worktree (development.md, section 9). It waits,
+saying so, while another code landing in the repository has its turn;
+keep waiting for that turn, which protects its gate from a moving main.
+It builds and
 runs clippy in the build lane before it takes the gate lane. By its exit
 status:
 
-- **2, refused:** fix what it names. "Nothing to land" after a 5 means the
+- **2, refused:** fix what it names: unread trailers (section 8.4), or a
+  word the plan's Pulse forbids, replaced by what the code checks, never
+  by a synonym. "Nothing to land" after a 5 means the
   commit had landed.
 - **3, conflicts:** resolve them against the design, never by dropping
   another session's change. Then `git rebase --continue`, and `land` again.

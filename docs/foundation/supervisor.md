@@ -109,8 +109,8 @@ context. Handle the event, then start the watch again:
 | `blocked:` and the blocks' headings | a ruling (section 3), or a design question (section 4) |
 | `answer:` | the unblock from the designer's answer (section 4) |
 | `check:` and steps, each with its session file | the ready check (section 5) |
-| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, or its thread is not loaded, run `plan resume` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
-| `quiet again:` | a push notification to the user, with the command `plan resume` |
+| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, or its thread is not loaded, run `plan resume crash` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
+| `quiet again:` | an alert to the user, with the command `plan resume` |
 | `paused:` | read `paused.md`; nothing else waits for you until the run resumes |
 | `done:` | the end (section 8) |
 | `context: … (compactions: N): hand over now`, N at least 2 | after the event in hand, section 7 |
@@ -119,6 +119,10 @@ context. Handle the event, then start the watch again:
 
 An idle coordinator (`idle.md`, development.md, section 7.4) has ended its
 turn on purpose: its silence is no event, and a ring starts its next turn.
+
+**Every alert to the user** is a push notification and one line with its
+UTC time appended to the run's `alerts.md`, so it stays visible:
+`plan status` prints its last ten lines first.
 
 **A thread not loaded.** Codex's daemon unloads an idle coordinator's
 thread. Until the kit loads it itself, when a ring (`plan ring`, or the

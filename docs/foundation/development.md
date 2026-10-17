@@ -407,6 +407,7 @@ machine's run. Nothing here is versioned.
 | `thread`, `threads` | `plan start`, `plan resume`, the coordinator | the coordinator's Codex thread's id, for the doorbell; every thread it has had, with when, for the metrics |
 | `claude.tsv` | `plan start`, `join`, `wake`, `handover`, `retro` | one line per Claude Code session that works on the run: its role, its session id and when, for `plan attach`, `plan wake` and the metrics; a role's last line is its current session |
 | `heartbeat` | the coordinator | touched at every wake-up |
+| `alerts.md` | the supervisor | each alert to the user, one line with its UTC time; `plan status` prints its last ten lines first (section 10.5) |
 | `idle.md` | `plan idle`; removed by `plan ring` | since when, and why, the coordinator ended its turn with nothing to do (section 7.4) |
 | `.watch` | `plan watch` | the escalations and events the supervisor, or the designer, has seen |
 | `handed-over` | `plan handover` | the supervisor sessions that handed over, to which `plan watch` shows nothing more |
@@ -418,7 +419,7 @@ machine's run. Nothing here is versioned.
 | `question.md`, `answer.md` | the supervisor; the designer | a design question, and its answer (section 10.4) |
 | `supervision.md` | the supervisor; `plan handover` | one entry per hourly check (section 14), each compaction and each handover (section 10.5), and each design question with its answer; appended only |
 | `.pulse` | `plan pulse` | where the last check stopped |
-| `paused.md`, `done.md` | the coordinator | a pause's checkpoint; the run's end |
+| `paused.md`, `done.md` | the coordinator | a pause's checkpoint; the run's end, from its opening `Recorded <UTC time>.` line (section 7.6) |
 | `sessions/<repository>-<NN>.md` | the implementer | its session's checkpoint (section 8.6) |
 | `logs/` | `heavy`; the implementers | each heavy command's output, and `heavy.tsv`, the queue's statistics (section 11.2); without an active run, `~/src/rust/tmp/logs/`. Each session's scripts and long outputs, in `logs/<repository>-<NN>/` |
 | `wt/<repository>-<NN>/` | `plan worktree` | the session's worktree, with its own `target/` |
@@ -466,10 +467,10 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 |---|---|
 | `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes |
 | `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local`, and `LAND_PREBUILD` the build lane's command before the gate |
-| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan, the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12) |
+| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan, the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
-| `plan resume` | after a restart, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn (section 7.6) |
+| `plan resume [CAUSE]` | after a restart or a crash, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; a known cause goes into the coordinator's prompt for its log (section 7.6) |
 | `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
 | `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief once its session has been compacted `PLAN_COMPACTIONS` times (2) or idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
 | `plan handover supervisor` | from the supervisor's session, starts its successor, and records it (section 10.5) |
@@ -1586,9 +1587,10 @@ dependency lands.
      <cause>", the cause one of: reboot, crash, the user's request,
      unknown. It is a reboot when the machine booted after the heartbeat
      was last touched (`uptime -s`, `stat -c %y <run>/heartbeat`). The
-     resume prompt is `plan resume`'s, whoever ran it, and names no
-     cause: it is the user's request only after a pause the user asked
-     for (`paused.md`). In protocol, a reboot was recorded as "the user's
+     resume prompt is `plan resume [CAUSE]`'s, whoever ran it: when the
+     caller knows the cause (reboot, crash, the user's request), it goes
+     into the prompt for this heading. Without a cause, it is the user's
+     request only after a pause the user asked for (`paused.md`). In protocol, a reboot was recorded as "the user's
      request". Read `context.md`, the ledger and the end of `log.md`.
      Append `paused.md`, if there is one, to `log.md`, and delete it.
   2. Write your thread's id to `thread` again: a restarted coordinator may
@@ -1601,14 +1603,17 @@ dependency lands.
      mid-increment: its implementer inspects them, then finishes or
      discards them. The coordinator never discards them itself.
 
-  After a restart of the machine, the user runs `plan resume`. It starts
+  After a restart of the machine, the user runs `plan resume reboot`;
+  after a crash, the supervisor runs `plan resume crash` (section 10.5).
+  It starts
   pueued and Codex's daemon if they are down, resumes the supervisor's
   session (which starts its watch and its hourly check again), and
   starts a coordinator turn with "Resume the run of `<plan-dir>` as skein's
   docs/foundation/development.md, section 7.6, says." The coordinator
   starts no Claude session.
 - **End** when every step has landed or been dropped.
-  1. Write `done.md`:
+  1. Write `done.md`, starting with `Recorded <UTC time>.`, so the
+     metrics read the run's end before later checks append to it:
      - each item of the plan's "Done when", with the ledger steps that
        cover it; run nothing;
      - the decisions in force from unblocks and steers, as `context.md`
@@ -1652,7 +1657,16 @@ numbers, so "section 8.5" names the same rule here and there:
 
 From a clean worktree on the branch to land, `land`:
 
-1. rebases the branch on `origin/main`;
+0. for a code landing, takes its repository's turn on this machine, a
+   lock in the repository's git directory, from the rebase to the push.
+   Another code landing waits, saying so, to keep main from moving under
+   its gate. A Markdown-only landing takes no turn: a gate holds across
+   it (section 9.2);
+1. rebases the branch on `origin/main`, and refuses (exit 2):
+   - a commit whose `Plan:`, `Step:` or `Proof:` line git does not read as
+     a trailer, so that `plan status` and the metrics can read it;
+   - code that adds a word the active plan's Pulse forbids, on a branch
+     that carries that plan's steps;
 2. unless a gate already passed on this tree, or on one that differs from
    it only in Markdown files under `docs/` (section 9.2):
    - in a Cargo repository, builds the tree and runs its lints in the build
@@ -1669,14 +1683,15 @@ From a clean worktree on the branch to land, `land`:
 4. pushes the tip to `origin`'s `main`;
 5. moves the local `main`, and the checkout that has it, to the tip.
 
-A push only fast-forwards, so it is the lock. If it is rejected, main
-moved, and `land` starts again from the rebase. It gives up after five
+A push only fast-forwards. If it is rejected, main moved from another
+machine or through a Markdown landing, and `land` starts again from the
+rebase. It gives up after five
 tries. Its exit status:
 
 | Status | Means |
 |---|---|
 | 0 | landed |
-| 2 | refused before starting, or nothing to land |
+| 2 | refused before starting, a commit's trailers, a forbidden word, or nothing to land |
 | 3 | the rebase stopped on conflicts, left in progress |
 | 4 | the build, its lints or the gate failed |
 | 5 | the local `main` could not follow: with a push, the commit landed on `origin/main`; with `--local`, nothing landed |
@@ -2003,7 +2018,7 @@ lines each.>
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
   supervisor rings the doorbell. If the ring finds no turn in progress,
   or the thread not loaded (the provider can end a turn), the supervisor
-  runs `plan resume` itself, once, and records it in `supervision.md`.
+  runs `plan resume crash` itself, once, and records it in `supervision.md`.
   Codex's daemon unloads an idle coordinator's thread, and until `plan
   ring` and `plan resume` load it themselves (the kit's, after the parity
   run's retrospective), a ring or a resume that finds it not loaded
@@ -2012,6 +2027,8 @@ lines each.>
   supervisors loaded it so ten times. If the heartbeat is still old ten
   minutes later, the supervisor alerts the user (in Claude Code, a push
   notification). The alert gives the restart command, `plan resume`.
+- **Every alert to the user** also goes, in one line with its UTC time, to
+  the run's `alerts.md`; `plan status` prints its last ten lines first.
 - **A usage limit.** A usage notice changes nothing: the role goes on,
   and writes no handover. A role stops only when a request is refused.
   If it can still write, as when the refusal is a sub-agent's, its last
@@ -2228,10 +2245,10 @@ that machine.
   is gated again each time another lands first. A gate now holds across
   Markdown under `docs/` (section 9.2), which removes the regates after
   rulings, and `land` builds in the build lane first (section 9.1), which
-  shortens each gate. A lock from the rebase to the push (test-budgets'
-  proposal 4), or a single lander that rebases and gates several branches
-  in turn, could cut the rest. The metric `gates_per_step` (section 15.2)
-  shows what it would save.
+  shortens each gate. A code landing holds its repository's turn on its
+  machine from rebase to push, so that another code landing there cannot
+  move main under its gate. Landings from another machine still can. The
+  metric `gates_per_step` (section 15.2) shows what remains.
 - **The build lane's pass before the gate** was replayed against
   jig-protocol's queue, not run: build waits fell from 45.7 hours to
   about 6.8 in the replay. The first run checks, in a gate's log, that
@@ -2374,6 +2391,9 @@ Since the last check:
 - **progress:** steps landed, planned and not, against the plan's rest;
   the planned count over the last three hours; each running session's
   time since its last landing;
+- **the record:** `log.md`'s headings and Kind values outside the shapes
+  of sections 7.3, 7.5, 10.2 and 10.3, and `context.md`'s lines past 200
+  characters, so the supervisor can keep the record readable by the metrics;
 - **the channel:** open blocks and their age; steps waiting for their
   ready check, and for how long; an idle coordinator, since when; steers
   not acknowledged;
@@ -2519,7 +2539,7 @@ counts them by hand.
 
 | Metric | Is |
 |---|---|
-| `wall_h` | hours from the claim to `done.md` |
+| `wall_h` | hours from the claim to `done.md`'s `Recorded` line (section 7.6), or else to `done.md`'s last change |
 | `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes |
 | `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan, steps added during the run, steps dropped |
 | `step_h` | `running_h` per landed step |
@@ -2541,9 +2561,9 @@ counts them by hand.
 | `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate |
 | `queue_wait_ratio` | time waiting in the queue against time running (`logs/heavy.tsv`) |
 | `suites` | for each repository, each suite's test count and time at its first and its last landing |
-| `proofs` | landed steps by proof layer, the first word of their `Proof:` line without its punctuation, and those below their increment's layer, whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
+| `proofs` | landed steps, each by its last commit, by proof layer, the first word of their `Proof:` line without its punctuation, and those below their increment's layer, whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
 | `report_lines` | the reports' median and 90th percentile length |
-| `lines` | lines added and removed, in code and in tests |
+| `lines` | lines added and removed, in four kinds: production code, tests, generated code (under a `generated/` directory), and data (any file not Rust) |
 | `contexts` | the median and 90th percentile of the largest context each session's thread reached, and the handovers (`log.md`'s `Handover` lines) |
 | `pin_lag` | how many commits each repository's pins are behind the upstream mains, when `plan metrics` runs |
 

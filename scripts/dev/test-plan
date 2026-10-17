@@ -134,10 +134,15 @@ seq 1 60 | sed 's/^/\/\/ line /' >"$repo/src/big.rs"
 echo "pub struct OwnerThing; // the actual one" >>"$repo/src/big.rs"
 for i in 1 2 3 4; do echo "fn text() {}" >"$repo/tests/t$i.rs"; done
 commit alpha-01.1 "world; the story first, passed" "scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
+echo "fn early() {}" >"$repo/src/early.rs"
+commit alpha-01.2 "live, an early try" "scripts/check.sh passed: 11 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
 echo "fn text() {} // exact" >"$repo/tests/t5.rs"
 echo "#[expect(clippy::too_many_lines)]" >>"$repo/src/big.rs"
 commit alpha-01.2 "unit, the unit tests, passed" "scripts/check.sh passed: 12 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all"
 echo "fn more() {}" >"$repo/src/more.rs"
+mkdir -p "$repo/src/generated"
+echo "fn g() {}" >"$repo/src/generated/g.rs"
+echo "{}" >"$repo/tests/golden.json"
 commit alpha-01.s1 "" "scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all"
 
 # The run's log, the queue's statistics and gate logs.
@@ -152,7 +157,9 @@ commit alpha-01.s1 "" "scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0
     printf '## Steered, 2026-10-11T11:30:00Z\n\nSteer 2026-10-11T11:30:00Z, point 1: cannot, no room.\n\n'
     printf '## Coordinator resumed, 2026-10-11T12:00:00Z: reboot\n\n'
     printf '## alpha 01, 2026-10-11T12:05:00Z\n\nline\n\n'
+    printf '## Unblock handled, 2026-10-11T12:06:00Z\n\n'
 } >>"$run/log.md"
+printf '%s\n' "$(printf 'x%.0s' $(seq 250))" >"$run/context.md"
 mkdir -p "$run/logs/alpha-01"
 printf 'SLOW [ 1.2s] a\nSLOW [ 2.0s] b\n' >"$run/logs/gate-1.log"
 stamp=$(date -u +%FT%TZ)
@@ -179,6 +186,7 @@ base=$(date -u -d '-3 hours' +%s)
     printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"t-impl-1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"%s"}}}}}\n' "$(date -u -d "@$base" +%FT%TZ)" "$coordinator"
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":260000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":250000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
+    printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":100000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
 } >"$CODEX_HOME/sessions/2026/10/11/rollout-x-t-impl-1.jsonl"
 session=11111111-2222-3333-4444-555555555555
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p/$session/subagents"
@@ -206,7 +214,9 @@ expect pulse "$pulse" \
     "- Running: alpha-01.3 (w1)" \
     "below plan: alpha-01.2 (unit, planned joint)" \
     "no Proof line: alpha-01.s1" \
-    "reports 1 lines median, 3 p90" "1 land gates for 3 landings, 1 other gate-lane tasks" "queue 20 s waiting, 200 s running" \
+    "reports 1 lines median, 3 p90" "1 land gates for 4 landings, 1 other gate-lane tasks" "queue 20 s waiting, 200 s running" \
+    "- Record: headings no shape names: 1 (the first: \"## Unblock handled, 2026-10-11T12:06:00Z\"); Kind values not in section 10.2: none; context.md lines past 200 characters: 1." \
+    "generated +1 -0, data +1 -0." \
     "last gate: scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all; within four fifths of the budgets" \
     "SLOW lines in gate logs: 2" \
     "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
@@ -215,7 +225,7 @@ expect pulse "$pulse" \
     "Claude Code at list prices, since the planning: \$0: planner \$0, supervisor \$0, designer \$0" \
     "1 steers in all, 1 points refused" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
-    "- Contexts: t-impl-1 250K (past 200K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
+    "- Contexts: t-impl-1 100K (past 200K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 sleep 1
 expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
@@ -233,17 +243,18 @@ expect metrics "$metrics" \
     $'gates_per_step\t0.3\t' $'gate_lane_other\t1\t' $'queue_wait_ratio\t0.10\t' \
     $'suites\talpha first: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
     $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90' \
+    "generated +1 -0, data +1 -0"$'\tlines' \
     $'pin_lag\tnone\t' $'contexts\t260K median, 260K p90 of the sessions\' peaks; 0 handovers'
 "$plan" metrics --out "$dir/metrics.tsv" >/dev/null
 expect history "$("$plan" metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
 
-expect contexts "$("$plan" contexts)" "  250K, peak 260K  past 200K: hand over"
+expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 200K: hand over"
 
 # Nothing in the workspace pins alpha.
 expect downstream "$("$plan" downstream)" "downstream: no repository pins alpha"
 
 # The watch, each of its events.
-watch() { timeout 10 "$plan" watch "$@" || echo "watch exited $?"; }
+watch() { timeout 10 "$plan" watch || echo "watch exited $?"; }
 echo "# Blocked" >"$run/blocked.md"; echo "## alpha 01.3: a question, $stamp" >>"$run/blocked.md"
 expect "watch blocked" "$(watch)" "blocked: $run/blocked.md" "## alpha 01.3: a question"
 echo "# Answer" >"$run/answer.md"
@@ -300,6 +311,18 @@ sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.m
 git -C "$repo" commit -q -am "Decide the older retrospective's proposals"
 expect "decisions made" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "ok    the last retrospective's proposals are decided (alpha's older)"
 
+# A clean primary checkout behind its origin is advanced by --fix.
+head=$(git -C "$repo" rev-parse HEAD)
+git clone -q --bare "$repo" "$t/ff.git"
+git -C "$repo" remote add origin "$t/ff.git"
+git clone -q "$t/ff.git" "$t/ff"
+git -C "$t/ff" -c user.email=test@example.com -c user.name=test commit -q --allow-empty -m "Advance origin"
+git -C "$t/ff" push -q origin main
+expect "check --fix fast-forwards" "$(PLAN_NO_GATE=1 "$plan" check --fix "$dir" 2>&1 || true)" "ok    alpha: main fast-forwarded 1 commits to origin/main"
+git -C "$repo" reset -q --hard "$head"
+git -C "$repo" remote remove origin
+rm -rf "$t/ff.git" "$t/ff"
+
 # The roles, offline.
 expect "attach coordinator" "$(PLAN_DRY_RUN=1 "$plan" attach coordinator)" "codex resume --remote unix:// $coordinator"
 expect "attach supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor)" "claude --resume $session"
@@ -320,6 +343,11 @@ expect handover "$(CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handov
 expect "handover by another" "$(CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
 printf 'supervisor\tnew-supervisor\t%s\n' "$stamp" >>"$run/claude.tsv"
 expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "watch exited $?")" "handed over: session new-supervisor" "watch exited 4"
+
+echo "- 2026-10-11T12:00:00Z: the coordinator is quiet; plan resume" >"$run/alerts.md"
+expect alerts "$("$plan" status)" "## Alerts" "the coordinator is quiet"
+printf 'Recorded %s.\n\nDone.\n' "$(date -u -d "@$(($(sed -nE 's/^## Claimed, (.*)$/\1/p' "$run/log.md" | xargs -I{} date -u -d {} +%s) + 7200))" +%FT%TZ)" >"$run/done.md"
+expect "the end recorded" "$("$plan" metrics)" $'wall_h\t2.0\th'
 
 # After the run's release, metrics and retro find it as the last run.
 "$plan" release >/dev/null
@@ -363,6 +391,16 @@ if ((live)); then
         sleep 2
     done
     expect "the coordinator resumed" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "RESUMED"
+    # An idle coordinator ended its turn; a ring starts its next one.
+    "$plan" idle "This is a test of plan idle." >/dev/null
+    expect "idle ring" "$(PLAN_COORDINATOR_WAKE="This is a test of a ring to an idle coordinator. Reply RUNG and end your turn." "$plan" ring "Rang." || true)" "woke the idle coordinator: Rang."
+    expect "idle cleared" "$(ls "$run")" "ledger.tsv"
+    [[ ! -f $run/idle.md ]] || { echo "FAIL idle.md stayed after the ring"; failed=1; }
+    for _ in $(seq 60); do
+        [[ $(PLAN_NO_ROLES='' "$plan" status || true) == *"- coordinator: $thread, idle"* ]] && break
+        sleep 2
+    done
+    expect "the idle coordinator answered" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "RUNG"
     expect wake "$("$plan" wake supervisor "This is a test of plan wake. Reply WOKEN and end your turn." || true)" "supervisor: Claude Code session"
     expect retro "$("$plan" retro "$dir" || true)" "retrospective: Claude Code session"
     # Clean up: the coordinator's thread archived, the Claude Code sessions removed.
