@@ -376,7 +376,7 @@ When the watch prints `done:` (development.md, section 7.6):
    "Done when" command of the plan's README once, as written, through
    `heavy` where it compiles or runs tests, and return each command with
    its output; append them to `done.md`, under `## Done when, run <UTC
-   time>`.
+   time>`. One that fails goes to the user, as an alert.
 2. Mark the plan `done <date>` in each `STATUS.md` that has its row, with
    `land --docs`.
 3. **Watch until the release.** After `done.md`, the coordinator removes

@@ -47,8 +47,13 @@ first edit, and every request after carried them.
 4. **Run its proof once,** as its Proof line says (section 8.8).
 5. **Run clippy once** on what you changed: `heavy cargo clippy -p <each
    crate you changed> --all-targets -- -D warnings`, and fix what it
-   prints. A plan's "run nothing before `land`" means no proof run and no
-   suite, not no clippy.
+   prints. **Then run once the focused tests of the crates that depend on
+   what you changed:** `heavy cargo nextest run --workspace -E
+   'rdeps(<crate>) | rdeps(<other crate>)'`, and fix what fails. A plan's
+   "run nothing before `land`" means no proof run and no whole suite, not
+   no clippy and no such tests. `land` runs clippy again on the tree it
+   lands, a conflict's resolution included. In the reliability run, 54
+   gates failed on tests no focused run had included.
 6. **Land it** with `land` (section 8.5). Once it has landed, remove
    your worktree's `target/` with `cargo clean`: kache refills it from
    its store for your next increment (development.md, section 11.4), and
@@ -97,48 +102,39 @@ it.
   fields is an implementation choice. Nor does a field you add, private to
   its crate and reached by no other session's code, bounded by a limit
   and priced in its owner's worst case.
-- **An edit outside the increment's Files** is an implementation choice,
-  named in the commit body, in the cases below. In every case no test is
-  renamed or loosened (no `matches!` in place of an equality), and no
-  assertion is removed, but a removed mechanism's. Any other edit outside
-  Files is a question (section 8.7).
-  - **A small fix that the change, its Proof or the gate needs:** at most
-    20 lines in all, in any session's files, shared test files and test
-    roots included. It keeps every test's name and every assertion's
-    expected value; a test's or a fixture's inputs may change, so that the
-    test checks the same behaviour under the new code. Moving a test's
-    unchanged statements into a named helper of the same file, to keep a
-    function within its limit, counts for nothing.
-  - **A failure the Shape explains:** when the gate fails, other than on a
-    timeout, in a test outside Files because the behaviour the Shape adds
-    reaches its fixture or its story (a new control pressed, a message now
-    judged again), fix the fixture or the story's inputs as a small fix,
-    name the Shape's words that explain it, and land again.
-  - **A value printed differently:** where the Shape changes how a value
-    prints (a renamed or re-wrapped variant in a trace or in `Debug` text,
-    a moved tag), the expected literals that print it become what the new
-    code prints for the same behaviour, at most 10 lines in all.
-  - **A new variant's arms:** an increment that adds a variant adds the arm
-    that each exhaustive match outside its Files then needs, in any
-    session's crate, written as its neighbours are, at most 5 lines a
-    match. Tests for those arms only where the Test shape names them.
-  - **The case the Shape changes:** a test outside Files that sets up the
-    very case whose answer the Shape changes, and expects the old answer,
-    expects the new one: its inputs and name kept, at most 4 assertions in
-    all, each named in the commit body with the Shape's words it follows.
+- **An edit outside the increment's Files** is part of the increment, with
+  no question, in the cases below; the commit body lists each under
+  "Users outside Files:". In every case no test is renamed or loosened (no
+  `matches!` in place of an equality), and no assertion is removed, but a
+  removed mechanism's. Any other edit outside Files is a question (section
+  8.7).
+  - **An edit that only follows a change the Shape names,** wherever it
+    falls in the repository, whatever its size:
+    - a new variant handled as its match handles the others; tests for
+      those arms only where the Test shape names them;
+    - a removed or renamed name replaced by its successor, and a value
+      printed differently (a trace, `Debug` text, a moved tag) expected as
+      the new code prints it for the same behaviour;
+    - a call adapted to a new signature;
+    - an expected value that the same story now produces, where the
+      Shape changes that case's answer: its inputs and name kept, and the
+      Shape's words it follows named in the commit body;
+    - a fixture's or a story's inputs kept on their story, where the
+      behaviour the Shape adds reaches them (a new control pressed, a
+      message now judged again): when the gate fails so, outside Files,
+      make the edit and land again;
+    - a value the Shape makes invalid (a constructor that now refuses it)
+      replaced, in each test that builds it, by a valid value in the same
+      role (distinct where it was distinct, as long where its length
+      matters), one constant per file, with the expected values that echo
+      it;
+    - a version's move with its whole sweep: every import, qualified name,
+      version constant, served range and expected version that names the
+      old version, with no alias for the old one left.
   - **A removed mechanism's tests** are the increment's, in any file: each
     moved to its replacement's behaviour, its name kept, where the Shape
-    names a replacement, and removed otherwise. No limit above binds them.
-  - **A value the Shape makes invalid** (a constructor that now refuses
-    it) is replaced in each test that builds it by a valid value in the
-    same role (distinct where it was distinct, as long where its length
-    matters), one constant per file; an expected value that echoes it
-    changes with it. It counts toward no limit above. A test whose subject
-    is the refused value is a removed mechanism's.
-  - **A version's move carries its whole sweep:** every import, qualified
-    name, version constant, served range and expected version that names
-    the old version, in any file, with no alias for the old one left. It
-    counts toward no limit above.
+    names a replacement, and removed otherwise. A test whose subject is a
+    value the Shape makes invalid is one.
   - **A test moving from a fake to the real component:** its fixture
     supplies what the real component requires, and an assertion that sees
     exactly that addition becomes an exact equality with the fixture's own
@@ -146,9 +142,14 @@ it.
     values become the design's, quoting its section. Any other failure on
     the real component is a finding, for a question.
   - **The harness the increment's tests need:** the peer, world or fixture
-    kit that the increment's prescribed tests run on may grow past 20
-    lines, in any session's test files: test code only, every landed
-    test's name and expected value kept.
+    kit that the increment's prescribed tests run on, in any session's test
+    files: test code only, every landed test's name and expected value
+    kept.
+  - **A small fix that the change, its Proof or the gate needs,** and that
+    follows no change of the Shape: at most 20 lines in all, in any
+    session's files, every test's name and expected value kept. Moving a
+    test's unchanged statements into a named helper of the same file, to
+    keep a function within its limit, counts for nothing.
   - **Inside Files by rule:** the file that code the Files or the Shape
     names has moved to since the plan was written; a new module beside a
     file past 800 lines, where `code-organization.md` sends new code; the
@@ -159,6 +160,9 @@ it.
     its own crate (`pub(crate)`, `pub(super)`, a module root's re-export)
     so that a sibling module reuses it, when it changes no behaviour,
     signature or test. Public API across crates stays a question.
+
+  In the reliability run, its README's rule on such edits was widened 11
+  times, and 77 commit bodies listed users outside Files.
 - **Test ceilings** (the Test shape's, or `code-organization.md`'s) bind
   the tests an increment writes: those it adds, and those whose inputs or
   setup it changes. A test changed only in an expected value is not made
@@ -176,6 +180,12 @@ it.
   Pass-on texts that restated them grew the spawn prompts from about 850
   characters to 11K, and copies landed anyway, a 14th `llm::Prompt`
   literal among them.
+- **Diagnostics are never committed.** To find the cause of a failure in
+  your own increment, you may add a print or an assertion message in any
+  file of your worktree, and run the failing test at most three times for
+  it, or within the budget a step to find a cause names (section 8.7).
+  Remove every such line before you commit: `git diff origin/main` shows
+  none of them at `land`.
 - **Evidence is the gate, the proof, and what the repository's workflow
   or the plan asks beyond the gate; nothing else.** Write no manifests of
   inputs, no observers, no polling scripts, and no repeated measurements.
@@ -203,7 +213,8 @@ it.
   run, 16 threads ran `python` first, and found no such command.
 - **Whole suites run only in `land`'s gate,** or for a measurement or a
   probe that the Proof line or the repository's workflow names. Do not
-  run the gate before `land`.
+  run the gate before `land`. The focused tests of your crates'
+  dependents, once, before `land` (section 8.1) are no whole suite.
 - **Never set `CARGO_BUILD_JOBS` or `NEXTEST_TEST_THREADS`,** nor pass
   `-j` beyond what the workflow documents: the lanes set the width.
 - **Never nest them:** `heavy land`, or `heavy` inside a heavy command,
@@ -276,8 +287,9 @@ status:
   or a test's wall-clock bound), in tests outside your session's files,
   `land` again once without asking; a second failure on the same tree is
   a question. If it fails in another way in code your increment did not
-  touch, see section 8.2's "A failure the Shape explains", and otherwise
-  stop on a question (section 8.7).
+  touch, and the behaviour your Shape adds explains it, it is an edit
+  that follows the Shape (section 8.2): make it, and land again;
+  otherwise stop on a question (section 8.7).
 - **6, main kept moving:** wait 60 seconds, and `land` again. After three
   such tries, report it and stop.
 - **5, 7 or 8:** report it, and stop.
@@ -361,6 +373,8 @@ it instead of finding them again.
   that covers the case is your answer: follow it, and name it in the
   commit body. In jig-protocol, about a quarter of the rulings answered
   with a rule that already existed.
+- **A step whose Scope is to find a cause** works within the budget its
+  session file gives, in runs and minutes, and asks only past it.
 - **A dependency not landed yet is not a block.** Do the increments that
   do not need it, then report what you wait for.
 - **While a question is open,** go on with whatever does not depend on it.

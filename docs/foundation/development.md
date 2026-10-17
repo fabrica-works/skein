@@ -738,7 +738,10 @@ user only what they and the design leave open, and asks before writing.
 - **The sessions:** per repository, a table with columns File, Session,
   Needs at start, and Increments that need more. Then how many sessions
   can start at once, and the order in which to start them when slots are
-  short: first the ones others wait on;
+  short: first the ones others wait on. Then the longest chain of
+  increments that must land one after another, with its hours at the
+  last runs' `step_h` (0.09 to 0.14 hours a step): no run ends before
+  it;
 - **Rules of this plan:** only what this document, the repositories'
   `AGENTS.md` and their workflows do not say. For example: fences ("this
   increment lands after every other skein increment"), version owners,
@@ -774,7 +777,8 @@ user only what they and the design leave open, and asks before writing.
   commits (`git log origin/main --grep='^Plan: <plan>$'`), never the
   newest commit, whose trailers a Markdown landing lacks; a live item's
   command reads the summary its run committed. The supervisor runs each
-  once, after `done.md` (section 7.6).
+  once, after `done.md` (section 7.6). A plan that proves with live probes
+  counts the probes calibrated in their task files.
 
 **`code-organization.md`:**
 - crates, with their kinds and names, and what each holds;
@@ -1864,7 +1868,9 @@ lines each.>
   - a plan defect, the order of steps, the plan's scope;
   - a step not in the plan, which it names `<repository>-<NN>.s<k>`, with
     a short session file (shape, test shape, proof and "Don't", in about
-    15 lines);
+    15 lines). A step whose Scope is to find a cause gets a budget there,
+    in runs and minutes, and its implementer asks only past it: in the
+    reliability run, one such step raised 14 blocks in 105 minutes;
   - process, infrastructure and credentials, within what the user allows.
 
   It records each ruling in the plan's `decisions.md`, and lands each
