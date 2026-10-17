@@ -243,8 +243,9 @@ claude_cost() {
 
 # The supervisor's sessions (development.md, sections 10.5 and 15.2): how
 # many, their hours, each from its first request to its last, their
-# weighted tokens per hour, the share of those in each session's first 40
-# requests (its bootstrap), and their compactions. Weights: fresh input 1,
+# weighted tokens per hour, the share of those in the 40 requests after
+# each session's start or compaction (its bootstrap, or its re-read), and
+# their compactions. Weights: fresh input 1,
 # cache reads 0.1, cache writes 1.25, output 5. Sub-agents are left out,
 # and a message counts once, for the first session that has it.
 supervisor_sessions() {
@@ -263,8 +264,8 @@ supervisor_sessions() {
                        + 1.25 * ($u.cache_creation_input_tokens // 0) + 5 * ($u.output_tokens // 0)]
                 else empty end | @tsv' "$file" 2>/dev/null || true
         done | awk -F'\t' '
-            $2 == "compaction" { if (!($3 in boundary)) { boundary[$3]; compactions++ } next }
-            !($3 in owner) { owner[$3] = $1; index_of[$3] = ++requests[$1]; keys[++n] = $3 }
+            $2 == "compaction" { if (!($3 in boundary)) { boundary[$3]; compactions++; since[$1] = 0 } next }
+            !($3 in owner) { owner[$3] = $1; early[$3] = ++since[$1] <= 40; keys[++n] = $3 }
             owner[$3] != $1 { next }
             { if ($5 > w[$3]) w[$3] = $5
               if (!($1 in requests_of)) { requests_of[$1]; sessions++ }
@@ -273,11 +274,11 @@ supervisor_sessions() {
             END {
                 for (i = 1; i <= n; i++) {
                     k = keys[i]; total += w[k]
-                    if (index_of[k] <= 40) boot += w[k]
+                    if (early[k]) boot += w[k]
                 }
                 for (s in t0) seconds += t1[s] - t0[s]
                 hours = seconds / 3600
-                printf "%d sessions, %.1f h, %.1fM weighted tokens per hour, %d%% in their first 40 requests, %d compactions\n",
+                printf "%d sessions, %.1f h, %.1fM weighted tokens per hour, %d%% in the 40 requests after each start or compaction, %d compactions\n",
                     sessions, hours, (hours > 0 ? total / hours / 1e6 : 0), (total > 0 ? 100 * boot / total : 0), compactions
             }'
 }

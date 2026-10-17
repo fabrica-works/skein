@@ -228,7 +228,7 @@ expect metrics "$metrics" \
     $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\treboot 1\t' \
     $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1620 in (6% cached), 20 out; in: 1500 before the claim, 120 in the run, 0 after' \
     $'cost_claude\t$1640: planner $502, supervisor $1132, designer $6; cache reads $100, cache writes $10, fresh input $1510, output $20\t' \
-    $'supervisor\t1 sessions, 0.0 h, 0.0M weighted tokens per hour, 100% in their first 40 requests, 2 compactions' \
+    $'supervisor\t1 sessions, 0.0 h, 0.0M weighted tokens per hour, 100% in the 40 requests after each start or compaction, 2 compactions' \
     $'coordinator_requests\t4, 1 after a wait ran out' $'compactions\t1\t' \
     $'gates_per_step\t0.3\t' $'gate_lane_other\t1\t' $'queue_wait_ratio\t0.10\t' \
     $'suites\talpha first: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
@@ -324,17 +324,17 @@ expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "w
 # After the run's release, metrics and retro find it as the last run.
 "$plan" release >/dev/null
 [[ ! -e $run/kit ]] || { echo "FAIL release: $run/kit is left"; failed=1; }
-# The successor's 41 requests over an hour, after a copy of the first's
-# compaction and of its message m2, which count once.
+# The successor's 42 requests over an hour, after a copy of the first's
+# compaction and of its message m2, which count once: the 41st is past its
+# bootstrap, and the 42nd, after its own compaction, in its re-read.
+request() { printf '{"type":"assistant","timestamp":"2026-10-17T%s:00.000Z","message":{"id":"%s","usage":{"input_tokens":100000,"output_tokens":0}}}\n' "$@"; }
 {
-    boundary u1; boundary u3; assistant m2 2 0 0 7
-    for i in $(seq 0 39); do
-        printf '{"type":"assistant","timestamp":"2026-10-17T10:%02d:00.000Z","message":{"id":"n%d","usage":{"input_tokens":100000,"output_tokens":0}}}\n' "$i" "$i"
-    done
-    printf '{"type":"assistant","timestamp":"2026-10-17T11:00:00.000Z","message":{"id":"n40","usage":{"input_tokens":100000,"output_tokens":0}}}\n'
+    boundary u1; assistant m2 2 0 0 7
+    for i in $(seq 0 40); do request "$(printf '10:%02d' "$i")" "n$i"; done
+    boundary u3; request 11:00 n41
 } >"$CLAUDE_CONFIG_DIR/projects/p/new-supervisor.jsonl"
 expect "metrics after release" "$("$plan" metrics)" $'steps_planned\t2\t' \
-    $'supervisor\t2 sessions, 1.0 h, 4.1M weighted tokens per hour, 97% in their first 40 requests, 3 compactions'
+    $'supervisor\t2 sessions, 1.0 h, 4.2M weighted tokens per hour, 97% in the 40 requests after each start or compaction, 3 compactions'
 
 if ((live)); then
     # Real agents, on cheap settings, with the real Codex and Claude Code homes.
