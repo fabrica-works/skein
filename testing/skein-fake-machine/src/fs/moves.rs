@@ -29,6 +29,15 @@ fn restore(names: Option<&mut BTreeMap<Box<[u8]>, NodeId>>, name: &[u8], node: O
     }
 }
 
+fn parent(nodes: &mut BTreeMap<NodeId, Node>, id: NodeId, directory: NodeId) {
+    if let Some(node) = nodes.get_mut(&id) {
+        match node.body {
+            Body::Directory { .. } => node.parent = Some(directory),
+            Body::File(_) | Body::Link(_) | Body::Special(_) => {}
+        }
+    }
+}
+
 impl Machine {
     pub(super) fn remember_move(&mut self, node: NodeId, from_dir: NodeId, from: &[u8], to_dir: NodeId, to: &[u8]) {
         let durable_from = entries(&mut self.durable_nodes, from_dir).and_then(|names| names.get(from).copied());
@@ -47,6 +56,7 @@ impl Machine {
     pub(super) fn sync_moves(&mut self, directory: NodeId) {
         for moved in core::mem::take(&mut self.pending_moves) {
             if moved.to_dir == directory {
+                parent(&mut self.durable_nodes, moved.node, moved.to_dir);
                 restore(entries(&mut self.durable_nodes, moved.from_dir), &moved.from, None);
             } else {
                 if moved.from_dir == directory {
@@ -61,9 +71,11 @@ impl Machine {
         for moved in core::mem::take(&mut self.pending_moves) {
             *rng = draw(*rng);
             if *rng & 1 != 0 {
+                parent(surviving, moved.node, moved.to_dir);
                 restore(entries(surviving, moved.to_dir), &moved.to, Some(moved.node));
                 restore(entries(surviving, moved.from_dir), &moved.from, None);
             } else {
+                parent(surviving, moved.node, moved.from_dir);
                 restore(entries(surviving, moved.to_dir), &moved.to, moved.durable_to);
                 restore(entries(surviving, moved.from_dir), &moved.from, moved.durable_from);
             }

@@ -432,3 +432,37 @@ fn a_power_loss_frees_every_lock() {
     machine.close(second);
     assert_eq!(machine.open_handles(), 0);
 }
+
+#[test]
+fn a_directory_moved_across_recovers_the_parent_it_lands_in() {
+    for sync in [None, Some(false), Some(true)] {
+        for seed in 0..16 {
+            let (mut machine, root) = machine(&[
+                Item::directory(b"left"),
+                Item::file(b"left/marker", b"left"),
+                Item::directory(b"right"),
+                Item::file(b"right/marker", b"right"),
+                Item::directory(b"left/child"),
+            ]);
+            let left = machine.open(root, b"left", How::Directory).unwrap();
+            let right = machine.open(root, b"right", How::Directory).unwrap();
+            machine.rename(left, b"child", right, b"child").unwrap();
+            if let Some(destination) = sync {
+                machine.sync(if destination { right } else { left });
+            }
+            machine.crash(seed);
+            let root = machine.reopen_root(0);
+            let landed = machine.open(root, b"right/child", How::Directory);
+            if let Ok(child) = landed {
+                machine.close(child);
+            }
+            let (path, expected): (&[u8], &[u8]) =
+                if landed.is_ok() { (b"right/child/../marker", b"right") } else { (b"left/child/../marker", b"left") };
+            let marker = machine.open(root, path, How::Read).unwrap();
+            assert_eq!(machine.read(marker, 0, 16).unwrap(), expected, "seed {seed}, sync {sync:?}");
+            machine.close(marker);
+            machine.close(root);
+            assert_eq!(machine.open_handles(), 0);
+        }
+    }
+}
