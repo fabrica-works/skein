@@ -1,7 +1,8 @@
 # The supervisor's card
 
-Provisional, 2026-10-14, revised 2026-10-16. What a run's supervisor
-does, step by step: all it reads of the process at its start.
+Provisional, 2026-10-14, revised 2026-10-17. What a run's supervisor
+does, step by step: all it reads of the process at its start, and all it
+reads again after a compaction.
 development.md's sections 2.5, 10 and 14 are the policy behind it. The
 sections of development.md this card names are read when a case needs
 them, never the whole document.
@@ -37,6 +38,44 @@ entry of the run's `supervision.md`, and `blocked.md`, `question.md` and
 **After a restart** (`plan resume`), steps 2 to 4 again, after reading the
 end of `supervision.md`.
 
+**After a compaction.** Your context compacts by itself at about 180K
+tokens (development.md, section 10.5, an experiment): a summary opens
+your context, and the workspace's hook says "You were just compacted".
+Your watch, your cron job and your background commands go on. Before
+acting on anything:
+
+1. **Re-read this card's sections 2 to 9,** not development.md: of it,
+   re-read sections 10.3 and 10.4 before your next ruling or question,
+   and the others when a case needs them, as at your start.
+2. **Re-read the run's state:** `plan status`; `supervision.md` from its
+   last `## Check` entry, or all of it if it has none:
+
+   ```
+   awk '/^## Check/ { b = "" } { b = b $0 "\n" } END { printf "%s", b }' <run>/supervision.md
+   ```
+
+   Then `blocked.md`, `question.md`, `answer.md`, `unblock.draft.md` and
+   `steer.md`, if they are there, and the ledger's steps in `check` and
+   `ready`, with their notes (section 5).
+3. **Check what runs:** your watch (`pgrep -af '[p]lan watch'`, as a
+   command of its own: the brackets keep it from finding itself), your
+   cron job (in Claude Code, `CronList`), and each re-check's wait
+   (section 5, step 4). Start what is missing, and nothing twice.
+4. **Append** `## Compacted, <UTC time>: session <id>, compaction <N>`
+   to `supervision.md`, `<id>` the first 8 characters of
+   `$CLAUDE_CODE_SESSION_ID`, and N one more than this session's earlier
+   entries, which this counts (the watch's `(compactions: N)` agrees):
+
+   ```
+   grep -c "^## Compacted, .*session ${CLAUDE_CODE_SESSION_ID:0:8}," <run>/supervision.md
+   ```
+
+   Under it, one line: what you found running, and what you started
+   again.
+5. **At the second compaction, or if you find yourself confused, hand
+   over** (section 7). Otherwise go on with what woke you, or end your
+   turn.
+
 **A check overdue.** A successor, or a session after a restart, whose
 `supervision.md` has no `## Check` entry in the last 45 minutes runs the
 hourly check at once (section 6), then starts its cron job: a new cron
@@ -57,7 +96,8 @@ context. Handle the event, then start the watch again:
 | `quiet again:` | a push notification to the user, with the command `plan resume` |
 | `paused:` | read `paused.md`; nothing else waits for you until the run resumes |
 | `done:` | the end (section 8) |
-| `context: … past 300K: hand over now` | after the event in hand, section 7 |
+| `context: … (compactions: N): hand over now`, N at least 2 | after the event in hand, section 7 |
+| `context: … past …K: hand over now` | the same: a run claimed before skein 71f6c38 hands over by context (section 7) |
 | `handed over:` | you supervise no more: end your turn, and start nothing |
 
 An idle coordinator (`idle.md`, development.md, section 7.4) has ended its
@@ -138,10 +178,10 @@ a rule that would serve every plan, a proposal for the retrospective
    block's report file.
 2. **Wake the designer:** `plan wake designer "question.md has a question:
    answer it as development.md, section 10.4, says."` It resumes the
-   designer's session, or, past 150K tokens of context or an hour idle,
-   starts a fresh designer from a brief. If it says the designer is at
-   work, never wake it again: send it a message (SendMessage) naming
-   `question.md`.
+   designer's session, or, once that session has been compacted twice or
+   idle an hour, starts a fresh designer from a brief (development.md,
+   section 10.4). If it says the designer is at work, never wake it
+   again: send it a message (SendMessage) naming `question.md`.
 3. **Go on** with everything else. A design gap always goes to the
    designer, even when its step can go on meanwhile: then an interim
    unblock lets the step go on only with work that does not rest on the
@@ -201,10 +241,12 @@ defects came from increments no check had read.
    question (section 4), or as a supplement step in a steer (section 3);
    never as a question to raise when reached (development.md, section
    10.4).
-3. **Let it start:** `plan ready <step> "<ruling N, or no change>"`, at
-   once, whether its needs have landed or not. It sets the step `ready`
-   and rings the coordinator, who starts it once they have: a re-check
-   never holds a start (development.md, section 7.2).
+3. **Let it start:** `plan ready <step> "<ruling N, or no change>;
+   checked <repository> <commit>, …"`, at once, whether its needs have
+   landed or not: the note keeps the commits for the re-check (step 4)
+   through a compaction or a handover. It sets the step `ready` and
+   rings the coordinator, who starts it once they have: a re-check never
+   holds a start (development.md, section 7.2).
 4. **Re-check what moved since, as a steer.** When the steps the session
    needs at its start have not all landed, wait for them with a second
    background command beside the watch:
@@ -227,7 +269,8 @@ session that goes on, from the handover entry, which names the re-checks
 still waiting (step 4), and the ledger's steps in `check` (`awk -F'\t'
 '$4 == "check"' <run>/ledger.tsv`): its background
 commands ended with the session before it, and the watch does not show a
-step twice.
+step twice. A compaction ends none of them: its sub-agents and waits go
+on, and their notifications reach you as before.
 
 ## 6. The hourly check
 
@@ -262,8 +305,17 @@ yourself, read it unfiltered, and append an entry of at most five lines
 
 ## 7. Handing over
 
-When the watch prints that your context is past 300,000 tokens
-(`PLAN_SUPERVISOR_LIMIT`):
+Your context compacts in place (section 1). You hand over only:
+- **after your second compaction:** step 5 of section 1 finds it, or the
+  watch prints `(compactions: N): hand over now`;
+- **when you find yourself confused:** after the re-read of section 1 you
+  cannot say what is open, which ruling landed last, or which background
+  commands are yours, or the run's files show actions of yours you do
+  not recall;
+- **in a run claimed before skein 71f6c38,** when the watch prints that
+  your context is past its limit: that run's kit does not compact you.
+
+Then:
 
 1. Finish the event in hand.
 2. Append to `supervision.md`, under `## Handover, <UTC time>`, at most 30
@@ -278,7 +330,10 @@ When the watch prints that your context is past 300,000 tokens
    prints `handed over:`: end your turn again.
 
 A supervisor's checks thin as its context grows: in jig-protocol, half its
-answers read code under 200K tokens, and none above 800K.
+answers read code under 200K tokens, and none above 800K. A handover by
+context costs a fresh start each time: on temper/client-api, the sessions
+that handed over at 150K spent 44% of their tokens in their first 40
+requests.
 
 **A usage limit is no handover** (development.md, section 10.5). A usage
 notice changes nothing: go on, and write no handover. You stop only when

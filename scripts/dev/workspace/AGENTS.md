@@ -60,19 +60,20 @@ and how it ends with a retrospective and its metrics. Its tools are in
 **A new machine.** Clone skein, smith, jig, hearth and temper from
 `git@github.com:forgetic/` into `~/src/rust/`, then run
 `skein/scripts/dev/plan check --fix`. It links the tools, this file, its
-`CLAUDE.md` and the coordinator's Codex profile, sets up the queue, and
-names what is still missing (pueue, kache, jq, cargo-nextest, the git
-settings below).
+`CLAUDE.md`, its Claude Code settings (`.claude/settings.json`) and the
+coordinator's Codex profile, sets up the queue, and names what is still
+missing (pueue, kache, jq, cargo-nextest, the git settings below).
 
-**A design.** Start Claude (Opus 5.5, effort xhigh) in `~/src/rust`, and
-say:
+**A design.** Start Claude (Opus 5.5, effort xhigh) in `~/src/rust`,
+with `claude --autocompact 200000`, so that its context compacts at about
+180K instead of handing over (development.md, section 2.1), and say:
 
 > Design: <the idea>. Work as the designer of skein's
 > docs/foundation/development.md, sections 2.1 and 4.
 
-**A plan.** In a fresh session, once the design has landed, not in the
-designer's: that session carries the whole design conversation into
-every request.
+**A plan.** In a fresh session, started the same way, once the design
+has landed, not in the designer's: that session carries the whole design
+conversation into every request.
 
 > Plan <the design documents, or the STATUS.md rows> as development.md,
 > section 5, says, in <repository>/docs/development/plans/<name>/.
