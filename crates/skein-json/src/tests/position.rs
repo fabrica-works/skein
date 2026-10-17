@@ -161,3 +161,65 @@ fn done_is_at_the_end_of_what_was_read() {
         assert_eq!(placed(document, LIMITS, &[]).last(), Some(&(Event::Done, position)), "{document:?}");
     }
 }
+
+fn string_failure_positions(rows: &[(&[u8], Error, Position)], limits: Limits) {
+    for &(document, error, position) in rows {
+        for chunk in [1, 2, 3, 4, 7] {
+            assert_eq!(
+                placed(document, Limits { chunk, ..limits }, &[]).last(),
+                Some(&(Event::Failed(error), position)),
+                "{document:?}, chunk {chunk}"
+            );
+        }
+    }
+}
+const ESCAPES: [(&[u8], Error, Position); 3] = [
+    (b"\"ab\\x\"", Error::Escape, at(3, 1, 4)),
+    (b"\"\\u12G4\"", Error::Escape, at(1, 1, 2)),
+    (b"{\"k\\q\":1}", Error::Escape, at(3, 1, 4)),
+];
+#[test]
+fn a_bad_escape_is_at_its_backslash() {
+    string_failure_positions(&ESCAPES, LIMITS);
+}
+const SURROGATES: [(&[u8], Error, Position); 4] = [
+    (b"\"a\\uDC00\"", Error::Surrogate, at(2, 1, 3)),
+    (b"\"\\uD800\"", Error::Surrogate, at(1, 1, 2)),
+    (b"\"x\\uD800\\u0041\"", Error::Surrogate, at(2, 1, 3)),
+    (b"\"\\uDC00\\uD800\"", Error::Surrogate, at(1, 1, 2)),
+];
+#[test]
+fn a_lone_surrogate_is_at_its_half_s_backslash() {
+    string_failure_positions(&SURROGATES, LIMITS);
+}
+const INVALID_UTF8: [(&[u8], Error, Position); 3] = [
+    (b"\"ab\xff\"", Error::Utf8, at(3, 1, 4)),
+    (b"\"abc\xe2\x28\xa1\"", Error::Utf8, at(4, 1, 5)),
+    (b"\"\xc3\"", Error::Utf8, at(1, 1, 2)),
+];
+#[test]
+fn invalid_utf8_is_at_the_first_byte_of_its_character() {
+    string_failure_positions(&INVALID_UTF8, LIMITS);
+}
+const CONTROL: [(&[u8], Error, Position); 1] = [(b"[\n\"a\x01\"]", Error::Control, at(4, 2, 3))];
+#[test]
+fn a_control_character_is_at_its_own_byte() {
+    string_failure_positions(&CONTROL, LIMITS);
+}
+const SHORT_STRING: Limits = Limits { string: 4, ..LIMITS };
+const LONG_STRINGS: [(&[u8], Error, Position); 4] = [
+    (b"\"abcde\"", Error::StringTooLong, at(5, 1, 6)),
+    (b"\"a\xF0\x9F\x98\x80\"", Error::StringTooLong, at(2, 1, 3)),
+    (b"\"abcd\\n\"", Error::StringTooLong, at(5, 1, 6)),
+    (b"{\"abcde\":1}", Error::StringTooLong, at(6, 1, 7)),
+];
+#[test]
+fn a_string_past_its_limit_is_at_the_character_or_escape() {
+    string_failure_positions(&LONG_STRINGS, SHORT_STRING);
+}
+const PAIRS: [(&[u8], Error, Position); 2] =
+    [(b"\"\\ud83d\\u12G4\"", Error::Escape, at(1, 1, 2)), (b"\"a\\ud83d\\ude00\"", Error::StringTooLong, at(2, 1, 3))];
+#[test]
+fn a_surrogate_pair_is_one_character_at_its_high_half_s_backslash() {
+    string_failure_positions(&PAIRS, SHORT_STRING);
+}

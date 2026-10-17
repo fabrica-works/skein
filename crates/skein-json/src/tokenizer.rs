@@ -45,8 +45,7 @@
 //!
 //! [`Tokenizer::position`] holds the first byte of its last token, long
 //! string or skipped value until the next demand (json.md, 3.6).
-//! Outcomes give the byte at fault or the end of what was read. String
-//! failures give that end while character positions are not supported.
+//! Outcomes give the byte at fault or the end of what was read.
 
 mod position;
 use position::Lines;
@@ -300,6 +299,7 @@ impl Tokenizer {
                     bytes: List::with_capacity(text_capacity(limits)),
                     length: 0,
                     retention: Retention::Strict(limits.string),
+                    begun: 0,
                 },
                 mode: Mode::Next,
                 read: 0,
@@ -313,7 +313,6 @@ impl Tokenizer {
     }
 
     /// Where its last answer is (json.md, 3.6).
-    /// String failures currently report the end of what was read.
     /// Before an answer and after restart, offset 0, line 1, column 1.
     #[must_use]
     pub fn position(&self) -> Position {
@@ -780,6 +779,7 @@ fn ended(document: &mut Document, reading: Reading, above: &mut Queue<Event>) ->
 
 /// The bytes delivered for `reading`'s demand.
 fn delivered(document: &mut Document, limits: &Limits, reading: Reading, bytes: &[u8]) -> Step {
+    let first = document.read;
     let read = match u32::try_from(bytes.len()) {
         Ok(len) => document.read.checked_add(len),
         Err(_) => None,
@@ -810,10 +810,10 @@ fn delivered(document: &mut Document, limits: &Limits, reading: Reading, bytes: 
                 bytes.len() <= chunk && (bytes.last() == Some(&b'"') || bytes.len() == chunk),
                 "a scan delivers through its quote or its maximum"
             );
-            match string::decode(text, bytes, &mut document.text) {
+            match string::decode(text, bytes, first, &mut document.text) {
                 Ok(Piece::More(text)) => Step::Read(Reading::String { key, text }),
                 Ok(Piece::Closed) => string_token(document, key),
-                Err(error) => Step::Fail(error, document.read),
+                Err(error) => Step::Fail(error, document.text.begun),
             }
         }
     }

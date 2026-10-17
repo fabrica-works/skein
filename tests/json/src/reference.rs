@@ -54,9 +54,6 @@ pub fn reading(document: &[u8], limits: &Limits) -> Reading {
     };
     let failure = match outcome {
         Outcome::Done => None,
-        Outcome::Failed(Error::Escape | Error::Surrogate | Error::Utf8 | Error::Control | Error::StringTooLong) => {
-            Some(parser.read)
-        }
         Outcome::Failed(_) => Some(parser.failed),
     };
     if let Some(offset) = failure {
@@ -273,7 +270,11 @@ impl Parser<'_> {
         self.visible = self.at;
         let mut text = Vec::new();
         loop {
+            let start = self.at;
             let byte = self.next()?;
+            // A character or a whole surrogate pair belongs to its first byte.
+            // A later delivery failure sets its own end offset in `next`.
+            self.failed = start;
             match byte {
                 b'"' => return Ok(text.into()),
                 b'\\' => self.escape(&mut text)?,

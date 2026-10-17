@@ -25,6 +25,8 @@ pub(crate) struct Buffer {
     pub(crate) bytes: List<u8>,
     pub(crate) length: u64,
     pub(crate) retention: Retention,
+    /// The first byte of the character or escape being decoded.
+    pub(crate) begun: u32,
 }
 
 impl Buffer {
@@ -122,11 +124,17 @@ impl Decoded {
 }
 
 /// Decodes `piece`, the next bytes of a string's text after `text`, onto
-/// `out`, which may hold at most `limit` bytes. A closing quote is last.
-pub(crate) fn decode(text: Text, piece: &[u8], out: &mut Buffer) -> Result<Piece, Error> {
+/// `out`, under its retention limit. `first` is the offset of the piece's
+/// first byte in the document. A closing quote is last.
+pub(crate) fn decode(text: Text, piece: &[u8], first: u32, out: &mut Buffer) -> Result<Piece, Error> {
     let mut text = text;
     // Bounded by the piece, which is at most the scan's maximum.
     for (at, &byte) in piece.iter().enumerate() {
+        if text == Text::Plain {
+            out.begun = first
+                .checked_add(u32::try_from(at).expect("a scan's length fits u32"))
+                .expect("within the document limit");
+        }
         let decoded = next(text, byte)?;
         out.room(u32::from(decoded.room))?;
         out.put(decoded.bytes());

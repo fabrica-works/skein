@@ -309,19 +309,9 @@ pub fn check(document: &[u8], settings: &Settings, seed: u64) -> Run {
                     "end position; {}",
                     replay()
                 ),
-                Outcome::Failed(error) => match error {
-                    Error::Unexpected
-                    | Error::Trailing
-                    | Error::TooDeep
-                    | Error::Number
-                    | Error::NumberTooLong
-                    | Error::TooLong
-                    | Error::Truncated
-                    | Error::Stream(_) => {
-                        assert_eq!(run.positions.last(), reading.failed_at.as_ref(), "failure position; {}", replay());
-                    }
-                    Error::Escape | Error::Surrogate | Error::Utf8 | Error::Control | Error::StringTooLong => {}
-                },
+                Outcome::Failed(_) => {
+                    assert_eq!(run.positions.last(), reading.failed_at.as_ref(), "failure position; {}", replay());
+                }
             }
         }
         None => assert!(settings.close.is_some(), "only an early close leaves no outcome; {}", replay()),
