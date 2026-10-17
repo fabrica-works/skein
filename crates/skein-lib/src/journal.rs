@@ -19,6 +19,8 @@
 //! A decision without writes makes no commit. Its outputs follow the last
 //! commit made, or number zero, which is already durable.
 
+use core::hash::{Hash, Hasher};
+
 use crate::Queue;
 
 /// Fixed capacities for a journal (lib.md, section 11).
@@ -37,7 +39,7 @@ pub struct JournalLimits {
 }
 
 /// The most one decision may write and hold.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct JournalRoom {
     /// The decision's maximum writes.
     pub writes: u32,
@@ -46,7 +48,7 @@ pub struct JournalRoom {
 }
 
 /// One accepted decision's writes, numbered for the store.
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub struct Commit<W> {
     /// The journal's increasing commit number.
     pub number: u64,
@@ -65,7 +67,7 @@ pub enum Released {
     Stopped,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 struct Held<O> {
     after: u64,
     output: O,
@@ -295,5 +297,20 @@ impl<W, O> Journal<W, O> {
             .checked_add(now)?
             .checked_add(writes)?
             .checked_add(decision_held)
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl<W: Hash, O: Hash> Hash for Journal<W, O> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pending.hash(state);
+        self.outstanding.hash(state);
+        self.held.hash(state);
+        self.now.hash(state);
+        self.reserved.hash(state);
+        self.last_number.hash(state);
+        self.sent.hash(state);
+        self.durable.hash(state);
+        self.stopped.hash(state);
     }
 }

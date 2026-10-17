@@ -1,6 +1,8 @@
 //! The deadline table each layer keeps for its own timers
 //! (programming-model.md, section 9).
 
+use core::hash::{Hash, Hasher};
+
 use crate::{Map, Set, Time};
 
 /// Timers, each named by a key of the owning layer's choosing, with at most
@@ -90,5 +92,12 @@ impl<K: Ord + Copy> Deadlines<K> {
         let armed = self.by_key.remove(&key);
         assert!(armed == Some(at), "both indexes hold every timer");
         Some(key)
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl<K: Hash> Hash for Deadlines<K> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.by_time.hash(state);
     }
 }

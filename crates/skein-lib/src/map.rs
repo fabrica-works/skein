@@ -1,6 +1,8 @@
 //! Bounded ordered maps (programming-model.md, 6.1): domain tables keyed by
 //! value, up to a limit.
 
+use core::hash::{Hash, Hasher};
+
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::{self, Entry};
 use core::borrow::Borrow;
@@ -142,5 +144,12 @@ impl<'a, K, V> IntoIterator for &'a Map<K, V> {
 
     fn into_iter(self) -> btree_map::Iter<'a, K, V> {
         self.entries.iter()
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl<K: Hash, V: Hash> Hash for Map<K, V> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.entries.hash(state);
     }
 }

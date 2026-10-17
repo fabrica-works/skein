@@ -7,6 +7,7 @@
 )]
 
 use alloc::vec::Vec;
+use core::hash::{Hash, Hasher};
 use core::mem::size_of;
 
 use crate::Id;
@@ -164,4 +165,33 @@ impl<T> Slab<T> {
 
 fn index(slot: u32) -> usize {
     usize::try_from(slot).expect("a u32 fits in a usize")
+}
+
+// lib.md, 5.1: slot identity and reuse order are state; capacity and len are not.
+impl<T: Hash> Hash for Slab<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for slot in &self.slots {
+            match slot {
+                Slot::Vacant { generation } => {
+                    state.write_u8(0);
+                    generation.hash(state);
+                }
+                Slot::Occupied { generation, retired, value } => {
+                    state.write_u8(1);
+                    generation.hash(state);
+                    retired.hash(state);
+                    value.hash(state);
+                }
+                Slot::Spent => state.write_u8(2),
+            }
+        }
+        self.free.len().hash(state);
+        for slot in &self.free {
+            slot.hash(state);
+        }
+        self.retired.len().hash(state);
+        for slot in &self.retired {
+            slot.hash(state);
+        }
+    }
 }

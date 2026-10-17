@@ -1,4 +1,6 @@
 //! `ChaCha20` with the original 64-bit counter and nonce (lib.md, 8).
+use core::hash::{Hash, Hasher};
+
 use crate::Secret;
 
 /// Secret randomness from a 32-byte key and a process-distinct stream.
@@ -91,5 +93,17 @@ fn quarter(words: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) {
 impl core::fmt::Debug for CryptoRng {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CryptoRng").field("stream", &self.stream).finish()
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl Hash for CryptoRng {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.stream.hash(state);
+        for word in self.words.get(12..14).expect("the two counter words") {
+            word.hash(state);
+        }
+        self.used.hash(state);
+        self.exhausted.hash(state);
     }
 }

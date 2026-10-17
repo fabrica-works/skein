@@ -3,6 +3,8 @@
 
 #![expect(clippy::disallowed_types, reason = "a stack is a Vec allocated once, at its final capacity")]
 
+use core::hash::{Hash, Hasher};
+
 use alloc::vec::Vec;
 use core::mem::size_of;
 
@@ -68,5 +70,15 @@ impl<T> Stack<T> {
     #[must_use]
     pub fn top_mut(&mut self) -> Option<&mut T> {
         self.items.last_mut()
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl<T: Hash> Hash for Stack<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.items.len().hash(state);
+        for item in &self.items {
+            item.hash(state);
+        }
     }
 }

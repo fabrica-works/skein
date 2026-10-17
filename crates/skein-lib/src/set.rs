@@ -1,6 +1,8 @@
 //! Bounded ordered sets (programming-model.md, 6.1): a [`Map`](crate::Map)
 //! without values.
 
+use core::hash::{Hash, Hasher};
+
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_set;
 use core::borrow::Borrow;
@@ -105,5 +107,12 @@ impl<'a, K> IntoIterator for &'a Set<K> {
 
     fn into_iter(self) -> btree_set::Iter<'a, K> {
         self.keys.iter()
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl<K: Hash> Hash for Set<K> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.keys.hash(state);
     }
 }

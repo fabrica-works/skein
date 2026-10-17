@@ -7,6 +7,8 @@
     reason = "an intake is a VecDeque allocated once, at its cap, and a delivery is built in a Vec of its exact length"
 )]
 
+use core::hash::{Hash, Hasher};
+
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -236,4 +238,11 @@ fn index(n: u32) -> usize {
 
 fn count(n: usize) -> u32 {
     u32::try_from(n).expect("a position in the buffer fits its u32 capacity")
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl Hash for Intake {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+    }
 }

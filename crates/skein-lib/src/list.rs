@@ -142,6 +142,9 @@ impl<T: Eq> Eq for List<T> {}
 
 impl<T: Hash> Hash for List<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.items.hash(state);
+        self.items.len().hash(state);
+        for item in &self.items {
+            item.hash(state);
+        }
     }
 }

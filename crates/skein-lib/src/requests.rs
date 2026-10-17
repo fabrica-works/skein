@@ -36,6 +36,8 @@
 //! owner, coalescing untaken changes; unknown is held until taken. After
 //! outputs and progress, call `reclaim` at the iteration's reclaim point.
 
+use core::hash::{Hash, Hasher};
+
 use crate::{Duration, Id, Map, Rng, Slab, Time, Token, Wall};
 
 /// A request's stable key, preserved across attempts and restoration.
@@ -59,7 +61,7 @@ pub struct RequestLimits {
 }
 
 /// A request's complete store record, without its process-local owner value.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RequestRecord<R> {
     pub key: RequestKey,
     pub scope: u64,
@@ -105,7 +107,7 @@ pub enum RequestAnswered<O> {
 }
 
 /// The latest request state its owner may display.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RequestProgress {
     /// An attempt is in flight.
     InFlight,
@@ -117,7 +119,7 @@ pub enum RequestProgress {
     Unknown,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 enum State {
     Parked,
     Ready,
@@ -126,13 +128,13 @@ enum State {
     Retired { erase: bool },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 struct Anchor {
     now: Time,
     age: Duration,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 struct Entry<O, R> {
     record: RequestRecord<R>,
     owner: O,
@@ -645,5 +647,23 @@ fn earliest(next: &mut Option<Time>, deadline: Time) {
             }
         }
         None => *next = Some(deadline),
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl<O: Hash, R: Hash> Hash for RequestTable<O, R> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.entries.hash(state);
+        self.order.hash(state);
+        self.index.hash(state);
+        self.bytes.hash(state);
+        self.draws.hash(state);
+        self.namespace.hash(state);
+        self.serial.hash(state);
+        self.attempt.hash(state);
+        self.up.hash(state);
+        self.scope.hash(state);
+        self.retention.hash(state);
+        self.retries.hash(state);
     }
 }

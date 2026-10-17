@@ -3,6 +3,8 @@
 
 #![expect(clippy::disallowed_types, reason = "a queue is a VecDeque allocated once, at its final capacity")]
 
+use core::hash::{Hash, Hasher};
+
 use alloc::collections::VecDeque;
 use alloc::collections::vec_deque;
 use core::mem::size_of;
@@ -85,5 +87,12 @@ impl<'a, T> IntoIterator for &'a Queue<T> {
 
     fn into_iter(self) -> vec_deque::Iter<'a, T> {
         self.items.iter()
+    }
+}
+
+// lib.md, 5.1: hash held state, never capacity or storage layout.
+impl<T: Hash> Hash for Queue<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.items.hash(state);
     }
 }
