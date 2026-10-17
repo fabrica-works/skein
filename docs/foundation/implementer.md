@@ -1,6 +1,6 @@
 # The implementer's card
 
-Provisional, 2026-10-14, revised 2026-10-16. What an implementing agent
+Provisional, 2026-10-14, revised 2026-10-17. What an implementing agent
 reads of the development process: development.md's section 8, in a file
 of its own, so that an implementer reads this card and not the whole
 process. Its sections keep their numbers, 8.1 to 8.8, so that
@@ -16,7 +16,8 @@ development.md it names are read only when a case needs them.
 - your session file, and the design sections its "Read first" names, not
   the whole design;
 - the sections of skein's `programming-model.md` and
-  `testing-strategy.md` that its "Read first" names, never either whole;
+  `testing-strategy.md` that its "Read first" names, never either whole,
+  and `testing-strategy.md`'s section 10, a test's shape;
 - the plan's `README.md` and `code-organization.md`;
 - your repository's `AGENTS.md` and the workflow it names.
 
@@ -38,7 +39,8 @@ first edit, and every request after carried them.
    origin/main`.
 3. **Implement it with its tests,** following the repository's `AGENTS.md`
    and the sections of skein's `programming-model.md` and
-   `testing-strategy.md` your session file names:
+   `testing-strategy.md` your session file names, and its section 10, a
+   test's shape:
    - the increment's Shape gives your paths, names and signatures;
    - its Test shape gives your test file, the fixtures to reuse, and the
      reference test to write the others like.
@@ -48,9 +50,12 @@ first edit, and every request after carried them.
    prints. A plan's "run nothing before `land`" means no proof run and no
    suite, not no clippy.
 6. **Land it** with `land` (section 8.5). Once it has landed, remove
-   your worktree's `target/` (`rm -rf target`): kache refills it from its
-   store for your next increment (development.md, section 11.4), and you
-   do not wait for a warm one. Then report (section 8.6).
+   your worktree's `target/` with `cargo clean`: kache refills it from
+   its store for your next increment (development.md, section 11.4), and
+   you do not wait for a warm one. Then report (section 8.6). Never `rm
+   -rf target`: Codex's command review refuses it, and drops the rest of
+   its cell. In smith's wall-clock run, it was refused 15 times, `plan
+   log` with it, and each report was sent again.
 
 **The code graph** indexes the primary checkouts, which are on `main`.
 Use it as `~/src/rust/AGENTS.md` says: name your repository's project in
@@ -163,6 +168,14 @@ it.
 - **Cases of one behaviour are rows of one table test** (testing-strategy.md,
   section 8), which checks every row and names each that fails. Tests of
   different behaviours are never merged to fit a budget.
+- **Every test takes the shape of testing-strategy.md, section 10,**
+  which you read before the first increment (section 8.1), whatever your
+  session file's "Read first" names; a plan's rule or a steer cites its
+  rules by name. In smith's wall-clock run, 11 of the steers' 18 points
+  were these rules, then in no document an implementer reads: the
+  Pass-on texts that restated them grew the spawn prompts from about 850
+  characters to 11K, and copies landed anyway, a 14th `llm::Prompt`
+  literal among them.
 - **Evidence is the gate, the proof, and what the repository's workflow
   or the plan asks beyond the gate; nothing else.** Write no manifests of
   inputs, no observers, no polling scripts, and no repeated measurements.
@@ -185,7 +198,9 @@ it.
   (`heavy cargo nextest run -p <crate> --no-run`, `heavy cargo build …`),
   and run clippy. In test-budgets, five gate-lane runs failed within
   seconds, after waiting 24 minutes in all.
-- **Light commands run directly:** git, `cargo fmt`, reading, `rg`.
+- **Light commands run directly:** git, `cargo fmt`, reading, `rg`, and
+  `python3`, Python's only name on the machines: in smith's wall-clock
+  run, 16 threads ran `python` first, and found no such command.
 - **Whole suites run only in `land`'s gate,** or for a measurement or a
   probe that the Proof line or the repository's workflow names. Do not
   run the gate before `land`.

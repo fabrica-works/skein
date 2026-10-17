@@ -1,6 +1,6 @@
 # Development process
 
-Provisional, 2026-10-09, revised 2026-10-16. How work goes from an idea
+Provisional, 2026-10-09, revised 2026-10-17. How work goes from an idea
 to `main` in skein and in every project built on it (smith, jig, hearth,
 temper): who designs, who plans, who builds, who supervises, where each
 of them writes, and how they talk to each other. Read it before starting
@@ -719,7 +719,11 @@ user only what they and the design leave open, and asks before writing.
   `later.md` row for their answer. Its baseline's miss goes to the
   designer at once (section 10.4). In smith's parity plan, a truly equal
   smith passed the whole verdict with a chance of 0.69, and a miss at the
-  closing run was left "a question for the designer".
+  closing run was left "a question for the designer". The plan states,
+  from its planning commands on the last committed baseline (section
+  5.4), the resolution of each run that measures a change against its
+  parent on the way: the smallest effect that run tells from none, and
+  so which changes have a run of their own (section 5.5).
 - **The executor.** The coordinator and the implementers read the plan as
   written (section 4.5).
 - **Language.** Rust, for everything.
@@ -738,7 +742,9 @@ user only what they and the design leave open, and asks before writing.
 - **Rules of this plan:** only what this document, the repositories'
   `AGENTS.md` and their workflows do not say. For example: fences ("this
   increment lands after every other skein increment"), version owners,
-  probes. A plan never restates this document;
+  probes. A plan never restates this document, nor the rules of a
+  test's shape (testing-strategy.md, section 10), which it cites by
+  name;
 - **Live services:** each one the plan uses, with its budget of calls or
   tokens;
 - **One test of a suite that needs a built artifact:** for each suite
@@ -783,9 +789,9 @@ user only what they and the design leave open, and asks before writing.
   - no type beside an existing one for the same thing: change the type in
     place, and its users in the same increment;
   - no field or predicate that its counterpart across a boundary lacks;
-  - no test that checks several behaviours under one name;
+  - no test that breaks a rule of a test's shape (testing-strategy.md,
+    section 10);
   - no lint exception in tests;
-  - no expected value computed by the code under test;
   - the words the plan forbids in code;
 - **size limits:** a file of at most 800 lines and a test function of at
   most 40, unless an increment says otherwise. An increment's size is
@@ -1108,6 +1114,17 @@ balancing confidence against the run's pace and its tokens.
   - One story, not a matrix: the cases belong in the tests (section 5.6).
   - Most increments prove in the suite. A live proof is for an increment
     that touches a live service, about once or twice a session.
+- **A comparison proves only an effect it resolves.** Where a plan
+  measures a change against its parent before it lands, on the way to a
+  measured verdict (smith's `parity-change`, `benchmarks.md` 16.6), only
+  a change whose expected effect its run can tell from none runs alone.
+  Any other proves itself on the counts it targets, such as a task's
+  responses, and lands; the plan's closing run measures such changes
+  together. In smith's wall-clock run, four change runs took 9.3 hours
+  of the gate lane, a third of the run, and $69.85: their RT intervals
+  were 0.34 to 0.78 wide, against effects of 4% to 22%, and two stopped
+  on noise, while the counts the steps targeted moved (responses on
+  `shell-cwd`, 70.1 to 54.2).
 - **A live proof ends at its task's first terminal failure,** not at its
   deadline, and its usage is counted whole: the step's commit carries
   `Completions:` and `Wall:` trailers that total every live run of the
@@ -1163,14 +1180,9 @@ shows them precisely.
   three production faults (rulings 136, 140 and 153) met only the process
   tier, the first to run the shipped profile, and the shipped limits'
   module cited test fixtures as the source of 61 of its numbers.
-- **Tests the plan shows:**
-  - check one behaviour each;
-  - write expected values as literals, never computed by the code under
-    test;
-  - name their fixtures (the parties, tasks and connectors a story uses),
-    never bare numbers, unless the number is the point;
-  - have names of about eight words that state the behaviour;
-  - reuse the crate's fixtures module, which grows with each session.
+- **Tests the plan shows take a test's shape** (testing-strategy.md,
+  section 10), and reuse the crate's fixtures module, which grows with
+  each session.
 - **Ceilings are per test, not shares of a budget:** a unit test under 20
   ms, a focused world test under 0.5 s, a fuzzy test about 5 s, on the
   development machine, unoptimized. A test past its ceiling is made
@@ -1298,8 +1310,9 @@ commits behind smith.
      that has its row, with `land --docs`; the row is what keeps another
      machine from claiming the same plan;
    - starts its watch, `plan watch`, in the background (section 10.5);
-   - starts its hourly check (section 14): in Claude Code, a cron job,
-     which lasts only as long as the session.
+   - schedules its hourly check (section 14): in Claude Code, a one-time
+     cron job, each check scheduling the next (`supervisor.md`, section
+     1); a cron job lasts only as long as the session.
 5. **The designer joins,** if the plan may raise design questions: in its
    Claude Code session, it runs `plan join designer`, so that the
    supervisor can wake it (section 10.4), then ends its turn. It does not
@@ -2019,8 +2032,8 @@ lines each.>
   2. re-reads the run's state: `plan status`, `supervision.md` from its
      last `## Check` entry, the escalation files there are, and the
      ledger's steps in `check` and `ready`;
-  3. checks that its watch, its cron job and its waits run, and starts
-     what is missing;
+  3. checks that its watch, its next check's cron job and its waits run,
+     and starts what is missing;
   4. appends `## Compacted, <UTC time>: session <id>, compaction <N>` to
      `supervision.md`, N counted from its session's earlier entries, with
      what it found running and what it started.
@@ -2040,7 +2053,7 @@ lines each.>
      most 30 lines: what is open, the steers it follows up, the rulings in
      force that the plan does not yet say, the next check's focus;
   3. it stops its watch, and each ready check's sub-agent and wait, and
-     deletes its cron job;
+     deletes its next check's cron job;
   4. it runs `plan handover supervisor`, which starts the successor and
      records it in `claude.tsv`;
   5. it ends its turn. A watch it left running exits with "handed over:",
@@ -2137,12 +2150,17 @@ be told from a loaded machine.
   increments, in smith's parity run.
 - **A session's `target/` goes after each of its landings.** Its
   implementer removes it once the step has landed, before its report
-  (implementer.md, 8.1), and the coordinator removes a session's when it
-  yields, hands over or ends. kache refills it from its store (section
-  11.3). In smith's parity run,
-  eight sessions' `target/` filled 29 GB in about five minutes, between
-  two checks, and then the disk; after this rule (ruling 108), no disk
-  event followed.
+  (implementer.md, 8.1), and the coordinator removes a session's, with
+  `cargo clean` in its worktree, when it yields, hands over or ends: at
+  once, or, while a heavy task the session queued is still queued or
+  running (`pueue status` shows each task's path), once the last of them
+  ends. kache refills it from its store (section 11.3). In smith's
+  parity run, eight sessions' `target/` filled 29 GB in about five
+  minutes, between two checks, and then the disk; after this rule
+  (ruling 108), no disk event followed. In smith's wall-clock run, a
+  baseline running from a yielded session's worktree died 33 seconds
+  after the coordinator removed its `target/`, with the disk above 101
+  GB.
 - **The coordinator checks** available memory (`free -g`) and disk (`df -h
   ~/src`) before each start, and at every wake-up (section 7.4).
 - **Below 6 GB of memory or 40 GB of disk,** it holds new starts.
@@ -2152,7 +2170,8 @@ be told from a loaded machine.
   `log.md` each time.
 - **Below 1.5 GB of memory or 15 GB of disk,** it stops the line.
 - **To free disk,** it may remove the `target/` of a session that is not
-  running. Before it holds starts or blocks on disk, it frees what it
+  running, once no heavy task the session queued is queued or running
+  (above). Before it holds starts or blocks on disk, it frees what it
   can, and logs each: first the `target/` of each session that has
   finished; then, at every disk check below 80 GB, `kache gc`, once more
   if it ends with "No such file or directory", with its `Store:` line
@@ -2273,7 +2292,10 @@ that machine.
 Once an hour, the supervisor checks whether the run heads for its plan's
 "Done when", at a healthy pace, without scope creep or waste, and with
 tests that stay cheap and readable. It is a light check of about ten
-minutes. Problems are cheaper to fix the hour they appear.
+minutes. Problems are cheaper to fix the hour they appear. The hour
+counts from the last check, across handovers and restarts: a
+successor's first check is due an hour after its predecessor's last,
+and runs at once if that time has passed (`supervisor.md`, section 1).
 
 **A sub-agent runs steps 1 to 4** (`supervisor.md`, section 6): a fresh
 one on Sonnet (`supervisor.md`, section 9), never a fork, which returns
@@ -2285,9 +2307,13 @@ request carried. The supervisor appends the entry, and sends the steer.
 
 **A quiet hour needs no sub-agent.** While no session is running and the
 run waits only on queue tasks (a live suite), the supervisor runs `plan
-pulse` itself, reads it unfiltered, and appends an entry of at most five
-lines: what runs, its progress, the machine. In smith's parity run, the
-eight checks while one suite ran cost about $21, and led to nothing.
+pulse` and step 2's listing of process changes itself, reads them
+unfiltered, and appends an entry of at most five lines: what runs, its
+progress, the machine, the changes found. In smith's parity run, the
+eight checks while one suite ran cost about $21, and led to nothing. In
+smith's wall-clock run, the quiet checks from 18:48 to 02:17 skipped
+the listing, and a change that named the run reached its coordinator
+ten hours after it landed.
 
 1. **Run `plan pulse`** (section 14.2), and read its output unfiltered:
    no `grep`, `head` or `tail`. It prints the numbers since the last
@@ -2305,7 +2331,9 @@ eight checks while one suite ran cost about $21, and led to nothing.
    supervision.md's Process line>..origin/main -- docs/foundation
    scripts/dev`. Each
    commit whose body says the run takes it, and that no steer has passed
-   on, is a steer point (section 4.4).
+   on, is a steer point (section 4.4), sent with this check's steer: a
+   change reaches the run's coordinator at the first check after its
+   landing.
 3. **Sample two files, about 300 lines in all:**
    - the largest test added since the last check, read against the test
      checklist (section 14.3);
@@ -2381,15 +2409,11 @@ easily misread.
     formatted only on failure);
   - limits sized for production instead of for the test;
   - more seeds than the assertions need.
-- **Shape:**
-  - one behaviour per test;
-  - expected values written as literals;
-  - named fixtures, not bare numbers;
-  - helpers reused from the crate's fixtures, not defined again;
-  - names that state the behaviour in about eight words.
+- **Shape:** testing-strategy.md's section 10, rule by rule. A finding
+  names the rule it breaks, and a steer's point cites it by section and
+  name.
 - **Weight:**
   - a test function within the plan's limit, and a file within its own;
-  - no test that checks several behaviours under one name;
   - no lint exception in tests.
 - **Awkwardness is a signal.** A test that needs a large setup to say
   something small points at the interface under test. It calls for a

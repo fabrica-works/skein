@@ -1,14 +1,14 @@
 # Testing strategy
 
-Provisional, 2026-10-03, revised 2026-10-13. How code in skein and in
+Provisional, 2026-10-03, revised 2026-10-17. How code in skein and in
 every service built on it is tested. Read it with programming-model.md,
 whose terms it uses, before writing or reviewing tests.
 
 **How to read this.** Section 1 is the whole strategy in one page. The
 sections after it take each part in turn: the tiers, faults, the fakes
 that stand in for neighbours, keeping the simulator honest, what every
-world checks, scenarios and the referee, the two suites, and where a
-failure is fixed.
+world checks, scenarios and the referee, the two suites, where a
+failure is fixed, and a test's shape.
 
 ## 1. In one page
 
@@ -53,6 +53,10 @@ failure is fixed.
 - **A failure is fixed in the lowest tier that shows it.** skein tests the
   kit and a service tests itself: a failure in a service's world that
   comes from skein is reproduced and fixed in skein's own tier.
+- **A test reads as what it shows.** One behaviour, the setup its
+  assertion reads, written once; its fixtures and sizes named, a bound
+  tested from both sides, a table's rows carrying data, and a recorded
+  stream edited as records (section 10).
 
 ## 2. The tiers
 
@@ -512,3 +516,44 @@ an ignored test until it is.
   conformance bug: the suite first, then the simulator (section 5).
 - **What a service finds missing in skein** is added to skein, with the
   service as its first user and first test.
+
+## 10. A test's shape
+
+How a test is written, at every tier. Each rule has a name, by which a
+plan, a steer or a review cites it, and no plan, steer or review
+restates it (development.md, sections 5.2, 5.6 and 14.3).
+
+- **One behaviour per test.** A test is named for what it shows, in
+  about eight words, and its expected value is a literal or a named
+  size, never computed by the code under test. Cases that expect
+  different outcomes are tests of their own; cases of one behaviour that
+  each cost less than a test's process are rows of one table test
+  (section 8).
+- **Rows carry data.** A table test's rows hold its inputs and expected
+  values, and one body checks every row alike. The body never branches
+  on a row's label, nor compares it: rows that need different code are
+  different behaviours, and different tests.
+- **The setup the assertion reads.** A test builds what its assertion
+  reads, and nothing more, and asserts nothing on the way: a
+  precondition worth checking is another test's behaviour. A test that a
+  compaction carries no guard does not first check that an ordinary
+  prompt carries one.
+- **A setup written once.** When two tests of a file open with the same
+  three lines or more, or a test types a fixture, a setup, an
+  expectation or a literal of three lines or more that its file or the
+  crate's shared fixtures already hold, those lines are written once, as
+  a named function that takes what differs, and called. Copies already
+  landed, in files a change does not otherwise touch, stay as they are.
+- **Named fixtures and sizes.** A story's parties, tasks and connectors
+  are named fixtures, never bare numbers. A size, a count or a limit in
+  a test is a named constant, with the derivation of its value beside
+  it: the code's own constant, the fixture's content, or the design's
+  section. A bare number, or a sum of them (`host_tools + 4`), is a size
+  nobody can check.
+- **A bound's two sides.** A limit is tested at the bound, which holds,
+  and one past it, which does not, each in a test or a row of its own.
+- **A recorded stream edited as records.** A test that alters a
+  recorded stream (a transcript, an event log, a summary) parses it,
+  changes the records it means to, and asserts how many it changed. It
+  never edits the text (`str::replace`), which, once the text moves,
+  changes nothing and says nothing.
