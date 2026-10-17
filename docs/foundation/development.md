@@ -1700,7 +1700,7 @@ tries. Its exit status:
 | 3 | the rebase stopped on conflicts, left in progress |
 | 4 | the build, its lints or the gate failed |
 | 5 | the local `main` could not follow: with a push, the commit landed on `origin/main`; with `--local`, nothing landed |
-| 6 | main kept moving |
+| 6 | main kept moving, or its ref stayed locked: a lost ref-lock race is retried like a moved main, and exits 6 when the retries run out |
 | 7 | fetching or pushing failed |
 | 8 | another command failed |
 

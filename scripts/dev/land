@@ -39,7 +39,7 @@
 #   4  the gate failed
 #   5  the local main could not follow: with a push, the commit landed on
 #      origin/main; with --local, nothing landed
-#   6  main kept moving
+#   6  main kept moving, or its ref stayed locked
 #   7  fetching or pushing failed
 #   8  another command failed
 set -euo pipefail
@@ -292,7 +292,7 @@ Say what the code checks instead, never a synonym (development.md, section 4.5);
     fi
 
     if ! err=$(git push --quiet origin "$commit:refs/heads/main" 2>&1); then
-        if grep -qE 'non-fast-forward|fetch first|stale info' <<<"$err"; then
+        if grep -qE 'non-fast-forward|fetch first|stale info|cannot lock ref' <<<"$err"; then
             echo "land: main moved on origin; again" >&2
             continue
         fi

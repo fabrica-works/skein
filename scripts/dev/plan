@@ -218,6 +218,7 @@ set_step() {
     load
     ledger_upgrade
     local step=${1:?step}
+    [[ $step != -* ]] || die "a step is not an option: $step"
     shift
     local pairs=() pair key
     for pair in "$@"; do

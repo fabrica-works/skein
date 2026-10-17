@@ -121,6 +121,50 @@ expect "ledger header" "$(head -n1 "$run/ledger.tsv")" $'slot\tthread\tbranch'
 expect "ledger thread" "$(grep alpha-01.1 "$run/ledger.tsv")" $'\tt-impl-1\t'
 expect status "$("$plan" status)" "3 of 4 steps landed; 1 running" "| alpha-01.3 | w1 | b3 |"
 
+# Land against an origin owned by this world, never a remote checkout.
+git init -q --bare --initial-branch=main "$t/origin.git"
+git clone -q "$t/origin.git" "$t/clone" 2>/dev/null
+git -C "$t/clone" config user.email test@example.com
+git -C "$t/clone" config user.name test
+echo '# Start' >"$t/clone/README.md"
+git -C "$t/clone" add README.md
+git -C "$t/clone" commit -qm Start
+git -C "$t/clone" push -q origin main
+land_branch() {
+    git -C "$t/clone" switch -qc "$1" origin/main
+    echo "$1" >>"$t/clone/README.md"
+    git -C "$t/clone" add README.md
+    git -C "$t/clone" commit -qm "$2"
+}
+land_branch locked 'A Markdown change'
+touch "$t/origin.git/refs/heads/main.lock"
+status=0
+out=$(cd "$t/clone" && DEV_TMP=$t/land-tmp "$kit/land" --docs --tries 2 2>&1) || status=$?
+rm "$t/origin.git/refs/heads/main.lock"
+expect "A locked ref is main moving" "$status $out" '6 land:' 'land: main moved 2 times; giving up'
+land_branch unread $'Unread trailer\n\nStep: alpha-01.1\n\nAnother paragraph.'
+status=0
+out=$(cd "$t/clone" && DEV_TMP=$t/land-tmp "$kit/land" --docs 2>&1) || status=$?
+expect "land refuses an unread trailer" "$status $out" '2 land:' 'git reads no trailer in:' 'its Step line'
+land_branch forbidden $'A forbidden word\n\nPlan: demo'
+echo 'let exact = 1;' >"$t/clone/w.rs"
+git -C "$t/clone" add w.rs
+git -C "$t/clone" commit -qm $'Add the word\n\nPlan: demo'
+mkdir -p "$t/land-tmp"
+printf 'alpha/demo\n%s\n' "$dir" >"$t/land-tmp/active-plan"
+flock "$t/clone/.git/land-turn.lock" sh -c 'touch "$1"; sleep 1' sh "$t/turn-held" &
+turn_pid=$!
+for ((poll=0; poll<50; poll++)); do [[ ! -f $t/turn-held ]] || break; sleep 0.1; done
+status=0
+out=$(cd "$t/clone" && DEV_TMP=$t/land-tmp LAND_PREBUILD='' "$kit/land" --gate true 2>&1) || status=$?
+wait "$turn_pid"
+expect "land refuses a Pulse word" "$status $out" '2 land:' "the plan's Pulse forbids these words (actual|exact)" 'w.rs: let exact = 1;' 'land: another landing in clone has its turn; waiting for it'
+before=$(cat "$run/ledger.tsv")
+status=0
+out=$("$plan" set --help state=ready 2>&1) || status=$?
+expect "plan set refuses an option" "$status $out" '2 plan:' 'a step is not an option: --help'
+expect "an option leaves the ledger unchanged" "$(if [[ $(cat "$run/ledger.tsv") == "$before" ]]; then echo unchanged; fi)" unchanged
+
 # Commits with trailers, after the claim.
 commit() {
     local step=$1 proof=$2 gate=$3 message
