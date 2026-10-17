@@ -7,6 +7,7 @@
 
 mod collector;
 mod document;
+mod position;
 mod text;
 mod tokenizer;
 mod writer;
@@ -18,7 +19,7 @@ use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Env, Intake, Queue, Time, Wall};
 
 use crate::Token;
-use crate::tokenizer::{self as json, Event, Limits, Request, Tokenizer};
+use crate::tokenizer::{self as json, Event, Limits, Position, Request, Tokenizer};
 
 /// Small limits, so that a test reaches each of them.
 const LIMITS: Limits = Limits { depth: 4, string: 16, number: 8, chunk: 4, length: 1024 };
@@ -94,6 +95,14 @@ fn demand(read: Read) -> Option<Down> {
 /// holds all of it and meets each demand from it: the events, the last its
 /// outcome.
 fn read(document: &[u8], limits: Limits) -> Vec<Event> {
+    let mut events = Vec::new();
+    for (event, _) in placed(document, limits, &[]) {
+        events.push(event);
+    }
+    events
+}
+
+fn placed(document: &[u8], limits: Limits, requests: &[Request]) -> Vec<(Event, Position)> {
     let mut machine = Machine::new(limits);
     let mut intake = Intake::with_capacity(u32::try_from(document.len()).unwrap().max(json::largest_demand(&limits)));
     intake.append(document).unwrap();
@@ -101,7 +110,7 @@ fn read(document: &[u8], limits: Limits) -> Vec<Event> {
     let mut demanded = None;
     for _ in 0..document.len().checked_mul(4).unwrap().checked_add(8).unwrap() {
         let (event, down) = match demanded.take() {
-            None => machine.down(Request::Next),
+            None => machine.down(requests.get(events.len()).copied().unwrap_or(Request::Next)),
             Some(read) => match intake.meet(read) {
                 Some(bytes) => machine.up(Up::Bytes(bytes)),
                 None => machine.up(Up::End),
@@ -119,7 +128,7 @@ fn read(document: &[u8], limits: Limits) -> Vec<Event> {
             Event::Done | Event::Failed(_) => true,
             Event::Closed => panic!("closed unasked"),
         };
-        events.push(event);
+        events.push((event, machine.tokenizer.position()));
         if over {
             return events;
         }

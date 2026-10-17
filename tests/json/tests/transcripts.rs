@@ -50,7 +50,7 @@ fn every_transcript_decodes_to_its_expectation_whatever_the_cuts_and_scans() {
                 limits.chunk = CHUNKS[usize::try_from(seed).unwrap() % CHUNKS.len()];
             }
             let settings = Settings::calm(&mut rng, limits);
-            let run = world::run(&transcript.document, &settings, seed);
+            let run = world::check(&transcript.document, &settings, seed);
             assert_eq!(run.decoded().as_ref(), Some(expected), "{}, seed {seed}: {settings:?}", transcript.name);
         }
     }

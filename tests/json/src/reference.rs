@@ -16,13 +16,24 @@
 //!   and within a number, the rest of a literal, a scan of a string.
 
 use skein_json::Token;
-use skein_json::tokenizer::{Error, Limits};
+use skein_json::tokenizer::{Error, Limits, Position};
 
 use crate::{Decoded, Outcome};
 
 /// What `document`, the whole of a stream, decodes to under `limits`.
 #[must_use]
 pub fn parse(document: &[u8], limits: &Limits) -> Decoded {
+    reading(document, limits).decoded
+}
+
+/// The independently read tokens and their positions.
+pub struct Reading {
+    pub decoded: Decoded,
+    pub at: Vec<Position>,
+}
+
+#[must_use]
+pub fn reading(document: &[u8], limits: &Limits) -> Reading {
     let mut parser = Parser {
         input: document,
         at: 0,
@@ -30,13 +41,15 @@ pub fn parse(document: &[u8], limits: &Limits) -> Decoded {
         depth: 0,
         visible: 0,
         tokens: Vec::new(),
+        offsets: Vec::new(),
         values: Vec::new(),
     };
     let outcome = match parser.document() {
         Ok(()) => Outcome::Done,
         Err(error) => Outcome::Failed(error),
     };
-    Decoded { tokens: parser.tokens, outcome }
+    let at = positions(document, &parser.offsets);
+    Reading { decoded: Decoded { tokens: parser.tokens, outcome }, at }
 }
 
 struct Parser<'a> {
@@ -49,10 +62,16 @@ struct Parser<'a> {
     /// How far the scans of the string being read have reached.
     visible: usize,
     tokens: Vec<Token>,
+    offsets: Vec<usize>,
     values: Vec<ValueSpan>,
 }
 
 impl Parser<'_> {
+    fn push(&mut self, token: Token, offset: usize) {
+        self.tokens.push(token);
+        self.offsets.push(offset);
+    }
+
     fn document(&mut self) -> Result<(), Error> {
         let first = self.significant()?;
         self.value(first)?;
@@ -95,7 +114,7 @@ impl Parser<'_> {
             b'[' => self.array(),
             b'"' => {
                 let text = self.string()?;
-                self.tokens.push(Token::String(text));
+                self.push(Token::String(text), start);
                 Ok(())
             }
             b't' => self.literal(b"rue", Token::True),
@@ -118,8 +137,9 @@ impl Parser<'_> {
                 if byte != b'"' {
                     return Err(Error::Unexpected);
                 }
+                let start = self.at - 1;
                 let key = self.string()?;
-                self.tokens.push(Token::Key(key));
+                self.push(Token::Key(key), start);
                 if self.significant()? != b':' {
                     return Err(Error::Unexpected);
                 }
@@ -158,13 +178,13 @@ impl Parser<'_> {
             return Err(Error::TooDeep);
         }
         self.depth += 1;
-        self.tokens.push(token);
+        self.push(token, self.at - 1);
         Ok(())
     }
 
     fn close(&mut self, token: Token) {
         self.depth -= 1;
-        self.tokens.push(token);
+        self.push(token, self.at - 1);
     }
 
     /// The rest of a literal: all of it is demanded at once, so a document
@@ -177,8 +197,9 @@ impl Parser<'_> {
         if read != rest {
             return Err(Error::Unexpected);
         }
+        let start = self.at - 1;
         self.at += rest.len();
-        self.tokens.push(token);
+        self.push(token, start);
         Ok(())
     }
 
@@ -220,7 +241,7 @@ impl Parser<'_> {
         if !is_number(run) {
             return Err(Error::Number);
         }
-        self.tokens.push(Token::Number(run.into()));
+        self.push(Token::Number(run.into()), start);
         Ok(())
     }
 
@@ -394,7 +415,7 @@ pub fn demands(
     document: &[u8],
     limits: &Limits,
     seed: u64,
-) -> (Vec<skein_json::tokenizer::Request>, Vec<skein_json::tokenizer::Event>) {
+) -> (Vec<skein_json::tokenizer::Request>, Vec<skein_json::tokenizer::Event>, Vec<Position>) {
     use skein_json::tokenizer::{Event, Request};
     let mut parser = Parser {
         input: document,
@@ -403,14 +424,18 @@ pub fn demands(
         depth: 0,
         visible: 0,
         tokens: Vec::new(),
+        offsets: Vec::new(),
         values: Vec::new(),
     };
     parser.document().expect("a complete bounded generated document");
     let mut rng = skein_lib::Rng::new(seed);
     let mut requests = Vec::new();
     let mut events = Vec::new();
+    let token_positions = positions(document, &parser.offsets);
+    let mut placed = Vec::new();
     let mut at = 0;
     while at < parser.tokens.len() {
+        placed.push(token_positions[at]);
         if rng.chance(300)
             && let Some(value) = parser.values.iter().find(|value| value.token == at)
         {
@@ -458,7 +483,7 @@ pub fn demands(
     }
     requests.push(Request::Next);
     events.push(Event::Done);
-    (requests, events)
+    (requests, events, placed)
 }
 
 /// Prunes independently parsed value spans through a filter, including exact
@@ -477,6 +502,7 @@ pub fn prune(
         depth: 0,
         visible: 0,
         tokens: Vec::new(),
+        offsets: Vec::new(),
         values: Vec::new(),
     };
     if parser.document().is_err() {
@@ -689,4 +715,28 @@ impl Pruned<'_> {
         }
         Ok(span.end_token)
     }
+}
+
+/// Counts line feeds once, in order, independently of the tokenizer.
+fn positions(document: &[u8], offsets: &[usize]) -> Vec<Position> {
+    let mut at = 0;
+    let mut line = 1;
+    let mut start = 0;
+    offsets
+        .iter()
+        .map(|&offset| {
+            for (index, &byte) in document[at..offset].iter().enumerate() {
+                if byte == b'\n' {
+                    line += 1;
+                    start = at + index + 1;
+                }
+            }
+            at = offset;
+            Position {
+                offset: u32::try_from(offset).expect("document offsets fit u32"),
+                line,
+                column: u32::try_from(offset - start + 1).expect("document columns fit u32"),
+            }
+        })
+        .collect()
 }

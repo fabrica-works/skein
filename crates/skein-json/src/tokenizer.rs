@@ -41,6 +41,16 @@
 //! a tokenizer holds; [`largest_demand`] is what whoever stacks it checks
 //! against the cap of the side below at startup.
 
+//! # Positions
+//!
+//! [`Tokenizer::position`] holds the first byte of its last token, long
+//! string or skipped value until the next demand (json.md, 3.6).
+//! Outcome positions remain at the last token.
+
+mod position;
+use position::Lines;
+pub use position::Position;
+
 use core::mem;
 
 use skein_lib::stream::{Delimiter, Down, Fault, Read, Up};
@@ -84,7 +94,8 @@ pub fn largest_demand(limits: &Limits) -> u32 {
 
 /// The most memory a tokenizer holds under `limits`, in bytes
 /// (programming-model.md, 6.3), or `None` if it does not fit a `u64` or the
-/// limits cannot be honoured: a [`Limits::chunk`] of zero.
+/// limits cannot be honoured: a [`Limits::chunk`] of zero or a
+/// [`Limits::length`] of `u32::MAX`.
 ///
 /// It is the stack of open objects and arrays and the text of the string or
 /// number being read, both allocated when the tokenizer is made, and the
@@ -94,7 +105,7 @@ pub fn largest_demand(limits: &Limits) -> u32 {
 /// token's box is the side above's to count from when it is emitted.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
-    if limits.chunk == 0 {
+    if limits.chunk == 0 || limits.length == u32::MAX {
         return None;
     }
     let open = Stack::<Container>::worst_case(limits.depth)?;
@@ -278,6 +289,7 @@ impl Tokenizer {
     #[must_use]
     pub fn new(limits: &Limits) -> Tokenizer {
         assert!(limits.chunk > 0, "a scan holds the quote it ends at");
+        assert!(limits.length < u32::MAX, "the end position fits u32");
         Tokenizer {
             state: State::Idle(Held::Nothing),
             document: Document {
@@ -290,10 +302,20 @@ impl Tokenizer {
                 },
                 mode: Mode::Next,
                 read: 0,
+                lines: Lines::FIRST,
+                pending: Position::START,
+                answer: Position::START,
                 token_start: 0,
                 token_end: 0,
             },
         }
+    }
+
+    /// Where its last token, long string or skipped value starts (json.md, 3.6).
+    /// Before an answer and after restart, offset 0, line 1, column 1.
+    #[must_use]
+    pub fn position(&self) -> Position {
+        self.document.answer
     }
 
     /// Starts a new stream after Done or Failed, retaining every capacity.
@@ -332,6 +354,9 @@ impl Tokenizer {
         self.document.expect = Expect::Value;
         self.document.mode = Mode::Next;
         self.document.read = 0;
+        self.document.lines = Lines::FIRST;
+        self.document.pending = Position::START;
+        self.document.answer = Position::START;
         self.document.token_start = 0;
         self.document.token_end = 0;
         self.state = State::Idle(Held::Nothing);
@@ -506,6 +531,9 @@ struct Document {
     mode: Mode,
     /// The bytes delivered so far, at most [`Limits::length`].
     read: u32,
+    lines: Lines,
+    pending: Position,
+    answer: Position,
     token_start: u32,
     token_end: u32,
 }
@@ -608,6 +636,7 @@ fn next(document: &mut Document, limits: &Limits, held: Held, above: &mut Queue<
             Step::Token(token, held) => complete_token(document, token, held_end(held), above),
             Step::Long(length) => {
                 document.token_end = document.read;
+                document.answer = document.pending;
                 above.push(Event::Long(length));
                 State::Idle(Held::End)
             }
@@ -657,6 +686,7 @@ fn settle(document: &mut Document, step: Step, above: &mut Queue<Event>) -> Stat
         Step::Token(token, held) => complete_token(document, token, held, above),
         Step::Long(length) => {
             document.token_end = document.read;
+            document.answer = document.pending;
             above.push(Event::Long(length));
             State::Idle(Held::Nothing)
         }
@@ -703,6 +733,7 @@ fn complete_token(document: &mut Document, token: Token, held: Held, above: &mut
             above.push(Event::Skipped(u64::from(length)));
         }
     }
+    document.answer = document.pending;
     State::Idle(held)
 }
 
@@ -790,6 +821,7 @@ fn one(bytes: &[u8]) -> u8 {
 /// A byte of the grammar, between tokens.
 fn significant(document: &mut Document, limits: &Limits, byte: u8) -> Step {
     if is_whitespace(byte) {
+        feed(document, byte);
         return Step::Read(Reading::Byte);
     }
     match document.expect {
@@ -826,6 +858,7 @@ fn significant(document: &mut Document, limits: &Limits, byte: u8) -> Step {
 
 /// The first byte of a value.
 fn value(document: &mut Document, limits: &Limits, byte: u8) -> Step {
+    pending(document);
     document.token_start = document.read.checked_sub(1).expect("the value opener was delivered");
     match &mut document.mode {
         Mode::Skip { start, .. } => {
@@ -854,6 +887,7 @@ fn value(document: &mut Document, limits: &Limits, byte: u8) -> Step {
 
 fn begin_string(document: &mut Document, limits: &Limits, key: bool) -> Step {
     if key {
+        pending(document);
         document.token_start = document.read.checked_sub(1).expect("the key quote was delivered");
     }
     let retention = match document.mode {
@@ -880,6 +914,7 @@ fn start(document: &mut Document, container: Container) -> Step {
 
 /// The end of an object or an array, which must be the innermost open.
 fn end(document: &mut Document, container: Container) -> Step {
+    pending(document);
     document.token_start = document.read.checked_sub(1).expect("the closer was delivered");
     // A document that fails is over, so a pop that does not match is not
     // undone.
@@ -925,6 +960,7 @@ fn number_byte(document: &mut Document, limits: &Limits, number: Number, byte: u
                 }
                 Mode::Next | Mode::Text(_) => {
                     if is_whitespace(byte) {
+                        feed(document, byte);
                         Held::Nothing
                     } else {
                         Held::Byte(byte)
@@ -985,4 +1021,19 @@ fn after_value(document: &mut Document) {
 
 fn is_whitespace(byte: u8) -> bool {
     b" \t\n\r".contains(&byte)
+}
+
+/// Records a token's first byte, keeping an outstanding skip's value opener.
+fn pending(document: &mut Document) {
+    match document.mode {
+        Mode::Skip { start: Some(_), .. } => return,
+        Mode::Next | Mode::Text(_) | Mode::Skip { start: None, .. } => {}
+    }
+    document.pending = document.lines.at(document.read.checked_sub(1).expect("the opener was delivered"));
+}
+
+fn feed(document: &mut Document, byte: u8) {
+    if byte == b'\n' {
+        document.lines.feed(document.read.checked_sub(1).expect("the line feed was delivered"));
+    }
 }

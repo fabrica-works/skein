@@ -19,7 +19,7 @@
 //! sent; and the tokenizer waiting for exactly what its neighbours see.
 
 use skein_json::Token;
-use skein_json::tokenizer::{self as json, Error, Event, Limits, MaxOut, Request, Tokenizer, Waiting};
+use skein_json::tokenizer::{self as json, Error, Event, Limits, MaxOut, Position, Request, Tokenizer, Waiting};
 use skein_lib::stream::{Delimiter, Down, Fault, Read, Up};
 use skein_lib::{Env, Intake, Queue, Rng, Time, Wall};
 
@@ -148,6 +148,8 @@ fn draw(rng: &mut Rng, low: u32, high: u32) -> u32 {
 pub struct Run {
     /// Demand answers in order, including lengths for text and skipped values.
     pub answers: Vec<Event>,
+    /// The position of each demand answer.
+    pub positions: Vec<Position>,
     /// The tokens the side above received, in order.
     pub tokens: Vec<Token>,
     /// The outcome it received, unless it closed first.
@@ -219,6 +221,7 @@ pub fn run(document: &[u8], settings: &Settings, seed: u64) -> Run {
         },
         above: Above {
             answers: Vec::new(),
+            positions: Vec::new(),
             pending: false,
             tokens: Vec::new(),
             outcome: None,
@@ -250,6 +253,7 @@ pub fn run(document: &[u8], settings: &Settings, seed: u64) -> Run {
             world.late();
             return Run {
                 answers: world.above.answers,
+                positions: world.above.positions,
                 tokens: world.above.tokens,
                 outcome: world.above.outcome,
                 closed_while: world.above.closing.expect("closed after a close"),
@@ -270,7 +274,9 @@ pub fn run(document: &[u8], settings: &Settings, seed: u64) -> Run {
 #[must_use]
 pub fn check(document: &[u8], settings: &Settings, seed: u64) -> Run {
     let run = run(document, settings, seed);
-    let expected = reference::parse(settings.sent(document), &settings.limits);
+    let reading = reference::reading(settings.sent(document), &settings.limits);
+    let expected = reading.decoded;
+    assert_eq!(&run.positions[..run.tokens.len()], &reading.at[..run.tokens.len()], "token positions, seed {seed}");
     let replay = || format!("seed {seed}, {settings:?}, document {}", document.escape_ascii());
     assert!(
         expected.tokens.starts_with(&run.tokens),
@@ -342,6 +348,7 @@ enum Life {
 /// The side above.
 struct Above {
     answers: Vec<Event>,
+    positions: Vec<Position>,
     /// A `Next` not yet answered.
     pending: bool,
     tokens: Vec<Token>,
@@ -493,6 +500,11 @@ impl World<'_> {
 
     fn down(&mut self, rq: Request) {
         if rq != Request::Close {
+            assert_eq!(
+                self.tokenizer.position(),
+                self.above.positions.last().copied().unwrap_or(Position { offset: 0, line: 1, column: 1 }),
+                "position holds until the next demand"
+            );
             self.held_byte = false;
         }
         json::down(&mut self.tokenizer, &self.env, rq, &mut self.events, &mut self.requests);
@@ -504,6 +516,9 @@ impl World<'_> {
         assert!(self.events.len() <= max.above, "MAX_OUT honoured above: {:?}", self.events);
         assert!(self.requests.len() <= max.below, "MAX_OUT honoured below: {:?}", self.requests);
         while let Some(event) = self.events.pop() {
+            if event != Event::Closed {
+                self.above.positions.push(self.tokenizer.position());
+            }
             self.above.receive(event);
         }
         while let Some(request) = self.requests.pop() {
@@ -613,9 +628,10 @@ fn read_len(read: Read, bytes: &[u8]) -> usize {
 /// judging each answer against independently recorded reference value spans.
 #[must_use]
 pub fn check_demands(document: &[u8], settings: &Settings, seed: u64) -> Run {
-    let (demands, expected) = reference::demands(document, &settings.limits, seed);
+    let (demands, expected, positions) = reference::demands(document, &settings.limits, seed);
     let settings = Settings { demands: Some(demands), ..settings.clone() };
     let run = run(document, &settings, seed);
+    assert_eq!(&run.positions[..positions.len()], positions, "seed {seed}: demand positions");
     assert_eq!(run.answers, expected, "seed {seed}: {}", document.escape_ascii());
     run
 }
