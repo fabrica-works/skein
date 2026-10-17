@@ -45,7 +45,8 @@
 //!
 //! [`Tokenizer::position`] holds the first byte of its last token, long
 //! string or skipped value until the next demand (json.md, 3.6).
-//! Outcome positions remain at the last token.
+//! Outcomes give the byte at fault or the end of what was read. String
+//! failures give that end while character positions are not supported.
 
 mod position;
 use position::Lines;
@@ -311,7 +312,8 @@ impl Tokenizer {
         }
     }
 
-    /// Where its last token, long string or skipped value starts (json.md, 3.6).
+    /// Where its last answer is (json.md, 3.6).
+    /// String failures currently report the end of what was read.
     /// Before an answer and after restart, offset 0, line 1, column 1.
     #[must_use]
     pub fn position(&self) -> Position {
@@ -386,7 +388,7 @@ pub fn up(tokenizer: &mut Tokenizer, env: &Env<Limits>, ev: Up, above: &mut Queu
                 settle(document, step, above)
             }
             Up::End => ended(document, reading, above),
-            Up::Failed(fault) => fail(document, Error::Stream(fault), above),
+            Up::Failed(fault) => fail(document, Error::Stream(fault), document.read, above),
             Up::Room => unreachable!("the tokenizer asks for no room"),
         },
         State::Idle(held) => match ev {
@@ -593,7 +595,7 @@ enum Step {
     /// More is needed: the tokenizer reads on.
     Read(Reading),
     /// The document failed.
-    Fail(Error),
+    Fail(Error, u32),
 }
 
 /// The quote that ends a string: what every scan is to.
@@ -641,10 +643,10 @@ fn next(document: &mut Document, limits: &Limits, held: Held, above: &mut Queue<
                 State::Idle(Held::End)
             }
             Step::Read(reading) => ended(document, reading, above),
-            Step::Fail(error) => fail(document, error, above),
+            Step::Fail(error, offset) => fail(document, error, offset, above),
         },
         Held::End => ended(document, Reading::Byte, above),
-        Held::Failed(fault) => fail(document, Error::Stream(fault), above),
+        Held::Failed(fault) => fail(document, Error::Stream(fault), document.read, above),
     }
 }
 
@@ -691,7 +693,7 @@ fn settle(document: &mut Document, step: Step, above: &mut Queue<Event>) -> Stat
             State::Idle(Held::Nothing)
         }
         Step::Read(reading) => State::Reading(reading),
-        Step::Fail(error) => fail(document, error, above),
+        Step::Fail(error, offset) => fail(document, error, offset, above),
     }
 }
 
@@ -737,8 +739,9 @@ fn complete_token(document: &mut Document, token: Token, held: Held, above: &mut
     State::Idle(held)
 }
 
-fn fail(document: &mut Document, error: Error, above: &mut Queue<Event>) -> State {
+fn fail(document: &mut Document, error: Error, offset: u32, above: &mut Queue<Event>) -> State {
     document.text.bytes.clear();
+    document.answer = document.lines.at(offset);
     above.push(Event::Failed(error));
     State::Over
 }
@@ -748,6 +751,7 @@ fn ended(document: &mut Document, reading: Reading, above: &mut Queue<Event>) ->
     match reading {
         Reading::Byte => match document.expect {
             Expect::Trailing => {
+                document.answer = document.lines.at(document.read);
                 above.push(Event::Done);
                 State::Over
             }
@@ -756,21 +760,21 @@ fn ended(document: &mut Document, reading: Reading, above: &mut Queue<Event>) ->
             | Expect::FirstKey
             | Expect::Key
             | Expect::Colon
-            | Expect::CommaOrEnd => fail(document, Error::Truncated, above),
+            | Expect::CommaOrEnd => fail(document, Error::Truncated, document.read, above),
         },
         // Only the end of the stream ends a number that is the whole
         // document; within an object or an array, more was due.
         Reading::Number(number) => {
             if !document.open.is_empty() {
-                return fail(document, Error::Truncated, above);
+                return fail(document, Error::Truncated, document.read, above);
             }
             if !number.is_complete() {
-                return fail(document, Error::Number, above);
+                return fail(document, Error::Number, document.token_start, above);
             }
             let token = number_token(document);
             complete_token(document, token, Held::End, above)
         }
-        Reading::Literal(_) | Reading::String { .. } => fail(document, Error::Truncated, above),
+        Reading::Literal(_) | Reading::String { .. } => fail(document, Error::Truncated, document.read, above),
     }
 }
 
@@ -782,15 +786,20 @@ fn delivered(document: &mut Document, limits: &Limits, reading: Reading, bytes: 
     };
     match read {
         Some(read) if read <= limits.length => document.read = read,
-        Some(_) | None => return Step::Fail(Error::TooLong),
+        Some(_) | None => return Step::Fail(Error::TooLong, document.read),
     }
     match reading {
         Reading::Byte => significant(document, limits, one(bytes)),
         Reading::Number(number) => number_byte(document, limits, number, one(bytes)),
         Reading::Literal(literal) => {
             assert!(bytes.len() == literal.rest().len(), "a fill delivers what it demanded");
-            if bytes != literal.rest() {
-                return Step::Fail(Error::Unexpected);
+            for (index, &byte) in bytes.iter().enumerate() {
+                if literal.rest().get(index) != Some(&byte) {
+                    let first = document.read.checked_sub(literal.len()).expect("the literal was delivered");
+                    let offset =
+                        first.checked_add(u32::try_from(index).expect("a few letters")).expect("within delivery");
+                    return Step::Fail(Error::Unexpected, offset);
+                }
             }
             after_value(document);
             Step::Token(literal.token(), Held::Nothing)
@@ -804,7 +813,7 @@ fn delivered(document: &mut Document, limits: &Limits, reading: Reading, bytes: 
             match string::decode(text, bytes, &mut document.text) {
                 Ok(Piece::More(text)) => Step::Read(Reading::String { key, text }),
                 Ok(Piece::Closed) => string_token(document, key),
-                Err(error) => Step::Fail(error),
+                Err(error) => Step::Fail(error, document.read),
             }
         }
     }
@@ -833,26 +842,28 @@ fn significant(document: &mut Document, limits: &Limits, byte: u8) -> Step {
         Expect::FirstKey => match byte {
             b'"' => begin_string(document, limits, true),
             b'}' => end(document, Container::Object),
-            _ => Step::Fail(Error::Unexpected),
+            _ => Step::Fail(Error::Unexpected, document.read.checked_sub(1).expect("the refused byte was delivered")),
         },
         Expect::Key => match byte {
             b'"' => begin_string(document, limits, true),
-            _ => Step::Fail(Error::Unexpected),
+            _ => Step::Fail(Error::Unexpected, document.read.checked_sub(1).expect("the refused byte was delivered")),
         },
         Expect::Colon => match byte {
             b':' => {
                 document.expect = Expect::Value;
                 Step::Read(Reading::Byte)
             }
-            _ => Step::Fail(Error::Unexpected),
+            _ => Step::Fail(Error::Unexpected, document.read.checked_sub(1).expect("the refused byte was delivered")),
         },
         Expect::CommaOrEnd => match byte {
             b',' => comma(document),
             b']' => end(document, Container::Array),
             b'}' => end(document, Container::Object),
-            _ => Step::Fail(Error::Unexpected),
+            _ => Step::Fail(Error::Unexpected, document.read.checked_sub(1).expect("the refused byte was delivered")),
         },
-        Expect::Trailing => Step::Fail(Error::Trailing),
+        Expect::Trailing => {
+            Step::Fail(Error::Trailing, document.read.checked_sub(1).expect("the refused byte was delivered"))
+        }
     }
 }
 
@@ -880,7 +891,9 @@ fn value(document: &mut Document, limits: &Limits, byte: u8) -> Step {
                 document.text.reset(Retention::Discard);
                 number_more(document, limits, number, byte)
             }
-            None => Step::Fail(Error::Unexpected),
+            None => {
+                Step::Fail(Error::Unexpected, document.read.checked_sub(1).expect("the refused byte was delivered"))
+            }
         },
     }
 }
@@ -902,7 +915,7 @@ fn begin_string(document: &mut Document, limits: &Limits, key: bool) -> Step {
 /// The start of an object or an array, refused past the depth.
 fn start(document: &mut Document, container: Container) -> Step {
     if document.open.push(container).is_err() {
-        return Step::Fail(Error::TooDeep);
+        return Step::Fail(Error::TooDeep, document.read.checked_sub(1).expect("the bracket was delivered"));
     }
     let (expect, token) = match container {
         Container::Object => (Expect::FirstKey, Token::ObjectStart),
@@ -920,7 +933,12 @@ fn end(document: &mut Document, container: Container) -> Step {
     // undone.
     match document.open.pop() {
         Some(top) if top == container => {}
-        Some(_) | None => return Step::Fail(Error::Unexpected),
+        Some(_) | None => {
+            return Step::Fail(
+                Error::Unexpected,
+                document.read.checked_sub(1).expect("the refused byte was delivered"),
+            );
+        }
     }
     after_value(document);
     let token = match container {
@@ -943,10 +961,10 @@ fn comma(document: &mut Document) -> Step {
 fn number_byte(document: &mut Document, limits: &Limits, number: Number, byte: u8) -> Step {
     match number.next(byte) {
         After::More(next) => number_more(document, limits, next, byte),
-        After::Invalid => Step::Fail(Error::Number),
+        After::Invalid => Step::Fail(Error::Number, document.token_start),
         After::Ended => {
             if !number.is_complete() {
-                return Step::Fail(Error::Number);
+                return Step::Fail(Error::Number, document.token_start);
             }
             let token = number_token(document);
             // The byte that ended the number is the grammar's: held for the
@@ -975,7 +993,7 @@ fn number_byte(document: &mut Document, limits: &Limits, number: Number, byte: u
 /// A byte that continues a number, refused past the number limit.
 fn number_more(document: &mut Document, limits: &Limits, number: Number, byte: u8) -> Step {
     if document.text.length >= u64::from(limits.number) {
-        return Step::Fail(Error::NumberTooLong);
+        return Step::Fail(Error::NumberTooLong, document.token_start);
     }
     document.text.length = document.text.length.checked_add(1).expect("under the number limit");
     match document.mode {

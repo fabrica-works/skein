@@ -20,3 +20,24 @@ fn the_reference_and_the_world_place_each_token_where_counted() {
         assert_eq!(run.positions[..TOKENS.len()], TOKENS, "seed {seed}");
     }
 }
+
+use skein_json::tokenizer::Error;
+const FAILURES: [(&[u8], Error, Position); 5] = [
+    (b"{}\n {}", Error::Trailing, at(4, 2, 2)),
+    (b"[\n[\n[\n[\n[", Error::TooDeep, at(8, 5, 1)),
+    (b"[-\n]", Error::Number, at(1, 1, 2)),
+    (b"[1\n", Error::Truncated, at(3, 2, 1)),
+    (b"nul!", Error::Unexpected, at(3, 1, 4)),
+];
+#[test]
+fn the_reference_and_the_world_place_each_failure_by_the_table() {
+    for (document, error, position) in FAILURES {
+        assert_eq!(reference::reading(document, &LIMITS).failed_at, Some(position));
+        for seed in 0..16 {
+            let mut rng = skein_lib::Rng::new(seed);
+            let run = world::check(document, &Settings::calm(&mut rng, LIMITS), seed);
+            assert_eq!(run.answers.last(), Some(&skein_json::tokenizer::Event::Failed(error)));
+            assert_eq!(run.positions.last(), Some(&position));
+        }
+    }
+}

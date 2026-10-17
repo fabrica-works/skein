@@ -150,6 +150,8 @@ pub struct Run {
     pub answers: Vec<Event>,
     /// The position of each demand answer.
     pub positions: Vec<Position>,
+    /// Bytes delivered within the document length before its outcome.
+    pub delivered: usize,
     /// The tokens the side above received, in order.
     pub tokens: Vec<Token>,
     /// The outcome it received, unless it closed first.
@@ -231,6 +233,7 @@ pub fn run(document: &[u8], settings: &Settings, seed: u64) -> Run {
         iteration: 0,
         held_back: 0,
         held_byte: false,
+        delivered: 0,
     };
     let stalled = match settings.stall {
         Some((_, iterations)) => iterations,
@@ -254,6 +257,7 @@ pub fn run(document: &[u8], settings: &Settings, seed: u64) -> Run {
             return Run {
                 answers: world.above.answers,
                 positions: world.above.positions,
+                delivered: world.delivered,
                 tokens: world.above.tokens,
                 outcome: world.above.outcome,
                 closed_while: world.above.closing.expect("closed after a close"),
@@ -288,10 +292,37 @@ pub fn check(document: &[u8], settings: &Settings, seed: u64) -> Run {
     match run.outcome {
         Some(Outcome::Failed(Error::Stream(fault))) => {
             assert_eq!(run.failed, Some(fault), "the stream's own fault; {}", replay());
+            assert_eq!(
+                run.positions.last(),
+                Some(&reference::position(settings.sent(document), run.delivered)),
+                "stream position; {}",
+                replay()
+            );
         }
         Some(outcome) => {
             assert_eq!(outcome, expected.outcome, "the reference's outcome; {}", replay());
             assert_eq!(run.tokens.len(), expected.tokens.len(), "all the reference's tokens; {}", replay());
+            match outcome {
+                Outcome::Done => assert_eq!(
+                    run.positions.last(),
+                    Some(&reference::position(settings.sent(document), settings.sent(document).len())),
+                    "end position; {}",
+                    replay()
+                ),
+                Outcome::Failed(error) => match error {
+                    Error::Unexpected
+                    | Error::Trailing
+                    | Error::TooDeep
+                    | Error::Number
+                    | Error::NumberTooLong
+                    | Error::TooLong
+                    | Error::Truncated
+                    | Error::Stream(_) => {
+                        assert_eq!(run.positions.last(), reading.failed_at.as_ref(), "failure position; {}", replay());
+                    }
+                    Error::Escape | Error::Surrogate | Error::Utf8 | Error::Control | Error::StringTooLong => {}
+                },
+            }
         }
         None => assert!(settings.close.is_some(), "only an early close leaves no outcome; {}", replay()),
     }
@@ -316,6 +347,7 @@ struct World<'a> {
     /// world sees it: a number sent up for a byte that is not whitespace,
     /// and no `Next` since.
     held_byte: bool,
+    delivered: usize,
 }
 
 /// The stream below.
@@ -490,6 +522,12 @@ impl World<'_> {
             Up::Bytes(bytes) => matches!(**bytes, [byte] if !b" \t\n\r".contains(&byte)),
             Up::Room | Up::End | Up::Failed(_) => false,
         };
+        if let Up::Bytes(bytes) = &ev
+            && self.above.closing.is_none()
+            && self.delivered + bytes.len() <= self.env.limits.length as usize
+        {
+            self.delivered += bytes.len();
+        }
         let before = self.above.tokens.len();
         json::up(&mut self.tokenizer, &self.env, ev, &mut self.events, &mut self.requests);
         self.route(json::UP_MAX_OUT, false);

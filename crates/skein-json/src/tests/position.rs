@@ -74,7 +74,7 @@ fn before_the_first_answer_and_after_restart_it_is_the_start() {
     machine.down(Request::Next);
     machine.bytes(b" ");
     assert_eq!(machine.tokenizer.position(), at(0, 1, 1));
-    assert_eq!(machine.up(Up::End).0, Some(Event::Failed(tokenizer::Error::Truncated)));
+    assert_eq!(machine.up(Up::End).0, Some(Event::Failed(Error::Truncated)));
     machine.tokenizer.restart();
     assert_eq!(machine.tokenizer.position(), at(0, 1, 1));
 }
@@ -84,4 +84,80 @@ fn a_length_of_u32_max_has_no_worst_case_and_no_tokenizer() {
     let limits = Limits { length: u32::MAX, ..LIMITS };
     assert_eq!(tokenizer::worst_case(&limits), None);
     let _tokenizer = tokenizer::Tokenizer::new(&limits);
+}
+
+use crate::tokenizer::Error;
+const UNEXPECTED: [(&[u8], Error, Position); 5] = [
+    (b"[}", Error::Unexpected, at(1, 1, 2)),
+    (b"{\"a\" 1}", Error::Unexpected, at(5, 1, 6)),
+    (b"nul!", Error::Unexpected, at(3, 1, 4)),
+    (b"t\nue", Error::Unexpected, at(1, 1, 2)),
+    (b"{}\n {}", Error::Trailing, at(4, 2, 2)),
+];
+#[test]
+fn unexpected_and_trailing_are_at_the_byte_refused() {
+    for (document, error, position) in UNEXPECTED {
+        assert_eq!(placed(document, LIMITS, &[]).last(), Some(&(Event::Failed(error), position)), "{document:?}");
+    }
+}
+#[test]
+fn too_deep_is_at_the_bracket_that_opens_past_the_depth() {
+    assert_eq!(placed(b"[\n[\n[\n[\n[", LIMITS, &[]).last(), Some(&(Event::Failed(Error::TooDeep), at(8, 5, 1))));
+}
+const NUMBERS: [(&[u8], Error, Position); 5] = [
+    (b"01", Error::Number, at(0, 1, 1)),
+    (b" [1.e5]", Error::Number, at(2, 1, 3)),
+    (b"[-\n]", Error::Number, at(1, 1, 2)),
+    (b"-", Error::Number, at(0, 1, 1)),
+    (b"[123456789]", Error::NumberTooLong, at(1, 1, 2)),
+];
+#[test]
+fn a_bad_or_too_long_number_is_at_its_first_byte() {
+    for (document, error, position) in NUMBERS {
+        assert_eq!(placed(document, LIMITS, &[]).last(), Some(&(Event::Failed(error), position)), "{document:?}");
+    }
+}
+const LONG: [(&[u8], Limits, Position); 2] = [
+    (b"[1,2]", Limits { length: 4, ..LIMITS }, at(4, 1, 5)),
+    (b"\"abcdef\"", Limits { length: 6, ..LIMITS }, at(5, 1, 6)),
+];
+#[test]
+fn too_long_is_at_the_end_of_what_was_read() {
+    for (document, limits, position) in LONG {
+        assert_eq!(
+            placed(document, limits, &[]).last(),
+            Some(&(Event::Failed(Error::TooLong), position)),
+            "{document:?}"
+        );
+    }
+}
+const TRUNCATED: [(&[u8], Position); 4] =
+    [(b"[1", at(2, 1, 3)), (b"[1\n", at(3, 2, 1)), (b"tru", at(1, 1, 2)), (b"\"abcdef", at(5, 1, 6))];
+#[test]
+fn truncated_is_where_the_next_byte_would_be() {
+    for (document, position) in TRUNCATED {
+        assert_eq!(
+            placed(document, LIMITS, &[]).last(),
+            Some(&(Event::Failed(Error::Truncated), position)),
+            "{document:?}"
+        );
+    }
+}
+#[test]
+fn a_stream_failure_is_at_the_end_of_what_was_read() {
+    let mut machine = Machine::new(LIMITS);
+    machine.down(Request::Next);
+    machine.bytes(b"[");
+    machine.down(Request::Next);
+    machine.bytes(b"\n");
+    let fault = skein_lib::stream::Fault::Reset;
+    assert_eq!(machine.up(Up::Failed(fault)).0, Some(Event::Failed(Error::Stream(fault))));
+    assert_eq!(machine.tokenizer.position(), at(2, 2, 1));
+}
+const DONE: [(&[u8], Position); 3] = [(b"1", at(1, 1, 2)), (b"[1] ", at(4, 1, 5)), (b"[1]\n\n", at(5, 3, 1))];
+#[test]
+fn done_is_at_the_end_of_what_was_read() {
+    for (document, position) in DONE {
+        assert_eq!(placed(document, LIMITS, &[]).last(), Some(&(Event::Done, position)), "{document:?}");
+    }
 }

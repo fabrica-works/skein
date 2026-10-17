@@ -30,6 +30,8 @@ pub fn parse(document: &[u8], limits: &Limits) -> Decoded {
 pub struct Reading {
     pub decoded: Decoded,
     pub at: Vec<Position>,
+    /// The first byte at fault, for a failed outcome.
+    pub failed_at: Option<Position>,
 }
 
 #[must_use]
@@ -40,6 +42,8 @@ pub fn reading(document: &[u8], limits: &Limits) -> Reading {
         limits: *limits,
         depth: 0,
         visible: 0,
+        read: 0,
+        failed: 0,
         tokens: Vec::new(),
         offsets: Vec::new(),
         values: Vec::new(),
@@ -48,8 +52,19 @@ pub fn reading(document: &[u8], limits: &Limits) -> Reading {
         Ok(()) => Outcome::Done,
         Err(error) => Outcome::Failed(error),
     };
-    let at = positions(document, &parser.offsets);
-    Reading { decoded: Decoded { tokens: parser.tokens, outcome }, at }
+    let failure = match outcome {
+        Outcome::Done => None,
+        Outcome::Failed(Error::Escape | Error::Surrogate | Error::Utf8 | Error::Control | Error::StringTooLong) => {
+            Some(parser.read)
+        }
+        Outcome::Failed(_) => Some(parser.failed),
+    };
+    if let Some(offset) = failure {
+        parser.offsets.push(offset);
+    }
+    let mut at = positions(document, &parser.offsets);
+    let failed_at = failure.and_then(|_| at.pop());
+    Reading { decoded: Decoded { tokens: parser.tokens, outcome }, at, failed_at }
 }
 
 struct Parser<'a> {
@@ -61,6 +76,8 @@ struct Parser<'a> {
     depth: u32,
     /// How far the scans of the string being read have reached.
     visible: usize,
+    read: usize,
+    failed: usize,
     tokens: Vec<Token>,
     offsets: Vec<usize>,
     values: Vec<ValueSpan>,
@@ -72,13 +89,18 @@ impl Parser<'_> {
         self.offsets.push(offset);
     }
 
+    fn fail(&mut self, error: Error, offset: usize) -> Error {
+        self.failed = offset;
+        error
+    }
+
     fn document(&mut self) -> Result<(), Error> {
         let first = self.significant()?;
         self.value(first)?;
         while self.at < self.input.len() {
             self.delivered(self.at + 1)?;
             if !is_whitespace(self.input[self.at]) {
-                return Err(Error::Trailing);
+                return Err(self.fail(Error::Trailing, self.at));
             }
             self.at += 1;
         }
@@ -94,14 +116,15 @@ impl Parser<'_> {
                 return Ok(byte);
             }
         }
-        Err(Error::Truncated)
+        Err(self.fail(Error::Truncated, self.read))
     }
 
     /// A delivery that ends at `end`, within the document's length.
-    fn delivered(&self, end: usize) -> Result<(), Error> {
+    fn delivered(&mut self, end: usize) -> Result<(), Error> {
         if end > usize::try_from(self.limits.length).expect("fits a usize") {
-            return Err(Error::TooLong);
+            return Err(self.fail(Error::TooLong, self.read));
         }
+        self.read = end;
         Ok(())
     }
 
@@ -121,7 +144,7 @@ impl Parser<'_> {
             b'f' => self.literal(b"alse", Token::False),
             b'n' => self.literal(b"ull", Token::Null),
             b'-' | b'0'..=b'9' => self.number(),
-            _ => Err(Error::Unexpected),
+            _ => Err(self.fail(Error::Unexpected, self.at - 1)),
         };
         if result.is_ok() {
             self.values.push(ValueSpan { token, end_token: self.tokens.len(), bytes: self.at - start });
@@ -135,20 +158,20 @@ impl Parser<'_> {
         if byte != b'}' {
             loop {
                 if byte != b'"' {
-                    return Err(Error::Unexpected);
+                    return Err(self.fail(Error::Unexpected, self.at - 1));
                 }
                 let start = self.at - 1;
                 let key = self.string()?;
                 self.push(Token::Key(key), start);
                 if self.significant()? != b':' {
-                    return Err(Error::Unexpected);
+                    return Err(self.fail(Error::Unexpected, self.at - 1));
                 }
                 let first = self.significant()?;
                 self.value(first)?;
                 match self.significant()? {
                     b',' => byte = self.significant()?,
                     b'}' => break,
-                    _ => return Err(Error::Unexpected),
+                    _ => return Err(self.fail(Error::Unexpected, self.at - 1)),
                 }
             }
         }
@@ -165,7 +188,7 @@ impl Parser<'_> {
                 match self.significant()? {
                     b',' => byte = self.significant()?,
                     b']' => break,
-                    _ => return Err(Error::Unexpected),
+                    _ => return Err(self.fail(Error::Unexpected, self.at - 1)),
                 }
             }
         }
@@ -175,7 +198,7 @@ impl Parser<'_> {
 
     fn open(&mut self, token: Token) -> Result<(), Error> {
         if self.depth == self.limits.depth {
-            return Err(Error::TooDeep);
+            return Err(self.fail(Error::TooDeep, self.at - 1));
         }
         self.depth += 1;
         self.push(token, self.at - 1);
@@ -191,11 +214,11 @@ impl Parser<'_> {
     /// that ends within it is cut short, whatever its bytes.
     fn literal(&mut self, rest: &[u8], token: Token) -> Result<(), Error> {
         let Some(read) = self.input.get(self.at..self.at + rest.len()) else {
-            return Err(Error::Truncated);
+            return Err(self.fail(Error::Truncated, self.read));
         };
         self.delivered(self.at + rest.len())?;
-        if read != rest {
-            return Err(Error::Unexpected);
+        if let Some(index) = read.iter().zip(rest).position(|(read, expected)| read != expected) {
+            return Err(self.fail(Error::Unexpected, self.at + index));
         }
         let start = self.at - 1;
         self.at += rest.len();
@@ -223,23 +246,23 @@ impl Parser<'_> {
             let mut completed = prefix.to_vec();
             completed.push(b'0');
             if !is_number(prefix) && !is_number(&completed) {
-                return Err(Error::Number);
+                return Err(self.fail(Error::Number, start));
             }
             if len > limit {
-                return Err(Error::NumberTooLong);
+                return Err(self.fail(Error::NumberTooLong, start));
             }
         }
         self.at = end;
         // Within an object or an array, only another byte ends a number;
         // that byte is read with it, a delivery of its own.
         if end == self.input.len() && self.depth > 0 {
-            return Err(Error::Truncated);
+            return Err(self.fail(Error::Truncated, self.read));
         }
         if end < self.input.len() {
             self.delivered(end + 1)?;
         }
         if !is_number(run) {
-            return Err(Error::Number);
+            return Err(self.fail(Error::Number, start));
         }
         self.push(Token::Number(run.into()), start);
         Ok(())
@@ -272,7 +295,7 @@ impl Parser<'_> {
             match window.iter().position(|&byte| byte == b'"') {
                 Some(quote) => self.visible += quote + 1,
                 None if rest.len() >= chunk => self.visible += chunk,
-                None => return Err(Error::Truncated),
+                None => return Err(self.fail(Error::Truncated, self.read)),
             }
             self.delivered(self.visible)?;
         }
@@ -423,6 +446,8 @@ pub fn demands(
         limits: *limits,
         depth: 0,
         visible: 0,
+        read: 0,
+        failed: 0,
         tokens: Vec::new(),
         offsets: Vec::new(),
         values: Vec::new(),
@@ -501,6 +526,8 @@ pub fn prune(
         limits: Limits { string: u32::MAX, ..limits.tokenizer },
         depth: 0,
         visible: 0,
+        read: 0,
+        failed: 0,
         tokens: Vec::new(),
         offsets: Vec::new(),
         values: Vec::new(),
@@ -739,4 +766,10 @@ fn positions(document: &[u8], offsets: &[usize]) -> Vec<Position> {
             }
         })
         .collect()
+}
+
+/// Where a byte of the document is, counted independently by line feeds.
+#[must_use]
+pub fn position(document: &[u8], offset: usize) -> Position {
+    positions(document, &[offset])[0]
 }
