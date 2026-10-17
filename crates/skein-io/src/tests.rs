@@ -322,3 +322,5 @@ pub(crate) fn filled(rig: &mut Rig, recv: Submit, bytes: &[u8]) -> Out {
     let n = u32::try_from(bytes.len()).unwrap();
     rig.complete(Submit { op, kind: Op::Recv { fd, buf } }, Ok(Done::Count(n)))
 }
+
+mod directory;

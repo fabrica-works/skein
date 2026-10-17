@@ -274,3 +274,19 @@ fn private_files_created_and_replaced_over_the_ring_have_private_modes() {
         drop(scratch);
     }
 }
+
+#[test]
+fn a_rename_across_over_the_ring_lands_the_file_in_its_destination() {
+    let scratch = skein_scratch::Scratch::new("io-rename");
+    std::fs::create_dir(scratch.path().join("staging")).unwrap();
+    std::fs::create_dir(scratch.path().join("cache")).unwrap();
+    std::fs::write(scratch.path().join("staging/index"), b"whole index").unwrap();
+    let root = skein_shell::open_root(scratch.path()).unwrap();
+    let mut owner = skein_io_world::renames::Owner::new(root, None, true);
+    let mut kernel = Kernel::open(Config { operations: 2 }).expect("ring usable");
+    let result = skein_shell::drive(&mut kernel, &Clock::new(), &mut owner);
+    assert_eq!(result, skein_io::kernel::Exit::Code(0));
+    assert_eq!(owner.found, Some(skein_io_world::renames::Found::Destination));
+    assert_eq!(std::fs::read(scratch.path().join("cache/index")).unwrap(), b"whole index");
+    assert_eq!(std::fs::read_dir(scratch.path().join("staging")).unwrap().count(), 0);
+}

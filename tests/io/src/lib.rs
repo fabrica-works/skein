@@ -32,3 +32,5 @@ pub mod usage;
 pub mod world;
 
 pub mod joined;
+
+pub mod renames;

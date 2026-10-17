@@ -357,3 +357,49 @@ fn a_cut_synced_keeps_the_new_length_past_a_crash() {
         machine.close(root);
     }
 }
+
+fn moved_after_crash(seed: u64, sync_source: bool, sync_destination: bool) -> bool {
+    let (mut machine, root) = machine(&[
+        Item::directory(b"staging"),
+        Item::directory(b"cache"),
+        Item::file(b"staging/index", b"whole index"),
+    ]);
+    let staging = machine.open(root, b"staging", How::Directory).unwrap();
+    let cache = machine.open(root, b"cache", How::Directory).unwrap();
+    machine.rename(staging, b"index", cache, b"index").unwrap();
+    if sync_source {
+        machine.sync(staging);
+    }
+    if sync_destination {
+        machine.sync(cache);
+    }
+    machine.crash(seed);
+    let root = machine.reopen_root(0);
+    let source = machine.open(root, b"staging/index", How::Read);
+    let destination = machine.open(root, b"cache/index", How::Read);
+    assert_ne!(source.is_ok(), destination.is_ok(), "exactly one name survives seed {seed}");
+    let file = *source.as_ref().or(destination.as_ref()).unwrap();
+    assert_eq!(machine.read(file, 0, 32).unwrap(), b"whole index");
+    machine.close(file);
+    machine.close(root);
+    destination.is_ok()
+}
+
+#[test]
+fn an_unsynced_rename_across_lands_in_exactly_one_directory_after_power_loss() {
+    let outcomes: Vec<_> = (0..16).map(|seed| moved_after_crash(seed, false, false)).collect();
+    assert!(outcomes.contains(&true) && outcomes.contains(&false));
+}
+
+#[test]
+fn a_rename_across_survives_power_loss_once_its_destination_is_synced() {
+    for seed in 0..16 {
+        assert!(moved_after_crash(seed, false, true), "seed {seed}");
+    }
+}
+
+#[test]
+fn a_synced_source_alone_leaves_a_rename_across_in_either_directory() {
+    let outcomes: Vec<_> = (0..16).map(|seed| moved_after_crash(seed, true, false)).collect();
+    assert!(outcomes.contains(&true) && outcomes.contains(&false));
+}

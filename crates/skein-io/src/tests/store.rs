@@ -682,3 +682,53 @@ fn a_temporary_already_removed_by_another_owner_has_no_residue() {
     );
     assert!(rig.events.is_empty() && rig.subs.is_empty() && rig.io.takes());
 }
+
+#[test]
+fn a_stores_temporary_is_its_target_skein_and_sixteen_hex_digits() {
+    let mut rig = Rig::new();
+    rig.store(Expect::Absent);
+    rig.parent_and_absent_old();
+    let submit = rig.take();
+    let Op::Open { path, .. } = submit.kind else { panic!("temporary create") };
+    assert_eq!(path.as_ref(), b"file.skein-6f6051c3cbd41aa0");
+}
+
+#[test]
+fn a_long_targets_temporary_keeps_its_first_230_bytes() {
+    let mut rig = Rig::new();
+    let target = concat!(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaathis-part-is-left-out"
+    )
+    .as_bytes();
+    file_layer::down(
+        &mut rig.io,
+        Time::ZERO,
+        Request::Store {
+            owner: OWNER,
+            root: rig.root,
+            path: Box::from(target),
+            bytes: Box::from(&b"new"[..]),
+            expected: Expect::Absent,
+            no_follow: true,
+        },
+        &mut rig.events,
+        &mut rig.subs,
+    );
+    let parent = rig.take();
+    rig.complete(parent, Ok(Done::Fd(PARENT)));
+    let old = rig.take();
+    rig.complete(old, Err(Error::NotFound));
+    let submit = rig.take();
+    let Op::Open { path, .. } = submit.kind else { panic!("temporary create") };
+    assert_eq!(
+        path.as_ref(),
+        concat!(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.skein-6f6051c3cbd41aa0"
+        )
+        .as_bytes()
+    );
+}

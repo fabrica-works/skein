@@ -31,7 +31,7 @@ fn file_driver_worst_case_counts_each_configured_limit() {
     assert_eq!(FileIo::worst_case(1, 8, 1, 0), None);
 }
 
-fn complete(
+pub(super) fn complete(
     io: &mut FileIo,
     submit: Submit,
     result: Result<Done, crate::kernel::Error>,
@@ -59,7 +59,7 @@ fn read(io: &mut FileIo, submit: Submit, bytes: &[u8], events: &mut Queue<Event>
     );
 }
 
-fn listed(
+pub(super) fn listed(
     io: &mut FileIo,
     submit: Submit,
     names_to_list: &[&[u8]],

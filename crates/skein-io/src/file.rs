@@ -147,10 +147,12 @@ pub enum Request {
         owner: Token,
         root: Fd,
     },
+    /// Moves a name between open directories: `Renamed` or `Failed` (io.md, 5).
     Rename {
         owner: Token,
-        root: Fd,
+        from_root: Fd,
         from: Box<[u8]>,
+        to_root: Fd,
         to: Box<[u8]>,
     },
     /// Removes one file or empty directory by name: `Removed` or `Failed` (io.md, 5).

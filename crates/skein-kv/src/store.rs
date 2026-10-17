@@ -976,8 +976,9 @@ pub fn fire(store: &mut Store, env: &Env<Limits>, _above: &mut Queue<Event>, bel
             SnapAction::Rename,
             file::Request::Rename {
                 owner: IO_OWNER,
-                root: store.root(),
+                from_root: store.root(),
                 from: Box::from(&b"snapshot.tmp"[..]),
+                to_root: store.root(),
                 to: Box::from(&b"snapshot"[..]),
             },
         ),

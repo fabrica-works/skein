@@ -573,13 +573,13 @@ fn down_inner(io: &mut FileIo, request: Request, events: &mut Queue<Event>, subs
             io.pending = Some(Pending::Sync { owner });
             io.issue(Op::Sync { fd: root }, subs);
         }
-        Request::Rename { owner, root, from, to } => {
+        Request::Rename { owner, from_root, from, to_root, to } => {
             if !crate::kernel::is_name(&from) || !crate::kernel::is_name(&to) {
                 events.push(Event::Failed { owner, error: Error::InvalidArgument, committed: false, residue: None });
                 return;
             }
             io.pending = Some(Pending::Rename { owner });
-            io.issue(Op::Rename { from_dir: root, from, to_dir: root, to }, subs);
+            io.issue(Op::Rename { from_dir: from_root, from, to_dir: to_root, to }, subs);
         }
         Request::Remove { owner, root, name, directory } => {
             if !crate::kernel::is_name(&name) {

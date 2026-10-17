@@ -3,6 +3,7 @@
 //! the face translates (testing-strategy.md, 4).
 
 mod cuts;
+mod moves;
 mod opens;
 
 use alloc::boxed::Box;
@@ -264,6 +265,7 @@ pub struct Machine {
     durable_nodes: BTreeMap<NodeId, Node>,
     pending_writes: BTreeMap<NodeId, Vec<(u64, Vec<u8>)>>,
     pending_dirs: BTreeSet<NodeId>,
+    pending_moves: Vec<moves::Move>,
     next_node: NodeId,
     handles: BTreeMap<u64, Handle>,
     next_handle: u64,
@@ -302,6 +304,7 @@ impl Machine {
             durable_nodes: BTreeMap::from([(0, top)]),
             pending_writes: BTreeMap::new(),
             pending_dirs: BTreeSet::new(),
+            pending_moves: Vec::new(),
             next_node: 1,
             handles: BTreeMap::new(),
             next_handle: 1,
@@ -418,6 +421,7 @@ impl Machine {
             Body::Link(_) | Body::Special(_) => fail("only a file or directory is synced"),
         }
         self.durable_nodes.insert(id, node);
+        self.sync_moves(id);
     }
 
     /// Power loss: durable state survives; selected pending writes may land
@@ -464,6 +468,7 @@ impl Machine {
                 write_bytes(contents, *at, bytes.get(..len).expect("torn within write"));
             }
         }
+        self.crash_moves(&mut surviving, &mut rng);
         recover_links(&mut surviving);
         self.nodes = surviving.clone();
         self.durable_nodes = surviving;
@@ -543,6 +548,9 @@ impl Machine {
             && self.has_entries(target)
         {
             return Err(Refusal::NotEmpty);
+        }
+        if from_dir != to_dir {
+            self.remember_move(source, from_dir, from, to_dir, to);
         }
         if let Some(target) = target {
             self.unname(to_dir, to, target);
