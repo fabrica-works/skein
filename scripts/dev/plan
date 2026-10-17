@@ -1015,7 +1015,8 @@ resume() {
     state=$(session_state "${session:-none}")
     if [[ -z $session ]]; then
         claude_role supervisor "$(supervisor_prompt)"
-    elif [[ $state == gone || $state == exited || $state == stopped ]]; then
+    elif [[ $state == gone || $state == exited || $state == stopped || $state == failed ]]; then
+        # A reboot leaves the session "failed": its process died with the machine.
         claude_role supervisor "$(supervisor_resume_prompt)" "$session"
     else
         echo "supervisor: running ($state)"
@@ -1029,8 +1030,14 @@ resume() {
     # shellcheck source=codex.sh
     source "$kit/codex.sh"
     codex_open || die "the Codex daemon does not answer: codex app-server daemon start"
-    state=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" 2>/dev/null |
-        jq -r '[.thread.turns[]? | .status] | last // "none"') || state="not loaded"
+    # After a restart the daemon no longer holds the thread, and thread/read
+    # answers an error: load it, rather than read its last turn as "none".
+    local read
+    if read=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" 2>/dev/null); then
+        state=$(jq -r '[.thread.turns[]? | .status] | last // "none"' <<<"$read")
+    else
+        state="not loaded"
+    fi
     if [[ $state == "not loaded" ]]; then
         codex_call thread/resume "$(jq -cn --arg t "$thread" --arg sandbox "$codex_sandbox" \
             '{threadId: $t, sandbox: $sandbox, approvalPolicy: "never"}')" >/dev/null ||
