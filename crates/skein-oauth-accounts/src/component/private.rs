@@ -190,6 +190,8 @@ impl Component {
                     keeper.next = Some(Operation::Load);
                 }
                 other @ (file::Event::Made { .. }
+                | file::Event::Locked { .. }
+                | file::Event::Busy { .. }
                 | file::Event::Refused { .. }
                 | file::Event::Loaded { .. }
                 | file::Event::Scanned { .. }
@@ -232,6 +234,8 @@ impl Component {
                         None
                     }
                     other @ (file::Event::Made { .. }
+                    | file::Event::Locked { .. }
+                    | file::Event::Busy { .. }
                     | file::Event::Refused { .. }
                     | file::Event::Opened { .. }
                     | file::Event::Scanned { .. }
@@ -282,6 +286,8 @@ impl Component {
                 Keeping::Kept
             }
             file::Event::Made { .. }
+            | file::Event::Locked { .. }
+            | file::Event::Busy { .. }
             | file::Event::Refused { .. }
             | file::Event::Opened { .. }
             | file::Event::Loaded { .. }
@@ -374,7 +380,9 @@ fn unloaded(event: file::Event) -> Unloaded {
         file::Event::Failed { error: kernel::Error::TimedOut, .. } => Unloaded::Stalled,
         file::Event::Failed { error, .. } => Unloaded::Failed(error),
         file::Event::Cancelled { .. } => Unloaded::Failed(kernel::Error::Cancelled),
-        file::Event::Made { .. }
+        file::Event::Locked { .. }
+        | file::Event::Busy { .. }
+        | file::Event::Made { .. }
         | file::Event::Opened { .. }
         | file::Event::Loaded { .. }
         | file::Event::Scanned { .. }

@@ -108,6 +108,8 @@ impl Owner {
                     self.phase = self.phase.checked_add(1).expect("bounded scenario state");
                 }
                 Event::Made { .. }
+                | Event::Locked { .. }
+                | Event::Busy { .. }
                 | Event::Refused { .. }
                 | Event::Opened { .. }
                 | Event::Loaded { .. }

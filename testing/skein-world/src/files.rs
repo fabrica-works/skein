@@ -206,7 +206,8 @@ impl Driver {
 
 fn owner_of(request: &Request) -> Token {
     match request {
-        Request::MakeDirectory { owner, .. }
+        Request::Lock { owner, .. }
+        | Request::MakeDirectory { owner, .. }
         | Request::OpenPrivate { owner, .. }
         | Request::Create { owner, .. }
         | Request::CreateNoFollow { owner, .. }

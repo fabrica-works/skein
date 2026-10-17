@@ -73,3 +73,22 @@ fn a_page_of_max_entries_stays_within_file_ios_worst_case() {
         assert_eq!(outcome.machine.files.open_handles(), 0);
     }
 }
+
+use skein_io_world::locks::{self, Heard};
+#[test]
+fn a_second_owner_hears_busy_until_the_first_is_killed() {
+    for seed in [0, 1, 17] {
+        let outcome = locks::world(seed, true).run();
+        assert_eq!(outcome.procs[1].heard, [Heard::Busy, Heard::Locked], "seed {seed}");
+        assert!(outcome.procs[0].heard.is_empty(), "the fresh holder locks nothing");
+        assert_eq!(outcome.machine.files.open_handles(), 0);
+    }
+}
+#[test]
+fn a_lock_asked_again_through_its_root_is_locked() {
+    for seed in [0, 1, 17] {
+        let outcome = locks::world(seed, false).run();
+        assert_eq!(outcome.procs[0].heard, [Heard::Locked, Heard::Locked], "seed {seed}");
+        assert_eq!(outcome.machine.files.open_handles(), 0);
+    }
+}

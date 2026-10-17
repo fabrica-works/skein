@@ -76,6 +76,8 @@ impl Owner {
                 Event::Closed { owner: CLOSE } => self.phase = Phase::Root,
                 Event::Closed { owner: ROOT } => self.phase = Phase::Settled,
                 Event::Made { .. }
+                | Event::Locked { .. }
+                | Event::Busy { .. }
                 | Event::Refused { .. }
                 | Event::Opened { .. }
                 | Event::Loaded { .. }

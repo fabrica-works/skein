@@ -308,3 +308,15 @@ fn a_directory_listed_by_pages_over_the_ring_gives_each_entry_once() {
     listed.sort();
     assert_eq!(listed, names);
 }
+
+#[test]
+fn a_second_root_of_a_locked_directory_hears_busy_over_the_ring() {
+    use skein_io_world::locks::{Heard, Judge, Owner};
+    let scratch = skein_scratch::Scratch::new("io-lock");
+    let first = skein_shell::open_root(scratch.path()).expect("first root");
+    let second = skein_shell::open_root(scratch.path()).expect("second independent root");
+    let mut world = skein_world::real::World::new(Judge::single());
+    world.spawn_with_fds(vec![first, second], || Owner::pair(first, second));
+    let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+    assert_eq!(outcome.procs[0].heard, [Heard::Locked, Heard::Busy, Heard::Locked]);
+}

@@ -29,6 +29,9 @@ mod store;
 
 #[derive(Debug)]
 enum Pending {
+    Lock {
+        owner: Token,
+    },
     Create {
         owner: Token,
     },
@@ -157,6 +160,7 @@ impl Pending {
             | Pending::Write { owner }
             | Pending::Read { owner, .. }
             | Pending::Cut { owner }
+            | Pending::Lock { owner }
             | Pending::Sync { owner }
             | Pending::Close { owner }
             | Pending::Rename { owner }
@@ -190,7 +194,8 @@ impl Pending {
             | Pending::LoadOpening { .. }
             | Pending::LoadReading { .. }
             | Pending::ScanOpening { .. } => true,
-            Pending::Cut { .. }
+            Pending::Lock { .. }
+            | Pending::Cut { .. }
             | Pending::Stat { .. }
             | Pending::Stating { .. }
             | Pending::Cleanup { .. }
@@ -454,6 +459,7 @@ pub fn down_until(
 #[expect(clippy::too_many_lines, reason = "one exhaustive request match keeps file admission in one place")]
 fn down_inner(io: &mut FileIo, request: Request, events: &mut Queue<Event>, subs: &mut Queue<Submit>) {
     match request {
+        Request::Lock { owner, root } => directory::lock(io, owner, root, events, subs),
         Request::MakeDirectory { owner, root, path, mode } => {
             private::start(io, owner, root, path, private::Action::Make { mode }, events, subs);
         }
@@ -682,6 +688,7 @@ pub fn cancel(io: &mut FileIo, owner: Token, subs: &mut Queue<Submit>) {
         | Pending::Write { .. }
         | Pending::Read { .. }
         | Pending::Cut { .. }
+        | Pending::Lock { .. }
         | Pending::Sync { .. }
         | Pending::Close { .. }
         | Pending::Rename { .. }
@@ -764,6 +771,7 @@ fn cancelled(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, sub
         | Pending::Stating { .. }
         | Pending::Cleanup { .. }
         | Pending::Cut { .. }
+        | Pending::Lock { .. }
         | Pending::Sync { .. }
         | Pending::Close { .. }
         | Pending::Rename { .. }
@@ -785,6 +793,7 @@ fn cancelled(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, sub
             | Pending::Write { .. }
             | Pending::Read { .. }
             | Pending::Cut { .. }
+            | Pending::Lock { .. }
             | Pending::Sync { .. }
             | Pending::Close { .. }
             | Pending::Rename { .. }
@@ -873,6 +882,10 @@ fn stopped(io: &mut FileIo, complete: Complete, reason: Error, events: &mut Queu
             store::stopped(io, store, complete, reason, events, subs);
             return;
         }
+        Pending::Lock { owner } => {
+            directory::locked(owner, complete, events);
+            return;
+        }
         page @ Pending::Page { .. } => {
             directory::answered(io, page, complete, Some(reason), events, subs);
             return;
@@ -912,6 +925,7 @@ fn stopped(io: &mut FileIo, complete: Complete, reason: Error, events: &mut Queu
         | Pending::Write { owner }
         | Pending::Read { owner, .. }
         | Pending::Cut { owner }
+        | Pending::Lock { owner }
         | Pending::Sync { owner }
         | Pending::Close { owner }
         | Pending::Rename { owner }
@@ -1020,6 +1034,10 @@ fn up_inner(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, subs
             store::up(io, store, complete, events, subs);
             return;
         }
+        Pending::Lock { owner } => {
+            directory::locked(owner, complete, events);
+            return;
+        }
         page @ Pending::Page { .. } => {
             directory::answered(io, page, complete, None, events, subs);
             return;
@@ -1084,6 +1102,7 @@ fn up_inner(io: &mut FileIo, complete: Complete, events: &mut Queue<Event>, subs
             | Pending::Write { owner }
             | Pending::Read { owner, .. }
             | Pending::Cut { owner }
+            | Pending::Lock { owner }
             | Pending::Sync { owner }
             | Pending::Close { owner }
             | Pending::Rename { owner }

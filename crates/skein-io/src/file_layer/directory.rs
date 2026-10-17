@@ -73,3 +73,23 @@ pub(super) fn answered(
         io.list_at_most(fd, max.checked_sub(held).expect("the list never takes past max"), subs);
     }
 }
+
+/// A lock is synchronous and always retains its own answer, even after a stop.
+pub(super) fn lock(io: &mut FileIo, owner: Token, root: Token, events: &mut Queue<Event>, subs: &mut Queue<Submit>) {
+    io.deadline = None;
+    let Some(fd) = io.file(root) else {
+        super::terminal_failure(events, owner, Error::NotFound);
+        return;
+    };
+    io.pending = Some(Pending::Lock { owner });
+    io.issue(Op::Lock { fd }, subs);
+}
+
+pub(super) fn locked(owner: Token, complete: Complete, events: &mut Queue<Event>) {
+    match complete.result {
+        Ok(Done::Nothing) => events.push(Event::Locked { owner }),
+        Err(Error::Busy) => events.push(Event::Busy { owner }),
+        Err(error) => super::terminal_failure(events, owner, error),
+        Ok(_) => unreachable!("a lock answers nothing"),
+    }
+}

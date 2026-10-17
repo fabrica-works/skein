@@ -188,3 +188,82 @@ fn a_page_the_list_in_flight_finishes_is_listed_past_its_deadline() {
         assert!(page.subs.is_empty() && page.io.takes());
     }
 }
+
+impl Page {
+    fn lock(&mut self) {
+        file_layer::down(
+            &mut self.io,
+            Time::ZERO,
+            Request::Lock { owner: OWNER, root: self.directory },
+            &mut self.events,
+            &mut self.subs,
+        );
+        assert_eq!(self.io.next_deadline(), None, "a lock has no timer");
+    }
+    fn lock_answer(&mut self, result: Result<Done, Error>) {
+        let submit = self.subs.pop().expect("one lock");
+        assert_eq!(submit.kind, Op::Lock { fd: CACHE });
+        complete(&mut self.io, submit, result, &mut self.events, &mut self.subs);
+        assert!(self.subs.is_empty() && self.io.takes());
+        assert_eq!(self.io.next_deadline(), None);
+        assert_eq!(self.io.descriptor(self.directory), Some(CACHE));
+    }
+}
+#[test]
+fn a_lock_asks_the_kernel_lock_and_tells_locked() {
+    let mut page = Page::new();
+    page.lock();
+    page.lock_answer(Ok(Done::Nothing));
+    assert_eq!(page.events.pop(), Some(Event::Locked { owner: OWNER }));
+}
+#[test]
+fn a_busy_answer_tells_the_owner_busy_and_arms_no_deadline() {
+    let mut page = Page::new();
+    page.lock();
+    page.lock_answer(Err(Error::Busy));
+    assert_eq!(page.events.pop(), Some(Event::Busy { owner: OWNER }));
+}
+#[test]
+fn another_kernel_error_fails_the_lock_with_it() {
+    let mut page = Page::new();
+    page.lock();
+    page.lock_answer(Err(Error::NoBufferSpace));
+    page.failed(Error::NoBufferSpace);
+}
+#[test]
+fn a_lock_of_an_unknown_token_fails_not_found() {
+    let mut page = Page::new();
+    let directory = page.directory;
+    page.directory = Token::new(99);
+    page.lock();
+    page.directory = directory;
+    page.failed(Error::NotFound);
+    assert_eq!(page.io.next_deadline(), None);
+}
+#[test]
+fn an_owners_cancel_of_a_lock_waits_for_its_own_answer() {
+    for (result, expected) in
+        [(Ok(Done::Nothing), Event::Locked { owner: OWNER }), (Err(Error::Busy), Event::Busy { owner: OWNER })]
+    {
+        let mut page = Page::new();
+        page.lock();
+        file_layer::cancel(&mut page.io, OWNER, &mut page.subs);
+        assert_eq!(page.subs.len(), 1, "no lock cancel");
+        assert!(page.events.is_empty());
+        page.lock_answer(result);
+        assert_eq!(page.events.pop(), Some(expected));
+    }
+}
+#[test]
+fn a_lock_answered_after_its_deadline_keeps_its_own_answer() {
+    for (result, expected) in
+        [(Ok(Done::Nothing), Event::Locked { owner: OWNER }), (Err(Error::Busy), Event::Busy { owner: OWNER })]
+    {
+        let mut page = Page::new();
+        page.lock();
+        file_layer::expire(&mut page.io, Time::ZERO.saturating_add(Duration::from_secs(2)), &mut page.subs);
+        assert_eq!(page.subs.len(), 1, "no lock cancel");
+        page.lock_answer(result);
+        assert_eq!(page.events.pop(), Some(expected));
+    }
+}

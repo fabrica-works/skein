@@ -29,6 +29,11 @@ pub struct Residue {
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum Request {
+    /// Takes an exclusive lock without waiting: `Locked`, `Busy` or `Failed`.
+    Lock {
+        owner: Token,
+        root: Token,
+    },
     /// Makes a directory beneath the owner's root: `Made` or `Failed`.
     MakeDirectory {
         owner: Token,
@@ -198,6 +203,14 @@ pub enum Unsafe {
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum Event {
+    /// The lock is taken, or already held through this root.
+    Locked {
+        owner: Token,
+    },
+    /// Another open holds the lock; the owner may ask again on its own timer.
+    Busy {
+        owner: Token,
+    },
     /// The owner's directory request made its directory.
     Made {
         owner: Token,
@@ -290,7 +303,9 @@ impl Event {
     #[must_use]
     pub const fn owner(&self) -> Token {
         match self {
-            Event::Made { owner }
+            Event::Locked { owner }
+            | Event::Busy { owner }
+            | Event::Made { owner }
             | Event::Refused { owner, .. }
             | Event::Opened { owner, .. }
             | Event::Loaded { owner, .. }

@@ -97,7 +97,8 @@ impl Owner {
 
 fn owner_of(request: &file::Request) -> Token {
     match request {
-        file::Request::MakeDirectory { owner, .. }
+        file::Request::Lock { owner, .. }
+        | file::Request::MakeDirectory { owner, .. }
         | file::Request::OpenPrivate { owner, .. }
         | file::Request::Create { owner, .. }
         | file::Request::CreateNoFollow { owner, .. }
@@ -356,7 +357,8 @@ fn check_file(request: &file::Request, shape: u32) {
             assert_eq!(shape, 2);
             assert_eq!(*file, Token::new(100));
         }
-        file::Request::MakeDirectory { .. }
+        file::Request::Lock { .. }
+        | file::Request::MakeDirectory { .. }
         | file::Request::Create { .. }
         | file::Request::CreateNoFollow { .. }
         | file::Request::OpenWrite { .. }
