@@ -78,6 +78,14 @@ supervisor_sessions() {
             }'
 }
 
+# Restart causes retain their full text; hand loads have the cause loaded.
+restart_causes() {
+    {
+        sed -nE -e 's/^## Coordinator resumed, [^ ]+Z: //p' -e 's/^## Coordinator loaded, .*/loaded/p' "$run/log.md"
+        [[ ! -f $run/supervision.md ]] || sed -nE 's/^## Loaded, .*/loaded/p' "$run/supervision.md"
+    } | sort | uniq -c | awk '{ n = $1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); printf "%s%s %d", (NR > 1 ? ", " : ""), $0, n }'
+}
+
 # The run's metrics (development.md, section 15.2): name, value, unit.
 metrics_of() {
     ledger_upgrade
@@ -126,7 +134,7 @@ metrics_of() {
             END { total += end - start; printf "%.1f", total / 3600 }')" h
     m answers_reversed "$(grep -cE '^Reverses: [^n]' "$run/log.md" 2>/dev/null || true)" answers
     m steers "$(grep -c '^## Steered' "$run/log.md" 2>/dev/null || true) sent, $(grep -cE '^Steer .*point [0-9]+: cannot' "$run/log.md" 2>/dev/null || true) points refused" ""
-    m restarts "$(sed -nE 's/^## Coordinator resumed, .*: ([^:]*)$/\1/p' "$run/log.md" 2>/dev/null | sort | uniq -c | awk '{ printf "%s%s %d", (NR > 1 ? ", " : ""), $2, $1 }')" "by cause"
+    m restarts "$(restart_causes)" "by cause"
 
     # Tokens.
     local kind thread a b c ci=0 co=0 cc=0 si=0 so=0 sc=0 li=0 lo=0 lc=0 requests=0 idle=0 compactions=0 file
@@ -137,7 +145,7 @@ metrics_of() {
         if [[ $kind == coordinator ]]; then
             ci=$((ci + a)); co=$((co + b)); cc=$((cc + c))
             for file in $(rollout_of "$thread"); do
-                requests=$((requests + $(grep -c '"total_token_usage"' "$file" || true)))
+                requests=$((requests + $(codex_requests "$file")))
                 idle=$((idle + $(grep -cE 'Wait timed out|\\"timed_out\\":true' "$file" || true)))
                 compactions=$((compactions + $(grep -c '"type":"compacted"' "$file" || true)))
             done
@@ -194,7 +202,7 @@ metrics_of() {
     local ca cr ta tr ga gr da dr
     read -r ca cr ta tr ga gr da dr <<<"$(cut -f1,2 <<<"$gated" | grep . | line_counts)"
     m lines "code +$ca -$cr, tests +$ta -$tr, generated +$ga -$gr, data +$da -$dr" lines
-    m pin_lag "$(pin_lag)" "commits behind upstream main"
+    m pin_lag "$(pin_lag fetch)" "commits behind upstream main"
     m contexts "$(thread_contexts | awk -F'\t' '$1 == "session" { print $5 }' | median_and_p90 |
         awk '{ printf "%dK median, %dK p90", $1 / 1000, $2 / 1000 }') of the sessions' peaks; $(grep -c '^Handover, ' "$run/log.md" 2>/dev/null || true) handovers" ""
 }

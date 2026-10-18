@@ -159,14 +159,25 @@ run_threads() {
     done
 }
 
-# A Codex thread's tokens, from its last token count: input, output, and
-# the part of the input read from the cache.
+# Prefer the last usage record's thread total; token_count totals are the fallback.
 codex_tokens() {
     local file
     file=$(rollout_of "$1" | head -n1)
     [[ -n $file ]] || { echo "0 0 0"; return; }
-    grep '"total_token_usage"' "$file" | tail -n1 |
-        jsonl '.payload.info.total_token_usage | "\(.input_tokens // 0) \(.output_tokens // 0) \(.cached_input_tokens // 0)"' 2>/dev/null || echo "0 0 0"
+    jsonl '
+        if .type == "token_usage_record" and .payload.thread_token_usage != null then ["record", .payload.thread_token_usage]
+        elif .payload.info.total_token_usage != null then ["total", .payload.info.total_token_usage]
+        else empty end
+        | [.[0], (.[1].input_tokens // 0), (.[1].output_tokens // 0), (.[1].cached_input_tokens // 0)] | @tsv' "$file" |
+        awk -F'\t' '{ last[$1] = $2 " " $3 " " $4 } END { print ("record" in last ? last["record"] : "total" in last ? last["total"] : "0 0 0") }'
+}
+
+# A response has one request even when its usage record is written twice.
+codex_requests() {
+    jsonl 'if .type == "token_usage_record" and .payload.response_id != null then ["record", .payload.response_id]
+        elif .payload.info.total_token_usage != null then ["total"] else empty end | @tsv' "$1" |
+        awk -F'\t' '$1 == "record" { seen[$2] = 1 } $1 == "total" { totals++ }
+            END { for (id in seen) n++; print (n ? n : totals + 0) }'
 }
 
 # Each Codex thread's context, the input of its last model request, and
@@ -431,14 +442,20 @@ rising_words() {
 # commits (development.md, section 5.7): "jig: skein 145, smith 338". A
 # repository that pins two revisions of one upstream counts the older.
 pin_lag() {
-    local repo up rev lag most out="" line
+    local repo up rev lag most out="" line lock
+    if [[ ${1:-} == fetch ]]; then
+        for up in $all_repos; do
+            [[ -d $root/$up/.git ]] || continue
+            timeout 20 git -C "$root/$up" fetch -q origin main 2>/dev/null || true
+        done
+    fi
     for repo in $all_repos; do
-        [[ -f $root/$repo/Cargo.lock ]] || continue
+        lock=$(git -C "$root/$repo" show origin/main:Cargo.lock 2>/dev/null) || continue
         line=""
         for up in $all_repos; do
             [[ $up != "$repo" ]] || break
             most=""
-            for rev in $(sed -nE "s|^source = \"git\+[^\"]*/$up\.git#([0-9a-f]+)\"$|\1|p" "$root/$repo/Cargo.lock" | sort -u); do
+            for rev in $(sed -nE "s|^source = \"git\+[^\"]*/$up\.git#([0-9a-f]+)\"$|\1|p" <<<"$lock" | sort -u); do
                 lag=$(git -C "$root/$up" rev-list --count "$rev..origin/main" 2>/dev/null) || lag="?"
                 if [[ $lag == "?" || -z $most ]] || { [[ $most != "?" ]] && ((lag > most)); }; then most=$lag; fi
             done
@@ -690,7 +707,7 @@ pulse() {
     beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$now_s")
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
-    echo "- Pins behind upstream main, in commits: $(pin_lag)."
+    echo "- Pins behind upstream main, in commits: $(pin_lag "")."
     echo "- Contexts: $(thread_contexts | awk -F'\t' -v limit="${PLAN_CONTEXT_LIMIT:-200000}" '
         $1 == "session" { line = line (n++ ? ", " : "") $2 " " int($4 / 1000) "K"; if ($5 > limit) past = past (p++ ? ", " : "") $2 }
         END { printf "%s", (n ? line : "no session yet"); if (p) printf " (past %dK: %s)", limit / 1000, past }'); Claude Code: $(claude_role_contexts)."

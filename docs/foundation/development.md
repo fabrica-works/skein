@@ -2460,7 +2460,8 @@ Since the last check:
   run so far, and what Claude Code's tokens cost at list prices, by role
   and by kind, since the design;
 - **pins:** how many commits each repository's pins are behind the
-  upstream mains;
+  upstream mains, as of the last fetch (`plan metrics` fetches; the pulse
+  does not);
 - **contexts:** each session's context, and those past the limit
   (section 7.3); the supervisor's and the designer's;
 - **the machine:** the heartbeat's age, memory and disk.
@@ -2592,14 +2593,14 @@ counts them by hand.
 | `blocked_h` | hours in which at least one block was open |
 | `answers_reversed` | unblocks whose `Reverses:` line names an earlier answer |
 | `steers` | steers sent, and points the coordinator refused |
-| `restarts` | `log.md`'s "Coordinator resumed" headings, by cause |
-| `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads |
-| `tokens_implementers` | the same, for every thread the coordinator spawned, at any depth |
+| `restarts` | `log.md`'s "Coordinator resumed" headings, by the whole cause after the time; its "Coordinator loaded" and `supervision.md`'s "Loaded" headings count as cause `loaded` |
+| `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads, from the last `token_usage_record`'s `thread_token_usage`, else the last `total_token_usage` |
+| `tokens_implementers` | the same usage totals, for every thread the coordinator spawned, at any depth |
 | `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), and the design's sessions (the `Designer-Session:` trailers of commits changing the Inputs' design paths after the previous plan landing and through this one), their sub-agents and sub-agents of sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (the design and the planning), from the claim to `done.md` (the run), and after (the retrospective) |
 | `cost_claude` | what those tokens cost at list prices for each message's model (Opus 5.5's when absent or unknown, unknown models named), in all, by role, and by kind: cache reads, cache writes, fresh input, output. At Opus's and Sonnet's rates, a cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
 | `tokens_per_step` | the coordinator's, the implementers' and the run's part of the Claude Code sessions', per landed step |
 | `supervisor` | the supervisor's sessions in `claude.tsv`: how many, their hours (each from its first request to its last), their weighted tokens per hour (fresh input 1, cache reads 0.1, cache writes 1.25, output 5; sub-agents left out, each message counted once), the share of those in the 40 requests after each session's start or compaction (the bootstrap), and their compactions (section 10.5) |
-| `coordinator_requests` | the coordinator's model requests, and those that only saw a wait end |
+| `coordinator_requests` | the coordinator's model requests, from its usage records (distinct `response_id` values, else `total_token_usage` lines), and how many followed a wait that ran out |
 | `compactions` | the coordinator's context compactions |
 | `gates_per_step` | `land`'s gates per landed step, by their label in `logs/heavy.tsv` (section 11.2) |
 | `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate, including finished tasks pueue still holds since the claim |
@@ -2609,7 +2610,7 @@ counts them by hand.
 | `report_lines` | the reports' median and 90th percentile length |
 | `lines` | lines added and removed by gated code landings (docs landings left out), in four kinds: production code, tests, generated code (under a `generated/` directory), and data (any file not Rust) |
 | `contexts` | the median and 90th percentile of the largest context each session's thread reached, and the handovers (`log.md`'s `Handover` lines) |
-| `pin_lag` | how many commits each repository's pins are behind the upstream mains, when `plan metrics` runs |
+| `pin_lag` | how many commits each repository's `origin/main:Cargo.lock` pins are behind the upstream mains, fetched best effort by `plan metrics`; the pulse reads the last fetch without fetching |
 
 - **`metrics.tsv`** holds one line per metric: its name, its value and its
   unit. `plan metrics --history` reads the `metrics.tsv` of every plan in

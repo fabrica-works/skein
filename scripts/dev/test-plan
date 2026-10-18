@@ -414,6 +414,45 @@ expect "the pulse counts a task pueue still holds" "$held_pulse" \
     "queue $((fixture_wait + held_wait)) s waiting, $((fixture_run + held_run)) s running" \
     '2 other gate-lane tasks' 'pueue holds 1 finished tasks no client removed'
 pueue remove "$task_id" >/dev/null
+# Hand loads and multi-word restart causes keep their full meaning.
+cp "$run/log.md" "$t/log.save"
+cat >>"$run/log.md" <<'RESTARTS'
+## Coordinator resumed, 2026-10-11T12:20:00Z: the user's request: a pause
+## Coordinator loaded, 2026-10-11T12:30:00Z: by plan ring
+RESTARTS
+printf '## Loaded, 2026-10-11T12:40:00Z: by hand\n%.0s' 1 2 >"$run/supervision.md"
+expect "restarts retain causes and hand loads" "$("$plan" metrics)" $'restarts\tloaded 3, reboot 1, the user\'s request: a pause 1\t'
+cp "$t/log.save" "$run/log.md"; rm "$run/supervision.md"
+
+# Usage records take precedence over token counts and deduplicate responses.
+mkdir -p "$t/codex-records/sessions"
+{
+    printf '{"type":"session_meta","payload":{"id":"%s"}}\n' "$coordinator"
+    while read -r response input cached output; do
+        printf '{"type":"token_usage_record","payload":{"thread_id":"%s","response_id":"%s","thread_token_usage":{"input_tokens":%d,"cached_input_tokens":%d,"output_tokens":%d}}}\n' "$coordinator" "$response" "$input" "$cached" "$output"
+    done <<'RECORDS'
+r1 1000 500 100
+r2 2100 1200 210
+r2 2100 1200 210
+r3 3100 1800 310
+RECORDS
+    printf '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9999}}}}\n'
+} >"$t/codex-records/sessions/rollout-x-$coordinator.jsonl"
+expect "usage records" "$(CODEX_HOME=$t/codex-records "$plan" metrics)" \
+    $'tokens_coordinator\t3100 in (58% cached), 310 out' $'coordinator_requests\t3, 0 after a wait ran out'
+
+# The checkout's lock is ahead of origin's; pin lag reads origin's lock.
+s=$DEV_ROOT/skein; g=(git -c user.email=test@example.com -c user.name=test)
+c1=$("${g[@]}" -C "$s" commit-tree -p HEAD -m a 'HEAD^{tree}')
+c2=$("${g[@]}" -C "$s" commit-tree -p "$c1" -m b 'HEAD^{tree}')
+git -C "$s" update-ref refs/remotes/origin/main "$c2"
+w=$DEV_ROOT/smith; mkdir -p "$w"; repository "$w"
+lock() { printf 'source = "git+https://example.invalid/forgetic/skein.git#%s"\n' "$1" >"$w/Cargo.lock"; }
+lock "$(git -C "$s" rev-parse HEAD)"; "${g[@]}" -C "$w" add -A; "${g[@]}" -C "$w" commit -q -m lock
+git -C "$w" update-ref refs/remotes/origin/main HEAD; lock "$c2"
+expect "pin lag from origin" "$("$plan" metrics)" $'pin_lag\tsmith: skein 2\t'
+rm -rf "$w"; git -C "$s" update-ref -d refs/remotes/origin/main
+
 # Split rows are replaced by planned parts; a supplement remains added.
 cp "$run/ledger.tsv" "$t/ledger.save"
 cp "$run/.pulse" "$t/pulse.save"
