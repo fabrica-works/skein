@@ -884,14 +884,31 @@ goldens.
 
 For the user, or the director.
 
+2026-10-18. The director, acting for the user (skein's development.md,
+2.7), adopted all nine proposals. For proposal 3, a "For the user" item
+is answered when the user, or the director, records a decision on it,
+"no veto" included, as a `Decision:` line under the item. The designer
+applied their text in skein 9c57a6b, and built each kit part, all small,
+through the kit's gate: 2 in 2a9bcd3, 3 in 5f26abb, 7 in 92633c1 and 8
+in 23cf08d. Nothing goes to a later kit batch. The runs in flight,
+temper's client-api (kit 841f487) and forge-setup (kit c0268a8) and
+hearth's render (kit 11af042), keep their kits (development.md, section
+12). Each takes 1's kit premise and 6 through its supervisor, and 9 as
+its sessions start. Each keeps its process for 1's Kit steps, 2, 3, 4, 5
+and 7. Each run's `plan metrics`, run after its release with main's kit,
+counts as 8 says. The commits' bodies say so.
+
+This plan's own eight "For the user" items, in `decisions.md`, have no
+`Decision:` line yet, and `later.md` row 1 still waits on the gate item.
+
 | Proposal | Decision | Where |
 |---|---|---|
-| 1 | open | |
-| 2 | open | |
-| 3 | open | |
-| 4 | open | |
-| 5 | open | |
-| 6 | open | |
-| 7 | open | |
-| 8 | open | |
-| 9 | open | |
+| 1 | adopted | skein 9c57a6b: development.md, 3.6, 5.2 (the README's Kit steps) and 10.3; supervisor.md, 3 |
+| 2 | adopted: a budget of 40 s with a 5 s margin for the lanes' noise | skein 9c57a6b: development.md, 5.6; skein 2a9bcd3: `test-plan`, with development.md 3.6's row |
+| 3 | adopted: an item is answered by a `Decision:` line under it, by the user or the director, "no veto" included, landed with `land --docs` | skein 5f26abb: `plan check` (`plan-check.sh`), with development.md, 3.6, 5.2, 5.4, 6 and 10.4 |
+| 4 | adopted | skein 9c57a6b: development.md, 5.3 and 5.6 |
+| 5 | adopted | skein 9c57a6b: development.md, 5.2 |
+| 6 | adopted | skein 9c57a6b: supervisor.md, 5, steps 2 and 3 |
+| 7 | adopted | skein 92633c1: `plan status [PLAN_DIR]`, with development.md 3.6's row |
+| 8 | adopted | skein 23cf08d: `numbers.sh` and `metrics.sh` (`lines`, the pulse's lengths, `proofs`, `cost_claude`), with development.md, 5.5, 14 and 15.2 |
+| 9 | adopted | skein 9c57a6b: `AGENTS.md`, and `scripts/dev/workspace/AGENTS.md` |
