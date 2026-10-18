@@ -635,9 +635,9 @@ expect "wake resumes after compactions" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$p
 stale=44444444-5555-6666-7777-888888888888
 printf '{"type":"assistant","timestamp":"%s","message":{"id":"b1","usage":{"input_tokens":1,"output_tokens":1}}}\n' "$(date -u -d '-2 hours' +%FT%T.000Z)" >"$CLAUDE_CONFIG_DIR/projects/p/$stale.jsonl"
 printf 'designer\t%s\t%s\n' "$stale" "$stamp" >>"$run/claude.tsv"
-expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: idle 120 min: a fresh session" "designer: would start a fresh session: You are the designer"
+expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: idle 120 min: a fresh session" "designer: would start a fresh session: You are the designer" "as $run/kit/docs/foundation/development.md, sections 2.1"
 # The supervisor hands over; the old session's watch then shows nothing.
-expect handover "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more"
+expect handover "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more" "as $run/kit/docs/foundation/supervisor.md, section 1" "Read development.md and testing-strategy.md there too"
 expect "handover clears the events seen" "$(if [[ ! -s $run/.watch ]]; then echo empty; fi)" empty
 expect "handover by another" "$(CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
 printf 'supervisor\tnew-supervisor\t%s\n' "$stamp" >>"$run/claude.tsv"
@@ -680,6 +680,7 @@ expect "metrics after release" "$(plan_numbers metrics)" $'steps_planned\t2\t' \
 released_status=$(PLAN_NO_ROLES='' "$plan" status "$dir")
 expect "status after release" "$released_status" "# alpha/demo on" "from ledger.tsv, after its release." "steps landed;"
 expect "status of the last run" "$("$plan" status)" "# alpha/demo on" "after its release."
+expect "the retrospective reads the checkout once the kit is gone" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" retro "$dir")" "as $DEV_ROOT/skein/docs/foundation/development.md, section 15"
 [[ $released_status != *"## Roles"* ]] || { echo "FAIL status after release: it lists the roles"; failed=1; }
 expect "the machine's links stay" "$(if [[ $(readlink "$machine_home/.local/bin/plan" || true) == "$machine_plan_link" ]]; then echo unchanged; fi)" unchanged
 

@@ -141,21 +141,34 @@ ring() {
     fi
 }
 
+# The run's copy of skein's docs/foundation, which its roles read, so that
+# the checkout moving under the run changes nothing (development.md, section
+# 3.6); the checkout's own, once release has removed the kit.
+foundation_dir() {
+    if [[ -d $run/kit ]]; then echo "$run/kit/docs/foundation"; else echo "$root/skein/docs/foundation"; fi
+}
+
 # The roles' prompts. Tests replace them through PLAN_*_PROMPT.
 coordinator_prompt() {
-    local text="Coordinate the run of $plan_dir, as skein's docs/foundation/development.md, section 7, says."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="Coordinate the run of $plan_dir, as $foundation/development.md, section 7, says. Read testing-strategy.md there too, and no other copy of either."
     echo "${PLAN_COORDINATOR_PROMPT:-$text}"
 }
 
 coordinator_resume_prompt() {
-    local text="Resume the run of $plan_dir as skein's docs/foundation/development.md, section 7.6, says."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="Resume the run of $plan_dir as $foundation/development.md, section 7.6, says."
     echo "${PLAN_COORDINATOR_RESUME:-$text}"
 }
 
 # The turn a ring starts for an idle coordinator: the ring's message, then
 # what to do with it.
 coordinator_wake_prompt() {
-    local text="You were idle (plan idle). Re-read context.md, run the wake-up command of skein's docs/foundation/development.md, section 7.4, and act on what it shows."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="You were idle (plan idle). Re-read context.md, run the wake-up command of $foundation/development.md, section 7.4, and act on what it shows."
     echo "$1"
     echo
     echo "${PLAN_COORDINATOR_WAKE:-$text}"
@@ -201,29 +214,39 @@ start_coordinator() {
 }
 
 supervisor_prompt() {
-    local text="Supervise the run of $plan_dir as skein's docs/foundation/supervisor.md says. The run's directory is $run."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="Supervise the run of $plan_dir as $foundation/supervisor.md says. Read development.md and testing-strategy.md there too, and no other copy of any. The run's directory is $run."
     echo "${PLAN_SUPERVISOR_PROMPT:-$text}"
 }
 
 supervisor_resume_prompt() {
-    local text="Your session restarted. Start your watch again (skein's docs/foundation/supervisor.md, section 1), read the end of supervision.md, and go on supervising the run of $plan_dir."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="Your session restarted. Start your watch again ($foundation/supervisor.md, section 1), read the end of supervision.md, and go on supervising the run of $plan_dir."
     echo "${PLAN_SUPERVISOR_RESUME:-$text}"
 }
 
 supervisor_handover_prompt() {
-    local text="Take over the supervision of the run of $plan_dir from a session that handed over, as skein's docs/foundation/supervisor.md, section 1, says for a successor. The run's directory is $run."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="Take over the supervision of the run of $plan_dir from a session that handed over, as $foundation/supervisor.md, section 1, says for a successor. Read development.md and testing-strategy.md there too, and no other copy of any. The run's directory is $run."
     echo "${PLAN_SUPERVISOR_HANDOVER:-$text}"
 }
 
 # A designer started fresh for one question, from a brief instead of the
 # whole history of the session before it (development.md, section 10.4).
 designer_fresh_prompt() {
-    local text="You are the designer of the run of $plan_dir, started fresh for one question, as skein's docs/foundation/development.md, sections 2.1, 4.4, 4.5 and 10.4, say. The run's directory is $run. Read $run/question.md, the design sections and plan files it names, and the earlier questions and answers of this run that touch it (the \"Question and answer\" sections of $run/supervision.md); read no other file of the run."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="You are the designer of the run of $plan_dir, started fresh for one question, as $foundation/development.md, sections 2.1, 4.4, 4.5 and 10.4, say. The run's directory is $run. Read $run/question.md, the design sections and plan files it names, and the earlier questions and answers of this run that touch it (the \"Question and answer\" sections of $run/supervision.md); read no other file of the run."
     echo "${PLAN_DESIGNER_PROMPT:-$text}"
 }
 
 retro_prompt() {
-    local text="Write the retrospective of the run of $plan_dir, as skein's docs/foundation/development.md, section 15, says. The run's directory is $run."
+    local foundation text
+    foundation=$(foundation_dir)
+    text="Write the retrospective of the run of $plan_dir, as $foundation/development.md, section 15, says. The run's directory is $run."
     echo "${PLAN_RETRO_PROMPT:-$text}"
 }
 
