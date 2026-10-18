@@ -388,6 +388,25 @@ expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 200K: hand over"
 # Nothing in the workspace pins alpha.
 expect downstream "$("$plan" downstream)" "downstream: no repository pins alpha"
 
+# A failed downstream probe removes its temporary worktree too.
+beta=$DEV_ROOT/beta
+mkdir -p "$beta" "$t/pueue-none"
+git -C "$beta" init -q -b main
+printf '[[package]]\nname = "alpha-package"\nsource = "git+https://example.com/alpha.git#main"\n' >"$beta/Cargo.lock"
+git -C "$beta" add Cargo.lock
+git -C "$beta" -c user.email=test@example.com -c user.name=test commit -qm "Pin alpha"
+git clone -q --bare "$beta" "$t/beta.git"
+git -C "$beta" remote add origin "$t/beta.git"
+cat >"$t/pueue-none/pueue.yml" <<EOF
+shared:
+  pueue_directory: $t/pueue-none
+  runtime_directory: $t/pueue-none
+  use_unix_socket: true
+  unix_socket_path: $t/pueue-none/pueue.socket
+EOF
+downstream=$(DEV_REPOS="alpha beta" PUEUE_CONFIG_PATH=$t/pueue-none/pueue.yml "$plan" downstream)
+expect "downstream leaves no worktree" "$(printf '%s\n' "$downstream"; if [[ ! -e $run/downstream ]]; then printf 'worktrees=%s downstream=removed\n' "$(git -C "$beta" worktree list | wc -l)"; fi)" "beta against alpha main: fails" "worktrees=1 downstream=removed"
+
 # The watch, each of its events.
 watch() { timeout 10 "$plan" watch || echo "watch exited $?"; }
 echo "# Blocked" >"$run/blocked.md"; echo "## alpha 01.3: a question, $stamp" >>"$run/blocked.md"

@@ -422,6 +422,7 @@ machine's run. Nothing here is versioned.
 | `paused.md`, `done.md` | the coordinator | a pause's checkpoint; the run's end, from its opening `Recorded <UTC time>.` line (section 7.6) |
 | `sessions/<repository>-<NN>.md` | the implementer | its session's checkpoint (section 8.6) |
 | `logs/` | `heavy`; the implementers | each heavy command's output, and `heavy.tsv`, the queue's statistics (section 11.2); without an active run, `~/src/rust/tmp/logs/`. Each session's scripts and long outputs, in `logs/<repository>-<NN>/` |
+| `downstream/<repository>/` | `plan downstream` | fresh worktrees of downstream mains, removed on every exit |
 | `wt/<repository>-<NN>/` | `plan worktree` | the session's worktree, with its own `target/` |
 
 The escalation files are written whole and renamed into place, so the
@@ -501,7 +502,7 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 | `plan watch` | waits until the supervisor has something to do, and prints its context and its compactions; at `PLAN_COMPACTIONS` (2), the word to hand over (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
 | `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (200,000 tokens) (section 7.3) |
-| `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane, and lands nothing (sections 5.7 and 14.1) |
+| `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane in fresh `downstream/` worktrees, removes them on every exit, and lands nothing (sections 5.7 and 14.1) |
 | `plan ring MESSAGE` | rings the coordinator's doorbell, and starts the turn of an idle one (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
 | `test-plan [--live]` | tests `plan` on a workspace of its own; `--live` also starts real roles, on cheap models. It compiles nothing: it runs in the build lane (`heavy test-plan`) |
@@ -2365,7 +2366,9 @@ ten hours after it landed.
    check, and moves its mark. Once the plan has landed in a repository others build on, also
    run `plan downstream`, in the background: a few minutes of `cargo
    check` in the build lane. Read its lines before the entry, one per
-   repository, `builds` or `fails`: the entry gives each, or says that it
+   repository, `builds` or `fails`. Its fresh worktrees live under the
+   run's `downstream/`, outside sessions' `wt/`, and are removed on every
+   exit. The entry gives each result, or says that it
    is still running. A repository it shows broken may get an early repin
    (section 5.7).
 2. **Read** the log's headings since the last check, the first five

@@ -517,15 +517,26 @@ source "$kit/plan-roles.sh"
 # latest main in a worktree of its own, then `cargo check` through the
 # build lane (development.md, sections 5.7 and 14.1). One line each, with
 # the errors by the repository whose code they are in. Nothing is landed.
+made=()
+# shellcheck disable=SC2317 # the EXIT trap runs after downstream returns
+unmake() {
+    local repo
+    for repo in "${made[@]}"; do
+        git -C "$root/$repo" worktree remove --force "$run/downstream/$repo" || true
+    done
+    rmdir "$run/downstream" 2>/dev/null || true
+}
 downstream() {
     load
+    made=()
+    trap unmake EXIT
     local changed repo up package dir out log errors update ok probed=0
     changed=$(plan_commits 0 | cut -f1 | sort -u)
     [[ -n $changed ]] || { echo "downstream: nothing has landed yet"; return 0; }
-    for repo in $all_repos; do
+    for repo in $repos; do
         [[ -f $root/$repo/Cargo.lock ]] || continue
         update=""
-        for up in $all_repos; do
+        for up in $repos; do
             [[ $up != "$repo" ]] || break
             grep -qx "$up" <<<"$changed" || continue
             # One package of that repository: updating it moves its whole source.
@@ -536,13 +547,10 @@ downstream() {
         done
         [[ -n $update ]] || continue
         probed=1
-        dir=$run/wt/$repo-downstream
+        dir=$run/downstream/$repo
         git -C "$root/$repo" fetch --quiet origin main
-        if [[ -d $dir ]]; then
-            git -C "$dir" checkout --quiet --force --detach origin/main
-        else
-            git -C "$root/$repo" worktree add --quiet --detach "$dir" origin/main
-        fi
+        git -C "$root/$repo" worktree add --quiet --detach "$dir" origin/main
+        made+=("$repo")
         ok=0
         out=$(cd "$dir" && HEAVY_LABEL="$repo downstream" "$kit/heavy" --tail 0 \
             bash -c "${update}cargo check --workspace --all-targets --keep-going --message-format short" 2>&1) && ok=1
@@ -551,7 +559,7 @@ downstream() {
             echo "$repo against $(tr '\n' ' ' <<<"$changed" | sed 's/ $//') main: builds"
             continue
         fi
-        errors=$(grep -E '^[^ ]+:[0-9]+:[0-9]+: error' "${log:-/dev/null}" 2>/dev/null |
+        errors=$({ grep -E '^[^ ]+:[0-9]+:[0-9]+: error' "${log:-/dev/null}" 2>/dev/null || true; } |
             sed -E "s|^.*/git/checkouts/([a-z]+)-[0-9a-f]+/.*|\1|; t; s|.*|$repo|" |
             sort | uniq -c | awk '{ printf "%s%d in %s'"'"'s code", (NR > 1 ? ", " : ""), $1, $2 }')
         echo "$repo against $(tr '\n' ' ' <<<"$changed" | sed 's/ $//') main: fails, ${errors:-no compiler error}; log $log"
