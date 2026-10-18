@@ -40,10 +40,12 @@ silent_watch() {
 fake_starts() { awk '$1 == "turn/start" { count++ } END { print count+0 }' "$PLAN_CODEX_FAKE/calls"; }
 # One call gathers all open events; a second call has none to show.
 : >"$run/.watch"
-printf '# Blocked\n\n## alpha 01.2: an open question\n' >"$run/blocked.md"
+printf '# Blocked\n\n## alpha 01.2: an open question\nThe block needs an answer.\n' >"$run/blocked.md"
 echo '# Answer' >"$run/answer.md"
 "$plan" set alpha-01.2 state=check
-expect "the first watch prints every open event" "$(watch)" "blocked:" "answer:" "check: alpha-01.2"
+first_watch=$(watch)
+expect "the first watch prints every open event" "$first_watch" "blocked:" "answer:" "check: alpha-01.2"
+expect "blocked prints the increment" "$first_watch" "  The block needs an answer." $'ledger: alpha-01.2\t' "  ### 01.2 The second increment" "session: $dir/alpha/01-first.md"
 # Three polls suffice to show that no event is repeated (PLAN_POLL=0.1).
 expect "the next watch repeats no event" "$(silent_watch)" "status=124 bytes=0"
 rm "$run/blocked.md" "$run/answer.md"
@@ -52,7 +54,19 @@ rm "$run/blocked.md" "$run/answer.md"
 echo "# Blocked" >"$run/blocked.md"; echo "## alpha 01.3: a question, $stamp" >>"$run/blocked.md"
 expect "watch blocked" "$(watch)" "blocked: $run/blocked.md" "## alpha 01.3: a question"
 echo "# Answer" >"$run/answer.md"
-expect "watch answer" "$(watch)" "answer: $run/answer.md"
+expect "answer prints its text" "$(watch)" "answer: $run/answer.md" "  # Answer"
+# development.md 10.5 bounds material at 150 lines, including the bound.
+while read -r rows expected_omitted; do
+    awk -v n="$rows" 'BEGIN { for (i=1;i<=n;i++) print "line" }' >"$run/answer.md"
+    touch -d "@$rows" "$run/answer.md"
+    material=$(watch)
+    omitted=$(sed -nE 's/^  … \(([0-9]+) more lines:.*/\1/p' <<<"$material")
+    expect "event material is bounded at rows=$rows" \
+        "lines=$(grep -c '^  line$' <<<"$material") omitted=${omitted:-0}" "lines=150 omitted=$expected_omitted"
+done <<'ROWS'
+150 0
+151 1
+ROWS
 rm "$run/blocked.md" "$run/answer.md"
 touch -d '-5 seconds' "$run/heartbeat"
 expect "watch quiet" "$(PLAN_QUIET=2 watch)" "quiet: no heartbeat"
@@ -67,6 +81,21 @@ expect "watch check" "$(watch)" "check: alpha-02.1, $dir/alpha/02-second.md" "(c
 expect "ready" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1)" "would ring the coordinator: ready: alpha-02.1"
 expect "ready in the ledger" "$(grep alpha-02.1 "$run/ledger.tsv")" $'\tready\t' "checked "
 expect "ready twice" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1 2>&1 || true)" "is not waiting for its check"
+# The ready check's commit precedes a file now on origin/main.
+checked=$(git -C "$repo" rev-parse HEAD)
+git clone -q --bare "$repo" "$t/watch-origin.git"
+git -C "$repo" remote add origin "$t/watch-origin.git"
+"$plan" set alpha-01.2 state=ready note="checked alpha $checked"
+# The watch sees ready and retains its note before the coordinator changes it.
+expect "ready waits for the start" "$(silent_watch)" "status=124 bytes=0"
+printf 'fn watch() {}\n' >"$repo/src/watch.rs"
+git -C "$repo" add src/watch.rs
+git -C "$repo" commit -qm "Move after the ready check"
+git -C "$repo" push -q origin main
+"$plan" set alpha-01.2 state=running note=started
+expect "started prints what moved" "$(watch)" "started: alpha-01.2" "src/watch.rs"
+"$plan" set alpha-01.2 state=landed
+git -C "$repo" remote remove origin
 # An idle coordinator's silence is no event.
 expect idle "$("$plan" idle "waiting for the user")" "end your turn now"
 touch -d '-5 seconds' "$run/heartbeat"

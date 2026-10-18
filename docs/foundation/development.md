@@ -2049,10 +2049,19 @@ without `## `, separated by `; `.
   - `answer.md` appears;
   - steps wait for their ready check (section 7.2), each with its session
     file;
+  - `started:`: a step whose ready check named commits has started; the
+    watch fetches and prints each repository's changes since those commits.
+    The supervisor greps the session file's names in the moved files and
+    re-checks a moved file that its sketch or suite reads (supervisor.md 5);
   - the coordinator's heartbeat is older than ten minutes, unless the
     coordinator is idle (`idle.md`, section 7.4);
   - the run pauses or ends.
 
+  Each event prints its handling material, indented and limited to 150
+  lines, with a source path for the rest: new blocks with their ledger row,
+  increment and report path; answers and pause/end files in full up to the
+  limit; check rows with their session path; quiet with the coordinator's
+  state and the last 20 log lines. It never prints a whole session file.
   Then it prints the supervisor's context, the input of its last request,
   and its compactions, and once they reach `PLAN_COMPACTIONS` (2), the
   word to hand over.

@@ -60,12 +60,84 @@ watch() {
     done
 }
 
+# Each event carries at most 150 material lines, with its source for the rest.
+watch_lines() {
+    awk -v file="$1" 'NR <= 150 { print "  " $0 }
+        END { if (NR > 150) printf "  … (%d more lines: %s)\n", NR-150, file }'
+}
+
+# A step's ledger row and session path; a block also needs the increment.
+watch_step() {
+    local step=$1 detail=${2:-} row repo session file report
+    row=$(awk -F'\t' -v s="$step" '$1 == s' "$run/ledger.tsv")
+    IFS=$'\t' read -r _ repo session _ <<<"$row"
+    [[ -n $repo && -n $session ]] || return 0
+    printf 'ledger: %s\n' "$row"
+    file=$(find "$plan_dir/$repo" -maxdepth 1 -name "$session-*.md" 2>/dev/null | sort | head -n1)
+    printf 'session: %s\n' "$file"
+    [[ -n $detail && -n $file ]] || return 0
+    awk -v s="${step#*-}" '/^### / { show = ($2 == s) } show' "$file"
+    report=$(find "$run/reports" -maxdepth 1 -name "$repo-$session-*.md" 2>/dev/null | sort | tail -n1)
+    [[ -z $report ]] || printf 'report: %s\n' "$report"
+}
+
+watch_blocked() {
+    local seen=$1 heading sig
+    local entries=()
+    [[ -f $run/blocked.md && ! -f $run/unblock.md ]] || return 1
+    while IFS= read -r heading; do
+        sig=blocked:$heading
+        grep -qxF "$sig" "$seen" && continue
+        echo "$sig" >>"$seen"
+        entries+=("$heading")
+    done < <(grep '^## ' "$run/blocked.md" || true)
+    ((${#entries[@]})) || return 1
+    echo "blocked: $run/blocked.md"
+    for heading in "${entries[@]}"; do
+        awk -v h="$heading" '/^## / { show = ($0 == h) } show' "$run/blocked.md"
+        if [[ $heading =~ ^##\ ([^[:space:]]+)\ ([0-9]+\.[^:[:space:]]+) ]]; then
+            watch_step "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}" increment
+        fi
+    done | watch_lines "$run/blocked.md"
+}
+
+# Ready notes retain the checked commits even if the running note changes.
+watch_started() {
+    local seen=$1 step state note sig repo commit shown=0
+    while IFS=$'\t' read -r step state note; do
+        if [[ $state == ready && $note == *'checked '* ]]; then
+            sig=ready:$step:$note
+            grep -qxF "$sig" "$seen" || echo "$sig" >>"$seen"
+            continue
+        fi
+        [[ $state == running ]] || continue
+        [[ $note == *'checked '* ]] || note=$(awk -v p="ready:$step:" 'index($0,p)==1 { n=substr($0,length(p)+1) } END { print n }' "$seen")
+        [[ $note == *'checked '* ]] || continue
+        sig=started:$step
+        grep -qxF "$sig" "$seen" && continue
+        echo "$sig" >>"$seen"
+        echo "started: $step"
+        while read -r repo commit; do
+            [[ -e $root/$repo/.git ]] || continue
+            echo "$repo since $commit:"
+            if git -C "$root/$repo" fetch --quiet origin main; then
+                git -C "$root/$repo" diff --stat "$commit" origin/main
+            else
+                echo "fetch failed: $repo"
+            fi
+        done < <(awk '{ gsub(/[,;]/," "); for (i=1;i<NF;i++) if ($(i+1) ~ /^[0-9a-f]+$/ && length($(i+1)) >= 7) print $i,$(i+1) }' <<<"${note#*checked }") | watch_lines "$run/ledger.tsv"
+        shown=1
+    done < <(awk -F'\t' 'NR > 1 && ($4 == "ready" || $4 == "running") { print $1 "\t" $4 "\t" $11 }' "$run/ledger.tsv")
+    ((shown))
+}
+
 # One look for an event not yet shown: prints it and succeeds, or fails.
 watch_once() {
     local seen=$1 quiet=${PLAN_QUIET:-600} sig beat age step repo session file shown=0
     if [[ -f $run/done.md ]] && ! grep -qx "done" "$seen"; then
         echo "done" >>"$seen"
         echo "done: $run/done.md"
+        watch_lines "$run/done.md" <"$run/done.md"
         shown=1
     fi
     if [[ -f $run/paused.md ]]; then
@@ -73,23 +145,17 @@ watch_once() {
         if ! grep -qxF "$sig" "$seen"; then
             echo "$sig" >>"$seen"
             echo "paused: $run/paused.md"
+            watch_lines "$run/paused.md" <"$run/paused.md"
             shown=1
         fi
     fi
-    if [[ -f $run/blocked.md && ! -f $run/unblock.md ]]; then
-        sig=blocked:$(grep '^## ' "$run/blocked.md" | sha1sum | cut -c1-12)
-        if ! grep -qxF "$sig" "$seen"; then
-            echo "$sig" >>"$seen"
-            echo "blocked: $run/blocked.md"
-            grep '^## ' "$run/blocked.md" || true
-            shown=1
-        fi
-    fi
+    if watch_blocked "$seen"; then shown=1; fi
     if [[ -f $run/answer.md ]]; then
         sig=answer:$(stat -c %Y "$run/answer.md")
         if ! grep -qxF "$sig" "$seen"; then
             echo "$sig" >>"$seen"
             echo "answer: $run/answer.md"
+            watch_lines "$run/answer.md" <"$run/answer.md"
             shown=1
         fi
     fi
@@ -101,8 +167,10 @@ watch_once() {
         echo "$sig" >>"$seen"
         file=$(find "$plan_dir/$repo" -maxdepth 1 -name "$session-*.md" 2>/dev/null | sort | head -n1)
         echo "check: $step${file:+, $file}"
+        watch_step "$step" | watch_lines "$run/ledger.tsv"
         shown=1
     done < <(awk -F'\t' 'NR > 1 && $4 == "check" { print $1 "\t" $2 "\t" $3 }' "$run/ledger.tsv" 2>/dev/null)
+    if watch_started "$seen"; then shown=1; fi
     ((!shown)) || return 0
     wake_idle_tasks
     if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md && ! -f $run/idle.md ]]; then
@@ -120,6 +188,7 @@ watch_once() {
                 else
                     echo "quiet: no heartbeat from the coordinator since $(date -u -d "@$beat" +%TZ)"
                 fi
+                { printf 'coordinator: %s\n' "$(coordinator_state)"; tail -n 20 "$run/log.md"; } | watch_lines "$run/log.md"
                 return 0
             fi
         done

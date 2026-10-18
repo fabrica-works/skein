@@ -103,17 +103,19 @@ go on. Before acting on anything:
 ## 2. The watch's events
 
 The watch ends when there is something to do. It prints what, then your
-context. Handle the event, then start the watch again:
+context. Material is indented and limited to 150 lines per event, with a
+source path for the rest. Handle the event, then start the watch again:
 
 | It prints | Do |
 |---|---|
-| `blocked:` and the blocks' headings | a ruling (section 3), or a design question (section 4) |
-| `answer:` | the unblock from the designer's answer (section 4) |
-| `check:` and steps, each with its session file | the ready check (section 5) |
-| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, run `plan resume crash` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
+| `blocked:` with each new block's text, ledger row, increment and last report's path | a ruling (section 3), or a design question (section 4) |
+| `answer:` with its text | the unblock from the designer's answer (section 4) |
+| `check:` and steps, each with its ledger row and session file | the ready check (section 5) |
+| `started:` and the changes since its ready check | re-check what moved (section 5, step 4) |
+| `quiet:` with the coordinator's state and last 20 log lines | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, run `plan resume crash` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
 | `quiet again:` | an alert to the user, with the command `plan resume` |
-| `paused:` | read `paused.md`; nothing else waits for you until the run resumes |
-| `done:` | the end (section 8) |
+| `paused:` with its text | read it; nothing else waits for you until the run resumes |
+| `done:` with its text | the end (section 8) |
 | `context: … (compactions: N): hand over now`, N at least 2 | after the event in hand, section 7 |
 | `context: … past …K: hand over now` | the same: a run claimed before skein 71f6c38 hands over by context (section 7) |
 | `handed over:` | you supervise no more: end your turn, and start nothing |
@@ -255,17 +257,10 @@ defects came from increments no check had read.
    through a compaction or a handover. It sets the step `ready` and
    rings the coordinator, who starts it once they have: a re-check never
    holds a start (development.md, section 7.2).
-4. **Re-check what moved since, as a steer.** When the steps the session
-   needs at its start have not all landed, wait for them with a second
-   background command beside the watch:
-
-   ```
-   for s in <those steps>; do until awk -F'\t' -v s="$s" '$1 == s && $4 == "landed" { f = 1 } END { exit !f }' <run>/ledger.tsv; do sleep 60; done; done
-   ```
-
-   Once they have landed, list what `main` moved since the check: `git
-   diff --stat <the commit checked> origin/main`, after a fetch, in each
-   repository the session names. Grep the session file's names in the
+4. **Re-check what moved since, as a steer.** When a step starts whose
+   ready check named commits, the watch prints `started:` with
+   `git diff --stat <the commit checked> origin/main`, after a fetch in
+   each repository. Grep the session file's names in the
    files it lists. A moved file that a sketch or a suite of the check
    reads goes to a fresh sub-agent with step 1's prompt, for those alone.
    Land each correction as in step 2, and send it to the session as a
