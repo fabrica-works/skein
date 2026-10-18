@@ -1,6 +1,6 @@
 # The browser parts
 
-Provisional, 2026-10-15, revised 2026-10-16. The design of
+Provisional, 2026-10-15, revised 2026-10-18. The design of
 `skein-ui-web`, skein's browser parts; of `skein-ui-bundle`, their
 bundler; of the face and the harness in `skein-fake-person-browser`;
 and of the UI example's browser tier. The tree the parts map is
@@ -89,9 +89,9 @@ parts its look (3.2), and changes what else it needs by 3.3's steps.
   safely is a part's (5.3).
 - **The reference shell,** `skein-ui-example-shell-web`, the UI
   example's: about 200 lines (a guide), commented to be copied.
-- **What the reference asks of the example's state machine** (names the
-  plan's): *start,* from the seed, the path and query the page opened
-  at, the small store's records, the person's offset and languages;
+- **What the reference asks of the example's state machine:** *start,*
+  from the seed, the path and query the page opened at, the small
+  store's records, the person's offset and languages;
   *step,* with one report, giving its duties in order (the small store's
   writes and removals, exchanges sent and abandoned, the stream opened
   and closed, a navigation away, an address shown, new or in place, its
@@ -192,7 +192,7 @@ Steps from the standard, each needing one before it only where it says.
   - `index.html`, the page, the bundler's or the application's (4.3);
   - beside it, one directory **named by the digest of everything in
     it:** SHA-256 over its files' paths and bytes, in the order of their
-    paths (the encoding the plan's), its first 16 hex digits. It holds:
+    paths, its first 16 hex digits. It holds:
     - `boot.js`, the starter (4.3);
     - `<name>.js`, `<name>_bg.wasm` and `snippets/`: the glue, the
       module and the modules the glue imports (3.3, step 7);
@@ -306,8 +306,7 @@ reference's order (5.2) or its own, within 5.3.
 
 Each is ordinary Rust, usable alone, taking and giving plain data; the
 transport is built over fetch, the small store and the hidden tab, the
-page over scenes as SVG, each usable without it. Their module names are
-the plan's.
+page over scenes as SVG, each usable without it.
 
 | Part | Takes | Gives |
 |---|---|---|
@@ -982,7 +981,7 @@ parts carry, so that its tier tests each once.
 - **Its shell takes 3.3's steps,** each once: it is the reference shell
   (step 1); its stylesheet, after `skein-ui.css` (step 2); its codec,
   its notes under `/notes/`, and `/bundle/` its bundle's prefix (step
-  3); its own page or the bundler's, the plan's choice (step 4); an
+  3); the bundler's page, and no page of its own (step 4); an
   element override, a note's region as an `<article>`, and a component,
   the body's text area that grows (step 6), calling one function of a
   JavaScript snippet of at most 10 lines, so that the bundler and the

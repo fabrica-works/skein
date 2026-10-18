@@ -1,6 +1,6 @@
 # The examples
 
-Provisional, 2026-10-04, revised 2026-10-15. The design of skein's
+Provisional, 2026-10-04, revised 2026-10-18. The design of skein's
 example services (testing.md, 3): what each one is, the steps README.md
 asks for before code (the wire protocol, the limits, the entities, the
 state machines), its fakes, the harness its worlds run on, and how it is
@@ -585,7 +585,7 @@ a service copies that.
   region names' names, its drawing code and its component table; and
   its stylesheet, loaded after `skein-ui.css`, styling its tokens and
   placing its regions (ui-web.md, section 12). Its page is the
-  bundler's or its own, the plan's choice (ui-web.md, 4.3).
+  bundler's (ui-web.md, 4.3).
 - **An element of its own** (ui-web.md, 6.1): a region carrying
   `notes-card` is an `<article>`, which keeps the region's role and
   name.
@@ -618,8 +618,7 @@ a service copies that.
   page shows past the restart limit, and one that bounds its small
   store below an add's record, so that the add's write is refused, with
   the note that add would have made; and, to the stories that look for
-  something absent, its status saying Live (9.2). Those addresses are
-  the plan's.
+  something absent, its status saying Live (9.2).
 
 ### 9.5 How it is tested
 
