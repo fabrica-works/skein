@@ -283,6 +283,13 @@ Don't: start pueued from the watch; keep a step that schedules, checks
 Size: about 40 lines.
 Removes: the cron job of supervisor.md 1, 6 and 7.
 
+### 04.s1 test-plan's watch checks in their own file (ruling 107)
+
+An added step, as code-organization.md, section 6, has it: the fake
+daemon's and the watch's checks moved from `test-plan` into
+`scripts/dev/test-plan-watch.sh`, sourced. Landed as skein 86a334c
+(`Step: skein-04.s1`).
+
 ## Interface sketches
 
 ```bash

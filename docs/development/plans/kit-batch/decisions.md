@@ -246,6 +246,13 @@ section 10 (findings/inventory.md); the planner decided what follows
 106. **skein-05.s1's landing with the claim's kit** (process, skein 05's block of 2026-10-18T01:19:02Z).
      Ruling 105's instruction 2 named `plan landed`, which skein-06.1 added (skein 2c4db1d); the run keeps its claim's kit, skein 6926c2d (development.md, section 3.6), which has no such command. Record skein-05.s1's landing with the kit's `plan set skein-05.s1 state=landed commit=4d6df9e`. What `plan landed` would have checked is checked below: the commit is on origin/main and carries `Step: skein-05.s1`, and session 05's report says its worktree is clean.
 
+107. **skein-01.s2: test-plan back within its 40 s** (steer of 2026-10-18T01:29:25Z).
+     Supplement step skein-01.s2 (`skein/01-s2-test-time.md`) brings `test-plan` back within code-organization.md's Time rule, about 40 s in all: it took 54 to 55 s after 06.3 (heavy.tsv), and ruling 104's steer of 00:28:54Z did not hold it. It needs skein 04.5 and 06.5, the last increments that edit `test-plan`, and merges the copied captures and poll loops into one helper each. Its Scope's cause has a budget of 3 traced runs and 45 minutes.
+
+     The steer's second point of 00:28:54Z, seen again at 01:18:47Z (three more copied captures, a fourth poll loop, a bare pair), is a standing rule of the README, "test-plan's checks": one behaviour per check, from a capture its world already took where one holds the line; a capture or a poll written twice becomes a helper; pairs print as `name=value`; and a `.s<N>` step is named in its report's Next, and has its ledger row, before it starts.
+
+     skein-04.s1, which moved the fake daemon's and the watch's checks into `scripts/dev/test-plan-watch.sh` (skein 86a334c, `Step: skein-04.s1`) before ruling 105's rule reached session 04, is recorded in skein/04-watch.md's new section "04.s1"; the coordinator has its ledger row, landed.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner
