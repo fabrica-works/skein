@@ -496,6 +496,15 @@ repository rather than the code it ships (a check of the sources' names,
 a generator that a drift test runs) may be built optimized: that hides
 nothing the tests check, and it costs what it does, not ten times that.
 
+**Nor is a dependency.** A repository's test builds may build its
+dependencies optimized, skein's and smith's crates among them, with
+`[profile.dev.package."*"] opt-level = 2` in its workspace's
+`Cargo.toml`; its own crates, the workspace's members, stay at
+`opt-level` 0, which `"*"` never matches. The setting changes
+`opt-level` alone: debug assertions and overflow checks stay on, so a
+dependency panics where it would unoptimized. A dependency is the code
+under test of its own repository, whose gate builds it unoptimized.
+
 A fuzzy test lives beside its world and uses that world's settings,
 random ones included. When a fuzzy seed fails, the bug is fixed and the
 seed kept: as a scenario if it shows behaviour worth naming, or among the
