@@ -331,13 +331,33 @@ attach() {
     exec "${line[@]}"
 }
 
-# After a restart, or a role's crash: start what is not running again. The
-# cause is recorded by the kit before it reaches the coordinator.
+# A paused run resumes with skein's main as its kit and process
+# (development.md, section 7.6): kit/ moves to origin/main, and
+# supervision.md gets its new Process line. Fails when nothing moved.
+move_kit() {
+    local from to
+    [[ -d $run/kit ]] || return 1
+    git -C "$root/skein" fetch --quiet origin main 2>/dev/null || true
+    to=$(git -C "$root/skein" rev-parse --verify --quiet origin/main) || return 1
+    from=$(git -C "$run/kit" rev-parse --short HEAD)
+    [[ $to != $(git -C "$run/kit" rev-parse HEAD) ]] || return 1
+    git -C "$run/kit" checkout --quiet --detach "$to"
+    to=$(git -C "$run/kit" rev-parse --short HEAD)
+    printf '\n## Process, %s: skein %s\n' "$(now)" "$to" >>"$run/supervision.md"
+    echo "kit: skein $from, moved to main's $to"
+}
+
+# After a restart, a pause, or a role's crash: start what is not running
+# again. The cause is recorded by the kit before it reaches the coordinator.
+# A paused run first takes main's kit, then resumes with it.
 resume() {
     load
     local cause=${1:-} boot heartbeat
     [[ ! -f $run/done.md ]] || die "the run is done"
-    [[ ! -d $run/kit ]] || echo "kit: skein $(git -C "$run/kit" rev-parse --short HEAD), the claim's"
+    if [[ -f $run/paused.md && -z ${PLAN_KIT_MOVED:-} ]] && move_kit; then
+        DEV_ROOT=$root DEV_TMP=$tmp PLAN_KIT_MOVED=1 exec "$run/kit/scripts/dev/plan" resume "$@"
+    fi
+    [[ ! -d $run/kit ]] || echo "kit: skein $(git -C "$run/kit" rev-parse --short HEAD)"
     if [[ -z $cause ]]; then
         boot=$(date -d "$(uptime -s)" +%s)
         heartbeat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$boot")

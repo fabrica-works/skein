@@ -55,7 +55,19 @@ expect "resume names a reboot" "$(resume_case)" 'status=0' ': reboot' 'turn/star
 touch "$run/heartbeat"
 echo '# Paused' >"$run/paused.md"
 expect "resume names the user's request" "$(resume_case)" 'status=0' ": the user's request" 'turn/start '
-rm "$run/paused.md"
+# A paused run resumes with skein's main as its kit, once.
+kit_head=$(git -C "$run/kit" rev-parse HEAD)
+main=$(git -C "$DEV_ROOT/skein" -c user.email=test@example.com -c user.name=test commit-tree -p "$kit_head" -m "Main moved" "$kit_head^{tree}")
+git -C "$DEV_ROOT/skein" update-ref refs/remotes/origin/main "$main"
+expect "a paused run takes main's kit" "$(resume_case)" 'status=0' "moved to main's ${main:0:7}" 'turn/start '
+second=$(resume_case)
+expect "a second resume keeps it" "$second" 'status=0' "kit: skein ${main:0:7}"
+[[ $second != *moved* && $(git -C "$run/kit" rev-parse HEAD) == "$main" &&
+    $(grep -c '^## Process, .*: skein ' "$run/supervision.md") == 1 ]] ||
+    { echo "FAIL a paused run's kit moves once, to main"; failed=1; }
+git -C "$run/kit" checkout -q --detach "$kit_head"
+git -C "$DEV_ROOT/skein" update-ref -d refs/remotes/origin/main
+rm "$run/paused.md" "$run/supervision.md"
 touch -d "@$((boot - 1))" "$run/heartbeat"
 expect "resume takes a given cause" "$(resume_case crash)" 'status=0' ': crash' 'turn/start '
 rm "$run/heartbeat"

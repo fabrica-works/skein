@@ -5,7 +5,7 @@
 #   plan start PLAN_DIR           check, claim, start the supervisor and the coordinator
 #   plan status [PLAN_DIR]        render status.md from the ledger, with the roles
 #   plan attach ROLE              open a role's session: coordinator, supervisor, designer
-#   plan resume [CAUSE]           after a restart or a crash, start the roles again
+#   plan resume [CAUSE]           after a restart, a crash or a pause, start the roles again
 #   plan claim PLAN_DIR           make it this machine's active run
 #   plan release                  end the active run
 #   plan worktree REPO NAME       a session's worktree, at origin/main
@@ -14,6 +14,7 @@
 #   plan set STEP KEY=VALUE...    add or change a step in the ledger
 #   plan log REPO NN [FILE]       log an implementer's report (stdin, or FILE); print its file
 #   plan idle REASON [--tasks ID…] the coordinator ends its turn; the doorbell starts the next
+#   plan await ROLE [PLAN/]STEP…  the watch tells ROLE once these steps reach origin/main
 #   plan watch                    wait for something the supervisor must see
 #   plan ring MESSAGE             ring the coordinator's doorbell
 #   plan docs                     the supervisor's worktree of the plan's repository
@@ -462,7 +463,9 @@ status() {
 
 # The supervisor's worktree of the plan's repository (development.md,
 # section 10.3): created at origin/main, and moved to it whenever it is
-# clean. Its plan edits land with plan ruling. Prints its path.
+# clean. Its plan edits land with plan ruling. It refuses while its branch
+# has commits origin/main lacks, a ruling that did not land, rather than
+# drop them. Prints its path.
 docs_worktree() {
     local project=${name%%/*} dir=$run/docs
     git -C "$root/$project" fetch --quiet origin main 2>/dev/null || true
@@ -470,6 +473,8 @@ docs_worktree() {
     git -C "$root/$project" rev-parse --verify --quiet "$base" >/dev/null || base=main
     if [[ ! -d $dir ]]; then
         git -C "$root/$project" worktree add --quiet -B "$plan/docs" "$dir" "$base"
+    elif [[ -n $(git -C "$dir" rev-list "$base..HEAD") ]]; then
+        die "$dir has commits that $base lacks: land them there (land --docs), or drop them"
     elif [[ -z $(git -C "$dir" status --porcelain) ]]; then
         git -C "$dir" switch --quiet -C "$plan/docs" "$base"
     fi
@@ -658,6 +663,7 @@ set) set_step "$@" ;;
 landed) landed "$@" ;;
 log) log_report "$@" ;;
 idle) idle "$@" ;;
+await) await "$@" ;;
 status) status "$@" ;;
 watch) watch "$@" ;;
 ring) ring "$@" ;;

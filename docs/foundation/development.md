@@ -425,12 +425,13 @@ machine's run. Nothing here is versioned.
 | `heartbeat` | the coordinator | touched at every wake-up |
 | `alerts.md` | the supervisor | each alert to the user, one line with its UTC time; `plan status` prints its last ten lines first (section 10.5) |
 | `idle.md` | `plan idle`; removed by `plan ring` or the watch’s queue wake | since when, why, and optional third line `tasks: <ids>` naming the queue tasks the coordinator waits on (section 7.4) |
+| `awaits.tsv` | `plan await`; the watch | the landings a role waits for, one line per step: the role, the plan and the step; the watch removes a role's lines once all its steps are on `origin/main` (section 7.4) |
 | `.watch` | `plan watch`; cleared by `plan handover supervisor` and a supervisor started by `plan resume` | the escalations and events this supervisor session has seen |
 | `handed-over` | `plan handover` | the supervisor sessions that handed over, to which `plan watch` shows nothing more |
 | `blocked.md` | the coordinator | open escalations (section 10.2) |
 | `unblock.draft.md`, `unblock.md` | the supervisor; `plan ruling` | the answer, written once as a draft, then landed and moved into place (section 10.3) |
 | `docs/` | `plan docs` | the supervisor's worktree of the plan's repository, for its plan edits; removed by `plan release` |
-| `kit/` | `plan claim` | the run's kit: a worktree of skein at the commit the run was claimed at (section 3.6); removed by `plan release` |
+| `kit/` | `plan claim`; `plan resume` | the run's kit: a worktree of skein at the commit the run was claimed at (section 3.6), moved to skein's `origin/main` when a paused run resumes (section 7.6); removed by `plan release` |
 | `steer.md` | the supervisor | an instruction nobody asked for (section 10.3) |
 | `question.md`, `answer.md` | the supervisor; the designer | a design question, and its answer (section 10.4) |
 | `supervision.md` | the supervisor; `plan handover` | one entry per hourly check (section 14), each compaction and each handover (section 10.5), and each design question with its answer; appended only |
@@ -520,7 +521,7 @@ block of its own.
 | `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories (the code graph's index of each against its `origin/main` among them), and, given a plan, the plan (its base run, its design answers and the decisions on its "For the user" items, section 5.4), the user's decisions on the last retrospective's proposals, the items its repository's `STATUS.md` still leaves to done plans (a warning, section 3.3), the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
-| `plan resume [CAUSE]` | after a restart or a crash, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself (section 7.6) |
+| `plan resume [CAUSE]` | after a restart, a crash or a pause, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself; a paused run first moves `kit/` to skein's `origin/main`, adds its Process line to `supervision.md` and resumes with that kit (section 7.6) |
 | `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
 | `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief once its session has been idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
 | `plan unblocked` | logs blocked.md and unblock.md whole, removes the answered block headings and deletes unblock.md (section 10.3) |
@@ -534,7 +535,8 @@ block of its own.
 | `plan set STEP KEY=VALUE…` | adds or changes a ledger row |
 | `plan log REPOSITORY NN [FILE]` | logs an implementer's report, from FILE or its standard input, in `log.md` and `reports/`, and prints the report's file (section 8.6) |
 | `plan idle REASON [--tasks ID…]` | the coordinator, with nothing running, ends its turn; `idle.md` says why, and the next ring starts its next turn (section 7.4) |
-| `plan docs` | prints the supervisor's worktree of the plan's repository, made at `origin/main`, and moved there whenever it is clean |
+| `plan await ROLE [PLAN/]STEP…` | records in `awaits.tsv` the landings ROLE, `coordinator` or `supervisor`, waits for, by default of this run's plan; once all their Plan and Step trailers are on `origin/main`, the watch tells the supervisor, or starts the coordinator's turn (section 7.4) |
+| `plan docs` | prints the supervisor's worktree of the plan's repository, made at `origin/main`, and moved there whenever it is clean; refuses while its branch has commits `origin/main` lacks, a ruling that did not land, rather than drop them (section 10.3) |
 | `plan ruling [--text FILE] TITLE SOURCE` | lands a ruling, written once: the Decision of `unblock.draft.md`, or FILE's text, as the next ruling of `decisions.md`, with the plan edits in the supervisor's worktree; then, for an unblock, names the commit, moves the draft to `unblock.md` and rings (section 10.3) |
 | `plan ready STEP [NOTE]` | sets a step the supervisor has checked to `ready`, and rings (section 7.2) |
 | `plan status [PLAN_DIR]` | renders `status.md` of the plan's run, by default the last run's, released or not |

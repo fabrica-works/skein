@@ -190,6 +190,19 @@ codex_tokens() {
         awk -F'\t' '{ last[$1] = $2 " " $3 " " $4 } END { print ("record" in last ? last["record"] : "total" in last ? last["total"] : "0 0 0") }'
 }
 
+# The waits of a rollout that ran out sooner than development.md section
+# 7.4's 300 s: a wait_agent, a wait or a command's yield that asked for
+# less, and ended with nothing to show.
+short_waits() {
+    jsonl '.payload
+        | if .type == "function_call" or .type == "custom_tool_call" then
+            ["call", .call_id, ([(.arguments // .input // "") | scan("(?:timeout_ms|yield_time_ms)\\D{0,3}(\\d+)")[0] | tonumber] | first // empty)]
+        elif .type == "function_call_output" or .type == "custom_tool_call_output" then
+            ["out", .call_id, (.output | tostring | test("Wait timed out|^Script running with cell ID"))]
+        else empty end | @tsv' "$1" |
+        awk -F'\t' '$1 == "call" && $3 < 300000 { short[$2] = 1 } $1 == "out" && $3 == "true" && ($2 in short) { n++ } END { print n + 0 }'
+}
+
 # A response has one request even when its usage record is written twice.
 codex_requests() {
     jsonl 'if .type == "token_usage_record" and .payload.response_id != null then ["record", .payload.response_id]
@@ -761,17 +774,23 @@ pulse() {
 
     # Cost so far, and the machine.
     local coordinator_in=0 coordinator_out=0 sessions_in=0 sessions_out=0 claude_in=0 claude_out=0 kind thread a b
+    local short_coordinator=0 short_sessions=0 short file
     while IFS=$'\t' read -r kind thread; do
         [[ -n $thread ]] || continue
         read -r a b _ <<<"$(codex_tokens "$thread")"
+        short=0
+        for file in $(rollout_of "$thread"); do short=$((short + $(short_waits "$file"))); done
         if [[ $kind == coordinator ]]; then
             coordinator_in=$((coordinator_in + a)); coordinator_out=$((coordinator_out + b))
+            short_coordinator=$((short_coordinator + short))
         else
             sessions_in=$((sessions_in + a)); sessions_out=$((sessions_out + b))
+            short_sessions=$((short_sessions + short))
         fi
     done < <(run_threads)
     read -r _ _ _ claude_in claude_out _ <<<"$(claude_tokens)"
     echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out; Claude Code at list prices, since the design: $(claude_cost)."
+    echo "- Short waits so far, run out in less than 300 s: coordinator $short_coordinator, sessions $short_sessions."
     local beat mem disk
     beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$now_s")
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)

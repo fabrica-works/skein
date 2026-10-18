@@ -336,7 +336,8 @@ base=$(date -u -d '-3 hours' +%s)
         printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":%d,"output_tokens":%d}}}}\n' \
             "$(date -u -d "@$((base + offset))" +%FT%TZ)" "$((offset * 10))" "$offset"
     done
-    printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call_output","output":"{\\"message\\":\\"Wait timed out.\\",\\"timed_out\\":true}"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
+    printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call","name":"wait_agent","arguments":"{\\"timeout_ms\\":60000}","call_id":"w1"}}\n' "$(date -u -d "@$((base + 5340))" +%FT%TZ)"
+    printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call_output","call_id":"w1","output":"{\\"message\\":\\"Wait timed out.\\",\\"timed_out\\":true}"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"compacted","payload":{"message":""}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
 } >"$CODEX_HOME/sessions/2026/10/11/rollout-x-$coordinator.jsonl"
 {
@@ -344,6 +345,10 @@ base=$(date -u -d '-3 hours' +%s)
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":260000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":250000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":100000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
+    for yield in 1000 300000; do
+        printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call","name":"wait","arguments":"{\\"cell_id\\":\\"5\\",\\"yield_time_ms\\":%d}","call_id":"y%d"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)" "$yield" "$yield"
+        printf '{"timestamp":"%s","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"y%d","output":"Script running with cell ID 5\\nWall time 1.0 seconds"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)" "$yield"
+    done
 } >"$CODEX_HOME/sessions/2026/10/11/rollout-x-t-impl-1.jsonl"
 session=11111111-2222-3333-4444-555555555555
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p/$session/subagents"
@@ -421,6 +426,7 @@ expect pulse "$pulse" \
     "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
     "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
     "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 120/17" \
+    "- Short waits so far, run out in less than 300 s: coordinator 1, sessions 1." \
     "Claude Code at list prices, since the design: \$0: planner \$0, supervisor \$0, designer \$0" \
     "1 steers in all, 1 points refused" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \

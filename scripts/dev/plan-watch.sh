@@ -23,6 +23,54 @@ idle() {
     echo "idle since $at: end your turn now; the doorbell starts your next one"
 }
 
+# A wait for landings, this run's or another's (development.md, section
+# 7.4): the waiting role names their steps, [PLAN/]STEP, by default this
+# run's plan, and the watch tells it once all have reached origin/main.
+await() {
+    load
+    local role=${1:-} step
+    [[ $role == coordinator || $role == supervisor ]] && shift && (($#)) ||
+        die "usage: plan await coordinator|supervisor [PLAN/]STEP…"
+    for step; do
+        [[ $step == */* ]] || step=$plan/$step
+        printf '%s\t%s\t%s\n' "$role" "${step%%/*}" "${step#*/}" >>"$run/awaits.tsv"
+    done
+    echo "awaiting $*: the watch tells the $role once they reach origin/main"
+}
+
+# The awaited steps whose Plan and Step trailers are on origin/main: a role
+# whose steps have all landed is told, the supervisor by an event, the
+# coordinator by a turn unless the run is paused. Succeeds when it printed.
+watch_landings() {
+    local file=$run/awaits.tsv repo landed='' role steps message start result shown=1
+    [[ -s $file ]] || return 1
+    for repo in $(awk -F'\t' '{ sub(/-[^-]*$/, "", $3); print $3 }' "$file" | sort -u); do
+        [[ -e $root/$repo/.git ]] || continue
+        timeout 20 git -C "$root/$repo" fetch --quiet origin main 2>/dev/null || true
+        landed+=$(git -C "$root/$repo" log origin/main \
+            --format='%(trailers:key=Plan,valueonly,separator=)%x09%(trailers:key=Step,valueonly,separator=)' 2>/dev/null)$'\n'
+    done
+    for role in supervisor coordinator; do
+        steps=$(awk -F'\t' -v role="$role" 'NR == FNR { done[$0] = 1; next }
+            $1 == role { all = all " " $2 "/" $3; if (!(($2 "\t" $3) in done)) left = 1 }
+            END { if (all != "" && !left) print substr(all, 2) }' <(printf '%s' "$landed") "$file")
+        [[ -n $steps ]] || continue
+        if [[ $role == supervisor ]]; then
+            echo "landed: $steps"
+            shown=0
+        else
+            [[ ! -f $run/paused.md && ! -f $run/done.md ]] || continue
+            message="From the supervisor, by plan watch: the landings you wait on have reached origin/main: $steps"
+            start=''
+            [[ ! -f $run/idle.md ]] || start=$(coordinator_wake_prompt "$message")
+            result=$(coordinator_turn watch "$message" "$start") || continue
+            [[ $result != started ]] || rm -f "$run/idle.md"
+        fi
+        awk -F'\t' -v role="$role" '$1 != role' "$file" >"$file.new" && mv "$file.new" "$file"
+    done
+    return "$shown"
+}
+
 # Queue completions wake the coordinator without ending the supervisor's watch.
 wake_idle_tasks() {
     local tasks queue=$1 message
@@ -194,6 +242,7 @@ watch_once() {
         shown=1
     done < <(awk -F'\t' 'NR > 1 && $4 == "check" { print $1 "\t" $2 "\t" $3 }' "$run/ledger.tsv" 2>/dev/null)
     if watch_started "$seen"; then shown=1; fi
+    if watch_landings; then shown=1; fi
     ((!shown)) || return 0
     if watch_health "$seen"; then return 0; fi
     if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md && ! -f $run/idle.md ]]; then

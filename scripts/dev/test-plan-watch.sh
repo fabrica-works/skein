@@ -142,6 +142,13 @@ expect "unblock from the draft" "$(cat "$run/unblock.md")" "## Landed" "ruling 1
 printf 'The second.\n' >"$t/ruling.txt"
 expect "ruling from a file" "$("$plan" ruling --text "$t/ruling.txt" "Second" "ready check of alpha-02.1" 2>/dev/null)" "ruling 102 landed as alpha "
 rm "$run/unblock.md"
+# A ruling that did not land stays in the worktree, which plan refuses to
+# move, or to rule in, until it lands or goes.
+git -C "$docs" commit -q --allow-empty -m "Ruling 103"
+expect "an unlanded ruling" "$(capture status "$plan" ruling --text "$t/ruling.txt" "Third" "ready check of alpha-02.1")" \
+    "status=2" "has commits that main lacks"
+expect "kept" "$(git -C "$docs" log -1 --format=%s)" "Ruling 103"
+git -C "$docs" reset -q --hard main
 
 # The user's decisions on the last retrospective's proposals.
 older=$repo/docs/development/plans/older
@@ -225,3 +232,25 @@ printf '{"tasks":{"%s":{"status":{"Done":{}}}}}\n' "$task" >"$t/pueue.json"
 expect "completed tasks keep the supervisor watching" "$(silent_watch)" "status=124 bytes=0"
 expect "the watch rings when the tasks end" "starts=$(fake_starts); idle=$(if [[ -f $run/idle.md ]]; then echo present; else echo removed; fi)" "starts=1; idle=removed"
 expect "the queue wake names the supervisor" "$(cat "$PLAN_CODEX_FAKE/calls")" 'From the supervisor, by plan watch: the queue tasks you wait on have ended: 12'
+
+# Each role waits for landings, its run's or another's, and is told once
+# their Plan and Step trailers have all reached origin/main.
+git clone -q --bare "$repo" "$t/await.git"
+git -C "$repo" remote add origin "$t/await.git"
+git clone -q "$t/await.git" "$t/await"
+land_step() { git -C "$t/await" -c user.email=test@example.com -c user.name=test commit -q --allow-empty -m Landing -m "$1"; git -C "$t/await" push -q origin HEAD:main; }
+printf 'turn-1\tcompleted\n' >"$PLAN_CODEX_FAKE/turns/$coordinator"
+: >"$PLAN_CODEX_FAKE/calls"
+"$plan" idle "other's 03.1" >/dev/null
+"$plan" await coordinator alpha-01.5 other/alpha-03.1 >/dev/null
+"$plan" await supervisor other/alpha-03.1 >/dev/null
+land_step $'Plan: demo\nStep: alpha-01.5'
+land_step $'Plan: demo\nStep: alpha-03.1'
+expect "a landing still awaited tells no one" "$(silent_watch); starts=$(fake_starts)" "status=124 bytes=0; starts=0"
+land_step $'Plan: other\nStep: alpha-03.1'
+expect "the landings tell the supervisor" "$(watch)" "landed: other/alpha-03.1"
+expect "and ring the coordinator" "starts=$(fake_starts); idle=$(if [[ -f $run/idle.md ]]; then echo present; else echo removed; fi); awaits=$(wc -c <"$run/awaits.tsv")" \
+    "starts=1; idle=removed; awaits=0"
+expect "the landing wake names the steps" "$(cat "$PLAN_CODEX_FAKE/calls")" 'the landings you wait on have reached origin/main: demo/alpha-01.5 other/alpha-03.1'
+git -C "$repo" remote remove origin
+rm -rf "$t/await" "$run/awaits.tsv"
