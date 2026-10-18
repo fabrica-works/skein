@@ -212,6 +212,46 @@ codex_daemon_start() {
         bash -lc 'cd "$1" && codex app-server daemon start' _ "$root" >/dev/null 2>&1
 }
 
+# The queue's user unit is repairable without restarting a running daemon.
+check_units() {
+    local unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/pueued.service
+    if ((bus)) && { ! grep -qsx 'StartLimitIntervalSec=0' "$unit" ||
+        ! grep -qsx 'Restart=always' "$unit" || ! grep -qsx 'RestartSec=5' "$unit"; }; then
+        warn "pueued's unit needs StartLimitIntervalSec=0, Restart=always and RestartSec=5 (--fix writes it)"
+        if ((fix)); then
+            mkdir -p "$(dirname "$unit")"
+            printf '%s\n' '[Unit]' 'Description=pueue daemon' 'StartLimitIntervalSec=0' '' '[Service]' \
+                "ExecStart=$(command -v pueued) --verbose" 'Restart=always' 'RestartSec=5' '' \
+                '[Install]' 'WantedBy=default.target' >"$unit"
+            systemctl --user daemon-reload
+        fi
+    fi
+    if ((!bus)); then
+        if pueue status >/dev/null 2>&1; then
+            ok "pueued is running (no systemd user bus: plan resume starts it after a restart)"
+        elif ((fix)); then
+            pueued --daemonize >/dev/null 2>&1 && sleep 1
+            pueue status >/dev/null 2>&1 && ok "pueued started" || fail "pueued does not start"
+        else
+            fail "pueued is not running (--fix starts it)"
+        fi
+    elif systemctl --user is-active --quiet pueued; then
+        ok "pueued is running as a user service"
+        if [[ $(systemctl --user show pueued -p UnitFileState --value) != enabled ]]; then
+            if ((fix)); then systemctl --user enable --quiet pueued
+            else warn "pueued's unit is not enabled: it will not start after a reboot (--fix enables it)"; fi
+        fi
+    elif ((fix)); then
+        systemctl --user enable --quiet pueued
+        systemctl --user restart pueued && sleep 1
+        systemctl --user is-active --quiet pueued && ok "pueued started" || fail "pueued does not start"
+    else
+        fail "pueued is not running as a user service (--fix starts it)"
+    fi
+    ((!bus)) || [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) == yes ]] ||
+        warn "no lingering: user services stop when $USER logs out (loginctl enable-linger)"
+}
+
 # The tools, the workspace's files, the queue and room to work.
 check_machine() {
     # Tools.
@@ -277,37 +317,10 @@ check_machine() {
     # The queue: the daemon as a user service, and its two lanes. Without a
     # systemd user bus (some containers), pueued runs on its own, and `plan
     # resume` starts it again after a restart.
-    local unit=$HOME/.config/systemd/user/pueued.service
-    if ((!bus)); then
-        if pueue status >/dev/null 2>&1; then
-            ok "pueued is running (no systemd user bus: plan resume starts it after a restart)"
-        elif ((fix)); then
-            pueued --daemonize >/dev/null 2>&1 && sleep 1
-            pueue status >/dev/null 2>&1 && ok "pueued started" || fail "pueued does not start"
-        else
-            fail "pueued is not running (--fix starts it)"
-        fi
-    elif systemctl --user is-active --quiet pueued; then
-        ok "pueued is running as a user service"
-        [[ $(systemctl --user show pueued -p UnitFileState --value) == enabled ]] ||
-            warn "pueued's unit is not enabled: it will not start after a reboot (stop it when the queue is idle, then --fix)"
-    elif ((fix)); then
-        if ! systemctl --user cat pueued >/dev/null 2>&1; then
-            mkdir -p "$(dirname "$unit")"
-            printf '%s\n' '[Unit]' 'Description=pueue daemon' '' '[Service]' \
-                "ExecStart=$(command -v pueued) --verbose" 'Restart=on-failure' '' \
-                '[Install]' 'WantedBy=default.target' >"$unit"
-            systemctl --user daemon-reload
-            systemctl --user enable --quiet pueued
-        fi
-        systemctl --user restart pueued && sleep 1
-        systemctl --user is-active --quiet pueued && ok "pueued started" ||
-            fail "pueued does not start"
-    else
-        fail "pueued is not running as a user service (--fix starts it)"
+    check_units
+    if apt-config dump 2>/dev/null | grep -E '^Unattended-Upgrade::Automatic-Reboot "true";' >/dev/null; then
+        warn 'the machine may reboot unattended (Unattended-Upgrade::Automatic-Reboot)'
     fi
-    ((!bus)) || [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) == yes ]] ||
-        warn "no lingering: user services stop when $USER logs out (loginctl enable-linger)"
     local group want have status slots slots_source line source
     read -r slots slots_source < <(machine_setting HEAVY_BUILD_SLOTS 2)
     while IFS= read -r line; do warn "machine.env: ignored line $line"; done < <(

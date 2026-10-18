@@ -496,9 +496,24 @@ expect alerts "$("$plan" status)" "## Alerts" "the coordinator is quiet"
 printf 'Recorded %s.\n\nDone.\n' "$(date -u -d "@$(($(sed -nE 's/^## Claimed, (.*)$/\1/p' "$run/log.md" | xargs -I{} date -u -d {} +%s) + 7200))" +%FT%TZ)" >"$run/done.md"
 expect "the end recorded" "$("$plan" metrics)" $'wall_h\t2.0\th'
 
-# After the run's release, metrics and retro find it as the last run.
-"$plan" release >/dev/null
+# User services stay inside this test's world.
+mkdir -p "$t/stub" "$t/config/systemd/user"
+cat >"$t/stub/systemctl" <<EOF
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >>"$t/systemctl.log"
+case \$2 in daemon-reload | enable | disable) exit 0 ;; *) exit 1 ;; esac
+EOF
+chmod +x "$t/stub/systemctl"
+boot=$t/config/systemd/user/plan-resume.service
+cp "$DEV_TMP/active-plan" "$t/active-plan"
+printf 'Environment=DEV_ROOT=%s DEV_TMP=%s\n' "$DEV_ROOT" "$DEV_TMP" >"$boot"
+XDG_CONFIG_HOME=$t/config PATH=$t/stub:$PATH "$plan" release >/dev/null
+expect "release removes the boot unit" "$(if [[ ! -e $boot ]]; then cat "$t/systemctl.log"; fi)" "--user disable plan-resume.service"
 [[ ! -e $run/kit ]] || { echo "FAIL release: $run/kit is left"; failed=1; }
+cp "$t/active-plan" "$DEV_TMP/active-plan"
+printf 'Environment=DEV_ROOT=%s DEV_TMP=%s/another\n' "$DEV_ROOT" "$DEV_TMP" >"$boot"
+expect "release leaves another run's boot unit" "$(XDG_CONFIG_HOME=$t/config PATH=$t/stub:$PATH "$plan" release 2>&1; cat "$boot")" "names another DEV_TMP; left in place" "DEV_TMP=$DEV_TMP/another"
+
 # The successor's 42 requests over an hour, after a copy of the first's
 # compaction and of its message m2, which count once: the 41st is past its
 # bootstrap, and the 42nd, after its own compaction, in its re-read.
@@ -524,9 +539,10 @@ if ((live)); then
     export PLAN_COORDINATOR_PROMPT="This is a test of plan start. Run the shell command \`sleep 40\`. Then reply with one line: every message you received after this one, quoted word for word, or none. End your turn."
     export PLAN_COORDINATOR_RESUME="This is a test of plan resume. Reply RESUMED and end your turn."
     export PLAN_RETRO_PROMPT="This is a test of plan retro. Reply OK and end your turn."
-    rm -f "$run/thread" "$run/claude.tsv"
-    started=$("$plan" start "$dir" 2>&1 || true)
+    rm -f "$run/thread" "$run/claude.tsv" "$run/done.md"
+    started=$(XDG_CONFIG_HOME=$t/config PATH=$t/stub:$PATH "$plan" start "$dir" 2>&1 || true)
     expect start "$started" "supervisor: Claude Code session" "coordinator: Codex thread" "rang the coordinator: Doorbell test"
+    expect "start enables its boot unit" "$(cat "$boot" "$t/systemctl.log")" "ExecStart=$kit/plan resume" "--user enable plan-resume.service"
     thread=$(cat "$run/thread" || true)
     supervisor=$(awk -F'\t' '$1 == "supervisor" { print $2 }' "$run/claude.tsv" || true)
     expect "attach running supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor || true)" "claude attach ${supervisor:0:8}"

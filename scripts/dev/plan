@@ -186,6 +186,7 @@ release() {
             echo "plan: $run/kit is left: git -C $root/skein worktree remove --force $run/kit" >&2
     fi
     printf '## Released, %s\n\n' "$(now)" >>"$run/log.md"
+    boot_unit disable
     rm -f "$active"
     echo "released $name"
 }

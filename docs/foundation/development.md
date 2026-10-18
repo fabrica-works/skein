@@ -1308,7 +1308,8 @@ commits behind smith.
 
    `--fix` links the tools, starts pueued (as a user service where
    systemd has a user bus) and Codex's daemon, and creates and starts the
-   lanes. It fixes no gate: a gate that fails on `main` goes to the user.
+   lanes. It repairs pueued's unit without restarting a running daemon
+   and warns if unattended upgrades may reboot the machine. It fixes no gate: a gate that fails on `main` goes to the user.
 
    It does not yet check whether the machine may reboot by itself (apt's
    `Unattended-Upgrade::Automatic-Reboot`): a reboot stops the run until
@@ -1612,7 +1613,13 @@ dependency lands.
      mid-increment: its implementer inspects them, then finishes or
      discards them. The coordinator never discards them itself.
 
-  After a restart of the machine, the user runs `plan resume reboot`;
+  `plan start` enables `plan-resume.service` in the user manager, after
+  pueued, so a reboot runs `plan resume` automatically. `plan release`
+  disables and removes it only if it names this run's `DEV_TMP`; a unit
+  for another run stays, with a warning. Both units live under
+  `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/`.
+
+  After a restart of the machine, the user may also run `plan resume reboot`;
   after a crash, the supervisor runs `plan resume crash` (section 10.5).
   It starts
   pueued and Codex's daemon if they are down, resumes the supervisor's
@@ -2123,7 +2130,9 @@ the run heading away from its plan's "Done when".
 
 ### 11.1 The queue
 
-- **pueued runs as a systemd user service,** never from an agent's command:
+- **pueued runs as a systemd user service,** with `StartLimitIntervalSec=0`,
+  `Restart=always` and `RestartSec=5`, so it keeps trying after failures.
+  It is never started from an agent's command:
   a daemon started by an agent dies with it. Lingering
   (`loginctl enable-linger`) keeps it running when the user logs out.
   Where systemd has no user bus (some containers), `plan check --fix` and

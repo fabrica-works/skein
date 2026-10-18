@@ -172,6 +172,28 @@ retro_prompt() {
     echo "${PLAN_RETRO_PROMPT:-$text}"
 }
 
+# A boot unit belongs to the run whose DEV_TMP it records.
+boot_unit() {
+    local action=$1 unit=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/plan-resume.service
+    if [[ $action == enable ]]; then
+        mkdir -p "$(dirname "$unit")"
+        printf '%s\n' '[Unit]' 'Description=Resume the development run' 'After=pueued.service' '' \
+            '[Service]' 'Type=oneshot' "Environment=DEV_ROOT=$root DEV_TMP=$tmp" \
+            "ExecStart=$kit/plan resume" '' '[Install]' 'WantedBy=default.target' >"$unit"
+        systemctl --user daemon-reload
+        systemctl --user enable plan-resume.service
+    elif [[ -f $unit ]]; then
+        if awk -v want="DEV_TMP=$tmp" '/^Environment=/ { for (i = 1; i <= NF; i++) if ($i == want) found = 1 }
+            END { exit !found }' "$unit"; then
+            systemctl --user disable plan-resume.service
+            rm "$unit"
+            systemctl --user daemon-reload
+        else
+            echo "plan: warning: $unit names another DEV_TMP; left in place" >&2
+        fi
+    fi
+}
+
 start() {
     local dir=${1:?plan directory}
     if [[ ${PLAN_START_UNCHECKED:-} != 1 ]]; then
@@ -182,6 +204,7 @@ start() {
     [[ ! -s $run/thread ]] || die "the run has a coordinator already: plan resume"
     claude_role supervisor "$(supervisor_prompt)"
     start_coordinator
+    boot_unit enable
     sleep "${PLAN_RING_DELAY:-5}"
     ring "Doorbell test: log it as development.md, section 7.4, says, and go on." ||
         echo "plan: the doorbell did not ring; steers wait for the coordinator's next wake-up" >&2
