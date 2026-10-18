@@ -13,7 +13,7 @@ codex_home=${CODEX_HOME:-$HOME/.codex}
 claude_home=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 
 # A session hands over after its peak passes this many tokens (section 7.3).
-context_limit() { echo "${PLAN_CONTEXT_LIMIT:-150000}"; }
+context_limit() { echo "${PLAN_CONTEXT_LIMIT:-100000}"; }
 
 # Name every applicable rung of development.md's disk ladder (section 11.4).
 disk_rule() {

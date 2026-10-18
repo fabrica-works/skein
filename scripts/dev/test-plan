@@ -415,7 +415,7 @@ expect pulse "$pulse" \
     "Claude Code at list prices, since the design: \$0: planner \$0, supervisor \$0, designer \$0" \
     "1 steers in all, 1 points refused" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
-    "- Contexts: t-impl-1 100K (past 150K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
+    "- Contexts: t-impl-1 100K (past 100K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
 expect "a document is judged by no length" "$(if [[ $pulse != *docs/long.md* ]]; then echo absent; fi)" absent
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 expect "pulse again" "$(plan_numbers pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
@@ -552,7 +552,7 @@ cp "$t/ledger.save" "$run/ledger.tsv"
 cp "$t/pulse.save" "$run/.pulse"
 rm -rf "$DEV_ROOT/beta" "$dir/beta"
 
-expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 150K: hand over"
+expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 100K: hand over"
 # The rollout fixture's peak is 260K: reaching the configured limit holds.
 context_handover() { local out; out=$(PLAN_CONTEXT_LIMIT=$1 "$plan" contexts); if [[ $out == *"hand over"* ]]; then echo handover; else echo clear; fi; }
 fixture_peak=260000
