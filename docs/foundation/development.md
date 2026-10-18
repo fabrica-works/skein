@@ -489,9 +489,12 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 | `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan, the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
-| `plan resume [CAUSE]` | after a restart or a crash, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; a known cause goes into the coordinator's prompt for its log (section 7.6) |
+| `plan resume [CAUSE]` | after a restart or a crash, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself (section 7.6) |
 | `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
 | `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief once its session has been compacted `PLAN_COMPACTIONS` times (2) or idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
+| `plan unblocked` | logs blocked.md and unblock.md whole, removes the answered block headings and deletes unblock.md (section 10.3) |
+| `plan steered` | logs and deletes steer.md (section 10.3) |
+| `plan handover REPOSITORY NN CONTEXT` | appends the session handover line to log.md (section 7.3) |
 | `plan handover supervisor` | from the supervisor's session, starts its successor, and records it (section 10.5) |
 | `plan retro [PLAN_DIR]` | starts the run's retrospective, by default the last run's, released or not (section 15) |
 | `plan claim PLAN_DIR`, `plan release` | start and end the machine's run, adding and removing its `kit/`; `plan start` claims |
@@ -1493,8 +1496,8 @@ and the question in one line, or "none". After each:
    them to 156K to 186K:
    - send it, with `send_message`: "Hand over: write your checkpoint as
      section 8.6 says, then end your turn with your report.";
-   - when it has reported, append `Handover, <UTC time>: <repository>
-     <NN> at <its context>` to `log.md`, and start the session's next
+   - when it has reported, run `plan handover REPOSITORY NN CONTEXT` to append its handover
+     line to `log.md`, and start the session's next
      increment in a fresh thread, as for a restarted session (section
      7.2), with its checkpoint.
 
@@ -1619,15 +1622,12 @@ dependency lands.
   each has reported, write `paused.md`: each session's worktree, branch,
   head and last landed step.
 - **Resume after a restart.**
-  1. Append to `log.md` a heading "Coordinator resumed, <UTC time>:
-     <cause>", the cause one of: reboot, crash, the user's request,
-     unknown. It is a reboot when the machine booted after the heartbeat
-     was last touched (`uptime -s`, `stat -c %y <run>/heartbeat`). The
-     resume prompt is `plan resume [CAUSE]`'s, whoever ran it: when the
-     caller knows the cause (reboot, crash, the user's request), it goes
-     into the prompt for this heading. Without a cause, it is the user's
-     request only after a pause the user asked for (`paused.md`). In protocol, a reboot was recorded as "the user's
-     request". Read `context.md`, the ledger and the end of `log.md`.
+  1. `plan resume [CAUSE]` appends the heading "Coordinator resumed,
+     <UTC time>: <cause>" to `log.md` itself. It takes the given cause;
+     else `reboot` when `uptime -s` is after the heartbeat's mtime;
+     else `the user's request` when `paused.md` exists; else `unknown`.
+     A missing heartbeat is no error. Read `context.md`, the ledger and
+     the end of `log.md`.
      Append `paused.md`, if there is one, to `log.md`, and delete it.
   2. Write your thread's id to `thread` again: a restarted coordinator may
      have a new one.
@@ -1857,6 +1857,9 @@ lines each.>
 1. …
 ```
 
+The headings answered are each written whole, as `blocked.md` has them
+without `## `, separated by `; `.
+
 - **The supervisor writes an unblock once,** as `unblock.draft.md`, and
   runs `plan ruling "<title>" "<kind>, <session>'s block of <time>"`. It
   appends the Decision to the plan's `decisions.md` as the next ruling,
@@ -1872,10 +1875,12 @@ lines each.>
   `Amends:`. In reliability, 10 of the 11 reversed answers rested on a
   premise nobody checked, and 23 of 156 unblocks quoted a command.
 - **When the coordinator finds `unblock.md`:**
-  1. it appends both files to `log.md`, under "Blocked and unblocked,
-     <time>";
-  2. it deletes `unblock.md`, and removes from `blocked.md` the headings
-     the answer names, deleting the file when none is left;
+  1. it runs `plan unblocked`, which logs both files whole under
+     "Blocked and unblocked, <time>", removes the block headings named
+     by each `Answer to` line and deletes `unblock.md`; it prints an
+     answer line that names no entry and removes none for that line;
+  2. `blocked.md` remains with only the unanswered entries, or is deleted
+     when none remains;
   3. it gives each session the answer concerns its Decision and
      Instructions, word for word (`send_message`; or `followup_task` if
      the session has ended its turn; or a fresh thread, from its
@@ -1908,7 +1913,8 @@ lines each.>
   ```
 
 - **When the coordinator finds `steer.md`:**
-  1. it appends it to `log.md`, under "Steered, <time>", and deletes it;
+  1. it runs `plan steered`, which logs it under "Steered, <time>" and
+     deletes it;
   2. it acts on each point;
   3. it logs one line per point: "Steer <its time>, point 1: done, <what
      it did>", or "…: cannot, <why>", which also goes into `blocked.md`

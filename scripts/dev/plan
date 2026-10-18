@@ -21,6 +21,9 @@
 #   plan ready STEP [NOTE]        a checked step may start: set it ready, ring
 #   plan join ROLE                record this Claude Code session as the run's ROLE
 #   plan wake ROLE MESSAGE        wake a Claude Code role: resumed, or fresh past its limits
+#   plan unblocked                file the answered blocks and remove them
+#   plan steered                  file the steer and remove it
+#   plan handover REPO NN CONTEXT  log an implementer handover
 #   plan handover supervisor      start the supervisor's successor, from this session
 #   plan pulse                    the run's numbers since the last check
 #   plan downstream               type-check each downstream repository against the plan's upstream mains
@@ -348,6 +351,42 @@ log_entry() {
     flock -u 7
 }
 
+# File the answer whole, then remove only the block headings it names.
+unblocked() {
+    load
+    [[ -f $run/unblock.md ]] || die "no unblock.md"
+    local body
+    body=$(mktemp "$run/.unblocked.XXXXXX")
+    { [[ ! -f $run/blocked.md ]] || cat "$run/blocked.md"; cat "$run/unblock.md"; } >"$body"
+    log_entry "Blocked and unblocked, $(now)" "$body"
+    rm "$body"
+    if [[ -f $run/blocked.md ]]; then
+        awk '
+            FILENAME == ARGV[1] { if (/^Answer to /) answer[++n] = $0; next }
+            /^## / {
+                drop = 0
+                for (i = 1; i <= n; i++) if (index(answer[i], substr($0, 4))) {
+                    drop = 1; matched[i] = 1
+                }
+            }
+            !drop { print }
+            END { for (i = 1; i <= n; i++) if (!matched[i]) print answer[i] > "/dev/stderr" }
+        ' "$run/unblock.md" "$run/blocked.md" >"$run/blocked.new"
+        mv "$run/blocked.new" "$run/blocked.md"
+        grep -q '^## ' "$run/blocked.md" || rm "$run/blocked.md"
+    else
+        grep '^Answer to ' "$run/unblock.md" || true
+    fi
+    rm "$run/unblock.md"
+}
+
+steered() {
+    load
+    [[ -f $run/steer.md ]] || die "no steer.md"
+    log_entry "Steered, $(now)" "$run/steer.md"
+    rm "$run/steer.md"
+}
+
 status() {
     load
     ledger_upgrade
@@ -615,6 +654,8 @@ ruling) ruling "$@" ;;
 ready) ready "$@" ;;
 join) join "$@" ;;
 wake) wake "$@" ;;
+unblocked) unblocked ;;
+steered) steered ;;
 handover) handover "$@" ;;
 pulse) pulse ;;
 downstream) downstream ;;

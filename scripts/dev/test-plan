@@ -532,11 +532,6 @@ done <<'DISK'
 14|kache gc at this check; at most six sessions run; starts held; the line stops
 DISK
 
-expect "context of a session" "$("$plan" context "$session")" 'context: 1K (compactions: 2): hand over now'
-status=0
-out=$(CLAUDE_CODE_SESSION_ID='' "$plan" context 2>&1) || status=$?
-expect "context needs a session" "$status $out" '2 plan:' 'name a session'
-
 # Nothing in the workspace pins alpha.
 expect downstream "$("$plan" downstream)" "downstream: no repository pins alpha"
 
@@ -560,6 +555,8 @@ downstream=$(DEV_REPOS="alpha beta" PUEUE_CONFIG_PATH=$t/pueue-none/pueue.yml "$
 expect "downstream leaves no worktree" "$(printf '%s\n' "$downstream"; if [[ ! -e $run/downstream ]]; then printf 'worktrees=%s downstream=removed\n' "$(git -C "$beta" worktree list | wc -l)"; fi)" "beta against alpha main: fails" "worktrees=1 downstream=removed"
 # shellcheck source=test-plan-watch.sh
 source "$kit/test-plan-watch.sh"
+# shellcheck source=test-plan-coordinator.sh
+source "$kit/test-plan-coordinator.sh"
 
 # A clean primary checkout behind its origin is advanced by --fix.
 head=$(git -C "$repo" rev-parse HEAD)

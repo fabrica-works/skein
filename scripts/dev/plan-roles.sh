@@ -150,7 +150,6 @@ coordinator_prompt() {
 
 coordinator_resume_prompt() {
     local text="Resume the run of $plan_dir as skein's docs/foundation/development.md, section 7.6, says."
-    [[ -z ${1:-} ]] || text+=" The cause, for your log.md heading: $1."
     echo "${PLAN_COORDINATOR_RESUME:-$text}"
 }
 
@@ -274,16 +273,26 @@ attach() {
 }
 
 # After a restart, or a role's crash: start what is not running again. The
-# cause, when the caller knows it (reboot, crash, the user's request), goes
-# to the coordinator for its log.
+# cause is recorded by the kit before it reaches the coordinator.
 resume() {
     load
-    local cause=${1:-}
+    local cause=${1:-} boot heartbeat
     [[ ! -f $run/done.md ]] || die "the run is done"
     [[ ! -d $run/kit ]] || echo "kit: skein $(git -C "$run/kit" rev-parse --short HEAD), the claim's"
-    pueue status >/dev/null 2>&1 ||
-        { systemctl --user start pueued 2>/dev/null || pueued --daemonize >/dev/null 2>&1 || true; }
-    codex app-server daemon version >/dev/null 2>&1 || codex_daemon_start || true
+    if [[ -z $cause ]]; then
+        boot=$(date -d "$(uptime -s)" +%s)
+        heartbeat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$boot")
+        if ((boot > heartbeat)); then cause=reboot
+        elif [[ -f $run/paused.md ]]; then cause="the user's request"
+        else cause=unknown
+        fi
+    fi
+    log_entry "Coordinator resumed, $(now): $cause"
+    if [[ -z ${PLAN_CODEX_FAKE:-} ]]; then
+        pueue status >/dev/null 2>&1 ||
+            { systemctl --user start pueued 2>/dev/null || pueued --daemonize >/dev/null 2>&1 || true; }
+        codex app-server daemon version >/dev/null 2>&1 || codex_daemon_start || true
+    fi
 
     local session state thread
     session=$(role_session supervisor)
@@ -304,31 +313,10 @@ resume() {
         start_coordinator
         return
     fi
-    # shellcheck source=codex.sh
-    source "$kit/codex.sh"
-    codex_open || die "the Codex daemon does not answer: codex app-server daemon start"
-    # After a restart the daemon no longer holds the thread, and thread/read
-    # answers an error: load it, rather than read its last turn as "none".
-    local read
-    if read=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" 2>/dev/null); then
-        state=$(jq -r '[.thread.turns[]? | .status] | last // "none"' <<<"$read")
-    else
-        state="not loaded"
+    state=$(coordinator_turn resume "" "$(coordinator_resume_prompt)") || return
+    if [[ $state == working ]]; then echo "coordinator: working"
+    else echo "coordinator: resumed, Codex thread $thread"
     fi
-    if [[ $state == "not loaded" ]]; then
-        codex_call thread/resume "$(jq -cn --arg t "$thread" --arg sandbox "$codex_sandbox" \
-            '{threadId: $t, sandbox: $sandbox, approvalPolicy: "never"}')" >/dev/null ||
-            die "the Codex daemon cannot load the coordinator's thread $thread"
-    fi
-    if [[ $state == inProgress ]]; then
-        echo "coordinator: working"
-    else
-        codex_call turn/start "$(jq -cn --arg t "$thread" --arg p "$(coordinator_resume_prompt "$cause")" \
-            '{threadId: $t, input: [{type: "text", text: $p}]}')" >/dev/null ||
-            die "the Codex daemon did not start the coordinator's turn"
-        echo "coordinator: resumed, Codex thread $thread"
-    fi
-    codex_close
 }
 
 join() {
@@ -373,6 +361,13 @@ wake() {
 # its handover is in supervision.md.
 handover() {
     load
+    if (($# == 3)); then
+        exec 7>"$run/log.md.lock"
+        flock 7
+        printf 'Handover, %s: %s %s at %s\n' "$(now)" "$1" "$2" "$3" >>"$run/log.md"
+        flock -u 7
+        return
+    fi
     local role=${1:?role: supervisor} old
     [[ $role == supervisor ]] || die "only the supervisor hands over; plan wake starts a fresh designer"
     old=$(role_session supervisor)

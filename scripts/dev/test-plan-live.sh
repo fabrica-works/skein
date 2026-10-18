@@ -33,6 +33,7 @@ done
 file=$(find "$HOME/.codex/sessions" "$HOME/.codex/archived_sessions" -name "rollout-*-$thread.jsonl" | head -n1 || true)
 expect "the coordinator heard the doorbell" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "Doorbell test"
 expect resume "$("$plan" resume || true)" "coordinator: resumed"
+expect "resume records its cause" "$(grep '^## Coordinator resumed, ' "$run/log.md" | tail -n1)" ": unknown"
 for _ in $(seq 60); do
     [[ $(PLAN_NO_ROLES='' "$plan" status || true) == *"- coordinator: $thread, idle"* ]] && break
     sleep 2
