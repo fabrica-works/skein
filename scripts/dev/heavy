@@ -33,7 +33,7 @@ if [[ -f $kit/kit.sh ]]; then
     source "$kit/kit.sh"
     run_kit heavy "$@"
 fi
-build_jobs=${HEAVY_BUILD_JOBS:-4}
+read -r build_jobs _ < <(machine_setting HEAVY_BUILD_JOBS 4)
 
 usage() {
     echo "usage: heavy [--gate] [--tail N] [--] command..." >&2

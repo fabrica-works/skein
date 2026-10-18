@@ -405,6 +405,12 @@ sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.m
 git -C "$repo" commit -q -am "Decide the older retrospective's proposals"
 expect "decisions made" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "ok    the last retrospective's proposals are decided (alpha's older)"
 
+# Per-machine minimums survive a resume; an environment value takes priority.
+printf '%s\n' 'PLAN_MIN_MEM_GB=1' 'BOGUS=3' >"$DEV_TMP/machine.env"
+expect "the machine file sets a minimum" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "want 1 (machine.env)" "warn  machine.env: ignored line 2: BOGUS=3"
+expect "the environment wins" "$(PLAN_MIN_MEM_GB=2 PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "want 2 (environment)"
+rm "$DEV_TMP/machine.env"
+
 # A clean primary checkout behind its origin is advanced by --fix.
 head=$(git -C "$repo" rev-parse HEAD)
 git clone -q --bare "$repo" "$t/ff.git"

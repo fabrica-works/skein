@@ -279,10 +279,13 @@ check_machine() {
     fi
     ((!bus)) || [[ $(loginctl show-user "$USER" -p Linger --value 2>/dev/null) == yes ]] ||
         warn "no lingering: user services stop when $USER logs out (loginctl enable-linger)"
-    local group want have status
+    local group want have status slots slots_source line source
+    read -r slots slots_source < <(machine_setting HEAVY_BUILD_SLOTS 2)
+    while IFS= read -r line; do warn "machine.env: ignored line $line"; done < <(
+        awk 'NF && $0 !~ /^(PLAN_MIN_MEM_GB|PLAN_MIN_DISK_GB|HEAVY_BUILD_SLOTS|HEAVY_BUILD_JOBS)=[0-9]+$/ { print NR ": " $0 }' "$tmp/machine.env" 2>/dev/null || true)
     for group in gate build; do
-        want=1
-        [[ $group == build ]] && want=${HEAVY_BUILD_SLOTS:-2}
+        want=1 source=default
+        [[ $group == build ]] && { want=$slots; source=$slots_source; }
         have=$(pueue group --json 2>/dev/null | jq -r --arg g "$group" '.[$g].parallel_tasks // empty')
         if [[ -z $have ]] && ((fix)); then
             pueue group add "$group" >/dev/null
@@ -296,8 +299,8 @@ check_machine() {
         if [[ $have != "$want" ]] && ((fix)); then
             pueue parallel "$want" --group "$group" >/dev/null && have=$want
         fi
-        [[ $have == "$want" ]] && ok "queue lane $group runs $want at once" ||
-            warn "queue lane $group runs $have at once, not $want (--fix sets it)"
+        [[ $have == "$want" ]] && ok "queue lane $group runs $want at once ($source)" ||
+            warn "queue lane $group runs $have at once, not $want ($source; --fix sets it)"
         status=$(pueue group --json | jq -r --arg g "$group" '.[$g].status')
         if [[ $status != Running ]] && ((fix)); then
             pueue start --group "$group" >/dev/null && status=Running
@@ -307,13 +310,15 @@ check_machine() {
     done
 
     # Room to work.
-    local disk mem
+    local disk mem disk_min disk_source mem_min mem_source
+    read -r disk_min disk_source < <(machine_setting PLAN_MIN_DISK_GB 40)
+    read -r mem_min mem_source < <(machine_setting PLAN_MIN_MEM_GB 6)
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
     mem=$(awk '/MemAvailable/ { print int($2 / 1048576) }' /proc/meminfo)
-    ((disk >= ${PLAN_MIN_DISK_GB:-40})) && ok "disk: ${disk} GB free" ||
-        fail "disk: ${disk} GB free, want ${PLAN_MIN_DISK_GB:-40}"
-    ((mem >= ${PLAN_MIN_MEM_GB:-6})) && ok "memory: ${mem} GB available" ||
-        fail "memory: ${mem} GB available, want ${PLAN_MIN_MEM_GB:-6}"
+    ((disk >= disk_min)) && ok "disk: ${disk} GB free, want $disk_min ($disk_source)" ||
+        fail "disk: ${disk} GB free, want $disk_min ($disk_source)"
+    ((mem >= mem_min)) && ok "memory: ${mem} GB available, want $mem_min ($mem_source)" ||
+        fail "memory: ${mem} GB available, want $mem_min ($mem_source)"
 
     # The roles' programs: Claude Code trusts the workspace, where the
     # supervisor starts, and Codex's daemon answers.

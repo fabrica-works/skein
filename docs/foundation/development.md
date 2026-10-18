@@ -450,6 +450,13 @@ agent's `PATH`, and the files into place. The tools read
 `DEV_REPOS`: the repositories `plan check` checks, by default the plan's
 and those upstream of it, or all of them without a plan.
 
+The machine keeps its settings in `$DEV_TMP/machine.env`: lines
+`KEY=integer`, for `PLAN_MIN_MEM_GB`, `PLAN_MIN_DISK_GB`,
+`HEAVY_BUILD_SLOTS` and `HEAVY_BUILD_JOBS` only. The environment wins
+over the file, and the file over the defaults (6 GB, 40 GB, 2 tasks and
+4 cargo jobs). The file is parsed, never sourced; `plan check` warns of
+invalid lines and prints each minimum and lane width with its source.
+
 `plan` holds the command dispatch, settings, ledger and worktree commands.
 It sources `plan-check.sh` for the checks, `plan-watch.sh` for the watch,
 `plan-roles.sh` for the roles and their prompts, and `numbers.sh` for the
@@ -2193,10 +2200,12 @@ be told from a loaded machine.
   GB.
 - **The coordinator checks** available memory (`free -g`) and disk (`df -h
   ~/src`) before each start, and at every wake-up (section 7.4).
-- **Below 6 GB of memory or 40 GB of disk,** it holds new starts.
+- **Below the memory and disk floors `plan check` prints,** it holds new
+  starts: the machine file's `PLAN_MIN_MEM_GB` and `PLAN_MIN_DISK_GB`,
+  6 and 40 GB unless it says otherwise.
   **Below 60 GB of disk,** at most six sessions run at once.
 - **Below 3 GB of memory,** it narrows the build lane to one task (`pueue
-  parallel 1 --group build`), and widens it again above 6 GB. It says so in
+  parallel 1 --group build`), and widens it again above the memory floor. It says so in
   `log.md` each time.
 - **Below 1.5 GB of memory or 15 GB of disk,** it stops the line.
 - **To free disk,** it may remove the `target/` of a session that is not
