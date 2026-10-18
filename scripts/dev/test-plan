@@ -4,7 +4,8 @@
 #
 #   test-plan          the commands that need no agent: the ledger, status,
 #                      watch, pulse, metrics, reports, rulings, the decisions
-#                      check, attach, wake and handover (printed); about 40 s
+#                      check, attach, wake and handover (printed); its
+#                      budget is 40 s, and it fails past 45 s
 #   test-plan --live   also start, ring, resume, wake and retro, with cheap
 #                      models and prompts that end at once; it spends a few
 #                      cents of each program's usage, and takes a few minutes
@@ -15,6 +16,9 @@ trap 'echo "test-plan: failed at line $LINENO" >&2' ERR
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 live=0
 [[ ${1:-} == --live ]] && live=1
+# The process layer's budget, and its margin for the lanes' noise
+# (development.md, section 3.6).
+budget=40 budget_margin=5
 machine_home=$HOME
 # shellcheck disable=SC2034 # test-plan-live.sh restores the machine's runtime directory
 machine_runtime_dir=${XDG_RUNTIME_DIR-}
@@ -664,6 +668,19 @@ request() { printf '{"type":"assistant","timestamp":"2026-10-17T%s:00.000Z","mes
 expect "metrics after release" "$(plan_numbers metrics)" $'steps_planned\t2\t' \
     $'supervisor\t2 sessions, 1.0 h, 4.2M weighted tokens per hour, 97% in the 40 requests after each start or compaction, 3 compactions'
 expect "the machine's links stay" "$(if [[ $(readlink "$machine_home/.local/bin/plan" || true) == "$machine_plan_link" ]]; then echo unchanged; fi)" unchanged
+
+# The process layer fails past its budget and margin, and passes at them.
+over_budget() {
+    if (($1 > $2 + $3)); then echo "$1 s, past $2 s and its $3 s margin"; fi
+}
+while IFS='|' read -r elapsed want; do
+    expect "budget, ${elapsed} s" "<$(over_budget "$elapsed" 40 5)>" "<$want>"
+done <<'BUDGET'
+45|
+46|46 s, past 40 s and its 5 s margin
+BUDGET
+over=$(over_budget "$SECONDS" "$budget" "$budget_margin")
+[[ -z $over ]] || { echo "FAIL the process layer ran $over (development.md, section 3.6)"; failed=1; }
 
 if ((live)); then
     rm "$t/stub/claude"

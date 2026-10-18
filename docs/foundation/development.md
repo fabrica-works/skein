@@ -527,7 +527,7 @@ own.
 | `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane in fresh `downstream/` worktrees, removes them on every exit, and lands nothing (sections 5.7 and 14.1) |
 | `plan ring MESSAGE` | loads the coordinator's thread if needed, rings its doorbell, and starts the turn of an idle one (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
-| `test-plan [--live]` | tests `plan` on a workspace of its own; `--live` also starts real roles, on cheap models. It compiles nothing: it runs in the build lane (`heavy test-plan`) |
+| `test-plan [--live]` | tests `plan` on a workspace of its own, and fails when that process layer runs past its budget, 40 s, by more than its 5 s margin for the lanes' noise; `--live` also starts real roles, on cheap models. It compiles nothing: it runs in the build lane (`heavy test-plan`) |
 
 The roles run in the background:
 - **Claude Code roles** are background sessions (`claude --bg`), started in
