@@ -496,14 +496,19 @@ repository rather than the code it ships (a check of the sources' names,
 a generator that a drift test runs) may be built optimized: that hides
 nothing the tests check, and it costs what it does, not ten times that.
 
-**Nor is a dependency.** A repository's test builds may build its
-dependencies optimized, skein's and smith's crates among them, with
-`[profile.dev.package."*"] opt-level = 2` in its workspace's
-`Cargo.toml`; its own crates, the workspace's members, stay at
-`opt-level` 0, which `"*"` never matches. The setting changes
-`opt-level` alone: debug assertions and overflow checks stay on, so a
-dependency panics where it would unoptimized. A dependency is the code
-under test of its own repository, whose gate builds it unoptimized.
+**A slow test is understood, never hidden.** Most tests do no I/O and
+are bound by the CPU, so a slow one has a cause in the code under test
+or in the test: a scan where a lookup would do (O(N) where O(1) or
+O(log N) would), hidden I/O, a sleep, setup repeated, data copied or
+encoded again. The cause is found with a profile and fixed where it
+is. Build settings never stand in for that fix: test builds stay
+unoptimized, dependencies included, the tools above aside. An optimized
+copy of skein or smith beside the gate's would also be built again at
+each repin and kept in the build cache. A per-crate override
+(`[profile.dev.package.<crate>]`) is allowed for one hot leaf crate
+alone: a profile must show a cost no test can avoid, and the user, or
+the director for them (development.md, 2.7), signs it off; a comment
+beside the override cites both.
 
 A fuzzy test lives beside its world and uses that world's settings,
 random ones included. When a fuzzy seed fails, the bug is fixed and the
