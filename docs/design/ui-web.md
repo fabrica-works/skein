@@ -497,7 +497,11 @@ the host tests (section 14).
   element, a scene's SVG, a menu's button, a description's element, the
   restart part's words) carry no `data-node`.
 - **One listener per kind of event,** on the mount element, finds the
-  node of the element acted on, by its nearest `data-node`.
+  node of the element acted on, by its nearest `data-node`. A click
+  finds instead the nearest element whose node a person presses, a
+  link, a button, a tab or a menu item, as a browser's own `<a>` and
+  `<button>` take a click on their content (ui.md, section 3); a click
+  inside none of them, its nearest `data-node`.
 
 ### 6.1 An application's elements and components
 

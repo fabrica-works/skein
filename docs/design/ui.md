@@ -118,6 +118,13 @@ waits is in section 18, and what is open in section 19.
   nodes always in the tree, which a shell may show as a list that opens,
   with no step. Choosing an option is a `Press` on it, and the chosen
   one is selected.
+- **A button, a tab or a menu item takes its words one way:** as its
+  name, holding no node, or, with no name, as the text nodes it holds.
+  A browser shows a name as the element's text (ui-web.md, section 6),
+  so a text node inside a named one shows its words twice; the builder
+  asserts against a node inside a named one when it closes it. A press
+  on a node it holds is a press on it: a person presses the control,
+  and its words are part of it.
 - **No layout.** Where things go is each shell's, from landmarks, region
   names, roles, order and tokens. The tree says what each region is,
   never where it goes: a phone and a terminal lay out one tree
