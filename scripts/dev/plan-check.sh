@@ -114,6 +114,8 @@ check_plan() {
         fail "plan is not on origin/main"
     fi
 
+    check_plan_readiness
+
     # The plan's row in its repository's STATUS.md: ready, or this
     # machine's run being resumed.
     local row state
@@ -124,6 +126,33 @@ check_plan() {
     ready | "active on $(host)"*) ok "STATUS.md says $state" ;;
     *) fail "STATUS.md says $state" ;;
     esac
+}
+
+# Only base commands and the Design questions section decide readiness.
+check_plan_readiness() {
+    local open
+    if awk '
+        FNR == 1 { fenced = 0 }
+        /^(```|~~~)/ { fenced = !fenced; next }
+        fenced && /^\$ / { found = 1 }
+        END { exit !found }' "$plan_dir"/findings/*.md 2>/dev/null; then
+        ok "plan has a base run in findings/"
+    else
+        fail "plan has no base run in findings/ (development.md, section 5.4)"
+    fi
+    open=$(awk '
+        /^#/ { if (item && !answered) open++; item = 0; section = ($0 == "## Design questions"); next }
+        section && /^(- |[0-9]+\. )/ {
+            if (item && !answered) open++
+            item = 1; answered = 0
+        }
+        section && /^[[:space:]]*Answer:/ { answered = 1 }
+        END { if (item && !answered) open++; print open + 0 }' "$plan_dir/decisions.md" 2>/dev/null || true)
+    if ((open)); then
+        fail "plan has $open open design questions in decisions.md"
+    else
+        ok "plan has no open design questions in decisions.md"
+    fi
 }
 
 # The last retrospective's proposals, each decided (development.md,

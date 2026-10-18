@@ -1037,14 +1037,17 @@ may veto.
   sketch that does not compile is a plan defect, fixed before the plan
   lands. The fixes of the reviews above get the same run. Each command's
   output goes in the plan's `findings/`, with the command. `plan check`
-  does not refuse a plan without them yet: that waits for the kit.
+  refuses a plan unless a `findings/*.md` file holds a line starting
+  `$ ` inside a fenced block.
 
   What cannot run at the base, because it names code an earlier session
   lands, is checked when its session becomes ready: the supervisor's
   ready check (section 7.2) greps its names and compiles its sketches
   against `main` before the session starts.
 - **A plan lands finished:** its design questions answered, and its
-  commands run. When planning must be lighter, the writing is cut, never
+  commands run. `plan check` refuses a plan whose `decisions.md` has an
+  item (a line starting `- ` or `<n>. `) in `## Design questions` with
+  no `Answer:` line before the next item or section. When planning must be lighter, the writing is cut, never
   these runs. In forgejo-17, they were what the planner cut: the process
   tier, a "Done when" item, would have shown at the base the panic that
   cost a ruling, a design question and two supplements; uncompiled

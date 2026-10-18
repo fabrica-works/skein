@@ -66,7 +66,8 @@ expect() {
 # A repository with a plan.
 repo=$DEV_ROOT/alpha
 dir=$repo/docs/development/plans/demo
-mkdir -p "$dir/alpha" "$repo/src" "$repo/tests"
+mkdir -p "$dir/alpha" "$dir/findings" "$repo/src" "$repo/tests"
+printf '```\n$ true\n```\n' >"$dir/findings/base-runs.md"
 git -C "$repo" init -q -b main
 git -C "$repo" config user.email test@example.com
 git -C "$repo" config user.name test
@@ -404,6 +405,18 @@ expect "decisions open" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "F
 sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.md"
 git -C "$repo" commit -q -am "Decide the older retrospective's proposals"
 expect "decisions made" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "ok    the last retrospective's proposals are decided (alpha's older)"
+
+# A plan is ready only after its base commands and design answers.
+unfinished=$repo/docs/development/plans/unfinished
+cp -r "$dir" "$unfinished"
+rm "$unfinished/findings/base-runs.md"
+expect "a plan with no base run is refused" "$(PLAN_NO_GATE=1 "$plan" check "$unfinished" 2>&1 || true)" "FAIL  plan has no base run in findings/ (development.md, section 5.4)"
+cp "$dir/findings/base-runs.md" "$unfinished/findings/base-runs.md"
+printf '\n## Design questions\n\n1. Which?\n' >>"$unfinished/decisions.md"
+expect "an open question is refused" "$(PLAN_NO_GATE=1 "$plan" check "$unfinished" 2>&1 || true)" "FAIL  plan has 1 open design question"
+printf '\nAnswer: this.\n' >>"$unfinished/decisions.md"
+expect "an answered question passes" "$(PLAN_NO_GATE=1 "$plan" check "$unfinished" 2>&1 || true)" "ok    plan has a base run in findings/" "ok    plan has no open design questions in decisions.md"
+rm -rf "$unfinished"
 
 # Per-machine minimums survive a resume; an environment value takes priority.
 printf '%s\n' 'PLAN_MIN_MEM_GB=1' 'BOGUS=3' >"$DEV_TMP/machine.env"
