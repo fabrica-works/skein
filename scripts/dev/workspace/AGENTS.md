@@ -18,7 +18,7 @@ implementers never call `list_projects`, `index_status`,
 say: the index covers the primary checkout, never a worktree, and may
 lag behind it: the supervisor re-indexes a repository whose index is
 older than its `origin/main` (development.md, sections 6 and 14.1), and
-until it has, your prompt says not to use the graph. Check each name the
+until it has, the plan README's rules say not to use the graph. Check each name the
 graph gives with `rg` in the worktree before relying on it.
 
 ## The projects
@@ -26,10 +26,10 @@ graph gives with `rg` in the worktree before relying on it.
 | Repository | What it is | Builds on | Its gate |
 |---|---|---|---|
 | `skein` | the io and protocol kit, and the foundation documents | — | `scripts/check.sh` |
-| `smith` | the agent kit | skein | `docs/development/workflow.md`, section 1 |
+| `smith` | the agent kit | skein | `scripts/check.sh` |
 | `jig` | the kit for agentic applications | skein, smith | `scripts/check.sh` |
 | `hearth` | the factory's build daemon | skein | `scripts/check.sh` |
-| `temper` | the application | skein, smith, jig | `docs/development/workflow.md`, section 1 |
+| `temper` | the application | skein, smith, jig | `scripts/check.sh` |
 
 Dependencies point upstream only: skein names neither smith nor temper,
 smith never names temper, and jig never names temper.
@@ -67,7 +67,8 @@ and how it ends with a retrospective and its metrics. Its tools are in
 `skein/scripts/dev/plan check --fix`. It links the tools, this file, its
 `CLAUDE.md`, its Claude Code settings (`.claude/settings.json`) and the
 coordinator's Codex profile, sets up the queue, and names what is still
-missing (pueue, kache, jq, cargo-nextest, the git settings below).
+missing (pueue, kache, jq, cargo-nextest, and cargo's `[net]
+git-fetch-with-cli = true` in `~/.cargo/config.toml`).
 
 Design and plan sessions are started by the user, never as a sub-agent
 of another session.
@@ -112,38 +113,3 @@ decides each of its proposals, in its section 10, before the next run.
 **Where things stand:**
 - a run: `cat tmp/<repository>/<plan>/status.md`, or `plan status`;
 - a project: `<repository>/docs/design/STATUS.md`.
-
-## Until the reliability plan ends
-
-smith's reliability plan, started before development.md, was ported to it
-on 2026-10-12: it is `smith/docs/development/plans/reliability/`, and runs
-on `debian-16gb-hel1-1` like any plan (`plan start`). Its first run's
-record, `~/src/rust/plans/reliability-plan/` on that machine, and its
-worktrees `~/src/rust/{skein,smith}-rel-*`, stay until the run's
-retrospective has landed; their `target/` directories may go when disk
-is short.
-
-- **Every machine may land in skein and smith,** designs, plans and the
-  kit included: `land` rebases each landing on what the others pushed.
-  temper and jig are free, as before.
-- **temper has no `scripts/check.sh` yet.** A code change there gives
-  `land` its workflow's section 1 as the gate: `land --gate '<the four
-  commands, joined with &&>'`.
-- **jig's and temper's Cargo git URLs still name `git.ekanayaka.io`;**
-  smith's name GitHub (2026-10-12). Cargo treats two URLs of one
-  repository as two sources, so a repository moves its URLs when it takes
-  a smith or jig that names GitHub: jig when it takes smith's latest
-  `main`, whose host protocol, charter and transcript changed under jig's
-  smith-facing crates; temper after jig. Until then every machine
-  rewrites the old URLs to GitHub, and cargo fetches with git:
-  - `git config --global url.git@github.com:forgetic/.insteadOf
-    https://git.ekanayaka.io/ai/`
-  - `[net] git-fetch-with-cli = true` in `~/.cargo/config.toml`.
-
-When the plan ends:
-- jig's and temper's Cargo git URLs move to GitHub, if they have not
-  already;
-- temper gets `scripts/check.sh`, and its `AGENTS.md` says that `land`
-  pushes;
-- after the retrospective, the first run's directory and its worktrees
-  may go, and this section with them.

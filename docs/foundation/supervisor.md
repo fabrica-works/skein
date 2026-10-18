@@ -24,7 +24,9 @@ section 3.6). Then:
    `origin/main`. Then record the process the run keeps: append
    `## Process, <UTC time>: skein <commit>` to `supervision.md`, the
    commit of the run's kit, as `git -C <run>/kit rev-parse --short HEAD`
-   prints it (development.md, sections 3.6 and 4.4). Then compare each
+   prints it (development.md, sections 3.6 and 4.4). A resume after a pause
+   appends the next itself (development.md, section 7.6): the last
+   Process line names the run's kit and process. Then compare each
    plan repository's graph index with its `origin/main` and re-index one
    that is older, with the steer that development.md, section 14.1,
    step 2, says until you have. A successor skips this step.
@@ -93,9 +95,10 @@ source path for the rest. Handle the event, then start the watch again:
 | `started:` and the changes since its ready check | re-check what moved (section 5, step 4) |
 | `hourly:` | the hourly check (section 6) |
 | `alert: pueued is down` | `systemctl --user start pueued`; if it stays down, an alert to the user |
+| `landed: <steps>` | the landings you await have all reached `origin/main`: go on with what waited for them (sections 5 and 6) |
 | `quiet:` with the coordinator's state and last 20 log lines | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, run `plan resume crash` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
 | `quiet again:` | an alert to the user, with the command `plan resume` |
-| `paused:` with its text | read it; nothing else waits for you until the run resumes |
+| `paused:` with its text | read it; nothing else waits for you until the run resumes. A pause you asked for resumes when what it waits for has come (section 6) |
 | `done:` with its text | the end (section 8) |
 | `context: … past …K: hand over now` | after the event in hand, section 7: a run claimed before skein 71f6c38 hands over by context |
 | `context: … (compactions: N): hand over now` | ignore the word: no count of compactions makes you hand over (section 7) |
@@ -150,13 +153,19 @@ carried by every later request.
    `<repository>-repin.s<k>`, and its Instructions name it with the step
    it starts after (development.md, sections 5.7 and 10.3).
 5. **Write the unblock once,** to `<run>/unblock.draft.md`, in development.md
-   section 10.3's shape, with its `## Landed` section empty. Its Decision
+   section 10.3's shape, with its `## Landed` section empty. Its
+   `Reverses:` names each earlier ruling or steer it replaces any part of,
+   by its time. Its Decision
    is the ruling's whole text. Write `{ruling}` where it names its own
    number.
 6. **Run `plan ruling "<title>" "<kind>, <session>'s block of <time>"`.** It
    appends the Decision to `decisions.md` as the next ruling, lands it
    with your plan edits (`land --docs`), names the commit in `## Landed`,
-   moves the draft to `unblock.md`, and rings the doorbell.
+   moves the draft to `unblock.md`, and rings the doorbell. If it refuses
+   because your worktree has commits that `origin/main` lacks, an earlier
+   ruling did not land: read them (`git -C <worktree> log origin/main..`),
+   land them there with `land --docs`, or drop them with `git -C
+   <worktree> reset --hard origin/main`, then run it again.
 
 **Nowhere else:** the ruling is not typed again in `decisions.md`, in a
 session file's prose, in `supervision.md`, or in the terminal. The hourly
@@ -165,7 +174,11 @@ check's entry counts the rulings.
 **A steer** (development.md, section 10.3): a plan change it rests on lands
 first, with `plan ruling --text <file> "<title>" "steer of <time>"`, which
 lands the file's text as a ruling and rings nothing. Then write `steer.md`
-and `plan ring "steer.md is ready"`.
+and `plan ring "steer.md is ready"`. A point that later sessions must keep
+lands in that ruling as a rule of the README's "Rules of this plan", and
+its "Pass on" names the rule: sessions read the rules first, and their
+prompts carry no steer (development.md, sections 7.2 and 10.3). Its
+`Reverses:` names each earlier ruling or steer it replaces any part of.
 
 **A kit step** (the README's Kit steps, development.md, section 3.6):
 once one lands, at the first event or hourly check that finds it landed
@@ -299,7 +312,9 @@ due 65 minutes after this heading, even if this check stops halfway.
    Run the hourly check of the run in <run>, as
    <run>/kit/docs/foundation/development.md, section 14.1, steps 1 to 4,
    say, with sections 14.2 and 14.3 and the testing-strategy.md beside
-   it; the claim's skein commit is <the Process line's commit>. Return
+   it; the run's kit commit is <the last Process line's commit>, and the
+   process tier last ran at <the commit the last entry names for it>, or
+   never. Return
    only: the check's entry (at most 15 lines, section 14.1, step 5), and
    the steer's points in section 10.3's shape: one for each finding not
    yet steered (section 14.4), and one for each process change the run
@@ -314,11 +329,32 @@ due 65 minutes after this heading, even if this check stops halfway.
    first move the run's kit to its commit: `git -C <run>/kit checkout
    --detach <commit>` (development.md, section 3.6). A point you do not
    send gets one line in the entry: why not.
+4. **A story the process tier turned red** (development.md, section
+   14.1, step 1), whose range holds only another run's commits, goes to
+   the user as an alert: the story, the range, and its commits' `Plan`
+   and `Step` trailers (development.md, section 12). One from this run's
+   commits is a finding of this check (development.md, section 14.4).
+
+**A wait for a landing,** this run's or another's (a ready check's, a
+fix the run needs): `plan await supervisor <step>… <plan>/<step>…`,
+each step as its `Step:` trailer gives it. The watch prints `landed:`
+once all are on `origin/main`. Never watch a commit's files for it, nor
+estimate when it comes. The coordinator awaits its own (development.md,
+section 7.4).
+
+**Nothing to do for an hour.** When no session is running and nothing
+can start for an hour (every step left waits on another run's landing,
+an answer or the user), steer the coordinator to pause (development.md,
+section 7.6), and await what the run waits for. When it comes, run `plan
+resume "<what came>"`: it moves the run's kit to skein's `main` and
+appends its Process line, and the coordinator resumes with that kit.
+Then re-read this card in `<run>/kit/`.
 
 **A quiet hour.** While no session is running and the run waits only on
-queue tasks (a live suite), skip the sub-agent: run `plan pulse` and the
-listing of process changes and the graph comparison yourself
-(development.md, section 14.1, step 2), read them unfiltered, and append
+queue tasks (a live suite), skip the sub-agent: run `plan pulse`, the
+process tier when `main` has moved since its last run (development.md,
+section 14.1, step 1), and the listing of process changes and the graph
+comparison yourself (step 2), read them unfiltered, and append
 an entry of at most five lines. A change the run takes is a steer point
 all the same: send it as step 3 says.
 
@@ -369,7 +405,10 @@ When the watch prints `done:` (development.md, section 7.6):
 1. Add to each decision in `done.md` the design commit that took it in,
    or "not in the design yet". Then have a sub-agent on Sonnet run each
    "Done when" command of the plan's README once, as written, through
-   `heavy` where it compiles or runs tests, and return each command with
+   `heavy` where it compiles or runs tests, in a detached worktree of each
+   repository's `origin/main` whose path is longer than any session's:
+   `git -C ~/src/rust/<repository> worktree add --detach
+   <run>/wt/<repository>-done-when-longer-than-any-session origin/main`, and return each command with
    its output; append them to `done.md`, under `## Done when, run <UTC
    time>`. One that fails goes to the user, as an alert, and gets a
    ruling (section 3): a step that fixes it, or the miss, recorded with

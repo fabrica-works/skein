@@ -550,6 +550,12 @@ restates it (development.md, sections 5.2, 5.6 and 14.3).
   it: the code's own constant, the fixture's content, or the design's
   section. A bare number, or a sum of them (`host_tools + 4`), is a size
   nobody can check.
+- **No number depends on the checkout's path.** A test whose expected
+  number counts a path (a size in bytes, a worst case, a length) lays
+  each path it uses at its bound, or measures it at its bound, so that
+  the number is the same in every checkout, at any depth. In temper's
+  forge-setup run, the owned example's minima moved with the scratch
+  directory: 32 bytes in one worktree, 8 in another.
 - **A bound's two sides.** A limit is tested at the bound, which holds,
   and one past it, which does not, each in a test or a row of its own.
 - **A recorded stream edited as records.** A test that alters a

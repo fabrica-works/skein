@@ -18,12 +18,17 @@ development.md it names are read only when a case needs them.
 - the sections of skein's `programming-model.md` and
   `testing-strategy.md` that its "Read first" names, never either whole,
   and `testing-strategy.md`'s section 10, a test's shape;
-- the plan's `README.md` and `code-organization.md`;
+- the plan's `README.md`, its "Rules of this plan" first, and
+  `code-organization.md`;
 - your repository's `AGENTS.md` and the workflow it names.
 
 **After a handover or a restart, read only** this card, your checkpoint,
-then the increment it names in your session file with the session's
-"Rules that bind it", and `code-organization.md`'s "Don't" list. Read
+the plan README's "Rules of this plan", then the increment it names in
+your session file with the session's "Rules that bind it", and
+`code-organization.md`'s "Don't" list. The steers that later sessions
+keep are those rules: your prompt carries none. In temper's forge-setup
+run, four of seven steered test shapes came from takeover threads that
+had never read them. Read
 nothing else of the set above again unless your increment names it. In
 client-composition, successors re-read 64K to 74K tokens of it.
 
@@ -236,10 +241,14 @@ it.
   seconds. Each call is a request that carries your whole context: in
   test-budgets, waits that saw nothing took 36% of the implementers'
   input.
-- **Start a heavy command with that longest wait too,** never a yield of
-  one second, which comes back empty at once and costs a request of its
-  own: in client-composition, 108 such launches were 10.2% of the
-  implementers' input.
+- **Start each long command with that longest wait too** (`land`, a
+  `heavy` command, a build or a test run outside it): `yield_time_ms:
+  300000`, never a yield of one second, which comes back empty at once
+  and costs a request of its own. The pulse counts each wait that ran
+  out sooner (development.md, section 14.2). In client-composition, 108
+  launches with one-second yields were 10.2% of the implementers' input;
+  in temper's forge-setup run, the threads that did not run `// @exec`
+  waited in 32% to 57% of their requests.
 
 ### 8.4 Commits
 
@@ -369,8 +378,8 @@ context passes 100,000 tokens (development.md, section 7.3): overwrite
 your checkpoint, then end your turn with your report. The checkpoint adds,
 in at most 15 lines, what the next increment needs from what you learned
 and the session file does not say: the files and fixtures it touches, the
-commands that worked, the traps you met. It never repeats the steers'
-"Pass on" texts, which the next prompt carries. A fresh implementer reads
+commands that worked, the traps you met. It never repeats the README's
+rules, which the next thread reads first. A fresh implementer reads
 it instead of finding them again.
 
 ### 8.7 When to stop

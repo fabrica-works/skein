@@ -169,8 +169,10 @@ the implementers.
   193 requests past 300K, and waited in polling loops.
 - **Does not change the design while planning.** A gap the plan exposes is
   closed by the designer, under the designer's rules, before the plan
-  relies on it. The planner finds such gaps with the design trace
-  (section 5.4), before the plan lands.
+  relies on it. The planner traces the design (section 5.4) before it
+  drafts the session files, and has every gap the trace finds answered
+  first. In temper's forge-setup plan, the drafts came first: $81 of
+  them raised 45 questions, and their revisions and fixes cost $69 more.
 - **Writes for the executor** (section 4.5). The coordinator and the
   implementers follow the plan's words as written.
 - **Runs what it prescribes** before the plan lands (section 5.4), through
@@ -440,7 +442,7 @@ machine's run. Nothing here is versioned.
 | `sessions/<repository>-<NN>.md` | the implementer | its session's checkpoint (section 8.6) |
 | `logs/` | `heavy`; the implementers | each heavy command's output, and `heavy.tsv`, the queue's statistics (section 11.2); without an active run, `~/src/rust/tmp/logs/`. Each session's scripts and long outputs, in `logs/<repository>-<NN>/` |
 | `downstream/<repository>/` | `plan downstream` | fresh worktrees of downstream mains, removed on every exit |
-| `wt/<repository>-<NN>/` | `plan worktree` | the session's worktree, with its own `target/` |
+| `wt/<repository>-<NN>/` | `plan worktree` | the session's worktree, with its own `target/`; beside them, the supervisor's `wt/<repository>-tier/` for the process tier (section 14.1) and its "Done when" worktrees (supervisor.md, section 8), all removed at the run's end (section 7.6) |
 
 The escalation files are written whole and renamed into place, so the
 other side never reads half a file. A writer that finds its file still
@@ -492,7 +494,10 @@ kit change lands as soon as it is decided, and reaches the runs claimed
 after it. A run that must take it sooner does so by its supervisor's
 ruling, which moves `kit/` to the commit that landed it (`git -C
 <run>/kit checkout --detach <commit>`). A run claimed without `kit/`,
-before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
+before skein e6fd9fb, runs the copy on `PATH`, main's, to its end. A
+paused run is the exception: its `plan resume` moves `kit/` to skein's
+`origin/main`, and the run resumes with that kit and its process
+(section 7.6).
 
 **A run's roles read the process in `kit/`,** never in the skein
 checkout: development.md, their card (`supervisor.md` or `implementer.md`)
@@ -661,7 +666,8 @@ for each such run, whether that run takes it ("<plan>'s run takes this")
 or keeps its process. The run's supervisor passes on, as a steer, each
 change its run takes, once its hourly check finds it (section 14.1, step
 2), and moves the run's `kit/` to a kit change it takes; the others wait
-for the run's end. In smith's parity run, five adoptions landed on
+for the run's end, or for its resume after a pause, which takes them all
+(section 7.6). In smith's parity run, five adoptions landed on
 other machines and none reached it; the run found three of their rules
 again, hours later, by its own steers and rulings.
 
@@ -820,6 +826,11 @@ user only what they and the design leave open, and asks before writing.
   `SKEIN_UI_EXAMPLE_BUNDLE`), the build-lane command that builds it once,
   and the one that then runs a single test against it, each through
   `heavy` (section 5.5);
+- **Process tier:** the command that runs the repository's process-tier
+  stories, outside its gate, through `heavy`, in a checkout of
+  `origin/main` (temper's `heavy --gate scripts/proof-one-process.sh`):
+  the hourly check runs it whenever `main` has moved (section 14.1).
+  Otherwise "none", with the reason;
 - **Repin:** nothing, when the plan repins every repository downstream of
   it (section 5.7); otherwise "none", with the reason;
 - **Kit steps:** in a plan that changes `scripts/dev`, each step whose
@@ -842,14 +853,23 @@ user only what they and the design leave open, and asks before writing.
   the focused and fuzzy suites' budgets in seconds, and `aims` the times
   a repository's focused and fuzzy suites stay within, in seconds: the
   base plus what the run may add (section 5.6), a line for each
-  repository the README gives aims;
+  repository the README gives aims. When another run lands on the same
+  `main`, the aim covers the packages the plan's sessions change, named
+  after its two times (`aims: temper 8 30 temper-service temper-forge`),
+  and is measured as their tests' summed time, not as the suite's wall
+  time: the pulse's verdict compares the suite's, so the hourly check and
+  "Done when" sum the packages' times from the gate's log, which `heavy`
+  keeps (section 11). In temper's forge-setup run, the default suite's
+  aim missed by 2.06 s with another plan's 510 tests inside it;
 - **Done when:** observable conditions, each with the command that checks
   it. Each aim the README states (fewer lines, one engine, plainer words)
   is an item with its command, or is named there as unchecked: an aim
-  nothing counts is not met. A command reads `main`'s files or the plan's
-  commits (`git log origin/main --grep='^Plan: <plan>$'`), never the
-  newest commit, whose trailers a Markdown landing lacks; a live item's
-  command reads the summary its run committed. The supervisor runs each
+  nothing counts is not met. An item reads a property of `origin/main`'s
+  files. It never greps the history, counts a whole file, or names a
+  test, a file or a member that a later session's Files may rename or
+  move; a live item's command reads the summary its run committed. In
+  temper's forge-setup run, five of seven items failed so, after every
+  step had landed. The supervisor runs each
   once, after `done.md` (section 7.6). A plan that proves with live probes
   counts the probes calibrated in their task files.
 
@@ -945,8 +965,10 @@ holds:
     field, since its counterpart must match it field for field; others
     may elide fields. Where a sketch and landed code disagree, the landed
     code wins, unless the design asks for the change.
-- **Questions to raise when reached:** what the design leaves open that
-  changes observable behaviour.
+- **Questions to raise when reached:** only those whose answer depends on
+  what the run records (a measured time, a probe's result, a recording).
+  What the design leaves open is answered before the file is drafted
+  (section 5.4).
 - **Done when.**
 
 **`decisions.md`:** numbered decisions, each with a short rationale, and
@@ -993,7 +1015,9 @@ landed with `land --docs` (section 5.4).
   change waits for it, and repins in a commit of its own, at its start.
 - **Shared files are named,** so the coordinator sees likely conflicts.
 - **Open behaviour stays open.** An increment does not decide what the
-  design leaves open if the choice is observable; it names the question.
+  design leaves open if the choice is observable: the designer answers it
+  before the session file is drafted (section 5.4), and the increment
+  follows the answer.
 - **A new test world** costs at most about 1 second focused and 5 seconds
   fuzzy. Anything beyond that is a decision to raise, not one to take.
 - **Each increment proves itself** at the highest layer within reach
@@ -1097,16 +1121,25 @@ landed with `land --docs` (section 5.4).
   - each instruction that can be read two ways;
   - each rule that nothing checks;
   - each request for evidence without a command, a bound or a count of
-    runs.
+    runs;
+  - each "Done when" item, against the Files of the sessions that land
+    after what it reads: one that greps the history, counts a whole file,
+    or names a test, a file or a member those Files may rename or move
+    (section 5.2);
+  - each test-time aim that names no packages, in a plan whose repository
+    another run lands on (section 5.2).
 
   The planner fixes what it lists.
-- **A design trace.** A third sub-agent reads, for each session, the
-  design sections its "Read first" cites against its increments' Shapes,
-  Test shapes and stories, and lists each observable rule that no
-  increment builds or tests and no line names as open (a session's
-  "Questions to raise when reached", `later.md`): a key, an event, a
-  dialog, the order of two answers. The designer answers each before the
-  plan lands, and the planner fixes the plan to the answer. In skein-ui,
+- **A design trace, before the session files are drafted.** A third
+  sub-agent reads, for each planned session, the design sections it will
+  cite against the increments the plan gives it, and lists each
+  observable rule that no increment builds or tests and no line leaves
+  to later (`later.md`): a key, an event, a dialog, the order of two
+  answers. The designer answers each before the planner drafts the files
+  that rely on it, and the planner drafts to the answer; a session's
+  "Questions to raise when reached" keeps only what depends on the run's
+  record (section 5.2). Once the files are drafted, the trace reads them
+  once more. In skein-ui,
   four of the seven design questions were in such text: `ui-web.md`,
   section 6, gives `Control+K` or `Meta+K` by platform, and 09.3's Shape
   took no platform.
@@ -1309,6 +1342,13 @@ shows them precisely.
     written out in full;
   - where each world's, fixture's and process configuration's limits
     come from.
+- **No expected number depends on the checkout's path.** A test, world
+  or proof whose number counts a path (a size, a count of bytes, a worst
+  case) lays each path at its bound, so that the number is the same in
+  every checkout (testing-strategy.md, section 10). In temper's
+  forge-setup run, the owned example's minima moved with the scratch
+  directory three times, and a "Done when" run in a longer path found it
+  by chance.
 - **Limits come from the shipped profile.** Every test, world and
   process-tier configuration takes its limits from the builder of the
   profile the product ships, never set by hand. A test that needs another
@@ -1537,8 +1577,8 @@ started it, which record it themselves.
 
   ```
   You are an implementer. Read <run>/kit/docs/foundation/implementer.md,
-  then ~/src/rust/<repository>/AGENTS.md, then
-  <plan-dir>/README.md and <plan-dir>/code-organization.md, then
+  then ~/src/rust/<repository>/AGENTS.md, then <plan-dir>/README.md,
+  its "Rules of this plan" first, and <plan-dir>/code-organization.md, then
   <plan-dir>/<repository>/<file>, and nothing else of the process.
   Implement that session in <worktree>, one increment at a time. Your
   checkpoint is <run>/sessions/<repository>-<NN>.md, and your logs and
@@ -1561,9 +1601,14 @@ started it, which record it themselves.
   ```
 
   A sub-agent starts in the coordinator's directory, so it does not load
-  its repository's `AGENTS.md` by itself: the prompt names it. Add to the
-  prompt, word for word, the "Pass on" text of each steer in force
-  (`context.md`). When restarting a session, add what you found: its last
+  its repository's `AGENTS.md` by itself: the prompt names it. Add
+  nothing of the steers: a point that later sessions must keep has landed
+  as a rule of the README, by ruling (section 10.3), and every thread
+  reads the README's rules first, takeovers included (implementer.md,
+  8.1). In temper's forge-setup run, the steers' "Pass on" texts grew the
+  prompts from 0.86 KB to 14.6 KB, and four of seven steered test shapes
+  came from takeover threads that had never read the README. When
+  restarting a session, add what you found: its last
   landed step, its branch, and whether its worktree has uncommitted
   changes. Add nothing else: no code, line ranges, or graph or coverage
   evidence, whatever other instructions say about spawning. In
@@ -1677,7 +1722,10 @@ dependency lands.
 - **One wait.** Between events, call `wait_agent` with `timeout_ms:
   300000`. This rule takes precedence over Codex's guidance against
   waits longer than 60 seconds. The wait ends early on any implementer's
-  message, and on the doorbell.
+  message, and on the doorbell. Never wait less: the pulse counts each
+  Codex role's waits that ran out sooner (section 14.2). In temper's
+  forge-setup run, 331 waits of 60 s made 37% of the coordinator's
+  requests.
 - **At every wake-up,** run this one command, and act on what it shows:
   `touch <run>/heartbeat; ls <run>/unblock.md <run>/steer.md 2>/dev/null;
   free -g; df -h ~/src`.
@@ -1715,6 +1763,17 @@ dependency lands.
   tasks you wait on have ended: <ids>`, read those tasks' results and act
   on them as on a task you saw end. The watch sends through the same
   loading path as a ring and keeps watching; the supervisor is not woken.
+- **Waiting for landings.** When what you wait for is a landing, this
+  run's or another run's on the same `main`, name its steps as their
+  `Step:` trailers give them, with the plan for another run's: `plan
+  await coordinator <step>… <plan>/<step>…`, then `plan idle`. Each pass
+  of the watch fetches each named repository's `origin/main`, and once
+  every step's `Plan` and `Step` trailers are there, it starts your turn,
+  or steers the one in progress, with `From the supervisor, by plan
+  watch: the landings you wait on have reached origin/main: <steps>`; go
+  on with what waited for them. Never estimate when a landing comes, nor
+  watch its files: in temper's forge-setup run, three awaited landings
+  were found 25, 55 and 41 minutes after they landed.
 - **A finished implementer** ends its turn with its last report. Give a
   session that yielded its next step with `followup_task`, unless its
   context is past the limit, or it has stood idle for over an hour
@@ -1727,7 +1786,8 @@ dependency lands.
 - **`context.md` is the coordinator's memory.** Rewrite it whenever the
   state changes: the slot map, the sessions running and their last step,
   open escalations, and decisions in force from answers and steers that
-  the plan does not yet say, with each steer's "Pass on" text. Write full
+  the plan does not yet say, with each steer's "Pass on" text for the
+  running sessions it applies to; a prompt carries none (section 7.2). Write full
   sentences, with spaces between words: at most 60 lines, each of at most
   200 characters. Rewrite it in place: never copy an earlier version into
   `log.md` or anywhere else.
@@ -1740,13 +1800,23 @@ dependency lands.
 
 ### 7.6 Pausing, resuming, ending
 
-- **Pause** at the user's or the supervisor's request. Start nothing new.
+- **Pause** at the user's or the supervisor's request: the supervisor
+  asks for one, by steer, when no session is running and nothing can
+  start for an hour (supervisor.md, section 6). Start nothing new.
   Tell each running session, with `send_message`: "Pause: land your
   increment, or commit it on your branch; report; end your turn." When
   each has reported, write `paused.md`: each session's worktree, branch,
   head and last landed step.
-- **Resume after a restart.**
-  1. `plan resume [CAUSE]` appends the heading "Coordinator resumed,
+- **Resume after a restart or a pause.**
+  1. A paused run first takes skein's `main`: `plan resume` moves `kit/`
+     to skein's `origin/main`, appends `## Process, <UTC time>: skein
+     <commit>` to `supervision.md`, prints `kit: skein <old>, moved to
+     main's <new>`, and resumes with that kit, whose process is the
+     run's from then on (sections 3.6 and 12). Nothing runs across a
+     pause, so no session meets a change of kit mid-step. In temper's
+     forge-setup run, a run idle 30 hours on its claim's kit met, once
+     resumed, six faults that `main` had fixed.
+     `plan resume [CAUSE]` appends the heading "Coordinator resumed,
      <UTC time>: <cause>" to `log.md` itself. It takes the given cause;
      else `reboot` when `uptime -s` is after the heartbeat's mtime;
      else `the user's request` when `paused.md` exists; else `unknown`.
@@ -1789,7 +1859,7 @@ dependency lands.
 
      The supervisor adds to each decision the design commit that took it
      in, or "not in the design yet". It then has a sub-agent run each
-     "Done when" command once, and appends each command, with its
+     "Done when" command once, in a path longer than any session's, and appends each command, with its
      output, to `done.md` (section 5.2). A command that fails gets a
      ruling (supervisor.md, section 3): a step that fixes it, or the miss,
      recorded.
@@ -1971,7 +2041,7 @@ The supervisor reads the report from its file: nobody types it again.
 # Unblock
 
 Answer to the blocked report of <time> (<headings answered>).
-Reverses: <the time of an earlier answer this one reverses>, or nothing.
+Reverses: <the time of each earlier ruling or steer this one replaces any part of>, or nothing.
 Amends: <the plan or design text this changes, by file and section>, or nothing.
 
 ## Decision
@@ -2007,10 +2077,17 @@ without `## `, separated by `; `.
   its own writing, each ruling typed four or five times, was about 14% of
   its input. A
   plan change a steer rests on lands the same way, with `plan ruling
-  --text <file>`, which rings nothing.
-- **Every premise shows its check,** in `## Checked`, and `Reverses:`
-  names only an earlier answer: a changed plan or design text is
-  `Amends:`. In reliability, 10 of the 11 reversed answers rested on a
+  --text <file>`, which rings nothing. `plan ruling` refuses while the
+  worktree's branch has commits that `origin/main` lacks, a ruling that
+  did not land: the supervisor lands it there, or drops it, and rules
+  again (supervisor.md, section 3). In temper's forge-setup run, a kit
+  that switched the branch back lost eight rulings' edits.
+- **Every premise shows its check,** in `## Checked`. `Reverses:` names
+  each earlier ruling or steer that this one replaces any part of, by
+  its time, and `Amends:` the plan or design text it changes; the
+  metrics count the first (`answers_reversed`, section 15.2). In temper's
+  forge-setup run, `answers_reversed` counted 2, and the rulings' text
+  replaced at least eleven. In reliability, 10 of the 11 reversed answers rested on a
   premise nobody checked, and 23 of 156 unblocks quoted a command. A
   command that a ruling or a steer tells a role to run is a premise
   checked against the run's `kit/`, not `main`: `grep -n '<command>'
@@ -2044,6 +2121,7 @@ without `## `, separated by `; `.
 
   <UTC time>, from the check of <UTC time>. Follow it before the plan
   where they differ.
+  Reverses: <the time of each earlier ruling or steer this one replaces any part of>, or nothing.
 
   ## 1. <topic>
 
@@ -2057,6 +2135,11 @@ without `## `, separated by `; `.
   - Pass on: <text for implementers, given word for word>, or nothing.
   ```
 
+  A point that later sessions must keep lands first as a rule of the
+  README's "Rules of this plan", with `plan ruling --text`, and its "Pass
+  on" names the rule: the sessions started later read it there
+  (section 7.2).
+
 - **When the coordinator finds `steer.md`:**
   1. it runs `plan steered`, which logs it under "Steered, <time>" and
      deletes it;
@@ -2065,8 +2148,7 @@ without `## `, separated by `; `.
      it did>", or "…: cannot, <why>", which also goes into `blocked.md`
      (kind: process);
   4. it gives each point's "Pass on" text, word for word, with
-     `send_message`, to the running sessions it applies to, and adds it to
-     the prompt of each session it starts while the point is in force;
+     `send_message`, to the running sessions it applies to;
   5. it updates `context.md`. A point whose "Until" has come leaves it.
 - **The supervisor follows up.** The next check verifies each point. A
   point not followed is sent again, with what was seen. A test-shape rule
@@ -2209,6 +2291,10 @@ without `## `, separated by `; `.
   - `hourly:`: a check is due; the supervisor runs supervisor.md, section 6;
   - `alert: pueued is down`: the supervisor handles it as supervisor.md,
     section 2's alert row says, then starts the watch again;
+  - `landed: <steps>`: the steps the supervisor awaits (`plan await
+    supervisor <step>… <plan>/<step>…`, section 7.4) have all reached
+    `origin/main`; for an awaiting coordinator the watch starts its turn
+    itself, and goes on;
   - the run pauses or ends.
 
   Each event prints its handling material, indented and limited to 150
@@ -2221,9 +2307,9 @@ without `## `, separated by `; `.
 - **After each event,** the supervisor handles it, then runs the watch
   again.
 - **A ready check never holds the watch.** Its sub-agent runs in the
-  background, and the watch runs again at once. The sub-agent's end, and
-  the landing the check waits for, wake the supervisor beside the watch
-  (supervisor.md, section 5). In client-composition, checks ran with the
+  background, and the watch runs again at once. The sub-agent's end wakes
+  the supervisor beside the watch, and the landing the check waits for
+  comes as the watch's `landed:` (supervisor.md, sections 5 and 6). In client-composition, checks ran with the
   watch off, one after another: jig 06's, in `check` from 14:15, was
   shown at 14:22, after jig 10's.
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
@@ -2396,7 +2482,9 @@ be told from a loaded machine.
   after the coordinator removed its `target/`, with the disk above 101
   GB.
 - **The coordinator checks** available memory (`free -g`) and disk (`df -h
-  ~/src`) before each start, and at every wake-up (section 7.4).
+  ~/src`) before each start, and at every wake-up (section 7.4). It logs
+  their figures in `log.md`, its `Resources` line, at most every ten
+  minutes, sooner only when a bound below is crossed.
 - **Below the memory and disk floors `plan check` prints,** it holds new
   starts: the machine file's `PLAN_MIN_MEM_GB` and `PLAN_MIN_DISK_GB`,
   6 and 40 GB unless it says otherwise.
@@ -2409,8 +2497,8 @@ be told from a loaded machine.
   running, once no heavy task the session queued is queued or running
   (above). Before it holds starts or blocks on disk, it frees what it
   can, and logs each: first the `target/` of each session that has
-  finished; then, at every disk check below 80 GB, `kache gc`, once more
-  if it ends with "No such file or directory", with its `Store:` line
+  finished; then, below 80 GB, `kache gc`, at most every ten minutes,
+  once more if it ends with "No such file or directory", with its `Store:` line
   logged beside the check. It holds or blocks only if disk stays below
   the bound. kache evicts late, past its cap by 11 to 17 GiB between its
   passes, and on smith's parity machine not at all: its store reached
@@ -2443,11 +2531,22 @@ that machine.
 - **Plans running at once avoid each other's hotspots.** When two must
   share one, the second plan's README names the first.
 - **Another machine landing on the same repository** is, to `land`, main
-  moving: rebase, gate again, push.
+  moving: rebase, gate again, push. To a run with a process tier, it is
+  what the hourly check runs that tier for (section 14.1). A story that
+  turned red goes, with its range of commits and their `Plan` and `Step`
+  trailers, to the run that landed them: the supervisor writes it for the
+  user (section 10.4), and the user, or the director, brings it to that
+  run's supervisor, who handles it as a finding of its own check (section
+  14.4).
 - **A kit change from another machine** reaches a run only by its
-  supervisor's ruling (section 3.6): each run keeps its claim's kit. This
-  holds for the runs claimed after skein e6fd9fb, through their resumes;
-  a run claimed before it runs main's kit to its end, resumed or not.
+  supervisor's ruling (section 3.6), or at its resume after a pause,
+  which takes skein's `main` as the run's kit and process (section 7.6):
+  otherwise each run keeps its claim's kit. This holds for the runs
+  claimed after skein e6fd9fb, through their resumes after a restart or
+  a crash; a run claimed before it runs main's kit to its end, resumed
+  or not. A pause's resume moves only a kit that has that move, skein
+  d450346 or later: an older kit keeps its claim's until its
+  supervisor's ruling moves it.
 
 ## 13. Open questions
 
@@ -2521,7 +2620,9 @@ minutes. Problems are cheaper to fix the hour they appear. The hour
 counts from the last check, across handovers and restarts: the next
 check is due 65 minutes after the last `## Check, <UTC time>` heading
 in `supervision.md`, or its first `## Process, <UTC time>: skein <commit>`
-if there is no check. The watch prints `hourly:` once for that heading
+if there is no check. The last Process line names the run's kit and
+process: its claim's, or the one a resume after a pause took (section
+7.6). The watch prints `hourly:` once for that heading
 when it is over 65 minutes old (`supervisor.md`, section 6).
 
 **A sub-agent runs steps 1 to 4** (`supervisor.md`, section 6): a fresh
@@ -2534,8 +2635,8 @@ request carried. The supervisor appends the entry, and sends the steer.
 
 **A quiet hour needs no sub-agent.** While no session is running and the
 run waits only on queue tasks (a live suite), the supervisor runs `plan
-pulse` and step 2's listing of process changes and graph comparison
-itself, reads them unfiltered, and appends an entry of at most five
+pulse`, step 1's process tier when it is due, and step 2's listing of
+process changes and graph comparison itself, reads them unfiltered, and appends an entry of at most five
 lines: what runs, its progress, the machine, the changes found. In
 smith's parity run, the eight checks while one suite ran cost about $21,
 and led to nothing. In smith's wall-clock run, the quiet checks from
@@ -2551,22 +2652,35 @@ reached its coordinator ten hours after it landed.
    run's `downstream/`, outside sessions' `wt/`, and are removed on every
    exit. The entry gives each result, or says that it
    is still running. A repository it shows broken may get an early repin
-   (section 5.7).
+   (section 5.7). In a plan whose README names a process tier (section
+   5.2), while another run lands on the same repository's `main`, also
+   run that tier, in the background, whenever `main` has moved since its
+   last run, quiet hours included: in `<run>/wt/<repository>-tier`, a
+   detached worktree (`git -C ~/src/rust/<repository> worktree add
+   --detach <run>/wt/<repository>-tier origin/main` the first time), moved to
+   `origin/main` after a fetch before each run. The entry gives the
+   commit it ran at, and each story that turned red since the last run
+   with the range of commits between the two; a red story whose range
+   holds only another run's commits goes to that run (section 12). In
+   temper's forge-setup run, the landing story was red on `main` for at
+   least 4.5 hours before a ready check saw it, and 40 gate-lane runs
+   bisected the cause, while 29 quiet checks ran nothing.
 2. **Read** the log's headings since the last check, the first five
    lines of each report, and the coordinator's acknowledgement of the
-   last steer. Then list the process changes since the run's claim:
+   last steer. Then list the process changes since the run's kit:
    `git -C ~/src/rust/skein fetch -q origin && git -C ~/src/rust/skein
-   log --format='%h %s%n%b' <the claim's skein commit, from
-   supervision.md's Process line>..origin/main -- docs/foundation
+   log --format='%h %s%n%b' <the run's kit commit, from
+   supervision.md's last Process line>..origin/main -- docs/foundation
    scripts/dev`. Each
    commit whose body says the run takes it, and that no steer has passed
    on, is a steer point (section 4.4), sent with this check's steer: a
    change reaches the run's coordinator at the first check after its
    landing. Then compare each plan repository's graph index with its
    `origin/main`, as `plan check` does (section 6). The supervisor
-   re-indexes one that is older. Until it has, a steer point passes on to
-   the implementers, for their prompts: "Do not use the code graph for
-   <repository>; search with `rg`." The next steer lifts it.
+   re-indexes one that is older. Until it has, a ruling adds to the
+   README's rules, and a steer point passes on to the running
+   implementers: "Do not use the code graph for <repository>; search with
+   `rg`." The ruling of the steer that lifts it removes the rule.
 3. **Sample two files, about 300 lines in all:**
    - the largest test added since the last check, read against the test
      checklist (section 14.3);
@@ -2633,6 +2747,9 @@ Since the last check:
 - **cost so far:** the time and token metrics of section 15.2, for the
   run so far, and what Claude Code's tokens cost at list prices, by role
   and by kind, since the design;
+- **short waits:** the coordinator's and the sessions' waits so far that
+  ran out sooner than section 7.4's 300 s: a `wait_agent`, a `wait` or a
+  command's yield that asked for less;
 - **pins:** how many commits each repository's pins are behind the
   upstream mains, as of the last fetch (`plan metrics` fetches; the pulse
   does not);
@@ -2688,7 +2805,8 @@ easily misread.
 
 ### 14.5 What the check is not
 
-No code review, no running of tests, no reading of whole reports. A
+No code review, no running of tests but section 14.1's process tier, no
+reading of whole reports. A
 question that needs more goes to a read-only sub-agent with a bounded
 question and its own budget, or waits for the retrospective.
 
@@ -2771,7 +2889,7 @@ counts them by hand.
 | `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing |
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |
 | `blocked_h` | hours in which at least one block was open |
-| `answers_reversed` | unblocks whose `Reverses:` line names an earlier answer |
+| `answers_reversed` | unblocks and steers whose `Reverses:` line names an earlier ruling or steer |
 | `steers` | steers sent, and points the coordinator refused |
 | `restarts` | `log.md`'s "Coordinator resumed" headings, by the whole cause after the time; its "Coordinator loaded" and `supervision.md`'s "Loaded" headings count as cause `loaded` |
 | `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads, from the last `token_usage_record`'s `thread_token_usage`, else the last `total_token_usage` |
