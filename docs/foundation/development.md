@@ -460,7 +460,8 @@ invalid lines and prints each minimum and lane width with its source.
 `plan` holds the command dispatch, settings, ledger and worktree commands.
 It sources `plan-check.sh` for the checks, `plan-watch.sh` for the watch,
 `plan-roles.sh` for the roles and their prompts, and `numbers.sh` for the
-run's numbers, pulse and metrics. These files are part of the same kit.
+run's numbers and pulse, and `metrics.sh` for its metrics. These files
+are part of the same kit.
 
 **A run takes its kit from its claim,** as it takes its process (section
 4.4). `plan claim`, which `plan start` runs, adds `kit/` to the run's

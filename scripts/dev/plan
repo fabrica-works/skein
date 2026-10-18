@@ -499,6 +499,8 @@ ready() {
 
 # shellcheck source=numbers.sh
 source "$kit/numbers.sh"
+# shellcheck source=metrics.sh
+source "$kit/metrics.sh"
 
 # shellcheck source=plan-check.sh
 source "$kit/plan-check.sh"
