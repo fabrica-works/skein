@@ -86,11 +86,9 @@ codex_sandbox=${PLAN_CODEX_SANDBOX:-danger-full-access}
 claude_dir=${PLAN_CLAUDE_DIR:-$root}
 # The long-lived Claude Code roles' limits (development.md, sections 10.4
 # and 10.5): the supervisor and the designer compact their contexts in
-# place, a little below the window given; the supervisor hands over after
-# its limit of compactions; a wake starts a fresh designer after as many,
-# or once its session has been idle longer than its cache lives.
+# place, a little below the window given; a wake starts a fresh designer
+# once its session has been idle longer than its cache lives.
 claude_autocompact=${PLAN_CLAUDE_AUTOCOMPACT:-200000}
-compaction_limit=${PLAN_COMPACTIONS:-2}
 designer_idle=${PLAN_DESIGNER_IDLE:-3600}
 
 die() { echo "plan: $*" >&2; exit 2; }

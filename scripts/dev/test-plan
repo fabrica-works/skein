@@ -624,14 +624,18 @@ expect "join outside a session" "$(CLAUDE_CODE_SESSION_ID='' "$plan" join design
 expect "join" "$(CLAUDE_CODE_SESSION_ID=fake-designer "$plan" join designer)" "designer: Claude Code session fake-designer" "End your turn now"
 expect "roles" "$(PATH=$t/stub:$PATH PLAN_NO_ROLES='' "$plan" status)" "## Roles" "- coordinator: $coordinator" "- supervisor: $session, gone"
 expect "wake resumes" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: would resume fake-designer: question.md"
-# A designer compacted twice starts fresh.
+# A designer compacted twice is resumed; one idle past its cache starts fresh.
 big=33333333-4444-5555-6666-777777777777
 {
     printf '{"type":"assistant","timestamp":"%s","message":{"id":"b1","usage":{"input_tokens":1,"cache_read_input_tokens":150000,"output_tokens":1}}}\n' "$(date -u +%FT%T.000Z)"
     boundary b2; boundary b3
 } >"$CLAUDE_CONFIG_DIR/projects/p/$big.jsonl"
 printf 'designer\t%s\t%s\n' "$big" "$stamp" >>"$run/claude.tsv"
-expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: compactions 2, idle 0 min: a fresh session" "designer: would start a fresh session: You are the designer"
+expect "wake resumes after compactions" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: would resume $big: question.md"
+stale=44444444-5555-6666-7777-888888888888
+printf '{"type":"assistant","timestamp":"%s","message":{"id":"b1","usage":{"input_tokens":1,"output_tokens":1}}}\n' "$(date -u -d '-2 hours' +%FT%T.000Z)" >"$CLAUDE_CONFIG_DIR/projects/p/$stale.jsonl"
+printf 'designer\t%s\t%s\n' "$stale" "$stamp" >>"$run/claude.tsv"
+expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: idle 120 min: a fresh session" "designer: would start a fresh session: You are the designer"
 # The supervisor hands over; the old session's watch then shows nothing.
 expect handover "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more"
 expect "handover clears the events seen" "$(if [[ ! -s $run/.watch ]]; then echo empty; fi)" empty

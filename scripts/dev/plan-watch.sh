@@ -229,11 +229,10 @@ handed_over() {
 }
 
 # The supervisor's context, the input of its last request, with its
-# compactions, and at their limit the word to hand over (development.md,
-# section 10.5).
+# compactions (development.md, section 10.5).
 supervisor_context() {
     local session
     session=$(role_session supervisor)
     [[ -n $session ]] || return 0
-    context "$session" | sed "s/^context: /context: the supervisor's is /; s/: hand over now$/: hand over now (supervisor.md, section 7)/"
+    context "$session" | sed "s/^context: /context: the supervisor's is /"
 }

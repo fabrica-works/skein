@@ -6,14 +6,13 @@
 # thread, in the run's thread file, and the Claude Code sessions, one line
 # each in claude.tsv: role, session id, time recorded.
 
-# Any Claude Code session's context and handover limit (development.md 2.1).
+# Any Claude Code session's context and compactions (development.md 2.1).
 context() {
-    local session=${1:-${CLAUDE_CODE_SESSION_ID:-}} tokens compactions suffix=""
+    local session=${1:-${CLAUDE_CODE_SESSION_ID:-}} tokens compactions
     [[ -n $session ]] || die "name a session, or run plan context in a Claude Code session"
     read -r tokens _ <<<"$(claude_context "$session")"
     compactions=$(claude_compactions "$session")
-    ((compactions < compaction_limit)) || suffix=": hand over now"
-    echo "context: $((tokens / 1000))K (compactions: $compactions)$suffix"
+    echo "context: $((tokens / 1000))K (compactions: $compactions)"
 }
 
 # Every Claude Code session this machine knows, as JSON.
@@ -348,12 +347,12 @@ join() {
 
 # Wakes a role's Claude Code session in the background with a message
 # (development.md, section 10.4). A session at work is never woken: a
-# second wake would fork a copy of it. A designer compacted to its limit,
-# or whose session has been idle longer than its cache lives, starts fresh
-# from a brief; any other session is resumed.
+# second wake would fork a copy of it. A designer whose session has been
+# idle longer than its cache lives starts fresh from a brief; any other
+# session is resumed.
 wake() {
     load
-    local role=${1:?role} message=${2:?message} session at idle_for compactions
+    local role=${1:?role} message=${2:?message} session at idle_for
     session=$(role_session "$role")
     [[ -n $session ]] || die "no $role recorded in $run/claude.tsv (plan join $role)"
     if [[ $(session_state "$session") == busy ]]; then
@@ -363,9 +362,8 @@ wake() {
     if [[ $role == designer ]]; then
         read -r _ at <<<"$(claude_context "$session")"
         idle_for=$(($(date +%s) - at))
-        compactions=$(claude_compactions "$session")
-        if ((compactions >= compaction_limit || (at > 0 && idle_for > designer_idle))); then
-            echo "designer: compactions $compactions, idle $((idle_for / 60)) min: a fresh session"
+        if ((at > 0 && idle_for > designer_idle)); then
+            echo "designer: idle $((idle_for / 60)) min: a fresh session"
             claude_role designer "$(designer_fresh_prompt) Then: $message"
             return
         fi

@@ -2,7 +2,9 @@
 # shellcheck disable=SC2154 # test-plan owns the fixture variables this suite reads
 # shellcheck disable=SC2034 # test-plan reads the failure flag this suite writes
 # Sourced by test-plan for the coordinator commands.
-expect "context of a session" "$("$plan" context "$session")" 'context: 1K (compactions: 2): hand over now'
+context_of=$("$plan" context "$session")
+expect "context of a session" "$context_of" 'context: 1K (compactions: 2)'
+expect "compactions never hand over" "$(if [[ $context_of != *"hand over"* ]]; then echo absent; fi)" absent
 out=$(CLAUDE_CODE_SESSION_ID='' capture status "$plan" context)
 expect "context needs a session" "$out" 'status=2' 'plan:' 'name a session'
 

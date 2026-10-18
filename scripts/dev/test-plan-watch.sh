@@ -68,11 +68,13 @@ expect "watch quiet" "$(PLAN_QUIET=2 watch)" "quiet: no heartbeat"
 expect "watch quiet again" "$(PLAN_QUIET=2 watch)" "quiet again: no heartbeat"
 touch "$run/heartbeat"
 echo "# Paused" >"$run/paused.md"
-expect "watch paused" "$(PLAN_COMPACTIONS=3 watch)" "paused: $run/paused.md" "context: the supervisor's is 1K (compactions: 2)"
+expect "watch paused" "$(watch)" "paused: $run/paused.md" "context: the supervisor's is 1K (compactions: 2)"
 rm "$run/paused.md"
 "$plan" set alpha-02.1 repo=alpha session=02 state=check title=third
 expect "status check" "$("$plan" status)" "1 to check"
-expect "watch check" "$(watch)" "check: alpha-02.1, $dir/alpha/02-second.md" "(compactions: 2): hand over now"
+check_watch=$(watch)
+expect "watch check" "$check_watch" "check: alpha-02.1, $dir/alpha/02-second.md" "(compactions: 2)"
+expect "compactions never hand over" "$(if [[ $check_watch != *"hand over"* ]]; then echo absent; fi)" absent
 expect "ready" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1)" "would ring the coordinator: ready: alpha-02.1"
 expect "ready in the ledger" "$(grep alpha-02.1 "$run/ledger.tsv")" $'\tready\t' "checked "
 expect "ready twice" "$(PLAN_DRY_RUN=1 "$plan" ready alpha-02.1 2>&1 || true)" "is not waiting for its check"
