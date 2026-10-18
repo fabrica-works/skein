@@ -635,7 +635,9 @@ impl Sim {
             let pipe =
                 &mut self.process_mut(pid).children.get_mut(&end.child).expect("pipe names child").pipes[end.index];
             pipe.open = false;
-            pipe.bytes.clear();
+            if pipe.spec.way == Way::Out {
+                pipe.bytes.clear();
+            }
             if pipe.spec.way == Way::In {
                 self.end_input(pid, end);
             }
@@ -981,6 +983,10 @@ fn add_resources(total: &mut Resources, child: Resources) {
     total.system = total.system.checked_add(child.system).expect("modeled system CPU fits");
     total.peak_rss_bytes = total.peak_rss_bytes.max(child.peak_rss_bytes);
 }
+
+#[cfg(test)]
+#[path = "../tests/closed_input.rs"]
+mod closed_input;
 
 #[cfg(test)]
 mod tests {
