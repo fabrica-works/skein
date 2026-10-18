@@ -486,6 +486,15 @@ ruling, which moves `kit/` to the commit that landed it (`git -C
 <run>/kit checkout --detach <commit>`). A run claimed without `kit/`,
 before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 
+**A plan that changes the kit names the steps its own run takes,** in
+its README's Kit steps (section 5.2), and the supervisor moves `kit/` to
+each by ruling once it lands (supervisor.md, section 3). A ruling or a
+steer names only commands that the run's `kit/` has, which may be behind
+`main` (section 10.3). kit-batch named none: its claim's `land` had no
+landing turn, and 30 of its 61 gates passed and were thrown away; ruling
+105 named `plan landed`, which its kit lacked, and made a block of its
+own.
+
 | Tool | Does |
 |---|---|
 | `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes; internal `heavy --task TOKEN -- command…` runs the task and writes its row |
@@ -786,6 +795,10 @@ user only what they and the design leave open, and asks before writing.
   `heavy` (section 5.5);
 - **Repin:** nothing, when the plan repins every repository downstream of
   it (section 5.7); otherwise "none", with the reason;
+- **Kit steps:** in a plan that changes `scripts/dev`, each step whose
+  landing its own run takes, with what it gives the run (a landing turn,
+  a command); the supervisor moves `kit/` to each by ruling once it lands
+  (section 3.6). Otherwise "none", with the reason;
 - **Pulse:** what `plan pulse` looks for in this plan's diffs (section
   14), as lines of their own, in a code block:
 
@@ -832,7 +845,13 @@ user only what they and the design leave open, and asks before writing.
   goldens and transcripts aside), by the command the document gives,
   written out with the paths it counts; each landing's report gives that
   count, against the tolerance of implementer.md, 8.6, which the document
-  does not repeat.
+  does not repeat. A move that any of several sessions may need, such as
+  splitting a file that every session grows, is a step of its own, owned
+  by one session, whose Needs is the file passing a count the document
+  sets below the limit (650 of 800 lines, say): never left to whichever
+  increment passes the limit. kit-batch left test-plan's split so, and
+  three sessions made it: two add/add conflicts, a failed gate, an
+  unrecorded landing and the blocks of rulings 105 and 106.
 
 **A session file, `<repository>/NN-<name>.md`,** gives each increment at
 most about 100 lines, and is read in one read: at most about 400 lines.
@@ -972,6 +991,14 @@ may veto.
   legacy paths, compatibility constructors, adapters that supply a value
   their source lacks. A plan that allows this ends with a consolidation
   session.
+- **A suite that every session adds to ends merged.** A plan whose
+  sessions all add to one test suite plans a last step, after the last
+  step that edits the suite, that merges the copies the sessions made of
+  its captures, polls and helpers, and trims its time, keeping every
+  check (testing-strategy.md, section 10). In kit-batch, parallel
+  sessions each added their own to test-plan, and a steer against copies
+  was logged done and not followed; 01.s2, added by ruling 107, merged
+  them and cut 20 s in 11 minutes.
 - **A session may reorder its own increments** when an earlier one needs a
   later one, the later one needs nothing the earlier provides, and landing
   it first leaves nothing unguarded or half-built on `main`. It says so in
@@ -1234,6 +1261,11 @@ shows them precisely.
   on carbon-forge): a smaller share fires on noise. In client-composition,
   shares of 0.2 s to 0.8 s were checked against single gates that swung
   by 1.3 s, and the whole run added 0.69 s.
+- **The Proof bounds of one suite sum within what the run may add to
+  it,** and a suite every session adds to ends with the step that merges
+  it (section 5.3). In kit-batch, the bounds for test-plan summed to 45 s
+  against the 25 s the plan allowed, which nothing checked, and the suite
+  reached 57.7 s against its 40.
 - **A bound the plan holds unchanged has a test.** Where the plan rests
   on a bound holding without change (a worst case within its declared
   limit), it names a floor for the margin (section 5.4), and the first
@@ -1877,7 +1909,10 @@ without `## `, separated by `; `.
 - **Every premise shows its check,** in `## Checked`, and `Reverses:`
   names only an earlier answer: a changed plan or design text is
   `Amends:`. In reliability, 10 of the 11 reversed answers rested on a
-  premise nobody checked, and 23 of 156 unblocks quoted a command.
+  premise nobody checked, and 23 of 156 unblocks quoted a command. A
+  command that a ruling or a steer tells a role to run is a premise
+  checked against the run's `kit/`, not `main`: `grep -n '<command>'
+  <run>/kit/scripts/dev/<tool>` (section 3.6).
 - **When the coordinator finds `unblock.md`:**
   1. it runs `plan unblocked`, which logs both files whole under
      "Blocked and unblocked, <time>", removes the block headings named

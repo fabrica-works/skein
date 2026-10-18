@@ -17,9 +17,10 @@ your task names.
   harnesses are `testing/*`.
 - **Plans** are in `docs/development/plans/<plan>/`.
 - **The code graph** (codebase-memory-mcp) indexes the primary checkout,
-  `main`, as project `srv-data-git-runner-src-skein` on this machine. Use
-  it for structure; check each name it gives with `rg` in your worktree
-  before relying on it.
+  `main`, as the project named by that checkout's path, as the
+  workspace's `AGENTS.md` says: `realpath ~/src/rust/skein | sed
+  's|^/||; s|/|-|g'`. Use it for structure; check each name it gives with
+  `rg` in your worktree before relying on it.
 
 ## The gate
 

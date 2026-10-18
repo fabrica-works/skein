@@ -121,6 +121,10 @@ carried by every later request.
      ruling or a new step names, and quote what you find in the draft's
      `## Checked` (development.md, section 10.3): each premise, the
      command, and its output;
+   - grep the run's kit, not `main`, for each command that the ruling or
+     a steer tells a role to run (`grep -n '<command>'
+     <run>/kit/scripts/dev/<tool>`), and name only commands it has: a
+     command only `main` has waits until `kit/` moves to it;
    - when the ruling changes a thing (a generator's output, a fixture, a
      type, a literal, a count), search its name, its copies by content and
      the values derived from it, in its repository and every repository
@@ -152,6 +156,14 @@ check's entry counts the rulings.
 first, with `plan ruling --text <file> "<title>" "steer of <time>"`, which
 lands the file's text as a ruling and rings nothing. Then write `steer.md`
 and `plan ring "steer.md is ready"`.
+
+**A kit step** (the README's Kit steps, development.md, section 3.6):
+once one lands, at the first event or hourly check that finds it landed
+in `plan status`, land a ruling with `plan ruling --text <file>
+"<step>'s kit" "kit step <step>"` that names its commit, and move the
+run's kit to it: `git -C <run>/kit checkout --detach <commit>`. Then
+steer the coordinator to what the step gives, if anything changes for
+it.
 
 **The same block twice** becomes a standing rule in the plan's README, and
 a rule that would serve every plan, a proposal for the retrospective
@@ -220,16 +232,22 @@ defects came from increments no check had read.
    and what you did not.
    ```
 
-2. **Correct what it reports** in your worktree, and land the corrections
-   with `plan ruling --text <file> "<session>'s Shapes against main"
-   "ready check of <step>"`. A suite it saw fail, or a rule the design
-   must settle, goes on before the session starts: to the designer as a
+2. **Correct what it reports** in your worktree, and land this session's
+   corrections as a ruling of their own, as soon as its check ends, with
+   `plan ruling --text <file> "<session>'s Shapes against main"
+   "ready check of <step>"`. Never wait for another session's check to
+   land them together: in kit-batch, 06 was corrected by 00:03 and 04 by
+   00:08, and both waited for 05's check and one ruling at 00:14:42,
+   though 04 headed the run's longest chain. A suite it saw fail, or a
+   rule the design must settle, goes on before the session starts: to the
+   designer as a
    question (section 4), or as a supplement step in a steer (section 3);
    never as a question to raise when reached (development.md, section
    10.4).
 3. **Let it start:** `plan ready <step> "<ruling N, or no change>;
-   checked <repository> <commit>, …"`, at once, whether its needs have
-   landed or not: the note keeps the commits for the re-check (step 4)
+   checked <repository> <commit>, …"`, at once, after its own ruling,
+   whether its needs have landed or not, and whatever other checks are
+   still running: the note keeps the commits for the re-check (step 4)
    through a compaction or a handover. It sets the step `ready` and
    rings the coordinator, who starts it once they have: a re-check never
    holds a start (development.md, section 7.2).

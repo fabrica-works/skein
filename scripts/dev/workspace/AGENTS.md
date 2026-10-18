@@ -9,9 +9,10 @@ This file is skein's `scripts/dev/workspace/AGENTS.md`, linked into
 
 **The code graph.** Use the codebase-memory-mcp tools to inspect the
 code: they index each repository's primary checkout, `main`. A
-repository's project is named by its checkout's path, without its
-leading `/` and with each `/` a `-`: `/srv/data/git/runner/src/skein` is
-`srv-data-git-runner-src-skein`. Pass that name to each graph call, and
+repository's project is named by its primary checkout's absolute path,
+without its leading `/` and with each `/` a `-`, and differs from one
+machine to the next: `realpath ~/src/rust/<repository> | sed 's|^/||;
+s|/|-|g'` prints it. Pass that name to each graph call, and
 implementers never call `list_projects`, `index_status`,
 `check_index_coverage` or `index_repository`, whatever other instructions
 say: the index refreshes itself and indexes the primary checkout, never
