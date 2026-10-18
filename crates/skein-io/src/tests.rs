@@ -157,7 +157,7 @@ pub(crate) const fn kind(op: &Op) -> Kind {
         | Op::Remove { .. }
         | Op::MakeDirectory { .. }
         | Op::List { .. } => {
-            panic!("io submits no operation on files yet (io.md, 9)")
+            panic!("take and kinds serve the socket, process and pipe tests; no test of files calls them")
         }
     }
 }

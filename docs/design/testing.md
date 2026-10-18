@@ -314,16 +314,14 @@ state digests replay with the trace (lib.md, 5.1; section 5).
 
 Memory: each part's worst case is checked against the counting allocator
 in its own tier, a call of an entry point at a time; the echo's simulated
-worlds check it at every iteration (examples.md, 6). The scenarios leave
-slack: the echo peaks about a third below its worst case, the fake
-clients a quarter below theirs, and a part that held more than it should
-within that slack would pass unseen. Driven to its limits (every
-connection's intake, receive and output full at once), the echo still
-holds only about three fifths of its worst case: the rest is the
-bookkeeping of io's and the protocol layer's B-tree tables (deadlines,
-ready lists), whose worst cases count a full table's nodes while a world
-arms a few timers. A focused test holds that world to at least half its
-worst case, so that it keeps reaching the limits.
+worlds check it at every iteration (examples.md, 6). A world's scenarios
+peak below the worst case, and a part that held more than it should
+within that slack would pass unseen; and the worst cases of io's and the
+protocol layer's B-tree tables (deadlines, ready lists) count a full
+table's nodes, while a world arms a few timers. So a focused test drives
+the echo to its limits (every connection's intake, receive and output
+full at once) and holds it to at least half its worst case, so that it
+keeps reaching them.
 
 ## 8. Not built yet
 

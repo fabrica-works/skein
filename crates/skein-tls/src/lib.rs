@@ -16,7 +16,7 @@
 //! rustls with ring beneath it, and the only step code that is not
 //! deterministic, as rustls draws its randoms and keys from the kernel
 //! through ring. It reads no clock: certificates are checked against
-//! `env.wall`. The server side is not built (tls.md, 8).
+//! `env.wall`. It is the client side (tls.md, section 1).
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]

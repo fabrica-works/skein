@@ -1,4 +1,4 @@
-//! The shell's bounded trust bytes composed with TLS's own parser (tls.md, 8).
+//! The shell's bounded trust bytes composed with TLS's own parser (tls.md, 3.4).
 
 use std::fs;
 

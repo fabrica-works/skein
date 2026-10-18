@@ -319,8 +319,6 @@ kernel with `io_uring_disabled` set, a kernel below the floor, or macOS.
   are not pidfds (kqueue's process filter stands in), and containment is
   Linux-only.
 
-It is not built until a deployment needs it.
-
 ## 8. Deferred optimisations
 
 Each sits behind the same records, keeps the contract of the kernel

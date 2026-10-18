@@ -1,6 +1,6 @@
 # Framed channels
 
-Provisional, 2026-10-06, revised 2026-10-09. `skein-channel` is a framed
+Provisional, 2026-10-06, revised 2026-10-18. `skein-channel` is a framed
 channel between two peers over a stream, for the application protocols
 that services built on skein design for themselves. An application gives
 it two things:
@@ -390,4 +390,4 @@ The worst case per channel is the sum of:
   stays its owner's. temper's link redials, and smith's connected agent is
   still open.
 - **TLS's server side** with independent output, for a service that
-  accepts channels over TLS (tls.md, section 8).
+  accepts channels over TLS (tls.md, section 1).
