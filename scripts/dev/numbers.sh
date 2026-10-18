@@ -43,6 +43,33 @@ plan_commits() {
     done | sort -s -t$'\t' -k3,3n
 }
 
+# Only gated steps contribute proofs and code/test line counts.
+gated_commits() {
+    plan_commits "${1:-}" | awk -F'\t' '$4 != "-" && $6 !~ /^none/'
+}
+
+# A split's lettered parts remain planned; the replaced row counts in none.
+ledger_kinds() {
+    awk -F'\t' -v OFS='\t' '
+        FNR == NR { if ($4 == "split") parents[$1] = 1; next }
+        $4 != "split" {
+            parent = $1; sub(/[a-z]$/, "", parent)
+            kind = ($1 ~ /\.s[0-9]+$/ || ($1 ~ /[0-9][a-z]$/ && !(parent in parents))) ? "added" : "planned"
+            print $0, kind
+        }' "$run/ledger.tsv" "$run/ledger.tsv"
+}
+
+# Each semicolon part names a layer; a hyphen ends its first word.
+proof_layers() {
+    awk -v proof="$1" 'BEGIN {
+        n = split(proof, part, ";")
+        for (i = 1; i <= n; i++) {
+            sub(/^[ \t]+/, "", part[i]); sub(/[ ,:.\t-].*$/, "", part[i])
+            if (part[i] != "") print tolower(part[i])
+        }
+    }'
+}
+
 # A layer's rank (development.md, section 5.5); 0 when unknown.
 layer_rank() {
     case ${1,,} in
@@ -58,21 +85,37 @@ planned_layer() {
     repo=${step%-*}
     session=${step##*-}
     item=${session#*.}
+    [[ $item =~ [0-9][a-z]$ ]] && item=${item%[a-z]}
     session=${session%%.*}
     [[ $session =~ ^[0-9]+$ ]] || return 0
     for file in "$plan_dir/$repo/$session"-*.md; do
         [[ -f $file ]] || continue
-        awk -v id="$((10#$session)).$item" -v raw="$session.$item" '
+        proof_layer "$(awk -v id="$((10#$session)).$item" -v raw="$session.$item" '
             /^### / { inside = ($2 == id || $2 == raw) }
-            inside && /^Proof:/ { sub(/^Proof: */, ""); sub(/[ ,.;:].*/, ""); print; exit }' "$file"
+            inside && /^Proof:/ { sub(/^Proof: */, ""); print; exit }' "$file")"
         return
     done
 }
 
-# A Proof line's layer: its first word, without punctuation.
+# Judge the highest-ranked layer, retaining the first word when unknown.
 proof_layer() {
-    local layer=${1%%[ ,;:.]*}
-    echo "${layer:--}"
+    local layer best=- rank=0 n
+    while read -r layer; do
+        n=$(layer_rank "$layer")
+        if [[ $best == - ]] || ((n > rank)); then best=$layer; rank=$n; fi
+    done < <(proof_layers "$1")
+    echo "$best"
+}
+
+# A split is judged only at its last part, against the whole increment.
+below_plan() {
+    local step=$1 proof=$2 parent=$1 want layer
+    [[ $step =~ [0-9][a-z]$ ]] && parent=${step%[a-z]}
+    if awk -F'\t' -v parent="$parent" -v step="$step" '
+        substr($1, 1, length(parent)) == parent && substr($1, length(parent)+1) ~ /^[a-z]$/ && $1 > step { found = 1 }
+        END { exit !found }' "$run/ledger.tsv"; then return; fi
+    want=$(planned_layer "$step"); layer=$(proof_layer "$proof")
+    if [[ -n $want && $layer != - ]] && (($(layer_rank "$layer") < $(layer_rank "$want"))); then echo "$want"; fi
 }
 
 # Codex's rollout directories that exist.
@@ -499,12 +542,11 @@ pulse() {
     echo
 
     # Progress.
-    local ledger=$run/ledger.tsv
-    awk -F'\t' -v since="$since" -v three="$((now_s - 10800))" -v now="$now_s" '
+    ledger_kinds | awk -F'\t' -v since="$since" -v three="$((now_s - 10800))" -v now="$now_s" '
         function epoch(t,   c) { c = "date -u -d \"" t "\" +%s"; c | getline e; close(c); return e }
         NR == 1 { next }
         {
-            added = ($1 ~ /\.s[0-9]+$/)
+            added = ($12 == "added")
             if ($4 == "landed") {
                 if (added) la++; else lp++
                 t = epoch($9)
@@ -519,7 +561,7 @@ pulse() {
             line = ""
             for (i = 1; i <= r; i++) { split(run[i], f, " "); flag = (f[3] > 2) ? "!" : ""; line = line (i > 1 ? "; " : "") f[1] " " f[2] " " f[3] " h" flag }
             printf "- Running: %s\n", (r ? line : "none")
-        }' "$ledger"
+        }'
 
     # The channel.
     local file line=""
@@ -536,8 +578,9 @@ pulse() {
     echo "- Channel: ${line:-nothing open; }$(grep -c '^## Steered' "$run/log.md" 2>/dev/null || true) steers in all, $(grep -cE '^Steer .*point [0-9]+: cannot' "$run/log.md" 2>/dev/null || true) points refused"
 
     # Proofs, and the commits since.
-    local commits repo hash at step proof layer want proofs="" missing="" lower=""
+    local commits gated repo hash at step proof layer want proofs="" missing="" lower=""
     commits=$(plan_commits "$since")
+    gated=$(gated_commits "$since")
     while IFS=$'\t' read -r repo hash at step proof _; do
         [[ -n $repo ]] || continue
         if [[ $proof == - ]]; then
@@ -545,12 +588,12 @@ pulse() {
             continue
         fi
         layer=$(proof_layer "$proof")
-        want=$(planned_layer "$step")
+        want=$(below_plan "$step" "$proof")
         proofs+="$step $layer; "
-        if [[ -n $want ]] && (($(layer_rank "$layer") < $(layer_rank "$want"))); then
+        if [[ -n $want ]]; then
             lower+="$step ($layer, planned $want) "
         fi
-    done <<<"$commits"
+    done <<<"$gated"
     echo "- Proofs: ${proofs:-none landed}${lower:+ below plan: $lower}${missing:+ no Proof line: $missing}"
 
     # Waste.
@@ -593,7 +636,7 @@ pulse() {
     local slow
     slow=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { print $9 }' < <(queue_rows "$run") |
         while read -r file; do grep -c 'SLOW \[' "$file" 2>/dev/null || true; done | awk '{ n += $1 } END { print n + 0 }')
-    counts=$(cut -f1,2 <<<"$commits" | { grep . || true; } | line_counts)
+    counts=$(cut -f1,2 <<<"$gated" | { grep . || true; } | line_counts)
     read -r ca cr ta tr ga gr da dr <<<"$counts"
     echo "  SLOW lines in gate logs: $slow; lines added and removed: code +$ca -$cr, tests +$ta -$tr, generated +$ga -$gr, data +$da -$dr."
 

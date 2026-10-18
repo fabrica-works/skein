@@ -229,8 +229,8 @@ set_step() {
         repo | session | slot | thread | branch | commit | title | note) ;;
         state)
             case ${pair#*=} in
-            waiting | check | ready | running | blocked | landed | dropped) ;;
-            *) die "state is one of waiting, check, ready, running, blocked, landed, dropped" ;;
+            waiting | check | ready | running | blocked | landed | dropped | split) ;;
+            *) die "state is one of waiting, check, ready, running, blocked, landed, dropped, split" ;;
             esac
             ;;
         *) die "unknown key $key" ;;
@@ -358,7 +358,7 @@ status() {
         fi
         awk -F'\t' -v git="$landed_git" '
             BEGIN { n = split(git, g, "\n"); for (i = 1; i <= n; i++) if (g[i] != "") ongit[g[i]] = 1 }
-            NR == 1 { next }
+            NR == 1 || $4 == "split" { next }
             {
                 key = $2 " " $3; if (!(key in seen)) { seen[key] = 1; order[++k] = key }
                 count[key, $4]++; total[key]++; all[$4]++; steps++

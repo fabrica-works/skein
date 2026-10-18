@@ -85,9 +85,9 @@ metrics_of() {
     started=$(run_started)
     ended=$(run_ended)
     running=$(running_seconds)
-    read -r planned added dropped <<<"$(awk -F'\t' 'NR > 1 {
-        if ($4 == "landed") { if ($1 ~ /\.s[0-9]+$/) a++; else p++ } else if ($4 == "dropped") d++ }
-        END { print p + 0, a + 0, d + 0 }' "$run/ledger.tsv" 2>/dev/null || echo "0 0 0")"
+    read -r planned added dropped <<<"$(ledger_kinds | awk -F'\t' 'NR > 1 {
+        if ($4 == "landed") { if ($12 == "added") a++; else p++ } else if ($4 == "dropped") d++ }
+        END { print p + 0, a + 0, d + 0 }' 2>/dev/null || echo "0 0 0")"
     landed=$((planned + added))
     m() { printf '%s\t%s\t%s\n' "$1" "$2" "$3"; }
     m wall_h "$(awk -v s="$started" -v e="$ended" 'BEGIN { printf "%.1f", (e - s) / 3600 }')" h
@@ -166,30 +166,33 @@ metrics_of() {
     m queue_wait_ratio "$(awk -F'\t' '{ w += $4; r += $5 } END { printf "%.2f", r ? w / r : 0 }' < <(queue_rows "$run"))" "waiting per running"
 
     # The commits.
-    local commits
+    local commits gated
     commits=$(plan_commits 0)
+    gated=$(gated_commits 0)
     m suites "$(awk -F'\t' '$6 != "" && $6 != "-" && $6 !~ /^none/ {
             if (!($1 in first)) { first[$1] = $6; order[++n] = $1 } last[$1] = $6 }
         END { for (i = 1; i <= n; i++) printf "%s%s first: %s; last: %s", (i > 1 ? " | " : ""), order[i], first[order[i]], last[order[i]] }' <<<"$commits")" "Gate-Result, by repository"
     local repo hash at step proof layer want below=0
     local -A by_layer=()
+    local -a unknown=()
+    local parts
     # Each step once, by its last commit: a step landed in several commits
     # proves itself at its tip.
     while IFS=$'\t' read -r repo hash at step proof _; do
         [[ -n $repo ]] || continue
-        layer=$(proof_layer "$proof")
-        [[ $layer != - ]] || layer=none
-        by_layer[$layer]=$((${by_layer[$layer]:-0} + 1))
-        want=$(planned_layer "$step")
-        if [[ -n $want && $layer != none ]] && (($(layer_rank "$layer") < $(layer_rank "$want"))); then
-            below=$((below + 1))
-        fi
+        parts=$(proof_layers "$proof")
+        for layer in ${parts:-none}; do
+            if [[ -z ${by_layer[$layer]:-} && $layer != none ]] && (($(layer_rank "$layer") == 0)); then unknown+=("$layer"); fi
+            by_layer[$layer]=$((${by_layer[$layer]:-0} + 1))
+        done
+        want=$(below_plan "$step" "$proof")
+        [[ -z $want ]] || below=$((below + 1))
     done < <(awk -F'\t' '{ last[$4] = $0; if (!($4 in seen)) { seen[$4] = 1; order[++n] = $4 } }
-        END { for (i = 1; i <= n; i++) print last[order[i]] }' <<<"$commits")
-    m proofs "$(for layer in unit world joint process live none; do [[ -n ${by_layer[$layer]:-} ]] && printf '%s %s, ' "$layer" "${by_layer[$layer]}"; done)$below below plan" steps
+        END { for (i = 1; i <= n; i++) print last[order[i]] }' <<<"$gated")
+    m proofs "$(for layer in unit world joint process live "${unknown[@]}" none; do [[ -n ${by_layer[$layer]:-} ]] && printf '%s %s, ' "$layer" "${by_layer[$layer]}"; done)$below below plan" steps
     m report_lines "$(report_lengths 1 | median_and_p90 | awk '{ print $1 " median, " $2 " p90" }')" lines
     local ca cr ta tr ga gr da dr
-    read -r ca cr ta tr ga gr da dr <<<"$(cut -f1,2 <<<"$commits" | grep . | line_counts)"
+    read -r ca cr ta tr ga gr da dr <<<"$(cut -f1,2 <<<"$gated" | grep . | line_counts)"
     m lines "code +$ca -$cr, tests +$ta -$tr, generated +$ga -$gr, data +$da -$dr" lines
     m pin_lag "$(pin_lag)" "commits behind upstream main"
     m contexts "$(thread_contexts | awk -F'\t' '$1 == "session" { print $5 }' | median_and_p90 |

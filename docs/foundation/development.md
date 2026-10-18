@@ -1094,7 +1094,10 @@ balancing confidence against the run's pace and its tokens.
 - **The Proof line** of an increment (section 5.2) gives:
   - **the layer,** first, by its word in the table above: unit, world,
     joint, process or live, which `plan metrics` reads. A second layer
-    follows a semicolon, with its own word (`joint, …; live, …`). When
+    follows a semicolon, with its own word (`joint, …; live, …`); each part
+    counts. A layer is the first word up to its first hyphen
+    (`process-tier` is process). A split increment is judged at its last
+    part. When
     the layer is not the highest one that exists, or is no higher than
     the increment's tests, the line says why, in one line. In forgejo-17,
     Proofs that began "the real Forgejo" or "the fake service" left 9 of
@@ -1269,8 +1272,8 @@ commits behind smith.
   three `later.md` rows for temper's next repin never reached temper's
   `STATUS.md`.
 - **When it starts.** A closing repin starts once every step of the plan
-  upstream of its repository has landed, and the repin before it in the
-  order. The supervisor may add one earlier, `<repository>-repin.s<k>`
+  upstream of its repository has landed, dropped or split (a `split` row
+  is done once its parts are), and the repin before it in the order. The supervisor may add one earlier, `<repository>-repin.s<k>`
   (section 10.4), when `plan downstream` shows the repository broken
   (section 14.1), most of all when sessions are about to change further
   the API that broke it. The closing repin still runs.
@@ -1516,6 +1519,9 @@ dependency lands.
   session file; the step goes to that session's implementer if it is
   running, and otherwise to a new implementer, started as section 7.2
   says, with that file.
+- When a session splits an increment, the coordinator sets its row `split`
+  (note: the parts) and adds `<NN>.<M>a`, `b`, ... with the note
+  "part of <NN>.<M>".
 - When a report shows work that no step covers, write it to `blocked.md`
   as a plan defect, and go on with everything else. Do not create a
   session, a step, a rule about who owns which files, or a protocol
@@ -1530,7 +1536,9 @@ dependency lands.
 - `running`: its session is on it, with the slot and the branch;
 - `blocked`: on an escalation, named in the note;
 - `landed`: with its commit;
-- `dropped`: by an instruction, named in the note.
+- `dropped`: by an instruction, named in the note;
+- `split`: replaced by its parts, named by letter, `<NN>.<M>a`, `b`, ...;
+  counts in none.
 
 ### 7.4 Waiting
 
@@ -1628,7 +1636,8 @@ dependency lands.
   starts a coordinator turn with "Resume the run of `<plan-dir>` as skein's
   docs/foundation/development.md, section 7.6, says." The coordinator
   starts no Claude session.
-- **End** when every step has landed or been dropped.
+- **End** when every step has landed, dropped or split (a `split` row is
+  done once its parts are).
   1. Write `done.md`, starting with `Recorded <UTC time>.`, so the
      metrics read the run's end before later checks append to it:
      - each item of the plan's "Done when", with the ledger steps that
@@ -2422,7 +2431,7 @@ Since the last check:
 - **the channel:** open blocks and their age; steps waiting for their
   ready check, and for how long; an idle coordinator, since when; steers
   not acknowledged;
-- **proofs:** each landed step's `Proof:` line, its layer against the one
+- **proofs:** each landed code step's `Proof:` line (docs landings left out), its layer against the one
   its increment named, and the steps with none;
 - **waste:** the log's growth; the reports' median and longest length;
   `land`'s gates per landed step, and the gate lane's other tasks; queue
@@ -2432,7 +2441,7 @@ Since the last check:
   under `logs/`;
 - **tests:** each suite's time from the `Gate-Result` trailers, against
   its budget; the tests past four fifths of a ceiling, and the SLOW ones;
-  lines added in tests and in code;
+  lines added in tests and in code, docs landings left out;
 - **code signals in the diff:** new files over the plan's size limit; new
   lint exceptions such as `too_many_lines`; the words the plan forbids;
   types named like a parallel type (the plan's "Pulse" patterns); test
@@ -2570,7 +2579,7 @@ counts them by hand.
 |---|---|
 | `wall_h` | hours from the claim to `done.md`'s `Recorded` line (section 7.6), or else to `done.md`'s last change |
 | `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes |
-| `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan, steps added during the run, steps dropped |
+| `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan (a split's lettered parts included), steps added during the run (every `.s<k>` and a lettered part whose parent is not `split`), steps dropped; a `split` row counts in none; `-repin` is planned |
 | `step_h` | `running_h` per landed step |
 | `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing |
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |
@@ -2590,9 +2599,9 @@ counts them by hand.
 | `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate, including finished tasks pueue still holds since the claim |
 | `queue_wait_ratio` | time waiting in the queue against time running (`logs/heavy.tsv` and finished tasks pueue still holds since the claim); `heavy --task` is counted only from its logged row |
 | `suites` | for each repository, each suite's test count and time at its first and its last landing |
-| `proofs` | landed steps, each by its last commit, by proof layer, the first word of their `Proof:` line without its punctuation, and those below their increment's layer, whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
+| `proofs` | landed code steps, each by its last gated commit, by each semicolon part's proof layer, its first word up to the first hyphen (`process-tier` is process), and those below their increment's highest layer, a split judged only at its last part; docs landings count in none; whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
 | `report_lines` | the reports' median and 90th percentile length |
-| `lines` | lines added and removed, in four kinds: production code, tests, generated code (under a `generated/` directory), and data (any file not Rust) |
+| `lines` | lines added and removed by gated code landings (docs landings left out), in four kinds: production code, tests, generated code (under a `generated/` directory), and data (any file not Rust) |
 | `contexts` | the median and 90th percentile of the largest context each session's thread reached, and the handovers (`log.md`'s `Handover` lines) |
 | `pin_lag` | how many commits each repository's pins are behind the upstream mains, when `plan metrics` runs |
 

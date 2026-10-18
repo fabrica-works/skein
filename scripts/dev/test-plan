@@ -68,9 +68,12 @@ repo=$DEV_ROOT/alpha
 dir=$repo/docs/development/plans/demo
 mkdir -p "$dir/alpha" "$dir/findings" "$repo/src" "$repo/tests"
 printf '```\n$ true\n```\n' >"$dir/findings/base-runs.md"
-git -C "$repo" init -q -b main
-git -C "$repo" config user.email test@example.com
-git -C "$repo" config user.name test
+repository() {
+    git -C "$1" init -q -b main
+    git -C "$1" config user.email test@example.com
+    git -C "$1" config user.name test
+}
+repository "$repo"
 cat >"$dir/README.md" <<'EOF'
 # Demo
 
@@ -249,12 +252,12 @@ commit() {
     message="Step $step"$'\n\n'"Body."$'\n\n'
     [[ -z $proof ]] || message+="Proof: $proof"$'\n'
     message+="Plan: demo"$'\n'"Step: $step"$'\n'"Gate-Result: $gate"
-    git -C "$repo" commit -q -m "$message"
+    git -C "$repo" commit -q "${@:4}" -m "$message"
 }
 seq 1 60 | sed 's/^/\/\/ line /' >"$repo/src/big.rs"
 echo "pub struct OwnerThing; // the actual one" >>"$repo/src/big.rs"
 for i in 1 2 3 4; do echo "fn text() {}" >"$repo/tests/t$i.rs"; done
-commit alpha-01.1 "world; the story first, passed" "scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
+commit alpha-01.1 "world, the story first, passed" "scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
 echo "fn early() {}" >"$repo/src/early.rs"
 commit alpha-01.2 "live, an early try" "scripts/check.sh passed: 11 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all"
 echo "fn text() {} // exact" >"$repo/tests/t5.rs"
@@ -411,6 +414,50 @@ expect "the pulse counts a task pueue still holds" "$held_pulse" \
     "queue $((fixture_wait + held_wait)) s waiting, $((fixture_run + held_run)) s running" \
     '2 other gate-lane tasks' 'pueue holds 1 finished tasks no client removed'
 pueue remove "$task_id" >/dev/null
+# Split rows are replaced by planned parts; a supplement remains added.
+cp "$run/ledger.tsv" "$t/ledger.save"
+cp "$run/.pulse" "$t/pulse.save"
+rm "$run/.pulse"
+while read -r step state; do
+    printf '%s\talpha\t04\t%s\t\t\t\t\t%s\t\t\n' "$step" "$state" "$stamp" >>"$run/ledger.tsv"
+done <<'ROWS'
+alpha-04.4 split
+alpha-04.4a landed
+alpha-04.4b landed
+alpha-04.5 landed
+alpha-01.s2 landed
+alpha-04.6 dropped
+ROWS
+expect "split steps in status" "$("$plan" status)" "7 of 9 steps landed; 1 running"
+expect "split steps in pulse" "$("$plan" pulse)" "- Progress: 5 planned and 2 added steps landed since; in all 5 of 6 planned landed, 2 added (0 to go)"
+expect "split steps in metrics" "$("$plan" metrics)" $'steps_planned\t5\t' $'steps_added\t2\t' $'steps_dropped\t1\t'
+cp "$t/ledger.save" "$run/ledger.tsv"
+
+# Each Proof part counts, docs contribute no lines, and only the last split part is judged.
+mkdir -p "$DEV_ROOT/beta" "$dir/beta"
+repository "$DEV_ROOT/beta"
+bcommit() { local repo=$DEV_ROOT/beta; commit "$@" --allow-empty; }
+bcommit beta-01.1 "unit, the units; world, the worlds" passed
+bcommit beta-01.2 "process-tier, the machinery" passed
+bcommit beta-01.3 "codecs, the wire; Live, one run" passed
+bcommit beta-01.4 "joint, together" passed
+bcommit beta-01.5 "" passed
+notes_lines=30
+awk -v lines="$notes_lines" 'BEGIN { for (i=0; i<lines; i++) print "note" }' >"$DEV_ROOT/beta/notes.md"
+bcommit beta-01.6 "" "none, Markdown only"
+bcommit beta-02.1a "unit, the first half" passed
+bcommit beta-02.1b "unit, the second half" passed
+printf '### 02.1\nProof: process, the whole\n' >"$dir/beta/02-parts.md"
+for part in a b; do printf 'beta-02.1%s\tbeta\t02\tlanded\t\t\t\t\t%s\t\t\n' "$part" "$stamp" >>"$run/ledger.tsv"; done
+expect "every Proof word" "$(DEV_REPOS="alpha beta" "$plan" metrics)" \
+    $'proofs\tunit 4, world 2, joint 1, process 1, live 1, codecs 1, none 2, 2 below plan' 'data +1 -0'
+rm "$run/.pulse"
+p=$(DEV_REPOS="alpha beta" "$plan" pulse | grep '^- Proofs:')
+expect "a gated step without Proof is named" "$p" beta-01.5
+expect "docs do not count as missing Proof" "$(if [[ $p != *beta-01.6* ]]; then echo absent; fi)" absent
+cp "$t/ledger.save" "$run/ledger.tsv"
+cp "$t/pulse.save" "$run/.pulse"
+rm -rf "$DEV_ROOT/beta" "$dir/beta"
 
 expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 200K: hand over"
 
