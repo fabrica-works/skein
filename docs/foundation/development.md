@@ -499,7 +499,7 @@ own.
 |---|---|
 | `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes; internal `heavy --task TOKEN -- command…` runs the task and writes its row |
 | `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local`, and `LAND_PREBUILD` the build lane's command before the gate |
-| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan, the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
+| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan (its base run, its design answers and the decisions on its "For the user" items, section 5.4), the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
 | `plan resume [CAUSE]` | after a restart or a crash, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself (section 7.6) |
@@ -918,7 +918,11 @@ read, and their writers cost $42. It holds:
 
 **`decisions.md`:** numbered decisions, each with a short rationale, and
 a closing section "For the user", listing the long-term choices the user
-may veto.
+may veto, each an item of its own (a line starting `- ` or `<n>. `). An
+item is answered when the user, or the director, records a decision on
+it, "no veto" included: a line under the item, before the next one,
+`Decision: <the decision>, by <the user or the director>, <date>.`,
+landed with `land --docs` (section 5.4).
 
 **`later.md`:** a table with columns Item, Design and When.
 
@@ -1089,13 +1093,23 @@ may veto.
 - **A plan lands finished:** its design questions answered, and its
   commands run. `plan check` refuses a plan whose `decisions.md` has an
   item (a line starting `- ` or `<n>. `) in `## Design questions` with
-  no `Answer:` line before the next item or section. When planning must be lighter, the writing is cut, never
-  these runs. In forgejo-17, they were what the planner cut: the process
+  no `Answer:` line before the next item or section. When planning must
+  be lighter, the writing is cut, never these runs. In forgejo-17, they were what the planner cut: the process
   tier, a "Done when" item, would have shown at the base the panic that
   cost a ruling, a design question and two supplements; uncompiled
   sketches cost three rulings of corrections and about 28 failed build
   rounds; and questions answered after the claim held 02.1 for 9.5
   minutes. The runs would have taken minutes.
+- **The user decides before the claim.** `plan check` refuses, as it
+  refuses an open design question, a plan whose `decisions.md` has an
+  item in its "For the user" section (a heading ending `For the user`,
+  numbered or not) with no `Decision:` line before the next item or
+  section (section 5.2). The planner sends the items to the user, as
+  section 10.4 says, when the plan lands, and the user, or the director,
+  lands each decision. In kit-batch, the fence was one of eight such
+  items: it idled the run 1 h 31 min, 40% of it, until the director
+  pinned client-api's kit, a change of minutes; the other seven had no
+  recorded answer.
 - **The plan lands** with `land --docs`, and `STATUS.md` gets the plan's
   row, `ready`. The landing commit carries the trailer `Planner-Session:
   <the planner's $CLAUDE_CODE_SESSION_ID>`, which the metrics read
@@ -1338,7 +1352,9 @@ commits behind smith.
 1. **The plan is on `origin/main`,** with its row `ready` in `STATUS.md`.
 2. **The machine is ready.** `plan check --fix <plan-dir>` passes. It
    checks:
-   - the plan and its `STATUS.md` row;
+   - the plan and its `STATUS.md` row, and that the plan is finished: a
+     base run in `findings/`, its design questions answered, and each of
+     its "For the user" items decided (section 5.4);
    - that the user, or the director, has decided each proposal of the last
      retrospective: the one added last to any repository's `origin/main`
      has a row for each of its proposals in its section 10, and none of
@@ -2066,7 +2082,8 @@ without `## `, separated by `; `.
   and reaches the user at once in a push notification, in one line with
   the choice and the default. While a director is appointed, it reads them
   within minutes, and every push to the user is optional (section 2.7).
-  The run blocks on it only if no work can continue without it.
+  The run blocks on it only if no work can continue without it. The
+  answer is a `Decision:` line under the item (section 5.2).
 - **No role of a run asks the user through a tool that waits for the
   answer** (in Claude Code, AskUserQuestion): its session waits inside
   the tool, and sees no event until the user answers. It writes the

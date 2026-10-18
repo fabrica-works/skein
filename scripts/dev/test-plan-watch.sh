@@ -160,17 +160,21 @@ unfinished=$repo/docs/development/plans/unfinished
 cp -r "$dir" "$unfinished"
 rm "$unfinished/findings/base-runs.md"
 printf '\n## Design questions\n\n1. Which?\n' >>"$unfinished/decisions.md"
+sed -i 's/^Nothing\.$/- **A choice.** Its default./' "$unfinished/decisions.md"
 unfinished_check=$(plan_check "$unfinished")
 expect "a plan with no base run is refused" "$unfinished_check" "FAIL  plan has no base run in findings/ (development.md, section 5.4)"
 expect "an open question is refused" "$unfinished_check" "FAIL  plan has 1 open design question"
+expect "an undecided item for the user is refused" "$unfinished_check" 'FAIL  plan has undecided "For the user" items in decisions.md: 1'
 cp "$dir/findings/base-runs.md" "$unfinished/findings/base-runs.md"
 printf '\nAnswer: this.\n' >>"$unfinished/decisions.md"
+sed -i '/^- \*\*A choice\.\*\*/a\  Decision: no veto, by the director, 2026-10-18.' "$unfinished/decisions.md"
 
 # Per-machine minimums survive a resume; an environment value takes priority.
 printf '%s\n' 'PLAN_MIN_MEM_GB=1' 'BOGUS=3' >"$DEV_TMP/machine.env"
 answered_check=$(plan_check "$unfinished")
 expect "decisions made" "$answered_check" "ok    the last retrospective's proposals are decided (alpha's older)"
-expect "an answered question passes" "$answered_check" "ok    plan has a base run in findings/" "ok    plan has no open design questions in decisions.md"
+expect "an answered question passes" "$answered_check" "ok    plan has a base run in findings/" "ok    plan has no open design questions in decisions.md" \
+    'ok    plan has a decision on each "For the user" item in decisions.md'
 expect "the machine file sets a minimum" "$answered_check" "want 1 (machine.env)" "warn  machine.env: ignored line 2: BOGUS=3"
 expect "the environment wins" "$(PLAN_MIN_MEM_GB=2 plan_check "$dir")" "want 2 (environment)"
 rm "$DEV_TMP/machine.env"

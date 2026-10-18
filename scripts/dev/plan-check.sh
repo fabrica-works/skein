@@ -130,7 +130,21 @@ check_plan() {
     esac
 }
 
-# Only base commands and the Design questions section decide readiness.
+# The items of decisions.md's sections whose heading matches $1 that have
+# no line starting $2 before the next item or heading.
+open_items() {
+    awk -v heading="$1" -v mark="^[[:space:]]*$2" '
+        /^#/ { if (item && !answered) open++; item = 0; section = ($0 ~ heading); next }
+        section && /^(- |[0-9]+\. )/ {
+            if (item && !answered) open++
+            item = 1; answered = 0
+        }
+        section && $0 ~ mark { answered = 1 }
+        END { if (item && !answered) open++; print open + 0 }' "$plan_dir/decisions.md" 2>/dev/null || true
+}
+
+# Only base commands, the Design questions and the user's decisions decide
+# readiness (development.md, section 5.4).
 check_plan_readiness() {
     local open
     if awk '
@@ -142,18 +156,17 @@ check_plan_readiness() {
     else
         fail "plan has no base run in findings/ (development.md, section 5.4)"
     fi
-    open=$(awk '
-        /^#/ { if (item && !answered) open++; item = 0; section = ($0 == "## Design questions"); next }
-        section && /^(- |[0-9]+\. )/ {
-            if (item && !answered) open++
-            item = 1; answered = 0
-        }
-        section && /^[[:space:]]*Answer:/ { answered = 1 }
-        END { if (item && !answered) open++; print open + 0 }' "$plan_dir/decisions.md" 2>/dev/null || true)
+    open=$(open_items '^## Design questions$' 'Answer:')
     if ((open)); then
         fail "plan has $open open design questions in decisions.md"
     else
         ok "plan has no open design questions in decisions.md"
+    fi
+    open=$(open_items '^#+ ([0-9.]+ )?For the user' 'Decision:')
+    if ((open)); then
+        fail "plan has undecided \"For the user\" items in decisions.md: $open (development.md, section 5.4)"
+    else
+        ok "plan has a decision on each \"For the user\" item in decisions.md"
     fi
 }
 
