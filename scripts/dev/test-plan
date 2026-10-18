@@ -401,7 +401,7 @@ plan_numbers() { PUEUE_SNAPSHOT=$t/queue-stats.json PATH=$t/stub:$PATH "$plan" "
 cat >"$t/stub/claude" <<'EOF'
 #!/usr/bin/env bash
 [[ $* == 'agents --json --all' ]] || exit 1
-printf '[]\n'
+printf '%s\n' "${STUB_JOBS:-[]}"
 EOF
 chmod +x "$t/stub/claude"
 pulse=$(DF_GB=90 plan_numbers pulse)
@@ -665,9 +665,14 @@ expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "
 # The supervisor hands over; the old session's watch then shows nothing.
 expect handover "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more" "as $run/kit/docs/foundation/supervisor.md, section 1" "Read development.md and testing-strategy.md there too"
 expect "handover clears the events seen" "$(if [[ ! -s $run/.watch ]]; then echo empty; fi)" empty
-expect "handover by another" "$(CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
+expect "handover by another" "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
+# A job's new session id is recorded, once, and its session may hand over.
+# An earlier run's job of the same name, and another plan's, are not.
+jobs='[{"id":"11111111","name":"demo supervisor","sessionId":"job-supervisor","startedAt":2},{"id":"fake-des","name":"demo designer","sessionId":"fake-designer","startedAt":1},{"id":"0ld0ld00","name":"demo supervisor","sessionId":"0ld0ld00-run","startedAt":0},{"id":"other000","name":"other supervisor","sessionId":"other","startedAt":3}]'
+expect "handover takes the job's new session" "$(STUB_JOBS=$jobs PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=job-supervisor PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over"
+expect "claude.tsv gains the job's session once" "job=$(grep -c job-supervisor "$run/claude.tsv") old=$(grep -c 0ld0ld00 "$run/claude.tsv" || true) other=$(grep -c other "$run/claude.tsv" || true)" "job=1 old=0 other=0"
 printf 'supervisor\tnew-supervisor\t%s\n' "$stamp" >>"$run/claude.tsv"
-expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "watch exited $?")" "handed over: session new-supervisor" "watch exited 4"
+expect "handed over" "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "watch exited $?")" "handed over: session new-supervisor" "watch exited 4"
 
 echo "- 2026-10-11T12:00:00Z: the coordinator is quiet; plan resume" >"$run/alerts.md"
 expect alerts "$("$plan" status)" "## Alerts" "the coordinator is quiet"

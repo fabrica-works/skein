@@ -594,6 +594,7 @@ claude_role_contexts() {
 pulse() {
     load
     ledger_upgrade
+    record_jobs
     local mark=$run/.pulse since from now_s
     now_s=$(date +%s)
     if [[ -f $mark ]]; then

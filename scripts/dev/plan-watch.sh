@@ -49,6 +49,7 @@ watch() {
     load
     local seen=$run/.watch
     touch "$seen"
+    record_jobs
     while :; do
         handed_over && return 4
         if watch_once "$seen"; then

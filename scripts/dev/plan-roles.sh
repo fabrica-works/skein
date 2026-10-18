@@ -28,6 +28,26 @@ record_role() {
     printf '%s\t%s\t%s\n' "$1" "$2" "$(now)" >>"$run/claude.tsv"
 }
 
+# Records each session id a job of this run has taken that claude.tsv
+# lacks: a job resumed, or given a new id, takes one, which plan handover
+# would refuse and the metrics miss. A job is this run's when its id begins
+# a session id claude.tsv holds, the one its role was started with: claude
+# agents --all lists every job ever run, an earlier run's of a plan of the
+# same name too. The oldest job first, so that the role's latest record is
+# its newest job's.
+record_jobs() {
+    [[ -f $run/claude.tsv ]] || return 0
+    local role id
+    while IFS=$'\t' read -r role id; do
+        record_role "$role" "$id"
+    done < <(claude_sessions | jq -r --rawfile tsv "$run/claude.tsv" '
+        ($tsv | split("\n") | map(split("\t") | select(length > 1) | {role: .[0], id: .[1]})) as $known
+        | sort_by(.startedAt // 0)[] | select(.id != null and .sessionId != null) | . as $job
+        | select(all($known[]; .id != $job.sessionId))
+        | first($known[] | select(.id | startswith($job.id)) | .role) // empty
+        | [., $job.sessionId] | @tsv')
+}
+
 # A Claude Code session's state: running, idle, or gone.
 session_state() {
     claude_sessions | jq -r --arg s "$1" '
@@ -408,6 +428,7 @@ handover() {
     fi
     local role=${1:?role: supervisor} old
     [[ $role == supervisor ]] || die "only the supervisor hands over; plan wake starts a fresh designer"
+    record_jobs
     old=$(role_session supervisor)
     [[ -z ${CLAUDE_CODE_SESSION_ID:-} || $CLAUDE_CODE_SESSION_ID == "$old" ]] ||
         die "this session is not the run's supervisor; $old is"

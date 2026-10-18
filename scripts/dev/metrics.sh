@@ -237,6 +237,7 @@ metrics() {
         last_run
     fi
     [[ -d $run ]] || die "no run directory at $run"
+    record_jobs
     if [[ -n $out ]]; then
         metrics_of >"$out"
         echo "wrote $out"
