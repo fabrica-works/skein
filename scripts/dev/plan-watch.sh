@@ -8,11 +8,36 @@
 # ring starts its next turn.
 idle() {
     load
-    local reason=${1:?reason} at
+    local reason=${1:?reason} at tasks=''
+    shift
+    if (($#)); then
+        [[ $1 == --tasks ]] || die "usage: plan idle REASON [--tasks ID…]"
+        shift
+        (($#)) || die "--tasks needs queue task ids"
+        tasks=$*
+    fi
     at=$(now)
     printf '%s\n%s\n' "$at" "$reason" >"$run/idle.md"
+    [[ -z $tasks ]] || printf 'tasks: %s\n' "$tasks" >>"$run/idle.md"
     printf '## Idle, %s\n\n%s\n\n' "$at" "$reason" >>"$run/log.md"
     echo "idle since $at: end your turn now; the doorbell starts your next one"
+}
+
+# Queue completions wake the coordinator without ending the supervisor's watch.
+wake_idle_tasks() {
+    local tasks queue message
+    [[ -f $run/idle.md && ! -f $run/paused.md && ! -f $run/done.md ]] || return 0
+    tasks=$(sed -n '3s/^tasks: //p' "$run/idle.md")
+    [[ -n $tasks ]] || return 0
+    queue=$(pueue status --json 2>/dev/null) || return 0
+    jq -e --arg ids "$tasks" '
+        [.tasks as $tasks | ($ids | split(" ")[]) as $id
+         | $tasks[$id].status? | objects | keys[0]
+         | select(. == "Queued" or . == "Running" or . == "Paused")]
+        | length == 0' <<<"$queue" >/dev/null || return 0
+    message="From the supervisor, by plan watch: the queue tasks you wait on have ended: $tasks"
+    coordinator_turn watch "$message" "$(coordinator_wake_prompt "$message")" >/dev/null || return 0
+    rm -f "$run/idle.md"
 }
 
 # Wait until the supervisor has something to do (development.md, section
@@ -79,6 +104,7 @@ watch_once() {
         shown=1
     done < <(awk -F'\t' 'NR > 1 && $4 == "check" { print $1 "\t" $2 "\t" $3 }' "$run/ledger.tsv" 2>/dev/null)
     ((!shown)) || return 0
+    wake_idle_tasks
     if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md && ! -f $run/idle.md ]]; then
         beat=$(stat -c %Y "$run/heartbeat")
         age=$(($(date +%s) - beat))

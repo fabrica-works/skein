@@ -413,7 +413,7 @@ machine's run. Nothing here is versioned.
 | `claude.tsv` | `plan start`, `join`, `wake`, `handover`, `retro` | one line per Claude Code session that works on the run: its role, its session id and when, for `plan attach`, `plan wake` and the metrics; a role's last line is its current session |
 | `heartbeat` | the coordinator | touched at every wake-up |
 | `alerts.md` | the supervisor | each alert to the user, one line with its UTC time; `plan status` prints its last ten lines first (section 10.5) |
-| `idle.md` | `plan idle`; removed by `plan ring` | since when, and why, the coordinator ended its turn with nothing to do (section 7.4) |
+| `idle.md` | `plan idle`; removed by `plan ring` or the watch’s queue wake | since when, why, and optional third line `tasks: <ids>` naming the queue tasks the coordinator waits on (section 7.4) |
 | `.watch` | `plan watch`; cleared by `plan handover supervisor` and a supervisor started by `plan resume` | the escalations and events this supervisor session has seen |
 | `handed-over` | `plan handover` | the supervisor sessions that handed over, to which `plan watch` shows nothing more |
 | `blocked.md` | the coordinator | open escalations (section 10.2) |
@@ -499,7 +499,7 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 | `plan landed STEP COMMIT` | fetches and checks a landing against origin/main, its Step trailer and its worktree, then sets the ledger only when all pass (section 7.3) |
 | `plan set STEP KEY=VALUE…` | adds or changes a ledger row |
 | `plan log REPOSITORY NN [FILE]` | logs an implementer's report, from FILE or its standard input, in `log.md` and `reports/`, and prints the report's file (section 8.6) |
-| `plan idle REASON` | the coordinator, with nothing running, ends its turn; `idle.md` says why, and the next ring starts its next turn (section 7.4) |
+| `plan idle REASON [--tasks ID…]` | the coordinator, with nothing running, ends its turn; `idle.md` says why, and the next ring starts its next turn (section 7.4) |
 | `plan docs` | prints the supervisor's worktree of the plan's repository, made at `origin/main`, and moved there whenever it is clean |
 | `plan ruling [--text FILE] TITLE SOURCE` | lands a ruling, written once: the Decision of `unblock.draft.md`, or FILE's text, as the next ruling of `decisions.md`, with the plan edits in the supervisor's worktree; then, for an unblock, names the commit, moves the draft to `unblock.md` and rings (section 10.3) |
 | `plan ready STEP [NOTE]` | sets a step the supervisor has checked to `ready`, and rings (section 7.2) |
@@ -1561,7 +1561,10 @@ dependency lands.
 - **When no session is running,** and nothing is left for you to do
   (holding for an answer, for the user, or for a pause to end): rewrite
   `context.md`, run `plan idle "<what you wait for>"`, and end your turn.
-  The next ring starts your next turn, with its message. Never sleep in a
+  When waiting on queue tasks, append `--tasks <ids>`: the watch starts
+  your next turn once none is queued, running or paused. A task removed
+  from the queue has ended too. The next ring starts your next turn, with
+  its message. Never sleep in a
   loop: in jig-protocol, 60-second sleeps while holding for the user made
   205 requests, and 52M input tokens, with nothing to do.
 - **No background waits.** Do not start `until` loops, `sleep` sessions,
@@ -1581,6 +1584,10 @@ dependency lands.
   the kit checks `thread/loaded/list`, loads the thread when needed, and
   appends `## Coordinator loaded, <UTC time>: by plan ring` to `log.md`.
   A refused send loads and sends once more.
+- **Queue tasks ended.** On `From the supervisor, by plan watch: the queue
+  tasks you wait on have ended: <ids>`, read those tasks' results and act
+  on them as on a task you saw end. The watch sends through the same
+  loading path as a ring and keeps watching; the supervisor is not woken.
 - **A finished implementer** ends its turn with its last report. Give a
   session that yielded its next step with `followup_task`, unless its
   context is past the limit, or it has stood idle for over an hour

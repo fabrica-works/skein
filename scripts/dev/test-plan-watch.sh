@@ -23,7 +23,21 @@ ring_result=$("$plan" ring stopped 2>&1) && ring_code=0 || ring_code=$?
 expect "ring with no turn says resume" "$ring_code: $ring_result" "3: plan: the coordinator has no turn in progress: plan resume"
 
 # The watch, each of its events.
-watch() { timeout 10 "$plan" watch || echo "watch exited $?"; }
+mkdir -p "$t/stub"
+cat >"$t/stub/pueue" <<EOF
+#!/usr/bin/env bash
+[[ \$* == 'status --json' && ! -e $t/pueue.down ]] || exit 1
+if [[ -f $t/pueue.json ]]; then cat "$t/pueue.json"; else echo '{"tasks":{}}'; fi
+EOF
+chmod +x "$t/stub/pueue"
+watch() { PATH=$t/stub:$PATH timeout 10 "$plan" watch || echo "watch exited $?"; }
+# A bounded observation of three polls (PLAN_POLL=0.1).
+silent_watch() {
+    local output status=0
+    output=$(PATH=$t/stub:$PATH timeout 0.3 "$plan" watch) || status=$?
+    printf 'status=%s bytes=%s' "$status" "${#output}"
+}
+fake_starts() { awk '$1 == "turn/start" { count++ } END { print count+0 }' "$PLAN_CODEX_FAKE/calls"; }
 # One call gathers all open events; a second call has none to show.
 : >"$run/.watch"
 printf '# Blocked\n\n## alpha 01.2: an open question\n' >"$run/blocked.md"
@@ -31,8 +45,7 @@ echo '# Answer' >"$run/answer.md"
 "$plan" set alpha-01.2 state=check
 expect "the first watch prints every open event" "$(watch)" "blocked:" "answer:" "check: alpha-01.2"
 # Three polls suffice to show that no event is repeated (PLAN_POLL=0.1).
-quiet_watch=$(timeout 0.3 "$plan" watch) && quiet_status=0 || quiet_status=$?
-expect "the next watch repeats no event" "status=$quiet_status output=$quiet_watch" "status=124 output="
+expect "the next watch repeats no event" "$(silent_watch)" "status=124 bytes=0"
 rm "$run/blocked.md" "$run/answer.md"
 "$plan" set alpha-01.2 state=landed
 : >"$run/.watch"
@@ -146,3 +159,13 @@ git -C "$repo" branch -D b4 >/dev/null
 git -C "$repo" remote remove origin
 mv "$t/ledger.before-landed" "$run/ledger.tsv"
 
+# The coordinator waits for a named queue task, then receives its completion.
+task=12
+: >"$PLAN_CODEX_FAKE/calls"
+"$plan" idle "the gate" --tasks "$task" >/dev/null
+printf '{"tasks":{"%s":{"status":{"Running":{}}}}}\n' "$task" >"$t/pueue.json"
+expect "running tasks keep the coordinator idle" "$(silent_watch); starts=$(fake_starts)" "status=124 bytes=0; starts=0"
+printf '{"tasks":{"%s":{"status":{"Done":{}}}}}\n' "$task" >"$t/pueue.json"
+expect "completed tasks keep the supervisor watching" "$(silent_watch)" "status=124 bytes=0"
+expect "the watch rings when the tasks end" "starts=$(fake_starts); idle=$(if [[ -f $run/idle.md ]]; then echo present; else echo removed; fi)" "starts=1; idle=removed"
+expect "the queue wake names the supervisor" "$(cat "$PLAN_CODEX_FAKE/calls")" 'From the supervisor, by plan watch: the queue tasks you wait on have ended: 12'

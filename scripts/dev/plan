@@ -13,7 +13,7 @@
 #   plan landed STEP COMMIT       check a landing, then set its ledger state
 #   plan set STEP KEY=VALUE...    add or change a step in the ledger
 #   plan log REPO NN [FILE]       log an implementer's report (stdin, or FILE); print its file
-#   plan idle REASON              the coordinator ends its turn; the doorbell starts the next
+#   plan idle REASON [--tasks ID…] the coordinator ends its turn; the doorbell starts the next
 #   plan watch                    wait for something the supervisor must see
 #   plan ring MESSAGE             ring the coordinator's doorbell
 #   plan docs                     the supervisor's worktree of the plan's repository
