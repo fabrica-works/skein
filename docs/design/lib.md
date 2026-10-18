@@ -577,10 +577,13 @@ lib because it is a data structure with a lifecycle, like a queue or the journal
   asker is gone. It can then route by the variant to the part that asked
   without keeping a routing table of its own. The owner is not required
   to be a token: a token's holder never interprets it (section 2).
-- **Keys:** each admitted request gets a key drawn from the seed given
-  at construction, never reused for another request. A restored request
-  keeps its key. Exhausting the key space refuses admission rather than
-  reusing a key.
+- **Keys:** a key is drawn from the seed given at construction, or given
+  by the asker (a digest of a name, say). A drawn key is never reused for
+  another request. A given key is the asker's: the table admits it while
+  it holds no entry under it. An entry holds its key from its admission
+  to its reclaim, retired or not. A restored request keeps its key.
+  Exhausting the key space refuses admission (`Full`) rather than reusing
+  a key.
 - **Scope:** each request keeps an opaque number its asker gives. Only
   requests whose scope is confirmed may be sent.
 - **Kept before sent:** each admitted request emits its record for the
@@ -589,14 +592,16 @@ lib because it is a data structure with a lifecycle, like a queue or the journal
   leave before the sends they cover, in order; each take emits at most
   its configured count. Retiring a request emits its erase.
 - **Not kept:** a request whose record the asker's store did not write
-  is retired by its key (`not_kept`), whatever its state: parked, ready,
-  in flight or retrying. The asker hands a send over only once the
-  records taken before it are stored, so such a request was never sent.
-  It is never sent; an answer for its attempt changes nothing. Its erase
-  is emitted, as any retired request's, since an earlier write may hold
-  its record. Its owner value is handed back, as a final answer's, with
-  no progress, and the asker answers it itself. A key that names no
-  request, or a retired one, hands back nothing.
+  is retired by its key and the number of its admission (`not_kept`),
+  whatever its state: parked, ready, in flight or retrying. The asker hands a send over only once the records taken
+  before it are stored, so such a request was never sent. It is never
+  sent; an answer for its attempt changes nothing. Its erase is emitted,
+  as any retired request's, since an earlier write may hold its record.
+  Its owner value is handed back, as a final answer's, with no progress,
+  and the asker answers it itself. A key that names no request, or a
+  retired one, hands back nothing. So does an admission number earlier
+  than the one the key holds: a stale "not kept" never retires a later
+  holder of the same given key.
 - **One attempt:** a request has at most one attempt in flight. Each
   attempt has its own fresh token, independent of the owner value.
   An answer for a superseded or retired attempt changes nothing.
@@ -625,12 +630,18 @@ lib because it is a data structure with a lifecycle, like a queue or the journal
 - **Progress:** changes to in flight, retrying, parked or unknown leave
   with the owner value, for display. The table never reads the answer
   or decides how progress is shown.
-- **Admission and memory:** capacities are fixed at construction. A
-  request past the held-request count or the sum of owners' declared
-  bytes is refused at admission, returning ownership and changing
-  nothing. The table does not measure a request. `worst_case` prices its
-  containers, owner values and bookkeeping from the limits with checked
-  arithmetic; the owner prices the payload bytes it declares separately.
+- **Admission and memory:** capacities are fixed at construction. `ask`
+  and `restore` refuse with a reason, handing back the request and
+  changing nothing: `Full` (past the held-request count or the sum of
+  owners' declared bytes, or no key left to draw) or `Held` (the key is
+  held). A restore of a held key is refused as `Held`. Each admission, by
+  `ask` or by `restore`, has a number, which they return with the key.
+  Numbers increase with each admission. `not_kept` names the key and the
+  number; every other call stays by key: an asker holds one admission per
+  key at a time. The table does not measure a request. `worst_case`
+  prices its containers, owner values and bookkeeping from the limits
+  with checked arithmetic; the owner prices the payload bytes it
+  declares separately.
 
 The asker decides each request's scope and contents, supplies its owner
 value and declared size, and tells the table the link, confirmed scope,
