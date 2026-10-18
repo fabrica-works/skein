@@ -347,7 +347,11 @@ designed old 1 0 0 1 >"$m/$d_old.jsonl"
 designed other 1 0 0 1 >"$m/$other.jsonl"
 
 # The pulse.
-pulse=$("$plan" pulse)
+mkdir -p "$t/stub"
+printf '#!/bin/sh\necho Avail; echo "${DF_GB}G"\n' >"$t/stub/df"; chmod +x "$t/stub/df"
+pulse=$(PATH=$t/stub:$PATH DF_GB=90 "$plan" pulse)
+rm "$t/stub/df"
+expect "the pulse names its disk rung" "$pulse" "- Disk: 90 GB free; no rule applies."
 expect pulse "$pulse" \
     "- Progress: 2 planned and 1 added steps landed since; in all 2 of 3 planned landed, 1 added (0 to go)" \
     "- Running: alpha-01.3 (w1)" \
@@ -364,7 +368,7 @@ expect pulse "$pulse" \
     "Claude Code at list prices, since the design: \$0: planner \$0, supervisor \$0, designer \$0" \
     "1 steers in all, 1 points refused" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
-    "- Contexts: t-impl-1 100K (past 200K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
+    "- Contexts: t-impl-1 100K (past 150K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 sleep 1
 expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
@@ -499,7 +503,31 @@ cp "$t/ledger.save" "$run/ledger.tsv"
 cp "$t/pulse.save" "$run/.pulse"
 rm -rf "$DEV_ROOT/beta" "$dir/beta"
 
-expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 200K: hand over"
+expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 150K: hand over"
+# The rollout fixture's peak is 260K: reaching the configured limit holds.
+context_handover() { local out; out=$(PLAN_CONTEXT_LIMIT=$1 "$plan" contexts); if [[ $out == *"hand over"* ]]; then echo handover; else echo clear; fi; }
+fixture_peak=260000
+expect "the context limit holds at the peak" "$(context_handover "$fixture_peak")" clear
+expect "one token past the limit hands over" "$(context_handover "$((fixture_peak - 1))")" handover
+
+# Section 11.4's rungs hold at each bound and apply one GB below it.
+# shellcheck source=kit.sh
+source "$kit/kit.sh"
+# shellcheck source=numbers.sh
+source "$kit/numbers.sh"
+export tmp=$DEV_TMP
+while IFS='|' read -r gb want; do
+    expect "disk ladder, gb=$gb" "<$(PLAN_MIN_DISK_GB=40 disk_rule "$gb")>" "<$want>"
+done <<'DISK'
+80|no rule applies
+79|kache gc at this check
+60|kache gc at this check
+59|kache gc at this check; at most six sessions run
+40|kache gc at this check; at most six sessions run
+39|kache gc at this check; at most six sessions run; starts held
+15|kache gc at this check; at most six sessions run; starts held
+14|kache gc at this check; at most six sessions run; starts held; the line stops
+DISK
 
 expect "context of a session" "$("$plan" context "$session")" 'context: 1K (compactions: 2): hand over now'
 status=0

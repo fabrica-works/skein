@@ -12,6 +12,21 @@
 codex_home=${CODEX_HOME:-$HOME/.codex}
 claude_home=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 
+# A session hands over after its peak passes this many tokens (section 7.3).
+context_limit() { echo "${PLAN_CONTEXT_LIMIT:-150000}"; }
+
+# Name every applicable rung of development.md's disk ladder (section 11.4).
+disk_rule() {
+    local gb=$1 floor rule
+    if ((gb >= 80)); then echo "no rule applies"; return; fi
+    rule="kache gc at this check"
+    ((gb >= 60)) || rule+="; at most six sessions run"
+    read -r floor _ <<<"$(machine_setting PLAN_MIN_DISK_GB 40)"
+    ((gb >= floor)) || rule+="; starts held"
+    ((gb >= 15)) || rule+="; the line stops"
+    echo "$rule"
+}
+
 # Read complete JSON objects line by line, skipping torn transcript records.
 jsonl() {
     local -a args=()
@@ -708,10 +723,11 @@ pulse() {
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
     echo "- Pins behind upstream main, in commits: $(pin_lag "")."
-    echo "- Contexts: $(thread_contexts | awk -F'\t' -v limit="${PLAN_CONTEXT_LIMIT:-200000}" '
+    echo "- Contexts: $(thread_contexts | awk -F'\t' -v limit="$(context_limit)" '
         $1 == "session" { line = line (n++ ? ", " : "") $2 " " int($4 / 1000) "K"; if ($5 > limit) past = past (p++ ? ", " : "") $2 }
         END { printf "%s", (n ? line : "no session yet"); if (p) printf " (past %dK: %s)", limit / 1000, past }'); Claude Code: $(claude_role_contexts)."
-    echo "- Machine: heartbeat $((now_s - beat)) s ago; $mem GB memory and $disk GB disk free."
+    echo "- Machine: heartbeat $((now_s - beat)) s ago; $mem GB memory free."
+    echo "- Disk: $disk GB free; $(disk_rule "$disk")."
 
     printf '%s %s\n' "$now_s" "$((log_lines + 1))" >"$mark"
 }

@@ -507,7 +507,7 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 | `plan watch` | waits until the supervisor has something to do, and prints its context and its compactions; at `PLAN_COMPACTIONS` (2), the word to hand over (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
 | `plan context [SESSION]` | prints a Claude Code session's context and compactions, with the word to hand over at `PLAN_COMPACTIONS` (2); defaults to `CLAUDE_CODE_SESSION_ID` (sections 2.1 and 2.2) |
-| `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (200,000 tokens) (section 7.3) |
+| `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (150,000 tokens) (section 7.3) |
 | `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane in fresh `downstream/` worktrees, removes them on every exit, and lands nothing (sections 5.7 and 14.1) |
 | `plan ring MESSAGE` | loads the coordinator's thread if needed, rings its doorbell, and starts the turn of an idle one (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
@@ -2463,7 +2463,8 @@ Since the last check:
   does not);
 - **contexts:** each session's context, and those past the limit
   (section 7.3); the supervisor's and the designer's;
-- **the machine:** the heartbeat's age, memory and disk.
+- **the machine:** the heartbeat's age, memory, disk and the rung of
+  section 11.4's disk ladder it is on.
 
 The numbers come from the script, not from reading: a log read by eye is
 easily misread.

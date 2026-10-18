@@ -579,12 +579,13 @@ downstream() {
 
 # Each Codex thread's context, the input of its last request, and the
 # largest it reached: the coordinator's, then each session's. A session
-# whose largest passed PLAN_CONTEXT_LIMIT (200,000 tokens) hands over after
+# whose largest passed PLAN_CONTEXT_LIMIT (150,000 tokens) hands over after
 # its next landing (development.md, section 7.3): a compaction lowers the
 # last, and must not hide it.
 contexts() {
     load
-    local limit=${PLAN_CONTEXT_LIMIT:-200000} kind slot thread last peak flag
+    local limit kind slot thread last peak flag
+    limit=$(context_limit)
     while IFS=$'\t' read -r kind slot thread last peak; do
         flag=""
         [[ $kind != session ]] || ((peak <= limit)) || flag="  past $((limit / 1000))K: hand over"
