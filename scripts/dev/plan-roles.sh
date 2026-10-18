@@ -162,6 +162,22 @@ coordinator_wake_prompt() {
     echo "${PLAN_COORDINATOR_WAKE:-$text}"
 }
 
+# The profile's TOML values, keyed as Codex's dotted config overrides.
+profile_config() {
+    awk '
+        /^[[:space:]]*(#|$)/ { next }
+        /^\[/ { section = substr($0, 2, length($0) - 2); next }
+        /=/ {
+            key = substr($0, 1, index($0, "=") - 1)
+            value = substr($0, index($0, "=") + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            if (section == "" && key == "model") next
+            print (section == "" ? key : section "." key) "\t" value
+        }
+    ' "$profile" | jq -Rn '[inputs | split("\t") | {key: .[0], value: (.[1] | fromjson)}] | from_entries'
+}
+
 start_coordinator() {
     local result thread
     # shellcheck source=codex.sh
@@ -169,8 +185,9 @@ start_coordinator() {
     codex_open || die "the Codex daemon does not answer: codex app-server daemon start"
     result=$(codex_call thread/start "$(jq -cn --arg cwd "$root" --arg model "$codex_model" \
         --arg effort "$codex_effort" --argjson threads "${codex_threads:-8}" --arg sandbox "$codex_sandbox" \
+        --argjson profile "$(profile_config)" \
         '{cwd: $cwd, model: $model, sandbox: $sandbox, approvalPolicy: "never",
-          config: {model_reasoning_effort: $effort, agents: {max_threads: $threads}}}')") ||
+          config: ($profile + {model_reasoning_effort: $effort, "agents.max_threads": $threads})}')") ||
         die "the Codex daemon did not start the coordinator's thread"
     thread=$(jq -r '.thread.id' <<<"$result")
     printf '%s\n' "$thread" >"$run/thread"

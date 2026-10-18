@@ -62,3 +62,14 @@ expect "resume takes a given cause" "$(resume_case crash)" 'status=0' ': crash' 
 rm "$run/heartbeat"
 expect "resume with no heartbeat" "$(resume_case)" 'status=0' ': unknown' 'turn/start '
 mv "$t/heartbeat.before-resume" "$run/heartbeat"
+
+# A fresh coordinator takes typed profile settings through the fake daemon.
+mv "$run/thread" "$t/thread.before-profile"
+[[ ! -f $run/threads ]] || mv "$run/threads" "$t/threads.before-profile"
+PLAN_DRY_RUN=1 "$plan" resume >/dev/null
+expect "the thread takes the profile" "$(jq -r '
+    "compact_limit=\(.config.model_auto_compact_token_limit) graph_enabled=\(.config["mcp_servers.codebase-memory-mcp.enabled"])"
+' "$PLAN_CODEX_FAKE/started")" 'compact_limit=200000 graph_enabled=false'
+mv "$t/thread.before-profile" "$run/thread"
+rm -f "$run/threads"
+[[ ! -f $t/threads.before-profile ]] || mv "$t/threads.before-profile" "$run/threads"

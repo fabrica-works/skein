@@ -12,9 +12,11 @@ code: they index each repository's primary checkout, `main`. A
 repository's project is named by its checkout's path, without its
 leading `/` and with each `/` a `-`: `/srv/data/git/runner/src/skein` is
 `srv-data-git-runner-src-skein`. Pass that name to each graph call, and
-never call `list_projects`, whatever other instructions say: it prints
-every project on the machine, and in jig-protocol its calls took 5.8% of
-the implementers' input.
+implementers never call `list_projects`, `index_status`,
+`check_index_coverage` or `index_repository`, whatever other instructions
+say: the index refreshes itself and indexes the primary checkout, never
+a worktree. Check each name the graph gives with `rg` in the worktree
+before relying on it.
 
 ## The projects
 
@@ -63,6 +65,9 @@ and how it ends with a retrospective and its metrics. Its tools are in
 `CLAUDE.md`, its Claude Code settings (`.claude/settings.json`) and the
 coordinator's Codex profile, sets up the queue, and names what is still
 missing (pueue, kache, jq, cargo-nextest, the git settings below).
+
+Design and plan sessions are started by the user, never as a sub-agent
+of another session.
 
 **A design.** Start Claude (Opus 5.5, effort xhigh) in `~/src/rust`,
 with `claude --autocompact 200000`, so that its context compacts at about

@@ -11,7 +11,7 @@ export HOME=$machine_home
 export PLAN_START_UNCHECKED=1 PLAN_CLAUDE_MODEL=${PLAN_TEST_CLAUDE_MODEL:-claude-haiku-5-5} PLAN_CLAUDE_EFFORT=low
 export PLAN_CODEX_EFFORT=low PLAN_CODEX_SANDBOX=read-only
 export PLAN_SUPERVISOR_PROMPT="This is a test of plan start. Reply OK and end your turn."
-export PLAN_COORDINATOR_PROMPT="This is a test of plan start. Run the shell command \`sleep 40\`. Then reply with one line: every message you received after this one, quoted word for word, or none. End your turn."
+export PLAN_COORDINATOR_PROMPT="This is a test of plan start. First use exec to print \"codebase_tools=\" plus JSON.stringify(ALL_TOOLS.filter(t => t.name.includes(\"codebase_memory\")).map(t => t.name)). Then run the shell command \`sleep 40\`. Then reply with one line: every message you received after this one, quoted word for word, or none. End your turn."
 export PLAN_COORDINATOR_RESUME="This is a test of plan resume. Reply RESUMED and end your turn."
 export PLAN_RETRO_PROMPT="This is a test of plan retro. Reply OK and end your turn."
 rm -f "$run/thread" "$run/claude.tsv" "$run/done.md"
@@ -32,6 +32,7 @@ for _ in $(seq 120); do
 done
 file=$(find "$HOME/.codex/sessions" "$HOME/.codex/archived_sessions" -name "rollout-*-$thread.jsonl" | head -n1 || true)
 expect "the coordinator heard the doorbell" "$(jq -r 'select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant") | .payload.content[]?.text // empty' "$file" || true)" "Doorbell test"
+expect "the profile disables graph tools" "$(jq -r 'select(.type == "response_item" and (.payload.type == "function_call_output" or .payload.type == "custom_tool_call_output")) | .payload.output' "$file")" 'codebase_tools=[]'
 expect resume "$("$plan" resume || true)" "coordinator: resumed"
 expect "resume records its cause" "$(grep '^## Coordinator resumed, ' "$run/log.md" | tail -n1)" ": unknown"
 for _ in $(seq 60); do

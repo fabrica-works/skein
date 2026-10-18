@@ -196,6 +196,10 @@ the implementers.
 - **Never designs, decides, reviews or writes code.**
   - It never edits a design or a plan, never answers a design question,
     and never fixes anything itself.
+  - Its Codex thread takes every coordinator profile setting except
+    `model` as dotted config keys; `PLAN_CODEX_EFFORT` and
+    `PLAN_CODEX_THREADS` override them. The profile disables the code
+    graph server.
   - It checks reports with git only, and never queries the code graph,
     whatever other instructions say: it reads no code. In protocol, a
     machine's `~/.codex/AGENTS.md` had it query the graph before 80 of its
@@ -409,7 +413,7 @@ machine's run. Nothing here is versioned.
 | `log.md` | the implementers, through `plan log`; the coordinator | every report, every escalation and its answer; appended only |
 | `reports/<repository>-<NN>-<time>.md` | `plan log` | each report, as its implementer wrote it, for the files that name it (section 8.6) |
 | `context.md` | the coordinator | what a restarted coordinator needs; rewritten, never appended |
-| `thread`, `threads` | `plan start`, `plan resume`, the coordinator | the coordinator's Codex thread's id, for the doorbell; every thread it has had, with when, for the metrics |
+| `thread`, `threads` | `plan start`, `plan resume`, the coordinator | the coordinator's Codex thread's id, for the doorbell; every thread it has had, with when, for the metrics. Each starts with the coordinator profile's config settings |
 | `claude.tsv` | `plan start`, `join`, `wake`, `handover`, `retro` | one line per Claude Code session that works on the run: its role, its session id and when, for `plan attach`, `plan wake` and the metrics; a role's last line is its current session |
 | `heartbeat` | the coordinator | touched at every wake-up |
 | `alerts.md` | the supervisor | each alert to the user, one line with its UTC time; `plan status` prints its last ten lines first (section 10.5) |
@@ -1337,7 +1341,8 @@ commits behind smith.
      xhigh) in the workspace, named `<plan> supervisor`, with "Supervise the
      run of `<plan-dir>` as skein's docs/foundation/supervisor.md says.";
    - it starts the coordinator, a thread on Codex's daemon named `<plan>
-     coordinator`, with "Coordinate the run of `<plan-dir>`, as skein's
+     coordinator`, with its profile's dotted config settings and the code
+     graph server disabled, and "Coordinate the run of `<plan-dir>`, as skein's
      docs/foundation/development.md, section 7, says.";
    - it rings the doorbell once, which the coordinator logs (section 7.4).
      If the ring fails, steers wait for the coordinator's next wake-up.
