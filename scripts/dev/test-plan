@@ -109,6 +109,8 @@ words: actual|exact
 types: ^Owner[A-Z]
 file-lines: 50
 budgets: 15 60
+aims: beta 8 30
+aims: alpha 1.05 60
 ```
 EOF
 echo "# Code organization" >"$dir/code-organization.md"
@@ -414,6 +416,7 @@ expect pulse "$pulse" \
     "- Record: headings no shape names: 1 (the first: \"## Unblock handled, 2026-10-11T12:06:00Z\"); Kind values not in section 10.2: none; context.md lines past 200 characters: 1." \
     "code +65 -0, tests +6 -0, generated +1 -0, data +61 -0." \
     "last gate: scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all; within four fifths of the budgets" \
+    "Landings past the aims: alpha-01.2 (focused 1.1 s past 1.05); alpha-01.s1 (focused 1.1 s past 1.05)." \
     "SLOW lines in gate logs: 2" \
     "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
     "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
@@ -425,6 +428,13 @@ expect pulse "$pulse" \
 expect "a document is judged by no length" "$(if [[ $pulse != *docs/long.md* ]]; then echo absent; fi)" absent
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 expect "pulse again" "$(plan_numbers pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
+sed -i.save '/^aims: alpha /d' "$dir/README.md"
+rm "$run/.pulse"
+expect "a repository without aims names no landing" "$(plan_numbers pulse)" "Landings past the aims: none."
+sed -i '/^aims:/d' "$dir/README.md"
+rm "$run/.pulse"
+expect "no aims, no line" "$(if [[ $(plan_numbers pulse) != *'past the aims'* ]]; then echo absent; fi)" absent
+mv "$dir/README.md.save" "$dir/README.md"
 
 # The metrics.
 metrics=$(plan_numbers metrics --out "$dir/metrics.tsv"; cat "$dir/metrics.tsv")

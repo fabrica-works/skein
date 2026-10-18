@@ -375,9 +375,14 @@ running_seconds() {
 }
 
 # The plan's README settings for the pulse (development.md, section 5.2):
-# lines `words: …`, `types: …`, `file-lines: N`, `budgets: FOCUSED FUZZY`.
+# lines `words: …`, `types: …`, `file-lines: N`, `budgets: FOCUSED FUZZY`,
+# and, one per repository, `aims: REPOSITORY FOCUSED FUZZY`.
+pulse_lines() {
+    sed -nE "s/^ *$1: *(.*[^ ]) *$/\\1/p" "$plan_dir/README.md" 2>/dev/null
+}
+
 pulse_setting() {
-    sed -nE "s/^ *$1: *(.*[^ ]) *$/\\1/p" "$plan_dir/README.md" 2>/dev/null | head -n1
+    pulse_lines "$1" | head -n1
 }
 
 is_test_path() {
@@ -677,6 +682,22 @@ pulse() {
             print (out == "" ? "within four fifths of the budgets" : out) }')"
     else
         echo "- Tests: no gate since"
+    fi
+    # The landings past their repository's aims, by the times in their own
+    # Gate-Result.
+    local aims past
+    aims=$(pulse_lines aims)
+    if [[ -n $aims ]]; then
+        past=$(awk -F'\t' -v a="$(paste -sd ';' <<<"$aims")" '
+            BEGIN { n = split(a, line, ";"); for (i = 1; i <= n; i++) { split(line[i], f, " "); focus[f[1]] = f[2]; fuzz[f[1]] = f[3] } }
+            $6 != "" && $6 != "-" && ($1 in focus) {
+                n = split($6, part, ";"); out = ""
+                for (i = 1; i <= 2 && i <= n; i++) if (match(part[i], /[0-9.]+ s/)) {
+                    t = substr(part[i], RSTART, RLENGTH - 2) + 0; b = (i == 1) ? focus[$1] : fuzz[$1]
+                    if (b != "" && t > b + 0) out = out sprintf("%s%s %g s past %s", (out == "" ? "" : ", "), (i == 1) ? "focused" : "fuzzy", t, b)
+                }
+                if (out != "") printf "%s%s (%s)", (k++ ? "; " : ""), $4, out }' <<<"$commits")
+        echo "  Landings past the aims: ${past:-none}."
     fi
     local slow
     slow=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { print $9 }' < <(queue_rows "$run") |
