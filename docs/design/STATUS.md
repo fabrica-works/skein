@@ -201,3 +201,4 @@ section 3.3).
 |---|---|---|
 | `draft/process.md` | Contained process trees: a cgroup and a view of the file system per tree, stopped whole, proved empty, nested | Promotion into `io.md` by a design pass, then a plan of its own |
 | `draft/redb.md` | redb as an adapter over skein's file records, at the boundary of a service and its shell | A decision to adopt it, once a store outgrows memory (`kv.md`, section 12); then its section 7 checks |
+| `draft/forge.md` | The forge kit, moved from temper: a neutral vocabulary of forge calls with Forgejo's dialect (`skein-forge`), the component (`skein-forge-connection`), the client's working set, budget and write lanes (`skein-forge-client`), the setup's machines (`skein-forge-setup`), the fake forge and the conformance; GitHub's seams | Review with temper's `draft/forge-kit.md`; promotion into five documents (its section 11); then temper's extraction plan, after client-api's run |
