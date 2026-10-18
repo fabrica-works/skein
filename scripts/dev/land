@@ -292,7 +292,7 @@ Say what the code checks instead, never a synonym (development.md, section 4.5);
     fi
 
     if ! err=$(git push --quiet origin "$commit:refs/heads/main" 2>&1); then
-        if grep -qE 'non-fast-forward|fetch first|stale info|cannot lock ref' <<<"$err"; then
+        if grep -qE 'non-fast-forward|fetch first|stale info|cannot lock ref|reference already exists' <<<"$err"; then
             echo "land: main moved on origin; again" >&2
             continue
         fi
