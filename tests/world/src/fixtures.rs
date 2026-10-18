@@ -18,3 +18,5 @@ pub fn scripts(seed: u64, expects: Vec<Expect>) -> World<Script, Judge, Stamped>
     World::<Script, Judge>::new(seed, skein_sim::Config::chaos(), Judge::new(seed, expects), Memory::Checked)
         .with_machine(Stamped([7; 32]))
 }
+
+pub mod startup;

@@ -9,6 +9,7 @@
 //! policy deadline fails before the host can fire it (testing-strategy.md, 6).
 
 mod digests;
+mod startup;
 
 pub use digests::{Digests, StateDigests};
 
@@ -54,6 +55,7 @@ pub enum Cut {
 
 struct Restart<P> {
     roots: Vec<StartupRoot>,
+    appends: Vec<crate::StartupAppend>,
     make: fn(&Inherited) -> P,
 }
 
@@ -272,13 +274,7 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
     /// and a signal source. A cut restarts it at the same index over these
     /// root paths (simulator.md, 3.3).
     pub fn spawn_restartable(&mut self, roots: Vec<StartupRoot>, make: fn(&Inherited) -> P) -> usize {
-        crate::program::check_roots(&roots);
-        let pid = self.sim.spawn_process();
-        let inherited = self.restart_inherited(pid, &roots);
-        self.signals.insert(self.next_host, (pid, inherited.signal));
-        let at = self.admit(pid, None, || make(&inherited));
-        *self.restart.get_mut(at).expect("a slot per process") = Some(Restart { roots, make });
-        at
+        self.spawn_restartable_startup(roots, Vec::new(), make)
     }
 
     /// Cuts `host` once before its zero-based `before`th submission.
@@ -294,23 +290,6 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
         }
         assert!(!self.cuts.iter().any(|planned| planned.host == host), "a host is cut once");
         self.cuts.push(PlannedCut { host, before, cut, done: false });
-    }
-
-    fn restart_inherited(&mut self, pid: Pid, declarations: &[StartupRoot]) -> Inherited {
-        let mut opened = Vec::new();
-        for declaration in declarations {
-            match self.machine.open_root(&declaration.path) {
-                Ok(handle) => opened.push((declaration.name.clone(), handle)),
-                Err(error) => {
-                    for (_, handle) in opened {
-                        self.machine.close_root(handle);
-                    }
-                    crate::fail(&format!("a restartable startup root opens: {error:?}"));
-                }
-            }
-        }
-        let roots = opened.into_iter().map(|(name, handle)| (name, self.sim.root(pid, handle))).collect();
-        Inherited { roots, pipes: Vec::new(), appends: Vec::new(), signal: self.sim.open_signal_source(pid) }
     }
 
     /// Adds a process with an append file the scenario's machine opened at startup.
@@ -698,7 +677,7 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
             let declaration =
                 self.restart.get_mut(at).expect("a slot per process").take().expect("a factory for a cut");
             let pid = self.sim.spawn_process();
-            let inherited = self.restart_inherited(pid, &declaration.roots);
+            let inherited = self.restart_inherited(pid, &declaration.roots, &declaration.appends);
             let old = self.procs.remove(at);
             let make = declaration.make;
             let proc = match &mut self.heap {
@@ -743,48 +722,13 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
                         .push(Answer { ticket: call.ticket, result: Err(skein_io::kernel::Error::TooManyOpenFiles) });
                     continue;
                 }
-                let mut roots = Vec::new();
-                let mut result = Ok(Reply::Program(Program::Service));
-                for declaration in declarations {
-                    match self.machine.open_root(&declaration.path) {
-                        Ok(handle) => roots.push((declaration.name, handle)),
-                        Err(error) => {
-                            result = Err(error);
-                            break;
-                        }
+                let result = match self.open_startup(&declarations, &append_declarations) {
+                    Ok(prepared) => {
+                        self.pending_startup.insert((pid, token), prepared);
+                        Ok(Reply::Program(Program::Service))
                     }
-                }
-                let mut appends = Vec::new();
-                if result.is_ok() {
-                    for declaration in append_declarations {
-                        let root = match self.machine.open_root(&declaration.root) {
-                            Ok(root) => root,
-                            Err(error) => {
-                                result = Err(error);
-                                break;
-                            }
-                        };
-                        let opened = self.machine.open_append(root, &declaration.path, declaration.mode);
-                        self.machine.close_root(root);
-                        match opened {
-                            Ok(file) => appends.push((declaration.name, file)),
-                            Err(error) => {
-                                result = Err(error);
-                                break;
-                            }
-                        }
-                    }
-                }
-                if result.is_ok() {
-                    self.pending_startup.insert((pid, token), PreparedStartup { roots, appends });
-                } else {
-                    for (_, handle) in roots {
-                        self.machine.close_root(handle);
-                    }
-                    for (_, handle) in appends {
-                        self.machine.close_append(handle);
-                    }
-                }
+                    Err((_, error)) => Err(error),
+                };
                 self.answers.push(Answer { ticket: call.ticket, result });
             } else {
                 self.machine.step(call, &mut self.answers);
