@@ -10,6 +10,7 @@
 #   plan release                  end the active run
 #   plan worktree REPO NAME       a session's worktree, at origin/main
 #   plan worktree --remove REPO NAME
+#   plan landed STEP COMMIT       check a landing, then set its ledger state
 #   plan set STEP KEY=VALUE...    add or change a step in the ledger
 #   plan log REPO NN [FILE]       log an implementer's report (stdin, or FILE); print its file
 #   plan idle REASON              the coordinator ends its turn; the doorbell starts the next
@@ -266,6 +267,47 @@ set_step() {
         }' "$ledger" >"$ledger.new"
     mv "$ledger.new" "$ledger"
     flock -u 8
+}
+
+# A landing changes the ledger only after development.md 7.3's checks pass.
+landed() {
+    load
+    local step=${1:?step} commit=${2:?commit} repo session branch path dir failed=0
+    IFS=$'\t' read -r repo session branch < <(awk -F'\t' -v step="$step" '
+        $1 == step { print $2 "\t" $3 "\t" $7 }' "$run/ledger.tsv")
+    [[ -n $repo && -n $session ]] || { echo "FAIL  $step has no repository and session"; return 1; }
+    path=$run/wt/$repo-$session
+    dir=$path
+    [[ -d $path ]] || dir=$root/$repo
+    if ! git -C "$dir" fetch --quiet origin; then
+        echo "FAIL  cannot fetch origin in $dir"
+        return 1
+    fi
+    if git -C "$dir" merge-base --is-ancestor "$commit" origin/main; then
+        echo "ok    $commit is on origin/main"
+    else
+        echo "FAIL  $commit is not on origin/main"
+        failed=1
+    fi
+    if [[ $(git -C "$dir" log -1 --format='%(trailers:key=Step,valueonly)' "$commit") == "$step" ]]; then
+        echo "ok    $commit has Step: $step"
+    else
+        echo "FAIL  $commit does not have Step: $step"
+        failed=1
+    fi
+    if [[ ! -d $path ]]; then
+        echo "ok    worktree is gone; skipping cleanliness check"
+    elif [[ $(git -C "$path" branch --show-current) != "$branch" ]]; then
+        echo "ok    worktree is on another branch; skipping cleanliness check"
+    elif [[ -z $(git -C "$path" status --porcelain) ]]; then
+        echo "ok    worktree on $branch is clean"
+    else
+        echo "FAIL  worktree on $branch is dirty"
+        failed=1
+    fi
+    ((failed == 0)) || return 1
+    set_step "$step" state=landed commit="$commit"
+    echo "landed $step $commit"
 }
 
 # An implementer's report, logged by the implementer itself (development.md,
@@ -540,6 +582,7 @@ claim) claim "$@" ;;
 release) release ;;
 worktree) worktree "$@" ;;
 set) set_step "$@" ;;
+landed) landed "$@" ;;
 log) log_report "$@" ;;
 idle) idle "$@" ;;
 status) status ;;

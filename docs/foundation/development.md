@@ -489,6 +489,7 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 | `plan retro [PLAN_DIR]` | starts the run's retrospective, by default the last run's, released or not (section 15) |
 | `plan claim PLAN_DIR`, `plan release` | start and end the machine's run, adding and removing its `kit/`; `plan start` claims |
 | `plan worktree [--remove] REPOSITORY NAME` | a session's worktree, at `origin/main` |
+| `plan landed STEP COMMIT` | fetches and checks a landing against origin/main, its Step trailer and its worktree, then sets the ledger only when all pass (section 7.3) |
 | `plan set STEP KEY=VALUE…` | adds or changes a ledger row |
 | `plan log REPOSITORY NN [FILE]` | logs an implementer's report, from FILE or its standard input, in `log.md` and `reports/`, and prints the report's file (section 8.6) |
 | `plan idle REASON` | the coordinator, with nothing running, ends its turn; `idle.md` says why, and the next ring starts its next turn (section 7.4) |
@@ -1455,26 +1456,18 @@ and the question in one line, or "none". After each:
    is logged. Read its file only for what the four lines do not say. A
    report that came without `plan log`, as a whole message: ask its
    implementer, once, to log it, and go on.
-2. Check it with git only, in the session's worktree. For a landed step:
-   - `git merge-base --is-ancestor <commit> origin/main && echo on-main`
-     prints `on-main`;
-   - `git log -1 --format='%(trailers:key=Step,valueonly)' <commit>`
-     prints the step;
-   - while the worktree is still on the step's branch (`git branch
-     --show-current`), `git status --porcelain` prints nothing. A
-     worktree already on another branch holds the next increment's work,
-     and is not checked.
-
-   For any other report, only the last. Every check prints its result: a
-   command that prints nothing on success, such as `merge-base`, gets an
-   `&& echo`. Read no code, diff or test. If a check fails, send its
-   output to the implementer (`send_message`, or
-   `followup_task` if it has ended its turn), and wait for its next
-   report.
-3. `plan set` the step's new state and commit, then `plan status`, in a
-   command of its own, once you have read the checks' output: never in
-   the command that runs them. In protocol, 34 commands logged "on-main"
-   and set the step `landed` before their checks' result was seen.
+2. For a landed step, run `plan landed STEP COMMIT`. It fetches in the
+   session's worktree and prints each result: the commit is on
+   `origin/main`, its `Step` trailer is STEP, and the worktree is clean
+   while its branch is the ledger row's. A worktree on another branch
+   holds the next increment's work; a worktree that is gone skips the
+   cleanliness check. Only when all checks pass does it set the step
+   `landed` and its commit. Read no code, diff or test. If a check fails,
+   send its output to the implementer (`send_message`, or `followup_task`
+   if it has ended its turn), and wait for its next report. For any other
+   report, check only the worktree's cleanliness.
+3. Run `plan status` after a checked landing. `plan set state=landed`
+   stays available for the supervisor's corrections.
 4. **Hand over a large context.** After a landing, run `plan contexts`. A
    session whose context, or whose peak, it prints past 150,000 tokens,
    flagged or not, hands over, between increments, never in one: a

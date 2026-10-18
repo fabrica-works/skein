@@ -410,6 +410,39 @@ printf '%s\n' 'PLAN_MIN_MEM_GB=1' 'BOGUS=3' >"$DEV_TMP/machine.env"
 expect "the machine file sets a minimum" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "want 1 (machine.env)" "warn  machine.env: ignored line 2: BOGUS=3"
 expect "the environment wins" "$(PLAN_MIN_MEM_GB=2 PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "want 2 (environment)"
 rm "$DEV_TMP/machine.env"
+# A landing's checks use the session's own worktree and leave refusals alone.
+cp "$run/ledger.tsv" "$t/ledger.before-landed"
+git clone -q --bare "$repo" "$t/alpha.git"
+git -C "$repo" remote add origin "$t/alpha.git"
+git -C "$repo" worktree add -q -b b4 "$run/wt/alpha-01" main
+"$plan" set alpha-01.4 repo=alpha session=01 state=running branch=b4
+landed_before=$(cat "$run/ledger.tsv")
+landing_commit() {
+    git -C "$run/wt/alpha-01" commit -q --allow-empty -m "Landing" -m "Step: $1"
+    landing=$(git -C "$run/wt/alpha-01" rev-parse HEAD)
+}
+refuse_landing() {
+    local what=$1 reason=$2 status=0 out
+    out=$("$plan" landed alpha-01.4 "$landing" 2>&1) || status=$?
+    expect "$what" "$status $out" '1 ' "$reason"
+    expect "$what leaves the ledger" "$(if [[ $(cat "$run/ledger.tsv") == "$landed_before" ]]; then echo unchanged; fi)" unchanged
+}
+landing_commit alpha-01.4
+refuse_landing "landed refuses a commit off main" 'is not on origin/main'
+landing_commit alpha-01.3
+git -C "$run/wt/alpha-01" push -q origin HEAD:main
+refuse_landing "landed refuses another step's commit" 'does not have Step: alpha-01.4'
+landing_commit alpha-01.4
+git -C "$run/wt/alpha-01" push -q origin HEAD:main
+echo dirty >>"$run/wt/alpha-01/src/big.rs"
+refuse_landing "landed refuses a dirty worktree" 'worktree on b4 is dirty'
+git -C "$run/wt/alpha-01" restore src/big.rs
+expect "landed sets a checked step" "$("$plan" landed alpha-01.4 "$landing")" "landed alpha-01.4 $landing"
+expect "landed records its commit" "$(awk -F'\t' '$1 == "alpha-01.4" { print $4, $8 }' "$run/ledger.tsv")" "landed $landing"
+git -C "$repo" worktree remove "$run/wt/alpha-01"
+git -C "$repo" branch -D b4 >/dev/null
+git -C "$repo" remote remove origin
+mv "$t/ledger.before-landed" "$run/ledger.tsv"
 
 # A clean primary checkout behind its origin is advanced by --fix.
 head=$(git -C "$repo" rev-parse HEAD)
