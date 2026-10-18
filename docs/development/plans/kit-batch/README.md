@@ -119,7 +119,8 @@ ones before it in its session.
 The real Codex and Claude Code, through `test-plan --live` only (Codex at
 effort low, Claude on Haiku): about $0.05 and 81 s a run at the base. At
 most eight runs in all (decisions.md, 20): one per live Proof, one more
-after a fix.
+after a fix. Nine had run by 06.5's Proof; no step runs another, and
+the last is "Done when" 4's, at the end (ruling 108).
 
 ## One test of a suite that needs a built artifact
 

@@ -253,6 +253,11 @@ section 10 (findings/inventory.md); the planner decided what follows
 
      skein-04.s1, which moved the fake daemon's and the watch's checks into `scripts/dev/test-plan-watch.sh` (skein 86a334c, `Step: skein-04.s1`) before ruling 105's rule reached session 04, is recorded in skein/04-watch.md's new section "04.s1"; the coordinator has its ledger row, landed.
 
+108. **06.5's Size and the live runs** (plan defect, skein 06's block of 2026-10-18T01:44:07Z).
+     A plan defect. code-organization.md, section 6, counts an increment's size "test-plan, `test-codex` and Markdown aside", but its command excludes only `scripts/dev/test-plan`, not the sourced `test-plan-live.sh`, `test-plan-watch.sh` and `test-plan-coordinator.sh` that 05.s1, 04.s1 and 06.3 moved test-plan's checks into. Those are test-plan: the command now excludes `':!scripts/dev/test-plan*'`. 06.5's Size by it is 0 production lines, within its about 10; the 38 test lines need no question. Land 06.5.
+
+     The live budget (decisions.md, 20: "at most eight in the run") stood at nine after 06.5's Proof, one over: 06.5's first attempt was cut short by the doorbell, not by a fix. Nine stand; no step runs `test-plan --live` again, and the run's last live run is "Done when" 4's, once, at the end (supervisor.md, section 8). A further live run a step needs is a block, with its reason.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner

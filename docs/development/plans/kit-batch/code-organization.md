@@ -113,11 +113,12 @@ commit of its own: skein-05.s1 did, at 4d6df9e (ruling 105). A further
 move this section calls for is a step of its own, `<session>.s<N>`:
 the implementer names it in its report's Next before it starts, and the
 coordinator adds it to the ledger, as for 05.s1.
-An increment's size is its hand-written production lines, test-plan,
-`test-codex` and Markdown aside, counted from the worktree with:
+An increment's size is its hand-written production lines, test-plan
+and its sourced `test-plan-*.sh` (ruling 108), `test-codex` and
+Markdown aside, counted from the worktree with:
 
 ```
-git diff --numstat origin/main -- scripts/dev ':!scripts/dev/test-plan' ':!scripts/dev/test-codex' ':!scripts/dev/workspace/*.md' | awk '{ a += $1 } END { print a + 0 }'
+git diff --numstat origin/main -- scripts/dev ':!scripts/dev/test-plan*' ':!scripts/dev/test-codex' ':!scripts/dev/workspace/*.md' | awk '{ a += $1 } END { print a + 0 }'
 ```
 
 A pure move (01.2, 05.1) counts only its new lines (the files' headers
