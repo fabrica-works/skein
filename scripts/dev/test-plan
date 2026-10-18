@@ -210,27 +210,37 @@ out=$("$plan" set --help state=ready 2>&1) || status=$?
 expect "plan set refuses an option" "$status $out" '2 plan:' 'a step is not an option: --help'
 expect "an option leaves the ledger unchanged" "$(if [[ $(cat "$run/ledger.tsv") == "$before" ]]; then echo unchanged; fi)" unchanged
 
-# heavy owns its row inside a task on this world's queue.
-heavy_run() { HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" "$@"; }
-status=0
-out=$(heavy_run sh -c 'exit 3' 2>&1) || status=$?
-expect "heavy writes a row and passes the status" "$status $out" '3 heavy:' 'exit 3'
-expect "heavy writes one failure row" "$(awk -F'\t' 'END { print NR, $6 }' "$t/heavy-tmp/logs/heavy.tsv")" '1 3'
-HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" sleep 1 >"$t/client.log" 2>&1 &
+# These commands share one queue and one row file; clients wait together.
+heavy_run() (cd "$repo"; HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" "$@")
+heavy_capture() {
+    local label=$1 status=0
+    shift
+    heavy_run "$@" >"$t/$label.out" 2>&1 || status=$?
+    printf 'status=%s\n' "$status" >"$t/$label.status"
+}
+heavy_row() {
+    awk -F'\t' -v command="$1" '$10 == command { n++; lane=$2; status=$6 }
+        END { printf "rows=%d lane=%s status=%s", n, lane, status }' "$t/heavy-tmp/logs/heavy.tsv"
+}
+heavy_capture failure sh -c 'exit 3' &
+failure_pid=$!
+HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" sleep 0.5 >"$t/client.log" 2>&1 &
 client_pid=$!
 for ((poll=0; poll<50; poll++)); do
-    task_id=$(pueue status --json | jq -r '.tasks[] | select(.status | has("Running")) | .id')
+    task_id=$(pueue status --json | jq -r '.tasks[] | select((.status | has("Running")) and (.command | contains("sleep 0.5"))) | .id')
     [[ -z $task_id ]] || break
     sleep 0.1
 done
 kill "$client_pid"
 wait "$client_pid" 2>/dev/null || true
-pueue wait --quiet "$task_id"
-expect "a killed client loses no row" "$(awk -F'\t' 'END { print NR, $6 }' "$t/heavy-tmp/logs/heavy.tsv")" '2 0'
-pueue remove "$task_id" >/dev/null
-out=$(heavy_run --gate true 2>&1)
-expect "the gate lane writes its row too" "$out" '(gate) exit 0'
-expect "heavy writes one gate row" "$(awk -F'\t' 'END { print NR, $2, $6 }' "$t/heavy-tmp/logs/heavy.tsv")" '3 gate 0'
+heavy_capture gate --gate true &
+gate_pid=$!
+wait "$failure_pid" "$gate_pid"
+expect "heavy passes the failed command's status" "$(cat "$t/failure.status")" 'status=3'
+expect "heavy writes one failure row" "$(heavy_row 'sh -c exit 3')" 'rows=1 lane=build status=3'
+expect "a killed client loses no row" "$(heavy_row 'sleep 0.5')" 'rows=1 lane=build status=0'
+expect "the gate lane passes the status too" "$(cat "$t/gate.status")" 'status=0'
+expect "the gate lane writes its row too" "$(heavy_row true)" 'rows=1 lane=gate status=0'
 
 # Commits with trailers, after the claim.
 commit() {
@@ -382,6 +392,25 @@ expect "prices by model" "$(CLAUDE_CONFIG_DIR=$t/claude-prices "$plan" metrics)"
     $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1'
 "$plan" metrics --out "$dir/metrics.tsv" >/dev/null
 expect history "$("$plan" metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
+
+# The fixture above records 20 seconds waiting and 200 seconds running.
+fixture_wait=20 fixture_run=200
+held_id=$(pueue add --print-task-id --group gate --label measure -- true)
+for ((poll=0; poll<50; poll++)); do
+    done_row=$(TZ=UTC0 pueue status --json | jq -r --arg id "$held_id" \
+        '.tasks[$id].status.Done // empty | [.enqueued_at, .start, .end] | @tsv')
+    [[ -z $done_row ]] || break
+    sleep 0.1
+done
+IFS=$'\t' read -r queued_at started_at ended_at <<<"$done_row"
+held_wait=$(($(date -d "$started_at" +%s) - $(date -d "$queued_at" +%s)))
+held_run=$(($(date -d "$ended_at" +%s) - $(date -d "$started_at" +%s)))
+rm "$run/.pulse"
+held_pulse=$("$plan" pulse)
+expect "the pulse counts a task pueue still holds" "$held_pulse" \
+    "queue $((fixture_wait + held_wait)) s waiting, $((fixture_run + held_run)) s running" \
+    '2 other gate-lane tasks' 'pueue holds 1 finished tasks no client removed'
+pueue remove "$task_id" >/dev/null
 
 expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 200K: hand over"
 

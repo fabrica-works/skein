@@ -430,6 +430,32 @@ record_check() {
     echo "headings no shape names: ${headings:-none}; Kind values not in section 10.2: ${kinds:-none}; context.md lines past 200 characters: $long"
 }
 
+# Logged tasks and finished commands whose client left them in pueue.
+queue_rows() {
+    local task_run=$1 claim json
+    if [[ ${queue_run:-} == "$task_run" ]]; then
+        [[ -z $queue_snapshot ]] || printf '%s\n' "$queue_snapshot"
+        return 0
+    fi
+    cat "$task_run/logs/heavy.tsv" 2>/dev/null || true
+    [[ -f $tmp/active-plan ]] || return 0
+    claim=$(sed -n 4p "$tmp/active-plan")
+    json=$(TZ=UTC0 pueue status --json 2>/dev/null) || return 0
+    jq -r --arg claim "$claim" '
+        def epoch: sub("\\.[0-9]+Z$"; "Z") | fromdate;
+        .tasks[] | select((.status | keys[0]) == "Done")
+        | select(.command | contains("heavy --task") | not)
+        | . as $task | .status.Done as $done
+        | select(($done.enqueued_at | epoch) >= ($claim | epoch))
+        | [$task.id, $task.group, ($done.end | epoch | strftime("%FT%TZ")),
+           (($done.start | epoch) - ($done.enqueued_at | epoch)),
+           (($done.end | epoch) - ($done.start | epoch)),
+           (if $done.result == "Success" then 0
+            elif ($done.result | type) == "object" then ($done.result.Failed // 1) else 1 end),
+           0, $task.path, "/dev/null", $task.command, ($task.label // "")]
+        | @tsv' <<<"$json"
+}
+
 # Gate-lane tasks since a time (all of them, without one): land's gates,
 # then the others (measurements, probes, live runs, plan check's gate), by
 # the label in heavy.tsv's eleventh column. A queue whose lines carry no
@@ -437,7 +463,7 @@ record_check() {
 land_gates() {
     awk -F'\t' -v s="${1:-}" '
         $2 == "gate" && (s == "" || $3 >= s) { g++; if (NF >= 11) { lab = 1; if ($11 ~ /^land /) l++ } }
-        END { if (!lab) l = g; print l + 0, g - l + 0 }' "$run/logs/heavy.tsv" 2>/dev/null || echo "0 0"
+        END { if (!lab) l = g; print l + 0, g - l + 0 }' < <(queue_rows "$run")
 }
 
 # Each long-lived Claude Code role's context: its latest session's, the
@@ -532,11 +558,21 @@ pulse() {
     log_lines=$(wc -l <"$run/log.md" 2>/dev/null || echo 0)
     reports=$(report_lengths "$from" | median_and_p90)
     landed_since=$(grep -c . <<<"$commits" || true)
+    # Read one queue snapshot for all figures in this pulse.
+    local queue_snapshot queue_run=
+    queue_snapshot=$(queue_rows "$run")
+    queue_run=$run
     gates=$(land_gates "$after")
-    wait_run=$(awk -F'\t' -v s="$after" '$3 >= s { w += $4; r += $5 } END { printf "%d s waiting, %d s running", w, r }' "$run/logs/heavy.tsv" 2>/dev/null || echo "no queue statistics")
+    wait_run=$(awk -F'\t' -v s="$after" '$3 >= s { w += $4; r += $5 } END { printf "%d s waiting, %d s running", w, r }' < <(queue_rows "$run"))
     files=$(find "$run/logs" -type f -newermt "@$((since + 1))" 2>/dev/null | wc -l)
     scripts=$(find "$run/logs" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.js' \) -newermt "@$((since + 1))" 2>/dev/null | wc -l)
     echo "- Waste: log +$((log_lines - from + 1)) lines; reports ${reports/ / lines median, } p90; ${gates% *} land gates for $landed_since landings, ${gates#* } other gate-lane tasks; queue $wait_run; logs/ +$files files, $scripts scripts."
+
+    local held logged
+    held=$(queue_rows "$run" | wc -l)
+    logged=$(wc -l <"$run/logs/heavy.tsv" 2>/dev/null || echo 0)
+    held=$((held - logged))
+    ((held == 0)) || echo "  pueue holds $held finished tasks no client removed"
 
     # Tests.
     local budgets focused fuzzy last_gate counts
@@ -555,7 +591,7 @@ pulse() {
         echo "- Tests: no gate since"
     fi
     local slow
-    slow=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { print $9 }' "$run/logs/heavy.tsv" 2>/dev/null |
+    slow=$(awk -F'\t' -v s="$after" '$2 == "gate" && $3 >= s { print $9 }' < <(queue_rows "$run") |
         while read -r file; do grep -c 'SLOW \[' "$file" 2>/dev/null || true; done | awk '{ n += $1 } END { print n + 0 }')
     counts=$(cut -f1,2 <<<"$commits" | { grep . || true; } | line_counts)
     read -r ca cr ta tr ga gr da dr <<<"$counts"

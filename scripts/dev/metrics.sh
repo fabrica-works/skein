@@ -159,12 +159,11 @@ metrics_of() {
     m compactions "$compactions" compactions
 
     # The queue.
-    local tsv=$run/logs/heavy.tsv
     local gates
     gates=$(land_gates)
     m gates_per_step "$(awk -v g="${gates% *}" -v n="$landed" 'BEGIN { printf "%.1f", n ? g / n : 0 }')" "land gates per step"
     m gate_lane_other "${gates#* }" "gate-lane tasks besides land's gates"
-    m queue_wait_ratio "$(awk -F'\t' '{ w += $4; r += $5 } END { printf "%.2f", r ? w / r : 0 }' "$tsv" 2>/dev/null || echo 0)" "waiting per running"
+    m queue_wait_ratio "$(awk -F'\t' '{ w += $4; r += $5 } END { printf "%.2f", r ? w / r : 0 }' < <(queue_rows "$run"))" "waiting per running"
 
     # The commits.
     local commits

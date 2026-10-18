@@ -2426,7 +2426,9 @@ Since the last check:
   its increment named, and the steps with none;
 - **waste:** the log's growth; the reports' median and longest length;
   `land`'s gates per landed step, and the gate lane's other tasks; queue
-  wait against run time (`logs/heavy.tsv`); files and scripts written
+  wait against run time (`logs/heavy.tsv` and finished tasks pueue still
+  holds, queued since the claim, excluding `heavy --task` rows already
+  logged); the number of finished tasks no client removed; files and scripts written
   under `logs/`;
 - **tests:** each suite's time from the `Gate-Result` trailers, against
   its budget; the tests past four fifths of a ceiling, and the SLOW ones;
@@ -2585,8 +2587,8 @@ counts them by hand.
 | `coordinator_requests` | the coordinator's model requests, and those that only saw a wait end |
 | `compactions` | the coordinator's context compactions |
 | `gates_per_step` | `land`'s gates per landed step, by their label in `logs/heavy.tsv` (section 11.2) |
-| `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate |
-| `queue_wait_ratio` | time waiting in the queue against time running (`logs/heavy.tsv`) |
+| `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate, including finished tasks pueue still holds since the claim |
+| `queue_wait_ratio` | time waiting in the queue against time running (`logs/heavy.tsv` and finished tasks pueue still holds since the claim); `heavy --task` is counted only from its logged row |
 | `suites` | for each repository, each suite's test count and time at its first and its last landing |
 | `proofs` | landed steps, each by its last commit, by proof layer, the first word of their `Proof:` line without its punctuation, and those below their increment's layer, whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
 | `report_lines` | the reports' median and 90th percentile length |
