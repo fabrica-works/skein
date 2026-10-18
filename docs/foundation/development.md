@@ -1,6 +1,6 @@
 # Development process
 
-Provisional, 2026-10-09, revised 2026-10-17. How work goes from an idea
+Provisional, 2026-10-09, revised 2026-10-18. How work goes from an idea
 to `main` in skein and in every project built on it (smith, jig, hearth,
 temper): who designs, who plans, who builds, who supervises, where each
 of them writes, and how they talk to each other. Read it before starting
@@ -83,12 +83,11 @@ the implementers.
 - **Contexts stay small, and nothing is written twice.** A long context
   is carried by every request, and checks thin as it grows.
   - The supervisor and the designer compact their contexts in place, at
-    about 180,000 tokens, re-read their files after each compaction, and
-    hand over to a fresh session after the second (section 10.5): an
-    experiment, from skein 71f6c38 (section 13).
-  - A designer idle for an hour, or compacted twice, is woken fresh, from
-    a brief.
-  - An implementer hands over between increments past 150,000 tokens,
+    about 180,000 tokens, and re-read their files after each compaction
+    (section 10.5). A role hands over only when it finds itself confused,
+    or when its watch says so, not at a count of compactions (section 13).
+  - A designer idle for an hour is woken fresh, from a brief.
+  - An implementer hands over between increments past 100,000 tokens,
     and a session idle for an hour goes on in a fresh thread, from its
     checkpoint.
   - Implementers log their own reports, so that the coordinator does not
@@ -142,19 +141,18 @@ the implementers.
   client-composition, the designer's 600-second sleep outlived its
   cache, and re-wrote 419K.
 - **Checks its context after each sub-agent's report** with `plan context`
-  (section 3.6), which prints its context and compactions, and the word
-  to hand over at `PLAN_COMPACTIONS` (2).
-- **Compacts in place, and hands over after its second compaction.** It
-  starts with `claude --autocompact 200000` (the workspace's `AGENTS.md`;
-  `plan` starts and resumes a run's designer so, section 10.4), and its
-  context compacts at about 180K. After each compaction it re-reads this
-  section and the files its work depends on (the design worktree, its
-  drafts, the notes in its scratch directory) before acting. After the
-  second, or when it finds itself confused, it writes what it holds to
-  its files (the design worktree, a handover note in its scratch
-  directory) and hands over to a fresh session that starts from them: a
-  second compaction summarizes a summary. During a run, `plan wake` does
-  it at the next question, from a brief (section 10.4).
+  (section 3.6), which prints its context and compactions.
+- **Compacts in place, and hands over only when it finds itself
+  confused.** It starts with `claude --autocompact 200000` (the
+  workspace's `AGENTS.md`; `plan` starts and resumes a run's designer so,
+  section 10.4), and its context compacts at about 180K. After each
+  compaction it re-reads this section and the files its work depends on
+  (the design worktree, its drafts, the notes in its scratch directory)
+  before acting. If it then finds itself confused, it writes what it
+  holds to its files (the design worktree, a handover note in its scratch
+  directory) and hands over to a fresh session that starts from them.
+  During a run, its answer says so, and the supervisor wakes a fresh
+  designer for the next question, from a brief (section 10.4).
 
 ### 2.2 The planner
 
@@ -182,11 +180,12 @@ the implementers.
 - **Waits, compacts and hands over as the designer does** (section 2.1):
   on its sub-agents' notifications, never polling or sleeping; started
   with `claude --autocompact 200000`, it re-reads section 5 and the
-  plan's files after each compaction, and after the second hands over to
-  a fresh session that starts from the plan's files. Each successor's
-  session gets its own `Planner-Session:` trailer. In client-composition,
-  the planner ran to 617K in one context, and spent $16.96 at 465K to
-  567K while its reviewers ran, about 57 of those requests polls.
+  plan's files after each compaction, and, if it finds itself confused,
+  hands over to a fresh session that starts from the plan's files. Each
+  successor's session gets its own `Planner-Session:` trailer. In
+  client-composition, the planner ran to 617K in one context, and spent
+  $16.96 at 465K to 567K while its reviewers ran, about 57 of those
+  requests polls.
 
 ### 2.3 The coordinator
 
@@ -214,7 +213,7 @@ the implementers.
   worktree, as its card says (section 8, `implementer.md`). It lands its
   own increments and resolves its own rebase conflicts. It logs its own
   reports with `plan log`, and sends the coordinator a pointer.
-- **Hands over between increments** when its context grows past 150,000
+- **Hands over between increments** when its context grows past 100,000
   tokens: a fresh implementer goes on from its checkpoint (section 7.3).
 - **Escalates to the coordinator,** and only on real gaps (section 8.7).
 
@@ -255,8 +254,8 @@ the implementers.
 - **Compacts in place** at about 180,000 tokens, keeping its watch and
   its background commands, and re-reads its card's working
   sections and the run's files after each compaction. It hands over to a
-  fresh session after its second compaction, or when it finds itself
-  confused, and starts its successor itself (section 10.5).
+  fresh session only when it finds itself confused, or when its watch
+  says so, and starts its successor itself (section 10.5).
   `supervision.md` and the run's files are enough to go on.
 - **Works from its card,** `supervisor.md`, which says each of these step
   by step, and reads of this document only the sections the card names.
@@ -309,8 +308,8 @@ they are away. Its working files are in `~/src/rust/tmp/director/`.
   names temper.
 - **A primary checkout (`~/src/rust/<repository>`) stays on `main`,
   clean, and equal to `origin/main`.** Nobody works in it. `land` moves it
-  forward, and the code graph indexes it, so the graph always describes
-  `main`.
+  forward, and the code graph indexes it. The graph describes `main` only
+  while its index is not older than `origin/main` (sections 6 and 14.1).
 - **Each repository names its gate and its budgets:** `scripts/check.sh`
   runs the gate, and `docs/development/workflow.md` (or skein's
   `docs/design/testing.md`, section 6) explains it, with the suites'
@@ -414,7 +413,7 @@ machine's run. Nothing here is versioned.
 | `reports/<repository>-<NN>-<time>.md` | `plan log` | each report, as its implementer wrote it, for the files that name it (section 8.6) |
 | `context.md` | the coordinator | what a restarted coordinator needs; rewritten, never appended |
 | `thread`, `threads` | `plan start`, `plan resume`, the coordinator | the coordinator's Codex thread's id, for the doorbell; every thread it has had, with when, for the metrics. Each starts with the coordinator profile's config settings |
-| `claude.tsv` | `plan start`, `join`, `wake`, `handover`, `retro` | one line per Claude Code session that works on the run: its role, its session id and when, for `plan attach`, `plan wake` and the metrics; a role's last line is its current session |
+| `claude.tsv` | `plan start`, `join`, `wake`, `handover`, `retro`, and each `plan` command that finds a role's job on a session id the file lacks | one line per Claude Code session that works on the run, one for each id a role's job takes (a `/resume` gives it a new one): its role, its session id and when, for `plan attach`, `plan wake`, `plan handover` and the metrics; a role's last line is its current session |
 | `heartbeat` | the coordinator | touched at every wake-up |
 | `alerts.md` | the supervisor | each alert to the user, one line with its UTC time; `plan status` prints its last ten lines first (section 10.5) |
 | `idle.md` | `plan idle`; removed by `plan ring` or the watch’s queue wake | since when, why, and optional third line `tasks: <ids>` naming the queue tasks the coordinator waits on (section 7.4) |
@@ -486,25 +485,36 @@ ruling, which moves `kit/` to the commit that landed it (`git -C
 <run>/kit checkout --detach <commit>`). A run claimed without `kit/`,
 before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 
+**A run's roles read the process in `kit/`,** never in the skein
+checkout: development.md, their card (`supervisor.md` or `implementer.md`)
+and `testing-strategy.md`, at `<run>/kit/docs/foundation/`. They read
+them there at their start and after each compaction, restart or
+handover, and so do their sub-agents. The roles are the supervisor, the
+coordinator, the implementers and a designer answering a run's question.
+The prompts `plan` gives them, and those they give their sub-agents,
+name the kit's copies. The retrospective's author starts after `plan
+release` has removed `kit/`, and reads the checkout's, as does a run
+claimed without `kit/`.
+
 **A plan that changes the kit names the steps its own run takes,** in
 its README's Kit steps (section 5.2), and the supervisor moves `kit/` to
 each by ruling once it lands (supervisor.md, section 3). A ruling or a
-steer names only commands that the run's `kit/` has, which may be behind
-`main` (section 10.3). kit-batch named none: its claim's `land` had no
-landing turn, and 30 of its 61 gates passed and were thrown away; ruling
-105 named `plan landed`, which its kit lacked, and made a block of its
-own.
+steer names only commands and sections that the run's `kit/` has, which
+may be behind `main` (section 10.3). kit-batch named none: its claim's
+`land` had no landing turn, and 30 of its 61 gates passed and were thrown
+away; ruling 105 named `plan landed`, which its kit lacked, and made a
+block of its own.
 
 | Tool | Does |
 |---|---|
 | `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes; internal `heavy --task TOKEN -- command…` runs the task and writes its row |
 | `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local`, and `LAND_PREBUILD` the build lane's command before the gate |
-| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories, and, given a plan, the plan (its base run, its design answers and the decisions on its "For the user" items, section 5.4), the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
+| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories (the code graph's index of each against its `origin/main` among them), and, given a plan, the plan (its base run, its design answers and the decisions on its "For the user" items, section 5.4), the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
 | `plan resume [CAUSE]` | after a restart or a crash, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself (section 7.6) |
 | `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
-| `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief once its session has been compacted `PLAN_COMPACTIONS` times (2) or idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
+| `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief once its session has been idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
 | `plan unblocked` | logs blocked.md and unblock.md whole, removes the answered block headings and deletes unblock.md (section 10.3) |
 | `plan steered` | logs and deletes steer.md (section 10.3) |
 | `plan handover REPOSITORY NN CONTEXT` | appends the session handover line to log.md (section 7.3) |
@@ -519,11 +529,11 @@ own.
 | `plan docs` | prints the supervisor's worktree of the plan's repository, made at `origin/main`, and moved there whenever it is clean |
 | `plan ruling [--text FILE] TITLE SOURCE` | lands a ruling, written once: the Decision of `unblock.draft.md`, or FILE's text, as the next ruling of `decisions.md`, with the plan edits in the supervisor's worktree; then, for an unblock, names the commit, moves the draft to `unblock.md` and rings (section 10.3) |
 | `plan ready STEP [NOTE]` | sets a step the supervisor has checked to `ready`, and rings (section 7.2) |
-| `plan status [PLAN_DIR]` | renders `status.md` of the plan's run, by default the last run's, released or not, so that "Done when" may name it after the release (section 7.6) |
-| `plan watch` | waits until the supervisor has something to do, and prints its context and its compactions; at `PLAN_COMPACTIONS` (2), the word to hand over (section 10.5) |
+| `plan status [PLAN_DIR]` | renders `status.md` of the plan's run, by default the last run's, released or not |
+| `plan watch` | waits until the supervisor has something to do, and prints its context and its compactions (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
-| `plan context [SESSION]` | prints a Claude Code session's context and compactions, with the word to hand over at `PLAN_COMPACTIONS` (2); defaults to `CLAUDE_CODE_SESSION_ID` (sections 2.1 and 2.2) |
-| `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (150,000 tokens) (section 7.3) |
+| `plan context [SESSION]` | prints a Claude Code session's context and compactions; defaults to `CLAUDE_CODE_SESSION_ID` (sections 2.1 and 2.2) |
+| `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (100,000 tokens) (section 7.3) |
 | `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane in fresh `downstream/` worktrees, removes them on every exit, and lands nothing (sections 5.7 and 14.1) |
 | `plan ring MESSAGE` | loads the coordinator's thread if needed, rings its doorbell, and starts the turn of an idle one (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
@@ -630,8 +640,8 @@ wrote it, the designer's, its successors' and its sub-agents', one
 `Designer-Session: <session id>` line each, as a plan's landing names its
 planner (section 5.4), so that a plan's whole cost, its design included,
 can be counted. `plan metrics` reads those trailers on commits changing
-the Inputs' design paths, after the repository's previous plan landing
-and through this plan's landing (section 15.2).
+the Inputs' design documents, after the repository's previous plan
+landing and through this plan's landing (section 15.2).
 
 **A change during another run.** A run keeps the process and the kit of
 its claim: development.md, its cards and `scripts/dev` at the skein
@@ -677,6 +687,13 @@ everything those agents read: plans, prompts, unblocks and steers.
 - **When there are options, name the default.**
 - **Quote the text an answer relies on,** from the design or the plan; do
   not paraphrase it. Check an answer against the code before sending it.
+- **Answer a bound with its first measure,** or with "measure it first".
+  An answer about a bound (a worst case, a margin, a limit's sufficiency)
+  gives the command that measured it and its output (section 10.4), or
+  names the increment that measures it (section 5.3). A figure argued
+  without a probe is neither. In render, the answer to "git's
+  listing decoder alone holds more than 256 MiB" ran no probe, and the
+  1 GiB bound was summed 9.5 hours into the run.
 - **Check what matters, as well as saying it.** A rule that must hold for
   the rest of a plan becomes:
   - a lint;
@@ -807,11 +824,15 @@ user only what they and the design leave open, and asks before writing.
   types: ^(Owner|Legacy)[A-Z]|V2$
   file-lines: 800
   budgets: 15 60
+  aims: hearth 8 30
   ```
 
   `words` are the words the plan forbids in code, `types` the names that
-  signal a parallel type, `file-lines` the plan's file limit, and
-  `budgets` the focused and fuzzy suites' budgets in seconds;
+  signal a parallel type, `file-lines` the plan's file limit, `budgets`
+  the focused and fuzzy suites' budgets in seconds, and `aims` the times
+  a repository's focused and fuzzy suites stay within, in seconds: the
+  base plus what the run may add (section 5.6), a line for each
+  repository the README gives aims;
 - **Done when:** observable conditions, each with the command that checks
   it. Each aim the README states (fewer lines, one engine, plainer words)
   is an item with its command, or is named there as unchecked: an aim
@@ -844,7 +865,7 @@ user only what they and the design leave open, and asks before writing.
   counted in hand-written production lines (tests, generated code,
   goldens and transcripts aside), by the command the document gives,
   written out with the paths it counts; each landing's report gives that
-  count, against the tolerance of implementer.md, 8.6, which the document
+  count by file, against the Size, whose rule (section 5.3) the document
   does not repeat. A move that any of several sessions may need, such as
   splitting a file that every session grows, is a step of its own, owned
   by one session, whose Needs is the file passing a count the document
@@ -856,11 +877,13 @@ user only what they and the design leave open, and asks before writing.
 **A session file, `<repository>/NN-<name>.md`,** gives each increment at
 most about 100 lines, and is read in one read: at most about 400 lines.
 A session that needs more is split. It names the design, the code and
-the findings by section and symbol, and restates none of them (section
-4.5). In forgejo-17, the session files held about 400 lines an
-increment, against 55 to 80 in jig's, smith's and skein's plans: they
-brought no fewer defects, three of them were too long for one Codex
-read, and their writers cost $42. It holds:
+the findings by section, path and symbol, never by line number (in
+render, 27 of the 48 corrections at ready checks and re-checks refreshed
+line numbers), and restates none of them (section 4.5). In forgejo-17,
+the session files held about 400 lines an increment, against 55 to 80 in
+jig's, smith's and skein's plans: they brought no fewer defects, three of
+them were too long for one Codex read, and their writers cost $42. It
+holds:
 - **Title and summary:** "Session NN: …", with one paragraph.
 - **Read first:** the design sections, decisions and findings it builds
   on, and, by number, the sections of skein's `programming-model.md` and
@@ -883,7 +906,7 @@ read, and their writers cost $42. It holds:
   Shape: <module paths, type and function names, signatures; a type that
     crosses a boundary written field by field, naming what it mirrors>.
   Test shape: <the test file; the fixtures and helpers to reuse, by
-    file:line; where its worlds' and fixtures' limits come from; one
+    path and symbol; where its worlds' and fixtures' limits come from; one
     reference test written out for each new test file or new kind of
     test; the tests' names; their ceilings (section 5.6)>.
   Proof: <the layer's word, then the test or the script, what it shows,
@@ -931,14 +954,21 @@ landed with `land --docs` (section 5.4).
 - **A session holds about four or five increments.** An implementer's
   context is near 105,000 tokens at its first change, from what it reads
   before it, and grows by about 50,000 with each increment (protocol's
-  medians); past 150,000 it hands over (section 7.3), so a session's
+  medians); past 100,000 it hands over (section 7.3), so a session's
   first thread lands about one increment, and each successor, which reads
-  less (implementer.md, 8.1), about two. An area that needs more is two
+  less (implementer.md, 8.1), one or two. An area that needs more is two
   sessions, the second needing the first.
 - **Small, and landed on its own.** Each passes the gate within budget and
   leaves `main` coherent: nothing half-built visible to users, no dead
   code. Prefer several small increments to one large one: parallel
   sessions rebase on each other.
+- **An increment past its Size lands without asking,** if it keeps to its
+  Files and to the rules for edits outside them (implementer.md, 8.2, and
+  the plan's README); its report gives the count by file (8.6). An edit
+  outside its Files that those rules do not cover stays a question,
+  whatever the count. In render, ten Size blocks were each answered
+  "land", and the rule went from twice the Size to four times and was
+  passed anyway.
 - **The increments that need nothing outside come first,** so the session
   can start at once.
 - **An increment whose Needs land before its session's comes first in
@@ -990,6 +1020,15 @@ landed with `land --docs` (section 5.4).
     its ceilings (section 5.6).
   - A suite's first breach of its budget is profiled, and the tests are
     made cheaper. A budget's rule is not changed to fit the tests.
+- **A bound over a sum of several sessions' parts is computed early.**
+  When a test or a "Done when" item bounds a sum over parts that several
+  sessions build (a worst case over every layer's holders), the first
+  increment that can compute the sum lands the computation, and its
+  report gives the number. Each later increment that changes a part keeps
+  the computation current and reports the number again. In render, ten
+  sessions tested their own layer's worst case; the last increment of the
+  last session summed them, 9.5 hours in, and nine supplements and four
+  design answers followed.
 - **Transitional code has an end.** An increment that lands a change
   piecemeal and keeps transitional code names the step that removes it:
   legacy paths, compatibility constructors, adapters that supply a value
@@ -1035,6 +1074,8 @@ landed with `land --docs` (section 5.4).
     increment's (section 5.3);
   - proofs no higher than their increment's tests without a reason, and
     sides that run ahead of what they meet (sections 5.3 and 5.5);
+  - a bound over a sum of several sessions' parts, with no increment that
+    first computes the sum (section 5.3);
   - Proof lines that do not start with their layer's word (section 5.5);
   - a `code-organization.md` without the command that counts an
     increment's hand-written production lines, and each Size above about
@@ -1077,7 +1118,9 @@ landed with `land --docs` (section 5.4).
   - each premise that a bound holds unchanged ("memory needs no
     change"): the command that computes the bound's margin at the base,
     with its output in the plan's `findings/`, and the floor the plan
-    names for the margin (section 5.6).
+    names for the margin (section 5.6). A bound whose sum no command
+    computes at the base, because its parts are not built, names instead
+    the increment that first computes it (section 5.3).
 
   A command that fails, a count that is not what the plan says, or a
   sketch that does not compile is a plan defect, fixed before the plan
@@ -1112,8 +1155,10 @@ landed with `land --docs` (section 5.4).
   recorded answer.
 - **The plan lands** with `land --docs`, and `STATUS.md` gets the plan's
   row, `ready`. The landing commit carries the trailer `Planner-Session:
-  <the planner's $CLAUDE_CODE_SESSION_ID>`, which the metrics read
-  (section 15.2).
+  <the planner's $CLAUDE_CODE_SESSION_ID>`, one for each of the planner's
+  sessions, in the paragraph of its other trailers; the metrics read them
+  (section 15.2), and `land` refuses a plan's landing whose lines git does
+  not read as trailers (section 9.1).
 
 ### 5.5 Each increment's proof
 
@@ -1248,7 +1293,7 @@ shows them precisely.
 
 - **The test shape** of an increment names:
   - the test file;
-  - the fixtures and helpers to reuse, by `file:line`;
+  - the fixtures and helpers to reuse, by path and symbol;
   - each test's name;
   - for each new test file, or each new kind of test, one reference test
     written out in full;
@@ -1333,10 +1378,18 @@ commits behind smith.
   `STATUS.md`.
 - **When it starts.** A closing repin starts once every step of the plan
   upstream of its repository has landed, dropped or split (a `split` row
-  is done once its parts are), and the repin before it in the order. The supervisor may add one earlier, `<repository>-repin.s<k>`
-  (section 10.4), when `plan downstream` shows the repository broken
-  (section 14.1), most of all when sessions are about to change further
-  the API that broke it. The closing repin still runs.
+  is done once its parts are), and the repin before it in the order. The
+  supervisor may add one earlier, `<repository>-repin.s<k>` (section
+  10.4), when `plan downstream` shows the repository broken (section
+  14.1), most of all when sessions are about to change further the API
+  that broke it. The closing repin still runs.
+- **A step added after a closing repin has landed.** A ruling that adds a
+  step to a repository also adds, for each downstream repository whose
+  closing repin has landed, that repin again, `<repository>-repin.s<k>`,
+  the first to start once the added step lands, the others in the order
+  (section 10.3). Otherwise the landed repin leaves the pin on an earlier
+  revision. In render, two skein steps added by rulings after smith-repin
+  left smith on an older skein, and "Done when" item 9 failed.
 - **A conflict in `Cargo.lock`** is never merged by hand: take
   `origin/main`'s, and run the step's `cargo update` again.
 - **Names.** A repin of a repository that the plan's own repository never
@@ -1364,6 +1417,9 @@ commits behind smith.
    - the primary checkouts of the plan's repository and of those upstream
      of it: on `main`, clean, equal to `origin/main`, with an `origin` that
      takes a push (`git push --dry-run`);
+   - the code graph: each of those repositories' index against its
+     `origin/main`. An older index is a warning, not a failure: the
+     supervisor re-indexes it (step 4);
    - the tools, pueued and the queue's lanes, memory and disk;
    - that Claude Code trusts the workspace, Codex's daemon, and the
      coordinator's Codex profile;
@@ -1388,17 +1444,20 @@ commits behind smith.
      `~/src/rust/tmp/active-plan` and adding its kit (section 3.6);
    - it starts the supervisor, a background Claude Code session (Opus 5.5,
      xhigh) in the workspace, named `<plan> supervisor`, with "Supervise the
-     run of `<plan-dir>` as skein's docs/foundation/supervisor.md says.";
+     run of `<plan-dir>` as `<run>/kit/docs/foundation/supervisor.md` says.";
    - it starts the coordinator, a thread on Codex's daemon named `<plan>
      coordinator`, with its profile's dotted config settings and the code
-     graph server disabled, and "Coordinate the run of `<plan-dir>`, as skein's
-     docs/foundation/development.md, section 7, says.";
+     graph server disabled, and "Coordinate the run of `<plan-dir>`, as
+     `<run>/kit/docs/foundation/development.md`, section 7, says.";
    - it rings the doorbell once, which the coordinator logs (section 7.4).
      If the ring fails, steers wait for the coordinator's next wake-up.
 4. **The supervisor, first** (`supervisor.md`, section 1):
    - marks the plan `active on <machine> since <date>` in each `STATUS.md`
      that has its row, with `land --docs`; the row is what keeps another
      machine from claiming the same plan;
+   - compares each plan repository's graph index with its `origin/main`
+     and re-indexes one that is older; until it has, steers the
+     implementers away from the graph (section 14.1, step 2);
    - starts its watch, `plan watch`, in the background (section 10.5);
    - handles `hourly:` from the watch with its hourly check (section 14).
 5. **The designer joins,** if the plan may raise design questions: in its
@@ -1422,9 +1481,9 @@ started it, which record it themselves.
 ### 7.1 Setting up
 
 1. Read this document's sections 3.5, 3.6, 7 and 9 to 12, `implementer.md`'s
-   section 8.6 (what reports say), the plan's `README.md` and
-   `code-organization.md`, and the head of each session file: its
-   increments and dependencies.
+   section 8.6 (what reports say), both in the run's `kit/docs/foundation/`
+   (section 3.6), the plan's `README.md` and `code-organization.md`, and
+   the head of each session file: its increments and dependencies.
 2. Write your thread's id to the run's `thread` file:
    `printf '%s\n' "${CODEX_THREAD_ID:-unknown}" > <run>/thread`. If it
    writes `unknown`, say so in `log.md`.
@@ -1467,8 +1526,8 @@ started it, which record it themselves.
   not inherit the coordinator's conversation, and give it this prompt:
 
   ```
-  You are an implementer. Read ~/src/rust/skein/docs/foundation/
-  implementer.md, then ~/src/rust/<repository>/AGENTS.md, then
+  You are an implementer. Read <run>/kit/docs/foundation/implementer.md,
+  then ~/src/rust/<repository>/AGENTS.md, then
   <plan-dir>/README.md and <plan-dir>/code-organization.md, then
   <plan-dir>/<repository>/<file>, and nothing else of the process.
   Implement that session in <worktree>, one increment at a time. Your
@@ -1481,8 +1540,8 @@ started it, which record it themselves.
   A repin step (section 5.7) gets this prompt instead:
 
   ```
-  You are an implementer. Read ~/src/rust/skein/docs/foundation/
-  implementer.md, then development.md's section 5.7 alone, then
+  You are an implementer. Read <run>/kit/docs/foundation/implementer.md,
+  then <run>/kit/docs/foundation/development.md's section 5.7 alone, then
   ~/src/rust/<repository>/AGENTS.md. Repin <repository> on <the
   repositories it moves> as section 5.7 says, in <worktree>. Your
   checkpoint is <run>/sessions/<repository>-repin.md, and your logs go
@@ -1539,13 +1598,15 @@ and the question in one line, or "none". After each:
 3. Run `plan status` after a checked landing. `plan set state=landed`
    stays available for the supervisor's corrections.
 4. **Hand over a large context.** After a landing, run `plan contexts`. A
-   session whose context, or whose peak, it prints past 150,000 tokens,
+   session whose context, or whose peak, it prints past 100,000 tokens,
    flagged or not, hands over, between increments, never in one: a
    compaction shrinks the last request but not the peak, and `plan
    contexts` flags only past `PLAN_CONTEXT_LIMIT`. In smith's parity run,
    handovers past 200K came at up to 329K, and 06.2 started at 164K and
    cost 24.2M against 06.1's 8.6M; a steer to hand over past 150K brought
-   them to 156K to 186K:
+   them to 156K to 186K. In hearth's render, with increments of 500 to
+   1,000 lines, sessions past 150K at a landing reached 182K in median and
+   344K at most:
    - send it, with `send_message`: "Hand over: write your checkpoint as
      section 8.6 says, then end your turn with your report.";
    - when it has reported, run `plan handover REPOSITORY NN CONTEXT` to append its handover
@@ -1554,8 +1615,8 @@ and the question in one line, or "none". After each:
      7.2), with its checkpoint.
 
    A session that ended its turn, on a question or a yield, is checked
-   before it is resumed, and its limit is 150,000 tokens: when its
-   context, the first number `plan contexts` prints for it, is past 150K,
+   before it is resumed, and its limit is 100,000 tokens: when its
+   context, the first number `plan contexts` prints for it, is past 100K,
    flagged or not, its answer or its next step goes to a fresh thread
    instead of a `followup_task`. So does a session that has stood idle
    for over an hour since its last report, whatever its context, since
@@ -1630,7 +1691,8 @@ dependency lands.
   supervisor runs `plan ring`, which steers a one-line message ("steer.md
   is ready") into your turn and ends your wait; if you are idle, it starts
   your next turn. Handle the file it names as at any wake-up. "ready:
-  <step>": start that step (section 7.2). A ring that names neither: append
+  <step>": start that step (section 7.2). "done when ran": go on with the
+  end (section 7.6). A ring that names none of these: append
   `Rang, <UTC time>: <message>` to `log.md`, and wait again. A ring
   reaches you as a user's message, but it is the supervisor's, through
   `plan ring`, never the user's: record it as the supervisor's. In
@@ -1663,8 +1725,8 @@ dependency lands.
   and lines of sections 7.3, 7.4, 7.6 and 10.3 as written there ("Blocked
   and unblocked, <time>", never "Unblock handled"); and `blocked.md` only
   section 10.2's six kinds. The metrics read them so (section 15.2).
-- **After a compaction or a restart,** re-read this section, `context.md`
-  and the ledger before acting.
+- **After a compaction or a restart,** re-read this section in the run's
+  `kit/` (section 3.6), `context.md` and the ledger before acting.
 
 ### 7.6 Pausing, resuming, ending
 
@@ -1703,9 +1765,9 @@ dependency lands.
   pueued and Codex's daemon if they are down, resumes the supervisor's
   session (which starts its watch again; it prints `hourly:` when a check
   is due), and
-  starts a coordinator turn with "Resume the run of `<plan-dir>` as skein's
-  docs/foundation/development.md, section 7.6, says." The coordinator
-  starts no Claude session.
+  starts a coordinator turn with "Resume the run of `<plan-dir>` as
+  `<run>/kit/docs/foundation/development.md`, section 7.6, says." The
+  coordinator starts no Claude session.
 - **End** when every step has landed, dropped or split (a `split` row is
   done once its parts are).
   1. Write `done.md`, starting with `Recorded <UTC time>.`, so the
@@ -1718,13 +1780,21 @@ dependency lands.
      The supervisor adds to each decision the design commit that took it
      in, or "not in the design yet". It then has a sub-agent run each
      "Done when" command once, and appends each command, with its
-     output, to `done.md` (section 5.2).
-  2. Remove the worktrees.
-  3. `plan release`. The run's directory stays.
+     output, to `done.md` (section 5.2). A command that fails gets a
+     ruling (supervisor.md, section 3): a step that fixes it, or the miss,
+     recorded.
+  2. `plan idle "the Done when run"`, and release nothing until the
+     supervisor rings "done when ran": every command has passed or has its
+     ruling.
+  3. Remove the worktrees.
+  4. `plan release`. The run's directory stays.
 
-  The supervisor marks the plan `done <date>` in `STATUS.md`, and watches
-  until the release, which reaches it as any event does (supervisor.md,
-  section 8); the retrospective follows (section 15).
+  The supervisor marks the plan `done <date>` in `STATUS.md` when it rings,
+  and watches until the release, which reaches it as any event does
+  (supervisor.md, section 8); the retrospective follows (section 15). In
+  hearth's render run, the release came 40 seconds before the commands
+  began and `STATUS.md` said `done` before they ended; item 9 failed, and
+  the run could no longer add a step.
 
 ## 8. Implementing: the implementer's card
 
@@ -1761,6 +1831,11 @@ From a clean worktree on the branch to land, `land`:
 1. rebases the branch on `origin/main`, and refuses (exit 2):
    - a commit whose `Plan:`, `Step:` or `Proof:` line git does not read as
      a trailer, so that `plan status` and the metrics can read it;
+   - a commit whose `Planner-Session:` or `Designer-Session:` line git
+     does not read as a trailer, so that the metrics count the planning
+     and the design (section 15.2). In render, the plan's nine lines stood
+     in a paragraph apart from its trailers, and $221 of planning went
+     uncounted;
    - code that adds a word the active plan's Pulse forbids, on a branch
      that carries that plan's steps;
 2. unless a gate already passed on this tree, or on one that differs from
@@ -1930,6 +2005,10 @@ without `## `, separated by `; `.
   command that a ruling or a steer tells a role to run is a premise
   checked against the run's `kit/`, not `main`: `grep -n '<command>'
   <run>/kit/scripts/dev/<tool>` (section 3.6).
+- **A ruling that adds a step names, in its Instructions,** the step and
+  its session file, and the repins it adds with it (section 5.7): each
+  `<repository>-repin.s<k>`, with the step it starts after. `plan status`
+  checks which closing repins have landed.
 - **When the coordinator finds `unblock.md`:**
   1. it runs `plan unblocked`, which logs both files whole under
      "Blocked and unblocked, <time>", removes the block headings named
@@ -1940,7 +2019,7 @@ without `## `, separated by `; `.
   3. it gives each session the answer concerns its Decision and
      Instructions, word for word (`send_message`; or `followup_task` if
      the session has ended its turn; or a fresh thread, from its
-     checkpoint, if it ended its turn past 150,000 tokens or has stood
+     checkpoint, if it ended its turn past 100,000 tokens or has stood
      idle for over an hour, as section 7.3, step 4, says), and `plan
      set`s its step back to `running`;
   4. it follows the instructions, which take precedence over the plan
@@ -1980,7 +2059,9 @@ without `## `, separated by `; `.
      the prompt of each session it starts while the point is in force;
   5. it updates `context.md`. A point whose "Until" has come leaves it.
 - **The supervisor follows up.** The next check verifies each point. A
-  point not followed is sent again, with what was seen.
+  point not followed is sent again, with what was seen. A test-shape rule
+  that a script can test, sent a second time, also becomes a check in the
+  gate (section 14.4).
 
 ### 10.4 Who decides what
 
@@ -2013,19 +2094,22 @@ without `## `, separated by `; `.
   steps. The supervisor writes the question to the run's `question.md`,
   in `blocked.md`'s shape, with its own reading of the design, and wakes
   the designer: `plan wake designer "question.md has a question: answer
-  it as development.md, section 10.4, says."` This resumes the designer's own session in the background, with
+  it as <run>/kit/docs/foundation/development.md, section 10.4,
+  says."` This resumes the designer's own session in the background, with
   its context; a designer session the user has open gets a copy instead.
   - **The designer's context compacts in place:** `plan wake` resumes it
     with `--autocompact`, at about 180K (section 10.5). After a
     compaction, the designer re-reads sections 2.1, 4.4, 4.5 and this
-    one, `question.md`, and the design sections and plan files it names,
-    before going on with the answer.
+    one, in the run's `kit/` (section 3.6), `question.md`, and the design
+    sections and plan files it names, before going on with the answer.
   - **A fresh designer** starts instead, from a brief (`plan wake`'s
     prompt: the role, `question.md`, and the earlier questions and answers
-    in `supervision.md`), when the last designer's session has been
-    compacted twice, or has been idle for over an hour, longer than its
-    cache lives. In jig-protocol, each wake re-read a history that grew to
-    966K tokens: 75% to 80% of the designer's 514M input tokens.
+    in `supervision.md`), when the last designer's session has been idle
+    for over an hour, longer than its cache lives, or when its last answer
+    said it was confused: then the supervisor wakes it with
+    `PLAN_DESIGNER_IDLE=0 plan wake designer …`. In jig-protocol, each
+    wake re-read a history that grew to 966K tokens: 75% to 80% of the
+    designer's 514M input tokens.
   - **A designer at work is never woken again:** a second wake forks a
     copy without the first's answers. `plan wake` refuses it, and the
     supervisor sends the designer a message instead (in Claude Code,
@@ -2123,8 +2207,7 @@ without `## `, separated by `; `.
   limit; check rows with their session path; quiet with the coordinator's
   state and the last 20 log lines. It never prints a whole session file.
   Then it prints the supervisor's context, the input of its last request,
-  and its compactions, and once they reach `PLAN_COMPACTIONS` (2), the
-  word to hand over.
+  and its compactions.
 - **After each event,** the supervisor handles it, then runs the watch
   again.
 - **A ready check never holds the watch.** Its sub-agent runs in the
@@ -2156,8 +2239,8 @@ without `## `, separated by `; `.
   half an hour later, with no line saying when it would end.
 - **The designer has no watch.** After `plan join designer` it ends its
   turn; `plan wake` brings it back with each question (section 6, step 5).
-- **The supervisor's context compacts in place,** an experiment (section
-  13). `plan` starts and resumes it with `--autocompact` at
+- **The supervisor's context compacts in place** (section 13). `plan`
+  starts and resumes it with `--autocompact` at
   `PLAN_CLAUDE_AUTOCOMPACT` (200,000 tokens), and Claude Code compacts it
   a little below that, at about 180K. A compacted session keeps its id,
   its cron jobs and its background commands: its watch and the waits
@@ -2174,22 +2257,22 @@ without `## `, separated by `; `.
   4. appends `## Compacted, <UTC time>: session <id>, compaction <N>` to
      `supervision.md`, N counted from its session's earlier entries, with
      what it found running and what it started.
-
-  On temper/client-api, the supervisors handed over by context (near
-  255K, then past 150K from 10-16 18Z): 28 sessions in about 30 hours. Those after the
-  150K rule spent 44% of their weighted tokens in their first 40
-  requests, against 16% before it, each starting at 80K to 90K; an old
-  session kept acting after its handover.
-- **The supervisor hands over after its second compaction,** or sooner
-  when it finds itself confused: after the re-read, it cannot say what is
-  open, which ruling landed last, or which background commands are its
-  own. It hands over to a fresh session, and starts it itself
-  (`supervisor.md`, section 7):
+- **The supervisor hands over only when it finds itself confused:** after
+  the re-read, it cannot say what is open, which ruling landed last, or
+  which background commands are its own. Or when its watch says so,
+  which it does only in a run claimed before skein 71f6c38, whose kit
+  does not compact the supervisor, once its context is past its limit.
+  The word to hand over that a later run's kit prints at a count of
+  compactions is ignored (section 13).
+  It hands over to a fresh session, and starts it itself (`supervisor.md`,
+  section 7):
   1. it finishes the event in hand;
   2. it appends a `## Handover, <time>` entry to `supervision.md`, of at
-     most 30 lines: what is open, the steers it follows up, the rulings in
-     force that the plan does not yet say, the next check's focus;
-  3. it stops its watch, and each ready check's sub-agent and wait;
+     most 30 lines: what is open, the sub-agents running and where each
+     report will be, the steers it follows up, the rulings in force that
+     the plan does not yet say, the next check's focus;
+  3. it stops its watch and each ready check's wait, and leaves the
+     sub-agents running;
   4. it runs `plan handover supervisor`, which starts the successor and
      records it in `claude.tsv`;
   5. it ends its turn. A watch it left running exits with "handed over:",
@@ -2199,9 +2282,9 @@ without `## `, separated by `; `.
   left it to the user ran nine more hours past 500K tokens, and its
   answers read less code as it grew (half under 200K, none above 800K).
   The successor reads its card, the handover entry and the open escalation
-  files, and starts again each ready check left open. Its first watch
-  prints every open event; each later watch shows only events this session
-  has not seen.
+  files, reads each sub-agent's report when it ends, and starts again each
+  ready check's wait. Its first watch prints every open event; each later
+  watch shows only events this session has not seen.
 
 ### 10.6 Stopping the line
 
@@ -2376,32 +2459,21 @@ that machine.
 - **An idle coordinator's next turn** comes from `plan ring` starting it
   (`turn/start`), as `plan resume` does: untested while sessions have
   ended their turns and wait on a `followup_task`.
-- **Compaction in place, an experiment** (the director's, for the user,
-  2026-10-17). The supervisor and the designer compact at about 180K and
-  hand over after their second compaction (sections 2.1, 10.4 and 10.5),
-  instead of handing over past a context limit (300,000 tokens for the
-  supervisor, 150,000 for the designer). It reaches the runs claimed
-  after skein 71f6c38; a run in flight keeps its claim's kit and process,
-  and takes it only by its supervisor's ruling, which moves its `kit/`
-  (sections 3.6 and 12). The next retrospective of a run that takes it
-  compares, against temper/client-api's supervisors, which handed over by
-  context (1.8M weighted tokens an hour and 16% in their first 40
-  requests near 255K; 1.6M and 44% at 150K):
-  - **the supervisor's weighted tokens per hour, and the bootstrap
-    share:** `plan metrics`' `supervisor` (section 15.2);
-  - **missed watch events:** an event the run's files show (a block, an
-    answer, a step in `check`, a quiet heartbeat) that waited while no
-    watch of the supervisor ran;
-  - **process mistakes after a compaction:** in the hour after each
-    `## Compacted` entry, a step of the card skipped or done twice, a
-    ruling or a steer sent again, a background command started twice, a
-    successor not started.
-
-  It holds if the supervisor's weighted tokens per hour and its
-  bootstrap share fall, and missed events and mistakes stay at none. If
-  missed events or mistakes come with the compactions, the handover by
-  context comes back. The designer's idle limit (an hour) stays either
-  way.
+- **Compaction in place** (the director's experiment, for the user,
+  2026-10-17; decided by render's retrospective). The supervisor and the
+  designer compact at about 180K and re-read their files after each
+  compaction (sections 2.1, 10.4 and 10.5); the experiment also had them
+  hand over after their second compaction. In render, compaction was
+  cheap, about 7 requests and $0.4 to restore, and the count was costly:
+  its handovers stopped eight sub-agents ($12.5, then relaunched) and
+  preceded both late hourly checks. The one confused session followed an
+  id change, not compactions. So compaction in place stays and the count
+  is dropped: a role hands over only when it finds itself confused, or
+  when its watch says so (section 10.5). The `supervisor` metric (section
+  15.2) is to give each session's restore cost and count its sub-agents,
+  in place of the bootstrap share, so that later runs show whether
+  restoring stays cheap: render's proposal 11, for the next kit batch.
+  The designer's idle limit (an hour) stays.
 - **`wait_agent`'s longest timeout.** 300 seconds works, and the doorbell
   ends such a wait within a second (tested 2026-10-11). Codex's
   `multi_agent_v2.max_wait_timeout_ms` bounds it; its default is unknown.
@@ -2452,13 +2524,13 @@ request carried. The supervisor appends the entry, and sends the steer.
 
 **A quiet hour needs no sub-agent.** While no session is running and the
 run waits only on queue tasks (a live suite), the supervisor runs `plan
-pulse` and step 2's listing of process changes itself, reads them
-unfiltered, and appends an entry of at most five lines: what runs, its
-progress, the machine, the changes found. In smith's parity run, the
-eight checks while one suite ran cost about $21, and led to nothing. In
-smith's wall-clock run, the quiet checks from 18:48 to 02:17 skipped
-the listing, and a change that named the run reached its coordinator
-ten hours after it landed.
+pulse` and step 2's listing of process changes and graph comparison
+itself, reads them unfiltered, and appends an entry of at most five
+lines: what runs, its progress, the machine, the changes found. In
+smith's parity run, the eight checks while one suite ran cost about $21,
+and led to nothing. In smith's wall-clock run, the quiet checks from
+18:48 to 02:17 skipped the listing, and a change that named the run
+reached its coordinator ten hours after it landed.
 
 1. **Run `plan pulse`** (section 14.2), and read its output unfiltered:
    no `grep`, `head` or `tail`. It prints the numbers since the last
@@ -2480,7 +2552,11 @@ ten hours after it landed.
    commit whose body says the run takes it, and that no steer has passed
    on, is a steer point (section 4.4), sent with this check's steer: a
    change reaches the run's coordinator at the first check after its
-   landing.
+   landing. Then compare each plan repository's graph index with its
+   `origin/main`, as `plan check` does (section 6). The supervisor
+   re-indexes one that is older. Until it has, a steer point passes on to
+   the implementers, for their prompts: "Do not use the code graph for
+   <repository>; search with `rg`." The next steer lifts it.
 3. **Sample two files, about 300 lines in all:**
    - the largest test added since the last check, read against the test
      checklist (section 14.3);
@@ -2530,7 +2606,9 @@ Since the last check:
   logged); the number of finished tasks no client removed; files and scripts written
   under `logs/`;
 - **tests:** each suite's time from the `Gate-Result` trailers, against
-  its budget; the tests past four fifths of a ceiling, and the SLOW ones;
+  its budget and its aim, and each landing whose focused or fuzzy time is
+  past the aim (in hearth's render run, ten were past 8 s before the
+  steer); the tests past four fifths of a ceiling, and the SLOW ones;
   lines added in tests and in code, docs landings left out;
 - **code signals in the diff:** code files the diff touches, tests
   included, over the plan's size limit, documents and data judged by no
@@ -2581,7 +2659,11 @@ easily misread.
   example: a test rewritten, a report's lines, the command that is the
   evidence.
 - **The second time,** the point becomes a standing rule in the plan's
-  README, or a line of the plan's "Don't" list, and a steer says so.
+  README, or a line of the plan's "Don't" list, and a steer says so. A
+  test-shape rule (testing-strategy.md, section 10) that a script can test
+  also becomes a check in the repository's gate, added as a step (section
+  10.4), so that a third steer is not needed. In render, test shape was
+  about 19 of 45 steer points, and one rule was sent six times.
 - **Every finding gets its steer, or a reason.** The check proposes a
   steer point for each finding not yet steered, and the supervisor sends
   it, or writes in the entry, in one line, why not. In smith's parity
@@ -2623,8 +2705,8 @@ question and its own budget, or waits for the retrospective.
     Code transcripts of the supervisor and the designer (from
     `claude.tsv`) and of the planner (the plan's `Planner-Session:`
     trailer), and the design's sessions (the `Designer-Session:` trailers
-    of commits changing the Inputs' design paths since the previous plan
-    landing), with their sub-agents;
+    of commits changing the Inputs' design documents since the previous
+    plan landing), with their sub-agents;
   - the earlier plans' metrics (`plan metrics --history`) and their
     retrospectives;
   - the skein commit its run's process came from (`supervision.md`'s
@@ -2683,10 +2765,10 @@ counts them by hand.
 | `restarts` | `log.md`'s "Coordinator resumed" headings, by the whole cause after the time; its "Coordinator loaded" and `supervision.md`'s "Loaded" headings count as cause `loaded` |
 | `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads, from the last `token_usage_record`'s `thread_token_usage`, else the last `total_token_usage` |
 | `tokens_implementers` | the same usage totals, for every thread the coordinator spawned, at any depth |
-| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), and the design's sessions (the `Designer-Session:` trailers of commits changing the Inputs' design paths after the previous plan landing and through this one), their sub-agents and sub-agents of sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (the design and the planning), from the claim to `done.md` (the run), and after (the retrospective) |
+| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), and the design's sessions (the `Designer-Session:` trailers of commits changing the Inputs' design paths after the previous plan landing and through this one; the next kit batch finds them also by the file names the Inputs give), their sub-agents and sub-agents of sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (the design and the planning), from the claim to `done.md` (the run), and after (the retrospective) |
 | `cost_claude` | what those tokens cost at list prices for each message's model (Opus 5.5's when absent or unknown, unknown models named), in all, by role, and by kind: cache reads, cache writes, fresh input, output; each session whose transcript is not on this machine is named, counted as $0. At Opus's and Sonnet's rates, a cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
 | `tokens_per_step` | the coordinator's, the implementers' and the run's part of the Claude Code sessions', per landed step |
-| `supervisor` | the supervisor's sessions in `claude.tsv`: how many, their hours (each from its first request to its last), their weighted tokens per hour (fresh input 1, cache reads 0.1, cache writes 1.25, output 5; sub-agents left out, each message counted once), the share of those in the 40 requests after each session's start or compaction (the bootstrap), and their compactions (section 10.5) |
+| `supervisor` | the supervisor's sessions in `claude.tsv`: how many, their hours (each from its first request to its last), their weighted tokens per hour (fresh input 1, cache reads 0.1, cache writes 1.25, output 5; sub-agents left out, each message counted once), the share of those in the 40 requests after each session's start or compaction (the bootstrap), and their compactions (section 10.5); the next kit batch replaces the share with each session's restore cost (the requests and dollars from its start, and from each compaction, to its next `plan watch`) and its sub-agents' count and cost (section 13) |
 | `coordinator_requests` | the coordinator's model requests, from its usage records (distinct `response_id` values, else `total_token_usage` lines), and how many followed a wait that ran out |
 | `compactions` | the coordinator's context compactions |
 | `gates_per_step` | `land`'s gates per landed step, by their label in `logs/heavy.tsv` (section 11.2) |

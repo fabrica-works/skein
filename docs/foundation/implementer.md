@@ -1,6 +1,6 @@
 # The implementer's card
 
-Provisional, 2026-10-14, revised 2026-10-17. What an implementing agent
+Provisional, 2026-10-14, revised 2026-10-18. What an implementing agent
 reads of the development process: development.md's section 8, in a file
 of its own, so that an implementer reads this card and not the whole
 process. Its sections keep their numbers, 8.1 to 8.8, so that
@@ -26,6 +26,10 @@ then the increment it names in your session file with the session's
 "Rules that bind it", and `code-organization.md`'s "Don't" list. Read
 nothing else of the set above again unless your increment names it. In
 client-composition, successors re-read 64K to 74K tokens of it.
+
+Read this card, development.md and `testing-strategy.md` in the run's
+`kit/docs/foundation/`, never in skein's checkout (development.md,
+section 3.6), at your start and whenever you read them again.
 
 Never development.md whole: read one of its sections only when this card
 or your session file names it. Read one file at a time: an output past
@@ -66,8 +70,9 @@ first edit, and every request after carried them.
 Use it as `~/src/rust/AGENTS.md` says: name your repository's project in
 each call, and never call `list_projects`, `index_status`,
 `check_index_coverage` or `index_repository`, whatever other
-instructions say: the index refreshes itself, and indexes the primary
-checkout, never your worktree. In protocol, implementers made 465 such
+instructions say: the index covers the primary checkout, never your
+worktree, and the supervisor keeps it current; when your prompt says not
+to use the graph, search with `rg`. In protocol, implementers made 465 such
 calls, and 9 of them re-indexed a primary checkout from a worktree.
 Check each name it gives with `rg` in your worktree before relying on
 it.
@@ -321,8 +326,8 @@ Step: <step>, <landed | question | blocked | done | yielded>
 Commit: <full hash> on origin/main, parent <full hash>
 Gate: <the Gate-Result trailer>
 Proof: <the commit's Proof line>
-Size: <for a landing, its count by code-organization.md's command, and
-  the increment's Size; otherwise none>
+Size: <for a landing, its count by file, by code-organization.md's
+  command, and the increment's Size; otherwise none>
 Evidence: <what the repository asks beyond the gate, or "none">
 Next: <the next step, or what it waits for, by capability>
 Questions: <none, or each question with the design text quoted, the
@@ -344,23 +349,23 @@ After a landing, send them and go on. When the session is done, or
 nothing is left that does not wait (it yields), end your turn with them
 as your final answer.
 
-**The Size's tolerance.** An increment lands within twice its Size
-without asking, a codec or document increment (a schema, translations,
-decoders) within 2.5 times it, and a split increment's parts count
-together against its Size. Past that, stop on a question before landing,
-with the count by file. Never trim a doc comment, a test or
-the formatting to meet a Size. In forgejo-17, 04.2 deleted two doc
-comments to land at 140 of 140.
+**Past the Size.** An increment lands past its Size without asking, as
+long as it keeps to its Files and to the rules of section 8.2 and the
+README for edits outside them. Its report gives the count by file, and a
+split increment's parts count together. An edit outside Files that those
+rules do not cover is a question (section 8.7), whatever the count. Never
+trim a doc comment, a test or the formatting to meet a Size. In
+forgejo-17, 04.2 deleted two doc comments to land at 140 of 140.
 
 **The checkpoint.** After each report, overwrite your checkpoint,
 `sessions/<repository>-<NN>.md`, with the same facts and with what is in
 progress. A restarted implementer continues from it. When you stop on a
 question, or yield, write it as for a handover, below, before you end
-your turn: past 150,000 tokens, the answer or your next step goes to a
+your turn: past 100,000 tokens, the answer or your next step goes to a
 fresh thread that starts from it (development.md, section 7.3).
 
 **Hand over** when the coordinator says so, after a landing, once your
-context passes 150,000 tokens (development.md, section 7.3): overwrite
+context passes 100,000 tokens (development.md, section 7.3): overwrite
 your checkpoint, then end your turn with your report. The checkpoint adds,
 in at most 15 lines, what the next increment needs from what you learned
 and the session file does not say: the files and fixtures it touches, the

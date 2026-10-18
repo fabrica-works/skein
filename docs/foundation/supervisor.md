@@ -1,6 +1,6 @@
 # The supervisor's card
 
-Provisional, 2026-10-14, revised 2026-10-17. What a run's supervisor
+Provisional, 2026-10-14, revised 2026-10-18. What a run's supervisor
 does, step by step: all it reads of the process at its start, and all it
 reads again after a compaction.
 development.md's sections 2.5, 10 and 14 are the policy behind it. The
@@ -9,10 +9,13 @@ them, never the whole document.
 
 ## 1. Starting, or taking over
 
-`plan start` starts you with "Supervise the run of `<plan-dir>` as skein's
-docs/foundation/supervisor.md says." Read this card, then development.md's
-sections 4.5 (writing for the executor), 10.3 (the shapes of an unblock
-and a steer) and 10.4 (who decides what). Then:
+`plan start` starts you with "Supervise the run of `<plan-dir>` as
+`<run>/kit/docs/foundation/supervisor.md` says." Read this card, then
+development.md's sections 4.5 (writing for the executor), 10.3 (the
+shapes of an unblock and a steer) and 10.4 (who decides what). Take this
+card, development.md and any other document of the process from the run's
+`kit/docs/foundation/`, never from skein's checkout (development.md,
+section 3.6). Then:
 
 1. **Mark the plan** `active on <machine> since <date>` in each `STATUS.md`
    that has its row, with `land --docs` (development.md, sections 3.3 and
@@ -21,8 +24,10 @@ and a steer) and 10.4 (who decides what). Then:
    `origin/main`. Then record the process the run keeps: append
    `## Process, <UTC time>: skein <commit>` to `supervision.md`, the
    commit of the run's kit, as `git -C <run>/kit rev-parse --short HEAD`
-   prints it (development.md, sections 3.6 and 4.4). A successor skips
-   this step.
+   prints it (development.md, sections 3.6 and 4.4). Then compare each
+   plan repository's graph index with its `origin/main` and re-index one
+   that is older, with the steer that development.md, section 14.1,
+   step 2, says until you have. A successor skips this step.
 2. **Start the watch:** `plan watch`, as a background command (in Claude
    Code, a Bash command with `run_in_background`).
 3. **End your turn,** with at most one line of text.
@@ -37,13 +42,15 @@ all open events, including those shown to its predecessor.
 end of `supervision.md`.
 
 **After a compaction.** Your context compacts by itself at about 180K
-tokens (development.md, section 10.5, an experiment): a summary opens
+tokens (development.md, section 10.5): a summary opens
 your context, and the workspace's hook says "You were just compacted".
 Your watch and your background commands go on. Before acting on anything:
 
 1. **Re-read this card's sections 2 to 9,** not development.md: of it,
    re-read sections 10.3 and 10.4 before your next ruling or question,
-   and the others when a case needs them, as at your start.
+   and the others when a case needs them, as at your start. Take the card
+   and development.md from the run's `kit/docs/foundation/`, never from
+   skein's checkout (development.md, section 3.6).
 2. **Re-read the run's state:** `plan status`; `supervision.md` from its
    last `## Check` entry, or all of it if it has none:
 
@@ -69,9 +76,8 @@ Your watch and your background commands go on. Before acting on anything:
 
    Under it, one line: what you found running, and what you started
    again.
-5. **At the second compaction, or if you find yourself confused, hand
-   over** (section 7). Otherwise go on with what woke you, or end your
-   turn.
+5. **If you find yourself confused, hand over** (section 7). Otherwise
+   go on with what woke you, or end your turn.
 
 ## 2. The watch's events
 
@@ -91,8 +97,8 @@ source path for the rest. Handle the event, then start the watch again:
 | `quiet again:` | an alert to the user, with the command `plan resume` |
 | `paused:` with its text | read it; nothing else waits for you until the run resumes |
 | `done:` with its text | the end (section 8) |
-| `context: … (compactions: N): hand over now`, N at least 2 | after the event in hand, section 7 |
-| `context: … past …K: hand over now` | the same: a run claimed before skein 71f6c38 hands over by context (section 7) |
+| `context: … past …K: hand over now` | after the event in hand, section 7: a run claimed before skein 71f6c38 hands over by context |
+| `context: … (compactions: N): hand over now` | ignore the word: no count of compactions makes you hand over (section 7) |
 | `handed over:` | you supervise no more: end your turn, and start nothing |
 
 An idle coordinator (`idle.md`, development.md, section 7.4) has ended its
@@ -139,6 +145,10 @@ carried by every later request.
    for a repository downstream of the plan names it as the plan's README
    does, and the designer's next landing adds it to that repository's
    `STATUS.md` (development.md, section 5.7).
+   A ruling that adds a step also adds, for each downstream repository
+   whose closing repin `plan status` shows landed, that repin again,
+   `<repository>-repin.s<k>`, and its Instructions name it with the step
+   it starts after (development.md, sections 5.7 and 10.3).
 5. **Write the unblock once,** to `<run>/unblock.draft.md`, in development.md
    section 10.3's shape, with its `## Landed` section empty. Its Decision
    is the ruling's whole text. Write `{ruling}` where it names its own
@@ -175,11 +185,13 @@ a rule that would serve every plan, a proposal for the retrospective
    the design, the design sections and plan files it touches, and the
    block's report file.
 2. **Wake the designer:** `plan wake designer "question.md has a question:
-   answer it as development.md, section 10.4, says."` It resumes the
-   designer's session, or, once that session has been compacted twice or
-   idle an hour, starts a fresh designer from a brief (development.md,
-   section 10.4). If it says the designer is at work, never wake it
-   again: send it a message (SendMessage) naming `question.md`.
+   answer it as <run>/kit/docs/foundation/development.md, section 10.4,
+   says."` It resumes the designer's session, or, once that session has
+   been idle an hour, starts a fresh designer from a brief (development.md,
+   section 10.4); after an answer that says the designer was confused,
+   wake it with `PLAN_DESIGNER_IDLE=0 plan wake designer …`, which does
+   the same. If it says the designer is at work, never wake it again:
+   send it a message (SendMessage) naming `question.md`.
 3. **Go on** with everything else. A design gap always goes to the
    designer, even when its step can go on meanwhile: then an interim
    unblock lets the step go on only with work that does not rest on the
@@ -217,7 +229,7 @@ defects came from increments no check had read.
    every increment of it, and note each repository's origin/main commit
    when you start. For each increment: grep every name its Files, Shape
    and Test shape give (crates, files, types, fields, functions, fixtures
-   by file:line); a name that an increment not landed yet adds is no
+   by path and symbol); a name that an increment not landed yet adds is no
    mismatch: name that increment. For each thing it changes, search its
    name, its copies by content and the values derived from it, in its
    repository and each repository downstream, for users its Files miss.
@@ -227,7 +239,8 @@ defects came from increments no check had read.
    reaches, under each profile the repository's gate runs, fuzzy
    included. Read nothing else, and change no file outside the scratch
    worktree. Report at most 30 lines: the commits you checked, each
-   mismatch with its file:line and the correction, and each suite run
+   mismatch with its file:line and the correction, which names code by
+   path and symbol, never by line number, and each suite run
    with its result. Stop at about 25 minutes, and report what you checked
    and what you did not.
    ```
@@ -264,10 +277,13 @@ defects came from increments no check had read.
 **A check left open** by a handover or a restart is started again by the
 session that goes on, from the handover entry, which names the re-checks
 still waiting (step 4), and the ledger's steps in `check` (`awk -F'\t'
-'$4 == "check"' <run>/ledger.tsv`): its background
-commands ended with the session before it. The new session's first watch
-shows every open event again, including steps in `check`. A compaction ends none of them: its sub-agents and waits go
-on, and their notifications reach you as before.
+'$4 == "check"' <run>/ledger.tsv`): its waits ended with the session
+before it, and after a restart so did its sub-agents. After a handover
+the sub-agents run to their end: the entry names them, and the new
+session reads each report when it ends (section 7). The new session's
+first watch shows every open event again, including steps in `check`. A
+compaction ends none of them: its sub-agents and waits go on, and their
+notifications reach you as before.
 
 ## 6. The hourly check
 
@@ -280,14 +296,14 @@ due 65 minutes after this heading, even if this check stops halfway.
    prompt:
 
    ```
-   Run the hourly check of the run in <run>, as skein's
-   docs/foundation/development.md, section 14.1, steps 1 to 4, say,
-   with sections 14.2 and 14.3; the claim's skein commit is <the
-   Process line's commit>. Return only: the check's entry (at most 15
-   lines, section 14.1, step 5), and the steer's points in section
-   10.3's shape: one for each finding not yet steered (section 14.4),
-   and one for each process change the run takes. Change no file
-   yourself.
+   Run the hourly check of the run in <run>, as
+   <run>/kit/docs/foundation/development.md, section 14.1, steps 1 to 4,
+   say, with sections 14.2 and 14.3 and the testing-strategy.md beside
+   it; the claim's skein commit is <the Process line's commit>. Return
+   only: the check's entry (at most 15 lines, section 14.1, step 5), and
+   the steer's points in section 10.3's shape: one for each finding not
+   yet steered (section 14.4), and one for each process change the run
+   takes. Change no file yourself.
    ```
 
    Its reading stays in its own context; only its entry reaches yours.
@@ -301,16 +317,15 @@ due 65 minutes after this heading, even if this check stops halfway.
 
 **A quiet hour.** While no session is running and the run waits only on
 queue tasks (a live suite), skip the sub-agent: run `plan pulse` and the
-listing of process changes yourself (development.md, section 14.1, step
-2), read them unfiltered, and append an entry of at most five lines. A
-change the run takes is a steer point all the same: send it as step 3
-says.
+listing of process changes and the graph comparison yourself
+(development.md, section 14.1, step 2), read them unfiltered, and append
+an entry of at most five lines. A change the run takes is a steer point
+all the same: send it as step 3 says.
 
 ## 7. Handing over
 
-Your context compacts in place (section 1). You hand over only:
-- **after your second compaction:** step 5 of section 1 finds it, or the
-  watch prints `(compactions: N): hand over now`;
+Your context compacts in place (section 1), and no count of compactions
+makes you hand over. You hand over only:
 - **when you find yourself confused:** after the re-read of section 1 you
   cannot say what is open, which ruling landed last, or which background
   commands are yours, or the run's files show actions of yours you do
@@ -323,20 +338,22 @@ Then:
 1. Finish the event in hand.
 2. Append to `supervision.md`, under `## Handover, <UTC time>`, at most 30
    lines: what is open (blocks, questions, steps to check or re-check),
-   the steers whose points you still follow up, the rulings in force that
-   the plan does not yet say, and the next check's focus.
-3. Stop your watch, and each ready check's sub-agent and wait (section 5;
-   in Claude Code, stop their background tasks). Your successor starts
-   the watch, which prints `hourly:` when the next check is due.
+   the sub-agents running, each with its step and where its report will
+   be, the steers whose points you still follow up, the rulings in force
+   that the plan does not yet say, and the next check's focus.
+3. Stop your watch and each ready check's wait (section 5; in Claude
+   Code, stop their background commands), and leave the sub-agents
+   running. Your successor reads their reports, and starts the watch,
+   which prints `hourly:` when the next check is due.
 4. Run `plan handover supervisor`. It starts your successor and records it.
-5. End your turn, and do nothing more. If anything wakes you, `plan watch`
-   prints `handed over:`: end your turn again.
+5. End your turn, and do nothing more. If anything wakes you, a
+   sub-agent's end included, `plan watch` prints `handed over:`: end your
+   turn again.
 
 A supervisor's checks thin as its context grows: in jig-protocol, half its
-answers read code under 200K tokens, and none above 800K. A handover by
-context costs a fresh start each time: on temper/client-api, the sessions
-that handed over at 150K spent 44% of their tokens in their first 40
-requests.
+answers read code under 200K tokens, and none above 800K. A handover
+costs more than a compaction (development.md, section 13): in render, the
+handovers at every second compaction stopped eight sub-agents mid-check.
 
 **A usage limit is no handover** (development.md, section 10.5). A usage
 notice changes nothing: go on, and write no handover. You stop only when
@@ -354,10 +371,14 @@ When the watch prints `done:` (development.md, section 7.6):
    "Done when" command of the plan's README once, as written, through
    `heavy` where it compiles or runs tests, and return each command with
    its output; append them to `done.md`, under `## Done when, run <UTC
-   time>`. One that fails goes to the user, as an alert.
-2. Mark the plan `done <date>` in each `STATUS.md` that has its row, with
-   `land --docs`.
-3. **Watch until the release.** After `done.md`, the coordinator removes
+   time>`. One that fails goes to the user, as an alert, and gets a
+   ruling (section 3): a step that fixes it, or the miss, recorded with
+   its reason.
+2. Once every command has passed or has its ruling, and not before, run
+   `plan ring "done when ran"`, then mark the plan `done <date>` in each
+   `STATUS.md` that has its row, with `land --docs`. The coordinator
+   releases the run on that ring.
+3. **Watch until the release.** After the ring, the coordinator removes
    the worktrees and runs `plan release`. Start the watch again, and
    beside it, in the background, `until [[ ! -f ~/src/rust/tmp/active-plan
    ]]; do sleep 60; done`. What holds the release reaches you as any

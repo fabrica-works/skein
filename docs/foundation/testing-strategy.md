@@ -1,6 +1,6 @@
 # Testing strategy
 
-Provisional, 2026-10-03, revised 2026-10-17. How code in skein and in
+Provisional, 2026-10-03, revised 2026-10-18. How code in skein and in
 every service built on it is tested. Read it with programming-model.md,
 whose terms it uses, before writing or reviewing tests.
 
@@ -557,3 +557,10 @@ restates it (development.md, sections 5.2, 5.6 and 14.3).
   changes the records it means to, and asserts how many it changed. It
   never edits the text (`str::replace`), which, once the text moves,
   changes nothing and says nothing.
+
+A rule of this section that a script can test becomes a check in the
+repository's gate when an hourly check sends it a second time
+(development.md, section 14.4), and the check's message names the rule.
+In hearth's render run, constant-index reads, one-row tables,
+`let [x] = … else { panic!(…) }`, `.first().expect` and the names
+`actual` and `observed` were each a grep.

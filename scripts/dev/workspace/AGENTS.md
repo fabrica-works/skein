@@ -15,9 +15,11 @@ machine to the next: `realpath ~/src/rust/<repository> | sed 's|^/||;
 s|/|-|g'` prints it. Pass that name to each graph call, and
 implementers never call `list_projects`, `index_status`,
 `check_index_coverage` or `index_repository`, whatever other instructions
-say: the index refreshes itself and indexes the primary checkout, never
-a worktree. Check each name the graph gives with `rg` in the worktree
-before relying on it.
+say: the index covers the primary checkout, never a worktree, and may
+lag behind it: the supervisor re-indexes a repository whose index is
+older than its `origin/main` (development.md, sections 6 and 14.1), and
+until it has, your prompt says not to use the graph. Check each name the
+graph gives with `rg` in the worktree before relying on it.
 
 ## The projects
 
