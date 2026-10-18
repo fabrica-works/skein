@@ -216,6 +216,21 @@ section 10 (findings/inventory.md); the planner decided what follows
      - `sed -n '195p' scripts/dev/plan-check.sh` gives `local bin=$HOME/.local/bin home=${DEV_KIT_HOME:-$kit}`; `:274` gives `systemctl --user restart pueued && sleep 1`.
      - `sed -n '35,36p' scripts/dev/test-plan` gives `pueued -d` and `pueue group add build >/dev/null`; the checks of 05 and 06 each saw their first run fail at `test-plan:36`, a rerun pass.
 
+103. **03's, 04's, 05's and 06's Shapes against main** (ready check of skein-03.1, 04.1, 05.1 and 06.1).
+     The ready checks of skein-03.1, 04.1, 05.1 and 06.1, against skein `817b15c` (01.1, 01.2, 02.1 to 02.3 landed), found no plan defect beyond ruling 102's and corrections in each session file; each file now carries them, and cites a place by its content with its line "at 817b15c":
+     - **03:** 03.4's `errors=$(` guards its grep (`{ grep -E … || true; }`), or `set -euo pipefail` (plan:39) aborts `plan downstream` before "fails" prints; `made` and `unmake` are global, so the EXIT trap sees them; 03.3's boot unit names an absolute `ExecStart`; 03.3's tests run in skein-01.s1's world; 03.1 needs skein-01.s1 (and the README's row says so); the cites moved by 01.2's split are corrected.
+     - **04:** cites moved by 01.2 (plan-roles.sh, plan-watch.sh); 04.1's heading is written in 7.4, which 7.5's bullet names; 04.3's Files gain `plan`'s usage (`plan idle REASON [--tasks ID…]`) and 7.4's idle bullet; a dirty worktree fails test-plan's `heavy_run --gate true` check (:203): commit first.
+     - **05:** metrics.sh opens with `# shellcheck shell=bash` and disables SC2154 and SC2034; development.md 3.6 (:455-456) names `metrics.sh`; `jsonl [--arg N V]... PROGRAM [FILE...]`, stdin with no FILE; of numbers.sh's eight jq lines, :99 and :131 stay `head -n1` reads; 05.4's fixture records carry `payload.thread_id` and `payload.response_id`, and `codex_requests` counts distinct `response_id`s (smith `rollouts.rs:171-181`); `restart_causes` takes the whole text after the heading's time, not numbers.sh:685's regex; the new functions are in Files.
+     - **06:** 06.1's and 06.3's Files gain `plan`'s usage and dispatch (plan:534); 06.3 reads each of unblock.md's `Answer to` lines (`plan ruling` appends a second draft, plan:436-438) and logs the two files as one body (`log_entry HEADING [BODY_FILE]`); 06.4's Files gain development.md 3.5's `thread`, `threads` row, and its test restores `$run/threads` with `$run/thread` (plan-roles.sh:138 appends to it; numbers.sh:90 reads it).
+     A further copy a session finds stale is corrected in its commit, and named in the commit body.
+
+     Checked:
+     - `git diff --stat 817b15c 0a1700b -- scripts docs/foundation` prints nothing: the cites hold at 0a1700b.
+     - `sed -n '509p' scripts/dev/plan` gives `errors=$(grep -E '^[^ ]+:[0-9]+:[0-9]+: error' "${log:-/dev/null}" …`; `sed -n '39p'` gives `set -euo pipefail`.
+     - `sed -n '436,438p' scripts/dev/plan` gives `if [[ -f $run/unblock.md ]]; then` / `sed '1{/^# Unblock/d}' "$draft" >>"$run/unblock.md"`.
+     - `sed -n '138p' scripts/dev/plan-roles.sh` gives `printf '%s\t%s\n' "$thread" "$(now)" >>"$run/threads"`.
+     - Suites: test-plan passed at 817b15c in each check's scratch worktree (tasks 3796, 3797 and others), after a first failure at test-plan:36 (ruling 102); `shellcheck -S warning -x` clean.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner

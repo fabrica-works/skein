@@ -38,7 +38,7 @@ ones before it in its session.
 | `skein/01-base.md` | skein 01: kit-after-parity's kit, and `plan` in four files | nothing | |
 | `skein/01-s1-test-world.md` | skein 01.s1: test-plan's world keeps off the machine (ruling 102) | nothing | |
 | `skein/02-land-heavy.md` | skein 02: `land` and `heavy`, and the rules with no kit | nothing (02.1 is Markdown) | 02.2, 02.3: skein 01.1 (d7e6ee3's `land`, the SC2120 fix); 02.4: skein 05.1 (`metrics.sh`) |
-| `skein/03-check.md` | skein 03: the machine file, `plan check`'s refusals, the units, `plan downstream` | skein 01.2 (`check_machine` in `plan-check.sh`) | |
+| `skein/03-check.md` | skein 03: the machine file, `plan check`'s refusals, the units, `plan downstream` | skein 01.2 (`check_machine` in `plan-check.sh`); skein 01.s1 (test-plan's world, ruling 102) | |
 | `skein/04-watch.md` | skein 04: the coordinator's thread, and the watch | skein 01.2 (`ring` and `coordinator_state` in `plan-roles.sh`) | |
 | `skein/05-numbers.md` | skein 05: the numbers | skein 01.2 (numbers.sh as 01.1 leaves it) | 05.5: skein 03.1 (`machine_setting`) |
 | `skein/06-coordinator.md` | skein 06: the coordinator's commands and its profile | skein 01.2 (`set_step` in `plan` after the move) | 06.3: skein 04.2 (`coordinator_turn`, `log_entry`, the fake Codex; `handover`'s and `resume`'s `.watch` line) |

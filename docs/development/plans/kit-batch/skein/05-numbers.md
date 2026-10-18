@@ -17,8 +17,9 @@ restart and a pin, and last the pulse's two rules.
 ## Read first
 
 - skein `docs/foundation/development.md`, sections 3.6 (`plan contexts`,
-  :488), 4.4 (:593-597), 7.3 (the states, :1505-1517), 11.4 (disk,
-  :2160-2183), 14.2 (:2398), 15.1 (:2462-2474), 15.2 (:2507-2552).
+  :494), 4.4 (:593-603), 7.3 (the states, :1518-1527), 11.4 (disk,
+  :2194-2213), 14.2 (its bullets, :2398-2431), 15.1 (its transcripts,
+  :2498-2502), 15.2 (:2540-2585).
 - The retrospectives, section 8 and its section 10 decisions:
   `smith/docs/development/plans/parity/retrospective.md` (6, 7, 14, 15),
   `smith/docs/development/plans/wall-clock/retrospective.md` (8),
@@ -32,7 +33,9 @@ restart and a pin, and last the pulse's two rules.
 - The kit after 01.1 (findings/base-runs.md, 9): `scripts/dev/numbers.sh`
   (786 lines; 747 at the base), `scripts/dev/plan`,
   `scripts/dev/test-plan`. Line numbers below are after 01.1: "before
-  01.2" for `plan`, and "before 05.1" for numbers.sh.
+  01.2" for `plan`, and "before 05.1" for numbers.sh. Those of
+  test-plan, development.md and supervisor.md (the ones above too) are
+  at skein 817b15c ("at 817b15c"): find each place by its content.
 
 ## What the design asks
 
@@ -104,22 +107,30 @@ Files: new `scripts/dev/metrics.sh`; `scripts/dev/numbers.sh`
   (`claude_cost` and `supervisor_sessions`, :221-284 with their comments,
   `metrics_of`, :637-754, and `metrics`, :756-786, leave; the header
   comment, :1-10, says so); `scripts/dev/plan` (the `source` of
-  numbers.sh, plan:1268-1269 before 01.2).
+  numbers.sh, plan:1268-1269 before 01.2); development.md 3.6 (:455-456
+  at 817b15c: "`numbers.sh` for the run's numbers, pulse and metrics"
+  also names `metrics.sh`).
 Shape: the four functions move unchanged, in order, to `metrics.sh`,
-  under `# shellcheck shell=bash` and a comment saying that `plan` sources
-  it after numbers.sh. `plan` gains `# shellcheck source=metrics.sh` and
+  under `# shellcheck shell=bash`, `# shellcheck disable=SC2154`
+  (numbers.sh sets claude_home, plan sets root and run),
+  `# shellcheck disable=SC2034` (`hash` in `metrics_of`'s `read -r repo
+  hash at step proof _` is unused), each with its reason on its line,
+  and a comment saying that `plan` sources it after numbers.sh. Without
+  them the gate's shellcheck fails; code-organization.md, section 1,
+  names only SC2154. `plan` gains `# shellcheck source=metrics.sh` and
   `source "$kit/metrics.sh"` below numbers.sh's. Functions resolve at call
   time, so numbers.sh's pulse still calls `claude_cost`, and
   `metrics_of` calls numbers.sh's readers. `claude_tokens`,
   `median_and_p90`, `report_lengths`, `land_gates`, `pin_lag`,
   `run_ended`, `running_seconds` and `thread_contexts` stay.
 Test shape: none new. test-plan copies the whole kit into its fake
-  skein (test-plan:88-92), so the run's kit has `metrics.sh` too.
+  skein (`cp -r "$kit"`, test-plan:109 at 817b15c), so the run's kit has
+  `metrics.sh` too.
 Proof: process, `scripts/dev/heavy --tail 15 scripts/dev/test-plan`
   prints `test-plan: passed`, with test-plan unchanged; the gate's
   shellcheck is silent.
 Don't: change a body or a comment of a moved function; move any other.
-Size: about 8 new lines (213 moved).
+Size: about 10 new lines (213 moved).
 Removes: numbers.sh's growth toward the ceiling.
 
 ### 05.2 Torn lines, the model, prices, the design's sessions
@@ -129,26 +140,34 @@ Scope: parity 15 (the torn line; a named sub-agent's own sub-agents),
   `tokens_claude` and `cost_claude`.
 Needs: 05.1.
 Files: `scripts/dev/numbers.sh` (new `jsonl`, `claude_files`, `design_inputs`,
-  `designer_sessions`; `claude_roles`, :164-176; `claude_messages`,
-  :183-212; the other jq sites on transcripts and rollouts: :117, :132,
+  `designer_sessions`; `claude_roles`, :164-174; `claude_messages`,
+  :183-210; the other jq sites on transcripts and rollouts: :117, :132,
   :145, :315; the pulse's cost label, :623); `scripts/dev/metrics.sh`
-  (`claude_cost`, :221-241 before 05.1, rewritten; `supervisor_sessions`'
+  (`claude_cost`, :221-242 before 05.1, rewritten; `supervisor_sessions`'
   jq, :257 before 05.1); `scripts/dev/plan-check.sh` (`check_plan`,
-  plan:240 before 01.2); `scripts/dev/test-plan`; development.md :515
-  (drop `PLAN_CLAUDE_PRICES`), 4.4 (:593-597, "does not read them yet"),
-  5.2's Inputs (:737: they name each design document by its full path in
-  the repository, as the metrics read them), 14.2's cost-so-far bullet
-  (:2391-2393: "since the planning" becomes "since the design", as the
-  count includes the design's sessions), 15.1's transcripts list (the
+  plan:240 before 01.2); `scripts/dev/test-plan`; development.md (drop
+  `PLAN_CLAUDE_PRICES`: the settings paragraph, :521 at 817b15c, and
+  15.2's `cost_claude` row, :2562), 4.4 ("does not read them yet",
+  :601), 5.2's Inputs (:743: they name each design document by its full
+  path in the repository, as the metrics read them), 14.2's cost-so-far
+  bullet (:2424-2426: "since the planning" becomes "since the design",
+  as the count includes the design's sessions), 15.1's transcripts list (the
   designer's sessions), 15.2 `tokens_claude` (the designer's sessions,
   sub-agents of sub-agents; the part before the claim names "the design
   and the planning") and `cost_claude` (prices per model; the cache-read
   sentence says "at Opus's and Sonnet's rates").
-Shape: `jsonl PROGRAM FILE...` runs `jq -R -r` over each line as
+Shape: `jsonl [--arg N V]... PROGRAM [FILE...]` runs `jq -R -r` (given
+  the `--arg`s) over each line as
   `fromjson? | select(type == "object") | (PROGRAM)`, so a torn line is
-  skipped and the rest read; all six jq sites on transcripts and
-  rollouts use it. (A file's last line without a newline joins the next
-  file's first, and both are skipped: a loss of two lines.)
+  skipped and the rest read; with no FILE it reads stdin. numbers.sh has
+  eight jq lines on transcripts and rollouts (:99, :117, :131, :132,
+  :145, :190, :257, :315 at 817b15c); the six that read a whole file or
+  a pipe use `jsonl`: :190 and :257 need `--arg role` and `--arg s`,
+  :117, :132 and :145 are pipes, and :315 reads `$files`. :99 and :131
+  (which has `--arg t`) are `head -n1` first-line reads and stay as they
+  are. (A file's last line without a newline
+  joins the next file's first, and both are skipped: a loss of two
+  lines.)
   `claude_messages` takes the message's `.message.model`
   as column 8 (the first line with the id decides; the other columns stay,
   so `claude_tokens` is untouched) and skips `<synthetic>` messages.
@@ -175,20 +194,21 @@ Shape: `jsonl PROGRAM FILE...` runs `jq -R -r` over each line as
   or docs/foundation/ path: the metrics will count no design session"
   when `design_inputs` prints nothing: one function in numbers.sh, which
   `designer_sessions` calls too, so the rule is written once.
-Test shape: three checks in test-plan, `expect` (:26) throughout.
+Test shape: three checks in test-plan, `expect` (:43 at 817b15c)
+  throughout.
   1. "a torn line": one line between the supervisor's messages
-     (:195-198) and `boundary` (:200); the supervisor's "2 compactions"
-     (:241) fails at the base, as the boundaries come after it, and
-     passes after:
+     (`assistant()`, :276, and its block, :277-281) and `boundary()`
+     (:283); the supervisor's "2 compactions" (:324) fails at the base,
+     as the boundaries come after it, and passes after:
      ```
      printf '{"type":"assistant","message":{"id":"t","usage":{"input_tok\n' >>"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
      ```
-  2. "the design's sessions". Before "Plan the demo" (:84-86): c1 changes
+  2. "the design's sessions". Before "Plan the demo" (:101-103): c1 changes
      `docs/design/thing.md` with `Designer-Session: $d_old`; c2 is
      `git commit --allow-empty` with `Planner-Session: $planner_old`; c3
      changes `docs/design/thing.md` with `Designer-Session: $designer` and
      `Designer-Session: agent-a1`; c4 changes `docs/design/other.md` with
-     `Designer-Session: $other`. The README heredoc (:45-55) gains
+     `Designer-Session: $other`. The README heredoc (:62-73) gains
      `## Inputs` and a line naming `` `docs/design/thing.md` ``. Transcripts,
      stamped 2020: `$designer.jsonl` holds d1 (100 in, 1 out);
      `$designer/subagents/agent-1.jsonl` d2 (40, 1); under a session no
@@ -197,13 +217,15 @@ Test shape: three checks in test-plan, `expect` (:26) throughout.
      with a meta.json, a2's `toolUseId` in a1's text and a3's in none, so
      only the closure finds a2 and it leaves a3 out; `$d_old` and
      `$other` hold one small message each, which count not.
-     The metrics expectation (:234-247) changes `tokens_claude` to
+     The metrics expectation (`metrics=`, :317, to the `pin_lag` line,
+     :330) changes `tokens_claude` (:322) to
      `$'tokens_claude\t1960 in (5% cached), 23 out; in: 1840 before the claim, 120 in the run, 0 after'`;
-     the pulse's "Claude Code 120/17" stays, and its expectation at :225
-     reads "since the design". The demo README's Inputs leave `plan check`
-     without the warning; the warning itself: at the first `plan check`
-     (:309), `sed -i '/^## Inputs/,/^$/d' "$dir/README.md"` strips the
-     Inputs (heading, line and the blank after), `PLAN_NO_GATE=1 "$plan"
+     the pulse's "Claude Code 120/17" (:307) stays, and the expectation
+     after it (:308) reads "since the design". The demo README's Inputs
+     leave `plan check` without the warning; the warning itself: at the
+     first `plan check` ("decisions open", :392),
+     `sed -i '/^## Inputs/,/^$/d' "$dir/README.md"` strips the Inputs
+     (heading, line and the blank after), `PLAN_NO_GATE=1 "$plan"
      check "$dir" 2>&1` must hold `warn  the README's Inputs name no
      docs/design/ or docs/foundation/ path`, and `git -C "$repo" checkout
      -- "$dir/README.md"` restores it.
@@ -220,8 +242,9 @@ Test shape: three checks in test-plan, `expect` (:26) throughout.
          $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1'
      ```
      Ignoring the tier would give a designer of $22 or $110. In the main
-     world the messages carry no model and cost Opus's: the call at :234
-     drops `PLAN_CLAUDE_PRICES`, and its `cost_claude` expectation becomes
+     world the messages carry no model and cost Opus's: the `metrics=`
+     call (:317) drops `PLAN_CLAUDE_PRICES`, and its `cost_claude`
+     expectation becomes
      `$'cost_claude\t$0: planner $0, supervisor $0, designer $0; cache reads $0, cache writes $0, fresh input $0, output $0'`.
 Proof: process, `scripts/dev/heavy --tail 15 scripts/dev/test-plan`
   prints `test-plan: passed`, which runs the three checks;
@@ -241,26 +264,29 @@ Needs: 05.2 (they share fixtures and `jsonl`).
 Files: `scripts/dev/plan` (state whitelist and its message, plan:566-567
   before 01.2: add `split`; `status`'s counts, plan:647-690, skip `split`
   rows); `scripts/dev/numbers.sh` (`layer_rank`, :38; `planned_layer`,
-  :47; `proof_layer`, :64; the pulse's progress awk, :494-512, proofs
-  block, :527-546, and line count, :574); `scripts/dev/metrics.sh`
-  (`metrics_of`'s counts, :644, and proofs and lines, :727-750);
+  :47; `proof_layer`, :64; the pulse's progress awk, :491-510, proofs
+  block, :526-542, and line count, :574; new `ledger_kinds`,
+  `proof_layers`, `gated_commits` and `below_plan`);
+  `scripts/dev/metrics.sh` (`metrics_of`'s counts, :644, and proofs and
+  lines, :727-750);
   `scripts/dev/test-plan`; development.md 7.3's states (add `split`:
   "replaced by its parts, named by letter, `<NN>.<M>a`, `b`, ...; counts
-  in none") and its "Steps not in the plan" (:1495-1499: the coordinator,
-  when a session splits its increment, sets the row `split` (note: the
-  parts) and adds `<NN>.<M>a`, `b`, ... with the note "part of
-  <NN>.<M>"; `.s<k>` stays for a step not in the plan); 10.4 (:1865) and
+  in none") and its "Steps not in the plan" (:1505 at 817b15c: the
+  coordinator, when a session splits its increment, sets the row
+  `split` (note: the parts) and adds `<NN>.<M>a`, `b`, ... with the note
+  "part of <NN>.<M>"; `.s<k>` stays for a step not in the plan); 10.4
+  (:1889) and
   2.5 (:219), which name unplanned steps `.s<k>`, only where their text
-  would contradict that; 7.6's end (:1606) and 5.7's "When it starts"
-  (:1248), which say a run ends, or its closing repin starts, once every
+  would contradict that; 7.6's end (:1619) and 5.7's "When it starts"
+  (:1258), which say a run ends, or its closing repin starts, once every
   step has landed (or been dropped): each says "landed, dropped or split
   (a `split` row is done once its parts are)", and no code changes for
   it, as the kit decides no end itself (the coordinator does, by `plan
-  status`); 5.5's Proof line (:1071-1076) and 15.2 `proofs`: a layer is
+  status`); 5.5's Proof line (:1081-1088) and 15.2 `proofs`: a layer is
   the first word up to its first hyphen ("process-tier" is process),
   each part after a semicolon counts, and a split increment is judged at
-  its last part; 14.2's Proofs and Tests bullets (:2374-2375,
-  :2380-2382), which say docs landings are not counted; 15.2 `steps_*`,
+  its last part; 14.2's Proofs and Tests bullets (:2407-2408,
+  :2413-2415), which say docs landings are not counted; 15.2 `steps_*`,
   `lines`.
 Shape: `ledger_kinds` reads the ledger in two passes (`FNR == NR`
   collects the `split` rows) and prints each row but the `split` ones with
@@ -278,7 +304,7 @@ Shape: `ledger_kinds` reads the ledger in two passes (`FNR == NR`
   not start `none`; `proofs` and `lines` read from it, so a docs landing
   adds nothing. The pulse reads it too, as `gated_commits "$since"`
   (passed on to `plan_commits`) into `gated`, for its Proofs block
-  (:528-541) and its line count (:574), so a docs landing is no "no Proof
+  (:526-542) and its line count (:574), so a docs landing is no "no Proof
   line" there; `$commits` stays for its landings, last gate and code
   signals. `below_plan STEP PROOF` prints the increment's layer when
   STEP has no later lettered part in the ledger and PROOF's layer ranks
@@ -286,10 +312,11 @@ Shape: `ledger_kinds` reads the ledger in two passes (`FNR == NR`
   and an earlier part is tallied, not judged. `proofs` prints the known
   layers in rank order, any other word in first-seen order, `none`, then
   `N below plan`.
-Test shape: `commit` (:125) and `expect` (:26); two changes and two worlds.
-  Alpha-01.1's Proof (:136) becomes "world, the story first, passed",
-  as "the" would now count as a layer. Both worlds save the ledger and
-  restore it, so "metrics after release" (:352) and the rest hold.
+Test shape: `commit` (:208 at 817b15c) and `expect` (:43); two changes
+  and two worlds. Alpha-01.1's Proof (:219) becomes "world, the story
+  first, passed", as "the" would now count as a layer. Both worlds save
+  the ledger and restore it, so "metrics after release" (:447) and the
+  rest hold.
   1. "split steps". `cp "$run/ledger.tsv" "$t/ledger.save"; rm
      "$run/.pulse"`, then append 11-column rows (updated `$stamp`):
      `alpha-04.4` split; `alpha-04.4a`, `alpha-04.4b`, `alpha-04.5` and
@@ -298,8 +325,8 @@ Test shape: `commit` (:125) and `expect` (:26); two changes and two worlds.
      planned and 2 added steps landed since; in all 5 of 6 planned
      landed, 2 added (0 to go)"; from `metrics`, `steps_planned\t5\t`,
      `steps_added\t2\t`, `steps_dropped\t1\t`.
-  2. "every Proof word". A `beta` repository made as alpha is (:42-44),
-     whose `bcommit STEP PROOF GATE` is `commit` (:125) with
+  2. "every Proof word". A `beta` repository made as alpha is (:59-61),
+     whose `bcommit STEP PROOF GATE` is `commit` (:208) with
      `--allow-empty`, run with
      `DEV_REPOS="alpha beta" "$plan" metrics`: 01.1 "unit, the units;
      world, the worlds", 01.2 "process-tier, the machinery", 01.3
@@ -333,29 +360,36 @@ Scope: parity 15 (hand loads; pins from origin), protocol 11 (restarts
 Needs: 05.3. (04.1 writes the `Coordinator loaded` heading, decisions.md
   9; this increment's test writes its own.)
 Files: `scripts/dev/numbers.sh` (`codex_tokens`, :112; `pin_lag`, :404;
-  the pulse's call, :628); `scripts/dev/metrics.sh` (`restarts`, :685;
-  the requests loop, :696; the call, :751); `scripts/dev/test-plan`;
+  the pulse's call, :628; new `codex_requests`); `scripts/dev/metrics.sh`
+  (`restarts`, :685; the requests loop, :696; the call, :751; new
+  `restart_causes`); `scripts/dev/test-plan`;
   development.md 15.2 on the five rows above, its `coordinator_requests`
   row restated "the coordinator's model requests, from its usage
   records, and how many followed a wait that ran out" (the kit counts
   those after a `timed_out` wait, not those that only saw a wait end);
-  14.2's pins bullet (:2394-2395: "behind the upstream mains, as of the
+  14.2's pins bullet (:2427-2428: "behind the upstream mains, as of the
   last fetch (`plan metrics` fetches; the pulse does not)").
 Shape: `restart_causes` prints `cause N, ...` sorted by cause. It counts
-  `## Coordinator resumed, <time>: <cause>` by the whole text after `Z: `;
-  each `## Coordinator loaded, ` heading in `log.md` as `loaded`; and
-  each `## Loaded, ` in `supervision.md` (`docs/foundation/supervisor.md`
-  :133) as `loaded`.
+  `## Coordinator resumed, <time>: <cause>` by the whole text after `Z: `
+  (the plan's rule; `restarts` at :685 cannot be reused, as its
+  `([^:]*)$` cuts "the user's request: a pause" to "a pause" and its awk
+  `$2` keeps a cause's first word); each `## Coordinator loaded, `
+  heading in `log.md` as `loaded`; and each `## Loaded, ` in
+  `supervision.md` (`docs/foundation/supervisor.md` :137 at 817b15c) as
+  `loaded`.
   `codex_tokens THREAD` reads, through `jsonl`, the last
   `token_usage_record`'s `payload.thread_token_usage` (input, output,
   cached input), else the last `total_token_usage` as before.
-  `codex_requests FILE` counts `token_usage_record` lines, else
+  `codex_requests FILE` counts the distinct `payload.response_id` values
+  of its `token_usage_record` lines (smith dedups by `response_id`,
+  `benchmarks/src/agent/codex/rollouts.rs:171-181`), else its
   `total_token_usage` lines. `thread_contexts` keeps `last_token_usage`.
   `pin_lag [fetch]` reads `git show origin/main:Cargo.lock` of each
   repository, not the checkout's; with `fetch`, `metrics_of` first runs
   `timeout 20 git fetch -q origin main` in each upstream, ignoring a
   failure.
-Test shape: three worlds, `expect` (:26); each restores what it changes.
+Test shape: three worlds, `expect` (:43 at 817b15c); each restores what it
+  changes.
   1. "restarts". Save `log.md` and append `## Coordinator resumed,
      2026-10-11T12:20:00Z: the user's request: a pause` and `##
      Coordinator loaded, 2026-10-11T12:30:00Z: by plan ring`; write
@@ -363,10 +397,16 @@ Test shape: three worlds, `expect` (:26); each restores what it changes.
      hand` entries. Expect `$'restarts\tloaded 3, reboot 1, the user\'s
      request: a pause 1\t'`; restore, `rm supervision.md`.
   2. "usage records". `CODEX_HOME=$t/codex-records`, thread `t-coord-1`
-     (:157 names it): three `token_usage_record` events whose
-     `thread_token_usage` grows to 3100 input, 1800 cached, 310 output,
-     and one `token_count` event with 9999 input, to show the records
-     win. Expect `$'tokens_coordinator\t3100 in (58% cached), 310 out'`
+     (`coordinator=`, :255 at 817b15c): three `token_usage_record`
+     events, each with `payload.thread_id` `t-coord-1` and its own
+     `payload.response_id` (smith's
+     `benchmarks/tests/recorded/codex/live-root-rollout.jsonl:2-5`
+     carry both), whose `thread_token_usage` grows to 3100 input, 1800
+     cached, 310 output. The second record is
+     written twice, as smith's `tests/codex_adapter.rs:15` writes each
+     (it dedups by `response_id`, `rollouts.rs:171-181`), so that
+     `codex_requests` must count distinct `response_id` values, not lines.
+     One `token_count` event with 9999 input shows the records win. Expect `$'tokens_coordinator\t3100 in (58% cached), 310 out'`
      and `$'coordinator_requests\t3, 0 after a wait ran out'`.
   3. "pin lag":
      ```
@@ -382,7 +422,7 @@ Test shape: three worlds, `expect` (:26); each restores what it changes.
      rm -rf "$w"; git -C "$s" update-ref -d refs/remotes/origin/main
      ```
      The checkout's lock names the newest rev, so only the origin read
-     gives 2. Afterwards `pin_lag\tnone` (:247) holds.
+     gives 2. Afterwards `pin_lag\tnone` (:330 at 817b15c) holds.
 Proof: process, `scripts/dev/heavy --tail 15 scripts/dev/test-plan`
   prints `test-plan: passed`, with the three worlds.
 Don't: write a `Coordinator loaded` heading (04.1 does); fetch from the
@@ -397,7 +437,7 @@ Files: `scripts/dev/numbers.sh` (the pulse's Contexts line, :629, and
   Machine line, :632; new `context_limit`, `disk_rule`);
   `scripts/dev/plan` (`contexts`, plan:1325 before 01.2, and its comment,
   :1318-1320 "200,000 tokens"); `scripts/dev/test-plan`; development.md
-  3.6 (:488, 150,000) and 14.2 (:2398, the machine bullet: heartbeat,
+  3.6 (:494, 150,000) and 14.2 (:2431, the machine bullet: heartbeat,
   memory, disk and the rung of 11.4's disk ladder it is on).
 Shape: `context_limit` prints `${PLAN_CONTEXT_LIMIT:-150000}`; the pulse
   and `plan contexts` use it. `claude_autocompact` (plan:81) and
@@ -409,10 +449,11 @@ Shape: `context_limit` prints `${PLAN_CONTEXT_LIMIT:-150000}`; the pulse
   says otherwise) and `the line stops` below 15. The Machine line
   (heartbeat and memory) drops its disk figure, and a new line follows
   it: `- Disk: N GB free; <rule>.`
-Test shape: the expectations at :228 and :251 say "past 150K". Reference
-  check, a `df` stub (03.3 and 04.3 make `$t/stub` too, so `mkdir -p`),
-  the pulse's mark saved and restored (:229 reads it), the disk floor at
-  its default, 40:
+Test shape: the expectations of the pulse's Contexts line (:311) and of
+  `contexts` (:334) say "past 150K" (at 817b15c). Reference check, a
+  `df` stub (03.3 and 04.3 make `$t/stub` too, so `mkdir -p`), the
+  pulse's mark saved and restored (`expect "pulse mark"`, :312, reads
+  it), the disk floor at its default, 40:
   ```
   mkdir -p "$t/stub"; printf '#!/bin/sh\necho Avail; echo "${DF_GB}G"\n' >"$t/stub/df"; chmod +x "$t/stub/df"
   cp "$run/.pulse" "$t/pulse.save"
@@ -438,7 +479,7 @@ Removes: the 200,000 default of the context limit.
 ## Interface sketches
 
 ```
-jsonl PROGRAM FILE...      # jq -R -r; torn lines and non-objects are skipped
+jsonl [--arg N V]... PROGRAM [FILE...]  # jq -R -r; stdin without FILE; torn lines and non-objects are skipped
 claude_files SESSION       # a session's transcripts, sub-agents of sub-agents included
 design_inputs README       # the docs/design/ and docs/foundation/ paths its Inputs name
 designer_sessions          # "designer<TAB>id", the plan's repository, decision 12

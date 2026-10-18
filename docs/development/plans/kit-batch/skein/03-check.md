@@ -54,11 +54,14 @@ downstream`'s worktrees stay in `wt/`, where they block `plan release`
 
 ### 03.1 The machine file
 Scope: the brief's item 8; decisions.md 13; 11.1.
-Needs: skein 01.2 (`check_machine` in `plan-check.sh`).
+Needs: skein 01.2 (`check_machine` in `plan-check.sh`); skein 01.s1
+  (test-plan's world, ruling 102: 03's tests run `plan check --fix` and
+  `systemctl`, which need its `HOME` and no user bus).
 Files: `scripts/dev/kit.sh`; `scripts/dev/plan-check.sh`
-  (`check_machine`'s lanes and room, plan:420–454 after 01.1);
-  `scripts/dev/heavy` (`build_jobs`, heavy:35); `scripts/dev/test-plan`;
-  development.md 3.6, 11.1, 11.4 (:2166–2171).
+  (`check_machine`'s lanes, plan-check.sh:282–307, and room, :309–316,
+  at 817b15c); `scripts/dev/heavy` (`build_jobs`, heavy:36 at 817b15c);
+  `scripts/dev/test-plan`; development.md 3.6, 11.1, 11.4 (the holds and
+  the lane's widening, :2196–2199 at 817b15c).
 Shape: `machine_setting KEY DEFAULT` prints `value source`: the
   environment's `$KEY` if set (`environment`), else the last `KEY=` line of
   `$tmp/machine.env` whose value is digits (`machine.env`), else DEFAULT
@@ -66,8 +69,9 @@ Shape: `machine_setting KEY DEFAULT` prints `value source`: the
   ignored, and `plan check` warns of it, naming the line. `check_machine`
   reads `PLAN_MIN_MEM_GB` (6), `PLAN_MIN_DISK_GB` (40) and
   `HEAVY_BUILD_SLOTS` (2) through it, and its lines say where each came
-  from: `ok    memory: 7 GB available, want 4 (machine.env)` (plan:451–454
-  say `want N` on a `fail` line only; the `ok` lines gain it). heavy reads
+  from: `ok    memory: 7 GB available, want 4 (machine.env)`
+  (plan-check.sh:313–316 at 817b15c say `want N` on a `fail` line only;
+  the `ok` lines gain it). heavy reads
   `HEAVY_BUILD_JOBS` (4) through it. development.md 11.4's coordinator
   hold, "Below 6 GB of memory or 40 GB of disk", reads: below the memory
   and disk floors `plan check` prints (the machine file's `PLAN_MIN_MEM_GB`
@@ -111,13 +115,15 @@ Removes: nothing.
 Scope: parity 8 (its unit); protocol 8 (the boot unit, the warning);
   7.6, 11.1.
 Needs: 03.1 (`check_machine` as 03.1 leaves it).
-Files: `scripts/dev/plan-check.sh` (`check_machine`'s unit, plan:386–419
-  after 01.1); `scripts/dev/plan-roles.sh` (`start`); `scripts/dev/plan`
-  (`release`); `scripts/dev/test-plan`; development.md 6, 7.6, 11.1.
+Files: `scripts/dev/plan-check.sh` (`check_machine`'s pueued branch,
+  :248–279 at 817b15c); `scripts/dev/plan-roles.sh` (`start`, :175 at
+  817b15c); `scripts/dev/plan` (`release`); `scripts/dev/test-plan`;
+  development.md 6, 7.6, 11.1.
 Shape: the unit's lines move out of `check_machine` into `check_units`,
   which it calls, so that neither grows past code-organization.md 6.
   pueued's unit is read at `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/`
-  (plan:389 says `$HOME/.config`), as the boot unit's is. It gains `StartLimitIntervalSec=0` under `[Unit]` and
+  (plan-check.sh:251 at 817b15c says `$HOME/.config`), as the boot
+  unit's is. It gains `StartLimitIntervalSec=0` under `[Unit]` and
   `RestartSec=5` with `Restart=always`. `check_machine` warns of a unit
   that lacks them; `--fix` rewrites it and runs `daemon-reload`, and
   restarts pueued only when it is not running. It warns `the machine may
@@ -126,15 +132,21 @@ Shape: the unit's lines move out of `check_machine` into `check_units`,
   `plan-resume.service` (`Type=oneshot`, `After=pueued.service`,
   `Environment=DEV_ROOT=<root> DEV_TMP=<tmp>`, `ExecStart=<kit>/plan
   resume`, `WantedBy=default.target`) and enables it; `start` calls it
-  once its roles have started. `boot_unit disable` disables and removes
+  once its roles have started. `ExecStart` names an absolute path
+  (`<kit>` is one), since the user manager's PATH lacks `~/.local/bin`
+  and `~/.cargo/bin`. `boot_unit disable` disables and removes
   the unit only when it names this run's `DEV_TMP`; `release` calls it
   before it removes active-plan. A unit naming another `DEV_TMP` is left,
   with a warning.
-Test shape: a `systemctl` stub in `$t/stub` (not `$t/bin`, so that
-  nothing else sees it) appends its arguments to `$t/systemctl.log` and
-  exits 0 for `daemon-reload`, `enable` and `disable`, 1 otherwise. The
-  release at test-plan:341 runs with `XDG_CONFIG_HOME=$t/config` and
-  `PATH=$t/stub:$PATH`, after the test writes
+Test shape: each test here that runs `plan check --fix` or `systemctl`
+  runs in test-plan's world of skein 01.s1 (ruling 102: its own `HOME`,
+  no user bus), with `systemctl` stubbed. A `systemctl` stub in
+  `$t/stub` (not `$t/bin`, so that nothing else sees it) appends its
+  arguments to `$t/systemctl.log` and exits 0 for `daemon-reload`,
+  `enable` and `disable`, 1 otherwise. The release (`"$plan" release
+  >/dev/null`, test-plan:436 at 817b15c) runs with
+  `XDG_CONFIG_HOME=$t/config` and `PATH=$t/stub:$PATH`, after the test
+  writes
   `$t/config/systemd/user/plan-resume.service` naming `DEV_TMP=$DEV_TMP`:
   "release removes the boot unit" expects the file gone and `--user
   disable plan-resume.service` in the log. A second unit naming another
@@ -154,15 +166,23 @@ Removes: a queue daemon that gives up; a run that stays stopped after a
 ### 03.4 `plan downstream` removes its worktrees
 Scope: forgejo-17 6, skein-ui 10; decisions.md 17; 14.1.
 Needs: skein 01.2 (`downstream` in `plan` after the move).
-Files: `scripts/dev/plan` (`downstream`, plan:1270–1316 after 01.1, which 01.2 leaves in `plan`);
+Files: `scripts/dev/plan` (`downstream`, plan:475–515 at 817b15c);
   `scripts/dev/test-plan` (beside "downstream", :254);
   development.md 3.5, 14.1.
 Shape: `dir=$run/downstream/$repo`, added fresh with `git worktree add
-  --detach` at origin/main; a `trap` set before the first add removes
-  every one made (`git worktree remove --force`, then `rmdir
-  $run/downstream`) on any exit. Its loops read `$repos`, the workspace's
-  repositories in order (`DEV_REPOS`, else all five), not `$all_repos`,
-  so that a test workspace is probed. The lines it prints do not change.
+  --detach` at origin/main, each appended to `made`; `trap unmake EXIT`,
+  set before the first add, removes every one in it (`git worktree
+  remove --force`, then `rmdir $run/downstream`) on any exit. `made` and
+  `unmake` are global: the trap runs after `downstream` has returned,
+  when a `local` `made` is empty and the worktrees and `$run/downstream`
+  are left. Its loops read `$repos`, the workspace's repositories in
+  order (`DEV_REPOS`, else all five), not `$all_repos`, so that a test
+  workspace is probed. The lines it prints do not change, but the
+  `errors=$(` line (plan:509 at 817b15c) becomes `errors=$({ grep -E …
+  || true; } | sed …)`: with a dead queue heavy prints no `heavy: task …
+  log` line, `log` is empty, the grep of `/dev/null` exits 1 and `set
+  -euo pipefail` aborts `plan downstream` before it prints, so "fails,
+  no compiler error" would never show.
 Test shape: a repository `beta` beside alpha in the fixture workspace,
   with a bare origin, whose `Cargo.lock` holds a package with `source =
   "git+…/alpha.git#…"`; `DEV_REPOS="alpha beta"` and, for the one call,

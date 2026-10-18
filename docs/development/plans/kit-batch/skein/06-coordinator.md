@@ -58,8 +58,9 @@ implementer's card prescribes (protocol 9).
 ### 06.1 `plan landed STEP COMMIT`
 Scope: protocol 6 (the checks); decisions.md 7; 7.3 steps 2 and 3.
 Needs: skein 01.2 (`set_step` in `plan` after the move).
-Files: `scripts/dev/plan` (beside `set_step`); `scripts/dev/test-plan`;
-  development.md 3.6, 7.3.
+Files: `scripts/dev/plan` (beside `set_step`; its usage, the header
+  comment from line 3, and the `case $cmd` dispatch, plan:534 at
+  817b15c); `scripts/dev/test-plan`; development.md 3.6, 7.3.
 Shape: from the step's ledger row (repository, session, branch), in
   `$run/wt/<repository>-<session>` after a fetch: `merge-base
   --is-ancestor COMMIT origin/main`; COMMIT's `Step` trailer is STEP;
@@ -115,14 +116,19 @@ Scope: protocol 6 (headings), protocol 8 (the cause); decisions.md 7, 8;
   7.3 step 4, 7.6, 10.3.
 Needs: skein 04.2 (04.1's `log_entry`, `coordinator_turn` and fake Codex;
   04.2's `.watch` line in `handover` and `resume`).
-Files: `scripts/dev/plan`; `scripts/dev/plan-roles.sh` (`handover`,
-  `resume`); `scripts/dev/test-plan`; development.md 3.6, 7.3, 7.6, 10.3;
+Files: `scripts/dev/plan` (the usage and the dispatch: `unblocked`,
+  `steered`, `handover` with three arguments); `scripts/dev/plan-roles.sh`
+  (`handover`, `resume`); `scripts/dev/test-plan`; development.md 3.6, 7.3, 7.6, 10.3;
   `coordinator_resume_prompt`'s text.
-Shape: `plan unblocked` reads unblock.md's `Answer to the blocked
-  report of <time> (<headings answered>).` line (its first line is `#
-  Unblock`; 10.3), logs `Blocked and unblocked, <time>` with blocked.md
-  and unblock.md, whole, as 10.3's step 1 says; removes from blocked.md
-  each `## ` entry whose heading text occurs in that line (a substring
+Shape: `plan unblocked` reads each of unblock.md's `Answer to the
+  blocked report of <time> (<headings answered>).` lines (its first line
+  is `# Unblock`; 10.3; `plan ruling` appends a second draft to an
+  unblock.md still there, plan:436–438 at 817b15c), logs `Blocked and
+  unblocked, <time>` with blocked.md and unblock.md, whole, as 10.3's
+  step 1 says (one body file, the two concatenated into a temporary
+  file: `log_entry HEADING [BODY_FILE]` takes one); removes from
+  blocked.md each `## ` entry whose heading text occurs in one of those
+  lines (a substring
   match, no split: a heading may hold commas, so no delimiter is safe),
   and the file when none is left; deletes unblock.md. A line that
   matches no entry is printed and removes none. 10.3 words the
@@ -137,8 +143,8 @@ Shape: `plan unblocked` reads unblock.md's `Answer to the blocked
   `unknown`; a missing heartbeat is no error. It logs `Coordinator
   resumed, <time>: <cause>` itself; reaches the thread through
   `coordinator_turn resume "" "<the resume prompt>"`, so it loads as a
-  ring does; its own `thread/read` test and comment (plan:1060–1072 after
-  01.1), which took a read's success for a loaded thread, go. The resume
+  ring does; its own `thread/read` test and comment (plan-roles.sh:245–257
+  at 817b15c), which took a read's success for a loaded thread, go. The resume
   prompt no longer asks the coordinator to write the heading. Under
   `PLAN_CODEX_FAKE`, `resume` neither checks nor starts pueued or the
   real daemon.
@@ -156,11 +162,11 @@ Test shape: "unblocked files the answer" (blocked.md with three
   heartbeat" (`unknown`, exit 0). `PLAN_UPTIME` is not added: the
   heartbeat is set before the boot.
 Proof: process, those checks, under 3 s; live, one `test-plan --live` run
-  (about $0.05 and 90 s): the live block's resume (test-plan:376 after
-  01.1) gains a check that log.md has `## Coordinator resumed, <time>:
+  (about $0.05 and 90 s): the live block's resume (its `expect resume`,
+  test-plan:471 at 817b15c) gains a check that log.md has `## Coordinator resumed, <time>:
   unknown`.
-Don't: parse unblock.md beyond its `Answer to` line; split that line on
-  any delimiter.
+Don't: parse unblock.md beyond its `Answer to` lines; split such a line
+  on any delimiter.
 Size: about 70 lines.
 Removes: the coordinator's hand-written headings (7.3, 7.6, 10.3).
 
@@ -170,10 +176,10 @@ Scope: protocol 4, protocol 5, parity 14 (never a sub-agent);
 Needs: 06.3 (`resume` through `coordinator_turn`, which the test runs
   under the fake).
 Files: `scripts/dev/plan-roles.sh` (`start_coordinator`, and `profile_config`
-  beside it; `profile_value` and the settings it reads, plan:65–73, stay);
+  beside it; `profile_value` and the settings it reads, plan:68–74 at 817b15c, stay);
   `scripts/dev/workspace/coordinator.config.toml`;
   `scripts/dev/workspace/AGENTS.md`; `scripts/dev/test-plan`;
-  development.md 2.3, 6.
+  development.md 2.3, 3.5 (the `thread`, `threads` row), 6.
 Shape: `profile_config` prints the profile as one JSON object of dotted
   keys (`[agents] max_threads = 8` → `"agents.max_threads": 8`), each
   value TOML's own (quoted strings, numbers, booleans), `model` left out;
@@ -184,7 +190,9 @@ Shape: `profile_config` prints the profile as one JSON object of dotted
   `index_status`, `check_index_coverage`, `index_repository`, and that a
   design or plan session is started by the user, never as a sub-agent.
 Test shape: `PLAN_DRY_RUN=1 PLAN_CODEX_FAKE=$t/codex-fake plan resume`
-  with `$run/thread` moved aside, and put back after (it starts the
+  with `$run/thread` moved aside, and it and `$run/threads` (which
+  `start_coordinator` appends to, plan-roles.sh:138 at 817b15c, and
+  numbers.sh reads) put back after (it starts the
   coordinator; the dry run starts no Claude session): the fake's `started` params have
   `model_auto_compact_token_limit` 200000 and
   `mcp_servers.codebase-memory-mcp.enabled` false ("the thread takes the
@@ -208,7 +216,7 @@ Shape: implementer.md 8.3 needs no change; the check proves its sentence
   it with `wait`, `yield_time_ms: 300000`; the check reads the rollout:
   one `wait` for that cell, with that yield, whose output came when the
   command ended (no second `wait`), and the turn took at least 70 s. The
-  rollout `find` (test-plan:374 after 01.1) gets `2>/dev/null`: it
+  rollout `find` (test-plan:469 at 817b15c) gets `2>/dev/null`: it
   printed `find: …/archived_sessions: No such file or directory` where
   Codex had archived nothing (findings/base-runs.md, 4).
 Test shape: the live block's "the cell waits 300 s" after "the
