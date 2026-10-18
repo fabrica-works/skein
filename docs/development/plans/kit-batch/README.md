@@ -130,7 +130,7 @@ take the kit from skein's checkout (development.md, 3.6).
 words: legacy|compat|hack|workaround
 types: ^(Legacy|Old|Compat)[A-Z]|V2$
 file-lines: 800
-budgets: 15 60
+budgets: 40 60
 ```
 
 ## Done when

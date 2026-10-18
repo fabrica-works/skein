@@ -231,6 +231,11 @@ section 10 (findings/inventory.md); the planner decided what follows
      - `sed -n '138p' scripts/dev/plan-roles.sh` gives `printf '%s\t%s\n' "$thread" "$(now)" >>"$run/threads"`.
      - Suites: test-plan passed at 817b15c in each check's scratch worktree (tasks 3796, 3797 and others), after a first failure at test-plan:36 (ruling 102); `shellcheck -S warning -x` clean.
 
+104. **test-plan's time and the Pulse's budget** (steer of 2026-10-18T00:28:34Z).
+     The Pulse's focused budget is `test-plan`'s, as code-organization.md's Time rule allows: 12 to 13 s at the base and about 25 s added, about 40 s in all. The README's Pulse reads `budgets: 40 60`; it read 15, a Rust suite's, and the pulse of 00:17:49Z reported `test-plan` at 227% of it.
+
+     `test-plan` took 15 to 17 s up to 02.2 and 28 to 34 s since 02.3 (heavy.tsv), whose Proof bounds its checks at 6 s together: 8 landings have used about 20 s of the 25, with 18 steps to go. The Time rule now says: each report's Evidence gives `test-plan`'s time before and after its increment, and a check over its Proof's bound is cut to it before it lands. Skein 02 cuts 02.3's checks to their 6 s at 02.4, keeping every refusal they cover.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner

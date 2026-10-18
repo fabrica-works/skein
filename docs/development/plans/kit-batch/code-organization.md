@@ -82,8 +82,11 @@ sources it, as `codex.sh` and `numbers.sh` do, with numbers.sh's
   thread: it starts no second coordinator.
 - **Time:** `test-plan` takes 12 to 13 s at the base. A Proof's "under N
   s" bounds its own checks; together the plan's checks may add about
-  25 s, to about 40 s in all, within the Pulse's 60; a `sleep` in a
-  check is at most 1 s, and polls use `PLAN_POLL=0.1`.
+  25 s, to about 40 s in all, the Pulse's focused budget; a `sleep` in
+  a check is at most 1 s, and polls use `PLAN_POLL=0.1`. Each report's
+  Evidence gives `test-plan`'s time before and after its increment, and
+  a check over its Proof's bound is cut to it before it lands
+  (ruling 104).
 
 ## 5. Don't
 
