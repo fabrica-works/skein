@@ -286,6 +286,11 @@ echo "fn more() {}" >"$repo/src/more.rs"
 mkdir -p "$repo/src/generated"
 echo "fn g() {}" >"$repo/src/generated/g.rs"
 echo "{}" >"$repo/tests/golden.json"
+# The shell kit is code, its test-* files tests; a long document is judged by no length.
+mkdir -p "$repo/scripts" "$repo/docs"
+echo "echo ok" >"$repo/scripts/tool"
+echo "echo ok" >"$repo/scripts/test-tool.sh"
+seq 1 60 | sed 's/^/a /' >"$repo/docs/long.md"
 commit alpha-01.s1 "" "scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all"
 
 # The run's log, the queue's statistics and gate logs.
@@ -401,7 +406,7 @@ expect pulse "$pulse" \
     "no Proof line: alpha-01.s1" \
     "reports 1 lines median, 3 p90" "1 land gates for 4 landings, 1 other gate-lane tasks" "queue 20 s waiting, 200 s running" \
     "- Record: headings no shape names: 1 (the first: \"## Unblock handled, 2026-10-11T12:06:00Z\"); Kind values not in section 10.2: none; context.md lines past 200 characters: 1." \
-    "generated +1 -0, data +1 -0." \
+    "code +65 -0, tests +6 -0, generated +1 -0, data +61 -0." \
     "last gate: scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0 s; 30 s in all; within four fifths of the budgets" \
     "SLOW lines in gate logs: 2" \
     "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
@@ -411,6 +416,7 @@ expect pulse "$pulse" \
     "1 steers in all, 1 points refused" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
     "- Contexts: t-impl-1 100K (past 150K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
+expect "a document is judged by no length" "$(if [[ $pulse != *docs/long.md* ]]; then echo absent; fi)" absent
 expect "pulse mark" "$(cat "$run/.pulse")" " "
 expect "pulse again" "$(plan_numbers pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
 
@@ -427,7 +433,7 @@ expect metrics "$metrics" \
     $'gates_per_step\t0.3\t' $'gate_lane_other\t1\t' $'queue_wait_ratio\t0.10\t' \
     $'suites\talpha first: scripts/check.sh passed: 10 tests / 1.0 s; 2 tests / 50.0 s; 60 s in all; last: scripts/check.sh passed: 13 tests' \
     $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90' \
-    "generated +1 -0, data +1 -0"$'\tlines' \
+    "code +65 -0, tests +6 -0, generated +1 -0, data +61 -0"$'\tlines' \
     $'pin_lag\tnone\t' $'contexts\t260K median, 260K p90 of the sessions\' peaks; 0 handovers'
 # Model pricing includes each Haiku prompt tier and names an unknown model.
 priced() { printf '{"type":"assistant","message":{"id":"%s","model":"%s","usage":{"input_tokens":%d,"cache_creation":{"ephemeral_5m_input_tokens":%d,"ephemeral_1h_input_tokens":%d},"cache_read_input_tokens":%d,"output_tokens":%d}}}\n' "$@"; }
@@ -492,7 +498,7 @@ git -C "$w" update-ref refs/remotes/origin/main HEAD; lock "$c2"
 
 shared_metrics=$(CODEX_HOME=$t/codex-records CLAUDE_CONFIG_DIR=$t/claude-prices plan_numbers metrics)
 expect "prices by model" "$shared_metrics" \
-    $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1'
+    $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1; no transcript on this machine, counted as $0: designer design-current, designer agent-a1\t'
 expect "restarts retain causes and hand loads" "$shared_metrics" $'restarts\tloaded 4, reboot 1, the user\'s request: a pause 1\t'
 expect "usage records" "$shared_metrics" \
     $'tokens_coordinator\t3100 in (58% cached), 310 out' $'coordinator_requests\t3, 0 after a wait ran out'
@@ -527,7 +533,7 @@ bcommit() { local repo=$DEV_ROOT/beta; commit "$@" --allow-empty; }
 bcommit beta-01.1 "unit, the units; world, the worlds" passed
 bcommit beta-01.2 "process-tier, the machinery" passed
 bcommit beta-01.3 "codecs, the wire; Live, one run" passed
-bcommit beta-01.4 "joint, together" passed
+bcommit beta-01.4 "joint, together (in 101 s; first run found it)" passed
 bcommit beta-01.5 "" passed
 notes_lines=30
 awk -v lines="$notes_lines" 'BEGIN { for (i=0; i<lines; i++) print "note" }' >"$DEV_ROOT/beta/notes.md"
@@ -537,7 +543,7 @@ bcommit beta-02.1b "unit, the second half" passed
 printf '### 02.1\nProof: process, the whole\n' >"$dir/beta/02-parts.md"
 for part in a b; do printf 'beta-02.1%s\tbeta\t02\tlanded\t\t\t\t\t%s\t\t\n' "$part" "$stamp" >>"$run/ledger.tsv"; done
 expect "every Proof word" "$(DEV_REPOS="alpha beta" plan_numbers metrics)" \
-    $'proofs\tunit 4, world 2, joint 1, process 1, live 1, codecs 1, none 2, 2 below plan' 'data +1 -0'
+    $'proofs\tunit 4, world 2, joint 1, process 1, live 1, codecs 1, none 2, 2 below plan' 'data +61 -0'
 rm "$run/.pulse"
 p=$(DEV_REPOS="alpha beta" plan_numbers pulse | grep '^- Proofs:')
 expect "a gated step without Proof is named" "$p" beta-01.5

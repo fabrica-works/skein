@@ -1149,13 +1149,14 @@ balancing confidence against the run's pace and its tokens.
   - **the layer,** first, by its word in the table above: unit, world,
     joint, process or live, which `plan metrics` reads. A second layer
     follows a semicolon, with its own word (`joint, …; live, …`); each part
-    counts. A layer is the first word up to its first hyphen
-    (`process-tier` is process). A split increment is judged at its last
-    part. When
-    the layer is not the highest one that exists, or is no higher than
-    the increment's tests, the line says why, in one line. In forgejo-17,
-    Proofs that began "the real Forgejo" or "the fake service" left 9 of
-    11 uncounted;
+    that starts with a layer's word counts, so a semicolon in the prose
+    names none, and the first part always does, so a line that starts
+    with no layer's word shows. A layer is the first word up to its first
+    hyphen (`process-tier` is process). A split increment is judged at its
+    last part. When the layer is not the highest one that exists, or is
+    no higher than the increment's tests, the line says why, in one line.
+    In forgejo-17, Proofs that began "the real Forgejo" or "the fake
+    service" left 9 of 11 uncounted;
   - **what runs:** a test by name, in the suite, which is preferred, or a
     script the implementer writes and keeps in the run's
     `logs/<repository>-<NN>/`, with its output. A script is for what the
@@ -2531,7 +2532,9 @@ Since the last check:
 - **tests:** each suite's time from the `Gate-Result` trailers, against
   its budget; the tests past four fifths of a ceiling, and the SLOW ones;
   lines added in tests and in code, docs landings left out;
-- **code signals in the diff:** new files over the plan's size limit; new
+- **code signals in the diff:** code files the diff touches, tests
+  included, over the plan's size limit, documents and data judged by no
+  length; new
   lint exceptions such as `too_many_lines`; the words the plan forbids;
   types named like a parallel type (the plan's "Pulse" patterns); test
   helpers defined in more than three files;
@@ -2681,7 +2684,7 @@ counts them by hand.
 | `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads, from the last `token_usage_record`'s `thread_token_usage`, else the last `total_token_usage` |
 | `tokens_implementers` | the same usage totals, for every thread the coordinator spawned, at any depth |
 | `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), and the design's sessions (the `Designer-Session:` trailers of commits changing the Inputs' design paths after the previous plan landing and through this one), their sub-agents and sub-agents of sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (the design and the planning), from the claim to `done.md` (the run), and after (the retrospective) |
-| `cost_claude` | what those tokens cost at list prices for each message's model (Opus 5.5's when absent or unknown, unknown models named), in all, by role, and by kind: cache reads, cache writes, fresh input, output. At Opus's and Sonnet's rates, a cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
+| `cost_claude` | what those tokens cost at list prices for each message's model (Opus 5.5's when absent or unknown, unknown models named), in all, by role, and by kind: cache reads, cache writes, fresh input, output; each session whose transcript is not on this machine is named, counted as $0. At Opus's and Sonnet's rates, a cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
 | `tokens_per_step` | the coordinator's, the implementers' and the run's part of the Claude Code sessions', per landed step |
 | `supervisor` | the supervisor's sessions in `claude.tsv`: how many, their hours (each from its first request to its last), their weighted tokens per hour (fresh input 1, cache reads 0.1, cache writes 1.25, output 5; sub-agents left out, each message counted once), the share of those in the 40 requests after each session's start or compaction (the bootstrap), and their compactions (section 10.5) |
 | `coordinator_requests` | the coordinator's model requests, from its usage records (distinct `response_id` values, else `total_token_usage` lines), and how many followed a wait that ran out |
@@ -2690,9 +2693,9 @@ counts them by hand.
 | `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate, including finished tasks pueue still holds since the claim |
 | `queue_wait_ratio` | time waiting in the queue against time running (`logs/heavy.tsv` and finished tasks pueue still holds since the claim); `heavy --task` is counted only from its logged row |
 | `suites` | for each repository, each suite's test count and time at its first and its last landing |
-| `proofs` | landed code steps, each by its last gated commit, by each semicolon part's proof layer, its first word up to the first hyphen (`process-tier` is process), and those below their increment's highest layer, a split judged only at its last part; docs landings count in none; whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
+| `proofs` | landed code steps, each by its last gated commit, by each semicolon part's proof layer, its first word up to the first hyphen (`process-tier` is process), a later part only when that word is a layer's (a semicolon in the prose names none), and those below their increment's highest layer, a split judged only at its last part; docs landings count in none; whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
 | `report_lines` | the reports' median and 90th percentile length |
-| `lines` | lines added and removed by gated code landings (docs landings left out), in four kinds: production code, tests, generated code (under a `generated/` directory), and data (any file not Rust) |
+| `lines` | lines added and removed by gated code landings (docs landings left out), in four kinds: production code, tests, generated code (under a `generated/` directory), and data (any file neither Rust nor the shell kit). The shell kit is a `.sh` file or one under `scripts/` with no extension, and its tests are named `test-*` |
 | `contexts` | the median and 90th percentile of the largest context each session's thread reached, and the handovers (`log.md`'s `Handover` lines) |
 | `pin_lag` | how many commits each repository's `origin/main:Cargo.lock` pins are behind the upstream mains, fetched best effort by `plan metrics`; the pulse reads the last fetch without fetching |
 

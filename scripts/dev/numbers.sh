@@ -74,13 +74,16 @@ ledger_kinds() {
         }' "$run/ledger.tsv" "$run/ledger.tsv"
 }
 
-# Each semicolon part names a layer; a hyphen ends its first word.
+# Each semicolon part names a layer; a hyphen ends its first word. A later
+# part counts only when that word is a layer's, so a semicolon in the prose
+# names none; the first always counts, so a line that starts with no
+# layer's word shows (development.md, section 5.5).
 proof_layers() {
     awk -v proof="$1" 'BEGIN {
         n = split(proof, part, ";")
         for (i = 1; i <= n; i++) {
-            sub(/^[ \t]+/, "", part[i]); sub(/[ ,:.\t-].*$/, "", part[i])
-            if (part[i] != "") print tolower(part[i])
+            sub(/^[ \t]+/, "", part[i]); sub(/[ ,:.\t-].*$/, "", part[i]); w = tolower(part[i])
+            if (w != "" && (i == 1 || w ~ /^(unit|world|joint|process|live)$/)) print w
         }
     }'
 }
@@ -381,6 +384,13 @@ is_test_path() {
     [[ $1 =~ (^|/)(tests?|testing)(/|$) || $1 =~ tests?\.rs$ || $1 =~ _tests?\.rs$ ]]
 }
 
+# Code, its tests included, as line_counts counts it: Rust outside a
+# generated/ directory, and the shell kit, a .sh file or one under scripts/
+# with no extension.
+is_code_path() {
+    [[ ! $1 =~ (^|/)generated(/|$) ]] && [[ $1 == *.rs || $1 == *.sh || ($1 =~ (^|/)scripts/ && ${1##*/} != *.*) ]]
+}
+
 # The reports' lengths in log.md, in lines that are not blank: sections
 # headed `## <repository> <NN>, <time>` (development.md, section 7.3), from
 # line $1 on.
@@ -404,8 +414,10 @@ median_and_p90() {
 
 # Lines added and removed, by the given commits (repository and hash per
 # line), in four kinds: production code, tests, generated code (under a
-# generated/ directory), and data (any file not Rust: goldens, lock files,
-# fixtures). Eight numbers: added and removed for each, in that order.
+# generated/ directory), and data (any file neither Rust nor the shell kit:
+# goldens, lock files, fixtures). The shell kit is a .sh file or one under
+# scripts/ with no extension, and its tests are named test-*. Eight
+# numbers: added and removed for each, in that order.
 line_counts() {
     local repo hash
     while IFS=$'\t' read -r repo hash; do
@@ -414,6 +426,7 @@ line_counts() {
         $1 == "-" { next }
         {
             if ($3 ~ /(^|\/)generated(\/|$)/) k = "g"
+            else if ($3 ~ /\.sh$/ || ($3 ~ /(^|\/)scripts\// && $3 !~ /\.[^\/]*$/)) k = ($3 ~ /(^|\/)test-[^\/]*$/ ? "t" : "c")
             else if ($3 !~ /\.rs$/) k = "d"
             else if ($3 ~ /(^|\/)(tests?|testing)(\/|$)/ || $3 ~ /tests?\.rs$/) k = "t"
             else k = "c"
@@ -684,7 +697,7 @@ pulse() {
             /^\+\+\+ / { path = substr($2, 3); next } /^\+/ { print repo "\t" path "\t" substr($0, 2) }'
     done <<<"$commits")
     big=$(cut -f1,2 <<<"$added" | sort -u | while IFS=$'\t' read -r repo path; do
-        [[ -n $path ]] || continue
+        [[ -n $path ]] && is_code_path "$path" || continue
         n=$(git -C "$root/$repo" show "main:$path" 2>/dev/null | wc -l)
         if ((n > limit)); then echo "$path ($n)"; fi
     done | paste -sd ' ' -)

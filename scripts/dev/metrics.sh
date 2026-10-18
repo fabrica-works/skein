@@ -7,7 +7,12 @@
 # platform.claude.com/docs/en/models/haiku-5-5/overview and anthropic.com/claude-sonnet-5-5.
 # Each model's prefix covers its dated names; unknown and absent models use Opus.
 claude_cost() {
-    claude_messages | awk -F'\t' '
+    # A session whose transcript is not on this machine counts as $0, named.
+    local role session missing=""
+    while IFS=$'\t' read -r role session; do
+        [[ -z $session || -n $(claude_files "$session") ]] || missing+="${missing:+, }$role $session"
+    done < <(claude_roles)
+    claude_messages | awk -F'\t' -v missing="$missing" '
         BEGIN {
             split("4 5 8 0.20 20", opus, " ")
             split("2 2.50 4 0.10 10", sonnet, " ")
@@ -32,6 +37,7 @@ claude_cost() {
             for (i = 1; i <= n; i++) printf "%s%s $%.0f", (i == 1 ? ": " : ", "), roles[i], by[roles[i]]
             printf "; cache reads $%.0f, cache writes $%.0f, fresh input $%.0f, output $%.0f", reads, writes, fresh, out
             for (i = 1; i <= nm; i++) printf "%s%s %d", (i == 1 ? "; unknown models, priced as Opus: " : ", "), models[i], unknown[models[i]]
+            if (missing != "") printf "; no transcript on this machine, counted as $0: %s", missing
             print ""
         }'
 }
