@@ -205,6 +205,17 @@ section 10 (findings/inventory.md); the planner decided what follows
      - `git -C ~/src/rust/temper show --format='%h %s%n%b' 0e25fc8d1 | head -2` gives `0e25fc8d1 Ruling 295 of client-api` and `the run's kit pinned at skein 841f487 (infrastructure, the director's request of 2026-10-17T23:40Z).`
      - `git -C ~/src/rust/skein show origin/main:docs/design/STATUS.md | grep -c "^| temper's client-api | active on"` at 23:17Z gave `1`: the row stays, and the fence's own command would hold the run.
 
+102. **test-plan's world keeps off the machine: skein-01.s1** (plan defect, ready checks of skein-05.1 and 06.1).
+     A plan defect of skein-01.1, found by the ready checks of skein-05.1 and 06.1: test-plan's world reaches the machine. The README's rule "No step runs a real role but through `test-plan --live`, and none restarts pueued or the Codex daemon of the machine it runs on" assumes a world that keeps off the machine; 01.1's test "check --fix fast-forwards" (`test-plan:404` at `817b15c`) runs `plan check --fix` with the machine's `$HOME` and user bus, so each `test-plan` run, a land gate's among them, relinks `~/.local/bin/{heavy,land,plan,test-plan}` to its own tree, which dangles once that tree is removed.
+
+     Supplement step skein-01.s1 (`skein/01-s1-test-world.md`) gives the offline layer its own `HOME` and no user bus, and waits for the world's pueued before its first `pueue group add`. It needs nothing; start it now, before any other session. The README gains the rule "test-plan keeps off the machine", which binds every session, since each changes `test-plan`; until skein-01.s1 lands, after each `test-plan` run and before a worktree is removed, relink: `for t in heavy land plan test-plan; do ln -sfn ~/src/rust/skein/scripts/dev/$t ~/.local/bin/$t; done`. Unchanged: `plan-check.sh`, and every other rule.
+
+     Checked:
+     - `ls -l ~/.local/bin/plan` at 2026-10-18T00:01Z gave `-> /home/free/src/rust/tmp/skein/scratch-check04-01/scripts/dev/plan`, a ready check's scratch worktree; relinked to `~/src/rust/skein/scripts/dev/plan` at 00:01:54Z.
+     - `git log --format='%h %s' -S'check --fix fast-forwards' origin/main -- scripts/dev/test-plan` gives `9ffbcfd Apply the adopted kit rules from kit-after-parity` (01.1).
+     - `sed -n '195p' scripts/dev/plan-check.sh` gives `local bin=$HOME/.local/bin home=${DEV_KIT_HOME:-$kit}`; `:274` gives `systemctl --user restart pueued && sleep 1`.
+     - `sed -n '35,36p' scripts/dev/test-plan` gives `pueued -d` and `pueue group add build >/dev/null`; the checks of 05 and 06 each saw their first run fail at `test-plan:36`, a rerun pass.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner

@@ -36,6 +36,7 @@ ones before it in its session.
 | File | Session | Needs at start | Increments that need more |
 |---|---|---|---|
 | `skein/01-base.md` | skein 01: kit-after-parity's kit, and `plan` in four files | nothing | |
+| `skein/01-s1-test-world.md` | skein 01.s1: test-plan's world keeps off the machine (ruling 102) | nothing | |
 | `skein/02-land-heavy.md` | skein 02: `land` and `heavy`, and the rules with no kit | nothing (02.1 is Markdown) | 02.2, 02.3: skein 01.1 (d7e6ee3's `land`, the SC2120 fix); 02.4: skein 05.1 (`metrics.sh`) |
 | `skein/03-check.md` | skein 03: the machine file, `plan check`'s refusals, the units, `plan downstream` | skein 01.2 (`check_machine` in `plan-check.sh`) | |
 | `skein/04-watch.md` | skein 04: the coordinator's thread, and the watch | skein 01.2 (`ring` and `coordinator_state` in `plan-roles.sh`) | |
@@ -56,6 +57,13 @@ ones before it in its session.
 
 ## Rules of this plan
 
+- **test-plan keeps off the machine** (ruling 102): its offline layer
+  never writes the machine's `$HOME` nor reaches its user bus; a test
+  that runs `plan check --fix` or `systemctl` does so in the world
+  skein-01.s1 sets up. Until skein-01.s1 lands, each `test-plan` run
+  relinks the machine's tools to its tree: after each, and before a
+  worktree is removed, run `for t in heavy land plan test-plan; do ln
+  -sfn ~/src/rust/skein/scripts/dev/$t ~/.local/bin/$t; done`.
 - **The fence is lifted** (decisions.md, 3; ruling 101): temper's
   client-api runs its own kit, pinned at skein `841f487` (temper's ruling
   295), so this run's landings no longer reach it. The coordinator runs
