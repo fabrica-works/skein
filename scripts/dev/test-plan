@@ -667,6 +667,10 @@ request() { printf '{"type":"assistant","timestamp":"2026-10-17T%s:00.000Z","mes
 } >"$CLAUDE_CONFIG_DIR/projects/p/new-supervisor.jsonl"
 expect "metrics after release" "$(plan_numbers metrics)" $'steps_planned\t2\t' \
     $'supervisor\t2 sessions, 1.0 h, 4.2M weighted tokens per hour, 97% in the 40 requests after each start or compaction, 3 compactions'
+released_status=$(PLAN_NO_ROLES='' "$plan" status "$dir")
+expect "status after release" "$released_status" "# alpha/demo on" "from ledger.tsv, after its release." "steps landed;"
+expect "status of the last run" "$("$plan" status)" "# alpha/demo on" "after its release."
+[[ $released_status != *"## Roles"* ]] || { echo "FAIL status after release: it lists the roles"; failed=1; }
 expect "the machine's links stay" "$(if [[ $(readlink "$machine_home/.local/bin/plan" || true) == "$machine_plan_link" ]]; then echo unchanged; fi)" unchanged
 
 # The process layer fails past its budget and margin, and passes at them.

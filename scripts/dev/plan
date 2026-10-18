@@ -3,7 +3,7 @@
 #
 #   plan check [--fix] [PLAN_DIR] is the machine ready (to run the plan)?
 #   plan start PLAN_DIR           check, claim, start the supervisor and the coordinator
-#   plan status                   render status.md from the ledger, with the roles
+#   plan status [PLAN_DIR]        render status.md from the ledger, with the roles
 #   plan attach ROLE              open a role's session: coordinator, supervisor, designer
 #   plan resume [CAUSE]           after a restart or a crash, start the roles again
 #   plan claim PLAN_DIR           make it this machine's active run
@@ -391,19 +391,29 @@ steered() {
     rm "$run/steer.md"
 }
 
+# The status of PLAN_DIR's run, or of the last run, released or not
+# (development.md, section 3.6): a released run's claim is in its log.
 status() {
-    load
+    if (($#)); then locate "$1"; else last_run; fi
+    [[ -d $run ]] || die "no run directory at $run"
     ledger_upgrade
-    local ledger=$run/ledger.tsv out=$run/status.md landed_git
+    local ledger=$run/ledger.tsv out=$run/status.md landed_git on since released=''
+    if [[ -f $active && $(sed -n 1p "$active") == "$name" ]]; then
+        on=$(sed -n 3p "$active") since=$(sed -n 4p "$active")
+    else
+        on=$(sed -nE '1s/^# .* on (.*)$/\1/p' "$run/log.md")
+        since=$(sed -nE 's/^## Claimed, (.*)$/\1/p' "$run/log.md" | head -n1)
+        released=", after its release"
+    fi
     # Steps landed according to origin/main's trailers, in every repository.
     landed_git=$(for repo in $repos; do
         [[ -d $root/$repo/.git ]] || continue
-        git -C "$root/$repo" log origin/main --since="$(sed -n 4p "$active")" \
+        git -C "$root/$repo" log origin/main --since="$since" \
             --format='%(trailers:key=Plan,valueonly,separator=)%x09%(trailers:key=Step,valueonly,separator=)' 2>/dev/null |
             awk -F'\t' -v plan="$plan" '$1 == plan { print $2 }' || true
     done)
     {
-        printf '# %s on %s\n\nRendered %s from ledger.tsv.\n\n' "$name" "$(sed -n 3p "$active")" "$(now)"
+        printf '# %s on %s\n\nRendered %s from ledger.tsv%s.\n\n' "$name" "$on" "$(now)" "$released"
         if [[ -s $run/alerts.md ]]; then
             printf '## Alerts\n\n'
             tail -n 10 "$run/alerts.md"
@@ -446,7 +456,7 @@ status() {
                     for (i = 1; i <= y; i++) printf "- %s: on origin/main, not landed in the ledger\n", extra[i]
                 }
             }' "$ledger"
-        [[ ${PLAN_NO_ROLES:-} == 1 ]] || roles
+        [[ -n $released || ${PLAN_NO_ROLES:-} == 1 ]] || roles
     } >"$out.new"
     mv "$out.new" "$out"
     cat "$out"
@@ -650,7 +660,7 @@ set) set_step "$@" ;;
 landed) landed "$@" ;;
 log) log_report "$@" ;;
 idle) idle "$@" ;;
-status) status ;;
+status) status "$@" ;;
 watch) watch "$@" ;;
 ring) ring "$@" ;;
 docs) docs ;;

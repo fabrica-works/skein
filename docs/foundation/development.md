@@ -519,7 +519,7 @@ own.
 | `plan docs` | prints the supervisor's worktree of the plan's repository, made at `origin/main`, and moved there whenever it is clean |
 | `plan ruling [--text FILE] TITLE SOURCE` | lands a ruling, written once: the Decision of `unblock.draft.md`, or FILE's text, as the next ruling of `decisions.md`, with the plan edits in the supervisor's worktree; then, for an unblock, names the commit, moves the draft to `unblock.md` and rings (section 10.3) |
 | `plan ready STEP [NOTE]` | sets a step the supervisor has checked to `ready`, and rings (section 7.2) |
-| `plan status` | renders `status.md` |
+| `plan status [PLAN_DIR]` | renders `status.md` of the plan's run, by default the last run's, released or not, so that "Done when" may name it after the release (section 7.6) |
 | `plan watch` | waits until the supervisor has something to do, and prints its context and its compactions; at `PLAN_COMPACTIONS` (2), the word to hand over (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
 | `plan context [SESSION]` | prints a Claude Code session's context and compactions, with the word to hand over at `PLAN_COMPACTIONS` (2); defaults to `CLAUDE_CODE_SESSION_ID` (sections 2.1 and 2.2) |
