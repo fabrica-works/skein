@@ -3,9 +3,8 @@
 # shellcheck disable=SC2034 # test-plan reads the failure flag this suite writes
 # Sourced by test-plan for the coordinator commands.
 expect "context of a session" "$("$plan" context "$session")" 'context: 1K (compactions: 2): hand over now'
-status=0
-out=$(CLAUDE_CODE_SESSION_ID='' "$plan" context 2>&1) || status=$?
-expect "context needs a session" "$status $out" '2 plan:' 'name a session'
+out=$(CLAUDE_CODE_SESSION_ID='' capture status "$plan" context)
+expect "context needs a session" "$out" 'status=2' 'plan:' 'name a session'
 
 # Coordinator headings and bodies are written by the kit, whole.
 cat >"$run/blocked.md" <<'EOF'
@@ -41,11 +40,9 @@ expect "handover logs a session's line" "$(tail -n1 "$run/log.md")" 'Handover, '
 
 # All resume causes use the same completed fake turn and capture.
 resume_case() {
-    local status=0 output
     printf 'turn-1\tcompleted\n' >"$PLAN_CODEX_FAKE/turns/$coordinator"
     : >"$PLAN_CODEX_FAKE/calls"
-    output=$(PLAN_DRY_RUN=1 "$plan" resume "$@" 2>&1) || status=$?
-    printf 'status=%s\n%s\n' "$status" "$output"
+    PLAN_DRY_RUN=1 capture status "$plan" resume "$@"
     grep '^## Coordinator resumed, ' "$run/log.md" | tail -n1
     grep '^turn/start ' "$PLAN_CODEX_FAKE/calls"
 }

@@ -13,7 +13,7 @@ run_kit() {
     local tool=$1 name pinned
     shift
     [[ -f $tmp/active-plan ]] || return 0
-    name=$(sed -n 1p "$tmp/active-plan")
+    IFS= read -r name <"$tmp/active-plan" || :
     pinned=$tmp/$name/kit/scripts/dev
     [[ -x $pinned/$tool ]] || return 0
     pinned=$(readlink -f "$pinned")

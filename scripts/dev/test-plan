@@ -29,6 +29,24 @@ cleanup() {
     if [[ ${PLAN_TEST_KEEP:-} != 1 ]]; then rm -rf "$t"; fi
 }
 [[ ${PLAN_TEST_KEEP:-} != 1 ]] || echo "test-plan: keeping $t"
+# Captures label their exit status, including successful commands.
+capture() {
+    local name=$1 code=0 output
+    shift
+    output=$("$@" 2>&1) || code=$?
+    printf '%s=%s\n%s\n' "$name" "$code" "$output"
+}
+# Every poll has the same tenth-second interval and a bounded attempt count.
+poll_until() {
+    local attempts=$1 attempt
+    shift
+    for ((attempt=0; attempt<attempts; attempt++)); do
+        "$@" && return 0
+        sleep 0.1
+    done
+    return 1
+}
+queue_up() { pueue status >/dev/null 2>&1; }
 export PUEUE_CONFIG_PATH=$t/pueue/pueue.yml
 mkdir -p "$t/pueue"
 cat >"$PUEUE_CONFIG_PATH" <<EOF
@@ -40,10 +58,7 @@ shared:
 EOF
 trap cleanup EXIT
 pueued -d
-for ((poll=0; poll<100; poll++)); do
-    pueue status >/dev/null 2>&1 && break
-    sleep 0.1
-done
+poll_until 100 queue_up
 pueue group add build >/dev/null
 pueue group add gate >/dev/null
 export DEV_ROOT=$t/src DEV_TMP=$t/src/tmp DEV_REPOS=alpha
@@ -187,42 +202,40 @@ land_branch() {
     git -C "$t/clone" add README.md
     git -C "$t/clone" commit -qm "$2"
 }
+land_run() (cd "$t/clone"; DEV_TMP=$t/land-tmp LAND_PREBUILD='' "$kit/land" "$@")
 land_branch locked 'A Markdown change'
 touch "$t/origin.git/refs/heads/main.lock"
-status=0
-out=$(cd "$t/clone" && DEV_TMP=$t/land-tmp "$kit/land" --docs --tries 2 2>&1) || status=$?
+out=$(capture status land_run --docs --tries 2)
 rm "$t/origin.git/refs/heads/main.lock"
-expect "A locked ref is main moving" "$status $out" '6 land:' 'land: main moved 2 times; giving up'
+expect "A locked ref is main moving" "$out" 'status=6' 'land:' 'land: main moved 2 times; giving up'
 land_branch unread $'Unread trailer\n\nStep: alpha-01.1\n\nAnother paragraph.'
-status=0
-out=$(cd "$t/clone" && DEV_TMP=$t/land-tmp "$kit/land" --docs 2>&1) || status=$?
-expect "land refuses an unread trailer" "$status $out" '2 land:' 'git reads no trailer in:' 'its Step line'
+out=$(capture status land_run --docs)
+expect "land refuses an unread trailer" "$out" 'status=2' 'land:' 'git reads no trailer in:' 'its Step line'
 land_branch forbidden $'A forbidden word\n\nPlan: demo'
 echo 'let exact = 1;' >"$t/clone/w.rs"
 git -C "$t/clone" add w.rs
 git -C "$t/clone" commit -qm $'Add the word\n\nPlan: demo'
 mkdir -p "$t/land-tmp"
 printf 'alpha/demo\n%s\n' "$dir" >"$t/land-tmp/active-plan"
-flock "$t/clone/.git/land-turn.lock" sh -c 'touch "$1"; sleep 1' sh "$t/turn-held" &
+flock "$t/clone/.git/land-turn.lock" sh -c 'touch "$1"; sleep 0.3' sh "$t/turn-held" &
 turn_pid=$!
-for ((poll=0; poll<50; poll++)); do [[ ! -f $t/turn-held ]] || break; sleep 0.1; done
-status=0
-out=$(cd "$t/clone" && DEV_TMP=$t/land-tmp LAND_PREBUILD='' "$kit/land" --gate true 2>&1) || status=$?
+poll_until 50 test -f "$t/turn-held"
+out=$(capture status land_run --gate true)
 wait "$turn_pid"
-expect "land refuses a Pulse word" "$status $out" '2 land:' "the plan's Pulse forbids these words (actual|exact)" 'w.rs: let exact = 1;' 'land: another landing in clone has its turn; waiting for it'
+expect "land refuses a Pulse word" "$out" 'status=2' 'land:' "the plan's Pulse forbids these words (actual|exact)" 'w.rs: let exact = 1;'
+expect "land waits for another landing's turn" "$out" 'land: another landing in clone has its turn; waiting for it'
 before=$(cat "$run/ledger.tsv")
-status=0
-out=$("$plan" set --help state=ready 2>&1) || status=$?
-expect "plan set refuses an option" "$status $out" '2 plan:' 'a step is not an option: --help'
+out=$(capture status "$plan" set --help state=ready)
+expect "plan set refuses an option" "$out" 'status=2' 'plan:' 'a step is not an option: --help'
 expect "an option leaves the ledger unchanged" "$(if [[ $(cat "$run/ledger.tsv") == "$before" ]]; then echo unchanged; fi)" unchanged
 
 # These commands share one queue and one row file; clients wait together.
 heavy_run() (cd "$repo"; HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" "$@")
 heavy_capture() {
-    local label=$1 status=0
+    local label=$1
     shift
-    heavy_run "$@" >"$t/$label.out" 2>&1 || status=$?
-    printf 'status=%s\n' "$status" >"$t/$label.status"
+    capture status heavy_run "$@" >"$t/$label.out"
+    head -n1 "$t/$label.out" >"$t/$label.status"
 }
 heavy_row() {
     awk -F'\t' -v command="$1" '$10 == command { n++; lane=$2; status=$6 }
@@ -232,11 +245,10 @@ heavy_capture failure sh -c 'exit 3' &
 failure_pid=$!
 HEAVY_TASK='' DEV_TMP=$t/heavy-tmp "$kit/heavy" sleep 0.5 >"$t/client.log" 2>&1 &
 client_pid=$!
-for ((poll=0; poll<50; poll++)); do
-    task_id=$(pueue status --json | jq -r '.tasks[] | select((.status | has("Running")) and (.command | contains("sleep 0.5"))) | .id')
-    [[ -z $task_id ]] || break
-    sleep 0.1
-done
+running_client() {
+    pueue status --json | jq -er '.tasks[] | select((.status | has("Running")) and (.command | contains("sleep 0.5"))) | .id'
+}
+task_id=$(poll_until 50 running_client)
 kill "$client_pid"
 wait "$client_pid" 2>/dev/null || true
 heavy_capture gate --gate true &
@@ -352,7 +364,30 @@ designed other 1 0 0 1 >"$m/$other.jsonl"
 # The pulse.
 mkdir -p "$t/stub"
 printf '#!/bin/sh\necho Avail; echo "${DF_GB}G"\n' >"$t/stub/df"; chmod +x "$t/stub/df"
-pulse=$(PATH=$t/stub:$PATH DF_GB=90 "$plan" pulse)
+pueue group --json >"$t/pueue-groups.json"
+pueue status --json >"$t/queue-stats.json"
+printf '{"tasks":{}}\n' >"$t/pueue.json"
+cat >"$t/stub/pueue" <<EOF
+#!/usr/bin/env bash
+[[ ! -e $t/pueue.down ]] || exit 1
+case \$* in
+  'status --json') cat "\${PUEUE_SNAPSHOT:-$t/pueue.json}" ;;
+  'group --json') cat "$t/pueue-groups.json" ;;
+  status) exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$t/stub/pueue"
+plan_check() { PATH=$t/stub:$PATH PLAN_NO_GATE=1 capture status "$plan" check "$@"; }
+plan_numbers() { PUEUE_SNAPSHOT=$t/queue-stats.json PATH=$t/stub:$PATH "$plan" "$@"; }
+# No real role is running in this offline world.
+cat >"$t/stub/claude" <<'EOF'
+#!/usr/bin/env bash
+[[ $* == 'agents --json --all' ]] || exit 1
+printf '[]\n'
+EOF
+chmod +x "$t/stub/claude"
+pulse=$(DF_GB=90 plan_numbers pulse)
 rm "$t/stub/df"
 expect "the pulse names its disk rung" "$pulse" "- Disk: 90 GB free; no rule applies."
 expect pulse "$pulse" \
@@ -373,11 +408,10 @@ expect pulse "$pulse" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
     "- Contexts: t-impl-1 100K (past 150K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
 expect "pulse mark" "$(cat "$run/.pulse")" " "
-sleep 1
-expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
+expect "pulse again" "$(plan_numbers pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
 
 # The metrics.
-metrics=$("$plan" metrics)
+metrics=$(plan_numbers metrics --out "$dir/metrics.tsv"; cat "$dir/metrics.tsv")
 expect metrics "$metrics" \
     $'running_h\t0.5\th' $'steps_planned\t2\t' $'steps_added\t1\t' \
     $'escalations\tdesign gap 1, plan defect 1\t' $'escalation_wait_min\t60.0\t' $'blocked_h\t2.0\th' \
@@ -399,39 +433,27 @@ priced p1 claude-opus-5-5 1000000 1000000 1000000 10000000 1000000 >"$m/$planner
   priced s2 claude-future-9 1000000 0 0 0 0
   priced s3 '<synthetic>' 0 0 0 0 0; } >"$m/$session.jsonl"
 awk 'BEGIN { for (i = 0; i < 1100; i++) printf "{\"type\":\"assistant\",\"message\":{\"id\":\"h%d\",\"model\":\"claude-haiku-5-5\",\"usage\":{\"input_tokens\":%d,\"output_tokens\":20000}}}\n", i, (i < 1000 ? 100000 : 100001) }' >"$m/$fork.jsonl"
-expect "prices by model" "$(CLAUDE_CONFIG_DIR=$t/claude-prices "$plan" metrics)" \
-    $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1'
-"$plan" metrics --out "$dir/metrics.tsv" >/dev/null
-expect history "$("$plan" metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
+expect history "$(plan_numbers metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
 
 # The fixture above records 20 seconds waiting and 200 seconds running.
 fixture_wait=20 fixture_run=200
 held_id=$(pueue add --print-task-id --group gate --label measure -- true)
-for ((poll=0; poll<50; poll++)); do
-    done_row=$(TZ=UTC0 pueue status --json | jq -r --arg id "$held_id" \
-        '.tasks[$id].status.Done // empty | [.enqueued_at, .start, .end] | @tsv')
-    [[ -z $done_row ]] || break
-    sleep 0.1
-done
+finished_task() {
+    TZ=UTC0 pueue status --json | jq -er --arg id "$held_id" \
+        '.tasks[$id].status.Done // empty | [.enqueued_at, .start, .end] | @tsv'
+}
+done_row=$(poll_until 50 finished_task)
 IFS=$'\t' read -r queued_at started_at ended_at <<<"$done_row"
 held_wait=$(($(date -d "$started_at" +%s) - $(date -d "$queued_at" +%s)))
 held_run=$(($(date -d "$ended_at" +%s) - $(date -d "$started_at" +%s)))
 rm "$run/.pulse"
-held_pulse=$("$plan" pulse)
+pueue status --json >"$t/queue-stats.json"
+held_pulse=$(plan_numbers pulse)
 expect "the pulse counts a task pueue still holds" "$held_pulse" \
     "queue $((fixture_wait + held_wait)) s waiting, $((fixture_run + held_run)) s running" \
     '2 other gate-lane tasks' 'pueue holds 1 finished tasks no client removed'
 pueue remove "$task_id" >/dev/null
-# Hand loads and multi-word restart causes keep their full meaning.
-cp "$run/log.md" "$t/log.save"
-cat >>"$run/log.md" <<'RESTARTS'
-## Coordinator resumed, 2026-10-11T12:20:00Z: the user's request: a pause
-## Coordinator loaded, 2026-10-11T12:30:00Z: by plan ring
-RESTARTS
-printf '## Loaded, 2026-10-11T12:40:00Z: by hand\n%.0s' 1 2 >"$run/supervision.md"
-expect "restarts retain causes and hand loads" "$("$plan" metrics)" $'restarts\tloaded 4, reboot 1, the user\'s request: a pause 1\t'
-cp "$t/log.save" "$run/log.md"; rm "$run/supervision.md"
-
+pueue status --json >"$t/queue-stats.json"
 # Usage records take precedence over token counts and deduplicate responses.
 mkdir -p "$t/codex-records/sessions"
 {
@@ -446,8 +468,13 @@ r3 3100 1800 310
 RECORDS
     printf '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9999}}}}\n'
 } >"$t/codex-records/sessions/rollout-x-$coordinator.jsonl"
-expect "usage records" "$(CODEX_HOME=$t/codex-records "$plan" metrics)" \
-    $'tokens_coordinator\t3100 in (58% cached), 310 out' $'coordinator_requests\t3, 0 after a wait ran out'
+# Hand loads and multi-word restart causes keep their full meaning.
+cp "$run/log.md" "$t/log.save"
+cat >>"$run/log.md" <<'RESTARTS'
+## Coordinator resumed, 2026-10-11T12:20:00Z: the user's request: a pause
+## Coordinator loaded, 2026-10-11T12:30:00Z: by plan ring
+RESTARTS
+printf '## Loaded, 2026-10-11T12:40:00Z: by hand\n%.0s' 1 2 >"$run/supervision.md"
 
 # The checkout's lock is ahead of origin's; pin lag reads origin's lock.
 s=$DEV_ROOT/skein; g=(git -c user.email=test@example.com -c user.name=test)
@@ -458,7 +485,16 @@ w=$DEV_ROOT/smith; mkdir -p "$w"; repository "$w"
 lock() { printf 'source = "git+https://example.invalid/forgetic/skein.git#%s"\n' "$1" >"$w/Cargo.lock"; }
 lock "$(git -C "$s" rev-parse HEAD)"; "${g[@]}" -C "$w" add -A; "${g[@]}" -C "$w" commit -q -m lock
 git -C "$w" update-ref refs/remotes/origin/main HEAD; lock "$c2"
-expect "pin lag from origin" "$("$plan" metrics)" $'pin_lag\tsmith: skein 2\t'
+
+shared_metrics=$(CODEX_HOME=$t/codex-records CLAUDE_CONFIG_DIR=$t/claude-prices plan_numbers metrics)
+expect "prices by model" "$shared_metrics" \
+    $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1'
+expect "restarts retain causes and hand loads" "$shared_metrics" $'restarts\tloaded 4, reboot 1, the user\'s request: a pause 1\t'
+expect "usage records" "$shared_metrics" \
+    $'tokens_coordinator\t3100 in (58% cached), 310 out' $'coordinator_requests\t3, 0 after a wait ran out'
+
+expect "pin lag from origin" "$shared_metrics" $'pin_lag\tsmith: skein 2\t'
+cp "$t/log.save" "$run/log.md"; rm "$run/supervision.md"
 rm -rf "$w"; git -C "$s" update-ref -d refs/remotes/origin/main
 
 # Split rows are replaced by planned parts; a supplement remains added.
@@ -476,8 +512,8 @@ alpha-01.s2 landed
 alpha-04.6 dropped
 ROWS
 expect "split steps in status" "$("$plan" status)" "7 of 9 steps landed; 1 running"
-expect "split steps in pulse" "$("$plan" pulse)" "- Progress: 5 planned and 2 added steps landed since; in all 5 of 6 planned landed, 2 added (0 to go)"
-expect "split steps in metrics" "$("$plan" metrics)" $'steps_planned\t5\t' $'steps_added\t2\t' $'steps_dropped\t1\t'
+expect "split steps in pulse" "$(plan_numbers pulse)" "- Progress: 5 planned and 2 added steps landed since; in all 5 of 6 planned landed, 2 added (0 to go)"
+expect "split steps in metrics" "$(plan_numbers metrics)" $'steps_planned\t5\t' $'steps_added\t2\t' $'steps_dropped\t1\t'
 cp "$t/ledger.save" "$run/ledger.tsv"
 
 # Each Proof part counts, docs contribute no lines, and only the last split part is judged.
@@ -496,10 +532,10 @@ bcommit beta-02.1a "unit, the first half" passed
 bcommit beta-02.1b "unit, the second half" passed
 printf '### 02.1\nProof: process, the whole\n' >"$dir/beta/02-parts.md"
 for part in a b; do printf 'beta-02.1%s\tbeta\t02\tlanded\t\t\t\t\t%s\t\t\n' "$part" "$stamp" >>"$run/ledger.tsv"; done
-expect "every Proof word" "$(DEV_REPOS="alpha beta" "$plan" metrics)" \
+expect "every Proof word" "$(DEV_REPOS="alpha beta" plan_numbers metrics)" \
     $'proofs\tunit 4, world 2, joint 1, process 1, live 1, codecs 1, none 2, 2 below plan' 'data +1 -0'
 rm "$run/.pulse"
-p=$(DEV_REPOS="alpha beta" "$plan" pulse | grep '^- Proofs:')
+p=$(DEV_REPOS="alpha beta" plan_numbers pulse | grep '^- Proofs:')
 expect "a gated step without Proof is named" "$p" beta-01.5
 expect "docs do not count as missing Proof" "$(if [[ $p != *beta-01.6* ]]; then echo absent; fi)" absent
 cp "$t/ledger.save" "$run/ledger.tsv"
@@ -565,7 +601,7 @@ git -C "$repo" remote add origin "$t/ff.git"
 git clone -q "$t/ff.git" "$t/ff"
 git -C "$t/ff" -c user.email=test@example.com -c user.name=test commit -q --allow-empty -m "Advance origin"
 git -C "$t/ff" push -q origin main
-expect "check --fix fast-forwards" "$(PLAN_NO_GATE=1 "$plan" check --fix "$dir" 2>&1 || true)" "ok    alpha: main fast-forwarded 1 commits to origin/main"
+expect "check --fix fast-forwards" "$(plan_check --fix "$dir")" "ok    alpha: main fast-forwarded 1 commits to origin/main"
 expect "check --fix links in the world" "$(readlink "$HOME/.local/bin/plan")" "$kit/plan"
 git -C "$repo" reset -q --hard "$head"
 git -C "$repo" remote remove origin
@@ -573,11 +609,11 @@ rm -rf "$t/ff.git" "$t/ff"
 
 # The roles, offline.
 expect "attach coordinator" "$(PLAN_DRY_RUN=1 "$plan" attach coordinator)" "codex resume --remote unix:// $coordinator"
-expect "attach supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor)" "claude --resume $session"
+expect "attach supervisor" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" attach supervisor)" "claude --resume $session"
 expect "join outside a session" "$(CLAUDE_CODE_SESSION_ID='' "$plan" join designer 2>&1 || true)" "run plan join from the Claude Code session itself"
 expect "join" "$(CLAUDE_CODE_SESSION_ID=fake-designer "$plan" join designer)" "designer: Claude Code session fake-designer" "End your turn now"
-expect "roles" "$(PLAN_NO_ROLES='' "$plan" status)" "## Roles" "- coordinator: $coordinator" "- supervisor: $session, gone"
-expect "wake resumes" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: would resume fake-designer: question.md"
+expect "roles" "$(PATH=$t/stub:$PATH PLAN_NO_ROLES='' "$plan" status)" "## Roles" "- coordinator: $coordinator" "- supervisor: $session, gone"
+expect "wake resumes" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: would resume fake-designer: question.md"
 # A designer compacted twice starts fresh.
 big=33333333-4444-5555-6666-777777777777
 {
@@ -585,9 +621,9 @@ big=33333333-4444-5555-6666-777777777777
     boundary b2; boundary b3
 } >"$CLAUDE_CONFIG_DIR/projects/p/$big.jsonl"
 printf 'designer\t%s\t%s\n' "$big" "$stamp" >>"$run/claude.tsv"
-expect "wake fresh" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: compactions 2, idle 0 min: a fresh session" "designer: would start a fresh session: You are the designer"
+expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: compactions 2, idle 0 min: a fresh session" "designer: would start a fresh session: You are the designer"
 # The supervisor hands over; the old session's watch then shows nothing.
-expect handover "$(CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more"
+expect handover "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more"
 expect "handover clears the events seen" "$(if [[ ! -s $run/.watch ]]; then echo empty; fi)" empty
 expect "handover by another" "$(CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
 printf 'supervisor\tnew-supervisor\t%s\n' "$stamp" >>"$run/claude.tsv"
@@ -596,7 +632,7 @@ expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "w
 echo "- 2026-10-11T12:00:00Z: the coordinator is quiet; plan resume" >"$run/alerts.md"
 expect alerts "$("$plan" status)" "## Alerts" "the coordinator is quiet"
 printf 'Recorded %s.\n\nDone.\n' "$(date -u -d "@$(($(sed -nE 's/^## Claimed, (.*)$/\1/p' "$run/log.md" | xargs -I{} date -u -d {} +%s) + 7200))" +%FT%TZ)" >"$run/done.md"
-expect "the end recorded" "$("$plan" metrics)" $'wall_h\t2.0\th'
+expect "the end recorded" "$(plan_numbers metrics)" $'wall_h\t2.0\th'
 
 # User services stay inside this test's world.
 mkdir -p "$t/stub" "$t/config/systemd/user"
@@ -625,11 +661,12 @@ request() { printf '{"type":"assistant","timestamp":"2026-10-17T%s:00.000Z","mes
     for i in $(seq 0 40); do request "$(printf '10:%02d' "$i")" "n$i"; done
     boundary u3; request 11:00 n41
 } >"$CLAUDE_CONFIG_DIR/projects/p/new-supervisor.jsonl"
-expect "metrics after release" "$("$plan" metrics)" $'steps_planned\t2\t' \
+expect "metrics after release" "$(plan_numbers metrics)" $'steps_planned\t2\t' \
     $'supervisor\t2 sessions, 1.0 h, 4.2M weighted tokens per hour, 97% in the 40 requests after each start or compaction, 3 compactions'
 expect "the machine's links stay" "$(if [[ $(readlink "$machine_home/.local/bin/plan" || true) == "$machine_plan_link" ]]; then echo unchanged; fi)" unchanged
 
 if ((live)); then
+    rm "$t/stub/claude"
     # shellcheck source=test-plan-live.sh
     source "$kit/test-plan-live.sh"
 fi

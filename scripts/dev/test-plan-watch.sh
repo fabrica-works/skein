@@ -19,23 +19,18 @@ expect "a refused steer loads and sends again" "$("$plan" ring again 2>&1)" "ran
 expect "a refused steer retries once" "$(cut -d' ' -f1 "$PLAN_CODEX_FAKE/calls" | paste -sd, -)" \
     "thread/loaded/list,thread/read,turn/steer,thread/resume,turn/steer"
 printf 'turn-1\tcompleted\n' >"$PLAN_CODEX_FAKE/turns/$coordinator"
-ring_result=$("$plan" ring stopped 2>&1) && ring_code=0 || ring_code=$?
-expect "ring with no turn says resume" "$ring_code: $ring_result" "3: plan: the coordinator has no turn in progress: plan resume"
+ring_result=$(capture status "$plan" ring stopped)
+expect "ring with no turn says resume" "$ring_result" "status=3" "plan: the coordinator has no turn in progress: plan resume"
 
 # The watch, each of its events.
-mkdir -p "$t/stub"
-cat >"$t/stub/pueue" <<EOF
-#!/usr/bin/env bash
-[[ \$* == 'status --json' && ! -e $t/pueue.down ]] || exit 1
-if [[ -f $t/pueue.json ]]; then cat "$t/pueue.json"; else echo '{"tasks":{}}'; fi
-EOF
-chmod +x "$t/stub/pueue"
 watch() { PATH=$t/stub:$PATH timeout 10 "$plan" watch || echo "watch exited $?"; }
 # A bounded observation of three polls (PLAN_POLL=0.1).
 silent_watch() {
-    local output status=0
-    output=$(PATH=$t/stub:$PATH timeout 0.3 "$plan" watch) || status=$?
-    printf 'status=%s bytes=%s' "$status" "${#output}"
+    local captured output
+    captured=$(PATH=$t/stub:$PATH capture status timeout 0.3 "$plan" watch)
+    output=${captured#"${captured%%$'\n'*}"}
+    output=${output#$'\n'}
+    printf '%s bytes=%s' "${captured%%$'\n'*}" "${#output}"
 }
 fake_starts() { awk '$1 == "turn/start" { count++ } END { print count+0 }' "$PLAN_CODEX_FAKE/calls"; }
 # One call gathers all open events; a second call has none to show.
@@ -153,30 +148,33 @@ printf '# Retrospective\n\n## 8. Proposals\n\n1. **One.** Why.\n\n2. **Two.** Wh
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "An older retrospective"
 sed -i '/^## Inputs/,/^$/d' "$dir/README.md"
-expect "Inputs with no design warn" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "warn  the README's Inputs name no docs/design/ or docs/foundation/ path"
+open_decisions=$(plan_check "$dir")
+expect "Inputs with no design warn" "$open_decisions" "warn  the README's Inputs name no docs/design/ or docs/foundation/ path"
 git -C "$repo" checkout -- "$dir/README.md"
-expect "decisions open" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "FAIL  the last retrospective, alpha's older, has proposals not yet decided: 2"
+expect "decisions open" "$open_decisions" "FAIL  the last retrospective, alpha's older, has proposals not yet decided: 2"
 sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.md"
 git -C "$repo" commit -q -am "Decide the older retrospective's proposals"
-expect "decisions made" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "ok    the last retrospective's proposals are decided (alpha's older)"
 
 # A plan is ready only after its base commands and design answers.
 unfinished=$repo/docs/development/plans/unfinished
 cp -r "$dir" "$unfinished"
 rm "$unfinished/findings/base-runs.md"
-expect "a plan with no base run is refused" "$(PLAN_NO_GATE=1 "$plan" check "$unfinished" 2>&1 || true)" "FAIL  plan has no base run in findings/ (development.md, section 5.4)"
-cp "$dir/findings/base-runs.md" "$unfinished/findings/base-runs.md"
 printf '\n## Design questions\n\n1. Which?\n' >>"$unfinished/decisions.md"
-expect "an open question is refused" "$(PLAN_NO_GATE=1 "$plan" check "$unfinished" 2>&1 || true)" "FAIL  plan has 1 open design question"
+unfinished_check=$(plan_check "$unfinished")
+expect "a plan with no base run is refused" "$unfinished_check" "FAIL  plan has no base run in findings/ (development.md, section 5.4)"
+expect "an open question is refused" "$unfinished_check" "FAIL  plan has 1 open design question"
+cp "$dir/findings/base-runs.md" "$unfinished/findings/base-runs.md"
 printf '\nAnswer: this.\n' >>"$unfinished/decisions.md"
-expect "an answered question passes" "$(PLAN_NO_GATE=1 "$plan" check "$unfinished" 2>&1 || true)" "ok    plan has a base run in findings/" "ok    plan has no open design questions in decisions.md"
-rm -rf "$unfinished"
 
 # Per-machine minimums survive a resume; an environment value takes priority.
 printf '%s\n' 'PLAN_MIN_MEM_GB=1' 'BOGUS=3' >"$DEV_TMP/machine.env"
-expect "the machine file sets a minimum" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "want 1 (machine.env)" "warn  machine.env: ignored line 2: BOGUS=3"
-expect "the environment wins" "$(PLAN_MIN_MEM_GB=2 PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "want 2 (environment)"
+answered_check=$(plan_check "$unfinished")
+expect "decisions made" "$answered_check" "ok    the last retrospective's proposals are decided (alpha's older)"
+expect "an answered question passes" "$answered_check" "ok    plan has a base run in findings/" "ok    plan has no open design questions in decisions.md"
+expect "the machine file sets a minimum" "$answered_check" "want 1 (machine.env)" "warn  machine.env: ignored line 2: BOGUS=3"
+expect "the environment wins" "$(PLAN_MIN_MEM_GB=2 plan_check "$dir")" "want 2 (environment)"
 rm "$DEV_TMP/machine.env"
+rm -rf "$unfinished"
 # A landing's checks use the session's own worktree and leave refusals alone.
 cp "$run/ledger.tsv" "$t/ledger.before-landed"
 git clone -q --bare "$repo" "$t/alpha.git"
@@ -189,9 +187,9 @@ landing_commit() {
     landing=$(git -C "$run/wt/alpha-01" rev-parse HEAD)
 }
 refuse_landing() {
-    local what=$1 reason=$2 status=0 out
-    out=$("$plan" landed alpha-01.4 "$landing" 2>&1) || status=$?
-    expect "$what" "$status $out" '1 ' "$reason"
+    local what=$1 reason=$2 out
+    out=$(capture status "$plan" landed alpha-01.4 "$landing")
+    expect "$what" "$out" 'status=1' "$reason"
     expect "$what leaves the ledger" "$(if [[ $(cat "$run/ledger.tsv") == "$landed_before" ]]; then echo unchanged; fi)" unchanged
 }
 landing_commit alpha-01.4
@@ -205,7 +203,7 @@ echo dirty >>"$run/wt/alpha-01/src/big.rs"
 refuse_landing "landed refuses a dirty worktree" 'worktree on b4 is dirty'
 git -C "$run/wt/alpha-01" restore src/big.rs
 expect "landed sets a checked step" "$("$plan" landed alpha-01.4 "$landing")" "landed alpha-01.4 $landing"
-expect "landed records its commit" "$(awk -F'\t' '$1 == "alpha-01.4" { print $4, $8 }' "$run/ledger.tsv")" "landed $landing"
+expect "landed records its commit" "$(awk -F'\t' '$1 == "alpha-01.4" { print "state=" $4 " commit=" $8 }' "$run/ledger.tsv")" "state=landed commit=$landing"
 git -C "$repo" worktree remove "$run/wt/alpha-01"
 git -C "$repo" branch -D b4 >/dev/null
 git -C "$repo" remote remove origin
