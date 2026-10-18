@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# The process tests' Codex daemon, from PLAN_CODEX_FAKE's state directory.
+set -euo pipefail
+state=${1:?state directory} method=${2:?method} params=${3:?params}
+mkdir -p "$state/turns"
+touch "$state/loaded"
+printf '%s %s\n' "$method" "$params" >>"$state/calls"
+thread=$(jq -r '.threadId // empty' <<<"$params")
+case $method in
+thread/loaded/list)
+    jq -Rn '[inputs | select(length > 0)] | {data: .}' < <(cat "$state/loaded" 2>/dev/null || true)
+    ;;
+thread/resume)
+    grep -qxF "$thread" "$state/loaded" 2>/dev/null || echo "$thread" >>"$state/loaded"
+    echo '{}'
+    ;;
+thread/read)
+    turn='' status=''
+    if [[ -f $state/turns/$thread ]]; then read -r turn status <"$state/turns/$thread"; fi
+    jq -cn --arg t "$thread" --arg u "$turn" --arg s "$status" \
+        '{thread: {id: $t, turns: (if $u == "" then [] else [{id: $u, status: $s}] end)}}'
+    ;;
+turn/start | turn/steer)
+    if ! grep -qxF "$thread" "$state/loaded" 2>/dev/null; then
+        echo 'thread not found' >&2; exit 1
+    fi
+    if grep -qxF "$method" "$state/refuse" 2>/dev/null; then
+        awk -v m="$method" '$0 == m && !removed { removed=1; next } { print }' "$state/refuse" >"$state/refuse.new"
+        mv "$state/refuse.new" "$state/refuse"
+        echo 'thread not found' >&2; exit 1
+    fi
+    if [[ $method == turn/start ]]; then printf 'turn-1\tinProgress\n' >"$state/turns/$thread"; fi
+    echo '{}'
+    ;;
+thread/start)
+    thread=thread-$(($(wc -l <"$state/loaded") + 1))
+    echo "$thread" >>"$state/loaded"
+    echo "$params" >"$state/started"
+    jq -cn --arg t "$thread" '{thread: {id: $t}}'
+    ;;
+*) echo '{}' ;;
+esac

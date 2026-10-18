@@ -109,7 +109,7 @@ context. Handle the event, then start the watch again:
 | `blocked:` and the blocks' headings | a ruling (section 3), or a design question (section 4) |
 | `answer:` | the unblock from the designer's answer (section 4) |
 | `check:` and steps, each with its session file | the ready check (section 5) |
-| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, or its thread is not loaded, run `plan resume crash` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
+| `quiet:` | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, run `plan resume crash` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
 | `quiet again:` | an alert to the user, with the command `plan resume` |
 | `paused:` | read `paused.md`; nothing else waits for you until the run resumes |
 | `done:` | the end (section 8) |
@@ -123,20 +123,6 @@ turn on purpose: its silence is no event, and a ring starts its next turn.
 **Every alert to the user** is a push notification and one line with its
 UTC time appended to the run's `alerts.md`, so it stays visible:
 `plan status` prints its last ten lines first.
-
-**A thread not loaded.** Codex's daemon unloads an idle coordinator's
-thread. Until the kit loads it itself, when a ring (`plan ring`, or the
-ring of `plan ruling` or `plan ready`) or `plan resume` says the thread
-is not loaded, or "thread not found", load it by hand, then ring again
-with the same message:
-
-```
-source ~/src/rust/skein/scripts/dev/codex.sh && codex_open && codex_call thread/resume "{\"threadId\":\"$(cat <run>/thread)\",\"sandbox\":\"danger-full-access\",\"approvalPolicy\":\"never\"}" >/dev/null; codex_close
-```
-
-Append `## Loaded, <UTC time>: <what the ring said>` to `supervision.md`.
-In smith's parity run, the supervisors loaded it so ten times
-(development.md, section 10.5).
 
 **End every turn with at most one line of text.** Nobody reads the
 terminal: the record is the run's files. A summary written there is

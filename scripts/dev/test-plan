@@ -282,6 +282,7 @@ commit alpha-01.s1 "" "scripts/check.sh passed: 13 tests / 1.1 s; 2 tests / 20.0
     printf '## Coordinator resumed, 2026-10-11T12:00:00Z: reboot\n\n'
     printf '## alpha 01, 2026-10-11T12:05:00Z\n\nline\n\n'
     printf '## Unblock handled, 2026-10-11T12:06:00Z\n\n'
+    printf '## Coordinator loaded, 2026-10-11T12:07:00Z: by plan ring\n\n'
 } >>"$run/log.md"
 printf '%s\n' "$(printf 'x%.0s' $(seq 250))" >"$run/context.md"
 mkdir -p "$run/logs/alpha-01"
@@ -373,7 +374,7 @@ metrics=$("$plan" metrics)
 expect metrics "$metrics" \
     $'running_h\t0.5\th' $'steps_planned\t2\t' $'steps_added\t1\t' \
     $'escalations\tdesign gap 1, plan defect 1\t' $'escalation_wait_min\t60.0\t' $'blocked_h\t2.0\th' \
-    $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\treboot 1\t' \
+    $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\tloaded 1, reboot 1\t' \
     $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1960 in (5% cached), 23 out; in: 1840 before the claim, 120 in the run, 0 after' \
     $'cost_claude\t$0: planner $0, supervisor $0, designer $0; cache reads $0, cache writes $0, fresh input $0, output $0\t' \
     $'supervisor\t1 sessions, 0.0 h, 0.0M weighted tokens per hour, 100% in the 40 requests after each start or compaction, 2 compactions' \
@@ -421,7 +422,7 @@ cat >>"$run/log.md" <<'RESTARTS'
 ## Coordinator loaded, 2026-10-11T12:30:00Z: by plan ring
 RESTARTS
 printf '## Loaded, 2026-10-11T12:40:00Z: by hand\n%.0s' 1 2 >"$run/supervision.md"
-expect "restarts retain causes and hand loads" "$("$plan" metrics)" $'restarts\tloaded 3, reboot 1, the user\'s request: a pause 1\t'
+expect "restarts retain causes and hand loads" "$("$plan" metrics)" $'restarts\tloaded 4, reboot 1, the user\'s request: a pause 1\t'
 cp "$t/log.save" "$run/log.md"; rm "$run/supervision.md"
 
 # Usage records take precedence over token counts and deduplicate responses.
@@ -526,6 +527,25 @@ shared:
 EOF
 downstream=$(DEV_REPOS="alpha beta" PUEUE_CONFIG_PATH=$t/pueue-none/pueue.yml "$plan" downstream)
 expect "downstream leaves no worktree" "$(printf '%s\n' "$downstream"; if [[ ! -e $run/downstream ]]; then printf 'worktrees=%s downstream=removed\n' "$(git -C "$beta" worktree list | wc -l)"; fi)" "beta against alpha main: fails" "worktrees=1 downstream=removed"
+# The coordinator's daemon, kept in this world's state directory.
+export PLAN_CODEX_FAKE=$t/codex-fake
+mkdir -p "$PLAN_CODEX_FAKE/turns"
+"$plan" idle "the ring test" >/dev/null
+expect "ring loads an unloaded thread" "$("$plan" ring hello)" "woke the idle coordinator: hello"
+expect "ring loads before sending" "$(cut -d' ' -f1 "$PLAN_CODEX_FAKE/calls" | paste -sd, -)" \
+    "thread/loaded/list,thread/resume,thread/read,turn/start"
+expect "ring records its load" "$(cat "$run/log.md")" ": by plan ring"
+: >"$PLAN_CODEX_FAKE/calls"
+expect "ring steers a turn in progress" "$("$plan" ring hello)" "rang the coordinator: hello"
+expect "the ring names the supervisor" "$(cat "$PLAN_CODEX_FAKE/calls")" '"text":"From the supervisor, by plan ring: hello"'
+printf 'turn/steer\n' >"$PLAN_CODEX_FAKE/refuse"
+: >"$PLAN_CODEX_FAKE/calls"
+expect "a refused steer loads and sends again" "$("$plan" ring again 2>&1)" "rang the coordinator: again"
+expect "a refused steer retries once" "$(cut -d' ' -f1 "$PLAN_CODEX_FAKE/calls" | paste -sd, -)" \
+    "thread/loaded/list,thread/read,turn/steer,thread/resume,turn/steer"
+printf 'turn-1\tcompleted\n' >"$PLAN_CODEX_FAKE/turns/$coordinator"
+ring_result=$("$plan" ring stopped 2>&1) && ring_code=0 || ring_code=$?
+expect "ring with no turn says resume" "$ring_code: $ring_result" "3: plan: the coordinator has no turn in progress: plan resume"
 
 # The watch, each of its events.
 watch() { timeout 10 "$plan" watch || echo "watch exited $?"; }
@@ -711,7 +731,7 @@ expect "the machine's links stay" "$(if [[ $(readlink "$machine_home/.local/bin/
 
 if ((live)); then
     # Real agents, on cheap settings, with the real Codex and Claude Code homes.
-    unset CODEX_HOME CLAUDE_CONFIG_DIR
+    unset CODEX_HOME CLAUDE_CONFIG_DIR PLAN_CODEX_FAKE
     export HOME=$machine_home
     [[ -z $machine_runtime_dir ]] || export XDG_RUNTIME_DIR=$machine_runtime_dir
     [[ -z $machine_bus_address ]] || export DBUS_SESSION_BUS_ADDRESS=$machine_bus_address
@@ -726,6 +746,11 @@ if ((live)); then
     expect start "$started" "supervisor: Claude Code session" "coordinator: Codex thread" "rang the coordinator: Doorbell test"
     expect "start enables its boot unit" "$(cat "$boot" "$t/systemctl.log")" "ExecStart=$kit/plan resume" "--user enable plan-resume.service"
     thread=$(cat "$run/thread" || true)
+    loaded=$(
+        source "$kit/codex.sh"
+        codex_open && codex_call thread/loaded/list '{}' && codex_close
+    )
+    expect "the real loaded list names the thread" "$(jq -r --arg t "$thread" '.data | index($t) != null' <<<"$loaded")" true
     supervisor=$(awk -F'\t' '$1 == "supervisor" { print $2 }' "$run/claude.tsv" || true)
     expect "attach running supervisor" "$(PLAN_DRY_RUN=1 "$plan" attach supervisor || true)" "claude attach ${supervisor:0:8}"
     for _ in $(seq 120); do

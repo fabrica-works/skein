@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # The Codex app-server daemon, as plan reaches it (development.md, sections
 # 6, 7.4 and 7.6). Sourced by plan, not run.
+# PLAN_CODEX_FAKE names a test-codex state directory, bypassing the daemon.
 #
 #   codex_open             connect to the daemon and initialize
 #   codex_call METHOD JSON print the result of one request; fail, printing
@@ -12,9 +13,12 @@
 # zero key, which leaves the payload as is, answers pings, and skips the
 # notifications that arrive between a request and its result.
 
+codex_fake=${PLAN_CODEX_FAKE:-}
+codex_fake_command=$(dirname "${BASH_SOURCE[0]}")/test-codex
 codex_id=0
 
 codex_open() {
+    [[ -z $codex_fake ]] || { [[ ! -e $codex_fake/down ]]; return; }
     coproc CODEX_PROXY { exec codex app-server proxy 2>/dev/null; }
     exec 3>&"${CODEX_PROXY[1]}" 4<&"${CODEX_PROXY[0]}"
     printf 'GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n' \
@@ -28,11 +32,13 @@ codex_open() {
 }
 
 codex_close() {
+    [[ -z $codex_fake ]] || return 0
     exec 3>&- 4<&-
 }
 
 codex_call() {
     local method=$1 params=$2 msg
+    [[ -z $codex_fake ]] || { "$codex_fake_command" "$codex_fake" "$method" "$params"; return; }
     codex_id=$((codex_id + 1))
     ws_send "$(jq -cn --argjson id "$codex_id" --arg m "$method" --argjson p "$params" \
         '{id: $id, method: $m, params: $p}')"

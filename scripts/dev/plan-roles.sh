@@ -74,6 +74,9 @@ coordinator_state() {
         # shellcheck source=codex.sh
         source "$kit/codex.sh"
         codex_open >/dev/null 2>&1 || { echo "unreachable"; exit; }
+        if ! codex_call thread/loaded/list '{}' | jq -e --arg t "$thread" '.data | index($t) != null' >/dev/null; then
+            echo "not loaded"; codex_close; exit
+        fi
         codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" 2>/dev/null |
             jq -r '[.thread.turns[]? | .status] | last // "idle" | if . == "inProgress" then "working" else "idle" end' ||
             echo "not loaded"
@@ -81,35 +84,62 @@ coordinator_state() {
     )
 }
 
+# Load before sending: thread/read can answer from an unloaded rollout.
+coordinator_load() {
+    codex_call thread/resume "$(jq -cn --arg t "$1" --arg s "$codex_sandbox" \
+        '{threadId: $t, sandbox: $s, approvalPolicy: "never"}')" >/dev/null || return
+    log_entry "Coordinator loaded, $(now): by plan $2"
+}
+
+# Every send to the coordinator loads it if needed and retries one refusal.
+coordinator_turn() (
+    local command=$1 steer=$2 start=$3 thread turn method params result
+    thread=$(cat "$run/thread" 2>/dev/null) || die "no coordinator thread in $run/thread"
+    # shellcheck source=codex.sh
+    source "$kit/codex.sh"
+    codex_open || return 1
+    trap codex_close EXIT
+    if ! codex_call thread/loaded/list '{}' | jq -e --arg t "$thread" '.data | index($t) != null' >/dev/null; then
+        coordinator_load "$thread" "$command" || return
+    fi
+    turn=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" |
+        jq -r '[.thread.turns[]? | select(.status == "inProgress")] | last | .id // empty') || return
+    if [[ -n $turn ]]; then
+        [[ -n $steer ]] || { echo working; return; }
+        method=turn/steer result=steered
+        params=$(jq -cn --arg t "$thread" --arg u "$turn" --arg m "$steer" \
+            '{threadId: $t, expectedTurnId: $u, input: [{type: "text", text: $m}]}')
+    else
+        [[ -n $start ]] || return 3
+        method=turn/start result=started
+        params=$(jq -cn --arg t "$thread" --arg p "$start" '{threadId: $t, input: [{type: "text", text: $p}]}')
+    fi
+    if ! codex_call "$method" "$params" >/dev/null; then
+        coordinator_load "$thread" "$command" || return
+        codex_call "$method" "$params" >/dev/null || return
+    fi
+    echo "$result"
+)
+
 ring() {
     load
-    local message=${1:?message} thread turn
+    local message=${1:?message} start='' result
     if [[ ${PLAN_DRY_RUN:-} == 1 ]]; then
         echo "would ring the coordinator: $message"
         return
     fi
-    thread=$(cat "$run/thread" 2>/dev/null) || die "no coordinator thread in $run/thread"
-    # shellcheck source=codex.sh
-    source "$kit/codex.sh"
-    codex_open || exit 1
-    turn=$(codex_call thread/read "$(jq -cn --arg t "$thread" '{threadId: $t, includeTurns: true}')" |
-        jq -r '[.thread.turns[]? | select(.status == "inProgress")] | last | .id // empty') ||
-        { echo "plan: the coordinator's thread is not loaded: plan resume" >&2; exit 3; }
-    if [[ -z $turn && -f $run/idle.md ]]; then
-        # An idle coordinator ended its turn (plan idle): the ring starts the next.
-        codex_call turn/start "$(jq -cn --arg t "$thread" --arg p "$(coordinator_wake_prompt "$message")" \
-            '{threadId: $t, input: [{type: "text", text: $p}]}')" >/dev/null ||
-            { echo "plan: the Codex daemon did not start the idle coordinator's turn" >&2; exit 3; }
+    [[ ! -f $run/idle.md ]] || start=$(coordinator_wake_prompt "$message")
+    result=$(coordinator_turn ring "From the supervisor, by plan ring: $message" "$start") || {
+        local code=$?
+        [[ $code != 3 ]] || echo "plan: the coordinator has no turn in progress: plan resume" >&2
+        return "$code"
+    }
+    if [[ $result == started ]]; then
         rm -f "$run/idle.md"
-        codex_close
         echo "woke the idle coordinator: $message"
-        return
+    else
+        echo "rang the coordinator: $message"
     fi
-    [[ -n $turn ]] || { echo "plan: the coordinator has no turn in progress: plan resume" >&2; exit 3; }
-    codex_call turn/steer "$(jq -cn --arg t "$thread" --arg u "$turn" --arg m "$message" \
-        '{threadId: $t, expectedTurnId: $u, input: [{type: "text", text: $m}]}')" >/dev/null
-    codex_close
-    echo "rang the coordinator: $message"
 }
 
 # The roles' prompts. Tests replace them through PLAN_*_PROMPT.

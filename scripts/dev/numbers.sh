@@ -475,7 +475,7 @@ record_check() {
     headings=$(awk -v from="${1:-1}" '
         NR < from || !/^## / { next }
         /^## [A-Za-z0-9_-]+ ([0-9]+|repin), [0-9T:-]+Z$/ { next }
-        /^## (Blocked and unblocked|Steered|Coordinator resumed|Claimed|Released|Idle), / { next }
+        /^## (Blocked and unblocked|Steered|Coordinator resumed|Coordinator loaded|Claimed|Released|Idle), / { next }
         /^## [A-Za-z0-9_-]+ [^ ]+: .*, [0-9T:-]+Z$/ { next }
         /^## (Decision|Landed|Instructions|Checked)$/ || /^## [0-9]+\. / { next }
         { n++; if (n == 1) first = $0 }

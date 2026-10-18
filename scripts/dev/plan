@@ -339,6 +339,15 @@ log_report() {
     echo "$out"
 }
 
+# Append a kit entry under the same lock as implementers' reports.
+log_entry() {
+    local heading=$1 body=${2:-}
+    exec 7>"$run/log.md.lock"
+    flock 7
+    { printf '## %s\n\n' "$heading"; [[ -z $body ]] || cat "$body"; printf '\n'; } >>"$run/log.md"
+    flock -u 7
+}
+
 status() {
     load
     ledger_upgrade

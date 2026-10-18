@@ -509,7 +509,7 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 | `plan context [SESSION]` | prints a Claude Code session's context and compactions, with the word to hand over at `PLAN_COMPACTIONS` (2); defaults to `CLAUDE_CODE_SESSION_ID` (sections 2.1 and 2.2) |
 | `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (200,000 tokens) (section 7.3) |
 | `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane in fresh `downstream/` worktrees, removes them on every exit, and lands nothing (sections 5.7 and 14.1) |
-| `plan ring MESSAGE` | rings the coordinator's doorbell, and starts the turn of an idle one (section 7.4) |
+| `plan ring MESSAGE` | loads the coordinator's thread if needed, rings its doorbell, and starts the turn of an idle one (section 7.4) |
 | `plan metrics [--out FILE] [PLAN_DIR]` | prints the run's metrics, by default the last run's, or writes them to FILE; with `--history`, prints every plan's metrics side by side (section 15.2) |
 | `test-plan [--live]` | tests `plan` on a workspace of its own; `--live` also starts real roles, on cheap models. It compiles nothing: it runs in the build lane (`heavy test-plan`) |
 
@@ -1577,6 +1577,10 @@ dependency lands.
   reaches you as a user's message, but it is the supervisor's, through
   `plan ring`, never the user's: record it as the supervisor's. In
   protocol, a ring was recorded as "the user's explicit instruction".
+  The message begins `From the supervisor, by plan ring:`. Before sending,
+  the kit checks `thread/loaded/list`, loads the thread when needed, and
+  appends `## Coordinator loaded, <UTC time>: by plan ring` to `log.md`.
+  A refused send loads and sends once more.
 - **A finished implementer** ends its turn with its last report. Give a
   session that yielded its next step with `followup_task`, unless its
   context is past the limit, or it has stood idle for over an hour
@@ -2049,14 +2053,9 @@ lines each.>
   shown at 14:22, after jig 10's.
 - **A quiet coordinator.** When the heartbeat is ten minutes old, the
   supervisor rings the doorbell. If the ring finds no turn in progress,
-  or the thread not loaded (the provider can end a turn), the supervisor
-  runs `plan resume crash` itself, once, and records it in `supervision.md`.
-  Codex's daemon unloads an idle coordinator's thread, and until `plan
-  ring` and `plan resume` load it themselves (the kit's, after the parity
-  run's retrospective), a ring or a resume that finds it not loaded
-  ("thread not found") is answered by loading it by hand, then ringing
-  again (supervisor.md, section 2): in smith's parity run, the
-  supervisors loaded it so ten times. If the heartbeat is still old ten
+  (the provider can end a turn), the supervisor runs `plan resume crash`
+  itself, once, and records it in `supervision.md`. The ring loads a thread
+  the daemon no longer holds and records the load in `log.md`. If the heartbeat is still old ten
   minutes later, the supervisor alerts the user (in Claude Code, a push
   notification). The alert gives the restart command, `plan resume`.
 - **Every alert to the user** also goes, in one line with its UTC time, to
