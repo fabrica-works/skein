@@ -382,7 +382,7 @@ designed other 1 0 0 1 >"$m/$other.jsonl"
 mkdir -p "$t/stub"
 printf '#!/bin/sh\necho Avail; echo "${DF_GB}G"\n' >"$t/stub/df"; chmod +x "$t/stub/df"
 pueue group --json >"$t/pueue-groups.json"
-pueue status --json >"$t/queue-stats.json"
+TZ=UTC0 pueue status --json >"$t/queue-stats.json"
 printf '{"tasks":{}}\n' >"$t/pueue.json"
 cat >"$t/stub/pueue" <<EOF
 #!/usr/bin/env bash
@@ -473,13 +473,13 @@ IFS=$'\t' read -r queued_at started_at ended_at <<<"$done_row"
 held_wait=$(($(date -d "$started_at" +%s) - $(date -d "$queued_at" +%s)))
 held_run=$(($(date -d "$ended_at" +%s) - $(date -d "$started_at" +%s)))
 rm "$run/.pulse"
-pueue status --json >"$t/queue-stats.json"
+TZ=UTC0 pueue status --json >"$t/queue-stats.json"
 held_pulse=$(plan_numbers pulse)
 expect "the pulse counts a task pueue still holds" "$held_pulse" \
     "queue $((fixture_wait + held_wait)) s waiting, $((fixture_run + held_run)) s running" \
     '2 other gate-lane tasks' 'pueue holds 1 finished tasks no client removed'
 pueue remove "$task_id" >/dev/null
-pueue status --json >"$t/queue-stats.json"
+TZ=UTC0 pueue status --json >"$t/queue-stats.json"
 # Usage records take precedence over token counts and deduplicate responses.
 mkdir -p "$t/codex-records/sessions"
 {
