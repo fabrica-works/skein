@@ -17,8 +17,9 @@
 # has it, follow. A code landing holds its repository's turn on this
 # machine from its rebase to its push, so that another landing here never
 # moves main under its gate. Before the gate, it refuses a commit whose
-# Plan, Step or Proof lines git does not read as trailers, and code that
-# adds a word the active plan's Pulse forbids.
+# Plan, Step, Proof, Planner-Session or Designer-Session lines git does
+# not read as trailers, and code that adds a word the active plan's Pulse
+# forbids.
 #
 # --docs   Markdown only, and a plan's metrics.tsv: check that, and skip
 #          the gate.
@@ -149,14 +150,14 @@ gated_before() {
     echo "$before"
 }
 
-# Each commit since the base that names a plan, a step or a proof does so
-# in trailers git reads (implementer.md, section 8.4): one that does not
-# would stay unread by plan status and the metrics for good.
+# Each commit since the base that names a plan, a step, a proof or a session
+# does so in trailers git reads (implementer.md, section 8.4): one that does
+# not would stay unread by plan status and the metrics for good.
 unread_trailers() {
     local commit key body
     for commit in $(git rev-list "$1..HEAD"); do
         body=$(git log -1 --format=%B "$commit")
-        for key in Plan Step Proof; do
+        for key in Plan Step Proof Planner-Session Designer-Session; do
             if grep -qE "^$key: " <<<"$body" &&
                 [[ -z $(git log -1 --format="%(trailers:key=$key,valueonly)" "$commit") ]]; then
                 git log -1 --format="%h %s: its $key line" "$commit"

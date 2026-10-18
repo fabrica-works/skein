@@ -215,6 +215,12 @@ expect "A locked ref is main moving" "$out" 'status=6' 'land:' 'land: main moved
 land_branch unread $'Unread trailer\n\nStep: alpha-01.1\n\nAnother paragraph.'
 out=$(capture status land_run --docs)
 expect "land refuses an unread trailer" "$out" 'status=2' 'land:' 'git reads no trailer in:' 'its Step line'
+land_branch unread-planner $'Unread session\n\nPlanner-Session: 3f2a\n\nAnother paragraph.'
+out=$(capture status land_run --docs)
+expect "land refuses an unread Planner-Session" "$out" 'status=2' 'land:' 'git reads no trailer in:' 'its Planner-Session line'
+land_branch unread-designer $'Unread session\n\nDesigner-Session: 3f2a\n\nAnother paragraph.'
+out=$(capture status land_run --docs)
+expect "land refuses an unread Designer-Session" "$out" 'status=2' 'land:' 'git reads no trailer in:' 'its Designer-Session line'
 land_branch forbidden $'A forbidden word\n\nPlan: demo'
 echo 'let exact = 1;' >"$t/clone/w.rs"
 git -C "$t/clone" add w.rs
