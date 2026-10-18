@@ -6,6 +6,16 @@
 # thread, in the run's thread file, and the Claude Code sessions, one line
 # each in claude.tsv: role, session id, time recorded.
 
+# Any Claude Code session's context and handover limit (development.md 2.1).
+context() {
+    local session=${1:-${CLAUDE_CODE_SESSION_ID:-}} tokens compactions suffix=""
+    [[ -n $session ]] || die "name a session, or run plan context in a Claude Code session"
+    read -r tokens _ <<<"$(claude_context "$session")"
+    compactions=$(claude_compactions "$session")
+    ((compactions < compaction_limit)) || suffix=": hand over now"
+    echo "context: $((tokens / 1000))K (compactions: $compactions)$suffix"
+}
+
 # Every Claude Code session this machine knows, as JSON.
 claude_sessions() { claude agents --json --all 2>/dev/null || echo '[]'; }
 

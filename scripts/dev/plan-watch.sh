@@ -115,14 +115,8 @@ handed_over() {
 # compactions, and at their limit the word to hand over (development.md,
 # section 10.5).
 supervisor_context() {
-    local session tokens compactions
+    local session
     session=$(role_session supervisor)
     [[ -n $session ]] || return 0
-    read -r tokens _ <<<"$(claude_context "$session")"
-    compactions=$(claude_compactions "$session")
-    if ((compactions >= compaction_limit)); then
-        echo "context: the supervisor's is $((tokens / 1000))K (compactions: $compactions): hand over now (supervisor.md, section 7)"
-    else
-        echo "context: the supervisor's is $((tokens / 1000))K (compactions: $compactions)"
-    fi
+    context "$session" | sed "s/^context: /context: the supervisor's is /; s/: hand over now$/: hand over now (supervisor.md, section 7)/"
 }

@@ -24,6 +24,7 @@
 #   plan handover supervisor      start the supervisor's successor, from this session
 #   plan pulse                    the run's numbers since the last check
 #   plan downstream               type-check each downstream repository against the plan's upstream mains
+#   plan context [SESSION]        this Claude session's context and compactions
 #   plan contexts                 each Codex thread's context, and the sessions past the limit
 #   plan metrics [--out FILE] [PLAN_DIR]  the run's metrics, as TSV (the last run's, by default)
 #   plan metrics --history        every plan's metrics, side by side
@@ -607,6 +608,7 @@ wake) wake "$@" ;;
 handover) handover "$@" ;;
 pulse) pulse ;;
 downstream) downstream ;;
+context) context "$@" ;;
 contexts) contexts ;;
 metrics) metrics "$@" ;;
 retro) retro "$@" ;;

@@ -141,6 +141,9 @@ the implementers.
   and each request in between re-reads the whole context. In
   client-composition, the designer's 600-second sleep outlived its
   cache, and re-wrote 419K.
+- **Checks its context after each sub-agent's report** with `plan context`
+  (section 3.6), which prints its context and compactions, and the word
+  to hand over at `PLAN_COMPACTIONS` (2).
 - **Compacts in place, and hands over after its second compaction.** It
   starts with `claude --autocompact 200000` (the workspace's `AGENTS.md`;
   `plan` starts and resumes a run's designer so, section 10.4), and its
@@ -174,6 +177,8 @@ the implementers.
   implementers follow the plan's words as written.
 - **Runs what it prescribes** before the plan lands (section 5.4), through
   `heavy`, like every role (section 11.1).
+- **Checks its context after each sub-agent's report** with `plan context`
+  (section 3.6), as the designer does.
 - **Waits, compacts and hands over as the designer does** (section 2.1):
   on its sub-agents' notifications, never polling or sleeping; started
   with `claude --autocompact 200000`, it re-reads section 5 and the
@@ -501,6 +506,7 @@ before skein e6fd9fb, runs the copy on `PATH`, main's, to its end.
 | `plan status` | renders `status.md` |
 | `plan watch` | waits until the supervisor has something to do, and prints its context and its compactions; at `PLAN_COMPACTIONS` (2), the word to hand over (section 10.5) |
 | `plan pulse` | prints the run's numbers since the last check (section 14) |
+| `plan context [SESSION]` | prints a Claude Code session's context and compactions, with the word to hand over at `PLAN_COMPACTIONS` (2); defaults to `CLAUDE_CODE_SESSION_ID` (sections 2.1 and 2.2) |
 | `plan contexts` | prints each Codex thread's context, the input of its last request, and marks the sessions past `PLAN_CONTEXT_LIMIT` (200,000 tokens) (section 7.3) |
 | `plan downstream` | type-checks each repository downstream of what the plan landed against those repositories' mains, through the build lane in fresh `downstream/` worktrees, removes them on every exit, and lands nothing (sections 5.7 and 14.1) |
 | `plan ring MESSAGE` | rings the coordinator's doorbell, and starts the turn of an idle one (section 7.4) |

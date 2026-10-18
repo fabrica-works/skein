@@ -461,6 +461,11 @@ rm -rf "$DEV_ROOT/beta" "$dir/beta"
 
 expect contexts "$("$plan" contexts)" "  100K, peak 260K  past 200K: hand over"
 
+expect "context of a session" "$("$plan" context "$session")" 'context: 1K (compactions: 2): hand over now'
+status=0
+out=$(CLAUDE_CODE_SESSION_ID='' "$plan" context 2>&1) || status=$?
+expect "context needs a session" "$status $out" '2 plan:' 'name a session'
+
 # Nothing in the workspace pins alpha.
 expect downstream "$("$plan" downstream)" "downstream: no repository pins alpha"
 
