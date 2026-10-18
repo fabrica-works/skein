@@ -1,6 +1,6 @@
 # Status
 
-Updated 2026-10-17. How far skein's code is from its design, and which
+Updated 2026-10-18. How far skein's code is from its design, and which
 plans take it there. The designer keeps this file (development.md,
 section 3.3).
 
@@ -25,46 +25,45 @@ section 3.3).
 | browser-implementation | done 2026-10-06 | browser.md; io.md 6 (pipes at chosen descriptors); lib.md 7 (a held buffer read as a stream) | `docs/plans/browser-implementation.md` |
 | kv-implementation | done 2026-10-05 | kv.md 1–5, 7–9; io.md 5 (files held open); simulator.md 3.1 (a disk that crashes) | `docs/plans/kv-implementation.md` |
 
-Section 2 names an increment of smith's reliability plan as
-`reliability <session>.<n>`, from that plan's `skein/` session files.
-
 ## 2. The design
 
 | Document | Built | Left |
 |---|---|---|
-| `foundation/programming-model.md` | partly | 4.3: a read of what has arrived (jig's test-budgets, skein 01); 10.3: rules held in review only, with no checker: not planned |
-| `foundation/testing-strategy.md` | partly | 2.4: machine worlds reading what has arrived (jig's test-budgets, skein 01.2); 8: nextest without its double spawn in the gates and the queue, the suites back within 15 s on carbon-forge (jig's test-budgets); 6: state digests, transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 12: `RequestTable::not_kept`, a request whose record was not stored retired by its key: temper's client-api (skein-01.s3); 6.2: SHA-256, with skein's copies moved onto it, its HMAC and its comparison in constant time: temper's forge-setup; 5.1: state digests, the hasher and lib's types' `Hash`: hearth's render (skein 03); 13: `Slab::get2_mut`: not planned |
-| `kernel.md` | partly | 6.3: `Window` (reliability 02.6); 6.1: the `Write` open and `Truncate` (jig's jig-protocol); 6.1: `Lock`, and its conformance scenario: hearth's render (skein 05); 9: fixed files, 10: the ring's descriptor limit: not planned |
-| `io.md` | partly | 2, 3.3: a read of what has arrived on sockets, joined ends and pipes (jig's test-budgets, skein 01.1); 5: `Remove` of an empty directory (smith's reliability plan, a step its supervisor names); 5.1: a write pipe's stated write deadline (smith's reliability plan, a step its supervisor names); 7: `Resized`, `Window` (reliability 02.6); 3.5: joined sockets, 4: in-process addresses, 5: `OpenWrite` and `Cut`, and a made directory synced into its parent, with a world that cuts after each make (jig's jig-protocol, skein-03.s1); 5: `Lock`, `ListPage` and `Rename` between two directories, and the answer of a `Lock` or a page that completes past its deadline: hearth's render (skein 04, 05); 5: a `Stat`, `Rename`, `Remove` or `MakeDirectory` that completes past its deadline answers `TimedOut` (`file_layer.rs`'s `stopped`), not its own: not planned; 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
-| `simulator.md` | partly | 7: the state digest in the trace (lib.md, 5.1; testing.md, 5); 3.1: locks, and 3.3: a rename between two directories in the crash model: hearth's render (skein 03, 05, 04) |
-| `shell.md` | partly | 5: the cryptographic seed, 6.1: `read_private_file` (jig's jig-protocol); 6: `make_root` (jig's jig-protocol, skein-03.s1); 6.1: `directory_access` (smith's reliability plan, a step its supervisor names); 6.3: terminal modes (reliability 02.6); 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
+| `foundation/programming-model.md` | partly | 10.3: rules held in review only, with no checker: not planned |
+| `foundation/testing-strategy.md` | partly | 6: state digests in the worlds of skein's services but the echo's (the harness carries them, `testing.md`, 5), transition coverage, `cargo fuzz`: not planned |
+| `lib.md` | partly | 12: `RequestTable::not_kept`, a request whose record was not stored retired by its key: temper's client-api (skein-01.s3); 6.2: SHA-256, with skein's copies moved onto it, its HMAC and its comparison in constant time: temper's forge-setup; 13: `Slab::get2_mut`: not planned |
+| `kernel.md` | partly | 9: fixed files, 10: the ring's descriptor limit: not planned |
+| `io.md` | partly | 5: a `Stat`, `Rename`, `Remove` or `MakeDirectory` that completes past its deadline answers `TimedOut` (`file_layer.rs`'s `stopped`), not its own: not planned; 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
+| `simulator.md` | yes | Nothing |
+| `shell.md` | partly | 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
 | `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
-| `testing.md` | partly | 5, 8: state digests in the world harness: hearth's render (skein 03); 8: TLS in the real loop, the HTTP example's worlds, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
-| `json.md` | partly | 3.6: positions, with 3.3's `length` below `u32::MAX`, and the reference's (section 6): hearth's render (skein 02); 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
-| `http.md` | partly | 3.3, 4: a body and an event's data read as they arrive; 6: the worlds reading so (jig's test-budgets, skein 01.1, 01.2); 2: the build for `wasm32-unknown-unknown`: not built; 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
-| `tls.md` | partly | 3.1: a read of what has arrived from the plaintext intake (jig's test-budgets, skein 01.1); 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
-| `codec.md` | partly | 4: generated worst cases that check a family's limits once (jig's test-budgets, skein 02.2); 2–4: `secret N`, `boxed` variants, pieces; 6: generated files that pass the lints with no allowances, table tests, bounds at small test limits, a generator linear in its schema (jig's jig-protocol); 2: the build for `wasm32-unknown-unknown`, 7: maps and sets, smaller integers, other languages: not planned |
+| `testing.md` | partly | 8: TLS in the real loop, the HTTP example's worlds, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
+| `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
+| `http.md` | partly | 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
+| `tls.md` | partly | 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
+| `codec.md` | partly | 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
-| `llm.md` | partly | 2, 4.2: a run of consecutive reasoning items as one block; replay values charged at their total (smith's reliability plan, a step its supervisor names). 6: Codex routing state, WebSocket: not planned |
+| `llm.md` | partly | 6: Codex routing state, WebSocket: not planned |
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
-| `fake-llm.md` | partly | 2.1: a changed tool choice keeps an automatic query's prefix (smith's parity); 7: providers' cache granularity: not planned |
-| `oauth.md` | partly | 6.4: a record dropped when its refresh fails as sign in again (jig's jig-protocol); 7: IPv6 loopback, device authorization, a credential helper: not planned |
+| `fake-llm.md` | partly | 7: providers' cache granularity: not planned |
+| `oauth.md` | partly | 7: IPv6 loopback, device authorization, a credential helper: not planned |
 | `browser.md` | partly | 6, 7: a test answering a native dialog itself, and the kit's `browser.rs` split by concern (jig's skein-ui `later.md`); 11: open questions: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
 | `ui.md` | partly | 4.2, 18, 19: the vocabulary that waits (a combo box, a slider and a meter, a switch, media, a feed, a list box choosing several, a tree grid) and right-to-left text, each by the light path (4.3) when an application needs it; 3: the builder's assertion that a named button, tab or menu item holds no node: not planned (temper's client-api `later.md`); 19: a markup macro for the builder, a server keeping the previous bundle's digest directory; 16, 18: parts for a phone or a desktop: not planned (jig's skein-ui `later.md`) |
-| `ui-text.md` | partly | 3, 4, 7: the settings' lines, `Terminal::room`, the terminal's own lines' room kept apart from the application's, no room once closing, the settings' line bytes, the terminal's worst case and operations: temper's client-api; 3, 4: a print's room from its own tree, never the limits' worst case, a page past a u32 printed as one line, the output in pieces of 64 KiB: temper's forgejo-17; 9: the text shell's own words in another language, a secret typed without echo: not planned (jig's skein-ui `later.md`) |
+| `ui-text.md` | partly | 3, 4, 7: the settings' lines, `Terminal::room`, the terminal's own lines' room kept apart from the application's, no room once closing, the settings' line bytes, the terminal's worst case and operations: temper's client-api; 9: the text shell's own words in another language, a secret typed without echo: not planned (jig's skein-ui `later.md`) |
 | `ui-web.md` | partly | 6: a click inside a button or a menu item finding it (`page/web.rs` finds a link's alone): not planned (temper's client-api `later.md`); 11, 15: the file picker, and parts for other effects; 15: the bundle served compressed, tabs of one person sharing one stream, HTTP/2; 16: a server keeping the previous bundle's digest directory; 14.2: the face typing into a field holding words: not planned (jig's skein-ui `later.md`); 14.2: the harness opening a printed line as a whole URL from either output, a page of another origin it serves, a printed URL again, and awaiting trouble and a request's status with its own `Host`: temper's client-api |
 
 Several "Not built yet" sections still list parts that `main` has:
-`io.md`, 9 (group signals, reaping at close, append streams);
-`kernel.md`, 10 (all but `Window`); `shell.md`, 11 (`Host` and `drive`,
-append files, io's records); `simulator.md`, 7 (groups, usage, appends,
-`Stat`); `json.md`, 9 (the collector, `Text` and `Skip`, compact
-documents); `http.md`, 9 (the reader's data face); `examples.md`, 8 (the
-echo over `drive`, draining); `testing.md`, 8 (the harness on `Host`,
-process trees in the end-to-end kit).
+`io.md`, 9 (`Lock`, `ListPage`, `Rename` between two directories,
+`OpenWrite` and `Cut`, io worlds for files, joined sockets and in-process
+addresses); `kernel.md`, 10 (all but the descriptor limit); `shell.md`,
+11 (`read_private_file`); `simulator.md`, 7 (all of it); `lib.md`, 13
+(state digests); `json.md`, 9 (positions, the collector, `Text` and
+`Skip`, compact documents); `examples.md`, 8 (the echo over `drive`,
+draining, the UI example); `testing.md`, 8 (io worlds for files and
+processes, skein-ui's crates and their tests, the build for
+`wasm32-unknown-unknown`, state digests).
 
 ## 3. Not planned
 
@@ -72,9 +71,6 @@ process trees in the end-to-end kit).
   of the file system per tree, stopped whole and proved empty, in place
   of process groups. Waits for `draft/process.md` to become a design, then
   a plan of its own; smith's containment checks wait on it.
-- **Joined sockets** (`io.md`, sections 3.5 and 4): in-process
-  addresses, and sockets joined in memory within one process, for jig's
-  one-process shape. Waits for its plan, which follows.
 - **Names while running** (`io.md`, section 4; `llm-connection.md`,
   section 9): a DNS client, and the datagram sockets it needs. Waits for a
   service that must resolve while it runs.
@@ -87,8 +83,10 @@ process trees in the end-to-end kit).
   without io_uring, and for measurements.
 - **The ring's descriptor limit** (`kernel.md`, section 10): waits for a
   way to lower it without `unsafe` outside the ring adapter.
-- **State digests in smith's worlds** (`testing-strategy.md`, section 6):
-  wait for skein's harness to have them (hearth's render, skein 03).
+- **State digests in the worlds** (`testing-strategy.md`, section 6):
+  skein's harness carries them (`testing.md`, section 5) and the echo
+  gives one; skein's other services and smith's worlds give none. Each
+  waits for a plan of its own.
 - **Transition coverage and fuzz targets** (`testing-strategy.md`,
   section 6; the "Not built yet" sections of `json.md`, `http.md` and
   `tls.md`): wait for `cargo llvm-cov` and a nightly toolchain.
