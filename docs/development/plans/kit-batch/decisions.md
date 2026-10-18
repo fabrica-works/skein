@@ -236,6 +236,13 @@ section 10 (findings/inventory.md); the planner decided what follows
 
      `test-plan` took 15 to 17 s up to 02.2 and 28 to 34 s since 02.3 (heavy.tsv), whose Proof bounds its checks at 6 s together: 8 landings have used about 20 s of the 25, with 18 steps to go. The Time rule now says: each report's Evidence gives `test-plan`'s time before and after its increment, and a check over its Proof's bound is cut to it before it lands. Skein 02 cuts 02.3's checks to their 6 s at 02.4, keeping every refusal they cover.
 
+105. **skein-05.s1: test-plan's live block in its own file** (plan defect, skein 05's block of 2026-10-18T01:16:15Z).
+     A plan defect: code-organization.md, section 6, says "an increment that would take it past 800 first moves its live block (test-plan:355–403) into `scripts/dev/test-plan-live.sh`, sourced, as a commit of its own", and named no step for that commit. Session 05 made it as skein-05.s1, which landed as skein 4d6df9e with `Step: skein-05.s1`.
+
+     skein-05.s1 is an added step of session 05, "test-plan's live block in its own file"; its session file is skein/05-numbers.md, whose new section "05.s1" records it. The coordinator adds it to the ledger (repository skein, session 05, that title), then records its landing with `plan landed skein-05.s1 4d6df9e`.
+
+     `test-plan` is 784 lines after it, and sessions 03, 04 and 06 still add checks to it. Section 6 now closes with the rule for the next such move: a further move it calls for is a step of its own, `<session>.s<N>`; the implementer names it in its report's Next before it starts, and the coordinator adds it to the ledger, as for 05.s1.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner

@@ -109,7 +109,10 @@ base has longer ones: `check_machine`, 155 lines; `metrics_of`, 118).
 `test-plan` is 409 lines after 01.1 and grows with every session: an
 increment that would take it past 800 first moves its live block
 (test-plan:355–403) into `scripts/dev/test-plan-live.sh`, sourced, as a
-commit of its own.
+commit of its own: skein-05.s1 did, at 4d6df9e (ruling 105). A further
+move this section calls for is a step of its own, `<session>.s<N>`:
+the implementer names it in its report's Next before it starts, and the
+coordinator adds it to the ledger, as for 05.s1.
 An increment's size is its hand-written production lines, test-plan,
 `test-codex` and Markdown aside, counted from the worktree with:
 

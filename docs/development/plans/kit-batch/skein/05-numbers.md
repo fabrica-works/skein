@@ -476,6 +476,15 @@ Don't: change `PLAN_CLAUDE_AUTOCOMPACT`; run `kache gc` from the pulse
 Size: about 44 lines.
 Removes: the 200,000 default of the context limit.
 
+### 05.s1 test-plan's live block in its own file (ruling 105)
+
+An added step: code-organization.md, section 6, has the increment that
+would take `test-plan` past 800 lines first move its live block into
+`scripts/dev/test-plan-live.sh`, sourced, as a commit of its own, and
+named no step for it. Landed as skein 4d6df9e (`Step: skein-05.s1`):
+`test-plan` 784 lines, `test-plan-live.sh` 61, the block byte-identical
+after unindent.
+
 ## Interface sketches
 
 ```
