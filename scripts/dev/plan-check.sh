@@ -140,9 +140,14 @@ check_plan() {
 # The items of section 2 of a status file still left to a plan that its
 # section 1 marks done (development.md, section 3.3): "<doc> (<plan>)" for
 # each, on one line. A plan is named as Left names it, ": <plan>" after
-# its items or "(<plan>" in them; one named for its `later.md` is not.
+# its items, or "(<plan>" or "(the <plan> plan" in them; one named for its
+# `later.md` is not.
 done_items() {
     awk -F'|' '
+        BEGIN {
+            np = split(": \001(\001(the ", pre, "\001")
+            nq = split(")\001;\001,\001 |\001 (\001 plan)\001 plan,\001 plan;", post, "\001")
+        }
         /^## [0-9]+\./ { section = $0; sub(/^## /, "", section); sub(/\..*/, "", section); next }
         section == 1 && /^\|/ {
             name = $2; state = $3
@@ -155,11 +160,9 @@ done_items() {
             line = $0
             for (i = 1; i <= n; i++) {
                 found = 0
-                split(": |(", pre, "|")
-                split(")|;|,| ||| (", post, "|")
-                for (a = 1; a <= 2 && !found; a++)
-                    for (b = 1; b <= 6 && !found; b++)
-                        if (post[b] != "" && index(line, pre[a] done[i] post[b])) found = 1
+                for (a = 1; a <= np && !found; a++)
+                    for (b = 1; b <= nq && !found; b++)
+                        if (index(line, pre[a] done[i] post[b])) found = 1
                 if (found) printf "%s%s (%s)", (k++ ? ", " : ""), doc, done[i]
             }
         }' "$1" 2>/dev/null || true
