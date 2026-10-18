@@ -31,18 +31,18 @@ section 3.3).
 |---|---|---|
 | `foundation/programming-model.md` | partly | 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 6: state digests in the worlds of skein's services but the echo's (the harness carries them, `testing.md`, 5), transition coverage, `cargo fuzz`: not planned |
-| `lib.md` | partly | 12: `RequestTable::not_kept`, a request whose record was not stored retired by its key: temper's client-api (skein-01.s3); 6.2: SHA-256, with skein's copies moved onto it, its HMAC and its comparison in constant time: temper's forge-setup; 13: `Slab::get2_mut`: not planned |
-| `kernel.md` | partly | 9: fixed files, 10: the ring's descriptor limit: not planned |
-| `io.md` | partly | 5: a `Stat`, `Rename`, `Remove` or `MakeDirectory` that completes past its deadline answers `TimedOut` (`file_layer.rs`'s `stopped`), not its own: not planned; 4: DNS and datagram sockets, 9: streams that read files, 6: contained trees: not planned |
+| `lib.md` | partly | 12: `RequestTable::not_kept`, a request whose record was not stored retired by its key: temper's client-api (skein-01.s3); 3: `Slab::get2_mut`: not planned |
+| `kernel.md` | partly | 8: the descriptor limit on the ring; 9: fixed files: not planned |
+| `io.md` | partly | 5: a root named by its token in `Create`, `CreateNoFollow`, `OpenRead`, `OpenReadNoFollow`, `OpenWrite`, `OpenWriteNoFollow`, `OpenDirectory`, `SyncDirectory`, `List`, `Rename` and `Remove`, which take its descriptor, read from `FileIo::descriptor`; a `Stat`, `Rename`, `Remove` or `MakeDirectory` that completes past its deadline answers `TimedOut` (`file_layer.rs`'s `stopped`), not its own; streams that read files; 4: DNS and datagram sockets; 6: contained trees: not planned |
 | `simulator.md` | yes | Nothing |
-| `shell.md` | partly | 6: names at startup, 7: the readiness backend, 8: optimisations: not planned |
-| `examples.md` | partly | 8: the HTTP example, the echo's domain worlds: not planned |
-| `testing.md` | partly | 8: TLS in the real loop, the HTTP example's worlds, coverage, fuzz targets, the referee's purity: not planned. Section 7 is as of 2026-10-04 |
-| `json.md` | partly | 8–9: writing in pieces, several documents in a stream, codecs from schemas, fuzz target: not planned |
-| `http.md` | partly | 8–9: chunked uploads, codings, trailers, reconnecting event streams, HTTP/2, a pool per peer, fuzz targets: not planned |
-| `tls.md` | partly | 8: a user of the native face, the server side, client certificates, the real loop, kernel TLS, fuzz target: not planned |
+| `shell.md` | partly | 6: names at startup (step 5), and certificates and keys for TLS's server side (step 6); 7: the readiness backend, and its conformance; 8: the deferred optimisations: not planned |
+| `examples.md` | partly | 6: the referee takes the echo's address from `svc.listening()`, not from its startup fact; 7: the echo's domain worlds (testing-strategy.md, 2.2); the HTTP server and its client (testing.md, 3), not yet designed here: not planned |
+| `testing.md` | partly | 3: the HTTP server and its client, and TLS in the real loop: not planned. Section 7 is as of 2026-10-04 |
+| `json.md` | partly | 4: writing in pieces, a body encoded a piece at a time as io grants room (temper's performance.md); 6: the fuzz target; 7: several documents in one stream; 8: codecs from schemas: not planned |
+| `http.md` | partly | 3: chunked uploads; 3 and 5: content codings, trailer fields, HTTP/2 and upgrades; 4: reconnecting an event stream, and a reconnection time in a block of its own; 5: a request's body read while answering it; 6: the selective collector on each event's data in the protocol worlds, their heap metered, the fuzz targets; 8: a pool per peer, `Expect: 100-continue` waited for, the server's deadlines: not planned |
+| `tls.md` | partly | 1: the server side, with client certificates; 3.6: a user of the native face, a framed connection over TLS (channel.md, 7); 5: the real loop, a loopback exchange through the shell against a local rustls server, and the fuzz target; kernel TLS (shell.md, 8): not planned |
 | `codec.md` | partly | 7: maps and sets, smaller integers, other languages: not planned |
-| `channel.md` | yes | 13: compression, bodies across frames, named calls, reconnecting: not planned |
+| `channel.md` | yes | 12: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 6: Codex routing state, WebSocket: not planned |
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
@@ -54,17 +54,6 @@ section 3.3).
 | `ui-text.md` | partly | 3, 4, 7: the settings' lines, `Terminal::room`, the terminal's own lines' room kept apart from the application's, no room once closing, the settings' line bytes, the terminal's worst case and operations: temper's client-api; 9: the text shell's own words in another language, a secret typed without echo: not planned (jig's skein-ui `later.md`) |
 | `ui-web.md` | partly | 6: a click inside a button or a menu item finding it (`page/web.rs` finds a link's alone): not planned (temper's client-api `later.md`); 11, 15: the file picker, and parts for other effects; 15: the bundle served compressed, tabs of one person sharing one stream, HTTP/2; 16: a server keeping the previous bundle's digest directory; 14.2: the face typing into a field holding words: not planned (jig's skein-ui `later.md`); 14.2: the harness opening a printed line as a whole URL from either output, a page of another origin it serves, a printed URL again, and awaiting trouble and a request's status with its own `Host`: temper's client-api |
 
-Several "Not built yet" sections still list parts that `main` has:
-`io.md`, 9 (`Lock`, `ListPage`, `Rename` between two directories,
-`OpenWrite` and `Cut`, io worlds for files, joined sockets and in-process
-addresses); `kernel.md`, 10 (all but the descriptor limit); `shell.md`,
-11 (`read_private_file`); `simulator.md`, 7 (all of it); `lib.md`, 13
-(state digests); `json.md`, 9 (positions, the collector, `Text` and
-`Skip`, compact documents); `examples.md`, 8 (the echo over `drive`,
-draining, the UI example); `testing.md`, 8 (io worlds for files and
-processes, skein-ui's crates and their tests, the build for
-`wasm32-unknown-unknown`, state digests).
-
 ## 3. Not planned
 
 - **Contained process trees** (`io.md`, section 6): a cgroup and a view
@@ -74,42 +63,83 @@ processes, skein-ui's crates and their tests, the build for
 - **Names while running** (`io.md`, section 4; `llm-connection.md`,
   section 9): a DNS client, and the datagram sockets it needs. Waits for a
   service that must resolve while it runs.
-- **Names at startup in the kit** (`shell.md`, sections 6 and 11):
-  services resolve their peers with the standard library. Waits for a
-  decision whether the kit does it.
-- **Streams that read files** (`io.md`, section 9): waits for a user.
+- **Names at startup in the kit** (`shell.md`, section 6): services
+  resolve their peers with the standard library. Waits for a decision
+  whether the kit does it.
+- **Roots by token** (`io.md`, section 5): the requests on open files and
+  directories name a root by its descriptor, which the owner reads from
+  `FileIo::descriptor`, though io alone should see one; `Load`, `Scan`,
+  `Store`, `MakeDirectory`, `OpenPrivate` and `Lock` take its token.
+  Waits for a plan.
+- **Streams that read files** (`io.md`, section 5): waits for a user.
 - **The readiness backend and the deferred optimisations** (`shell.md`,
   sections 7 and 8; `kernel.md`, section 9): wait for a deployment
-  without io_uring, and for measurements.
-- **The ring's descriptor limit** (`kernel.md`, section 10): waits for a
+  without io_uring, and for measurements. The backend's conformance
+  comes with it.
+- **The ring's descriptor limit** (`kernel.md`, section 8): waits for a
   way to lower it without `unsafe` outside the ring adapter.
 - **State digests in the worlds** (`testing-strategy.md`, section 6):
   skein's harness carries them (`testing.md`, section 5) and the echo
   gives one; skein's other services and smith's worlds give none. Each
   waits for a plan of its own.
 - **Transition coverage and fuzz targets** (`testing-strategy.md`,
-  section 6; the "Not built yet" sections of `json.md`, `http.md` and
-  `tls.md`): wait for `cargo llvm-cov` and a nightly toolchain.
-- **`Slab::get2_mut`** (`lib.md`, section 13): waits for its first user.
-- **HTTP's remaining features** (`http.md`, sections 8 and 9): chunked
+  section 6; `json.md` and `http.md`, section 6; `tls.md`, section 5):
+  wait for `cargo llvm-cov` and a nightly toolchain.
+- **`Slab::get2_mut`** (`lib.md`, section 3): waits for its first user.
+- **HTTP's remaining features** (`http.md`, sections 3, 4, 5 and 8): chunked
   uploads, content codings, trailers, reconnecting event streams and their
   `retry` block, HTTP/2 and upgrades, a request body read while
   answering, a pool per peer, `Expect: 100-continue`, the server's
   deadlines. Each waits for a peer that needs it; temper's forge and
   webhooks pull next.
-- **The HTTP example** (`examples.md`, section 8; `testing.md`, section
-  8): its service, worlds and real loop. Waits for a plan.
-- **JSON's remaining parts** (`json.md`, sections 8 and 9): writing in
+- **The HTTP example** (`testing.md`, section 3): its design in
+  `examples.md`, its service, worlds and real loop. Waits for a plan.
+- **JSON's remaining parts** (`json.md`, sections 4, 7 and 8): writing in
   pieces, several documents in one stream, codecs from schemas, text that
   is not UTF-8. Each waits for a user; temper asks for the first.
-- **TLS's server side and client certificates** (`tls.md`, section 8;
-  `channel.md`, section 13): wait for temper's engine, or smith's
-  connected agent's domain contract.
-- **TLS in the real loop, and kernel TLS** (`tls.md`, sections 7 and 8;
-  `testing.md`, section 8): a loopback exchange through the shell. Waits
-  for a plan; a TLS that replays and session resumption are open
-  (`notes.md`). The drafted rustls issue waits for the user to file it.
-- **Channel features** (`channel.md`, section 13): compression, bodies
+- **The protocol worlds' collector** (`http.md`, section 6): the
+  client's end stacks a tokenizer on each event's data, where an LLM
+  client's stack has the selective collector (`http.md`, section 2).
+  Waits for a plan.
+- **TLS's server side and client certificates** (`tls.md`, section 1;
+  `shell.md`, section 6; `channel.md`, section 12): wait for temper's
+  engine, or smith's connected agent's domain contract.
+- **A user of TLS's native face** (`tls.md`, 3.6): a framed connection
+  over TLS (`channel.md`, section 7). Until one, the native face meets
+  only its own tests (`tls.md`, section 5). Waits for a service that
+  runs a channel over TLS.
+- **TLS in the real loop, and kernel TLS** (`tls.md`, sections 5 and 7;
+  `testing.md`, section 3; `shell.md`, section 8): a loopback exchange
+  through the shell against a local rustls server. Waits for a plan; a
+  TLS that replays and session resumption are open (`notes.md`).
+- **The rustls issue** (`tls.md`, section 6): drafted against 0.23.41
+  and not filed, so that the override of `[profile.dev.package.rustls]`
+  can go. Waits for the user to file it:
+
+  > **`send_fatal_alert` panics in debug builds after `send_close_notify`**
+  >
+  > `CommonState::send_close_notify` sets `sent_fatal_alert`, so that no
+  > alert follows `close_notify`; `send_fatal_alert` begins with
+  > `debug_assert!(!self.sent_fatal_alert)` (common_state.rs:567). A
+  > client that sends `close_notify` and reads on, as a half-closed
+  > connection lets it (RFC 8446, 6.1: each side closes its own
+  > direction), reaches it on the first fatal error in what it reads: a
+  > record that fails to decrypt (conn.rs:1133, `BadRecordMac`), a message
+  > that does not decode, one that comes out of turn. A debug build
+  > panics; a release build queues a fatal alert behind the
+  > `close_notify`.
+  >
+  > To reproduce with `UnbufferedClientConnection`: complete a handshake,
+  > `queue_close_notify` and send it, then hand `process_tls_records` the
+  > server's next application-data record with a byte of it changed.
+  > Expected: `Error::DecryptError`. With debug assertions: a panic at
+  > common_state.rs:567.
+  >
+  > Suggested fix: once `close_notify` was sent, `send_fatal_alert` sends
+  > no alert and returns the error, as `send_close_notify` sends nothing
+  > after a fatal alert; the assertion then guards only against a second
+  > fatal alert.
+- **Channel features** (`channel.md`, section 12): compression, bodies
   across frames, named calls, reconnecting. Named calls wait for smith's
   and temper's channels both to have them.
 - **Codec extensions** (`codec.md`, section 7): maps and sets,
@@ -131,11 +161,12 @@ processes, skein-ui's crates and their tests, the build for
   sync, for a dataset or a second store.
 - **The fake LLM's cache granularity** (`fake-llm.md`, section 7): waits
   for a world that needs providers' minimum lengths and steps.
-- **The echo's worlds made pure** (`examples.md`, section 8; `testing.md`,
-  section 8): the referee reads `listening()` rather than the fact `main`
-  prints, and the echo has no domain worlds. Waits for a plan.
+- **The echo's worlds made pure** (`examples.md`, sections 6 and 7): the
+  referee reads the echo's address from `svc.listening()` rather than
+  from its startup fact, and the echo has no domain worlds. Waits for a
+  plan.
 - **Heap handed between services in one thread** (`testing.md`, section
-  9; `http.md`, section 9): the protocol worlds unmetered. Waits for a way
+  9; `http.md`, section 6): the protocol worlds unmetered. Waits for a way
   to count the hand-off.
 - **Rules held by a checker** (`programming-model.md`, section 10.3;
   `notes.md`): a `syn` checker and two more lints. Waits for review to

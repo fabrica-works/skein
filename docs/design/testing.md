@@ -1,6 +1,6 @@
 # Testing skein
 
-Provisional, 2026-10-03, revised 2026-10-16. How testing-strategy.md
+Provisional, 2026-10-03, revised 2026-10-18. How testing-strategy.md
 applies to skein itself: which tiers skein has, what they run, the
 example services and the minimal fake machine they need, where the tests
 live, what skein supplies for a service's own tiers, and where things
@@ -64,9 +64,9 @@ view and its server are tested in step tests, and the three together in
 the browser tier (ui-web.md, section 14).
 
 Their design, the steps before code of each, their fakes and the harness
-their worlds run on are examples.md. The echo is built: a domain, a
-protocol layer, a service and a `main`, its fake client, and its worlds
-in `tests/echo`, over the world harness, `skein-world` (examples.md, 6).
+their worlds run on are examples.md. The echo has a domain, a protocol
+layer, a service and a `main`, its fake client, and its worlds in
+`tests/echo`, over the world harness, `skein-world` (examples.md, 6).
 
 ## 4. The minimal fake machine
 
@@ -182,7 +182,7 @@ second, which is why it is skein's (testing-strategy.md, 7).
     a boundary. A process's is taken where its hook runs, after its
     `iterate` and its drain and before its submit; the machine's once
     every process has had its turn in the iteration. Each is an entry of
-    the trace that simulator.md, section 7 names. Without it, the trace is
+    the trace that simulator.md, section 3 names. Without it, the trace is
     as before.
 
 ## 6. Layout
@@ -309,8 +309,8 @@ environment. `measure` runs a suite with no budget, to time each test.
 
 Replay: a seed replays to the same trace of submissions and completions,
 and a JSON world, an HTTP world, an io world and an echo world to the
-same run; a TLS world does not, as rustls draws from the kernel. No state
-digest yet: designed in lib.md, 5.1 and section 5, not built (section 8).
+same run; a TLS world does not, as rustls draws from the kernel. The
+state digests replay with the trace (lib.md, 5.1; section 5).
 
 Memory: each part's worst case is checked against the counting allocator
 in its own tier, a call of an entry point at a time; the echo's simulated
@@ -327,32 +327,8 @@ worst case, so that it keeps reaching the limits.
 
 ## 8. Not built yet
 
-- **io worlds for files and processes,** beyond their step tests, memory
-  tests and conformance cases.
-- **Conformance against the readiness backend,** if that backend is built.
-- **Fuzz targets** for every machine, JSON's, HTTP's and TLS's included,
-  when a nightly toolchain is installed; and the heap metered in the
-  protocol worlds, which meets the open question of heap handed between
-  stacks in one thread (section 9).
-- **TLS in the real loop,** a loopback exchange through the shell against
-  a local rustls server (tls.md, 8). A TLS that replays is an open
-  question (notes.md).
-- **The HTTP examples,** their simulated worlds and real loop
-  (examples.md, 8).
-- **The referee's purity** in the echo's simulated worlds: it reads
-  `svc.listening()` and calls `svc.shutdown()` (examples.md, 6).
-- **skein-ui's crates and their tests:** `crates/skein-ui*`,
-  `testing/skein-fake-person*`, `tests/ui`, `tests/ui-text`,
-  `tests/ui-web` and the UI example (section 6).
-- **The gate's build for `wasm32-unknown-unknown`,** with clippy on that
-  target for `skein-ui`, `skein-ui-web` and the UI example's view and
-  browser shell; the UI example's bundle and its browser tier in the
-  gate (section 6).
-- **State digests** (lib.md, 5.1; section 5): `Host`'s and `Machine`'s
-  `state_digest`, and the trace's digests after each iteration.
-
-By check: state digests for replay, transition coverage (it needs
-`cargo llvm-cov`), fuzzing.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).
 
 ## 9. Open questions
 

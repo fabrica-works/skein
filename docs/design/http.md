@@ -1,12 +1,11 @@
 # HTTP
 
-Provisional, 2026-10-04; revised 2026-10-13. The design of
+Provisional, 2026-10-04; revised 2026-10-18. The design of
 `skein-http`: the protocol machines for HTTP/1.1, client and server, and
 for server-sent events, reader and writer. They are step machines of a
 connection's stack (programming-model.md, 4): each depends on lib only,
 and meets the stream below it and the user above it through entry points
-of the model's shape. All four are built, the reader's data face aside
-(section 9).
+of the model's shape.
 
 ## 1. In one page
 
@@ -1051,8 +1050,9 @@ pub struct Limits {
 - **Protocol worlds** (testing-strategy.md, 2.5) in `tests/protocol`
   (`skein-protocol-world`): both ends of an LLM streaming exchange, built
   as two services would build them. The client's end stacks the client,
-  the reader on its body and a tokenizer for each event's data, its
-  request written by the JSON writer; the server's stacks the server, a
+  the reader on its body and skein-json's selective collector on each
+  event's data, as an LLM client's stack has it (section 2), its request
+  written by the JSON writer; the server's stacks the server, a
   tokenizer on the request body and the writer on the reply, each event's
   data written by the JSON writer; each routes as a connection routes,
   every call held to its `MAX_OUT`, and a scripted user sits at each top.
@@ -1313,18 +1313,5 @@ pub struct Limits {
 
 ## 9. Not built yet
 
-Chunked uploads; content codings (`gzip`), which the
-client refuses and the server answers with a 501; trailer fields, which
-are read and dropped; reconnecting an event stream, for which the reader
-keeps the reconnection time and the last event ID; a block of its own for
-the reconnection time, `retry: N` alone ahead of the first event, which
-the writer cannot write, as every block it writes is an event or a
-comment and a reconnection time goes with an event; HTTP/2 and upgrades,
-until a peer requires them; reading a request's body while answering
-it; the heap metered in the protocol worlds, which join two stacks in
-one thread and so meet testing.md, 9's open question on heap handed
-between them, while each machine's worst case is checked in its memory
-tests; and the **fuzz targets** (`fuzz/`, fed `Bytes` under every
-demand), which wait for a nightly toolchain, the fuzzy suite standing in
-for them. Transition coverage of the handlers (testing-strategy.md, 6)
-waits for `cargo llvm-cov`.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).

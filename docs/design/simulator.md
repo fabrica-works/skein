@@ -1,6 +1,6 @@
 # The simulator
 
-Provisional, 2026-10-03, revised 2026-10-16. The design of `skein-sim`:
+Provisional, 2026-10-03, revised 2026-10-18. The design of `skein-sim`:
 the simulated kernel that every world from io worlds up runs on
 (testing-strategy.md, 2). It is a backend of the kernel boundary
 (kernel.md), for every process of one world, with every choice drawn from
@@ -58,6 +58,12 @@ runs against it in `tests/conformance/sim` (testing.md, 6).
   deadline, once no process has work or deferred work, so an idle world
   jumps straight there. The wall clock starts at a fixed date, so it
   replays too.
+- **The trace** holds each submission, each completion reaped and each
+  fault drawn, under its process's pid, and the state digests the world
+  harness writes beside them (lib.md, 5.1; testing.md, section 5): an entry
+  `Event::Digest([u8; 32])`, under the process's pid, or under
+  `Pid::MACHINE`, `Pid(u32::MAX)`, printed `machine`, for the machine's.
+  `spawn_process` never gives that pid. A `None` digest writes no entry.
 - **The machine seam.** File and process operations go to the embedder's
   fake machine, which answers the file operations and runs the programs.
   A spawned program may be another service, which the world then starts
@@ -249,10 +255,5 @@ was metered as its own, which also finds a leak.
 
 ## 7. Not built yet
 
-- **Locks** (3.1), for hearth's store: the seam's `Lock`, the minimal
-  machine's answer, and the handles of an ended process freeing theirs.
-- **A state digest** in the trace, beside the records (lib.md, 5.1),
-  which the world harness writes there (testing.md, section 5): an entry
-  `Event::Digest([u8; 32])`, under the process's pid, or under
-  `Pid::MACHINE`, `Pid(u32::MAX)`, printed `machine`, for the machine's.
-  `spawn_process` never gives that pid. A `None` digest writes no entry.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).

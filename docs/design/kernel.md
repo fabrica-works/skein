@@ -1,6 +1,6 @@
 # The kernel boundary
 
-Provisional, 2026-10-03, revised 2026-10-16. The design of the boundary
+Provisional, 2026-10-03, revised 2026-10-18. The design of the boundary
 below io: the records io submits to a backend, the completions the
 backend hands back, and what every backend promises. The records live in
 `skein-io`'s `kernel` module, whose module documentation states each rule
@@ -493,7 +493,9 @@ for its backend.
 - **What only the simulator shows:** a disk beyond a healthy one (no
   space, a filesystem gone read-only, an I/O error) is the simulator's
   own tests' (simulator.md, 6), and an `Open` past the descriptor limit a
-  scenario on the simulator only. A `Cancel` of a file's `Read` runs on
+  scenario on the simulator only: lowering a process's limit on the real
+  kernel takes `unsafe` outside the ring adapter, or a child process, and
+  neither is allowed. A `Cancel` of a file's `Read` runs on
   both: the ring stops it or comes too late, from one run to the next,
   and requires a pairing the simulator draws; the simulator's `hung`
   fault, a filesystem gone away, adds the `Read` that waits for good,
@@ -530,13 +532,5 @@ for its backend.
 
 ## 10. Not built yet
 
-- **The descriptor limit on the ring.** The simulator checks it; lowering
-  a process's limit on the real kernel takes `unsafe` outside the ring
-  adapter, or a child process, and neither is allowed.
-- **`Lock`** (6.1), with its conformance scenario on both backends, for
-  hearth's store (io.md, 9).
-- **The records io's next parts pull** (io.md, 9): `Append`; `Stat`'s
-  owner and links; the path-only open (`PathNoFollow`); a `Wait` that does not reap, and `Signal`'s target,
-  the group; `Usage` and `Window`. Today a `Wait` reaps, and a `Signal`
-  reaches the child alone. Each comes with its conformance scenario
-  (section 8) on both backends.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).

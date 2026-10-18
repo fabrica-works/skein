@@ -6,8 +6,7 @@ asks for before code (the wire protocol, the limits, the entities, the
 state machines), its fakes, the harness its worlds run on, and how it is
 tested; and of the UI example, an application on skein-ui (section 9).
 The examples exist to be tested and to be copied: a service starts from
-them. The echo server is built; the HTTP server and its client are not,
-nor is the UI example (section 8).
+them.
 
 ## 1. In one page
 
@@ -334,14 +333,12 @@ processes, each a host of an `iterate` (a service, or a fake client):
 - **The referee** holds a scenario's expectations, each with a deadline:
   safety on every observation, liveness as the deadline; it may also
   inject what belongs to no fake. The echo's tells the fake clients the
-  echo's address once it listens, as a directory would, and shuts the
-  echo down once the clients are done, or at a given time, so that the
-  world settles. Both reach into the service where the referee should
-  only watch from outside (testing-strategy.md, 7): its reading of
-  `svc.listening()` stands in for the "listening at" line `main` prints,
-  which the service does not emit as a fact; and its call of
-  `svc.shutdown()` for the termination signal, which the end-to-end test
-  sends the binary instead.
+  echo's address once it listens, as a directory would, and sends the
+  echo a termination signal once the clients are done, or at a given
+  time, so that the world settles, as the end-to-end test signals the
+  binary. It watches only from outside (testing-strategy.md, 7): the
+  address is the one the echo's startup fact says it listens at (section
+  4), never one read from the service's state.
 - **The real loop** runs the same processes and referee over one ring, in
   one thread on loopback, with deadlines on the real clock. An idle loop
   blocks on the ring until the next completion or deadline.
@@ -456,15 +453,8 @@ processes, each a host of an `iterate` (a service, or a fake client):
 
 ## 8. Not built yet
 
-- **The HTTP server and its client,** with `skein-http`.
-- **The echo's `main` over `drive`,** with its hook (section 4), and its
-  worlds under the teardown check (section 6), once `skein-shell` has
-  both (shell.md, 11); with them, its connections draining at a shutdown
-  rather than running to their end (section 3.3).
-- **Domain worlds** for the echo's domain: it is one slab and a counter,
-  and its step tests cover it.
-- **The UI example** (section 9): its three crates and its browser
-  tier.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).
 
 ## 9. The UI example
 

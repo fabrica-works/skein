@@ -1,6 +1,6 @@
 # io
 
-Provisional, 2026-10-03, revised 2026-10-16. The design of `skein-io`'s
+Provisional, 2026-10-03, revised 2026-10-18. The design of `skein-io`'s
 step layer: the lowest step layer of every service. It owns sockets,
 pipes, files and child processes, the operations in flight on them, and
 the receive and send queues, and it is the only layer that sees a
@@ -555,19 +555,19 @@ pub enum Request {
     MakeDirectory { owner, root: Token, path, mode },                            // Made
     OpenPrivate { owner, root: Token, path },                                    // Opened, Refused
     // open files, at offsets
-    Create, CreateNoFollow { owner, root: Fd, name, mode },                        // Opened
-    OpenRead, OpenReadNoFollow { owner, root: Fd, name },                          // Opened
-    OpenWrite, OpenWriteNoFollow { owner, root: Fd, name },                        // Opened
-    OpenDirectory { owner, root: Fd, name, no_follow },                            // Opened: a root
+    Create, CreateNoFollow { owner, root: Token, name, mode },                     // Opened
+    OpenRead, OpenReadNoFollow { owner, root: Token, name },                       // Opened
+    OpenWrite, OpenWriteNoFollow { owner, root: Token, name },                     // Opened
+    OpenDirectory { owner, root: Token, name, no_follow },                         // Opened: a root
     ReadAt  { owner, file: Token, offset: u64, max: u32 },                         // Read
     WriteAt { owner, file: Token, offset: u64, bytes },                            // Written
     Cut { owner, file: Token, length: u64 },                                       // Cut
     Stat { owner, file }, Sync { owner, file }, Close { owner, file },
     // the entries of a directory
-    SyncDirectory { owner, root: Fd }, List { owner, root: Fd },
+    SyncDirectory { owner, root: Token }, List { owner, root: Token },
     ListPage { owner, directory: Token, max: u32 },                                // Listed
-    Rename { owner, from_root: Fd, from, to_root: Fd, to },
-    Remove { owner, root: Fd, name, directory },
+    Rename { owner, from_root: Token, from, to_root: Token, to },
+    Remove { owner, root: Token, name, directory },
     // a lock
     Lock { owner, root: Token },                                                   // Locked, Busy
 }
@@ -582,8 +582,9 @@ pub enum Request {
 - **Where roots come from.** The shell opens the first at startup, from
   configuration (`open_root`), and the service gives each to
   `FileIo::adopt_root` for its token. `OpenDirectory` opens another
-  beneath one. The whole-file requests name a root by its token, the
-  others still by its descriptor (section 9).
+  beneath one, and its `Opened` gives that root's token. Every request
+  names a root by its token, never by its descriptor, which io alone
+  sees.
 - **Whole files** are one request each; io runs the opens, the reads or
   writes and the closes beneath it:
   - `Load` reads a file of at most `max` bytes; a larger one is
@@ -972,10 +973,8 @@ invariant of testing-strategy.md, 6.
 
 Files and processes go to skein's minimal fake machine: a few files
 beneath a root, a program that echoes its input, one that exits with a
-given status, one that never exits. Its files are built, behind the
+given status, one that never exits. Its files lie behind the
 simulator's machine seam (testing.md, 4).
-
-Built, for sockets:
 
 - **Step tests** (`crates/skein-io/src/tests/`): each cell of both
   machines driven by hand, the refusals at a full slab, stale tokens
@@ -1024,9 +1023,6 @@ Built, for sockets:
   a power loss lays nothing its requests make: its private root and its
   directories start absent, so a cut after each make and before its
   answer finds the directory there only if the request answered it.
-
-To come with what section 9 builds:
-
 - **Process groups:** on the real kernel, a child that starts a
   descendant holding its pipe and exits, then a signal to its group,
   which ends the descendant and the pipe; a close of a child whose group
@@ -1040,10 +1036,9 @@ To come with what section 9 builds:
   simulator, for a write at the end of a file opened to append.
 - **Durable replace and private files:** every step of the replace
   failed in turn, the temporary removed each time, and a conflict; a
-  private directory and file refused for each bit, link and kind; and,
-  once the simulator can cut a process at an operation (simulator.md,
-  3.3), a cut at each `Sync` and `Rename`, after which the target is old
-  or new and whole.
+  private directory and file refused for each bit, link and kind; and a
+  cut at each `Sync` and `Rename` (simulator.md, 3.3), after which the
+  target is old or new and whole.
 - **Resource usage:** in the simulator, a usage asked before and after a
   child's close, its part joining the children's only at the close; on
   the real kernel, the conformance suite's (kernel.md, 8).
@@ -1071,25 +1066,8 @@ To come with what section 9 builds:
 
 ## 9. Remaining work
 
-Sockets, processes with pipes, files and signals to the service are
-built. What remains:
-
-- **Roots by token everywhere.** `Create`, `OpenRead`, `OpenDirectory`,
-  `SyncDirectory`, `List`, `Rename` and `Remove` name a root by its
-  descriptor, which the owner reads from `FileIo::descriptor`, though io
-  is the only layer that should see one. They are to take its token, as
-  `Load`, `Scan` and `Store` do.
-- **For hearth's store** (hearth's `README.md`, 8.1): `Lock`,
-  `ListPage`, and `Rename` between two directories (section 5), each with
-  io's step tests and a world of files that meets it.
-- **`OpenWrite` and `Cut`** (section 5), for kv.md's payload logs
-  (section 6) and an application's transcript files.
-- **io worlds for files,** beyond the step tests and kv's.
-- **File streams and datagram sockets,** when a user needs them.
-- **Transition coverage** of the handlers (testing-strategy.md, 6), which
-  waits for `cargo llvm-cov`.
-- **Joined sockets and in-process addresses** (3.5, section 4), with
-  `Limits::names`, and their worlds (section 8).
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).
 
 ## 10. Open questions
 

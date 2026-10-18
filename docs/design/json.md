@@ -1,6 +1,6 @@
 # JSON
 
-Provisional, 2026-10-03; revised 2026-10-16. The design of `skein-json`:
+Provisional, 2026-10-03; revised 2026-10-18. The design of `skein-json`:
 a bounded JSON tokenizer, pulled by demand, a selective collector over it,
 and a sized writer. The tokenizer and the collector are step machines of
 a connection's stack (programming-model.md, 4), and the crate depends on
@@ -679,20 +679,5 @@ pub enum Kind {
 
 ## 9. Not built yet
 
-- **Positions** (3.6), the tokenizer's, and the reference's (section 6).
-  Their first user is hearth's configuration (hearth's README.md, 8.1).
-- **The selective collector, the tokenizer's `Text` and `Skip`, and
-  compact documents** (sections 3.1, 5.1 and 5.2). Their first user is
-  skein's LLM client, whose events they decode as they stream (llm.md,
-  section 4.4).
-- **The fuzz target** (`fuzz/`, fed `Bytes` under every demand), which
-  waits for a nightly toolchain; the fuzzy suite stands in for it.
-- **Writing in pieces:** temper's performance.md asks for a body measured
-  whole and encoded a piece at a time, as io grants room. The writer
-  writes a document whole.
-- **Several documents in one stream,** concatenated or as JSON lines.
-
-The protocol worlds stack the tokenizer over HTTP and server-sent events,
-and the writer under them, at both ends of an LLM exchange (http.md, 6);
-once built, the collector takes the tokenizer's place on each event's
-data stream.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).

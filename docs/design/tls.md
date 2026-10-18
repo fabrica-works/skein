@@ -1,11 +1,10 @@
 # TLS
 
-Provisional, 2026-10-04, revised 2026-10-13. The design of
+Provisional, 2026-10-04, revised 2026-10-18. The design of
 `skein-tls`: a TLS stream machine over rustls, ciphertext below and
 plaintext above. It is the one exception of programming-model.md,
 section 3: the only step code that depends on a crate from outside skein
-and the service, and the only step code that is not deterministic. The
-client is built; the server side is not (section 8).
+and the service, and the only step code that is not deterministic.
 
 ## 1. In one page
 
@@ -467,7 +466,9 @@ a wall time each test chooses.
   each version, a protocol agreed, a retry, records read past a key
   update, a close in each wait the worlds reach, and each oddity of the
   neighbours. It draws no alert, no protocol error and no cookie too long
-  to echo: the focused tests reach those.
+  to echo: the focused tests reach those. It stands in for the fuzz
+  target (`fuzz/`, fed records under every demand), which waits for a
+  nightly toolchain.
 - **The native face** (section 3.6): step tests in
   `crates/skein-tls/src/client/native/tests.rs`; a pair against a rustls
   server in memory (`tests/tls/tests/native_output.rs`), the same over
@@ -530,7 +531,8 @@ a wall time each test chooses.
   tests', without its debug assertions (`[profile.dev.package.rustls]` in
   the workspace's `Cargo.toml`): one holds any alert after `close_notify`
   to be a bug, and aborts a half-closed connection that reads a corrupted
-  record (section 8 drafts the issue); release builds compile it out.
+  record (`send_fatal_alert`'s debug assertion, once
+  `send_close_notify` has run); release builds compile it out.
   Cargo honours profiles only in the root manifest, so a workspace that
   depends on skein-tls copies the override into its own: until it does,
   its debug builds abort on a peer's error after the client's
@@ -552,44 +554,5 @@ a wall time each test chooses.
 
 ## 8. Not built yet
 
-- **A user of the native face:** a framed connection over TLS
-  (channel.md, 7; io.md, 3.3). Until one is built, the native face is
-  tested only by its own tests (section 5).
-- **The server side,** when a service terminates TLS: temper's engine,
-  for its webhooks and its workers on other hosts.
-- **Client certificates,** with it.
-- **The real loop:** a loopback exchange through the shell, against a
-  local rustls server; and the shell reading root stores at startup
-  (shell.md, 6.2) into `Config::from_der`, with its count of what it
-  skipped.
-- **Kernel TLS:** after the handshake, the record layer could move into
-  the kernel, and the plaintext stream become the socket's own (shell.md,
-  8).
-- **The fuzz target** (`fuzz/`, fed records under every demand), which
-  waits for a nightly toolchain; the fuzzy suite stands in for it.
-- **An issue for rustls,** drafted against 0.23.41 and not filed, so that
-  the override of section 6 can go:
-
-  > **`send_fatal_alert` panics in debug builds after `send_close_notify`**
-  >
-  > `CommonState::send_close_notify` sets `sent_fatal_alert`, so that no
-  > alert follows `close_notify`; `send_fatal_alert` begins with
-  > `debug_assert!(!self.sent_fatal_alert)` (common_state.rs:567). A
-  > client that sends `close_notify` and reads on, as a half-closed
-  > connection lets it (RFC 8446, 6.1: each side closes its own
-  > direction), reaches it on the first fatal error in what it reads: a
-  > record that fails to decrypt (conn.rs:1133, `BadRecordMac`), a message
-  > that does not decode, one that comes out of turn. A debug build
-  > panics; a release build queues a fatal alert behind the
-  > `close_notify`.
-  >
-  > To reproduce with `UnbufferedClientConnection`: complete a handshake,
-  > `queue_close_notify` and send it, then hand `process_tls_records` the
-  > server's next application-data record with a byte of it changed.
-  > Expected: `Error::DecryptError`. With debug assertions: a panic at
-  > common_state.rs:567.
-  >
-  > Suggested fix: once `close_notify` was sent, `send_fatal_alert` sends
-  > no alert and returns the error, as `send_close_notify` sends nothing
-  > after a fatal alert; the assertion then guards only against a second
-  > fatal alert.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).

@@ -1,6 +1,6 @@
 # lib
 
-Provisional, 2026-10-03, revised 2026-10-16. The design of `skein-lib`:
+Provisional, 2026-10-03, revised 2026-10-18. The design of `skein-lib`:
 the building blocks every step crate shares, in skein and in every
 service built on it. The mechanics are those of programming-model.md;
 this document says what lib holds and what each part promises.
@@ -56,6 +56,8 @@ them (testing.md, section 6).
     is full: the refusal.
   - `get` and `get_mut` check the generation and return `None` for a
     handle whose slot holds another entity now.
+  - `get2_mut` looks up two entities at once, for the rare step that
+    needs both, and fails on equal handles (programming-model.md, 5.1).
   - `retire` marks a slot; `reclaim`, at the iteration's reclaim point,
     frees every retired one, so an entity can be looked up until the
     iteration ends.
@@ -642,11 +644,5 @@ traits, takes no closures, and uses no `dyn` (programming-model.md,
 
 ## 13. Not built yet
 
-- **`Slab::get2_mut`,** which looks up two entities at once and fails on
-  equal handles (programming-model.md, 5.1).
-- **SHA-256** (6.2), with skein's copies moved onto it: skein-io's
-  content digests over it, `skein-oauth`'s PKCE and `skein-ui-bundle`'s.
-  Its first new user is hearth's M1 (hearth's README.md, 8.1).
-- **State digests** (5.1): the hasher, and the `Hash` of lib's types as
-  5.1's table gives it; the world harness carries them (testing.md,
-  section 5).
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).

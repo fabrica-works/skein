@@ -1,6 +1,6 @@
 # The shell kit
 
-Provisional, 2026-10-03, revised 2026-10-16. The design of
+Provisional, 2026-10-03, revised 2026-10-18. The design of
 `skein-shell`: what a service's `main` runs its loop on. The kernel (the
 io_uring backend of the kernel boundary, kernel.md), the clock and the
 seed; the loop itself, over a service's `Host`, and how it ends; what
@@ -146,6 +146,9 @@ Before its loop, a service's `main`, with the kit:
 6. reads certificates, keys and root stores for TLS: the machine's trust
    roots, or a DER file (6.2; tls.md);
 7. reads the seed and opens the kernel.
+
+Startup is each service's `main`, step by step, with the kit's
+functions: the kit holds no startup function of its own.
 
 What startup reads, its configuration, its secrets and certificates, it
 reads with the kit (6.1). Then `main` makes the service and calls `drive`
@@ -310,6 +313,8 @@ kernel with `io_uring_disabled` set, a kernel below the floor, or macOS.
   memory and plain values, single-shot operations, and synchronous
   operations already in the vocabulary. A feature only io_uring has is
   always an optimisation, never something io's behaviour relies on.
+- **It meets the conformance suite** as the ring does, each scenario
+  once (kernel.md, 8).
 - **macOS would only be a convenience for development.** Processes there
   are not pidfds (kqueue's process filter stands in), and containment is
   Linux-only.
@@ -391,14 +396,8 @@ and changes no code above io:
 
 ## 11. Not built yet
 
-- **Startup** (section 6): resolving names, and reading TLS's
-  configuration. The ring's probe is built, and so are `open_root` for
-  roots and `open_termination_signals`; the echo's `main` runs the rest of
-  startup as a service's would (examples.md, 4). Startup is each
-  service's `main`, with the kit, so the kit holds no startup function of
-  its own.
-- **The private read at startup,** `read_private_file` (6.1).
-- **The readiness backend** and the deferred optimisations.
+What of this document is not built is `STATUS.md`'s (its row in section 2,
+and section 3).
 
 ## 12. The loop: `Host` and `drive`
 
