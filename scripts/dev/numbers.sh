@@ -499,6 +499,25 @@ pin_lag() {
     echo "${out:-none}"
 }
 
+# A repository's code graph index against its origin/main (development.md,
+# section 6): the project the codebase-memory-mcp names from the primary
+# checkout's real path, each / a -, and `older` when the index's database
+# was written before origin/main's tip, `none` when it has no database.
+graph_index() {
+    local project db tip
+    project=$(readlink -f "$root/$1")
+    project=${project#/}
+    project=${project//\//-}
+    db=$HOME/.cache/codebase-memory-mcp/$project.db
+    if [[ ! -f $db ]]; then
+        echo "$project none"
+    elif tip=$(git -C "$root/$1" log -1 --format=%ct origin/main 2>/dev/null) && (($(stat -c %Y "$db") < tip)); then
+        echo "$project older"
+    else
+        echo "$project current"
+    fi
+}
+
 # The coordinator's record against its shapes (development.md, sections
 # 7.3, 7.5, 10.2 and 10.3), from line $1 of log.md on: headings no shape
 # names, Kind values section 10.2 does not list, and context.md's lines
@@ -757,6 +776,12 @@ pulse() {
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
     echo "- Pins behind upstream main, in commits: $(pin_lag "")."
+    local older="" index
+    for repo in $(plan_repos); do
+        index=$(graph_index "$repo")
+        [[ $index != *' older' ]] || older+="${older:+ }$repo"
+    done
+    echo "- Graph: index older than origin/main: ${older:-none}."
     echo "- Contexts: $(thread_contexts | awk -F'\t' -v limit="$(context_limit)" '
         $1 == "session" { line = line (n++ ? ", " : "") $2 " " int($4 / 1000) "K"; if ($5 > limit) past = past (p++ ? ", " : "") $2 }
         END { printf "%s", (n ? line : "no session yet"); if (p) printf " (past %dK: %s)", limit / 1000, past }'); Claude Code: $(claude_role_contexts)."

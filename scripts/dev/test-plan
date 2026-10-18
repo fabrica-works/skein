@@ -629,6 +629,16 @@ git -C "$t/ff" -c user.email=test@example.com -c user.name=test commit -q --allo
 git -C "$t/ff" push -q origin main
 expect "check --fix fast-forwards" "$(plan_check --fix "$dir")" "ok    alpha: main fast-forwarded 1 commits to origin/main"
 expect "check --fix links in the world" "$(readlink "$HOME/.local/bin/plan")" "$kit/plan"
+# The code graph's index of the checkout is compared with origin/main's tip.
+graph=$(readlink -f "$repo" | sed 's|^/||; s|/|-|g')
+expect "check says the graph has no index" "$(plan_check "$dir")" "ok    alpha: the graph has no index of it ($graph)"
+mkdir -p "$HOME/.cache/codebase-memory-mcp"
+touch -d 2020-01-01 "$HOME/.cache/codebase-memory-mcp/$graph.db"
+expect "check warns of an older index" "$(plan_check "$dir")" "warn  alpha: the graph's index is older than origin/main: re-index $repo (project $graph)"
+expect "the pulse names an older index" "$(plan_numbers pulse)" "- Graph: index older than origin/main: alpha."
+touch "$HOME/.cache/codebase-memory-mcp/$graph.db"
+expect "check accepts a fresh index" "$(plan_check "$dir")" "ok    alpha: the graph's index is as new as origin/main"
+expect "the pulse names no fresh index" "$(plan_numbers pulse)" "- Graph: index older than origin/main: none."
 git -C "$repo" reset -q --hard "$head"
 git -C "$repo" remote remove origin
 rm -rf "$t/ff.git" "$t/ff"

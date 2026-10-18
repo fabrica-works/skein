@@ -18,7 +18,7 @@ check() {
     # repository and those upstream of it; without a plan, all of them.
     # --fix fast-forwards a clean checkout that is only behind, and keeps
     # the code graph's index out of git status.
-    local repo dir ahead behind checked=$repos
+    local repo dir ahead behind graph state checked=$repos
     [[ -n ${DEV_REPOS:-} || -z ${project:-} ]] || checked=$(upstream "$project")
     for repo in $checked; do
         dir=$root/$repo
@@ -44,6 +44,12 @@ check() {
         else
             ok "$repo: main is origin/main"
         fi
+        read -r graph state < <(graph_index "$repo")
+        case $state in
+            none) ok "$repo: the graph has no index of it ($graph)" ;;
+            older) warn "$repo: the graph's index is older than origin/main: re-index $dir (project $graph)" ;;
+            *) ok "$repo: the graph's index is as new as origin/main" ;;
+        esac
         if GIT_TERMINAL_PROMPT=0 git -C "$dir" push --dry-run --quiet origin main >/dev/null 2>&1; then
             ok "$repo: origin takes a push"
         else
