@@ -134,6 +134,46 @@ check_plan() {
     ready | "active on $(host)"*) ok "STATUS.md says $state" ;;
     *) fail "STATUS.md says $state" ;;
     esac
+    check_status_done "$top_dir/docs/design/STATUS.md"
+}
+
+# The items of section 2 of a status file still left to a plan that its
+# section 1 marks done (development.md, section 3.3): "<doc> (<plan>)" for
+# each, on one line. A plan is named as Left names it, ": <plan>" after
+# its items or "(<plan>" in them; one named for its `later.md` is not.
+done_items() {
+    awk -F'|' '
+        /^## [0-9]+\./ { section = $0; sub(/^## /, "", section); sub(/\..*/, "", section); next }
+        section == 1 && /^\|/ {
+            name = $2; state = $3
+            gsub(/^ +| +$/, "", name); gsub(/^ +| +$/, "", state)
+            if (state ~ /^done/) done[++n] = name
+            next
+        }
+        section == 2 && /^\| `/ {
+            doc = $2; gsub(/^ +| +$/, "", doc)
+            line = $0
+            for (i = 1; i <= n; i++) {
+                found = 0
+                split(": |(", pre, "|")
+                split(")|;|,| ||| (", post, "|")
+                for (a = 1; a <= 2 && !found; a++)
+                    for (b = 1; b <= 6 && !found; b++)
+                        if (post[b] != "" && index(line, pre[a] done[i] post[b])) found = 1
+                if (found) printf "%s%s (%s)", (k++ ? ", " : ""), doc, done[i]
+            }
+        }' "$1" 2>/dev/null || true
+}
+
+check_status_done() {
+    local items
+    [[ -f $1 ]] || return 0
+    items=$(done_items "$1")
+    if [[ -n $items ]]; then
+        warn "STATUS.md section 2 still leaves items to done plans: $items (the designer clears them, development.md, section 3.3)"
+    else
+        ok "STATUS.md section 2 leaves nothing to a done plan"
+    fi
 }
 
 # The items of decisions.md's sections whose heading matches $1 that have

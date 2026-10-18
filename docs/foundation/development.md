@@ -367,9 +367,17 @@ development.md, section 3.3).
   row in each; an upstream repository's row names the plan with its
   repository ("smith's reliability"), and jig's never names temper.
 - **Built** is `yes`, `partly` or `no`. **Left** names what is not built,
-  by section, and the plan that builds it, or "not planned".
+  by section, and the plan that builds it (": <plan>" after its items),
+  or "not planned" (naming the `later.md` that defers it, if one does).
 - **The designer keeps the file.** It changes it in the same landing as the
   design or the plan that changes what it says.
+- **When a plan ends, the designer clears its items** from section 2, in
+  the landing that records the decisions on its retrospective (section
+  15.1): what it built leaves Left, and what it left becomes "not
+  planned", with its item in section 3. `plan check` warns of an item
+  section 2 still leaves to a plan that section 1 marks done. jig's
+  `STATUS.md` kept jig-protocol's items for five days after its end, and
+  called the store, the channel and the services unbuilt.
 - **A plan's state is the planner's until `ready`** (section 5.4), **then
   the supervisor's,** who changes it when its run starts and ends
   (sections 6 and 7.6). The supervisor touches no other line of the
@@ -509,7 +517,7 @@ block of its own.
 |---|---|
 | `heavy [--gate] [--tail N] command…` | queues a heavy command, waits, prints the tail of its log, exits with its status (section 11); `--gate` refuses a tree with uncommitted changes; internal `heavy --task TOKEN -- command…` runs the task and writes its row |
 | `land [--docs] [--local] [--gate COMMAND] [--tries N]` | lands the current branch (section 9); `LAND_LOCK` names the lock for `--local`, and `LAND_PREBUILD` the build lane's command before the gate |
-| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories (the code graph's index of each against its `origin/main` among them), and, given a plan, the plan (its base run, its design answers and the decisions on its "For the user" items, section 5.4), the user's decisions on the last retrospective's proposals, the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
+| `plan check [--fix] [PLAN_DIR]` | checks the machine and the repositories (the code graph's index of each against its `origin/main` among them), and, given a plan, the plan (its base run, its design answers and the decisions on its "For the user" items, section 5.4), the user's decisions on the last retrospective's proposals, the items its repository's `STATUS.md` still leaves to done plans (a warning, section 3.3), the queue and its repository's gate (sections 6 and 12); `--fix` fast-forwards a clean primary checkout that is only behind `origin/main`, and keeps the code graph's `.codebase-memory/` out of each checkout's `git status` |
 | `plan start PLAN_DIR` | checks the machine, claims the run, starts the supervisor and the coordinator, and rings the doorbell once (section 6) |
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
 | `plan resume [CAUSE]` | after a restart or a crash, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself (section 7.6) |
@@ -2739,10 +2747,11 @@ question and its own budget, or waits for the retrospective.
       last column where it was applied.
 - **The user, or the director, decides each proposal before the next run
   starts,** and the designer applies what is adopted and records each
-  decision in section
-  10. `plan check` refuses a plan while the last retrospective lacks
-  section 10 or has a proposal still open (section 6). In test-budgets,
-  six of jig-protocol's seventeen undecided proposals recurred.
+  decision in section 10, and in the same landing clears the plan's items
+  from its repositories' `STATUS.md` (section 3.3). `plan check` refuses
+  a plan while the last retrospective lacks section 10 or has a proposal
+  still open (section 6). In test-budgets, six of jig-protocol's
+  seventeen undecided proposals recurred.
 
 ### 15.2 Metrics
 

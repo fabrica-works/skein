@@ -639,6 +639,29 @@ expect "the pulse names an older index" "$(plan_numbers pulse)" "- Graph: index 
 touch "$HOME/.cache/codebase-memory-mcp/$graph.db"
 expect "check accepts a fresh index" "$(plan_check "$dir")" "ok    alpha: the graph's index is as new as origin/main"
 expect "the pulse names no fresh index" "$(plan_numbers pulse)" "- Graph: index older than origin/main: none."
+# A done plan that section 2 of the status file still names is warned of,
+# but not one named for its later.md (development.md, section 3.3).
+cat >"$repo/docs/design/STATUS.md" <<'EOF'
+# Status
+
+## 1. Plans
+
+| Plan | State | Takes the design to | Where |
+|---|---|---|---|
+| demo | ready | x | y |
+| old | done 2026-10-01 | x | y |
+
+## 2. The design
+
+| Document | Built | Left |
+|---|---|---|
+| `thing.md` | partly | 2: a part: old; 3: another: not planned |
+| `other.md` | partly | 4: a later part: not planned (old's `later.md`) |
+EOF
+done_check=$(plan_check "$dir")
+expect "check warns of a done plan's items" "$done_check" 'warn  STATUS.md section 2 still leaves items to done plans: `thing.md` (old)'
+expect "a later.md is no done plan's item" "$(if [[ $done_check != *'`other.md` (old)'* ]]; then echo absent; fi)" absent
+rm "$repo/docs/design/STATUS.md"
 git -C "$repo" reset -q --hard "$head"
 git -C "$repo" remote remove origin
 rm -rf "$t/ff.git" "$t/ff"
