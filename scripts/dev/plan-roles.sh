@@ -289,9 +289,11 @@ resume() {
     session=$(role_session supervisor)
     state=$(session_state "${session:-none}")
     if [[ -z $session ]]; then
+        : >"$run/.watch"
         claude_role supervisor "$(supervisor_prompt)"
     elif [[ $state == gone || $state == exited || $state == stopped || $state == failed ]]; then
         # A reboot leaves the session "failed": its process died with the machine.
+        : >"$run/.watch"
         claude_role supervisor "$(supervisor_resume_prompt)" "$session"
     else
         echo "supervisor: running ($state)"
@@ -378,6 +380,7 @@ handover() {
         die "this session is not the run's supervisor; $old is"
     printf '## Handed over, %s\n\nFrom session %s.\n\n' "$(now)" "${old:-none}" >>"$run/supervision.md"
     [[ -z $old ]] || printf '%s\n' "$old" >>"$run/handed-over"
+    : >"$run/.watch"
     claude_role supervisor "$(supervisor_handover_prompt)"
     echo "This session supervises no more: with its watch and its cron job stopped, end your turn."
 }

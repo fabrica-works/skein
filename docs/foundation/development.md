@@ -414,7 +414,7 @@ machine's run. Nothing here is versioned.
 | `heartbeat` | the coordinator | touched at every wake-up |
 | `alerts.md` | the supervisor | each alert to the user, one line with its UTC time; `plan status` prints its last ten lines first (section 10.5) |
 | `idle.md` | `plan idle`; removed by `plan ring` | since when, and why, the coordinator ended its turn with nothing to do (section 7.4) |
-| `.watch` | `plan watch` | the escalations and events the supervisor, or the designer, has seen |
+| `.watch` | `plan watch`; cleared by `plan handover supervisor` and a supervisor started by `plan resume` | the escalations and events this supervisor session has seen |
 | `handed-over` | `plan handover` | the supervisor sessions that handed over, to which `plan watch` shows nothing more |
 | `blocked.md` | the coordinator | open escalations (section 10.2) |
 | `unblock.draft.md`, `unblock.md` | the supervisor; `plan ruling` | the answer, written once as a draft, then landed and moved into place (section 10.3) |
@@ -2117,8 +2117,9 @@ lines each.>
   left it to the user ran nine more hours past 500K tokens, and its
   answers read less code as it grew (half under 200K, none above 800K).
   The successor reads its card, the handover entry and the open escalation
-  files, and starts again each ready check left open: the watch does not
-  show again what it has shown.
+  files, and starts again each ready check left open. Its first watch
+  prints every open event; each later watch shows only events this session
+  has not seen.
 
 ### 10.6 Stopping the line
 

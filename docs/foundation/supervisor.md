@@ -55,7 +55,8 @@ and a steer) and 10.4 (who decides what). Then:
 **A successor** starts with "Take over the supervision of the run…". It
 reads this card and the same three sections, then the last `## Handover`
 entry of the run's `supervision.md`, and `blocked.md`, `question.md` and
-`answer.md` if they are there; then steps 2 to 4.
+`answer.md` if they are there; then steps 2 to 4. Its first watch shows
+all open events, including those shown to its predecessor.
 
 **After a restart** (`plan resume`), steps 2 to 4 again, after reading the
 end of `supervision.md`.
@@ -275,8 +276,8 @@ defects came from increments no check had read.
 session that goes on, from the handover entry, which names the re-checks
 still waiting (step 4), and the ledger's steps in `check` (`awk -F'\t'
 '$4 == "check"' <run>/ledger.tsv`): its background
-commands ended with the session before it, and the watch does not show a
-step twice. A compaction ends none of them: its sub-agents and waits go
+commands ended with the session before it. The new session's first watch
+shows every open event again, including steps in `check`. A compaction ends none of them: its sub-agents and waits go
 on, and their notifications reach you as before.
 
 ## 6. The hourly check

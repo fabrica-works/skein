@@ -577,6 +577,18 @@ expect "ring with no turn says resume" "$ring_code: $ring_result" "3: plan: the 
 
 # The watch, each of its events.
 watch() { timeout 10 "$plan" watch || echo "watch exited $?"; }
+# One call gathers all open events; a second call has none to show.
+: >"$run/.watch"
+printf '# Blocked\n\n## alpha 01.2: an open question\n' >"$run/blocked.md"
+echo '# Answer' >"$run/answer.md"
+"$plan" set alpha-01.2 state=check
+expect "the first watch prints every open event" "$(watch)" "blocked:" "answer:" "check: alpha-01.2"
+# Three polls suffice to show that no event is repeated (PLAN_POLL=0.1).
+quiet_watch=$(timeout 0.3 "$plan" watch) && quiet_status=0 || quiet_status=$?
+expect "the next watch repeats no event" "status=$quiet_status output=$quiet_watch" "status=124 output="
+rm "$run/blocked.md" "$run/answer.md"
+"$plan" set alpha-01.2 state=landed
+: >"$run/.watch"
 echo "# Blocked" >"$run/blocked.md"; echo "## alpha 01.3: a question, $stamp" >>"$run/blocked.md"
 expect "watch blocked" "$(watch)" "blocked: $run/blocked.md" "## alpha 01.3: a question"
 echo "# Answer" >"$run/answer.md"
@@ -717,6 +729,7 @@ printf 'designer\t%s\t%s\n' "$big" "$stamp" >>"$run/claude.tsv"
 expect "wake fresh" "$(PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: compactions 2, idle 0 min: a fresh session" "designer: would start a fresh session: You are the designer"
 # The supervisor hands over; the old session's watch then shows nothing.
 expect handover "$(CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more"
+expect "handover clears the events seen" "$(if [[ ! -s $run/.watch ]]; then echo empty; fi)" empty
 expect "handover by another" "$(CLAUDE_CODE_SESSION_ID=someone "$plan" handover supervisor 2>&1 || true)" "this session is not the run's supervisor"
 printf 'supervisor\tnew-supervisor\t%s\n' "$stamp" >>"$run/claude.tsv"
 expect "handed over" "$(CLAUDE_CODE_SESSION_ID=$session "$plan" watch || echo "watch exited $?")" "handed over: session new-supervisor" "watch exited 4"

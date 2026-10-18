@@ -41,14 +41,14 @@ watch_once() {
     if [[ -f $run/done.md ]] && ! grep -qx "done" "$seen"; then
         echo "done" >>"$seen"
         echo "done: $run/done.md"
-        return 0
+        shown=1
     fi
     if [[ -f $run/paused.md ]]; then
         sig=paused:$(stat -c %Y "$run/paused.md")
         if ! grep -qxF "$sig" "$seen"; then
             echo "$sig" >>"$seen"
             echo "paused: $run/paused.md"
-            return 0
+            shown=1
         fi
     fi
     if [[ -f $run/blocked.md && ! -f $run/unblock.md ]]; then
@@ -57,7 +57,7 @@ watch_once() {
             echo "$sig" >>"$seen"
             echo "blocked: $run/blocked.md"
             grep '^## ' "$run/blocked.md" || true
-            return 0
+            shown=1
         fi
     fi
     if [[ -f $run/answer.md ]]; then
@@ -65,7 +65,7 @@ watch_once() {
         if ! grep -qxF "$sig" "$seen"; then
             echo "$sig" >>"$seen"
             echo "answer: $run/answer.md"
-            return 0
+            shown=1
         fi
     fi
     # Steps the coordinator holds for the supervisor's check before they
