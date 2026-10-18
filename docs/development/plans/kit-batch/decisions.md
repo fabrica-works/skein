@@ -243,6 +243,9 @@ section 10 (findings/inventory.md); the planner decided what follows
 
      `test-plan` is 784 lines after it, and sessions 03, 04 and 06 still add checks to it. Section 6 now closes with the rule for the next such move: a further move it calls for is a step of its own, `<session>.s<N>`; the implementer names it in its report's Next before it starts, and the coordinator adds it to the ledger, as for 05.s1.
 
+106. **skein-05.s1's landing with the claim's kit** (process, skein 05's block of 2026-10-18T01:19:02Z).
+     Ruling 105's instruction 2 named `plan landed`, which skein-06.1 added (skein 2c4db1d); the run keeps its claim's kit, skein 6926c2d (development.md, section 3.6), which has no such command. Record skein-05.s1's landing with the kit's `plan set skein-05.s1 state=landed commit=4d6df9e`. What `plan landed` would have checked is checked below: the commit is on origin/main and carries `Step: skein-05.s1`, and session 05's report says its worktree is clean.
+
 ## For the user
 
 Long-term choices the user may veto. Each was decided by the planner
