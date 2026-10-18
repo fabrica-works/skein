@@ -248,8 +248,8 @@ the implementers.
 - **Does not review in depth and writes no code.** A question that needs
   more than the hourly check goes to a read-only sub-agent with a bounded
   question, or waits for the retrospective.
-- **Compacts in place** at about 180,000 tokens, keeping its watch, its
-  cron job and its background commands, and re-reads its card's working
+- **Compacts in place** at about 180,000 tokens, keeping its watch and
+  its background commands, and re-reads its card's working
   sections and the run's files after each compaction. It hands over to a
   fresh session after its second compaction, or when it finds itself
   confused, and starts its successor itself (section 10.5).
@@ -1346,9 +1346,7 @@ commits behind smith.
      that has its row, with `land --docs`; the row is what keeps another
      machine from claiming the same plan;
    - starts its watch, `plan watch`, in the background (section 10.5);
-   - schedules its hourly check (section 14): in Claude Code, a one-time
-     cron job, each check scheduling the next (`supervisor.md`, section
-     1); a cron job lasts only as long as the session.
+   - handles `hourly:` from the watch with its hourly check (section 14).
 5. **The designer joins,** if the plan may raise design questions: in its
    Claude Code session, it runs `plan join designer`, so that the
    supervisor can wake it (section 10.4), then ends its turn. It does not
@@ -1649,7 +1647,8 @@ dependency lands.
   after a crash, the supervisor runs `plan resume crash` (section 10.5).
   It starts
   pueued and Codex's daemon if they are down, resumes the supervisor's
-  session (which starts its watch and its hourly check again), and
+  session (which starts its watch again; it prints `hourly:` when a check
+  is due), and
   starts a coordinator turn with "Resume the run of `<plan-dir>` as skein's
   docs/foundation/development.md, section 7.6, says." The coordinator
   starts no Claude session.
@@ -2055,6 +2054,9 @@ without `## `, separated by `; `.
     re-checks a moved file that its sketch or suite reads (supervisor.md 5);
   - the coordinator's heartbeat is older than ten minutes, unless the
     coordinator is idle (`idle.md`, section 7.4);
+  - `hourly:`: a check is due; the supervisor runs supervisor.md, section 6;
+  - `alert: pueued is down`: the supervisor handles it as supervisor.md,
+    section 2's alert row says, then starts the watch again;
   - the run pauses or ends.
 
   Each event prints its handling material, indented and limited to 150
@@ -2082,6 +2084,8 @@ without `## `, separated by `; `.
   notification). The alert gives the restart command, `plan resume`.
 - **Every alert to the user** also goes, in one line with its UTC time, to
   the run's `alerts.md`; `plan status` prints its last ten lines first.
+  The watch records `pueued is down` once per outage, when
+  `pueue status --json` fails; a successful response ends the outage.
 - **A usage limit.** A usage notice changes nothing: the role goes on,
   and writes no handover. A role stops only when a request is refused.
   If it can still write, as when the refusal is a sub-agent's, its last
@@ -2108,8 +2112,7 @@ without `## `, separated by `; `.
   2. re-reads the run's state: `plan status`, `supervision.md` from its
      last `## Check` entry, the escalation files there are, and the
      ledger's steps in `check` and `ready`;
-  3. checks that its watch, its next check's cron job and its waits run,
-     and starts what is missing;
+  3. checks that its watch and its waits run, and starts what is missing;
   4. appends `## Compacted, <UTC time>: session <id>, compaction <N>` to
      `supervision.md`, N counted from its session's earlier entries, with
      what it found running and what it started.
@@ -2128,8 +2131,7 @@ without `## `, separated by `; `.
   2. it appends a `## Handover, <time>` entry to `supervision.md`, of at
      most 30 lines: what is open, the steers it follows up, the rulings in
      force that the plan does not yet say, the next check's focus;
-  3. it stops its watch, and each ready check's sub-agent and wait, and
-     deletes its next check's cron job;
+  3. it stops its watch, and each ready check's sub-agent and wait;
   4. it runs `plan handover supervisor`, which starts the successor and
      records it in `claude.tsv`;
   5. it ends its turn. A watch it left running exits with "handed over:",
@@ -2376,9 +2378,11 @@ Once an hour, the supervisor checks whether the run heads for its plan's
 "Done when", at a healthy pace, without scope creep or waste, and with
 tests that stay cheap and readable. It is a light check of about ten
 minutes. Problems are cheaper to fix the hour they appear. The hour
-counts from the last check, across handovers and restarts: a
-successor's first check is due an hour after its predecessor's last,
-and runs at once if that time has passed (`supervisor.md`, section 1).
+counts from the last check, across handovers and restarts: the next
+check is due 65 minutes after the last `## Check, <UTC time>` heading
+in `supervision.md`, or its first `## Process, <UTC time>: skein <commit>`
+if there is no check. The watch prints `hourly:` once for that heading
+when it is over 65 minutes old (`supervisor.md`, section 6).
 
 **A sub-agent runs steps 1 to 4** (`supervisor.md`, section 6): a fresh
 one on Sonnet (`supervisor.md`, section 9), never a fork, which returns

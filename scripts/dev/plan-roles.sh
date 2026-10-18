@@ -190,7 +190,7 @@ supervisor_prompt() {
 }
 
 supervisor_resume_prompt() {
-    local text="Your session restarted. Start your watch and your hourly check again (skein's docs/foundation/supervisor.md, section 1), read the end of supervision.md, and go on supervising the run of $plan_dir."
+    local text="Your session restarted. Start your watch again (skein's docs/foundation/supervisor.md, section 1), read the end of supervision.md, and go on supervising the run of $plan_dir."
     echo "${PLAN_SUPERVISOR_RESUME:-$text}"
 }
 
@@ -357,7 +357,7 @@ wake() {
 }
 
 # The supervisor hands over to a fresh session (development.md, section
-# 10.5), from its own session, once its watch and cron job are stopped and
+# 10.5), from its own session, once its watch is stopped and
 # its handover is in supervision.md.
 handover() {
     load
@@ -377,7 +377,7 @@ handover() {
     [[ -z $old ]] || printf '%s\n' "$old" >>"$run/handed-over"
     : >"$run/.watch"
     claude_role supervisor "$(supervisor_handover_prompt)"
-    echo "This session supervises no more: with its watch and its cron job stopped, end your turn."
+    echo "This session supervises no more: with its watch stopped, end your turn."
 }
 
 retro() {

@@ -25,47 +25,21 @@ and a steer) and 10.4 (who decides what). Then:
    this step.
 2. **Start the watch:** `plan watch`, as a background command (in Claude
    Code, a Bash command with `run_in_background`).
-3. **Schedule the hourly check:** a one-time cron job (in Claude Code,
-   `CronCreate` with `recurring: false`), due an hour after
-   `supervision.md`'s last `## Check` entry, or after its first
-   `## Process` entry if it has none, with this prompt, word for word:
-   "Hourly check of the run, as skein's docs/foundation/supervisor.md,
-   section 6, says." First delete any such job already pending
-   (`CronList`), so that one check is ever due. The command below prints
-   its expression, rounded up to the minute, or `now` when that time is
-   less than a minute away or has passed: then run the check at once
-   instead (section 6).
-
-   ```
-   s=<run>/supervision.md
-   last=$(grep '^## Check, ' $s | tail -1 | cut -d' ' -f3)
-   [[ $last ]] || last=$(grep '^## Process, ' $s | head -1 | cut -d' ' -f3)
-   due=$(( ($(date -d "${last%:}" +%s) + 3600 + 59) / 60 * 60 ))
-   now=$(date +%s)
-   (( due > now + 60 )) && date -d "@$due" '+%-M %-H %-d %-m *' || echo now
-   ```
-
-   Each check schedules the next (section 6), so that the hour counts
-   from the last check, across handovers and restarts (development.md,
-   section 14.1). In smith's wall-clock run, each successor's hourly job
-   counted its hour from the takeover, and first fired 61 to 79 minutes
-   after it: five gaps of 71 to 91 minutes between checks.
-4. **End your turn,** with at most one line of text.
+3. **End your turn,** with at most one line of text.
 
 **A successor** starts with "Take over the supervision of the run…". It
 reads this card and the same three sections, then the last `## Handover`
 entry of the run's `supervision.md`, and `blocked.md`, `question.md` and
-`answer.md` if they are there; then steps 2 to 4. Its first watch shows
+`answer.md` if they are there; then steps 2 to 3. Its first watch shows
 all open events, including those shown to its predecessor.
 
-**After a restart** (`plan resume`), steps 2 to 4 again, after reading the
+**After a restart** (`plan resume`), steps 2 to 3 again, after reading the
 end of `supervision.md`.
 
 **After a compaction.** Your context compacts by itself at about 180K
 tokens (development.md, section 10.5, an experiment): a summary opens
 your context, and the workspace's hook says "You were just compacted".
-Your watch, your next check's cron job and your background commands
-go on. Before acting on anything:
+Your watch and your background commands go on. Before acting on anything:
 
 1. **Re-read this card's sections 2 to 9,** not development.md: of it,
    re-read sections 10.3 and 10.4 before your next ruling or question,
@@ -81,9 +55,8 @@ go on. Before acting on anything:
    `steer.md`, if they are there, and the ledger's steps in `check` and
    `ready`, with their notes (section 5).
 3. **Check what runs:** your watch (`pgrep -af '[p]lan watch'`, as a
-   command of its own: the brackets keep it from finding itself), your
-   next check's cron job (in Claude Code, `CronList`), and each
-   re-check's wait (section 5, step 4). Start what is missing, and
+   command of its own: the brackets keep it from finding itself), and
+   each re-check's wait (section 5, step 4). Start what is missing, and
    nothing twice.
 4. **Append** `## Compacted, <UTC time>: session <id>, compaction <N>`
    to `supervision.md`, `<id>` the first 8 characters of
@@ -112,6 +85,8 @@ source path for the rest. Handle the event, then start the watch again:
 | `answer:` with its text | the unblock from the designer's answer (section 4) |
 | `check:` and steps, each with its ledger row and session file | the ready check (section 5) |
 | `started:` and the changes since its ready check | re-check what moved (section 5, step 4) |
+| `hourly:` | the hourly check (section 6) |
+| `alert: pueued is down` | `systemctl --user start pueued`; if it stays down, an alert to the user |
 | `quiet:` with the coordinator's state and last 20 log lines | `plan ring "heartbeat?"`; the coordinator touches its heartbeat when it wakes. If the ring says the coordinator has no turn in progress, run `plan resume crash` yourself, once, and append `## Resumed, <UTC time>: <what the ring said>` to `supervision.md` (development.md, section 10.5) |
 | `quiet again:` | an alert to the user, with the command `plan resume` |
 | `paused:` with its text | read it; nothing else waits for you until the run resumes |
@@ -125,7 +100,8 @@ turn on purpose: its silence is no event, and a ring starts its next turn.
 
 **Every alert to the user** is a push notification and one line with its
 UTC time appended to the run's `alerts.md`, so it stays visible:
-`plan status` prints its last ten lines first.
+`plan status` prints its last ten lines first. The watch already records
+`pueued is down`; append any push notification under the same rule.
 
 **End every turn with at most one line of text.** Nobody reads the
 terminal: the record is the run's files. A summary written there is
@@ -277,11 +253,10 @@ on, and their notifications reach you as before.
 
 ## 6. The hourly check
 
-The cron job's prompt brings you here, once an hour. First note the
-time, `date -u +%FT%TZ`, which heads this check's entry (step 2), and
-schedule the next check an hour from it, as section 1, step 3, says
-(`date -d '+60 min' '+%-M %-H %-d %-m *'`), so that a check that stops
-halfway still leaves the next one due.
+The watch prints `hourly:` when a check is due. First append
+`## Check, <UTC time>` to `supervision.md`, using `date -u +%FT%TZ`,
+before starting the sub-agent, for a quiet hour too. The next check is
+due 65 minutes after this heading, even if this check stops halfway.
 
 1. **Start a sub-agent,** a fresh one on Sonnet, never a fork, with this
    prompt:
@@ -298,8 +273,8 @@ halfway still leaves the next one due.
    ```
 
    Its reading stays in its own context; only its entry reaches yours.
-2. **Append the entry** to `supervision.md`, under `## Check, <UTC time>`,
-   the time you noted at the start.
+2. **Append the entry** to `supervision.md`, under the heading you wrote
+   at the start.
 3. **If it returned steer points,** land what they rest on, and send the
    steer (section 3). For a change to `scripts/dev` that the run takes,
    first move the run's kit to its commit: `git -C <run>/kit checkout
@@ -333,9 +308,8 @@ Then:
    the steers whose points you still follow up, the rulings in force that
    the plan does not yet say, and the next check's focus.
 3. Stop your watch, and each ready check's sub-agent and wait (section 5;
-   in Claude Code, stop their background tasks), and delete your next
-   check's cron job: your successor schedules its own, from your last
-   check (section 1, step 3).
+   in Claude Code, stop their background tasks). Your successor starts
+   the watch, which prints `hourly:` when the next check is due.
 4. Run `plan handover supervisor`. It starts your successor and records it.
 5. End your turn, and do nothing more. If anything wakes you, `plan watch`
    prints `handed over:`: end your turn again.
@@ -371,8 +345,7 @@ When the watch prints `done:` (development.md, section 7.6):
    ]]; do sleep 60; done`. What holds the release reaches you as any
    event (section 2). In forgejo-17, the release waited 24 minutes, 8 of
    them unattended, behind a `done:` watch that was not started again.
-4. Once the run is released, stop your watch and delete your next
-   check's cron job.
+4. Once the run is released, stop your watch.
 5. Start the retrospective: `plan retro`.
 
 ## 9. What the supervisor does not do

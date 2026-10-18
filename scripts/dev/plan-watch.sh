@@ -25,11 +25,10 @@ idle() {
 
 # Queue completions wake the coordinator without ending the supervisor's watch.
 wake_idle_tasks() {
-    local tasks queue message
+    local tasks queue=$1 message
     [[ -f $run/idle.md && ! -f $run/paused.md && ! -f $run/done.md ]] || return 0
     tasks=$(sed -n '3s/^tasks: //p' "$run/idle.md")
     [[ -n $tasks ]] || return 0
-    queue=$(pueue status --json 2>/dev/null) || return 0
     jq -e --arg ids "$tasks" '
         [.tasks as $tasks | ($ids | split(" ")[]) as $id
          | $tasks[$id].status? | objects | keys[0]
@@ -131,6 +130,29 @@ watch_started() {
     ((shown))
 }
 
+# The hourly heading and queue outage persist across successive watches.
+watch_health() {
+    local seen=$1 stamp at queue shown=0
+    stamp=$(awk '/^## Check, / { check=$3 } /^## Process, / && !process { process=$3 }
+        END { print (check ? check : process) }' "$run/supervision.md" 2>/dev/null || true)
+    if [[ -n $stamp ]] && at=$(date -d "${stamp%:}" +%s 2>/dev/null) &&
+        (($(date +%s) - at > 3900)) && ! grep -qxF "hourly:$stamp" "$seen"; then
+        echo "hourly:$stamp" >>"$seen"
+        echo "hourly: $run/supervision.md since ${stamp%:}"
+        shown=1
+    fi
+    if queue=$(pueue status --json 2>/dev/null); then
+        rm -f "$run/.pueued-down"
+        wake_idle_tasks "$queue"
+    elif [[ ! -f $run/.pueued-down ]]; then
+        touch "$run/.pueued-down"
+        echo "alert: pueued is down"
+        printf '%s pueued is down\n' "$(now)" >>"$run/alerts.md"
+        shown=1
+    fi
+    ((shown))
+}
+
 # One look for an event not yet shown: prints it and succeeds, or fails.
 watch_once() {
     local seen=$1 quiet=${PLAN_QUIET:-600} sig beat age step repo session file shown=0
@@ -172,7 +194,7 @@ watch_once() {
     done < <(awk -F'\t' 'NR > 1 && $4 == "check" { print $1 "\t" $2 "\t" $3 }' "$run/ledger.tsv" 2>/dev/null)
     if watch_started "$seen"; then shown=1; fi
     ((!shown)) || return 0
-    wake_idle_tasks
+    if watch_health "$seen"; then return 0; fi
     if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md && ! -f $run/idle.md ]]; then
         beat=$(stat -c %Y "$run/heartbeat")
         age=$(($(date +%s) - beat))
@@ -203,7 +225,7 @@ watch_once() {
 handed_over() {
     local me=${CLAUDE_CODE_SESSION_ID:-}
     [[ -n $me ]] && grep -qxF "$me" "$run/handed-over" 2>/dev/null || return 1
-    echo "handed over: session $(role_session supervisor) supervises the run now. End your turn, and start no watch, check or cron job."
+    echo "handed over: session $(role_session supervisor) supervises the run now. End your turn, and start no watch or check."
 }
 
 # The supervisor's context, the input of its last request, with its

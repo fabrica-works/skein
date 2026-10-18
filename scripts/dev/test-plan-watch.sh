@@ -99,9 +99,32 @@ git -C "$repo" remote remove origin
 # An idle coordinator's silence is no event.
 expect idle "$("$plan" idle "waiting for the user")" "end your turn now"
 touch -d '-5 seconds' "$run/heartbeat"
-expect "watch idle" "$(PLAN_QUIET=2 timeout 3 "$plan" watch || echo "watch exited $?")" "watch exited 124"
+expect "watch idle" "$(PLAN_QUIET=2 silent_watch)" "status=124 bytes=0"
 rm "$run/idle.md"
 touch "$run/heartbeat"
+
+# A bare heading still dates the next check after an interrupted check.
+old=$(date -u -d '-66 minutes' +%FT%TZ)
+for heading in Check Process; do
+    : >"$run/.watch"
+    printf '## %s, %s%s\n' "$heading" "$old" "$(if [[ $heading == Process ]]; then echo ': skein abc123'; fi)" >"$run/supervision.md"
+    hourly=$(watch)
+    expect "hourly after 65 minutes from $heading" "$hourly" "hourly: $run/supervision.md since $old"
+    expect "hourly is printed once for $heading" "$(silent_watch)" "status=124 bytes=0"
+done
+rm "$run/supervision.md"
+touch "$t/pueue.down"
+down=$(watch)
+expect "the queue down alerts" "$down" "alert: pueued is down"
+expect "the queue down alerts once" "$(silent_watch)" "status=124 bytes=0"
+expect "the outage is recorded once" "rows=$(wc -l <"$run/alerts.md")" "rows=1"
+rm "$t/pueue.down"
+expect "the recovered queue stays quiet" "$(silent_watch)" "status=124 bytes=0"
+touch "$t/pueue.down"
+down=$(watch)
+expect "a second outage alerts again" "$down" "alert: pueued is down"
+expect "the second outage is recorded" "rows=$(wc -l <"$run/alerts.md")" "rows=2"
+rm "$t/pueue.down"
 
 # A report, logged by its implementer.
 report=$(printf 'Session: alpha 01\nStep: alpha-01.3, landed\n' | "$plan" log alpha 01)
