@@ -12,6 +12,15 @@
 codex_home=${CODEX_HOME:-$HOME/.codex}
 claude_home=${CLAUDE_CONFIG_DIR:-$HOME/.claude}
 
+# Read complete JSON objects line by line, skipping torn transcript records.
+jsonl() {
+    local -a args=()
+    while [[ ${1:-} == --arg ]]; do args+=("$1" "$2" "$3"); shift 3; done
+    local program=$1
+    shift
+    jq -R -r "${args[@]}" "fromjson? | select(type == \"object\") | ($program)" "$@"
+}
+
 # The repositories the plan may change: the workspace's, and the plan's own.
 plan_repos() {
     # shellcheck disable=SC2086 # the repositories, one word each
@@ -114,7 +123,7 @@ codex_tokens() {
     file=$(rollout_of "$1" | head -n1)
     [[ -n $file ]] || { echo "0 0 0"; return; }
     grep '"total_token_usage"' "$file" | tail -n1 |
-        jq -r '.payload.info.total_token_usage | "\(.input_tokens // 0) \(.output_tokens // 0) \(.cached_input_tokens // 0)"' 2>/dev/null || echo "0 0 0"
+        jsonl '.payload.info.total_token_usage | "\(.input_tokens // 0) \(.output_tokens // 0) \(.cached_input_tokens // 0)"' 2>/dev/null || echo "0 0 0"
 }
 
 # Each Codex thread's context, the input of its last model request, and
@@ -129,7 +138,7 @@ thread_contexts() {
         slot=coordinator
         [[ $kind == coordinator ]] ||
             slot=$(head -n1 "$file" | jq -r --arg t "${thread:0:13}" '.payload.agent_path // .payload.source.subagent.thread_spawn.agent_path // $t' 2>/dev/null || true)
-        sizes=$(grep '"last_token_usage"' "$file" | jq -r '.payload.info.last_token_usage.input_tokens // 0' 2>/dev/null |
+        sizes=$(grep '"last_token_usage"' "$file" | jsonl '.payload.info.last_token_usage.input_tokens // 0' 2>/dev/null |
             awk '{ last = $1; if ($1 > peak) peak = $1 } END { printf "%d\t%d", last, peak }' || true)
         printf '%s\t%s\t%s\t%s\n' "$kind" "${slot:-?}" "$thread" "${sizes:-0	0}"
     done < <(run_threads)
@@ -142,7 +151,7 @@ claude_context() {
     local file last
     file=$(find "$claude_home/projects" -maxdepth 2 -name "$1.jsonl" 2>/dev/null | head -n1)
     [[ -n $file ]] || { echo "0 0"; return; }
-    last=$(tac "$file" | head -n 400 | jq -r 'select(.type == "assistant" and .message.usage != null and .message.model != "<synthetic>")
+    last=$(tac "$file" | head -n 400 | jsonl 'select(.type == "assistant" and .message.usage != null and .message.model != "<synthetic>")
         | [(.message.usage | (.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)),
            ((.timestamp // "") | if . == "" then 0 else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) end)]
         | "\(.[0]) \(.[1])"' 2>/dev/null | head -n1 || true)
@@ -158,6 +167,47 @@ claude_compactions() {
     grep -c '"subtype":"compact_boundary"' "$file" || true
 }
 
+# The Inputs' design paths bound the design sessions to this plan's repository.
+design_inputs() {
+    awk '/^## /{inside=($0=="## Inputs")} inside{while(match($0,/`docs\/(design|foundation)\/[^`]*`/)){print substr($0,RSTART+1,RLENGTH-2); $0=substr($0,RSTART+RLENGTH)}}' "$1"
+}
+
+designer_sessions() {
+    local top prefix inputs landing prev
+    inputs=$(design_inputs "$plan_dir/README.md")
+    [[ -n $inputs ]] || return 0
+    top=$(git -C "$plan_dir" rev-parse --show-toplevel) || return 0
+    prefix=$(cd "$plan_dir" && git rev-parse --show-prefix)
+    landing=$(git -C "$top" log -n1 --format=%H --grep='^Planner-Session:' main -- "${prefix%/}")
+    [[ -n $landing ]] || return 0
+    prev=$(git -C "$top" log -n1 --format=%H --grep='^Planner-Session:' "$landing^" 2>/dev/null || true)
+    # shellcheck disable=SC2086 # one path per line, none with spaces
+    git -C "$top" log "${prev:+$prev..}$landing" --format='%(trailers:key=Designer-Session,valueonly,separator=%x0A)' -- $inputs |
+        awk 'NF { print "designer\t" $1 }'
+}
+
+# A named agent's descendants share its directory; toolUseId joins them.
+claude_files() {
+    local session=$1 file meta tool next
+    local -a pending=()
+    local -A seen=()
+    mapfile -t pending < <(find "$claude_home/projects" \( -name "$session.jsonl" -o -name "agent-${session#agent-}.jsonl" -o -path "*/$session/subagents/*.jsonl" \) 2>/dev/null || true)
+    while ((${#pending[@]})); do
+        file=${pending[0]}; pending=("${pending[@]:1}")
+        [[ -z ${seen[$file]:-} ]] || continue
+        seen[$file]=1
+        printf '%s\n' "$file"
+        [[ $file == */subagents/agent-*.jsonl ]] || continue
+        for meta in "${file%/*}"/agent-*.meta.json; do
+            [[ -f $meta ]] || continue
+            next=${meta%.meta.json}.jsonl
+            [[ -f $next && -z ${seen[$next]:-} ]] || continue
+            tool=$(jq -r '.toolUseId // empty' "$meta")
+            if [[ -n $tool ]] && grep -qF -- "$tool" "$file"; then pending+=("$next"); fi
+        done
+    done
+}
+
 # The run's Claude Code sessions, role and session id, each once: the
 # planner's first, named by the Planner-Session trailers of the plan's
 # commits (development.md, section 5.4), then claude.tsv's, in its order.
@@ -170,6 +220,7 @@ claude_roles() {
                 awk 'NF { print "planner\t" $1 }'
         fi
         awk -F'\t' 'NF >= 2 { print $1 "\t" $2 }' "$run/claude.tsv" 2>/dev/null || true
+        designer_sessions
     } | awk -F'\t' '!seen[$2]++'
 }
 
@@ -179,32 +230,32 @@ claude_roles() {
 # that has them. One line each: role, part (1 before the claim, 2 from the
 # claim to done.md, 3 after; a message without a time counts in the run),
 # fresh input, 5-minute cache writes, 1-hour cache writes, cache reads,
-# output.
+# output and model.
 claude_messages() {
     local role session files
     while IFS=$'\t' read -r role session; do
         [[ -n $session ]] || continue
-        files=$(find "$claude_home/projects" \( -name "$session.jsonl" -o -path "*/$session/subagents/*.jsonl" \) 2>/dev/null || true)
+        files=$(claude_files "$session")
         [[ -n $files ]] || continue
         # shellcheck disable=SC2086 # one path per line, none with spaces
-        jq -r --arg role "$role" 'select(.type == "assistant" and .message.usage != null) | .message as $m | $m.usage as $u
+        jsonl --arg role "$role" 'select(.type == "assistant" and .message.usage != null and .message.model != "<synthetic>") | .message as $m | $m.usage as $u
             | ($u.cache_creation // {}) as $c
             | (if ($c.ephemeral_1h_input_tokens // null) == null and ($c.ephemeral_5m_input_tokens // null) == null
                then ($u.cache_creation_input_tokens // 0) else ($c.ephemeral_1h_input_tokens // 0) end) as $hour
             | [$role, $m.id, ($u.input_tokens // 0), ($c.ephemeral_5m_input_tokens // 0), $hour,
                ($u.cache_read_input_tokens // 0), ($u.output_tokens // 0),
-               ((.timestamp // "") | if . == "" then "" else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 | tostring) end)]
+               ((.timestamp // "") | if . == "" then "" else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 | tostring) end), ($m.model // "")]
             | @tsv' $files 2>/dev/null || true
     done < <(claude_roles) |
         awk -F'\t' -v OFS='\t' -v start="$(run_started)" -v end="$(run_ended)" '
-            !($2 in role) { role[$2] = $1; order[++n] = $2 }
+            !($2 in role) { role[$2] = $1; model[$2] = $9; order[++n] = $2 }
             { for (i = 3; i <= 7; i++) if ($i + 0 > v[$2, i] + 0) v[$2, i] = $i
               if ($8 != "" && !($2 in t)) t[$2] = $8 }
             END {
                 for (j = 1; j <= n; j++) {
                     k = order[j]
                     part = (!(k in t)) ? 2 : (t[k] < start) ? 1 : (t[k] <= end) ? 2 : 3
-                    print role[k], part, v[k, 3] + 0, v[k, 4] + 0, v[k, 5] + 0, v[k, 6] + 0, v[k, 7] + 0
+                    print role[k], part, v[k, 3] + 0, v[k, 4] + 0, v[k, 5] + 0, v[k, 6] + 0, v[k, 7] + 0, model[k]
                 }
             }'
 }
@@ -247,7 +298,7 @@ running_seconds() {
         return
     fi
     # shellcheck disable=SC2086 # one path per line, none with spaces
-    jq -r '.timestamp // empty | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601' $files 2>/dev/null | sort -n |
+    jsonl '.timestamp // empty | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601' $files 2>/dev/null | sort -n |
         awk -v gap="${PLAN_GAP:-600}" 'NR > 1 { d = $1 - last; if (d <= gap) total += d } { last = $1 } END { print total + 0 }'
 }
 
@@ -555,7 +606,7 @@ pulse() {
         fi
     done < <(run_threads)
     read -r _ _ _ claude_in claude_out _ <<<"$(claude_tokens)"
-    echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out; Claude Code at list prices, since the planning: $(claude_cost)."
+    echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out; Claude Code at list prices, since the design: $(claude_cost)."
     local beat mem disk
     beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$now_s")
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)

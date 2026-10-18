@@ -114,6 +114,8 @@ check_plan() {
         fail "plan is not on origin/main"
     fi
 
+    [[ -n $(design_inputs "$plan_dir/README.md") ]] ||
+        warn "the README's Inputs name no docs/design/ or docs/foundation/ path: the metrics will count no design session"
     check_plan_readiness
 
     # The plan's row in its repository's STATUS.md: ready, or this

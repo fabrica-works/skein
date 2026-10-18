@@ -527,8 +527,7 @@ The roles run in the background:
 `HEAVY_BUILD_JOBS`, `HEAVY_BUILD_SLOTS` and `HEAVY_TAIL` tune the queue;
 `PLAN_MIN_DISK_GB`, `PLAN_MIN_MEM_GB`, `PLAN_QUIET`, `PLAN_POLL`,
 `PLAN_CLAUDE_DIR` (where the Claude Code roles start), the roles' limits
-above, and `PLAN_CLAUDE_PRICES` (the list prices the metrics use, section
-15.2) tune `plan`. `PLAN_DRY_RUN=1` prints what `plan` would start or
+above tune `plan`. `PLAN_DRY_RUN=1` prints what `plan` would start or
 ring, and starts and rings nothing.
 
 ## 4. Designing
@@ -607,9 +606,9 @@ says what changed and why. Its trailers name each Claude Code session that
 wrote it, the designer's, its successors' and its sub-agents', one
 `Designer-Session: <session id>` line each, as a plan's landing names its
 planner (section 5.4), so that a plan's whole cost, its design included,
-can be counted. `plan metrics` does not read them yet: that waits for the
-kit, after smith's parity run. In client-composition, $28.13 of design and
-orchestration went uncounted.
+can be counted. `plan metrics` reads those trailers on commits changing
+the Inputs' design paths, after the repository's previous plan landing
+and through this plan's landing (section 15.2).
 
 **A change during another run.** A run keeps the process and the kit of
 its claim: development.md, its cards and `scripts/dev` at the skein
@@ -749,7 +748,8 @@ user only what they and the design leave open, and asks before writing.
 
 **`README.md`:**
 - the title, and a dated line with each repository's start commit;
-- **Inputs:** the design documents, `decisions.md`, `findings/`;
+- **Inputs:** each design document by its full path in the repository
+  (`docs/design/` or `docs/foundation/`), `decisions.md`, `findings/`;
 - **The sessions:** per repository, a table with columns File, Session,
   Needs at start, and Increments that need more. Then how many sessions
   can start at once, and the order in which to start them when slots are
@@ -2438,7 +2438,7 @@ Since the last check:
   ("actual" became "observed", 9 to 119); the check reads this line;
 - **cost so far:** the time and token metrics of section 15.2, for the
   run so far, and what Claude Code's tokens cost at list prices, by role
-  and by kind, since the planning;
+  and by kind, since the design;
 - **pins:** how many commits each repository's pins are behind the
   upstream mains;
 - **contexts:** each session's context, and those past the limit
@@ -2514,7 +2514,9 @@ question and its own budget, or waits for the retrospective.
     run's `threads` file, and the threads each spawned), and the Claude
     Code transcripts of the supervisor and the designer (from
     `claude.tsv`) and of the planner (the plan's `Planner-Session:`
-    trailer);
+    trailer), and the design's sessions (the `Designer-Session:` trailers
+    of commits changing the Inputs' design paths since the previous plan
+    landing), with their sub-agents;
   - the earlier plans' metrics (`plan metrics --history`) and their
     retrospectives;
   - the skein commit its run's process came from (`supervision.md`'s
@@ -2573,8 +2575,8 @@ counts them by hand.
 | `restarts` | `log.md`'s "Coordinator resumed" headings, by cause |
 | `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads |
 | `tokens_implementers` | the same, for every thread the coordinator spawned, at any depth |
-| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), their sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (planning), from the claim to `done.md` (the run), and after (the retrospective) |
-| `cost_claude` | what those tokens cost at list prices (`PLAN_CLAUDE_PRICES`, Opus 5.5's by default), in all, by role, and by kind: cache reads, cache writes, fresh input, output. A cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
+| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), and the design's sessions (the `Designer-Session:` trailers of commits changing the Inputs' design paths after the previous plan landing and through this one), their sub-agents and sub-agents of sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (the design and the planning), from the claim to `done.md` (the run), and after (the retrospective) |
+| `cost_claude` | what those tokens cost at list prices for each message's model (Opus 5.5's when absent or unknown, unknown models named), in all, by role, and by kind: cache reads, cache writes, fresh input, output. At Opus's and Sonnet's rates, a cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
 | `tokens_per_step` | the coordinator's, the implementers' and the run's part of the Claude Code sessions', per landed step |
 | `supervisor` | the supervisor's sessions in `claude.tsv`: how many, their hours (each from its first request to its last), their weighted tokens per hour (fresh input 1, cache reads 0.1, cache writes 1.25, output 5; sub-agents left out, each message counted once), the share of those in the 40 requests after each session's start or compaction (the bootstrap), and their compactions (section 10.5) |
 | `coordinator_requests` | the coordinator's model requests, and those that only saw a wait end |

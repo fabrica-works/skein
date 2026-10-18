@@ -3,17 +3,25 @@
 # shellcheck disable=SC2034 # hash in metrics_of's commit reader is unused
 # The run's metrics. Sourced by plan after numbers.sh, not run.
 
-# What the Claude Code sessions' tokens cost at list prices (development.md,
-# section 15.2): in all, by role, and by kind. PLAN_CLAUDE_PRICES gives the
-# dollars per million tokens of fresh input, 5-minute cache writes, 1-hour
-# cache writes, cache reads and output; Opus 5.5's by default. A cache read
-# costs a fortieth of a 1-hour write, so token counts alone hide most of
-# what a long context costs.
+# List prices per MTok, checked 2026-10-17: platform.claude.com/docs/en/about-claude/pricing,
+# platform.claude.com/docs/en/models/haiku-5-5/overview and anthropic.com/claude-sonnet-5-5.
+# Each model's prefix covers its dated names; unknown and absent models use Opus.
 claude_cost() {
-    claude_messages | awk -F'\t' -v prices="${PLAN_CLAUDE_PRICES:-4 5 8 0.20 20}" '
-        BEGIN { split(prices, p, " ") }
+    claude_messages | awk -F'\t' '
+        BEGIN {
+            split("4 5 8 0.20 20", opus, " ")
+            split("2 2.50 4 0.10 10", sonnet, " ")
+            split("0.10 0.125 0.20 0.01 0.50", haiku, " ")
+            split("0.50 0.625 1 0.05 2.50", haiku_long, " ")
+        }
         {
             if (!($1 in by)) roles[++n] = $1
+            model = ($8 ~ /^claude-sonnet-5-5/ ? "sonnet" : $8 ~ /^claude-haiku-5-5/ ? "haiku" : "opus")
+            if ($8 != "" && $8 !~ /^claude-(opus|sonnet|haiku)-5-5/) {
+                if (!($8 in unknown)) models[++nm] = $8
+                unknown[$8]++
+            }
+            for (j = 1; j <= 5; j++) p[j] = model == "sonnet" ? sonnet[j] : model == "haiku" ? (($3+$4+$5+$6 > 100000) ? haiku_long[j] : haiku[j]) : opus[j]
             c = ($3 * p[1] + $4 * p[2] + $5 * p[3] + $6 * p[4] + $7 * p[5]) / 1e6
             by[$1] += c; total += c
             fresh += $3 * p[1] / 1e6; writes += ($4 * p[2] + $5 * p[3]) / 1e6
@@ -22,7 +30,9 @@ claude_cost() {
         END {
             printf "$%.0f", total
             for (i = 1; i <= n; i++) printf "%s%s $%.0f", (i == 1 ? ": " : ", "), roles[i], by[roles[i]]
-            printf "; cache reads $%.0f, cache writes $%.0f, fresh input $%.0f, output $%.0f\n", reads, writes, fresh, out
+            printf "; cache reads $%.0f, cache writes $%.0f, fresh input $%.0f, output $%.0f", reads, writes, fresh, out
+            for (i = 1; i <= nm; i++) printf "%s%s %d", (i == 1 ? "; unknown models, priced as Opus: " : ", "), models[i], unknown[models[i]]
+            print ""
         }'
 }
 
@@ -39,7 +49,7 @@ supervisor_sessions() {
         while read -r session; do
             file=$(find "$claude_home/projects" -maxdepth 2 -name "$session.jsonl" 2>/dev/null | head -n1)
             [[ -n $file ]] || continue
-            jq -r --arg s "$session" '
+            jsonl --arg s "$session" '
                 if .type == "system" and .subtype == "compact_boundary" then [$s, "compaction", (.uuid // .timestamp // "")]
                 elif .type == "assistant" and .message.usage != null and .message.model != "<synthetic>" then
                     .message.usage as $u

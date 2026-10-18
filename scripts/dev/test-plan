@@ -74,6 +74,9 @@ git -C "$repo" config user.name test
 cat >"$dir/README.md" <<'EOF'
 # Demo
 
+## Inputs
+`docs/design/thing.md`
+
 ## Pulse
 
 ```
@@ -111,6 +114,19 @@ cat >"$dir/decisions.md" <<'EOF'
 Nothing.
 EOF
 planner=99999999-8888-7777-6666-555555555555
+# Only this design's sessions, after the previous planner, belong to the plan.
+d_old='design-old'; planner_old='planner-old'; designer='design-current'; other='design-other'; host='design-host'
+mkdir -p "$repo/docs/design"
+echo old >"$repo/docs/design/thing.md"
+git -C "$repo" add docs/design/thing.md
+git -C "$repo" commit -q -m "An earlier design" -m "Designer-Session: $d_old"
+git -C "$repo" commit -q --allow-empty -m "An earlier plan" -m "Planner-Session: $planner_old"
+echo current >"$repo/docs/design/thing.md"
+git -C "$repo" add docs/design/thing.md
+git -C "$repo" commit -q -m "This design" -m "Designer-Session: $designer"$'\n''Designer-Session: agent-a1'
+echo other >"$repo/docs/design/other.md"
+git -C "$repo" add docs/design/other.md
+git -C "$repo" commit -q -m "Another design" -m "Designer-Session: $other"
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "Plan the demo" -m "Planner-Session: $planner"
 
@@ -291,6 +307,7 @@ assistant() { printf '{"type":"assistant","message":{"id":"%s","usage":{"input_t
     # Planning, before the claim: counted apart (development.md, section 15.2).
     printf '{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"m0","usage":{"input_tokens":1000,"output_tokens":1}}}\n'
 } >"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
+printf '{"type":"assistant","message":{"id":"t","usage":{"input_tok\n' >>"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
 # The supervisor's context was compacted twice (development.md, section 10.5).
 boundary() { printf '{"type":"system","subtype":"compact_boundary","uuid":"%s","timestamp":"2026-10-17T09:00:00.000Z"}\n' "$1"; }
 { boundary u1; boundary u2; } >>"$CLAUDE_CONFIG_DIR/projects/p/$session.jsonl"
@@ -301,6 +318,19 @@ fork=22222222-3333-4444-5555-666666666666
 # The planner's session, named by the plan's Planner-Session trailer: before the claim.
 printf '{"type":"assistant","timestamp":"2020-01-01T00:00:00.000Z","message":{"id":"m9","usage":{"input_tokens":500,"output_tokens":2}}}\n' >"$CLAUDE_CONFIG_DIR/projects/p/$planner.jsonl"
 printf 'supervisor\t%s\t%s\ndesigner\t%s\t%s\n' "$session" "$stamp" "$fork" "$stamp" >"$run/claude.tsv"
+
+# The designer's agent has one child beside it; an unrelated sibling is excluded.
+designed() { assistant "$@" | jq -c '. + {timestamp:"2020-01-01T00:00:00.000Z"}'; }
+m=$CLAUDE_CONFIG_DIR/projects/p
+mkdir -p "$m/$designer/subagents" "$m/$host/subagents"
+designed d1 100 0 0 1 >"$m/$designer.jsonl"
+designed d2 40 0 0 1 >"$m/$designer/subagents/agent-1.jsonl"
+{ designed d3 100 0 0 1; printf '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-a2"}]}}\n'; } >"$m/$host/subagents/agent-a1.jsonl"
+designed d4 100 0 0 0 >"$m/$host/subagents/agent-a2.jsonl"
+designed d5 1000 0 0 9 >"$m/$host/subagents/agent-a3.jsonl"
+for agent in a1 a2 a3; do printf '{"toolUseId":"tool-%s"}\n' "$agent" >"$m/$host/subagents/agent-$agent.meta.json"; done
+designed old 1 0 0 1 >"$m/$d_old.jsonl"
+designed other 1 0 0 1 >"$m/$other.jsonl"
 
 # The pulse.
 pulse=$("$plan" pulse)
@@ -317,7 +347,7 @@ expect pulse "$pulse" \
     "over 50 lines: src/big.rs (62)" "new lint exceptions: 1" "forbidden words: actual 1, exact 1" \
     "types like a parallel one: OwnerThing" "test helpers in more than three files: text (5 files)" \
     "tokens in/out: coordinator 54000/5400, sessions 700/70, Claude Code 120/17" \
-    "Claude Code at list prices, since the planning: \$0: planner \$0, supervisor \$0, designer \$0" \
+    "Claude Code at list prices, since the design: \$0: planner \$0, supervisor \$0, designer \$0" \
     "1 steers in all, 1 points refused" \
     "- Rising words: line 0 to 60" "- Pins behind upstream main, in commits: none." \
     "- Contexts: t-impl-1 100K (past 200K: t-impl-1); Claude Code: supervisor 1K, designer 0K."
@@ -326,13 +356,13 @@ sleep 1
 expect "pulse again" "$("$plan" pulse)" "- Progress: 0 planned and 0 added steps landed since" "no gate since"
 
 # The metrics.
-metrics=$(PLAN_CLAUDE_PRICES="1000000 1000000 1000000 1000000 1000000" "$plan" metrics)
+metrics=$("$plan" metrics)
 expect metrics "$metrics" \
     $'running_h\t0.5\th' $'steps_planned\t2\t' $'steps_added\t1\t' \
     $'escalations\tdesign gap 1, plan defect 1\t' $'escalation_wait_min\t60.0\t' $'blocked_h\t2.0\th' \
     $'answers_reversed\t1\t' $'steers\t1 sent, 1 points refused' $'restarts\treboot 1\t' \
-    $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1620 in (6% cached), 20 out; in: 1500 before the claim, 120 in the run, 0 after' \
-    $'cost_claude\t$1640: planner $502, supervisor $1132, designer $6; cache reads $100, cache writes $10, fresh input $1510, output $20\t' \
+    $'tokens_coordinator\t54000 in (0% cached), 5400 out' $'tokens_implementers\t700 in (0% cached), 70 out' $'tokens_claude\t1960 in (5% cached), 23 out; in: 1840 before the claim, 120 in the run, 0 after' \
+    $'cost_claude\t$0: planner $0, supervisor $0, designer $0; cache reads $0, cache writes $0, fresh input $0, output $0\t' \
     $'supervisor\t1 sessions, 0.0 h, 0.0M weighted tokens per hour, 100% in the 40 requests after each start or compaction, 2 compactions' \
     $'coordinator_requests\t4, 1 after a wait ran out' $'compactions\t1\t' \
     $'gates_per_step\t0.3\t' $'gate_lane_other\t1\t' $'queue_wait_ratio\t0.10\t' \
@@ -340,6 +370,16 @@ expect metrics "$metrics" \
     $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90' \
     "generated +1 -0, data +1 -0"$'\tlines' \
     $'pin_lag\tnone\t' $'contexts\t260K median, 260K p90 of the sessions\' peaks; 0 handovers'
+# Model pricing includes each Haiku prompt tier and names an unknown model.
+priced() { printf '{"type":"assistant","message":{"id":"%s","model":"%s","usage":{"input_tokens":%d,"cache_creation":{"ephemeral_5m_input_tokens":%d,"ephemeral_1h_input_tokens":%d},"cache_read_input_tokens":%d,"output_tokens":%d}}}\n' "$@"; }
+m=$t/claude-prices/projects/p; mkdir -p "$m"
+priced p1 claude-opus-5-5 1000000 1000000 1000000 10000000 1000000 >"$m/$planner.jsonl"
+{ priced s1 claude-sonnet-5-5 2000000 2000000 0 10000000 1000000
+  priced s2 claude-future-9 1000000 0 0 0 0
+  priced s3 '<synthetic>' 0 0 0 0 0; } >"$m/$session.jsonl"
+awk 'BEGIN { for (i = 0; i < 1100; i++) printf "{\"type\":\"assistant\",\"message\":{\"id\":\"h%d\",\"model\":\"claude-haiku-5-5\",\"usage\":{\"input_tokens\":%d,\"output_tokens\":20000}}}\n", i, (i < 1000 ? 100000 : 100001) }' >"$m/$fork.jsonl"
+expect "prices by model" "$(CLAUDE_CONFIG_DIR=$t/claude-prices "$plan" metrics)" \
+    $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1'
 "$plan" metrics --out "$dir/metrics.tsv" >/dev/null
 expect history "$("$plan" metrics --history)" "| Metric | demo |" "| steps_planned | 2 |"
 
@@ -401,6 +441,9 @@ mkdir -p "$older"
 printf '# Retrospective\n\n## 8. Proposals\n\n1. **One.** Why.\n\n2. **Two.** Why.\n   1. A sub-item.\n\n## 10. Decisions\n\n| Proposal | Decision | Where |\n|---|---|---|\n| 1 | adopted | here |\n| 2 | open | |\n' >"$older/retrospective.md"
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "An older retrospective"
+sed -i '/^## Inputs/,/^$/d' "$dir/README.md"
+expect "Inputs with no design warn" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "warn  the README's Inputs name no docs/design/ or docs/foundation/ path"
+git -C "$repo" checkout -- "$dir/README.md"
 expect "decisions open" "$(PLAN_NO_GATE=1 "$plan" check "$dir" 2>&1 || true)" "FAIL  the last retrospective, alpha's older, has proposals not yet decided: 2"
 sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.md"
 git -C "$repo" commit -q -am "Decide the older retrospective's proposals"
