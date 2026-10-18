@@ -105,6 +105,15 @@ clock, cancellation and delivery ledgers; the kit answers synchronous
 mechanical operations only. Its focused leaf tests and small replay sweep
 stay beside the crate in `testing/skein-fake-checkout/tests`.
 
+A code forge has fakes of its own (fake-forge.md). `skein-fake-forge-domain`,
+a step crate on skein-lib alone, plays a forge's state, CI, merges and git,
+and `skein-fake-forge-protocol` serves Forgejo's API over it on skein's HTTP
+server. The forge peer in `skein-fake-peers` hosts that layer on loopback
+io. `skein-throwaway-forgejo` runs the pinned Forgejo in a scratch
+directory, for the tools and process tiers that need a real one, and a
+conformance tool outside the suites holds the dialect to it. A service
+keeps its fake of its own git component, its worlds and its cost ceilings.
+
 ## 5. What skein supplies for a service's tiers
 
 | Service tier | Real | What skein supplies |
@@ -121,6 +130,13 @@ The service supplies its fakes, the fake machine that plugs into the
 simulator among them, and the scenarios its worlds run. A failure in a
 service's world that comes from io, a machine or the simulator is
 reproduced in skein's own tier, and fixed there.
+
+A service that works on a forge takes the forge's fakes from skein: the
+domain and the protocol layer in its protocol worlds, the forge peer in
+its real loop, and the throwaway Forgejo in its tools and process tiers
+(fake-forge.md, sections 2 to 6). The peer serves plaintext on loopback
+over a forge the service may share with its own fake of git. Its
+transcripts of git stay its own.
 
 **The counting allocator** is `skein-heap`, in `testing/` (section 6): a
 global allocator that counts each thread's heap, and a meter that checks a
@@ -201,8 +217,10 @@ testing/skein-echo-client       the fake echo client, a step machine
 testing/skein-fake-machine      the minimal fake machine: files beneath a root, its programs, and its face behind the simulator
 testing/skein-fake-checkout     files, scripted commands and local git for a service's domain worlds (fake-checkout.md)
 testing/skein-fake-llm-*        the shared scripted LLM peer: its domain and its byte peer (fake-llm.md)
+testing/skein-fake-forge-*      the shared fake forge: its domain and its protocol layer (fake-forge.md, 2 to 4)
+testing/skein-throwaway-forgejo the pinned Forgejo run on loopback in a scratch directory (fake-forge.md, 6)
 testing/skein-fake-oauth        an independent rotating OAuth issuer (oauth.md, 5)
-testing/skein-fake-peers        the LLM and OAuth peers hosted on loopback io
+testing/skein-fake-peers        the LLM, OAuth and forge peers hosted on loopback io (fake-forge.md, 5)
 testing/skein-fake-channel      a scripted framed peer for a service's protocol worlds (channel.md)
 testing/skein-codegen           the codec generator, run by a consumer's tests (codec.md)
 testing/skein-browser           the browser kit, a step machine: headless Chromium over the DevTools protocol on a pipe (browser.md)
@@ -225,6 +243,11 @@ tests/protocol                  the protocol worlds: an LLM client's stack again
 tests/llm                       skein-llm's subscription protocol worlds, fragmentation and fault sweeps, and bounds against the counting allocator, skein-llm-world
 tests/llm-connection            the LLM connection component's worlds, skein-llm-connection-world
 tests/oauth                     the OAuth client against the independent issuer, skein-oauth-world
+tests/forge/machine             the forge component's machine world and the listener's, against a scripted HTTP peer, and their worst case against the counting allocator (forge-connection.md, 10)
+tests/forge/protocol            the protocol world: the client and the component against the fake forge's protocol layer and domain (forge-connection.md, 10)
+tests/forge/client              the client world: the client alone under a scripted parent, over the fake forge's domain (forge-client.md, 10)
+tests/forge/setup               reconcile's world: the host played over a store of items and the fake forge's setup routes (forge-setup.md, 7)
+tests/forge/conformance         the conformance tool, outside the suites: a throwaway Forgejo driven, each fact the dialect relies on recorded (fake-forge.md, 7)
 tests/channel                   the framed channel's machine and protocol worlds, skein-channel-world
 tests/codec                     a generated sample codec and its worlds, skein-codec-tests
 tests/kv                        the store over file io, the simulated kernel and a crashing fake disk, skein-kv-tests

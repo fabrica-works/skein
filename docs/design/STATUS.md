@@ -53,6 +53,11 @@ section 3.3).
 | `ui.md` | partly | 4.2, 18, 19: the vocabulary that waits (a combo box, a slider and a meter, a switch, media, a feed, a list box choosing several, a tree grid) and right-to-left text, each by the light path (4.3) when an application needs it; 3: the builder's assertion that a named button, tab or menu item holds no node: not planned (temper's client-api `later.md`); 19: a markup macro for the builder, a server keeping the previous bundle's digest directory; 16, 18: parts for a phone or a desktop: not planned (jig's skein-ui `later.md`) |
 | `ui-text.md` | partly | 3, 4, 7: the settings' lines, `Terminal::room`, the terminal's own lines' room kept apart from the application's, no room once closing, the settings' line bytes, the terminal's worst case and operations: temper's client-api; 9: the text shell's own words in another language, a secret typed without echo: not planned (jig's skein-ui `later.md`) |
 | `ui-web.md` | partly | 6: a click inside a button or a menu item finding it (`page/web.rs` finds a link's alone): not planned (temper's client-api `later.md`); 11, 15: the file picker, and parts for other effects; 15: the bundle served compressed, tabs of one person sharing one stream, HTTP/2; 16: a server keeping the previous bundle's digest directory; 14.2: the face typing into a field holding words: not planned (jig's skein-ui `later.md`); 14.2: the harness opening a printed line as a whole URL from either output, a page of another origin it serves, a printed URL again, and awaiting trouble and a request's status with its own `Host`: temper's client-api |
+| `forge.md` | no | 2 to 9, 11: `skein-forge`, the vocabulary, Forgejo's dialect and its call plans, the markers, deliveries, credentials and the pin, held today by temper's `temper-forge-forgejo` and `temper-engine-domain-forge-client`: not planned (temper's forge-kit extraction, section 3); 9: a recorded fact for a job no runner took: not planned (temper's forgejo-17 `later.md`); 10: GitHub's dialect: not planned |
+| `forge-connection.md` | no | 2 to 10: the component, held today by temper's `temper-engine-protocol-forge`: not planned (temper's forge-kit extraction); 10: the protocol world's late, reordered and lost deliveries, its stories run with hints and without; 5.1: renewal; 6: a listener over TLS, for a forge on another host (`tls.md`, 1): not planned |
+| `forge-client.md` | no | 2 to 10: the working set, keeping up, fresh reads, the budget, effects' keys, lanes and recovery, restart, held today by temper's `temper-engine-domain-forge-client`: not planned (temper's forge-kit extraction) |
+| `forge-setup.md` | no | 2 to 4, 6 to 8: the access, the three modes and Forgejo's reconcile, held today by temper's `temper-forge-setup`: not planned (temper's forge-kit extraction); 5: GitHub's plan: not planned |
+| `fake-forge.md` | no | 2 to 8: the fake forge's domain and protocol layer, the forge peer, the throwaway Forgejo and the conformance, held today by temper's fakes, `ForgeHost` and tools: not planned (temper's forge-kit extraction); 4: deliveries to an organization's hook, in a world: not planned; 3: the real-git bridge: a design of its own |
 
 ## 3. Not planned
 
@@ -102,8 +107,9 @@ section 3.3).
   client's stack has the selective collector (`http.md`, section 2).
   Waits for a plan.
 - **TLS's server side and client certificates** (`tls.md`, section 1;
-  `shell.md`, section 6; `channel.md`, section 12): wait for temper's
-  engine, or smith's connected agent's domain contract.
+  `shell.md`, section 6; `channel.md`, section 12; `forge-connection.md`,
+  section 6): wait for temper's engine, a forge's webhooks from another
+  host, or smith's connected agent's domain contract.
 - **A user of TLS's native face** (`tls.md`, 3.6): a framed connection
   over TLS (`channel.md`, section 7). Until one, the native face meets
   only its own tests (`tls.md`, section 5). Waits for a service that
@@ -188,6 +194,18 @@ section 3.3).
   face typing into a field holding words, a test answering a native
   dialog, the kit's `browser.rs` split. Each waits for the application
   or the plan its row names.
+- **The forge kit** (`forge.md`, `forge-connection.md`,
+  `forge-client.md`, `forge-setup.md`, `fake-forge.md`): temper's forge
+  crates, made neutral, move here by temper's forge-kit extraction, a
+  plan in temper's plans directory (temper's `STATUS.md`, section 3).
+  Each step lands the crate in skein, then temper's repin deletes its
+  own (development.md, 5.7): `skein-forge`, then the client, the
+  component, reconcile, and the fakes and the conformance last.
+- **GitHub** (`forge.md`, section 10; `forge-setup.md`, section 5): its
+  dialect and its setup's plan. Waits for a service on GitHub.
+- **The real-git bridge** (`fake-forge.md`, section 3): real git
+  against the fake forge, for real-loop worlds. Waits for a design
+  session of its own.
 - **The client's generic half** (jig's `README.md`, section 10, and
   `client/domain/client.md`, section 18): keyed requests sent again
   until durable, level-triggered watches, the link and generic guards,
@@ -201,4 +219,3 @@ section 3.3).
 |---|---|---|
 | `draft/process.md` | Contained process trees: a cgroup and a view of the file system per tree, stopped whole, proved empty, nested | Promotion into `io.md` by a design pass, then a plan of its own |
 | `draft/redb.md` | redb as an adapter over skein's file records, at the boundary of a service and its shell | A decision to adopt it, once a store outgrows memory (`kv.md`, section 12); then its section 7 checks |
-| `draft/forge.md` | The forge kit, moved from temper: a neutral vocabulary of forge calls with Forgejo's dialect (`skein-forge`), the component (`skein-forge-connection`), the client's working set, budget and write lanes (`skein-forge-client`), the setup's machines (`skein-forge-setup`), the fake forge and the conformance; GitHub's seams | Review with temper's `draft/forge-kit.md`; promotion into five documents (its section 11); then temper's extraction plan, after client-api's run |

@@ -42,6 +42,11 @@ starts from.
 | LLM | `skein-llm` | provider-neutral calls, streaming deltas, concrete replay and completions; subscription wire dialects | [llm.md](docs/design/llm.md) |
 | LLM connections | `skein-llm-connection` | a protocol layer's component that runs LLM calls end to end: connecting, TLS, deadlines, reuse | [llm-connection.md](docs/design/llm-connection.md) |
 | OAuth | `skein-oauth`, `skein-fake-oauth` | bounded sign-in and refresh client, with an independent rotating issuer for worlds | [oauth.md](docs/design/oauth.md) |
+| the forge's vocabulary and dialects | `skein-forge` | a code forge's calls and documents, deliveries and credentials, neutral and rendered by a dialect; Forgejo's built, GitHub's later | [forge.md](docs/design/forge.md) |
+| the forge component | `skein-forge-connection` | a protocol layer's component that runs a forge's calls end to end: connecting, TLS, credentials, deliveries | [forge-connection.md](docs/design/forge-connection.md) |
+| the forge client | `skein-forge-client` | a bounded view of a forge for its owner's domain, and each write made at most once | [forge-client.md](docs/design/forge-client.md) |
+| the forge setup | `skein-forge-setup` | makes a forge ready for a service: the identity, credentials, repositories and hooks it acts with | [forge-setup.md](docs/design/forge-setup.md) |
+| the fake forge | `skein-fake-forge-domain`, `skein-fake-forge-protocol`, `skein-throwaway-forgejo` | for tests: a forge's state and git, Forgejo's API over it, a forge peer on loopback, the pinned Forgejo run in a scratch, and the conformance that holds the dialect to it | [fake-forge.md](docs/design/fake-forge.md) |
 | the browser kit | `skein-browser` | for tests: a headless Chromium driven over the DevTools protocol on a pipe, by role and name, from the loop | [browser.md](docs/design/browser.md) |
 | the UI kit | `skein-ui` | a semantic tree of an application's state, by accessibility roles, built, diffed into patches, its acts bound to their owners; words, Markdown, scenes | [ui.md](docs/design/ui.md) |
 | the text shell | `skein-ui-text` | the tree printed as lines, a typed line read as an act, for a terminal or a pipe | [ui-text.md](docs/design/ui-text.md) |
@@ -62,6 +67,13 @@ skein-llm      lib, http, json
 skein-llm-connection lib, io, tls, llm
 skein-oauth    lib, json
 skein-fake-oauth lib, json, oauth
+skein-forge    lib, json
+skein-forge-client lib, forge
+skein-forge-connection lib, io, http, tls, json, forge
+skein-forge-setup lib, json, forge
+skein-fake-forge-domain lib
+skein-fake-forge-protocol lib, http, json, forge, fake-forge-domain
+skein-throwaway-forgejo lib, io, http, json, shell, forge
 skein-browser  lib, json
 skein-ui       lib
 skein-ui-text  lib, io, ui
@@ -98,12 +110,14 @@ parts' glue, `wasm-bindgen`, `js-sys` and `web-sys`, with the bundler's
 
 ## Not in skein
 
-- **Domains, and protocols only one application speaks:** a forge's API,
-  temper's protocol between worker and
-  engine. They are built on skein's machines.
+- **Domains, and protocols only one application speaks:** temper's
+  protocol between worker and engine. They are built on skein's machines.
 - **What a service does with an LLM:** its tools and their execution,
   when to sign in or refresh a credential, and whether to retry. The
   calls, their connections and OAuth's documents are skein's.
+- **What a service does on a forge:** what it watches, its effects and
+  their purposes, its policy, and what people see. A forge's calls, its
+  component, client and setup, and the fakes of a forge are skein's.
 - **A service's wiring:** its `iterate`, the sum of its worst cases, its
   `main`.
 - **What a simulated program does.** The simulator plays the kernel; the
