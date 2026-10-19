@@ -6,15 +6,23 @@ development.md's designer, planner, supervisor and coordinator. Runs
 started before 2026-10-19 finish under development.md. Designs and plans
 landed by then stay, and those not yet run may be carried out by an
 owner. If the experiment fails, this file goes and development.md
-stands. Read it with [the testing strategy](testing-strategy.md) and
-the repository's own `AGENTS.md`.
+stands.
+
+**What an owner reads:** its brief, this file, and three documents
+beside it: [programming-model.md](programming-model.md) and
+[testing-strategy.md](testing-strategy.md), the rules for the code's
+shape and its tests, and [notes.md](notes.md), the reasons and open
+questions behind them. The repository's `AGENTS.md` loads on its own.
+The rest of this directory (development.md, implementer.md,
+supervisor.md) belongs to the runs started before 2026-10-19: an owner
+needs none of it.
 
 ## 1. In one page
 
 - **The input is a draft** that the user wrote and reviewed: the goal,
   the constraints, the expectations. A landed design or plan not yet run
   can stand in for it.
-- **The director** (development.md, 2.7) knows every draft and the
+- **The director** knows every draft and the
   direction. It starts one owner per draft, gives the final call on what
   owners escalate, and asks the user only what it can't reasonably
   decide.
@@ -31,21 +39,25 @@ the repository's own `AGENTS.md`.
   `docs/design/domain/testing.md`). Momentum and tokens count more than
   upfront perfection: QA (section 4.6) catches the rest, and what is wrong is
   corrected as it shows.
-- **Guidelines, not prescriptions.** What this file says, and what it
-  cites from development.md and the testing documents, is good practice
-  for the owner to apply with judgement, case by case, as the work goes:
-  partly, later, or not at all where it doesn't pay. None of it is
-  upfront work to complete before starting, as the designer's and the
-  planner's was. What the tools enforce still holds: `land` and its
-  gate, `heavy`, the disk floor.
+- **Rules and guidelines.** programming-model.md, testing-strategy.md
+  and the project's testing documents are rules: they shape the code
+  and its tests, and a departure needs its reason, stated in the design
+  or the commit. This file is guidelines: good practice for the owner
+  to apply with judgement, case by case, as the work goes, partly,
+  later, or not at all where it doesn't pay. None of it is upfront work
+  to complete before starting, as the old designer's and planner's was.
+  What the tools enforce holds: `land` and its gate, `heavy`, the disk
+  floor.
 
 ## 2. The owner's session
 
 - **Started by its parent** in `~/src/rust` of the machine its work runs
   on, named `o/<name>`:
   `claude --bg -n o/<name> --model claude-opus-5-5 --effort <effort>
-  --autocompact 150000 --dangerously-skip-permissions "Read <brief> and
-  do what it says."`
+  --autocompact 150000 --dangerously-skip-permissions --settings
+  '{"autoMemoryEnabled": false}' "Read <brief> and do what it says."`
+  Its notes are its memory: Claude Code's auto-memory stays off, since
+  in `~/src/rust` it would share the director's.
 - **Its effort** is the parent's choice by the part's difficulty: xhigh,
   high or medium. The parent may raise it after the first report, when
   the output falls short.
@@ -75,8 +87,17 @@ the repository's own `AGENTS.md`.
 ## 3. Designing
 
 - **The owner is its part's designer.** It writes the design documents
-  in `docs/design/` (development.md, 4.3, the house style) and lands
-  them with `land --docs` (4.4), from a worktree on a branch.
+  in `docs/design/` and lands them with `land --docs` (4.4), from a
+  worktree on a branch. The house style:
+  - a title, then a dated status line ("Provisional, 2026-10-09");
+  - "1. In one page" first, with bold-led bullets, then numbered
+    sections, cited as "io.md, 6.3";
+  - never renumber: code cites sections by number, so new material goes
+    in an existing section, a new subsection, or a new last section;
+  - contracts, not history: no spikes, findings or benchmark numbers;
+  - rules in the domain documents, numbers in the documents the
+    repository names for them;
+  - what no decision settles stays under "Open questions".
 - **It settles what the draft leaves open.** It escalates to its parent
   only what changes the draft's goal, constraints or expectations, or
   would be hard to reverse: an interface between repositories, a stored
@@ -110,24 +131,30 @@ After the green light, the owner implements directly what is small.
 Otherwise it breaks the work into tasks, all upfront, as it goes, or
 both, and prepares the next tasks while implementers work.
 
-**The planner's guidelines serve its tasks too** (development.md,
-section 5), as section 1 says: applied as the work goes and where they
-pay, never as upfront planning. Those about plan files, sessions and
-the coordinator don't apply. The useful ones:
-- 5.1, what is settled first: the scope, the APIs that may break and
-  their repair, credentials and live services, the proofs, the
-  interface sketches;
-- 5.3, the increments: small, each landed on its own and leaving `main`
-  coherent; dependencies named by capability; upstream first; open
-  behaviour stays open until the owner, as its designer, answers it; a
-  new world's cost; transitional code with an end; a bound over a sum
-  computed early; a suite every task adds to ends merged;
-- 5.5 and 5.6: each task proves itself at the highest layer within
-  reach, layers open as early as they can, and the tests keep their
-  shape and ceilings;
-- 5.7: repins.
+What the old planners learned serves its tasks, as guidelines (section
+1), applied as the work goes and where they pay:
+- **Settle first** what the tasks rest on: the scope, the APIs that may
+  break and who repairs them, credentials and live services, the
+  interface sketches.
+- **Small tasks,** each landed on its own and leaving `main` coherent:
+  nothing half-built in sight, no dead code. Transitional code names
+  the task that removes it.
+- **Upstream first:** a task that needs an upstream change waits for
+  it, and repins in a commit of its own (4.5). Dependencies are named
+  by capability, never by a task's number alone.
+- **Open behaviour stays open** until the owner, as its designer,
+  decides it. An implementer never does.
+- **Each task proves itself** at the highest layer within its reach,
+  and layers open as early as they can: the first joint, process or
+  real-loop story as soon as the code can run it.
+- **Test cost holds from the first task.** A new world costs at most
+  about 1 s focused and 5 s fuzzy. A suite's first breach of its budget
+  is profiled and its tests made cheaper; the budget is not raised. A
+  bound over a sum of several tasks' parts is computed by the first
+  task that can, and kept current. A suite that several tasks add to
+  ends merged: their copies of captures, polls and helpers become one.
 
-The one that pays most often: **the meeting point comes first** (5.3). Where two parts
+The one that pays most often: **the meeting point comes first.** Where two parts
 meet (a client and its server, a protocol's two ends, a domain and its
 store, a service and its host), one thin story runs them together, the
 real thing on both sides, as soon as the far side can answer, and each
@@ -171,14 +198,36 @@ not as a code review:
   sketches the task gave, in the right world.
 
 A sub-agent may check a large one. Then the owner lands it, or tells
-the implementer to, with `land` (development.md, section 9). It updates the repository's
-`docs/design/STATUS.md` rows its work changes.
+the implementer to, with `land`, from a clean worktree on its branch:
+it rebases on `origin/main`, builds and lints, runs the repository's
+gate (`scripts/check.sh`) through `heavy --gate`, records the evidence
+in the tip commit's trailers, and pushes. `land --docs` lands Markdown
+alone, without the gate. Its exit status 3 is a rebase stopped on
+conflicts, left in progress; 4 a failed build, lint or gate. The owner
+updates the repository's `docs/design/STATUS.md` rows its work changes.
 
 ### 4.5 Sharing the machines
 
-- The kit stays: worktrees under `tmp/owners/<name>/`, `heavy`'s queue
-  and its gate (development.md, 11.1), the disk floor and the cap on
-  sessions (11.4), and downstream repins (5.7).
+- **Worktrees** under `tmp/owners/<name>/`, one per implementer, never
+  a primary checkout. A worktree's `target/` is cleared when done with.
+- **`heavy`** is the only way to build and test, for everyone: `heavy
+  cargo nextest run -p <crate>`. It queues on pueue in two lanes:
+  builds, two at a time, and gates, alone on a quiet machine.
+- **The disk floor.** Below the machine's floor, 40 GB unless
+  `tmp/machine.env` says otherwise, no new implementer starts, and
+  finished targets are cleared. A target grows to about 21 GB.
+- **Repins.** A repository's `Cargo.lock` pins its upstreams' git
+  revisions. A repin moves a pin to the upstream's `origin/main` (`heavy
+  cargo update -p <one of its packages>`; jig moves smith and skein
+  together), runs `heavy cargo check --workspace --all-targets`, repairs
+  what breaks, and lands with the gate. Its repairs: the pins, what an
+  upstream trait now requires, names that moved, and the tests an
+  upstream change of behaviour breaks, in at most about 200 lines and
+  no change of design. A conflict in `Cargo.lock` is never merged by
+  hand: take `origin/main`'s and update again.
+- **Breaking upstream.** An upstream change that breaks a downstream
+  build, and a repin of a repository others also repin, wait for the
+  director's word: it orders them across owners and runs.
 - **The footprint.** An owner's notes list the repositories, crates and
   protocol versions it changes, and the repins it needs. The director
   orders owners whose footprints overlap, and one repin at a time per
@@ -247,5 +296,5 @@ directory, in at most half a page:
 - what went well and what didn't, in this process.
 
 It reports to its parent, which folds the note into its own. The
-director compares the notes with the runs' metrics (development.md,
-15.2) to judge the experiment.
+director compares the notes with the old process's runs to judge the
+experiment.

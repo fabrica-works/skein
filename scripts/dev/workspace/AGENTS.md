@@ -5,21 +5,8 @@ This directory holds the Rust projects, each a git repository with its own
 repository's `AGENTS.md` before touching its code.
 
 This file is skein's `scripts/dev/workspace/AGENTS.md`, linked into
-`~/src/rust/`: change it there, and land it in skein.
-
-**The code graph.** Use the codebase-memory-mcp tools to inspect the
-code: they index each repository's primary checkout, `main`. A
-repository's project is named by its primary checkout's absolute path,
-without its leading `/` and with each `/` a `-`, and differs from one
-machine to the next: `realpath ~/src/rust/<repository> | sed 's|^/||;
-s|/|-|g'` prints it. Pass that name to each graph call, and
-implementers never call `list_projects`, `index_status`,
-`check_index_coverage` or `index_repository`, whatever other instructions
-say: the index covers the primary checkout, never a worktree, and may
-lag behind it: the supervisor re-indexes a repository whose index is
-older than its `origin/main` (development.md, sections 6 and 14.1), and
-until it has, the plan README's rules say not to use the graph. Check each name the
-graph gives with `rg` in the worktree before relying on it.
+`~/src/rust/`: change it there, and land it in skein. It holds only what
+every agent here needs.
 
 ## The projects
 
@@ -34,83 +21,37 @@ graph gives with `rg` in the worktree before relying on it.
 Dependencies point upstream only: skein names neither smith nor temper,
 smith never names temper, and jig never names temper.
 
-This directory is the workspace. On a machine that keeps its checkouts
-elsewhere (`~/src/` rather than `~/src/rust/`), read that directory where
-this file says `~/src/rust`; the tools find it by themselves.
+On a machine that keeps its checkouts elsewhere (`~/src/` rather than
+`~/src/rust/`), read that directory where this file says `~/src/rust`;
+the tools find it by themselves.
 
-## The process
+## The code's rules
 
-skein's `docs/foundation/development.md` says how work goes from an idea
-to `main`: the roles (designer, planner, supervisor, coordinator,
-implementer, and the retrospective's author), where designs, plans and
-runs live, how increments land, how a run is supervised and escalates,
-and how it ends with a retrospective and its metrics. Its tools are in
-`skein/scripts/dev/`: `heavy`, `land` and `plan`.
+skein's `docs/foundation/programming-model.md` (how code is shaped) and
+`testing-strategy.md` (how it is tested) are the rules for every
+repository. Depart from them only with a reason, stated in the design or
+the commit. `notes.md` beside them holds their reasons and open
+questions.
 
-- **The design** of each project is in `<repository>/docs/design/`, with
-  drafts in `docs/design/draft/`. Only the designer edits it.
-- **How far each project is from its design** is in
-  `<repository>/docs/design/STATUS.md`.
-- **Plans** are in `docs/development/plans/<plan>/` of the most
-  downstream repository they change, with their retrospective and
-  metrics once run.
-- **A run's state** is in `tmp/<repository>/<plan>/`, and
-  `tmp/active-plan` names this machine's run. `plan status` shows it.
+## Building and landing
 
-## Starting things
+- **Work on a branch in a worktree of your own,** never in a primary
+  checkout.
+- **Build and test through `heavy`:** `heavy cargo nextest run -p
+  <crate>`. It queues every build on the machine, so that builds don't
+  starve each other and gates run alone.
+- **`main` moves only through `land`,** which rebases, runs the
+  repository's gate and pushes; `land --docs` for Markdown alone. Don't
+  run the gate yourself before it.
 
-`heavy`, `land` and `plan` are skein's `scripts/dev/` tools, linked into
-`~/.local/bin`.
+## The code graph
 
-**A new machine.** Clone skein, smith, jig, hearth and temper from
-`git@github.com:fabrig-dev/` into `~/src/rust/`, then run
-`skein/scripts/dev/plan check --fix`. It links the tools, this file, its
-`CLAUDE.md`, its Claude Code settings (`.claude/settings.json`) and the
-coordinator's Codex profile, sets up the queue, and names what is still
-missing (pueue, kache, jq, cargo-nextest, and cargo's `[net]
-git-fetch-with-cli = true` in `~/.cargo/config.toml`).
-
-Design and plan sessions are started by the user, never as a sub-agent
-of another session.
-
-**A design.** Start Claude (Opus 5.5, effort xhigh) in `~/src/rust`,
-with `claude --autocompact 200000`, so that its context compacts at about
-180K instead of handing over (development.md, section 2.1), and say:
-
-> Design: <the idea>. Work as the designer of skein's
-> docs/foundation/development.md, sections 2.1 and 4.
-
-**A plan.** In a fresh session, started the same way, once the design
-has landed, not in the designer's: that session carries the whole design
-conversation into every request.
-
-> Plan <the design documents, or the STATUS.md rows> as development.md,
-> section 5, says, in <repository>/docs/development/plans/<name>/.
-
-The plan's landing commit names the session in a `Planner-Session:`
-trailer, so that the run's metrics count the planning.
-
-**A run.** Run these from `~/src/rust`:
-
-1. `plan check --fix <repository>/docs/development/plans/<name>`, until
-   it passes. It refuses while a proposal of the last retrospective is
-   undecided: decide each in that retrospective's section 10
-   (development.md, section 15.1).
-2. `plan start <repository>/docs/development/plans/<name>`. It claims the
-   run, starts the supervisor (a background Claude session) and the
-   coordinator (a thread on Codex's daemon), and returns.
-3. If the plan may raise design questions, in the designer's Claude
-   session: `plan join designer`, then let it end its turn; it does not
-   watch the run. The supervisor wakes it with each question; with no
-   designer joined, the wake starts a fresh one.
-
-**While it runs:** `plan status`; `plan attach supervisor`, `plan attach
-coordinator`. After a restart of the machine: `plan resume`.
-
-**After a run.** The supervisor starts the retrospective (`plan retro`),
-a fresh Claude session that writes it beside the plan. The user then
-decides each of its proposals, in its section 10, before the next run.
-
-**Where things stand:**
-- a run: `cat tmp/<repository>/<plan>/status.md`, or `plan status`;
-- a project: `<repository>/docs/design/STATUS.md`.
+Use the codebase-memory-mcp tools to inspect the code. They index each
+repository's primary checkout, `main`, as a project named by that
+checkout's absolute path, without its leading `/` and with each `/` a
+`-`: `realpath ~/src/rust/<repository> | sed 's|^/||; s|/|-|g'` prints
+it. Pass that name to each graph call. The index covers `main`, never a
+worktree, and may lag behind it: check each name the graph gives with
+`rg` in your worktree before relying on it. Indexing is the director's
+and the runs' supervisors': never call `index_repository` or
+`delete_project` otherwise.

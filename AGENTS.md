@@ -10,8 +10,9 @@ your task names.
   "tls.md, 3.6". `docs/design/STATUS.md` says what is built.
   `docs/foundation/` holds the rules every crate follows:
   `programming-model.md` (step machines, states, what step code may
-  use), `testing-strategy.md` (tests, worlds, suites) and
-  `development.md` (the process).
+  use) and `testing-strategy.md` (tests, worlds, suites); a departure
+  needs its reason, stated in the design or the commit. `notes.md`
+  holds their reasons and open questions.
 - **The layout** of crates and tests: `docs/design/testing.md`, section 6.
   Step crates are `crates/*`; their worlds are `tests/*`; shared test
   harnesses are `testing/*`.
@@ -31,8 +32,7 @@ your task names.
   within 15 seconds, the fuzzy one (binaries named `fuzzy_*`) within 60.
   A test past its slow period is flagged SLOW.
 - Run what compiles and the tests of the crates you touch through
-  `heavy` (development.md, section 8.3): `heavy cargo nextest run -p
-  <crate>`.
+  `heavy`: `heavy cargo nextest run -p <crate>`.
 
 ## The code's rules
 
