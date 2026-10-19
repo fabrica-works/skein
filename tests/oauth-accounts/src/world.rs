@@ -87,6 +87,9 @@ pub fn limits() -> accounts::Limits {
             code_bytes: 64,
             url_bytes: 1024,
             request_bytes: 1024,
+            parameter_bytes: 0,
+            resource_bytes: 0,
+            nonce_bytes: 0,
             sign_in_time: Duration::from_secs(120),
             request_time: Duration::from_secs(10),
             backoff_base: Duration::from_secs(1),
@@ -130,6 +133,7 @@ pub(crate) fn registration(transport: Transport) -> oauth::Registration {
         client_secret: None,
         pkce_for_confidential: false,
         metadata_claim: None,
+        terms: None,
     }
 }
 

@@ -2,8 +2,8 @@ use skein_fake_oauth as fake;
 use skein_lib::{Duration, bytes};
 use skein_oauth as oauth;
 use skein_oauth_world::{
-    boxed, client_limits, client_step, documents, error, failure, fake_limits, fake_step, http, issuer, record,
-    registration, response, sign_in, success, time, wall,
+    boxed, client_limits, client_step, documents, error, failure, fake_limits, fake_step, http, issuer, issuer_for,
+    record, redirected, registration, response, sign_in, success, terms, time, visit, wall,
 };
 
 #[test]
@@ -28,6 +28,8 @@ fn a_localhost_registration_signs_in_through_its_exact_redirect() {
     let Some(oauth::Request::Visit { url }) = client_step(
         &mut client,
         oauth::Event::SignIn {
+            nonce: None,
+            port: None,
             registration,
             key: 7,
             generation: 0,
@@ -323,4 +325,81 @@ fn a_version_two_record_refreshes_into_version_three() {
     let restored = oauth::decode_record(&saved, &documents()).expect("version three");
     assert!(restored.refresh_token == Some(boxed(b"next")));
     assert_eq!(restored.generation, 3);
+}
+
+#[test]
+fn a_varying_redirect_refuses_another_ports_redirect() {
+    const BOUND_PORT: u16 = 40001; // The listener bound for this sign-in.
+    let mut registration = registration(true);
+    registration.redirect_uri = boxed(b"http://127.0.0.1:40001/callback");
+    let mut additions = terms();
+    additions.varying_port = true;
+    registration.terms = Some(additions);
+    let mut issuer = issuer_for(&registration);
+    let mut client = oauth::Client::new(client_limits()).expect("client");
+    let url = visit(&mut client, registration, None, Some(BOUND_PORT));
+    let oauth::Event::Redirected { state, code, error, now, .. } = redirected(&mut issuer, url) else {
+        panic!("redirect")
+    };
+    let result = client_step(
+        &mut client,
+        oauth::Event::Redirected { uri: boxed(b"http://127.0.0.1:40002/callback"), state, code, error, now },
+    );
+    assert_eq!(failure(result.as_ref()), oauth::Failure::InvalidRedirect);
+}
+
+fn resource_registration(public: bool) -> oauth::Registration {
+    let mut registration = registration(public);
+    let mut additions = terms();
+    additions.resource = Some(boxed(b"https://service.example"));
+    registration.terms = Some(additions);
+    registration
+}
+
+#[test]
+fn the_resource_goes_in_every_request() {
+    for (public, field) in [
+        (true, b"resource=https%3A%2F%2Fservice.example".as_slice()),
+        (false, br#""resource":"https://service.example""#.as_slice()),
+    ] {
+        let registration = resource_registration(public);
+        let mut issuer = issuer_for(&registration);
+        issuer.queue(success(b"access", Some(b"refresh"), 0)).expect("plan");
+        let mut client = oauth::Client::new(client_limits()).expect("client");
+        let url = visit(&mut client, registration, None, None);
+        assert!(bytes::find(&url, b"&resource=https%3A%2F%2Fservice.example").is_some(), "authorization {public}");
+        let event = redirected(&mut issuer, url);
+        let request = http(client_step(&mut client, event));
+        assert!(bytes::find(&request.body, field).is_some(), "exchange {public}");
+        let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(2), wall: wall(100) }));
+        let saved = record(client_step(&mut client, oauth::Event::Http(answer)));
+        drop(client_step(&mut client, oauth::Event::Reset));
+        let request = http(client_step(
+            &mut client,
+            oauth::Event::Refresh {
+                registration: resource_registration(public),
+                prior: saved.refresh_state().expect("refresh"),
+                now: time(3),
+            },
+        ));
+        assert!(bytes::find(&request.body, field).is_some(), "refresh {public}");
+    }
+}
+
+#[test]
+fn an_openid_sign_in_fails_before_its_check_exists() {
+    let mut registration = registration(true);
+    registration.scope = boxed(b"openid");
+    let mut additions = terms();
+    additions.openid = Some(oauth::OpenId { issuer: boxed(b"https://issuer.example"), key_set: None });
+    registration.terms = Some(additions);
+    let mut issuer = issuer_for(&registration);
+    issuer.queue(success(b"access", Some(b"refresh"), 0)).expect("plan");
+    let mut client = oauth::Client::new(client_limits()).expect("client");
+    let url = visit(&mut client, registration, Some(boxed(b"0123456789abcdef")), None);
+    let event = redirected(&mut issuer, url);
+    let request = http(client_step(&mut client, event));
+    let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(2), wall: wall(100) }));
+    let result = client_step(&mut client, oauth::Event::Http(answer));
+    assert_eq!(failure(result.as_ref()), oauth::Failure::Malformed);
 }

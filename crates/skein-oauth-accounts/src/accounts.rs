@@ -62,5 +62,6 @@ pub(crate) fn copy_registration(registration: &Registration) -> Registration {
         client_secret: registration.client_secret.clone(),
         pkce_for_confidential: registration.pkce_for_confidential,
         metadata_claim: registration.metadata_claim.clone(),
+        terms: registration.terms.clone(),
     }
 }

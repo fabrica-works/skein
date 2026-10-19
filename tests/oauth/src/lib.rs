@@ -42,6 +42,9 @@ pub fn client_limits() -> oauth::ClientLimits {
         code_bytes: 64,
         url_bytes: 1024,
         request_bytes: 1024,
+        parameter_bytes: 256,
+        resource_bytes: 128,
+        nonce_bytes: 64,
         sign_in_time: Duration::from_secs(120),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(2),
@@ -69,21 +72,22 @@ pub fn registration(public: bool) -> oauth::Registration {
         client_secret: if public { None } else { Some(boxed(b"secret")) },
         pkce_for_confidential: false,
         metadata_claim: None,
+        terms: None,
     }
 }
 #[must_use]
 pub fn issuer(public: bool) -> fake::Issuer {
+    issuer_for(&registration(public))
+}
+#[must_use]
+pub fn issuer_for(registration: &oauth::Registration) -> fake::Issuer {
     fake::Issuer::new(
         fake::Config {
-            authorization_url: boxed(b"https://issuer.example/authorize"),
-            token_endpoint: boxed(b"https://issuer.example/token"),
-            client_id: boxed(b"client"),
-            client_secret: if public { None } else { Some(boxed(b"secret")) },
-            redirect_uri: if public {
-                boxed(b"http://127.0.0.1:1234/callback")
-            } else {
-                boxed(b"https://web.example/callback")
-            },
+            authorization_url: registration.authorization_url.clone(),
+            token_endpoint: registration.token_endpoint.clone(),
+            client_id: registration.client_id.clone(),
+            client_secret: registration.client_secret.clone(),
+            redirect_uri: registration.redirect_uri.clone(),
             refresh_token: boxed(b"seed"),
         },
         fake_limits(),
@@ -157,22 +161,60 @@ pub fn error(status: u16, code: &[u8], retry_after: u64) -> fake::Plan {
 }
 #[must_use]
 pub fn sign_in(client: &mut oauth::Client, issuer: &mut fake::Issuer, public: bool) -> oauth::HttpRequest {
-    let visit = client_step(
-        client,
-        oauth::Event::SignIn {
-            registration: registration(public),
-            key: 7,
-            generation: 0,
-            state: boxed(b"0123456789abcdef"),
-            verifier: if public { Some(boxed(b"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")) } else { None },
-            now: time(1),
-        },
-    );
-    let Some(oauth::Request::Visit { url }) = visit else { panic!("visit expected") };
+    let url = visit(client, registration(public), None, None);
     if public {
         assert!(bytes::find(&url, b"code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM").is_some());
     }
+    let event = redirected(issuer, url);
+    http(client_step(client, event))
+}
+
+#[must_use]
+pub fn terms() -> oauth::Terms {
+    oauth::Terms {
+        parameters: Box::new([]),
+        openid: None,
+        issued_client_id: false,
+        varying_port: false,
+        resource: None,
+        required_scopes: None,
+        revocation_endpoint: None,
+        sign_in_again: Box::new([]),
+    }
+}
+
+#[must_use]
+pub fn visit(
+    client: &mut oauth::Client,
+    registration: oauth::Registration,
+    nonce: Option<Box<[u8]>>,
+    port: Option<u16>,
+) -> Box<[u8]> {
+    let verifier = if registration.client_secret.is_none() || registration.pkce_for_confidential {
+        Some(boxed(b"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"))
+    } else {
+        None
+    };
+    let request = client_step(
+        client,
+        oauth::Event::SignIn {
+            registration,
+            key: 7,
+            generation: 0,
+            state: boxed(b"0123456789abcdef"),
+            verifier,
+            nonce,
+            port,
+            now: time(1),
+        },
+    );
+    let Some(oauth::Request::Visit { url }) = request else { panic!("visit expected") };
+    url
+}
+
+#[must_use]
+pub fn redirected(issuer: &mut fake::Issuer, url: Box<[u8]>) -> oauth::Event {
     let redirect = fake_step(issuer, fake::Event::Authorize { url, now: time(1) });
     let Some(fake::Request::Redirect { uri, state, code }) = redirect else { panic!("redirect expected") };
-    http(client_step(client, oauth::Event::Redirected { uri, state, code: Some(code), error: None, now: time(2) }))
+    oauth::Event::Redirected { uri, state, code: Some(code), error: None, now: time(2) }
 }

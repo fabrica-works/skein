@@ -28,6 +28,7 @@ impl Owner {
                 wire: skein_oauth::WireFormat::Form,
                 pkce_for_confidential: false,
                 metadata_claim: None,
+                terms: None,
             },
             endpoint: Endpoint {
                 address: kernel::Addr::from(([127, 0, 0, 1], 31000)),

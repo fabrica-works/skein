@@ -59,6 +59,9 @@ fn every_account_holds_a_maximal_record_within_the_heap_bound() {
             code_bytes: 64,
             url_bytes: 512,
             request_bytes: 512,
+            parameter_bytes: 0,
+            resource_bytes: 0,
+            nonce_bytes: 0,
             sign_in_time: Duration::from_secs(120),
             request_time: Duration::from_secs(10),
             backoff_base: Duration::from_secs(2),
@@ -121,6 +124,7 @@ fn every_refresh_slot_holds_its_maximal_records_and_tls_connection() {
             client_secret: None,
             pkce_for_confidential: false,
             metadata_claim: None,
+            terms: None,
         };
         assert!(
             configured
@@ -396,6 +400,7 @@ fn registration(
         client_secret,
         pkce_for_confidential: false,
         metadata_claim: None,
+        terms: None,
     }
 }
 

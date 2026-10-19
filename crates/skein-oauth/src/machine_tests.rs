@@ -34,6 +34,9 @@ fn limits() -> ClientLimits {
         code_bytes: 128,
         url_bytes: 1024,
         request_bytes: 1024,
+        parameter_bytes: 256,
+        resource_bytes: 128,
+        nonce_bytes: 64,
         sign_in_time: Duration::from_secs(120),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(2),
@@ -56,6 +59,7 @@ fn registration(public: bool, wire: WireFormat) -> Registration {
         client_secret: if public { None } else { Some(boxed(b"secret")) },
         pkce_for_confidential: false,
         metadata_claim: None,
+        terms: None,
     }
 }
 fn state() -> Box<[u8]> {
@@ -113,6 +117,8 @@ fn public_sign_in_uses_s256_state_and_one_code_exchange() {
     let visit = step(
         &mut client,
         Event::SignIn {
+            nonce: None,
+            port: None,
             registration: registration(true, WireFormat::Form),
             key: 7,
             generation: 0,
@@ -147,6 +153,8 @@ fn confidential_sign_in_sends_secret_in_json_only_to_token_endpoint() {
     let visit = step(
         &mut client,
         Event::SignIn {
+            nonce: None,
+            port: None,
             registration: registration(false, WireFormat::Json),
             key: 1,
             generation: 8,
@@ -182,7 +190,16 @@ fn confidential_registration_can_require_pkce_too() {
     registration.pkce_for_confidential = true;
     let Some(Request::Visit { url }) = step(
         &mut client,
-        Event::SignIn { registration, key: 1, generation: 0, state: state(), verifier: Some(verifier()), now: time(1) },
+        Event::SignIn {
+            nonce: None,
+            port: None,
+            registration,
+            key: 1,
+            generation: 0,
+            state: state(),
+            verifier: Some(verifier()),
+            now: time(1),
+        },
     ) else {
         panic!("visit expected")
     };
@@ -215,6 +232,8 @@ fn public_redirect_spellings_supply_the_exact_loopback_bind_address() {
         let Some(Request::Visit { .. }) = step(
             &mut client,
             Event::SignIn {
+                nonce: None,
+                port: None,
                 registration,
                 key: 1,
                 generation: 0,
@@ -250,6 +269,8 @@ fn localhost_redirect_admission_refuses_other_spellings_and_missing_parts() {
             failure(step(
                 &mut client,
                 Event::SignIn {
+                    nonce: None,
+                    port: None,
                     registration,
                     key: 1,
                     generation: 0,
@@ -280,6 +301,8 @@ fn localhost_registration_refuses_every_redirect_uri_change_before_exchange() {
         let Some(Request::Visit { .. }) = step(
             &mut client,
             Event::SignIn {
+                nonce: None,
+                port: None,
                 registration,
                 key: 1,
                 generation: 0,
@@ -321,6 +344,8 @@ fn public_redirect_must_have_a_numeric_loopback_port() {
             failure(step(
                 &mut client,
                 Event::SignIn {
+                    nonce: None,
+                    port: None,
                     registration,
                     key: 1,
                     generation: 0,
@@ -341,6 +366,8 @@ fn wrong_state_and_redirect_are_terminal_without_exchange() {
         let _visit = step(
             &mut client,
             Event::SignIn {
+                nonce: None,
+                port: None,
                 registration: registration(true, WireFormat::Form),
                 key: 1,
                 generation: 0,
@@ -557,6 +584,8 @@ fn issuer_http_endpoints_are_admitted_only_on_numeric_loopback() {
                 let result = step(
                     &mut client,
                     Event::SignIn {
+                        nonce: None,
+                        port: None,
                         registration: configured,
                         key: 1,
                         generation: 0,
@@ -626,3 +655,5 @@ fn refresh_keeps_its_admitted_http_loopback_endpoint() {
         }
     }
 }
+
+mod terms;

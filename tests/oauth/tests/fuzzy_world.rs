@@ -1,17 +1,7 @@
 use skein_fake_oauth as fake;
-use skein_lib::{Duration, Time, Wall, bytes};
+use skein_lib::Duration;
 use skein_oauth as oauth;
-use skein_oauth_world::{client_step, documents, fake_step};
-
-fn box_of(input: &[u8]) -> Box<[u8]> {
-    bytes::copy_of(input)
-}
-fn at(seconds: u64) -> Time {
-    Time::from_nanos(seconds.saturating_mul(1_000_000_000))
-}
-fn wall(seconds: u64) -> Wall {
-    Wall::from_nanos(seconds.saturating_mul(1_000_000_000))
-}
+use skein_oauth_world::{boxed as box_of, client_step, documents, fake_step, time as at, wall};
 
 fn registration(seed: u64) -> oauth::Registration {
     oauth::Registration {
@@ -24,6 +14,7 @@ fn registration(seed: u64) -> oauth::Registration {
         client_secret: None,
         pkce_for_confidential: false,
         metadata_claim: None,
+        terms: None,
     }
 }
 
@@ -37,6 +28,9 @@ fn scenario(seed: u64) {
         code_bytes: 32,
         url_bytes: 512,
         request_bytes: 512,
+        parameter_bytes: 0,
+        resource_bytes: 0,
+        nonce_bytes: 0,
         sign_in_time: Duration::from_secs(60),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(1),

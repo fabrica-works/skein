@@ -3,12 +3,14 @@
 //! identity or token store. `Client::step` emits visits, HTTP demands and one
 //! terminal. HTTP transport and persistence belong to the caller.
 
-use crate::redirect::{authorization_url, form_fields, validate_registration};
+use crate::redirect::{
+    authorization_url, form_fields, has_openid, resource_field, sign_in_values, validate_registration,
+};
 use crate::{ClaimSelector, DecodeError, Failure, Json, Limits, OAuthError, RefreshState, SavedToken, TokenResponse};
 use crate::{classify, decode_error, decode_response, pkce, rotate};
 use alloc::boxed::Box;
 use skein_json::writer::Encoder;
-use skein_lib::{Duration, Queue, Time, Wall, bytes};
+use skein_lib::{Duration, List, Queue, Time, Wall, bytes};
 
 /// Maximum requests emitted by one step.
 pub const MAX_OUT: u32 = 1;
@@ -23,6 +25,9 @@ pub struct ClientLimits {
     pub code_bytes: u32,
     pub url_bytes: u32,
     pub request_bytes: u32,
+    pub parameter_bytes: u32,
+    pub resource_bytes: u32,
+    pub nonce_bytes: u32,
     pub sign_in_time: Duration,
     pub request_time: Duration,
     pub backoff_base: Duration,
@@ -34,8 +39,15 @@ pub struct ClientLimits {
 #[must_use]
 pub fn client_worst_case(limits: &ClientLimits) -> Option<u64> {
     crate::worst_case(&limits.document)?
-        .checked_add(u64::from(limits.uri_bytes).checked_mul(4)?)?
-        .checked_add(u64::from(limits.scope_bytes))?
+        .checked_add(u64::from(limits.uri_bytes).checked_mul(7)?)?
+        .checked_add(u64::from(limits.scope_bytes).checked_mul(2)?)?
+        .checked_add(u64::from(limits.parameter_bytes))?
+        .checked_add(
+            u64::from(limits.parameter_bytes).checked_mul(u64::try_from(size_of::<crate::Parameter>()).ok()?)?,
+        )?
+        .checked_add(List::<Option<(&[u8], &[u8])>>::worst_case(limits.parameter_bytes.checked_add(9)?)?)?
+        .checked_add(u64::from(limits.resource_bytes))?
+        .checked_add(u64::from(limits.nonce_bytes))?
         .checked_add(u64::from(limits.state_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.code_bytes))?
         .checked_add(u64::from(limits.url_bytes))?
@@ -61,6 +73,7 @@ pub struct Registration {
     pub client_secret: Option<Box<[u8]>>,
     pub pkce_for_confidential: bool,
     pub metadata_claim: Option<ClaimSelector>,
+    pub terms: Option<crate::Terms>,
 }
 
 /// A complete token POST for the caller's HTTP/TLS stack.
@@ -100,6 +113,8 @@ pub enum Event {
         generation: u64,
         state: Box<[u8]>,
         verifier: Option<Box<[u8]>>,
+        nonce: Option<Box<[u8]>>,
+        port: Option<u16>,
         now: Time,
     },
     Redirected {
@@ -137,6 +152,16 @@ enum Phase {
     AwaitHttp { id: u64, deadline: Time },
     Backoff { due: Time },
     Done,
+}
+
+struct SignInValues {
+    key: u32,
+    generation: u64,
+    state: Box<[u8]>,
+    verifier: Option<Box<[u8]>>,
+    nonce: Option<Box<[u8]>>,
+    port: Option<u16>,
+    now: Time,
 }
 
 enum Grant {
@@ -193,11 +218,12 @@ impl Client {
     pub fn step(&mut self, event: Event, out: &mut Queue<Request>) {
         assert!(out.room() >= MAX_OUT, "caller reserves one OAuth output");
         match event {
-            Event::SignIn { registration, key, generation, state, verifier, now } => {
+            Event::SignIn { registration, key, generation, state, verifier, nonce, port, now } => {
                 if self.phase != Phase::Idle {
                     return;
                 }
-                let result = self.sign_in(registration, key, generation, state, verifier, now);
+                let result =
+                    self.sign_in(registration, SignInValues { key, generation, state, verifier, nonce, port, now });
                 self.emit_start(result, out);
             }
             Event::Refresh { registration, prior, now } => {
@@ -237,14 +263,12 @@ impl Client {
 
     fn sign_in(
         &mut self,
-        registration: Registration,
-        key: u32,
-        generation: u64,
-        state: Box<[u8]>,
-        verifier: Option<Box<[u8]>>,
-        now: Time,
+        mut registration: Registration,
+        values: SignInValues,
     ) -> Result<(Exchange, Request, Phase), Failure> {
+        let SignInValues { key, generation, state, verifier, nonce, port, now } = values;
         validate_registration(&registration, &self.limits, true)?;
+        sign_in_values(&mut registration, nonce.as_deref(), port, &self.limits)?;
         if state.len() < 16 || state.len() > usize::try_from(self.limits.state_bytes).expect("u32 fits") {
             return Err(Failure::Limit);
         }
@@ -257,7 +281,7 @@ impl Client {
             (None, false) => None,
             (Some(_), false) | (None, true) => return Err(Failure::Malformed),
         };
-        let url = authorization_url(&registration, &state, challenge.as_deref(), &self.limits)?;
+        let url = authorization_url(&registration, &state, challenge.as_deref(), nonce.as_deref(), &self.limits)?;
         let deadline = now.checked_add(self.limits.sign_in_time).ok_or(Failure::Limit)?;
         let exchange = Exchange {
             registration,
@@ -413,6 +437,9 @@ impl Client {
         let prior = match &exchange.grant {
             Grant::Refresh { prior } => prior.clone(),
             Grant::SignIn { key, generation, .. } => {
+                if has_openid(&exchange.registration) {
+                    return Err(Failure::Malformed);
+                }
                 let Some(refresh) = &response.refresh_token else {
                     return Err(Failure::Malformed);
                 };
@@ -557,6 +584,7 @@ fn token_body(exchange: &Exchange, limits: &ClientLimits) -> Result<Box<[u8]>, F
         }
     };
     let fields = [
+        resource_field(registration),
         Some((b"grant_type".as_slice(), grant_type)),
         Some((b"client_id".as_slice(), registration.client_id.as_ref())),
         Some((name, value)),

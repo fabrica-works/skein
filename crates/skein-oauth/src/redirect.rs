@@ -4,7 +4,41 @@ use crate::{ClientLimits, Failure, Registration};
 use alloc::boxed::Box;
 use core::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use core::str::FromStr;
-use skein_lib::{Writer, bytes};
+use skein_lib::{Decimal, List, Writer, bytes};
+
+/// An issuer's additions to its client registration (oauth.md, section 1).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Terms {
+    pub parameters: Box<[Parameter]>,
+    pub openid: Option<OpenId>,
+    pub issued_client_id: bool,
+    pub varying_port: bool,
+    pub resource: Option<Box<[u8]>>,
+    pub required_scopes: Option<Box<[u8]>>,
+    pub revocation_endpoint: Option<Box<[u8]>>,
+    pub sign_in_again: Box<[Box<[u8]>]>,
+}
+
+/// One parameter added to the authorization URL, and when it is sent.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Parameter {
+    pub name: Box<[u8]>,
+    pub value: Box<[u8]>,
+    pub sent: Sent,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Sent {
+    EverySignIn,
+    NewRegistration,
+}
+
+/// The ID token's issuer and, where configured, its published key set.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct OpenId {
+    pub issuer: Box<[u8]>,
+    pub key_set: Option<Box<[u8]>>,
+}
 
 /// Validates an owner's registration before an exchange or component starts.
 pub fn validate_registration(registration: &Registration, limits: &ClientLimits, sign_in: bool) -> Result<(), Failure> {
@@ -20,7 +54,9 @@ pub fn validate_registration(registration: &Registration, limits: &ClientLimits,
         return Err(Failure::Malformed);
     }
     if sign_in {
-        if registration.client_secret.is_none() && redirect_address(&registration.redirect_uri).is_err() {
+        if registration.client_secret.is_none()
+            && parse_redirect(&registration.redirect_uri, varying_port(registration)).is_err()
+        {
             return Err(Failure::InvalidRedirect);
         }
         if registration.client_secret.is_some() && !registration.redirect_uri.starts_with(b"https://") {
@@ -38,6 +74,7 @@ pub fn validate_registration(registration: &Registration, limits: &ClientLimits,
     {
         return Err(Failure::Limit);
     }
+    validate_terms(registration, limits)?;
     Ok(())
 }
 
@@ -95,6 +132,11 @@ fn port_number(port: &[u8]) -> bool {
 }
 
 fn redirect_port(port: &[u8]) -> Option<u16> {
+    let number = parse_port(port)?;
+    if number == 0 { None } else { Some(number) }
+}
+
+fn parse_port(port: &[u8]) -> Option<u16> {
     if port.is_empty() || port.len() > 5 {
         return None;
     }
@@ -107,13 +149,17 @@ fn redirect_port(port: &[u8]) -> Option<u16> {
         let value = tens.checked_add(u32::from(digit.wrapping_sub(b'0')))?;
         number = value;
     }
-    if number == 0 { None } else { u16::try_from(number).ok() }
+    u16::try_from(number).ok()
 }
 
 /// Address the caller binds for a public redirect; `localhost` is never resolved.
 /// Admits only exact loopback spellings, an explicit nonzero port and a path
 /// (oauth.md, sections 1 and 5); the caller still compares the whole URI exactly.
 pub fn redirect_address(uri: &[u8]) -> Result<SocketAddr, Failure> {
+    parse_redirect(uri, false)
+}
+
+fn parse_redirect(uri: &[u8], varying: bool) -> Result<SocketAddr, Failure> {
     if uri.contains(&b'#') {
         return Err(Failure::InvalidRedirect);
     }
@@ -127,13 +173,15 @@ pub fn redirect_address(uri: &[u8]) -> Result<SocketAddr, Failure> {
     } else if let Some(value) = authority.strip_prefix(b"[::1]:") {
         address = IpAddr::V6(Ipv6Addr::LOCALHOST);
         value
-    } else if let Some(value) = authority.strip_prefix(b"localhost:") {
+    } else if let Some(value) = authority.strip_prefix(b"localhost:")
+        && !varying
+    {
         address = IpAddr::V4(Ipv4Addr::LOCALHOST);
         value
     } else {
         return Err(Failure::InvalidRedirect);
     };
-    match redirect_port(port) {
+    match if varying { parse_port(port) } else { redirect_port(port) } {
         Some(port) => Ok(SocketAddr::new(address, port)),
         None => Err(Failure::InvalidRedirect),
     }
@@ -143,6 +191,7 @@ pub(crate) fn authorization_url(
     registration: &Registration,
     state: &[u8],
     challenge: Option<&[u8]>,
+    nonce: Option<&[u8]>,
     limits: &ClientLimits,
 ) -> Result<Box<[u8]>, Failure> {
     let fields = [
@@ -160,7 +209,26 @@ pub(crate) fn authorization_url(
             None => None,
         },
     ];
-    let query = form_fields(&fields, limits.url_bytes)?;
+    let parameters = match &registration.terms {
+        Some(terms) => terms.parameters.as_ref(),
+        None => &[],
+    };
+    let Ok(count) = u32::try_from(parameters.len()) else { return Err(Failure::Limit) };
+    let capacity = count.checked_add(9).ok_or(Failure::Limit)?;
+    let mut all = List::with_capacity(capacity);
+    for field in fields {
+        all.push(field).expect("measured URL fields");
+    }
+    for parameter in parameters {
+        all.push(Some((parameter.name.as_ref(), parameter.value.as_ref()))).expect("measured URL fields");
+    }
+    all.push(resource_field(registration)).expect("measured URL fields");
+    all.push(match nonce {
+        Some(value) => Some((b"nonce".as_slice(), value)),
+        None => None,
+    })
+    .expect("measured URL fields");
+    let query = form_fields(all.as_slice(), limits.url_bytes)?;
     let prefix = registration.authorization_url.len().checked_add(1).ok_or(Failure::Limit)?;
     let length = prefix.checked_add(query.len()).ok_or(Failure::Limit)?;
     if length > usize::try_from(limits.url_bytes).expect("u32 fits") {
@@ -228,4 +296,125 @@ fn write_encoded(writer: &mut Writer, value: &[u8]) {
 
 const fn plain(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'.' || byte == b'_' || byte == b'~'
+}
+
+fn varying_port(registration: &Registration) -> bool {
+    match &registration.terms {
+        Some(terms) => terms.varying_port,
+        None => false,
+    }
+}
+
+pub(crate) fn resource_field(registration: &Registration) -> Option<(&[u8], &[u8])> {
+    match registration.terms.as_ref()?.resource.as_deref() {
+        Some(value) => Some((b"resource".as_slice(), value)),
+        None => None,
+    }
+}
+
+pub(crate) fn has_openid(registration: &Registration) -> bool {
+    match &registration.terms {
+        Some(terms) => terms.openid.is_some(),
+        None => false,
+    }
+}
+
+pub(crate) fn sign_in_values(
+    registration: &mut Registration,
+    nonce: Option<&[u8]>,
+    port: Option<u16>,
+    limits: &ClientLimits,
+) -> Result<(), Failure> {
+    let openid = has_openid(registration);
+    match (openid, nonce) {
+        (true, Some(value)) if (16..=usize::try_from(limits.nonce_bytes).expect("u32 fits")).contains(&value.len()) => {
+        }
+        (false, None) => {}
+        (true, Some(_) | None) | (false, Some(_)) => return Err(Failure::Limit),
+    }
+    match (varying_port(registration), port) {
+        (false, None) => return Ok(()),
+        (true, Some(port)) if port != 0 => {
+            parse_redirect(&registration.redirect_uri, true)?;
+            let rest = registration.redirect_uri.strip_prefix(b"http://").expect("parsed redirect");
+            let path_at = bytes::find(rest, b"/").expect("parsed path");
+            let authority = rest.get(..path_at).expect("parsed authority");
+            let host =
+                if authority.starts_with(b"127.0.0.1:") { b"127.0.0.1:".as_slice() } else { b"[::1]:".as_slice() };
+            let path = rest.get(path_at..).expect("parsed path");
+            let digits = Decimal::of(u64::from(port));
+            let prefix = 7_usize.checked_add(host.len()).ok_or(Failure::Limit)?;
+            let prefix = prefix.checked_add(digits.as_bytes().len()).ok_or(Failure::Limit)?;
+            let length = prefix.checked_add(path.len()).ok_or(Failure::Limit)?;
+            if length > usize::try_from(limits.uri_bytes).expect("u32 fits") {
+                return Err(Failure::Limit);
+            }
+            let mut writer = Writer::new(length);
+            for part in [b"http://".as_slice(), host, digits.as_bytes(), path] {
+                writer.put(part).expect("measured redirect");
+            }
+            registration.redirect_uri = writer.finish();
+        }
+        (true, None | Some(_)) | (false, Some(_)) => return Err(Failure::InvalidRedirect),
+    }
+    Ok(())
+}
+
+fn validate_terms(registration: &Registration, limits: &ClientLimits) -> Result<(), Failure> {
+    let Some(terms) = &registration.terms else { return Ok(()) };
+    let (issuer, key_set) = match &terms.openid {
+        Some(openid) => (Some(openid.issuer.as_ref()), openid.key_set.as_deref()),
+        None => (None, None),
+    };
+    for uri in [issuer, key_set, terms.revocation_endpoint.as_deref()].into_iter().flatten() {
+        if uri.len() > usize::try_from(limits.uri_bytes).expect("u32 fits") {
+            return Err(Failure::Limit);
+        }
+        if uri.is_empty() || uri.contains(&b'#') || !issuer_endpoint(uri) {
+            return Err(Failure::Malformed);
+        }
+    }
+    if issuer.is_some() && !scope_contains(&registration.scope, b"openid") {
+        return Err(Failure::Malformed);
+    }
+    let mut parameter_bytes = 0_usize;
+    for parameter in &terms.parameters {
+        if parameter.name.is_empty() {
+            return Err(Failure::Limit);
+        }
+        parameter_bytes = parameter_bytes.checked_add(parameter.name.len()).ok_or(Failure::Limit)?;
+        parameter_bytes = parameter_bytes.checked_add(parameter.value.len()).ok_or(Failure::Limit)?;
+    }
+    for name in &terms.sign_in_again {
+        if name.is_empty() {
+            return Err(Failure::Limit);
+        }
+        parameter_bytes = parameter_bytes.checked_add(name.len()).ok_or(Failure::Limit)?;
+    }
+    if parameter_bytes > usize::try_from(limits.parameter_bytes).expect("u32 fits") {
+        return Err(Failure::Limit);
+    }
+    for (value, cap) in
+        [(terms.resource.as_deref(), limits.resource_bytes), (terms.required_scopes.as_deref(), limits.scope_bytes)]
+    {
+        if let Some(value) = value
+            && value.len() > usize::try_from(cap).expect("u32 fits")
+        {
+            return Err(Failure::Limit);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn scope_contains(scopes: &[u8], wanted: &[u8]) -> bool {
+    let mut start = 0;
+    for end in 0..=scopes.len() {
+        if end == scopes.len() || scopes.get(end) == Some(&b' ') {
+            if scopes.get(start..end) == Some(wanted) {
+                return true;
+            }
+            start = end.saturating_add(1);
+        }
+    }
+    false
 }

@@ -126,7 +126,16 @@ impl Component {
             });
         }
         exchange.client.step(
-            oauth::Event::SignIn { registration, key: account, generation, state, verifier, now: env.now },
+            oauth::Event::SignIn {
+                nonce: None,
+                port: None,
+                registration,
+                key: account,
+                generation,
+                state,
+                verifier,
+                now: env.now,
+            },
             &mut exchange.above,
         );
     }
