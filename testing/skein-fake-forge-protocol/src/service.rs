@@ -87,6 +87,18 @@ impl Service {
         let setup = crate::setup::Store::new(limits);
         Ok(Self { config, calls: Slab::with_capacity(limits.calls), rng: Rng::new(seed), tally, setup })
     }
+    /// Returns the previous endpoint on admission; a refusal leaves the current endpoint unchanged.
+    pub fn set_hooks(
+        &mut self,
+        hooks: Option<crate::delivery::Endpoint>,
+    ) -> Result<Option<crate::delivery::Endpoint>, Error> {
+        if let Some(endpoint) = &hooks
+            && (endpoint.host.is_empty() || endpoint.secret.is_empty())
+        {
+            return Err(Error::Limits);
+        }
+        Ok(core::mem::replace(&mut self.config.hooks, hooks))
+    }
     #[expect(clippy::result_large_err, reason = "an unmatched owned reply returns unchanged with its reply right")]
     pub fn target(&mut self, request: domain::Request) -> Result<(Token, domain::Request), domain::Request> {
         match request {

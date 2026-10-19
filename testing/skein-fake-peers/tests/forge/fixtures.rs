@@ -30,7 +30,7 @@ pub fn address() -> SocketAddr {
 pub fn limits() -> Limits {
     Limits {
         io: skein_io::Limits {
-            sockets: 3,
+            sockets: 5,
             refusals: 1,
             intake: 32_768,
             receive: 1024,
@@ -148,8 +148,10 @@ pub fn fake_config() -> domain::Config {
 }
 
 pub fn shared() -> Rc<RefCell<Forge>> {
-    let config = fake_config();
-    let mut domain = domain::Domain::new(&config, SEED);
+    configured_forge(SEED, fake_config(), false)
+}
+fn configured_forge(seed: u64, config: domain::Config, hooked: bool) -> Rc<RefCell<Forge>> {
+    let mut domain = domain::Domain::new(&config, seed);
     domain::repository(
         &mut domain,
         &config,
@@ -169,7 +171,7 @@ pub fn shared() -> Rc<RefCell<Forge>> {
                 cue: None,
             },
             protection: None,
-            hooked: false,
+            hooked,
         },
     );
     domain::grant(&mut domain, REPOSITORY, USER, api::Permission::Admin);
@@ -185,23 +187,51 @@ pub struct World {
     passes: u32,
     serial: u64,
     pub replies: usize,
+    receiver: Option<Receiver>,
+    pub connects: usize,
+    posts: Vec<Vec<u8>>,
+    first_delivery: Option<Time>,
 }
 impl World {
     pub fn new() -> Self {
-        let forge = shared();
-        let peer = Peer::new(address(), limits(), config(), protocol_limits(), Rc::clone(&forge), SEED)
+        Self::configured(SEED, fake_config(), false)
+    }
+    fn configured(seed: u64, domain: domain::Config, hooked: bool) -> Self {
+        let forge = configured_forge(seed, domain, hooked);
+        let peer = Peer::new(address(), limits(), config(), protocol_limits(), Rc::clone(&forge), seed)
             .expect("checked forge fixture");
-        let mut sim = Sim::new(SEED, skein_sim::Config::calm());
+        let mut sim = Sim::new(seed, skein_sim::Config::calm());
         let peer_pid = sim.spawn_process();
         let client_pid = sim.spawn_process();
-        Self { peer, forge, sim, peer_pid, client_pid, passes: 0, serial: 0, replies: 0 }
+        Self {
+            peer,
+            forge,
+            sim,
+            peer_pid,
+            client_pid,
+            passes: 0,
+            serial: 0,
+            replies: 0,
+            receiver: None,
+            connects: 0,
+            posts: Vec::new(),
+            first_delivery: None,
+        }
     }
     pub fn pass(&mut self) {
         self.passes += 1;
         assert!(self.passes <= MAX_PASSES, "forge world settles within its pass bound");
         self.sim.reap(self.peer_pid, self.peer.completions());
         self.peer.iterate(self.sim.now(), self.sim.wall());
+        if self.first_delivery.is_none() && !self.delivery_outcomes().is_empty() {
+            self.first_delivery = Some(self.sim.now());
+        }
+        self.connects +=
+            self.peer.submissions().iter().filter(|submit| matches!(submit.kind, Op::Connect { .. })).count();
         self.sim.submit(self.peer_pid, self.peer.submissions());
+        if let Some(receiver) = &mut self.receiver {
+            receiver.reset_if_connecting(&mut self.sim, self.connects);
+        }
         if !self.peer.work_pending(self.sim.now())
             && let Some(next) = [self.sim.next_due(), self.peer.next_deadline()].into_iter().flatten().min()
         {
@@ -286,6 +316,9 @@ impl World {
         assert_eq!(support::call(&mut self.sim, self.client_pid, 3, Op::Close { fd }), Done::Nothing);
     }
     pub fn settle(&mut self) {
+        if let Some(receiver) = &mut self.receiver {
+            receiver.close(&mut self.sim);
+        }
         self.peer.shutdown();
         while !self.peer.is_empty() {
             self.pass();
@@ -383,11 +416,13 @@ impl Refusal {
         }
     }
 }
-pub fn refusals() -> [Refusal; 8] {
+pub fn refusals() -> [Refusal; 9] {
     // Face's queue minimum is 64; one less cannot reserve a server pass.
     const SHORT_QUEUE: u32 = 63;
     // The protocol fixture admits four connections; five is one past it.
     const TOO_MANY_CONNECTIONS: u32 = 5;
+    // One listener plus two server and two client slots require five sockets.
+    const SHORT_SOCKETS: u32 = 4;
     // The shared fixture needs four calls plus eight hooks pending records.
     const SHORT_PENDING: u32 = 11;
     // HTTP head bytes 4096 require at least that much plaintext space.
@@ -406,9 +441,331 @@ pub fn refusals() -> [Refusal; 8] {
             ..Refusal::new("no protocol bound")
         },
         Refusal { limits: Limits { connections: TOO_MANY_CONNECTIONS, ..limits() }, ..Refusal::new("connections") },
+        Refusal {
+            limits: Limits { io: skein_io::Limits { sockets: SHORT_SOCKETS, ..limits().io }, ..limits() },
+            ..Refusal::new("outbound sockets")
+        },
         Refusal { shared: pending, ..Refusal::new("pending") },
         Refusal { limits: Limits { plaintext: SHORT_PLAINTEXT, ..limits() }, ..Refusal::new("wire") },
         Refusal { config: Config { base: Box::new([]), ..config() }, ..Refusal::new("config") },
         Refusal { shared: domain, ..Refusal::new("domain") },
     ]
+}
+
+// fake_config's late lower bound; chance knobs are per thousand.
+pub const LATE_MIN: Duration = Duration::from_secs(1);
+pub const CERTAIN: u32 = 1000;
+pub const ONE_POST: usize = 1;
+pub const NO_POSTS: usize = 0;
+pub const WRITE_AND_READBACK: usize = 2;
+pub const ISSUE_BODY: &[u8] = br#"{"title":"A kit issue","body":"A frozen body"}"#;
+pub const SECRET: &[u8] = b"kit-webhook-secret";
+// Two outbound slots hold their last admitted hooks; the third is one past that bound.
+pub const HOOKS_WITHOUT_ROOM: usize = 3;
+const RECEIVER_BACKLOG: u32 = 2;
+const RECEIVE_BYTES: usize = 1024;
+const RECEIVER_OP: u64 = 1;
+
+pub fn endpoint(host: &[u8], secret: &[u8]) -> skein_fake_forge_protocol::delivery::Endpoint {
+    skein_fake_forge_protocol::delivery::Endpoint { forge: 1, host: boxed(host), secret: Secret::new(boxed(secret)) }
+}
+
+struct Receiver {
+    pid: Pid,
+    listener: Option<Fd>,
+    address: SocketAddr,
+    reset: bool,
+}
+impl Receiver {
+    fn bind(sim: &mut Sim, reset: bool) -> Self {
+        let pid = sim.spawn_process();
+        let Done::Fd(fd) = support::call(sim, pid, RECEIVER_OP, Op::Socket { family: Family::Ipv4 }) else {
+            panic!("receiver socket");
+        };
+        let Done::Bound(address) = support::call(sim, pid, RECEIVER_OP, Op::Bind { fd, addr: address() }) else {
+            panic!("receiver bind");
+        };
+        support::call(sim, pid, RECEIVER_OP, Op::Listen { fd, backlog: RECEIVER_BACKLOG });
+        Self { pid, listener: Some(fd), address, reset }
+    }
+    fn reset_if_connecting(&mut self, sim: &mut Sim, connects: usize) {
+        if self.reset && connects > 0 {
+            self.close(sim);
+        }
+    }
+    fn close(&mut self, sim: &mut Sim) {
+        if let Some(fd) = self.listener.take() {
+            support::call(sim, self.pid, RECEIVER_OP, Op::Close { fd });
+        }
+        sim.assert_quiescent(self.pid);
+        sim.assert_no_open_fds(self.pid);
+    }
+}
+
+impl World {
+    pub fn delivery(seed: u64) -> Self {
+        Self::configured(seed, fake_config(), true)
+    }
+    pub fn late_delivery(seed: u64) -> Self {
+        Self::configured(seed, domain::Config { hooks_late: CERTAIN, ..fake_config() }, true)
+    }
+    pub fn lost_delivery(seed: u64) -> Self {
+        Self::configured(seed, domain::Config { hooks_lost: CERTAIN, ..fake_config() }, true)
+    }
+    pub fn bind_receiver(&mut self, reset: bool) {
+        self.bind();
+        let receiver = Receiver::bind(&mut self.sim, reset);
+        let host = receiver.address.to_string();
+        self.forge.borrow_mut().hooks = Some(endpoint(host.as_bytes(), SECRET));
+        self.receiver = Some(receiver);
+    }
+    pub fn create_issue_and_settle(&mut self) -> Vec<u8> {
+        let fd = self.open();
+        self.send(fd, &issue_request());
+        let response = self.response(fd);
+        self.close(fd);
+        self.settle_hooks();
+        response
+    }
+    pub fn settle_hooks(&mut self) {
+        while self.peer.work_pending(self.sim.now()) || self.peer.next_policy_deadline().is_some() {
+            self.pass();
+        }
+        // Connections with a write in flight need their io completions even after the policy has settled.
+        while self.receiver.as_ref().is_some_and(|receiver| !receiver.reset)
+            && self.delivery_outcomes().len() < self.connects
+        {
+            self.pass();
+        }
+        let posts = self.delivery_outcomes().iter().filter(|outcome| ***outcome == forge::Delivery::Written).count();
+        for _ in 0..posts {
+            self.receive_post();
+        }
+        self.settle();
+    }
+    fn receive_post(&mut self) {
+        let receiver = self.receiver.as_ref().expect("a written delivery has its receiver");
+        let pid = receiver.pid;
+        let listener = receiver.listener.expect("receiver listens until posts are read");
+        let Done::Accepted { fd, .. } = support::call(&mut self.sim, pid, RECEIVER_OP, Op::Accept { fd: listener })
+        else {
+            panic!("delivery accepted");
+        };
+        let mut post = Vec::new();
+        loop {
+            let complete = self.receiver_call(pid, Op::Recv { fd, buf: Box::new([0; RECEIVE_BYTES]) });
+            let Ok(Done::Count(count)) = complete.result else {
+                panic!("receiver read: {complete:?}");
+            };
+            if count == 0 {
+                break;
+            }
+            let Op::Recv { buf, .. } = complete.kind else {
+                unreachable!("receiver read");
+            };
+            post.extend_from_slice(buf.get(..usize::try_from(count).expect("read count")).expect("read bytes"));
+        }
+        support::call(&mut self.sim, pid, RECEIVER_OP, Op::Close { fd });
+        self.posts.push(post);
+    }
+    fn receiver_call(&mut self, pid: Pid, kind: Op) -> Complete {
+        let mut submissions = Queue::with_capacity(1);
+        let mut completions = Queue::with_capacity(1);
+        submissions.push(Submit { op: Token::new(RECEIVER_OP), kind });
+        self.sim.submit(pid, &mut submissions);
+        loop {
+            self.sim.reap(pid, &mut completions);
+            if let Some(complete) = completions.pop() {
+                return complete;
+            }
+            self.pass();
+        }
+    }
+    pub fn delivery_outcomes(&self) -> Vec<&forge::Delivery> {
+        self.peer
+            .observations()
+            .iter()
+            .filter_map(|record| match record {
+                forge::Observation::Delivery { outcome, .. } => Some(outcome),
+                forge::Observation::Connection { .. }
+                | forge::Observation::Head { .. }
+                | forge::Observation::Call { .. } => None,
+            })
+            .collect()
+    }
+    pub fn received_posts(&self) -> usize {
+        self.posts.len()
+    }
+    pub fn first_delivery_at(&self) -> Duration {
+        self.first_delivery.expect("delivery terminal").saturating_since(Time::ZERO)
+    }
+    pub fn domain_calls(&self) -> usize {
+        self.peer.observations().iter().filter(|record| matches!(record, forge::Observation::Call { .. })).count()
+    }
+    pub fn frozen_trace(&self) -> String {
+        format!("{:?}\n{:?}\n{}", self.peer.observations(), self.posts, self.sim.render_trace())
+    }
+    pub fn mutate_owner(&mut self) {
+        self.forge.borrow_mut().hooks = Some(endpoint(b"127.0.0.1:1", b"changed-secret"));
+        let mut forge = self.forge.borrow_mut();
+        let config = forge.config;
+        domain::commit(
+            &mut forge.domain,
+            &config,
+            1,
+            Box::new([api::File { path: boxed(b"changed"), content: boxed(b"changed content") }]),
+            b"changed message",
+        )
+        .expect("commit room")
+        .expect("changed content");
+    }
+    pub fn inject_hooks(&mut self, count: usize) {
+        for _ in 0..count {
+            self.forge.borrow_mut().pending.push(domain::Request::Hook {
+                repository: boxed(REPOSITORY),
+                change: api::Change::Push,
+                number: None,
+                branch: Some(boxed(BRANCH)),
+                commit: Some(PUSHED_COMMIT),
+                by: Some(USER),
+                body: None,
+                ended: None,
+            });
+        }
+        self.pass();
+    }
+    pub fn wire_posts(&self) -> &[Vec<u8>] {
+        &self.posts
+    }
+}
+
+fn issue_request() -> Vec<u8> {
+    let mut request =
+        b"POST /api/v1/repos/org/repo/issues HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: token ".to_vec();
+    request.extend_from_slice(TOKEN);
+    request.extend_from_slice(b"\r\nContent-Type: application/json\r\nContent-Length: ");
+    request.extend_from_slice(ISSUE_BODY.len().to_string().as_bytes());
+    request.extend_from_slice(b"\r\nConnection: close\r\n\r\n");
+    request.extend_from_slice(ISSUE_BODY);
+    request
+}
+
+type UnusableEndpoint = (&'static str, Option<&'static [u8]>, &'static [u8]);
+pub fn unusable_endpoints() -> [UnusableEndpoint; 6] {
+    [
+        ("absent", None, SECRET),
+        ("malformed", Some(b"kit.invalid:7200"), SECRET),
+        ("non-loopback", Some(b"192.0.2.1:7200"), SECRET),
+        ("empty host", Some(b""), SECRET),
+        ("empty secret", Some(b"127.0.0.1:7200"), b""),
+        ("injected host", Some(b"127.0.0.1:7200\r\nInjected: value"), SECRET),
+    ]
+}
+pub fn refused_endpoint_updates_preserve_ownership() {
+    let mut service =
+        skein_fake_forge_protocol::Service::new(config(), &protocol_limits(), SEED).expect("fixture service");
+    for (host, secret) in [(b"".as_slice(), SECRET), (b"127.0.0.1:7200".as_slice(), b"".as_slice())] {
+        service.set_hooks(Some(endpoint(b"127.0.0.1:7200", SECRET))).expect("valid endpoint");
+        assert_eq!(
+            service.set_hooks(Some(endpoint(host, secret))).err(),
+            Some(skein_fake_forge_protocol::Error::Limits)
+        );
+        let retained = service.set_hooks(None).expect("clear endpoint").expect("previous endpoint retained");
+        assert_eq!(&*retained.host, b"127.0.0.1:7200");
+        assert_eq!(retained.secret.expose(), SECRET);
+    }
+}
+pub fn record_kinds(world: &World) -> Vec<&'static str> {
+    let mut kinds = Vec::new();
+    for record in world.peer.observations() {
+        let kind = match record {
+            forge::Observation::Connection { .. } => "connection",
+            forge::Observation::Head { .. } => "head",
+            forge::Observation::Call { .. } => "call",
+            forge::Observation::Delivery { .. } => "delivery",
+        };
+        if !kinds.contains(&kind) {
+            kinds.push(kind);
+        }
+    }
+    kinds
+}
+#[derive(Clone, Copy)]
+pub enum Unwritable {
+    NoRoom,
+    Refused,
+    Reset,
+}
+pub struct UnwritableCase {
+    pub name: &'static str,
+    pub kind: Unwritable,
+    pub hooks: usize,
+    pub outcomes: Vec<&'static forge::Delivery>,
+    pub connects: usize,
+    pub posts: usize,
+}
+impl UnwritableCase {
+    pub fn world(&self) -> World {
+        let mut world = World::delivery(SEED);
+        match self.kind {
+            Unwritable::NoRoom => world.bind_receiver(false),
+            Unwritable::Reset => world.bind_receiver(true),
+            Unwritable::Refused => {
+                world.bind();
+                world.forge.borrow_mut().hooks = Some(endpoint(b"127.0.0.1:7200", SECRET));
+            }
+        }
+        world
+    }
+}
+pub fn unwritable_cases() -> [UnwritableCase; 3] {
+    // The peer fixture reserves exactly two outbound slots; both admit a hook.
+    const OUTBOUND_SLOTS: usize = 2;
+    [
+        UnwritableCase {
+            name: "no room",
+            kind: Unwritable::NoRoom,
+            hooks: HOOKS_WITHOUT_ROOM,
+            outcomes: vec![&forge::Delivery::NoRoom, &forge::Delivery::Written, &forge::Delivery::Written],
+            connects: OUTBOUND_SLOTS,
+            posts: OUTBOUND_SLOTS,
+        },
+        UnwritableCase {
+            name: "refused",
+            kind: Unwritable::Refused,
+            hooks: ONE_POST,
+            outcomes: vec![&forge::Delivery::Refused],
+            connects: ONE_POST,
+            posts: NO_POSTS,
+        },
+        UnwritableCase {
+            name: "reset",
+            kind: Unwritable::Reset,
+            hooks: ONE_POST,
+            outcomes: vec![&forge::Delivery::Reset],
+            connects: ONE_POST,
+            posts: NO_POSTS,
+        },
+    ]
+}
+pub fn recorded_delivery(seed: u64) -> World {
+    let mut world = World::delivery(seed);
+    world.bind_receiver(false);
+    world.git_push();
+    world.create_issue_and_settle();
+    world
+}
+
+pub fn heads_hide_token(world: &World) -> bool {
+    world.peer.observations().iter().all(|record| {
+        if let forge::Observation::Head { call, .. } = record {
+            !call.target.windows(TOKEN.len()).any(|window| window == TOKEN)
+                && call.headers.iter().all(|header| {
+                    !header.name.windows(TOKEN.len()).any(|window| window == TOKEN)
+                        && !header.value.windows(TOKEN.len()).any(|window| window == TOKEN)
+                })
+        } else {
+            true
+        }
+    })
 }

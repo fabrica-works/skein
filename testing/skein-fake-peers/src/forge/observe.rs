@@ -1,5 +1,5 @@
 //! Frozen terminal ownership and bounded observation payloads.
-use super::{Connection, Delivery, Forge, Observation, Peer};
+use super::{Connection, Forge, Observation, Peer};
 use skein_fake_forge_domain::{self as domain, api};
 use skein_fake_forge_protocol as protocol;
 use skein_lib::{Env, ReplyTo};
@@ -38,8 +38,8 @@ impl Peer {
                     let token = to.into_token();
                     (token, domain::Request::Reply { to: ReplyTo::new(token), result })
                 }
-                domain::Request::Hook { .. } => {
-                    self.observe(Observation::Delivery { post: None, outcome: Delivery::NoAddress }, 0);
+                hook @ domain::Request::Hook { .. } => {
+                    self.deliver(&hook);
                     continue;
                 }
             };

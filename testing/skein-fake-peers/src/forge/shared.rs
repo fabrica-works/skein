@@ -24,7 +24,8 @@ impl Forge {
 pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound: u64, forge: &Forge) -> Option<u64> {
     let config = &forge.config;
     let domain = &config.limits;
-    if limits.connections > protocol.connections
+    if limits.io.sockets < limits.connections.checked_mul(2)?.checked_add(1)?
+        || limits.connections > protocol.connections
         || protocol.calls >= (7 << 28)
         || limits.plaintext < protocol.http.head.max(protocol.http.read)
         || limits.io.output < protocol.http.response.max(protocol.http.send)
@@ -59,6 +60,7 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
         .checked_add(Queue::<skein_lib::stream::Up>::worst_case(limits.queue)?)?
         .checked_add(u64::from(limits.queue).checked_mul(payload.checked_add(u64::from(limits.plaintext))?)?)?;
     face::worst_case(limits)?
+        .checked_add(super::delivery::worst_case(limits, protocol, forge.hooks.as_ref())?)?
         .checked_add(protocol_bound)?
         .checked_add(domain_bound)?
         .checked_add(Queue::<domain::Request>::worst_case(forge.pending.capacity())?)?

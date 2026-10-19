@@ -12,6 +12,7 @@ use crate::face::{Face, LISTENER};
 use crate::transport::Wire;
 use crate::{Error, Limits, Transport};
 
+mod delivery;
 mod observe;
 mod shared;
 
@@ -89,6 +90,8 @@ pub struct Peer {
     protocol_bound: u64,
     connections: Vec<Connection>,
     calls: Vec<Call>,
+    deliveries: Vec<delivery::Outbound>,
+    destination: Option<SocketAddr>,
     next: u64,
     observations: Vec<Observation>,
     observed_bytes: u64,
@@ -117,6 +120,8 @@ impl Peer {
             protocol_bound,
             connections: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
             calls: Vec::with_capacity(usize::try_from(call_capacity).expect("u32 fits")),
+            deliveries: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
+            destination: None,
             next: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
             observed_bytes: 0,
@@ -136,6 +141,7 @@ impl Peer {
     }
 
     fn event(&mut self, event: io::Event, now: Time, wall: Wall) {
+        let Some(event) = self.delivery_event(event) else { return };
         let env = Env { now, wall, limits: self.protocol };
         match event {
             io::Event::Listening { owner, listener, addr } => {
@@ -224,6 +230,10 @@ impl Peer {
         let shared = Rc::clone(&self.forge);
         let mut forge = shared.borrow_mut();
         forge.now = now;
+        // Endpoint ownership lives in the service only for this pass; refusal leaves it empty.
+        self.destination = forge.hooks.as_ref().and_then(delivery::address);
+        let previous = self.service.set_hooks(forge.hooks.take());
+        assert!(previous.is_err() || previous.expect("admitted endpoint").is_none());
         let domain_env = Env { now, wall, limits: forge.config };
         for index in 0..self.connections.len() {
             if self.face.requests.room() < 32 {
@@ -318,6 +328,7 @@ impl Peer {
         self.route(&mut forge, &env);
         forge.domain.reclaim();
         self.service.reclaim();
+        forge.hooks = self.service.set_hooks(None).expect("clearing an endpoint is valid");
     }
 }
 
@@ -367,6 +378,7 @@ impl Host for Peer {
         self.face.is_empty()
             && self.connections.is_empty()
             && self.calls.is_empty()
+            && self.deliveries.is_empty()
             && self.forge.borrow().domain.calls() == 0
     }
     fn worst_case(&self) -> u64 {

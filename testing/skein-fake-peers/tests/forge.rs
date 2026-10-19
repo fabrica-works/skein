@@ -90,3 +90,89 @@ fn shutdown_keeps_a_mid_request_client_until_its_terminal() {
     world.settle();
     assert!(world.peer.is_empty());
 }
+
+#[test]
+fn an_endpoint_set_after_binding_delivers_the_next_hook() {
+    for (name, host, secret) in fixtures::unusable_endpoints() {
+        let mut world = World::delivery(fixtures::SEED);
+        world.bind();
+        world.forge.borrow_mut().hooks = host.map(|host| fixtures::endpoint(host, secret));
+        world.create_issue_and_settle();
+        assert_eq!(world.delivery_outcomes(), [&forge::Delivery::NoAddress], "{name}");
+        assert_eq!(world.connects, fixtures::NO_POSTS, "{name}");
+        assert_eq!(world.received_posts(), fixtures::NO_POSTS, "{name}");
+    }
+    fixtures::refused_endpoint_updates_preserve_ownership();
+    let mut world = World::delivery(fixtures::SEED);
+    world.bind_receiver(false);
+    world.create_issue_and_settle();
+    assert_eq!(world.delivery_outcomes(), [&forge::Delivery::Written]);
+    assert_eq!(world.received_posts(), fixtures::ONE_POST);
+    assert_eq!(world.connects, fixtures::ONE_POST);
+}
+
+#[test]
+fn loopback_calls_and_deliveries_leave_frozen_observations() {
+    let mut world = World::delivery(fixtures::SEED);
+    world.bind_receiver(false);
+    let response = world.create_issue_and_settle();
+    assert!(response.starts_with(b"HTTP/1.1 201 "));
+    assert_eq!(world.domain_calls(), fixtures::WRITE_AND_READBACK);
+    assert_eq!(world.received_posts(), fixtures::ONE_POST);
+    assert_eq!(fixtures::record_kinds(&world), ["connection", "head", "call", "delivery"]);
+    for record in world.peer.observations() {
+        if let forge::Observation::Head { call, .. } = record {
+            for header in &call.headers {
+                if header.name.eq_ignore_ascii_case(b"authorization") {
+                    assert_eq!(&*header.value, b"");
+                }
+            }
+        }
+    }
+    let frozen = world.frozen_trace();
+    assert!(fixtures::heads_hide_token(&world));
+    world.mutate_owner();
+    assert_eq!(world.frozen_trace(), frozen);
+}
+
+#[test]
+fn late_deliveries_are_written_once() {
+    let mut world = World::late_delivery(fixtures::SEED);
+    world.bind_receiver(false);
+    world.create_issue_and_settle();
+    assert_eq!(world.delivery_outcomes(), [&forge::Delivery::Written]);
+    assert_eq!(world.received_posts(), fixtures::ONE_POST);
+    assert!(world.first_delivery_at() >= fixtures::LATE_MIN);
+    assert_eq!(world.connects, fixtures::ONE_POST);
+}
+
+#[test]
+fn lost_hooks_make_no_delivery_attempt() {
+    let mut world = World::lost_delivery(fixtures::SEED);
+    world.bind_receiver(false);
+    world.create_issue_and_settle();
+    assert_eq!(world.delivery_outcomes(), Vec::<&forge::Delivery>::new());
+    assert_eq!(world.received_posts(), fixtures::NO_POSTS);
+    assert_eq!(world.connects, fixtures::NO_POSTS);
+}
+
+#[test]
+fn unwritable_deliveries_are_dropped_once() {
+    for case in fixtures::unwritable_cases() {
+        let mut world = case.world();
+        world.inject_hooks(case.hooks);
+        world.settle_hooks();
+        assert_eq!(world.delivery_outcomes(), case.outcomes, "{}", case.name);
+        assert_eq!(world.connects, case.connects, "{}", case.name);
+        assert_eq!(world.received_posts(), case.posts, "{}", case.name);
+    }
+}
+
+#[test]
+fn a_seed_replays_names_replies_observations_and_deliveries() {
+    let first = fixtures::recorded_delivery(fixtures::SEED);
+    let second = fixtures::recorded_delivery(fixtures::SEED);
+    assert_eq!(first.peer.observations(), second.peer.observations());
+    assert_eq!(first.wire_posts(), second.wire_posts());
+    assert_eq!(first.frozen_trace(), second.frozen_trace());
+}
