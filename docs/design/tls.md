@@ -72,8 +72,8 @@ pub enum Event {
   is made then, its `ClientHello` written, with the step's `env.wall` as
   the time it checks certificates against. The plaintext stream may be
   demanded before `Ready`: its demands wait for the handshake. A
-  connection that holds a call while it handshakes (temper's llm.md, 8)
-  makes the call on `Ready`.
+  connection that holds a call while it handshakes (llm-connection.md,
+  section 5) makes the call on `Ready`.
 - **The plaintext stream** keeps lib.md, 7, and holds the side above to it
   as io does: each demand answered at most once, from the client's intake,
   as lib's intake meets it (exactly, or for a read of what has arrived,

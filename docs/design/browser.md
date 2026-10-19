@@ -5,7 +5,7 @@ Implemented, 2026-10-06, revised 2026-10-15. The design of
 a service's loop, so that a service with a web can test it as a person
 uses it. It is a step machine over the child's pipes, speaking the
 DevTools protocol (CDP), with no dependency beyond skein. Its first user
-is temper's web (temper's `docs/design/web/architecture.md`, 7.3); the
+is temper's browser shell (temper's `client/browser.md`, section 4); the
 person's browser face in `skein-fake-person-browser`, and the UI
 example's browser tier through it, are others (ui-web.md, section 14).
 

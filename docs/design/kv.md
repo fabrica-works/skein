@@ -213,10 +213,11 @@ failed syncs.
 
 ## 10. For temper
 
-- **The engine's store** (temper's `domain/engine.md`, section 5): the
-  children's records and keys as values and keys, the root's commit as
-  one `Commit`, loads by key range at restart; secrets in a second store,
-  in a root of their own, `0o600`.
+- **The engine's store** (jig's `protocol/store.md`, which temper's
+  `protocol/store.md` extends): the children's records and keys as
+  values and keys, the root's commit as one `Commit`, loads by key range
+  at restart; secrets in a second store, in a root of their own,
+  `0o600`.
 - **Transcripts** as payload logs: a turn's bytes appended and synced,
   then committed with its spend and the messages it took; the worker's
   acknowledgement after that commit, as today.

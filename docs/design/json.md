@@ -621,11 +621,11 @@ pub enum Kind {
 - **One text buffer, allocated at the limit,** with the tokenizer, and
   held for its life, idle too: a string's length is not known until its
   closing quote, and its pieces must be joined. A tokenizer then costs the
-  whole limit from the start; the capped buffer that grows by doubling,
-  proposed in temper's performance.md, would make a string cost only its
-  length, and only while it is read. A string skipped, or past its `Text`
-  cap, uses none of it, so the limit is the longest string an application
-  keeps, not the longest a peer sends.
+  whole limit from the start; a capped buffer that grows by doubling
+  would make a string cost only its length, and only while it is read.
+  A string skipped, or past its `Text` cap, uses none of it, so the limit
+  is the longest string an application keeps, not the longest a peer
+  sends.
 - **Selection by path, declared before reading.** What an application
   reads of a peer's document is known when it is written, so the filter
   is static data, and the collector decides each value as it reaches it,
