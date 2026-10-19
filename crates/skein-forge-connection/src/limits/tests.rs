@@ -22,9 +22,13 @@ fn each_listing_uses_its_largest_answer_row() {
             "{listing:?}: independent oracle"
         );
         assert_eq!(largest_row(listing, &limits), Some(u64::from(row)), "{listing:?}: production bound");
-        for (answer_bytes, rows, cap, expected) in
-            [(row - 1, 2, 2, 0), (row, 2, 2, 1), (2 * row, 2, 2, 2), (2 * row, 2, 1, 1), (2 * row, 1, 2, 1)]
-        {
+        for (answer_bytes, rows, cap, expected) in [
+            (row - 1, fixtures::PAGE_ROWS, fixtures::PAGE_ROWS, fixtures::NO_PAGE_ROWS),
+            (row, fixtures::PAGE_ROWS, fixtures::PAGE_ROWS, fixtures::ONE_PAGE_ROW),
+            (fixtures::PAGE_ROWS * row, fixtures::PAGE_ROWS, fixtures::PAGE_ROWS, fixtures::PAGE_ROWS),
+            (fixtures::PAGE_ROWS * row, fixtures::PAGE_ROWS, fixtures::ONE_PAGE_ROW, fixtures::ONE_PAGE_ROW),
+            (fixtures::PAGE_ROWS * row, fixtures::ONE_PAGE_ROW, fixtures::PAGE_ROWS, fixtures::ONE_PAGE_ROW),
+        ] {
             let shared = Shared { rows, answer_bytes, ..fixtures::shared() };
             assert_eq!(page_size(listing, cap, &limits, &shared), expected, "{listing:?}/{answer_bytes}/{rows}/{cap}");
         }

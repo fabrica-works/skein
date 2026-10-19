@@ -5,6 +5,7 @@
     clippy::disallowed_macros,
     reason = "this host-side AST checker uses standard collections and diagnostics; step-code bans do not apply"
 )]
+mod connection_shapes;
 mod plan_shapes;
 
 use syn::{
@@ -164,13 +165,20 @@ const SOURCE_LIMIT: usize = 256 * 1024; // each file remains below the plan's 80
 fn main() {
     let mut bad = false;
     let mut plan_shapes_mode = false;
+    let mut connection_shapes_mode = false;
     for arg in std::env::args().skip(1) {
+        if arg == "--connection-shapes" {
+            connection_shapes_mode = true;
+            continue;
+        }
         if arg == "--plan-shapes" {
             plan_shapes_mode = true;
             continue;
         }
         if arg == "--controls" {
-            if plan_shapes_mode {
+            if connection_shapes_mode {
+                connection_shapes::controls();
+            } else if plan_shapes_mode {
                 plan_shapes::controls();
             } else {
                 controls();
@@ -179,7 +187,13 @@ fn main() {
         }
         let source = std::fs::read_to_string(&arg).expect("source file");
         assert!(source.len() <= SOURCE_LIMIT, "source exceeds bounded input size");
-        let errors = if plan_shapes_mode { plan_shapes::check(&source) } else { check(&source) };
+        let errors = if connection_shapes_mode {
+            connection_shapes::check(&source)
+        } else if plan_shapes_mode {
+            plan_shapes::check(&source)
+        } else {
+            check(&source)
+        };
         for rule in errors {
             eprintln!("{arg}: testing-strategy.md 10: {rule}");
             bad = true;

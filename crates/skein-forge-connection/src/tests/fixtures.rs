@@ -766,3 +766,13 @@ impl Harness {
         count
     }
 }
+
+// The page premise contains two maximal rows, and also tests one row and no room.
+pub const PAGE_ROWS: u32 = 2; // The premise budgets exactly two maximal rows.
+pub const ONE_PAGE_ROW: u32 = 1; // One maximal row is the admission boundary.
+pub const NO_PAGE_ROWS: u32 = 0; // No row fits below the first row byte bound.
+// Eviction shares one connection and one call slot between two sequential requests.
+pub const EVICTION_CONNECTIONS: u32 = 1; // A single connection forces reassignment.
+pub const EVICTION_CALLS: u32 = EVICTION_CONNECTIONS;
+pub const EVICTION_NO_CONNECTIONS: u32 = 0; // The evicted forge has no connection.
+pub const EVICTION_ANSWERS: u32 = 2; // Each of the two sequential requests answers once.

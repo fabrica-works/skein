@@ -478,8 +478,8 @@ fn a_stopped_forge_does_not_stop_another() {
 #[test]
 fn an_idle_connection_is_reassigned_to_another_forge() {
     use skein_forge::api;
-    let limits = crate::Limits { connections: 1, ..fixtures::limits() };
-    let shared = crate::Shared { calls: 1, ..fixtures::shared() };
+    let limits = crate::Limits { connections: fixtures::EVICTION_CONNECTIONS, ..fixtures::limits() };
+    let shared = crate::Shared { calls: fixtures::EVICTION_CALLS, ..fixtures::shared() };
     let mut h = fixtures::ready_two(limits, shared);
     h.call(1, fixtures::REPO, api::Op::Read(api::Read::Branch { branch: Box::from(fixtures::BRANCH) }));
     h.run(Duration::ZERO);
@@ -490,8 +490,11 @@ fn an_idle_connection_is_reassigned_to_another_forge() {
     h.run(Duration::ZERO);
     h.connected(fixtures::OTHER_FORGE);
     fixtures::branch_answers(&mut h, fixtures::OTHER_FORGE);
-    assert_eq!(h.connections_opened(), before.checked_add(1).expect("next connection"));
-    assert_eq!((h.connections_for(fixtures::FORGE), h.connections_for(fixtures::OTHER_FORGE)), (0, 1));
+    assert_eq!(h.connections_opened(), before.checked_add(fixtures::EVICTION_CONNECTIONS).expect("next connection"));
+    assert_eq!(
+        (h.connections_for(fixtures::FORGE), h.connections_for(fixtures::OTHER_FORGE)),
+        (fixtures::EVICTION_NO_CONNECTIONS, fixtures::EVICTION_CONNECTIONS)
+    );
     assert_eq!(
         h.answered(2),
         Some(&crate::Answered {
@@ -500,12 +503,11 @@ fn an_idle_connection_is_reassigned_to_another_forge() {
             result: Ok(api::Answer::Commit(fixtures::BRANCH_HEAD)),
         })
     );
-    assert_eq!(h.answers.len(), 2);
+    assert_eq!(h.answers.len(), fixtures::EVICTION_ANSWERS);
 }
 #[test]
 fn start_backoff_doubles_to_its_maximum() {
-    use crate::start::{self, Start};
-    use skein_forge::forgejo::plans::start::Heard as StartHeard;
+    use crate::start::Start;
     let mut h = fixtures::Harness::new(fixtures::settings());
     for (wait, until, next, before) in [(1, 1, 2, 1), (2, 3, 4, 2), (4, 7, 8, 3), (8, 15, 8, 4), (8, 23, 8, 5)] {
         h.refuse(fixtures::FORGE);
@@ -521,17 +523,21 @@ fn start_backoff_doubles_to_its_maximum() {
         h.run(Duration::from_nanos(1));
         assert_eq!(h.connections_opened(), before + 1, "{wait}: at deadline");
     }
+}
+#[test]
+fn terminal_start_states_ignore_every_start_answer() {
+    use crate::start::{self, Start};
+    use skein_forge::forgejo::plans::start::Heard as StartHeard;
+    // The terminal matrix uses the 23-second backoff horizon and the same limits.
+    let now = Time::ZERO.saturating_add(Duration::from_secs(23));
+    let limits = fixtures::limits();
     for state in [Start::Ready { cap: 2 }, Start::Stopped(crate::Stopped::OtherUser { user: 1 })] {
         for heard in [
             StartHeard::Unanswered,
             StartHeard::User { id: fixtures::WRITER },
             StartHeard::ApiSettings { max_response_items: 2 },
         ] {
-            assert_eq!(
-                start::heard(state, heard, fixtures::WRITER, h.env.now, &h.env.limits),
-                state,
-                "{state:?}/{heard:?}"
-            );
+            assert_eq!(start::heard(state, heard, fixtures::WRITER, now, &limits), state, "{state:?}/{heard:?}");
         }
     }
 }
