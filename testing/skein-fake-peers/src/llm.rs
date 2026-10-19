@@ -53,6 +53,7 @@ pub struct Peer {
     domain: domain::Domain,
     domain_limits: domain::Config,
     replies: Queue<domain::Request>,
+    releases: Queue<Box<[u8]>>,
     connections: Vec<Connection>,
     next: u64,
     observations: Vec<Observation>,
@@ -90,6 +91,7 @@ impl Peer {
             domain,
             domain_limits,
             replies: Queue::with_capacity(limits.queue),
+            releases: Queue::with_capacity(domain_limits.calls),
             connections: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
             next: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
@@ -120,6 +122,15 @@ impl Peer {
     /// Keep the byte peer live when the client finishes its write side.
     pub fn ignore_half_close(&mut self) {
         self.ignore_half_close = true;
+    }
+
+    /// Queues a hold name for the next domain pass, without releasing from the wire.
+    pub fn release(&mut self, name: &[u8]) -> Result<(), Error> {
+        if name.is_empty() || name.len() > 64 || self.releases.room() == 0 {
+            return Err(Error::Limits);
+        }
+        self.releases.push(name.into());
+        Ok(())
     }
 
     fn reserve_observation(&self, bytes: u64) {
@@ -316,6 +327,10 @@ impl Peer {
                 connection.wire.close(&mut self.face.requests);
             }
         }
+        while self.replies.room() >= domain::MAX_OUT {
+            let Some(name) = self.releases.pop() else { break };
+            domain::step(&mut self.domain, &domain_env, domain::Event::Release { name }, &mut self.replies);
+        }
         if self.domain.is_due(now) && self.replies.room() >= domain::MAX_OUT {
             domain::fire(&mut self.domain, &domain_env, &mut self.replies);
         }
@@ -384,6 +399,7 @@ impl Host for Peer {
         self.face.work_pending()
             || self.domain.is_due(now)
             || !self.replies.is_empty()
+            || !self.releases.is_empty()
             || self.connections.iter().any(|connection| {
                 connection.server.has_work()
                     || !connection.above.is_empty()
@@ -404,6 +420,7 @@ impl Host for Peer {
         self.face.is_empty()
             && self.connections.is_empty()
             && self.replies.is_empty()
+            && self.releases.is_empty()
             && self.domain.calls() == 0
             && self.service.calls() == 0
     }
@@ -441,6 +458,8 @@ pub fn worst_case(
         )?;
     face::worst_case(limits)?
         .checked_add(domain::worst_case(domain)?)?
+        .checked_add(Queue::<Box<[u8]>>::worst_case(domain.calls)?)?
+        .checked_add(u64::from(domain.calls).checked_mul(64)?)?
         .checked_add(connection_bound.checked_mul(u64::from(limits.connections))?)?
         .checked_add(Queue::<domain::Request>::worst_case(limits.queue)?)?
         .checked_add(u64::from(limits.queue).checked_mul(u64::from(domain.answer_bytes))?)?

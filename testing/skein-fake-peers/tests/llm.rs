@@ -152,3 +152,36 @@ fn a_connection_past_the_peers_limit_is_rejected_and_the_peer_settles() {
     sim.assert_quiescent(client);
     sim.assert_no_open_fds(client);
 }
+
+#[test]
+fn a_release_name_past_64_bytes_is_refused_as_limits() {
+    let mut peer = make(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), Transport::Plaintext).unwrap();
+    for name in [b"".as_slice(), &[b'x'; 65]] {
+        assert_eq!(peer.release(name), Err(skein_fake_peers::Error::Limits), "name length {}", name.len());
+    }
+    for _ in 0..skein_llm_world::fake::config().calls {
+        assert_eq!(peer.release(&[b'x'; 64]), Ok(()));
+    }
+}
+
+#[test]
+fn a_release_past_the_queue_is_refused_as_limits() {
+    let mut peer = make(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), Transport::Plaintext).unwrap();
+    for _ in 0..skein_llm_world::fake::config().calls {
+        assert_eq!(peer.release(b"ready"), Ok(()));
+    }
+    assert_eq!(peer.release(b"extra"), Err(skein_fake_peers::Error::Limits));
+    peer.iterate(Time::ZERO, skein_lib::Wall::EPOCH);
+    assert_eq!(peer.release(b"next"), Ok(()));
+}
+
+#[test]
+fn a_queued_release_keeps_the_peer_working() {
+    let mut peer = make(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), Transport::Plaintext).unwrap();
+    peer.iterate(Time::ZERO, skein_lib::Wall::EPOCH);
+    assert!(!peer.work_pending(Time::ZERO));
+    assert_eq!(peer.release(b"ready"), Ok(()));
+    assert!(peer.work_pending(Time::ZERO));
+    peer.iterate(Time::ZERO, skein_lib::Wall::EPOCH);
+    assert!(!peer.work_pending(Time::ZERO));
+}

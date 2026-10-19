@@ -64,6 +64,8 @@ pub struct Client {
     calls: u32,
     input: usize,
     completed: u32,
+    first_delta: Option<Time>,
+    completion_time: Option<Time>,
     closed: bool,
     bound: u64,
 }
@@ -97,6 +99,8 @@ impl Client {
             calls,
             input,
             completed: 0,
+            first_delta: None,
+            completion_time: None,
             closed: false,
             bound,
         }
@@ -204,6 +208,9 @@ impl Host for Client {
             let Some(event) = self.events.pop() else { break };
             match &event {
                 Event::Delta { call, .. } | Event::Block { call, .. } => {
+                    if let Event::Delta { .. } = &event {
+                        self.first_delta.get_or_insert(now);
+                    }
                     self.component.as_mut().expect("started").down(
                         &env,
                         Request::Next { call: *call },
@@ -213,6 +220,7 @@ impl Host for Client {
                 }
                 Event::Completed { .. } => {
                     self.completed += 1;
+                    self.completion_time = Some(now);
                     if self.completed == self.calls {
                         self.component.as_mut().expect("started").down(
                             &env,
@@ -301,58 +309,66 @@ pub enum Process {
     /// The connection service sends owner records to the referee and closes its sockets.
     Client(Box<Client>),
     /// The independent fake sends outside observations and settles on shutdown.
-    Peer(Box<llm::Peer>),
+    Peer(Box<llm::Peer>, Option<(Box<[u8]>, Time)>),
 }
 
 impl Host for Process {
     fn iterate(&mut self, now: Time, wall: Wall) {
         match self {
             Self::Client(client) => client.iterate(now, wall),
-            Self::Peer(peer) => peer.iterate(now, wall),
+            Self::Peer(peer, release) => {
+                if release.as_ref().is_some_and(|(_, at)| now >= *at) {
+                    let (name, _) = release.take().expect("due release");
+                    peer.release(&name).expect("one bounded release");
+                }
+                peer.iterate(now, wall);
+            }
         }
     }
     fn completions(&mut self) -> &mut Queue<kernel::Complete> {
         match self {
             Self::Client(client) => client.completions(),
-            Self::Peer(peer) => peer.completions(),
+            Self::Peer(peer, _) => peer.completions(),
         }
     }
     fn submissions(&mut self) -> &mut Queue<kernel::Submit> {
         match self {
             Self::Client(client) => client.submissions(),
-            Self::Peer(peer) => peer.submissions(),
+            Self::Peer(peer, _) => peer.submissions(),
         }
     }
     fn work_pending(&self, now: Time) -> bool {
         match self {
             Self::Client(client) => client.work_pending(now),
-            Self::Peer(peer) => peer.work_pending(now),
+            Self::Peer(peer, release) => release.as_ref().is_some_and(|(_, at)| now >= *at) || peer.work_pending(now),
         }
     }
     fn next_deadline(&self) -> Option<Time> {
         match self {
             Self::Client(client) => client.next_deadline(),
-            Self::Peer(peer) => peer.next_deadline(),
+            Self::Peer(peer, release) => {
+                [peer.next_deadline(), release.as_ref().map(|(_, at)| *at)].into_iter().flatten().min()
+            }
         }
     }
 
     fn next_policy_deadline(&self) -> Option<Time> {
         match self {
             Self::Client(client) => client.next_policy_deadline(),
-            Self::Peer(peer) => peer.next_policy_deadline(),
+            Self::Peer(peer, _) => peer.next_policy_deadline(),
         }
     }
 
     fn is_empty(&self) -> bool {
         match self {
             Self::Client(client) => client.is_empty(),
-            Self::Peer(peer) => peer.is_empty(),
+            Self::Peer(peer, _) => peer.is_empty(),
         }
     }
     fn worst_case(&self) -> u64 {
         match self {
             Self::Client(client) => client.worst_case(),
-            Self::Peer(peer) => peer.worst_case(),
+            Self::Peer(peer, _) => peer.worst_case(),
         }
         .checked_add(4096)
         .expect("boxed process wrapper")
@@ -360,7 +376,7 @@ impl Host for Process {
     fn operations(&self) -> u32 {
         match self {
             Self::Client(client) => client.operations(),
-            Self::Peer(peer) => peer.operations(),
+            Self::Peer(peer, _) => peer.operations(),
         }
     }
 }
@@ -373,12 +389,13 @@ struct Judge {
     teardown_started: bool,
     query_times: std::collections::BTreeMap<Token, Time>,
     input: usize,
+    release_at: Option<Time>,
 }
 
 impl Referee<Process> for Judge {
     fn act(&mut self, _now: Time, processes: &mut [Process]) {
         let address = processes.iter().find_map(|process| match process {
-            Process::Peer(peer) => peer.address(),
+            Process::Peer(peer, _) => peer.address(),
             Process::Client(_) => None,
         });
         if address.is_some() {
@@ -387,7 +404,7 @@ impl Referee<Process> for Judge {
         for process in processes {
             match process {
                 Process::Client(client) => client.address = address,
-                Process::Peer(peer) => {
+                Process::Peer(peer, _) => {
                     if self.passed {
                         peer.shutdown();
                         self.teardown_started = true;
@@ -405,6 +422,12 @@ impl Referee<Process> for Judge {
             match process {
                 Process::Client(client) => {
                     client_closed = client.closed;
+                    if client.closed
+                        && let Some(at) = self.release_at
+                    {
+                        assert!(client.first_delta.expect("first piece reached the owner") < at);
+                        assert!(client.completion_time.expect("released call completed") > at);
+                    }
                     for event in &client.received {
                         if let Event::Completed { completion, .. } = event {
                             assert_eq!(completion.content.len(), 1, "one literal scripted block");
@@ -428,7 +451,7 @@ impl Referee<Process> for Judge {
                         }
                     }
                 }
-                Process::Peer(peer) => {
+                Process::Peer(peer, _) => {
                     for observation in peer.observations() {
                         match observation {
                             llm::Observation::Query { connection, query } => {
@@ -527,6 +550,39 @@ pub fn run_with_shutdown(
     input: usize,
     ignore_half_close: bool,
 ) -> Outcome<Process> {
+    run_configured(seed, faulted, transport, large, memory, Setup { input, ignore_half_close, held: false })
+}
+
+#[derive(Clone, Copy)]
+struct Setup {
+    input: usize,
+    ignore_half_close: bool,
+    held: bool,
+}
+
+/// Runs two text pieces separated by a host release at 50 ms.
+#[must_use]
+pub fn run_held(seed: u64) -> Outcome<Process> {
+    run_configured(
+        seed,
+        false,
+        Transport::Plaintext,
+        false,
+        Memory::Checked,
+        Setup { input: 0, ignore_half_close: false, held: true },
+    )
+}
+
+fn run_configured(
+    seed: u64,
+    faulted: bool,
+    transport: Transport,
+    large: bool,
+    memory: Memory,
+    setup: Setup,
+) -> Outcome<Process> {
+    let Setup { input, ignore_half_close, held } = setup;
+    let release_at = held.then_some(Time::from_nanos(50_000_000));
     let calls = if large { 2 } else { 1 };
     let answer = if large { vec![b'x'; 2048] } else { b"simulated answer".to_vec() };
     let judge = Judge {
@@ -537,6 +593,7 @@ pub fn run_with_shutdown(
         teardown_started: false,
         query_times: std::collections::BTreeMap::new(),
         input,
+        release_at,
     };
     let mut config = Config::calm();
     config.wall = skein_tls_world::pki::VALID;
@@ -558,7 +615,8 @@ pub fn run_with_shutdown(
                 + CUE.len()
                 + std::mem::size_of::<api::Script>()
                 + std::mem::size_of::<api::Turn>()
-                + std::mem::size_of::<api::Line>(),
+                + std::mem::size_of::<api::Line>()
+                + if held { 2 * std::mem::size_of::<api::Piece>() + b"ready".len() } else { 0 },
         )
         .expect("exact script cap");
         domain_limits.latency_min = Duration::from_millis(5);
@@ -566,7 +624,16 @@ pub fn run_with_shutdown(
         let scripts = Box::new([api::Script {
             cue: CUE.into(),
             turns: Box::new([api::Turn {
-                lines: Box::new([api::Line::Text { text: answer.clone().into_boxed_slice() }]),
+                lines: Box::new([if held {
+                    api::Line::Pieces {
+                        pieces: Box::new([
+                            api::Piece { text: b"simulated ".as_slice().into(), hold: None },
+                            api::Piece { text: b"answer".as_slice().into(), hold: Some(b"ready".as_slice().into()) },
+                        ]),
+                    }
+                } else {
+                    api::Line::Text { text: answer.clone().into_boxed_slice() }
+                }]),
                 finish: api::Finish::Stop,
                 tokens: 2,
             }]),
@@ -603,7 +670,7 @@ pub fn run_with_shutdown(
         if ignore_half_close {
             peer.ignore_half_close();
         }
-        Process::Peer(Box::new(peer))
+        Process::Peer(Box::new(peer), release_at.map(|at| (b"ready".as_slice().into(), at)))
     });
     world.spawn(|| Process::Client(Box::new(Client::new(transport, calls, input))));
     world.run()
@@ -622,7 +689,8 @@ pub fn assert_replay(first: &Outcome<Process>, second: &Outcome<Process>) {
     assert_eq!(first.trace, second.trace, "the actual two-process io trace replays");
     for (first, second) in first.procs.iter().zip(&second.procs) {
         match (first, second) {
-            (Process::Peer(first), Process::Peer(second)) => {
+            (Process::Peer(first, first_release), Process::Peer(second, second_release)) => {
+                assert_eq!(first_release, second_release);
                 assert_eq!(first.observations(), second.observations(), "the independent peer's observations replay");
             }
             (Process::Client(first), Process::Client(second)) => assert_eq!(
@@ -630,7 +698,7 @@ pub fn assert_replay(first: &Outcome<Process>, second: &Outcome<Process>) {
                 format!("{:?}", second.received),
                 "actual owner payloads and terminals replay"
             ),
-            (Process::Peer(_), Process::Client(_)) | (Process::Client(_), Process::Peer(_)) => {
+            (Process::Peer(_, _), Process::Client(_)) | (Process::Client(_), Process::Peer(_, _)) => {
                 panic!("process order replays")
             }
         }

@@ -60,3 +60,14 @@ fn a_peer_that_ignores_the_half_close_is_settled_by_ios_close_deadline() {
     assert!(first.end >= skein_lib::Time::from_nanos(1_000_000_000), "io's close deadline bounds the live peer");
     assert!(first.end < skein_lib::Time::from_nanos(2_000_000_000));
 }
+
+#[test]
+fn a_held_reply_released_over_loopback_completes_the_call() {
+    let first = skein_llm_connection_world::simulated::run_held(47);
+    let second = skein_llm_connection_world::simulated::run_held(47);
+    skein_llm_connection_world::simulated::assert_replay(&first, &second);
+    assert_eq!(first.end, second.end);
+    for outcome in [&first, &second] {
+        assert!(outcome.heap.as_ref().expect("checked heaps").iter().all(|(peak, bound)| peak <= bound));
+    }
+}
