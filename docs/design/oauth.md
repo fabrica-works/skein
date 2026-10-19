@@ -42,8 +42,9 @@ infers an issuer from the redirect or token response.
 value, the issuer's terms; a registration without it is exactly the one
 above. The terms are:
 
-- **parameters added to the authorization URL,** each a name and a value,
-  sent on every sign-in, or only on a new registration (section 2.1);
+- **parameters added to the authorization URL,** each a name of at least
+  one byte and a value, which may be empty, sent on every sign-in, or only
+  on a new registration (section 2.1);
 - **a resource,** sent in the authorization URL, the code exchange and
   every refresh (RFC 8707);
 - **an issued client id:** the registration's client id is then only the
@@ -54,8 +55,8 @@ above. The terms are:
   checks it (section 2.2);
 - **the scopes that must be granted,** among those requested (section 2.2);
 - **a revocation endpoint** (section 2.3);
-- **the error names that mean sign in again,** beside `invalid_grant`
-  (section 4);
+- **the error names that mean sign in again,** each of at least one byte,
+  beside `invalid_grant` (section 4);
 - **a redirect whose port varies** (below).
 
 Every endpoint the terms name, the metadata's and the key set's among them,
@@ -344,16 +345,22 @@ untrusted metadata. Only an authenticated TLS token endpoint, or an
 `Limits` caps authorization URL, endpoint and redirect URI, client id and
 secret, scope, state, verifier, code, request body, response document, JSON
 depth and tokens, string, access and refresh tokens, error detail, record,
-and optional JWT payload bytes. For the issuer's terms it also caps the
-added parameters, resource, issued client id, nonce, subject, granted scopes,
+and optional JWT payload bytes. For the issuer's terms it also caps, in
+one sum, the added parameters' names and values and the added error names;
+and the resource, issued client id, nonce, subject, granted scopes,
 ID token, the metadata and key-set documents, the keys a set holds, and an
 RSA modulus of at most 8192 bits; and the skew allowed on an ID token's
 expiry. Encoders measure the complete escaped URL or
-body before allocating. Readers reject overflow before storing. `worst_case`
-counts the in-progress machine, one request and answer, parsing temporaries,
-candidate record and prior record, with checked arithmetic. The caller adds
-HTTP/TLS and its own account table and queues. The maximum output per step
-is one demand plus one terminal in the case where an answer completes an
+body before allocating. Readers reject overflow before storing. A
+registration whose terms hold an empty parameter name or an empty error
+name is refused as `Limit`: each entry then holds at least one byte of the
+terms' sum, so that sum also bounds how many entries there are. `worst_case`
+counts the in-progress machine with its registration (each of the terms'
+entries with its own storage, beside its bytes), one request and answer,
+parsing temporaries, candidate record and prior record, with checked
+arithmetic. The caller adds HTTP/TLS and its own account table and queues.
+The maximum output per step is one demand plus one terminal in the case
+where an answer completes an
 exchange; exact values are exported with the implementation.
 
 Focused tests cover both sign-in types, state and redirect mismatch, duplicate
@@ -381,8 +388,10 @@ no `kid` with two keys, another issuer, another audience, an expiry at the
 skew's edge, another nonce, a modulus past the bound); a metadata document
 naming another issuer; fewer scopes granted than required; a version-2
 record read, refreshed and kept as version 3, and refused under an issued
-client id; revocation confirmed and unconfirmed; and each added error name on
-a refresh, with each status.
+client id; revocation confirmed and unconfirmed; each added error name on
+a refresh, with each status; an empty parameter name or error name refused,
+and a parameter with an empty value sent; and terms at their most entries
+within `worst_case`.
 
 **The fake issuer's additions,** each scriptable and observed:
 
@@ -722,6 +731,7 @@ and a `locked` that comes later is answered by `unlock` at once, until
 `closed`, after which it is the owner's to release (6.4).
 
 The client's own limits are section 5's. The worst case is each account's
+registration, its terms' entries counted as section 5 counts them, its
 current and candidate records, a shared record's read under its lock beside
 them, and per exchange the client's worst case, the issuer's key set among it,
 `skein-http`'s, TLS's and io's buffers for one connection; per listener, one
