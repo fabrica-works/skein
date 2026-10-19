@@ -2,7 +2,7 @@
 //!
 //! The table owns requests, opaque scopes and owner values, declared byte
 //! counts, seeded keys and attempt tokens. It never reads an owner or a
-//! request. Each admission by `ask` or `restore` is numbered; each refusal says
+//! request. Each admission by `ask`, `ask_given` or `restore` is numbered; each refusal says
 //! why and hands back the value. `link` and `confirmed` control eligibility.
 //! `take` lends a bounded cursor: apply every `Save` before handling a
 //! `Send`. Dropping a cursor leaves untaken work in the table.
@@ -10,9 +10,10 @@
 //! | State | Event | Next | Emits |
 //! |---|---|---|---|
 //! | absent | ask | parked or ready | save, then eligible send |
+//! | absent | `ask_given` of an unheld key | parked or ready | save, then eligible send |
 //! | absent | restore | parked | initial parked progress |
 //! | absent | ask or restore past a limit | absent | refused Full, the value handed back |
-//! | any held state, retired included | restore of its key | unchanged | refused Held, the record handed back |
+//! | any held state, retired included | restore or `ask_given` of its key | unchanged | refused Held, the value handed back |
 //! | parked | link up, matching confirmation, retention known if restored | ready | send after first-send save if needed |
 //! | ready | take send | in flight | fresh attempt, in-flight progress |
 //! | in flight | final envelope | retired | owner value, erase |
@@ -47,7 +48,7 @@ use crate::{Duration, Id, Map, Rng, Slab, Time, Token, Wall};
 /// A request's stable key, preserved across attempts and restoration.
 pub type RequestKey = [u8; 16];
 
-/// One admission's number, by `ask` or `restore`: 1 for the first, one more for each after.
+/// One admission's number, by `ask`, `ask_given` or `restore`: 1 for the first, one more for each after.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct RequestNumber(u64);
 
@@ -268,6 +269,26 @@ impl<O: Copy, R> RequestTable<O, R> {
             return Err(RequestRefused::Full(request));
         };
         self.draws = draws;
+        let record = RequestRecord { key, scope, first_sent: None, request };
+        let number = self.insert(owner, size, record, false);
+        Ok(RequestAdmission { key, number })
+    }
+
+    /// Admit a request under the asker's own key, while no entry holds it.
+    pub fn ask_given(
+        &mut self,
+        owner: O,
+        scope: u64,
+        size: u64,
+        key: RequestKey,
+        request: R,
+    ) -> Result<RequestAdmission, RequestRefused<R>> {
+        if self.contains(key) {
+            return Err(RequestRefused::Held(request));
+        }
+        if !self.fits(size) || self.serial == u64::MAX || self.fresh_attempt().is_none() {
+            return Err(RequestRefused::Full(request));
+        }
         let record = RequestRecord { key, scope, first_sent: None, request };
         let number = self.insert(owner, size, record, false);
         Ok(RequestAdmission { key, number })
@@ -560,7 +581,7 @@ impl<O: Copy, R> RequestTable<O, R> {
     fn fresh_key(&self) -> Option<(RequestKey, u64)> {
         let mut draws = self.draws;
         // SplitMix64 permutes all u64 states; before its period it never
-        // repeats. Restored keys may collide, so at most held + 1 draws suffice.
+        // repeats. Restored or given keys may collide, so at most held + 1 draws suffice.
         for _ in 0..=self.limits.requests {
             let mut key = [0; 16];
             for (slot, byte) in key.iter_mut().zip(self.namespace.to_be_bytes()) {
