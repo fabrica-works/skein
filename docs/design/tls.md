@@ -378,6 +378,11 @@ independence.
   certificates against. Each connection's configuration carries one that
   answers the `env.wall` of the step that started its handshake, read
   once; the handshake deadline bounds how far it lags the wall.
+- **An ID token's signature:** ring's RSA verification also checks an
+  OAuth ID token's RS256 signature (oauth.md, section 2.2), inside
+  skein-tls; it draws no randomness and reads no clock. The fake issuer's
+  signing draws ring's blinding randomness, and its signatures do not
+  depend on it.
 - **What rustls's API makes the crate use:** an `Arc` of the shared
   configuration, a trait object for the time, a hand-written `Debug`
   for its connection, `Vec`s in the configuration, and arms for the

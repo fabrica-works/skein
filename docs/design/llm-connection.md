@@ -1,6 +1,6 @@
 # LLM connections
 
-Provisional, 2026-10-07; revised 2026-10-09. `skein-llm-connection` runs
+Provisional, 2026-10-07; revised 2026-10-19. `skein-llm-connection` runs
 LLM calls end to end for the protocol layer that owns it. For each call it:
 
 - connects through io;
@@ -12,8 +12,8 @@ LLM calls end to end for the protocol layer that owns it. For each call it:
 
 When its owner closes it, it closes everything it keeps and says so. Its
 owner gives it calls and gets their answers, so a service that calls LLMs
-translates its own vocabulary and writes no connection code. smith's
-agent is its first user.
+translates its own vocabulary and writes no connection code. An agent's
+protocol layer is its first user.
 
 ## 1. In one page
 
@@ -56,8 +56,9 @@ agent is its first user.
   cancels its calls, or aborts.
 - **No retries and no policy.** Whether to call again is the owner's
   domain's.
-- **Credentials pass through.** The owner hands the credential's value with
-  each call. This component keeps none beyond the call's request.
+- **Credentials pass through.** The owner hands a credential, its value
+  and how it is sent, with each call (4.2). This component keeps none
+  beyond the call's request, and never chooses one.
 
 ## 2. In skein
 
@@ -81,14 +82,15 @@ An endpoint is configuration, given when the component is made. It has:
   or plaintext, refused at configuration unless the address is on
   loopback. Plaintext serves a server on the same machine, such as a local
   model's, and the replaying tiers' fakes (testing-strategy.md, 4.4);
-- **skein's LLM endpoint:** the dialect, the path, and the headers the
-  dialect needs, such as an identity profile (llm.md). Its headers may not
-  name a field the client writes itself, the dialect's per-call headers
-  included (llm.md, section 4.6);
+- **skein's LLM endpoint:** the route, the path, and the headers the
+  route needs, such as an API version (llm.md). Its headers may not name
+  a field the client writes itself, the credential's and the route's
+  per-call headers included (llm.md, sections 2.6 and 4.8);
 - **its limits,** derived for its dialect from the owner's declaration
   for the models the endpoint serves (llm.md, section 4.2). The request
   head's limit is measured from the endpoint's headers and the owner's
-  bound on a credential when the component is made.
+  bounds on a credential's value and account id when the component is
+  made.
 
 The owner names an endpoint by its index in that configuration.
 
@@ -108,7 +110,7 @@ The owner names an endpoint by its index in that configuration.
 | delta | a piece of the answer as it comes |
 | block | a completed block |
 | completed | the call's completion: its blocks, stop reason and usage |
-| failed | the class, the evidence, and the provider's details within bounds |
+| failed | the class, the evidence, the provider's report (its error code, request id and the field it names) and its details, each within bounds (llm.md, section 2.5) |
 | cancelled | the call ended at the owner's request |
 | closed | after a close or an abort: no call is left and every socket has settled |
 
@@ -167,6 +169,26 @@ The owner names an endpoint by its index in that configuration.
   own declaration.
 
 Once it runs, a call that waited is a call like any other.
+
+### 4.2 Credentials
+
+- **A credential goes with its call.** A start carries one credential:
+  its value, its scheme, a bearer or a key, and, on the withdrawn Codex
+  route alone, an account id (llm.md, section 2.6). skein's client writes
+  it where the endpoint's route takes it. The component holds it in the
+  call's request only, and drops it at the call's terminal: it is never
+  kept on a connection, nor used for another call.
+- **Connections are not an account's.** A request authenticates itself,
+  and a connection holds no session, so the calls of several accounts
+  share an endpoint's pool. A connection reused for the next call carries
+  that call's credential, whichever it is.
+- **Admission checks it.** A credential past the owner's bounds, or one
+  its endpoint's route refuses (a key on the Codex route, an account id
+  on another), is refused at the entrance by skein's client, naming why;
+  no terminal follows.
+- **Which account a failure concerns** is the owner's to know: it chose
+  the credential. The failure carries the class and the provider's
+  report (llm.md, section 2.5), never the credential.
 
 ## 5. Connections
 
@@ -318,6 +340,12 @@ client's evidence: unsent, possibly sent, or a response received.
   - a truncated body;
   - cancels racing terminals;
   - reuse after drain, and a drain that stalls until idleness closes it;
+  - calls with different credentials, of both schemes, sharing one
+    endpoint's connections, each request carrying its own call's
+    credential, which the fake peer observes by index (fake-llm.md,
+    section 3);
+  - each provider failure the fake peer scripts (fake-llm.md, section
+    2), reaching the owner with its class and report;
   - a pool at its limit: more calls to one endpoint than it may hold
     connections, each completing after its wait; a wait that outlasts its
     whole deadline, failing unsent; a cancel while waiting;

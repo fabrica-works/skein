@@ -327,7 +327,7 @@ Two profiles stay out of both: `browser`, the browser kit against real
 Chromium and the UI example's browser tier, within two minutes for both
 (`cargo nextest run --workspace --profile browser`; browser.md, section
 9; ui-web.md, 14.1), and `live`,
-skein-llm against real subscription endpoints, with credentials from the
+skein-llm against real endpoints, with a key or a plan's token from the
 environment. `measure` runs a suite with no budget, to time each test.
 
 Replay: a seed replays to the same trace of submissions and completions,

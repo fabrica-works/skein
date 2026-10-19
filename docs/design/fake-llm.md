@@ -1,5 +1,8 @@
 # Shared scripted LLM peer
 
+Provisional, 2026-10-05, revised 2026-10-19. The scripted peer that worlds
+and an application's real loop call in place of an LLM provider.
+
 ## 1. Role
 
 Skein owns reusable provider-neutral LLM calls and their independent wire
@@ -42,7 +45,7 @@ answer ownership is checked before effects or payload copies.
 - **A query's prefix** is its model, its tools and its system text,
   then, for a marked query alone, its tool choice, then its messages. A
   changed choice therefore keeps an automatic query's whole prefix, as
-  the Codex wire does, and only a marked query's tools and system text,
+  the Responses wire does, and only a marked query's tools and system text,
   as Anthropic's does.
 - **Reads.** An automatic query reads the longest prefix written in its
   scope that it begins with. A query without a scope reads only with the
@@ -96,6 +99,42 @@ answer ownership is checked before effects or payload copies.
   owner to release a hold, so it refuses a script with one at its
   start. A world without a hold sees the peer as before.
 
+### 2.3 Scripted failures
+
+- **A turn may fail.** A failing line, `Line::Fail`, answers with a
+  provider failure: its class, as the domain's error; the provider's
+  error code; its request id; and the field it names, for `Unsupported`.
+  The domain's error has `Refused` and `Unsupported`, and `Exhausted`'s
+  reset is optional, as skein-llm's failure has them (llm.md, section
+  2.5). Exhausted with a reset or without, refused, unsupported and
+  unauthorized are its point; any class may be scripted.
+- **Where it falls.** A failing line ends its turn; a line after it is
+  refused when the script is configured. First in its turn, it answers
+  before any stream, with its route's status and error body; after other
+  lines, it ends the stream as its route fails one (`response.failed` on
+  Responses, an `error` event on Anthropic), once their pieces are sent,
+  a hold's included when released (2.2).
+- **As the route says it.** The byte peer renders the class as its
+  route's table names it (llm.md, sections 4.6 to 4.8): the status, a code
+  the table maps to that class unless the script gives one, the reset
+  where the route carries one, and the field as `error.param`. A class
+  the route has no row for is refused at configuration. So the client's
+  own classification reads back the class the script gave.
+- **Whose calls it fails.** A failing line may name the accepted
+  credentials it answers, by index (section 3), which the byte peer puts
+  in each query; it fails only their calls, and a call with another
+  credential passes over it to the rest of its turn. Naming none, it
+  fails every call. A failure adds no assistant message, so the same turn
+  answers the call made again: a story fails one account's calls, lets
+  another's through, and so drives each account's state deterministically.
+- **The evidence is the script's.** The code, the request id and the
+  field are sent as given, past the client's bounds too, so that a story
+  sees the client keep each or leave it empty (llm.md, section 2.5). An
+  empty request id is the peer's own (section 3.1).
+- **The chances stay,** for soak runs: a seeded failure carries the
+  table's code for its class and the peer's own request id, and names no
+  field.
+
 ## 3. Byte peer
 
 `Service` owns bounded routing across connections; `Server` owns one HTTP
@@ -107,11 +146,31 @@ terminal becomes a bounded native stream.
 the actual connection token; an unmatched/closed route returns the same
 owned terminal. Looking up a route never discards its reply right.
 
-Each entry receives a borrowed explicit credential. The fake compares the
-bearer and required account bytes; it owns no sign-in, refresh, JWT parser,
-credential generation or durable credential record. The caller remains the
-credential owner. The peer's provider selection is wire configuration, never
-application policy.
+**Credentials.** The peer accepts several credentials, each a
+`skein_llm::Credential` with its scheme (llm.md, section 2.6), so that one
+peer serves several accounts. `Peer::new` takes one, the index 0, and
+`Peer::accept` adds another and returns its index. Each entry
+receives the accepted credentials, borrowed. A request is authorized when
+it presents one of them as its route sends it: on Responses, either
+scheme as `Authorization: Bearer`; on Anthropic, a key as `x-api-key` and
+a bearer as `Authorization` (the withdrawn route, llm.md, section 4.7),
+never both. Anything else is answered as unauthorized. The fake compares
+bytes; it owns no sign-in, refresh, JWT parser, credential generation or
+durable credential record. The caller remains the credential owner. The
+peer's provider selection is wire configuration, never application policy.
+
+**On OpenAI's dialect the route follows the credential.** A credential
+with an account id is the withdrawn Codex route (llm.md, section 4.6),
+whose `chatgpt-account-id` must match it; one without is the public route
+(llm.md, section 4.8). A peer's OpenAI credentials are all of one route, and its
+configured path is that route's; a mix is refused at configuration.
+
+**No observation holds a credential's value.** The head observation
+leaves out the credential's fields (`Authorization`, `x-api-key`,
+`chatgpt-account-id`). `Observation::Credential` records, for each
+request, its route (`skein_llm::Provider`), the scheme of the accepted
+credential it matched and that credential's index, or none when it matched
+none.
 
 `Close` requests lower settlement; `closed` acknowledges actual settlement.
 A lost connection cannot authorize effects or turn a withdrawal into a
@@ -130,15 +189,24 @@ a simulated world and the real loop host it as they host a service
   within the observation caps, beside the decoded query, so a world can
   assert what reached the wire: that every request of a conversation
   carries the same affinity, and that two conversations' threads differ.
-- **It reads the dialect's cache instructions into the query.** Codex:
-  `prompt_cache_key` and the `session-id` header must be the same key in
-  its rendered form, and `thread-id` must be well formed; the key becomes
-  the query's scope. Anthropic: each `cache_control` marker becomes a
+- **It reads the dialect's cache instructions into the query.** The
+  public route: `prompt_cache_key` must be the key in its rendered form,
+  and a `session-id` or `thread-id` header is refused. The withdrawn Codex
+  route: `prompt_cache_key` and the `session-id` header must be the same
+  key, and `thread-id` must be well formed. On both, the key becomes the
+  query's scope. Anthropic: each `cache_control` marker becomes a
   mark; there may be at most four, never on thinking or redacted
   thinking. A request that breaks a rule the dialect promises is refused
   as invalid: the fake checks its client (testing-strategy.md, section 6).
-- **It echoes as a provider does.** Its Codex events can carry, as the
-  backend's do, the request's instructions and tools and a usage
+- **It refuses what a plan's route refuses.** On the public route, a
+  request carrying a field of llm.md, section 4.8's refused list is
+  answered as unsupported, naming that field.
+- **It answers with a request id,** in each response's head under its
+  route's name (`x-request-id`, `x-oai-request-id` or `request-id`):
+  numbered as its response ids are, unless a failing line gives one
+  (section 2.3).
+- **It echoes as a provider does.** Its Responses events can carry, on
+  either route, the request's instructions and tools and a usage
   attribution entry per input item, sized by configuration, so worlds
   exercise a client that keeps only what it reads (llm.md, section 4.4).
 
@@ -165,8 +233,9 @@ envelope. Its seven-byte version/tag/length header is additional to the raw
 `replay_worst_case` includes temporary JSON and simultaneous raw/envelope
 storage. A complete raw replay admitted at its cap still fits its envelope.
 Provider compatibility is validated by the real Client when replay is used.
-`Prompt::output_ceiling` applies configured dialect support; Codex omits its
-unsupported wire field and the caller still bounds local output.
+`Prompt::output_ceiling` applies configured dialect support: Codex omits its
+unsupported wire field, the public route refuses an explicit cap at
+admission (llm.md, section 4.8), and the caller still bounds local output.
 
 ## 5. Outside stories and bounds
 
@@ -235,6 +304,51 @@ connections sharing one delayed script domain. They establish shared
 Client/peer ownership only: application worlds add their schema, result and
 replay copies and their outside effect ledger to this envelope.
 
+**The accounts' stories,** through `Exchange`, which accepts further
+credentials for its peer as `Peer::accept` does: a peer holding
+credentials of both schemes on one endpoint answers each as its own, and
+observes which by index; each scripted failure reaches the client's
+terminal with its class and report, and a code, request id or field past
+the report's bound arrives empty; a failing line naming one credential
+fails its calls and lets another's through; a public-route request with a
+refused field is answered as unsupported, naming it; and no observation
+holds a credential's value.
+
 The redacted Anthropic captures beside the shared codec keep their
 provenance. They flow through the actual Client under fragmentation and
 prove wire preservation, not current live subscription admission.
+
+## 6. The real loop
+
+An application's real loop (testing-strategy.md, section 2.8) runs the
+peer in its own process, on loopback, with no injected latency, as it runs
+the fake forge (fake-forge.md) and the fake issuer (oauth.md, section 6.8).
+Its script is the same `Script`, `Turn` and `Line`, and the referee reads
+the same observations.
+
+- **Most stories give an account a key** (llm.md, section 2.6), which the
+  peer accepts: no sign-in is driven.
+- **Stories that sign a person in** run the fake issuer beside the peer,
+  and the test drives the redirect. The access tokens the issuer's script
+  grants are among the peer's accepted credentials, as bearers, so a
+  signed-in account's calls are accepted without the test reading a token.
+- **Stories of a program that signs in by itself** use a fake program; the
+  credential it hands over is one the peer accepts.
+- **An account's state is the script's:** failing lines that name a
+  credential exhaust, refuse or unauthorize one account and not another
+  (section 2.3), so a story asserts what its application does with each.
+
+## 7. Open questions
+
+- **Cache granularity.** Providers cache only past a minimum length and in
+  steps of tokens; the fake caches any prefix at a message's or a mark's
+  end. Default: it stays so, until a world needs the providers'
+  granularity to catch a regression.
+- **Digests.** The cache table compares prefixes by a digest of their
+  content, not the content itself, to keep its bound small. A collision
+  would show as a false hit; with a 64-bit digest and a world's few
+  prefixes, it is accepted rather than paid for in memory.
+- **A failure's reset as a header.** A scripted reset on the public route
+  goes in the error's `resets_in_seconds`, never in `retry-after`, which
+  the client also reads (llm.md, section 4.8). Default: the error's field
+  alone, until a capture shows which the route sends.
