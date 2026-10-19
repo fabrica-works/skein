@@ -68,6 +68,34 @@ answer ownership is checked before effects or payload copies.
   peer sends as its dialect's own truncation, and a menu body longer than
   the client's input limit is an oversized call.
 
+### 2.2 A reply in pieces, and a hold
+
+- **A scripted reply can come in pieces.** The script gives the reply's
+  text as an ordered list of pieces, and the peer sends each as a delta
+  of its own, in order, in the dialect's own streaming events, so the
+  client under test sees the reply arrive by parts, as it does from a
+  provider. A reply scripted whole is one piece. The pieces' bytes are
+  the reply: concatenated, they are the text the committed answer holds.
+- **A piece the script marks held is not sent until its owner releases
+  it.** Pieces before it are sent at their latency; the held piece and
+  those after it wait, and the stream stays open, with the dialect's
+  keep-alive if it has one. A world therefore observes a reply partway:
+  what reached the client is exactly the pieces before the hold.
+- **The owner releases by name.** The script gives a hold a name, and
+  the world that owns the domain releases it by that name, at any time,
+  in its own iteration (the domain stays pure: a release is an event,
+  not a timer or a callback). Releasing sends the held piece and the
+  pieces after it up to the next hold, each at its latency. A release
+  of a name nothing holds changes nothing. A reply cut or refused by
+  a fault while held ends as the fault says; the hold is dropped with
+  the reply.
+- **Holds and the peers.** The domain keeps the holds, so the byte peer
+  and the worlds that host it (the one-process world and the real loop:
+  testing-strategy.md, 4 and 4.1) take the release as the domain's
+  event, never from the wire. The peer as a process of its own has no
+  owner to release a hold, so it refuses a script with one at its
+  start. A world without a hold sees the peer as before.
+
 ## 3. Byte peer
 
 `Service` owns bounded routing across connections; `Server` owns one HTTP

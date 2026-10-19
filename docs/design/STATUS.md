@@ -48,7 +48,7 @@ section 3.3).
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 6: Codex routing state, WebSocket: not planned |
 | `llm-connection.md` | partly | 9: names while running, proxies, HTTP/2, pool fairness: not planned |
-| `fake-llm.md` | partly | 7: providers' cache granularity: not planned |
+| `fake-llm.md` | partly | 2.2: a reply in pieces and a hold: designed, waits for a downstream repository's live-text plan; 7: providers' cache granularity: not planned |
 | `oauth.md` | partly | 7: IPv6 loopback, device authorization, a credential helper: not planned |
 | `browser.md` | partly | 6, 7: a test answering a native dialog itself, and the kit's `browser.rs` split by concern (jig's skein-ui `later.md`); 11: open questions: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
@@ -167,6 +167,10 @@ section 3.3).
   sketched in `kv-implementation.md`, sections 6 and 9, not scheduled.
   Payload logs wait for temper's transcripts; values on disk and a shared
   sync, for a dataset or a second store.
+- **The fake LLM's pieces and holds** (`fake-llm.md`, section 2.2): a
+  scripted reply sent in pieces, and a hold released by its owner.
+  Designed, and waits for the downstream repository's live-text plan,
+  which needs it to read a reply partway.
 - **The fake LLM's cache granularity** (`fake-llm.md`, section 7): waits
   for a world that needs providers' minimum lengths and steps.
 - **The echo's worlds made pure** (`examples.md`, sections 6 and 7): the
