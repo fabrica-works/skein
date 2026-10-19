@@ -177,6 +177,7 @@ fn anthropic_request(data: &[u8], limits: &anthropic::Limits) -> Result<api::Que
         messages.push(api::Message { role, parts: parts.into_boxed() }).or(Err(Error::TooLarge))?;
     }
     Ok(api::Query {
+        credential: None,
         caching: api::Caching::Marks(marks.into_boxed()),
         model: request.model,
         system: request.instructions,
@@ -246,6 +247,7 @@ fn openai_request(data: &[u8], limits: &Limits) -> Result<api::Query, Error> {
         messages.push(api::Message { role, parts: parts.into_boxed() }).or(Err(Error::TooLarge))?;
     }
     Ok(api::Query {
+        credential: None,
         caching: match cache_scope {
             Some(key) => api::Caching::Scope(key),
             None => api::Caching::Unscoped,

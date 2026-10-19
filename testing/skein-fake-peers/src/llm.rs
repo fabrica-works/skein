@@ -343,7 +343,7 @@ impl Peer {
                 domain::Request::Reply { result, .. } => self.observe(
                     Observation::Answered {
                         connection: owner,
-                        result: result.as_ref().map(|_| ()).map_err(|error| *error),
+                        result: result.as_ref().map(|_| ()).map_err(|failure| failure.error),
                     },
                     0,
                 ),

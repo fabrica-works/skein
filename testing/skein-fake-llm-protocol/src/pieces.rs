@@ -251,7 +251,8 @@ fn failed(
         api::Error::Unavailable => b"server_error".as_slice(),
         api::Error::ContextTooLong => b"context_length_exceeded".as_slice(),
         api::Error::Unauthorized => b"authentication_error".as_slice(),
-        api::Error::InvalidRequest => b"invalid_request_error".as_slice(),
+        api::Error::Refused => b"permission_error".as_slice(),
+        api::Error::Unsupported | api::Error::InvalidRequest => b"invalid_request_error".as_slice(),
     };
     let error = openai::ProviderError {
         kind: bytes::copy_of(kind),

@@ -411,7 +411,8 @@ pub fn down(
                 response_error(server, service, env, api::Error::InvalidRequest);
             }
         }
-        Err(error) => {
+        Err(failure) => {
+            let error = failure.error;
             if let State::Pieces { .. } = server.state {
                 server.pieces.fail(error);
                 next_event(server, service, env, above, below);
@@ -864,8 +865,9 @@ fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, err
         api::Error::Unavailable => (500, b"server_error".as_slice(), None),
         api::Error::ContextTooLong => (400, b"context_length_exceeded".as_slice(), None),
         api::Error::Unauthorized => (401, b"authentication_error".as_slice(), None),
-        api::Error::Exhausted { retry_after } => (429, b"usage_limit_reached".as_slice(), Some(retry_after)),
-        api::Error::InvalidRequest => (400, b"invalid_request_error".as_slice(), None),
+        api::Error::Exhausted { retry_after } => (429, b"usage_limit_reached".as_slice(), retry_after),
+        api::Error::Refused => (403, b"permission_error".as_slice(), None),
+        api::Error::Unsupported | api::Error::InvalidRequest => (400, b"invalid_request_error".as_slice(), None),
     };
     let body = match service.config.provider {
         documents::Provider::Anthropic => {
@@ -876,6 +878,8 @@ fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, err
                 api::Error::Overloaded
                 | api::Error::RateLimited { .. }
                 | api::Error::Unauthorized
+                | api::Error::Refused
+                | api::Error::Unsupported
                 | api::Error::InvalidRequest => (kind, kind),
             };
             let error = anthropic::ProviderError {
@@ -935,6 +939,8 @@ fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, err
             | api::Error::Unavailable
             | api::Error::ContextTooLong
             | api::Error::Unauthorized
+            | api::Error::Refused
+            | api::Error::Unsupported
             | api::Error::InvalidRequest => {}
         }
     }

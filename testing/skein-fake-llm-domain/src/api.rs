@@ -172,6 +172,8 @@ pub enum Mark {
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Query {
+    /// The accepted credential index supplied by the peer, if any.
+    pub credential: Option<u32>,
     /// Cache instructions in the fake's own terms, independent of wire headers.
     pub caching: Caching,
     /// Provider model name, treated as bytes by the domain.
@@ -292,11 +294,13 @@ pub enum Error {
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     Exhausted {
-        /// Optional provider cooldown, retained in the representation of this boundary.
-        ///
-        /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
-        retry_after: Duration,
+        /// The reset supplied by the provider, if any.
+        retry_after: Option<Duration>,
     },
+    /// The provider refuses this account what was asked.
+    Refused,
+    /// The provider will not take a field of the request.
+    Unsupported,
     /// The neutral fake rejected the client's conversation structure.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
@@ -345,6 +349,15 @@ pub struct Turn {
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Line {
+    /// Ends the turn for the named credential indices, or every call when empty.
+    Fail {
+        /// The provider failure class.
+        error: Error,
+        /// The evidence sent as given by the script.
+        report: Report,
+        /// Accepted credential indices whose calls fail.
+        credentials: Box<[u32]>,
+    },
     /// The reply's text in pieces, each its own delta; the turn's first line.
     ///
     /// Contract: docs/design/fake-llm.md, section 2.2.
@@ -393,4 +406,38 @@ pub struct Piece {
     pub text: Box<[u8]>,
     /// A name of 1 to 64 bytes that the owner releases before this piece.
     pub hold: Option<Box<[u8]>>,
+}
+
+/// The evidence a failing line gives: code, request id and field, as bytes.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Report {
+    /// Provider error code, or empty for the route's default.
+    pub code: Box<[u8]>,
+    /// Provider request id, or empty for the peer's own.
+    pub request: Box<[u8]>,
+    /// Request field the provider names.
+    pub field: Box<[u8]>,
+}
+impl Report {
+    /// Empty evidence for a seeded failure or the domain's own refusal.
+    #[must_use]
+    pub fn none() -> Report {
+        Report { code: Box::new([]), request: Box::new([]), field: Box::new([]) }
+    }
+}
+
+/// A failed reply: its class, evidence and parts before the failing line.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Failure {
+    /// The provider's failure class.
+    pub error: Error,
+    /// Evidence supplied by the script.
+    pub report: Report,
+    /// Reply parts before the failing line.
+    pub parts: Box<[Part]>,
+}
+impl From<Error> for Failure {
+    fn from(error: Error) -> Failure {
+        Failure { error, report: Report::none(), parts: Box::new([]) }
+    }
 }

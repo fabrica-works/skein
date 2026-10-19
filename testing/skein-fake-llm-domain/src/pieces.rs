@@ -26,8 +26,13 @@ pub(crate) struct Stream {
 pub(crate) fn valid(scripts: &[Script]) -> bool {
     for script in scripts {
         for turn in &script.turns {
+            let mut ended = false;
             for (index, line) in turn.lines.iter().enumerate() {
+                if ended {
+                    return false;
+                }
                 match line {
+                    Line::Fail { credentials, .. } => ended = credentials.is_empty(),
                     Line::Pieces { pieces } => {
                         if index != 0 || pieces.is_empty() {
                             return false;
@@ -71,7 +76,7 @@ fn at(scripts: &[Script], place: Place) -> &[Piece] {
     let turn = scripts.get(place.script).expect("retained script").turns.get(place.turn).expect("retained turn");
     match turn.lines.first() {
         Some(Line::Pieces { pieces }) => pieces,
-        Some(Line::Text { .. } | Line::Opaque { .. } | Line::Call { .. }) | None => {
+        Some(Line::Fail { .. } | Line::Text { .. } | Line::Opaque { .. } | Line::Call { .. }) | None => {
             unreachable!("a stream starts with pieces")
         }
     }

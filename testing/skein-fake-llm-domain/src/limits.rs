@@ -7,7 +7,7 @@ use core::mem::size_of;
 
 use skein_lib::{Deadlines, Id, Set, Slab};
 
-use crate::api::{Answer, Line, Message, Part, Piece, Query, Script, ToolSpec, Turn};
+use crate::api::{Answer, Failure, Line, Message, Part, Piece, Query, Report, Script, ToolSpec, Turn};
 use crate::domain::{Call, Config};
 
 pub(crate) fn fits(bytes: Option<u64>, cap: u32) -> bool {
@@ -91,6 +91,9 @@ pub(crate) fn scripts(scripts: &[Script]) -> Option<u64> {
                         }
                         owned
                     }
+                    Line::Fail { report, credentials, .. } => {
+                        report_bytes(report)?.checked_add(array(credentials.len(), size_of::<u32>())?)?
+                    }
                     Line::Text { text } => bytes(text)?,
                     Line::Opaque { bytes: value } => bytes(value)?,
                     Line::Call { name, arguments } => bytes(name)?.checked_add(bytes(arguments)?)?,
@@ -100,6 +103,14 @@ pub(crate) fn scripts(scripts: &[Script]) -> Option<u64> {
         }
     }
     Some(total)
+}
+
+fn report_bytes(report: &Report) -> Option<u64> {
+    bytes(&report.code)?.checked_add(bytes(&report.request)?)?.checked_add(bytes(&report.field)?)
+}
+
+pub(crate) fn failure(failure: &Failure) -> Option<u64> {
+    parts(&failure.parts)?.checked_add(report_bytes(&failure.report)?)
 }
 
 pub(crate) fn answer(answer: &Answer) -> Option<u64> {
@@ -119,6 +130,9 @@ pub(crate) fn scripted_answer(turn: &Turn) -> Option<u64> {
                     owned = owned.checked_add(bytes(&piece.text)?)?;
                 }
                 owned
+            }
+            Line::Fail { report, credentials, .. } => {
+                report_bytes(report)?.checked_add(array(credentials.len(), size_of::<u32>())?)?
             }
             Line::Text { text } => bytes(text)?,
             Line::Opaque { bytes: value } => bytes(value)?,

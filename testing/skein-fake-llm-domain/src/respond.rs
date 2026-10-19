@@ -31,7 +31,7 @@ use alloc::boxed::Box;
 use skein_lib::bytes::copy_of;
 use skein_lib::{List, Rng};
 
-use crate::api::{Answer, Error, Finish, Line, Message, Part, Query, Role, Script, Turn, Usage};
+use crate::api::{Answer, Error, Failure, Finish, Line, Message, Part, Query, Role, Script, Turn, Usage};
 use crate::domain::Config;
 use crate::{limits, pieces};
 
@@ -42,7 +42,7 @@ pub(crate) fn respond(
     scripts: &[Script],
     menu: &crate::api::Menu,
     query: &Query,
-) -> Result<(Answer, Option<pieces::Place>), Error> {
+) -> Result<(Answer, Option<pieces::Place>), Failure> {
     let roll = rng.below(1000);
     let failures = [
         (config.overloaded, Error::Overloaded),
@@ -55,11 +55,11 @@ pub(crate) fn respond(
     for (chance, error) in failures {
         below = below.saturating_add(u64::from(chance));
         if roll < below {
-            return Err(error);
+            return Err(error.into());
         }
     }
     if !valid(&query.messages) || !valid_choice(query) {
-        return Err(Error::InvalidRequest);
+        return Err(Error::InvalidRequest.into());
     }
     let roll = rng.below(1000);
     let refused = u64::from(config.refused);
@@ -77,14 +77,21 @@ pub(crate) fn respond(
         let turns = &scripts.get(script).expect("found among the scripts").turns;
         if let Some(turn) = turns.get(said(&query.messages)) {
             if !limits::fits(limits::scripted_answer(turn), config.answer_bytes) {
-                return Err(Error::ContextTooLong);
+                return Err(Error::ContextTooLong.into());
             }
             let answer = scripted(minted, query, turn)?;
             let place = match turn.lines.first() {
                 Some(Line::Pieces { .. }) if turn.tokens <= u64::from(query.max_tokens) => {
                     Some(pieces::Place { script, turn: said(&query.messages) })
                 }
-                Some(Line::Pieces { .. } | Line::Text { .. } | Line::Opaque { .. } | Line::Call { .. }) | None => None,
+                Some(
+                    Line::Fail { .. }
+                    | Line::Pieces { .. }
+                    | Line::Text { .. }
+                    | Line::Opaque { .. }
+                    | Line::Call { .. },
+                )
+                | None => None,
             };
             return Ok((answer, place));
         }
@@ -100,7 +107,7 @@ pub(crate) fn respond(
     {
         let count = u32::try_from(rng.between(1, config.calls_per_answer.max(1).into())).expect("drawn below a u32");
         if !limits::fits(limits::random_answer(query, menu, count), config.answer_bytes) {
-            return Err(Error::ContextTooLong);
+            return Err(Error::ContextTooLong.into());
         }
         let mut calls = List::with_capacity(count);
         for _ in 0..count {
@@ -264,11 +271,21 @@ fn cued(scripts: &[Script], system: &[u8]) -> Option<usize> {
 /// starts with one.
 ///
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
-fn scripted(minted: &mut u64, query: &Query, turn: &Turn) -> Result<Answer, Error> {
+fn scripted(minted: &mut u64, query: &Query, turn: &Turn) -> Result<Answer, Failure> {
     let count = u32::try_from(turn.lines.len()).expect("a script's answer fits a u32");
     let mut parts = List::with_capacity(count);
     for line in &turn.lines {
         let part = match line {
+            Line::Fail { error, report, credentials } => {
+                let named = match query.credential {
+                    Some(index) => credentials.contains(&index),
+                    None => false,
+                };
+                if credentials.is_empty() || named {
+                    return Err(Failure { error: *error, report: report.clone(), parts: parts.into_boxed() });
+                }
+                continue;
+            }
             Line::Pieces { pieces } => Part::Text { text: pieces::join(pieces) },
             Line::Text { text } => Part::Text { text: copy_of(text) },
             Line::Opaque { bytes } => Part::Opaque { bytes: bytes.clone() },
@@ -578,7 +595,7 @@ mod tests {
         let config = Config { rate_limited: 1000, retry_after: Duration::from_secs(2), ..CONFIG };
         let result =
             respond(&mut rng, &mut minted, &config, &[], &menu(), &query(Box::new([user(Box::new([text()]))])));
-        assert_eq!(result, Err(Error::RateLimited { retry_after: Duration::from_secs(2) }));
+        assert_eq!(result, Err(Error::RateLimited { retry_after: Duration::from_secs(2) }.into()));
         let cases = [
             (Config { unavailable: 1000, ..CONFIG }, Error::Unavailable),
             (Config { too_long: 1000, ..CONFIG }, Error::ContextTooLong),
@@ -586,12 +603,12 @@ mod tests {
         for (config, error) in cases {
             let result =
                 respond(&mut rng, &mut minted, &config, &[], &menu(), &query(Box::new([user(Box::new([text()]))])));
-            assert_eq!(result, Err(error));
+            assert_eq!(result, Err(error.into()));
         }
         let config = Config { unauthorized: 1000, ..CONFIG };
         let result =
             respond(&mut rng, &mut minted, &config, &[], &menu(), &query(Box::new([user(Box::new([text()]))])));
-        assert_eq!(result, Err(Error::Unauthorized));
+        assert_eq!(result, Err(Error::Unauthorized.into()));
     }
 
     #[test]
@@ -738,3 +755,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod failures;

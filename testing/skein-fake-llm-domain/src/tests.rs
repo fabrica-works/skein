@@ -37,6 +37,7 @@ pub(super) fn user(parts: Box<[Part]>) -> Message {
 pub(super) fn query(messages: Box<[Message]>) -> Query {
     let tool = ToolSpec { name: copy_of(b"ls"), description: copy_of(b""), parameters: copy_of(b"{}") };
     Query {
+        credential: None,
         caching: crate::api::Caching::Unscoped,
         model: copy_of(b"fake"),
         system: copy_of(b""),
@@ -174,7 +175,7 @@ fn one_release_frees_every_call_held_at_its_name() {
 fn a_faulted_reply_in_pieces_goes_whole_in_one_reply() {
     let mut play = Playback::new(Config { overloaded: 1000, ..STREAM_CONFIG }, Box::new([piece(b"a", Some(b"h"))]));
     let Some(Request::Reply { result, .. }) = play.fire(1) else { panic!("a fault is a terminal") };
-    assert_eq!(result, Err(crate::api::Error::Overloaded));
+    assert_eq!(result, Err(crate::api::Error::Overloaded.into()));
 }
 
 #[test]
@@ -211,4 +212,46 @@ fn a_hold_name_at_64_bytes_is_admitted() {
     let turn = pieces_turn(Box::new([piece(b"a", Some(&[b'h'; MAX_HOLD_BYTES]))]));
     Domain::try_scripted(&CONFIG, 1, Box::new([script(b"@main", Box::new([turn]))]))
         .expect("a hold at the bound is admitted");
+}
+
+#[test]
+fn a_line_after_a_failing_line_naming_none_is_refused() {
+    let fail =
+        Line::Fail { error: crate::api::Error::Refused, report: crate::api::Report::none(), credentials: Box::new([]) };
+    let turn = Turn { lines: Box::new([fail, Line::Text { text: copy_of(b"later") }]), ..says(b"") };
+    let got = Domain::try_scripted(&CONFIG, 1, Box::new([script(b"@main", Box::new([turn]))]));
+    assert_eq!(got.err(), Some(crate::api::Error::InvalidRequest));
+}
+
+#[test]
+fn a_failing_lines_bytes_count_against_the_script_cap() {
+    use crate::api::{Error, Report};
+    // Stored wrappers, the cue, the three report values, and two u32 indices.
+    const CAP: usize = size_of::<Script>()
+        + size_of::<Turn>()
+        + size_of::<Line>()
+        + b"@main".len()
+        + b"spent".len()
+        + b"req_42".len()
+        + b"top_p".len()
+        + 2 * size_of::<u32>();
+    let scripts = Box::new([script(
+        b"@main",
+        Box::new([Turn {
+            lines: Box::new([Line::Fail {
+                error: Error::Refused,
+                report: Report { code: copy_of(b"spent"), request: copy_of(b"req_42"), field: copy_of(b"top_p") },
+                credentials: Box::new([0, 1]),
+            }]),
+            ..says(b"")
+        }]),
+    )]);
+    for (cap, expected) in [(CAP, None), (CAP - 1, Some(Error::ContextTooLong))] {
+        let got = Domain::try_scripted(
+            &Config { script_bytes: u32::try_from(cap).expect("fixture fits"), ..CONFIG },
+            1,
+            scripts.clone(),
+        );
+        assert_eq!(got.err(), expected, "{cap}");
+    }
 }

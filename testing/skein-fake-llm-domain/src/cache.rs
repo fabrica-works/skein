@@ -303,6 +303,7 @@ mod tests {
 
     fn query(scope: Option<[u8; 16]>) -> Query {
         Query {
+            credential: None,
             caching: match scope {
                 Some(scope) => Caching::Scope(scope),
                 None => Caching::Unscoped,

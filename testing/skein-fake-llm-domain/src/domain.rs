@@ -7,7 +7,7 @@ use core::mem;
 
 use skein_lib::{Deadlines, Duration, Env, Id, Queue, ReplyTo, Rng, Set, Slab, Time, Token};
 
-use crate::api::{Answer, Error, Query, Script, Usage};
+use crate::api::{Answer, Error, Failure, Query, Script, Usage};
 use crate::{cache, limits, pieces, respond};
 
 /// The most requests an entry point emits per call.
@@ -159,7 +159,7 @@ pub enum Request {
         /// The one terminal value for the enclosing call; ownership passes to its receiver.
         ///
         /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
-        result: Result<Answer, Error>,
+        result: Result<Answer, Failure>,
     },
 }
 
@@ -204,7 +204,7 @@ pub(crate) enum State {
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     Thinking {
         reply_to: ReplyTo,
-        result: Result<Answer, Error>,
+        result: Result<Answer, Failure>,
     },
     /// Terminal: holds nothing.
     ///
@@ -268,6 +268,12 @@ impl Domain {
             menu,
             cache: cache::Cache::new(config.cache_entries, config.cache_lifetime),
         })
+    }
+
+    /// The admitted scripts, borrowed by the peer for route validation.
+    #[must_use]
+    pub fn scripts(&self) -> &[Script] {
+        &self.scripts
     }
 
     /// Calls present, answered ones included until they are reclaimed.
@@ -351,24 +357,24 @@ fn call(
     out: &mut Queue<Request>,
 ) {
     if domain.calls.is_full() {
-        out.push(Request::Reply { to: reply_to, result: Err(Error::Overloaded) });
+        out.push(Request::Reply { to: reply_to, result: Err(Error::Overloaded.into()) });
         return;
     }
     let config = &env.limits;
     let mut place = None;
     let mut result = if !cache::valid(query) {
-        Err(Error::InvalidRequest)
+        Err(Error::InvalidRequest.into())
     } else if limits::fits(limits::query(query), config.query_bytes) {
         match respond::respond(&mut domain.rng, &mut domain.minted, config, &domain.scripts, &domain.menu, query) {
             Ok((answer, position)) if limits::fits(limits::answer(&answer), config.answer_bytes) => {
                 place = position;
                 Ok(answer)
             }
-            Ok(_) => Err(Error::ContextTooLong),
-            Err(error) => Err(error),
+            Err(failure) if limits::fits(limits::failure(&failure), config.answer_bytes) => Err(failure),
+            Ok(_) | Err(_) => Err(Error::ContextTooLong.into()),
         }
     } else {
-        Err(Error::ContextTooLong)
+        Err(Error::ContextTooLong.into())
     };
     if let Ok(answer) = &mut result {
         let allowed = match query.caching {
@@ -404,7 +410,7 @@ fn call(
 /// Thinking, timer: the answer goes out.
 ///
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
-fn answer(reply_to: ReplyTo, result: Result<Answer, Error>, out: &mut Queue<Request>) -> State {
+fn answer(reply_to: ReplyTo, result: Result<Answer, Failure>, out: &mut Queue<Request>) -> State {
     out.push(Request::Reply { to: reply_to, result });
     State::Closed
 }

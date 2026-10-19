@@ -36,6 +36,7 @@ fn menu() -> Menu {
 
 fn query() -> Query {
     Query {
+        credential: None,
         caching: skein_fake_llm_domain::api::Caching::Unscoped,
         model: Box::new([]),
         system: b"cue".as_slice().into(),
@@ -95,7 +96,7 @@ fn exact_joint_menu_script_cap_and_all_delayed_slots_include_empty_part_wrappers
     let Request::Reply { result, .. } = out.pop().expect("full slab refuses once") else {
         panic!("the call ends in one reply")
     };
-    assert_eq!(result, Err(Error::Overloaded));
+    assert_eq!(result, Err(Error::Overloaded.into()));
     meter.check(measured, bound, &"one-over live-slot refusal");
     env.now = Time::from_nanos(1_000_000_000);
     let mut terminals = 0_u32;
@@ -138,7 +139,7 @@ fn exact_joint_menu_script_cap_and_all_delayed_slots_include_empty_part_wrappers
     let Request::Reply { result, .. } = out.pop().expect("actual refusal terminal") else {
         panic!("the call ends in one reply")
     };
-    assert_eq!(result, Err(Error::ContextTooLong), "empty wrappers count toward answer admission");
+    assert_eq!(result, Err(Error::ContextTooLong.into()), "empty wrappers count toward answer admission");
 }
 
 #[test]
@@ -180,7 +181,7 @@ fn exact_query_cap_is_accepted_and_one_byte_less_returns_one_actual_refusal() {
             assert_eq!(answer.parts.len(), ITEMS);
             drop(answer);
         } else {
-            assert_eq!(result, Err(Error::ContextTooLong), "only the query allowance changed");
+            assert_eq!(result, Err(Error::ContextTooLong.into()), "only the query allowance changed");
         }
         assert!(out.pop().is_none(), "one terminal consumes the original reply right");
         meter.check(measured, bound, &"actual query success or refusal terminal");
