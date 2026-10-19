@@ -57,8 +57,8 @@ pub use map::Map;
 pub use queue::Queue;
 pub use reader::Reader;
 pub use requests::{
-    RequestAnswered, RequestEnvelope, RequestKey, RequestLimits, RequestOut, RequestProgress, RequestRecord,
-    RequestTable, RequestTake,
+    RequestAdmission, RequestAnswered, RequestEnvelope, RequestKey, RequestLimits, RequestNumber, RequestOut,
+    RequestProgress, RequestRecord, RequestRefused, RequestTable, RequestTake,
 };
 pub use rng::Rng;
 pub use secret::Secret;

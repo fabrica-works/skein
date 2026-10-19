@@ -648,7 +648,7 @@ fn request_table_memory<O: Item + Copy + std::fmt::Debug + PartialEq, T: Item + 
             table.restore(O::nth(n), 2, record).expect("room for restored records");
             key = restored_key;
         } else {
-            key = table.ask(O::nth(n), 7, 2, T::nth(n)).expect("room to every limit");
+            key = table.ask(O::nth(n), 7, 2, T::nth(n)).expect("room to every limit").key;
         }
         metered.end(());
         keys.push(key);

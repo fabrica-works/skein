@@ -14,8 +14,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use skein_lib::{
-    Duration, RequestAnswered, RequestEnvelope, RequestKey, RequestLimits, RequestOut, RequestProgress, RequestRecord,
-    RequestTable, Rng, Time, Token, Wall,
+    Duration, RequestAnswered, RequestEnvelope, RequestKey, RequestLimits, RequestNumber, RequestOut, RequestProgress,
+    RequestRecord, RequestRefused, RequestTable, Rng, Time, Token, Wall,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,10 +44,12 @@ impl Owner {
 enum Terminal {
     Final,
     Unknown,
+    NotKept,
 }
 
 #[derive(Debug)]
 struct Obligation {
+    number: RequestNumber,
     record: RequestRecord<u64>,
     owner: Owner,
     size: u64,
@@ -71,6 +73,8 @@ enum Observed {
 #[derive(Default, Debug)]
 struct Coverage {
     asks: u32,
+    not_kept: u32,
+    ignored: u32,
     refused: u32,
     saves: u32,
     sends: u32,
@@ -87,6 +91,7 @@ struct Coverage {
 
 struct World {
     table: RequestTable<Owner, u64>,
+    last: Option<RequestNumber>,
     limits: RequestLimits,
     held: BTreeMap<RequestKey, Obligation>,
     saved: BTreeMap<RequestKey, RequestRecord<u64>>,
@@ -108,6 +113,7 @@ impl World {
     fn new(seed: u64, limits: RequestLimits) -> World {
         World {
             table: RequestTable::new(&limits, seed),
+            last: None,
             limits,
             held: BTreeMap::new(),
             saved: BTreeMap::new(),
@@ -149,12 +155,15 @@ impl World {
         let fits = self.held.len() < usize::try_from(self.limits.requests).expect("small count")
             && self.bytes().checked_add(size).is_some_and(|bytes| bytes <= self.limits.bytes);
         match self.table.ask(owner, scope, size, request) {
-            Ok(key) => {
+            Ok(admission) => {
+                self.admitted(admission.number);
+                let key = admission.key;
                 assert!(fits, "accepted past admission limits");
                 assert!(self.issued.insert(key, request).is_none(), "new asks never reuse keys, even after a restart");
                 self.held.insert(
                     key,
                     Obligation {
+                        number: admission.number,
                         record: RequestRecord { key, scope, first_sent: None, request },
                         owner,
                         size,
@@ -170,11 +179,42 @@ impl World {
                 );
                 coverage.asks += 1;
             }
-            Err(returned) => {
+            Err(RequestRefused::Full(returned)) => {
                 assert!(!fits, "refusal when count and bytes fit");
                 assert_eq!(returned, request, "refusal returns ownership");
                 coverage.refused += 1;
             }
+            Err(RequestRefused::Held(_)) => unreachable!("a drawn key is never held"),
+        }
+    }
+
+    fn admitted(&mut self, number: RequestNumber) {
+        if let Some(last) = self.last {
+            assert!(number > last, "every admission increases its number");
+        }
+        self.last = Some(number);
+    }
+
+    fn not_kept(&mut self, pick: u64, other: u64, coverage: &mut Coverage) {
+        let count = self.held.len();
+        if count == 0 {
+            return;
+        }
+        let pick = usize::try_from(pick).expect("small pick") % count;
+        let other = usize::try_from(other).expect("small pick") % count;
+        let (&key, entry) = self.held.iter().nth(pick).expect("held pick");
+        let number = self.held.values().nth(other).expect("held other").number;
+        let own = number == entry.number;
+        let expected =
+            if own && entry.terminal.is_none() && entry.expiry_witness.is_none() { Some(entry.owner) } else { None };
+        assert_eq!(self.table.not_kept(key, number), expected, "only its admission can return a live owner");
+        if expected.is_some() {
+            let entry = self.held.get_mut(&key).expect("held pick");
+            entry.terminal = Some(Terminal::NotKept);
+            entry.attempt = None;
+            coverage.not_kept += 1;
+        } else if !own {
+            coverage.ignored += 1;
         }
     }
 
@@ -433,6 +473,7 @@ impl World {
     fn restart(&mut self, coverage: &mut Coverage) {
         self.seed = self.seed.wrapping_add(1);
         self.table = RequestTable::new(&self.limits, self.seed);
+        self.last = None;
         self.up = false;
         self.scope = None;
         self.retention = None;
@@ -442,12 +483,18 @@ impl World {
         self.seen_attempts.clear();
         for record in self.saved.values() {
             let size = record.request % 4;
-            self.table
+            let admission = self
+                .table
                 .restore(Owner::Restored(record.key), size, record.clone())
                 .expect("saved records fit the same limits");
+            if let Some(last) = self.last {
+                assert!(admission.number > last, "restoration increases admission numbers");
+            }
+            self.last = Some(admission.number);
             self.held.insert(
                 record.key,
                 Obligation {
+                    number: admission.number,
                     record: record.clone(),
                     owner: Owner::Restored(record.key),
                     size,
@@ -528,7 +575,7 @@ pub fn check(seed: u64, rounds: u32) -> u64 {
         };
         let mut world = World::new(rng.next_u64(), limits);
         for _ in 0..96 {
-            match rng.below(11) {
+            match rng.below(12) {
                 0..=3 => {
                     let scope = rng.below(3);
                     let size = world.next_request % 4;
@@ -569,8 +616,9 @@ pub fn check(seed: u64, rounds: u32) -> u64 {
                         world.clock += 1;
                     }
                 }
-                10 => {}
-                _ => unreachable!("draw below eleven"),
+                10 => world.not_kept(rng.below(6), rng.below(6), &mut coverage),
+                11 => {}
+                _ => unreachable!("draw below twelve"),
             }
             let prefix = u32::try_from(rng.below(u64::from(limits.out) + 2)).expect("small prefix");
             world.take(prefix, &mut coverage);
@@ -590,6 +638,7 @@ pub fn check(seed: u64, rounds: u32) -> u64 {
         assert!(coverage.envelopes.iter().all(|count| *count > 0), "all envelope transitions covered: {coverage:?}");
         assert!(coverage.progress_owners.iter().all(|count| *count > 0), "every owner gets progress: {coverage:?}");
         assert!(coverage.final_owners.iter().all(|count| *count > 0), "every owner gets final answers: {coverage:?}");
+        assert!(coverage.not_kept > 0 && coverage.ignored > 0, "not-kept outcomes covered: {coverage:?}");
         assert!(coverage.stale > 0 && coverage.offline > 0 && coverage.confirmed > 0);
         assert!(
             coverage.restarts > 0 && coverage.restored > 0 && coverage.unknown > 0,

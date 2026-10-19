@@ -2,7 +2,8 @@
 //!
 //! The table owns requests, opaque scopes and owner values, declared byte
 //! counts, seeded keys and attempt tokens. It never reads an owner or a
-//! request. `ask` and `restore` admit values; `link` and `confirmed` control eligibility.
+//! request. Each admission by `ask` or `restore` is numbered; each refusal says
+//! why and hands back the value. `link` and `confirmed` control eligibility.
 //! `take` lends a bounded cursor: apply every `Save` before handling a
 //! `Send`. Dropping a cursor leaves untaken work in the table.
 //!
@@ -10,13 +11,16 @@
 //! |---|---|---|---|
 //! | absent | ask | parked or ready | save, then eligible send |
 //! | absent | restore | parked | initial parked progress |
+//! | absent | ask or restore past a limit | absent | refused Full, the value handed back |
+//! | any held state, retired included | restore of its key | unchanged | refused Held, the record handed back |
 //! | parked | link up, matching confirmation, retention known if restored | ready | send after first-send save if needed |
 //! | ready | take send | in flight | fresh attempt, in-flight progress |
 //! | in flight | final envelope | retired | owner value, erase |
 //! | in flight | again or lost, eligible | retrying | retry deadline, retrying progress |
 //! | in flight | again or lost, ineligible | parked | parked progress |
 //! | in flight | signed out | parked | clear confirmation, parked progress |
-//! | parked, ready, in flight, retrying | not kept | retired | owner value, erase |
+//! | parked, ready, in flight, retrying | not kept, with its admission's number | retired | owner value, erase |
+//! | any state | not kept under another number | unchanged | nothing |
 //! | retrying | retry deadline fires | ready | eligible send |
 //! | ready, in flight, retrying | link down or scope changes away | parked | invalidate attempt, parked progress |
 //! | any live state | retention cutoff passes | retired | erase, unknown progress |
@@ -42,6 +46,42 @@ use crate::{Duration, Id, Map, Rng, Slab, Time, Token, Wall};
 
 /// A request's stable key, preserved across attempts and restoration.
 pub type RequestKey = [u8; 16];
+
+/// One admission's number, by `ask` or `restore`: 1 for the first, one more for each after.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct RequestNumber(u64);
+
+impl RequestNumber {
+    /// A number from its raw value.
+    #[must_use]
+    pub const fn new(raw: u64) -> RequestNumber {
+        RequestNumber(raw)
+    }
+
+    /// The raw value.
+    #[must_use]
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+/// An admitted request's key and number; `not_kept` names both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RequestAdmission {
+    /// The key the entry holds from this admission to its reclaim.
+    pub key: RequestKey,
+    /// This admission's number.
+    pub number: RequestNumber,
+}
+
+/// Why admission refused, handing back its value without changing the table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RequestRefused<T> {
+    /// Past count or declared bytes, or no key, number or attempt left.
+    Full(T),
+    /// An entry holds the key until reclaim; told before `Full`.
+    Held(T),
+}
 
 /// Fixed admission, output and retry bounds (lib.md, section 12).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -220,27 +260,36 @@ impl<O: Copy, R> RequestTable<O, R> {
     }
 
     /// Admit a request, or return ownership without changing anything at a limit.
-    pub fn ask(&mut self, owner: O, scope: u64, size: u64, request: R) -> Result<RequestKey, R> {
+    pub fn ask(&mut self, owner: O, scope: u64, size: u64, request: R) -> Result<RequestAdmission, RequestRefused<R>> {
         if !self.fits(size) || self.serial == u64::MAX || self.fresh_attempt().is_none() {
-            return Err(request);
+            return Err(RequestRefused::Full(request));
         }
         let Some((key, draws)) = self.fresh_key() else {
-            return Err(request);
+            return Err(RequestRefused::Full(request));
         };
         self.draws = draws;
         let record = RequestRecord { key, scope, first_sent: None, request };
-        self.insert(owner, size, record, false);
-        Ok(key)
+        let number = self.insert(owner, size, record, false);
+        Ok(RequestAdmission { key, number })
     }
 
     /// Restore a saved request with its owner's current value and declared size.
-    /// Duplicate keys and capacity overruns return the record unchanged.
-    pub fn restore(&mut self, owner: O, size: u64, record: RequestRecord<R>) -> Result<(), RequestRecord<R>> {
-        if !self.fits(size) || self.serial == u64::MAX || self.contains(record.key) {
-            return Err(record);
+    /// Held keys and capacity overruns return the record with their reason.
+    pub fn restore(
+        &mut self,
+        owner: O,
+        size: u64,
+        record: RequestRecord<R>,
+    ) -> Result<RequestAdmission, RequestRefused<RequestRecord<R>>> {
+        if self.contains(record.key) {
+            return Err(RequestRefused::Held(record));
         }
-        self.insert(owner, size, record, true);
-        Ok(())
+        if !self.fits(size) || self.serial == u64::MAX {
+            return Err(RequestRefused::Full(record));
+        }
+        let key = record.key;
+        let number = self.insert(owner, size, record, true);
+        Ok(RequestAdmission { key, number })
     }
 
     /// Tell the table whether its peer is reachable.
@@ -308,8 +357,11 @@ impl<O: Copy, R> RequestTable<O, R> {
     }
 
     /// Retire a request whose store record was not kept, returning its owner once.
-    pub fn not_kept(&mut self, key: RequestKey) -> Option<O> {
+    pub fn not_kept(&mut self, key: RequestKey, number: RequestNumber) -> Option<O> {
         let id = *self.index.get(&key)?;
+        if self.order.get(&number.raw()) != Some(&id) {
+            return None;
+        }
         let entry = self.entries.get_mut(id).expect("index names a held entry");
         match entry.state {
             State::Retired { .. } => return None,
@@ -528,7 +580,7 @@ impl<O: Copy, R> RequestTable<O, R> {
         None
     }
 
-    fn insert(&mut self, owner: O, size: u64, record: RequestRecord<R>, restored: bool) {
+    fn insert(&mut self, owner: O, size: u64, record: RequestRecord<R>, restored: bool) -> RequestNumber {
         let key = record.key;
         let eligible = self.up && self.scope == Some(record.scope) && (!restored || self.retention.is_some());
         let entry = Entry {
@@ -552,6 +604,7 @@ impl<O: Copy, R> RequestTable<O, R> {
         let replaced = self.order.insert(self.serial, id).expect("one order entry per slab slot");
         assert!(replaced.is_none(), "admission numbers are fresh");
         self.bytes = self.bytes.checked_add(size).expect("admission checked declared bytes");
+        RequestNumber::new(self.serial)
     }
 
     fn synchronize(&mut self) {

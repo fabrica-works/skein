@@ -1,5 +1,10 @@
+mod admissions;
+
 use crate::List;
-use crate::{Duration, RequestLimits, RequestOut, RequestRecord, RequestTable, Time, Token, Wall};
+use crate::{
+    Duration, RequestAdmission, RequestLimits, RequestNumber, RequestOut, RequestRecord, RequestRefused, RequestTable,
+    Time, Token, Wall,
+};
 use alloc::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,7 +40,7 @@ fn seeded_keys_are_unique_across_thousands_of_asks() {
     let mut seen = BTreeSet::new();
     for n in 0..5_000 {
         let key = table.ask(owner(n), 7, 1, n).expect("fits");
-        assert!(seen.insert(key));
+        assert!(seen.insert(key.key));
         assert_eq!(other.ask(owner(n), 7, 1, n), Ok(key));
     }
     assert_eq!(table.len(), 5_000);
@@ -46,9 +51,9 @@ fn count_and_byte_refusals_return_ownership_and_change_nothing() {
     for limits in [RequestLimits { requests: 1, ..limits() }, RequestLimits { bytes: 3, ..limits() }] {
         let mut table = RequestTable::<Owner, u64>::new(&limits, 5);
         let mut control = RequestTable::<Owner, u64>::new(&limits, 5);
-        let key = table.ask(owner(1), 7, 3, 10).expect("fits");
-        assert_eq!(control.ask(owner(1), 7, 3, 10), Ok(key));
-        assert_eq!(table.ask(owner(2), 7, 1, 20), Err(20));
+        let key = table.ask(owner(1), 7, 3, 10).expect("fits").key;
+        assert_eq!(control.ask(owner(1), 7, 3, 10), Ok(RequestAdmission { key, number: RequestNumber::new(1) }));
+        assert_eq!(table.ask(owner(2), 7, 1, 20), Err(RequestRefused::Full(20)));
         assert_eq!(table.len(), control.len());
         assert_eq!(table.bytes(), control.bytes());
         assert_eq!(table.owner(key), Some(owner(1)));
@@ -66,10 +71,10 @@ fn count_and_byte_refusals_return_ownership_and_change_nothing() {
 fn byte_overflow_and_zero_capacity_refuse() {
     let mut table = RequestTable::<Owner, u64>::new(&RequestLimits { bytes: u64::MAX, ..limits() }, 1);
     table.ask(owner(1), 7, u64::MAX, 1).expect("fits");
-    assert_eq!(table.ask(owner(2), 7, 1, 2), Err(2));
+    assert_eq!(table.ask(owner(2), 7, 1, 2), Err(RequestRefused::Full(2)));
     assert_eq!(table.bytes(), u64::MAX);
     let mut empty = RequestTable::<Owner, u64>::new(&RequestLimits { requests: 0, ..limits() }, 1);
-    assert_eq!(empty.ask(owner(1), 7, 0, 1), Err(1));
+    assert_eq!(empty.ask(owner(1), 7, 0, 1), Err(RequestRefused::Full(1)));
     assert!(empty.is_empty());
 }
 
@@ -81,7 +86,7 @@ fn saves_precede_sends_across_bounded_visits() {
         table.confirmed(Some(4));
         let mut keys = List::with_capacity(3);
         for n in 0..3 {
-            keys.push(table.ask(owner(n), 4, 1, n).expect("fits")).expect("three keys");
+            keys.push(table.ask(owner(n), 4, 1, n).expect("fits").key).expect("three keys");
         }
         let mut saved = BTreeSet::new();
         let mut sent = List::with_capacity(3);
@@ -123,7 +128,7 @@ fn saves_precede_sends_across_bounded_visits() {
 #[test]
 fn dropped_visits_leave_untaken_work_held() {
     let mut table = RequestTable::<Owner, u64>::new(&limits(), 1);
-    let key = table.ask(owner(1), 7, 1, 10).expect("fits");
+    let key = table.ask(owner(1), 7, 1, 10).expect("fits").key;
     {
         let _visit = table.take(Time::ZERO, Wall::EPOCH);
     }
@@ -165,8 +170,11 @@ fn parked_asks_are_saved_then_first_send_updates_the_record() {
 fn restoration_keeps_keys_and_waits_for_link_scope_and_retention() {
     let mut table = RequestTable::<Owner, u64>::new(&limits(), 1);
     let record = RequestRecord { key: [42; 16], scope: 7, first_sent: Some(Wall::from_nanos(10)), request: 5 };
-    assert_eq!(table.restore(owner(9), 1, record.clone()), Ok(()));
-    assert_eq!(table.restore(owner(8), 1, record.clone()), Err(record.clone()));
+    assert_eq!(
+        table.restore(owner(9), 1, record.clone()),
+        Ok(RequestAdmission { key: record.key, number: RequestNumber::new(1) })
+    );
+    assert_eq!(table.restore(owner(8), 1, record.clone()), Err(RequestRefused::Held(record.clone())));
     assert!(!table.pending());
     table.link(true);
     table.confirmed(Some(6));
@@ -186,14 +194,14 @@ fn restoration_keeps_keys_and_waits_for_link_scope_and_retention() {
 #[test]
 fn restored_work_waits_for_retention_and_new_keys_skip_held_collisions() {
     let mut original = RequestTable::<Owner, u64>::new(&limits(), 8);
-    let key = original.ask(owner(1), 7, 1, 10).expect("fits");
+    let key = original.ask(owner(1), 7, 1, 10).expect("fits").key;
     let record = RequestRecord { key, scope: 7, first_sent: None, request: 10 };
     let mut table = RequestTable::<Owner, u64>::new(&limits(), 8);
     table.restore(owner(1), 1, record).expect("fits");
     table.link(true);
     table.confirmed(Some(7));
     assert!(table.take(Time::ZERO, Wall::EPOCH).next_out().is_none());
-    let fresh = table.ask(owner(2), 7, 1, 11).expect("fits");
+    let fresh = table.ask(owner(2), 7, 1, 11).expect("fits").key;
     assert_ne!(fresh, key);
 }
 
@@ -225,14 +233,14 @@ fn sent(table: &mut RequestTable<Owner, u64>, now: Time, wall: Wall) -> Option<T
 #[test]
 fn final_hands_back_owner_once_and_erases_before_reclaiming() {
     let mut table = live();
-    let key = table.ask(owner(99), 7, 10, 5).expect("fits");
+    let key = table.ask(owner(99), 7, 10, 5).expect("fits").key;
     let attempt = sent(&mut table, Time::ZERO, Wall::EPOCH).expect("send");
     assert_eq!(table.progress(), Some((owner(99), RequestProgress::InFlight)));
     assert_eq!(table.answered(Time::ZERO, attempt, RequestEnvelope::Final), RequestAnswered::Final(owner(99)));
     assert_eq!(table.answered(Time::ZERO, attempt, RequestEnvelope::Final), RequestAnswered::Stale);
     table.reclaim();
     assert_eq!(table.len(), 1);
-    assert_eq!(table.ask(owner(2), 7, 1, 6), Err(6));
+    assert_eq!(table.ask(owner(2), 7, 1, 6), Err(RequestRefused::Full(6)));
     match table.take(Time::ZERO, Wall::EPOCH).next_out().expect("erase") {
         RequestOut::Erase(erased) => assert_eq!(erased, key),
         RequestOut::Save(_) | RequestOut::Send { .. } => unreachable!("retired"),
@@ -242,19 +250,20 @@ fn final_hands_back_owner_once_and_erases_before_reclaiming() {
     assert!(table.is_empty());
     assert_eq!(table.bytes(), 0);
     assert_eq!(table.owner(key), None);
-    assert_ne!(table.ask(owner(2), 7, 10, 6).expect("room freed"), key);
+    assert_ne!(table.ask(owner(2), 7, 10, 6).expect("room freed").key, key);
 }
 
 #[test]
 fn not_kept_retires_a_parked_request_and_erases_it() {
     let mut table = RequestTable::<Owner, u64>::new(&limits(), 1);
-    let key = table.ask(owner(FIRST_OWNER), 7, 1, 10).expect("fits");
+    let key_admission = table.ask(owner(FIRST_OWNER), 7, 1, 10).expect("fits");
+    let key = key_admission.key;
     match table.take(Time::ZERO, Wall::EPOCH).next_out().expect("record") {
         RequestOut::Save(record) => assert_eq!(record.first_sent, None),
         RequestOut::Erase(_) | RequestOut::Send { .. } => unreachable!("parked"),
     }
-    assert_eq!(table.not_kept(key), Some(owner(FIRST_OWNER)));
-    assert_eq!(table.not_kept(key), None);
+    assert_eq!(table.not_kept(key, key_admission.number), Some(owner(FIRST_OWNER)));
+    assert_eq!(table.not_kept(key, key_admission.number), None);
     assert_eq!(table.progress(), None);
     {
         let mut visit = table.take(Time::ZERO, Wall::EPOCH);
@@ -264,8 +273,9 @@ fn not_kept_retires_a_parked_request_and_erases_it() {
         }
         assert!(visit.next_out().is_none());
     }
-    let unsaved = table.ask(owner(SECOND_OWNER), 7, 1, 20).expect("fits");
-    assert_eq!(table.not_kept(unsaved), Some(owner(SECOND_OWNER)));
+    let unsaved_admission = table.ask(owner(SECOND_OWNER), 7, 1, 20).expect("fits");
+    let unsaved = unsaved_admission.key;
+    assert_eq!(table.not_kept(unsaved, unsaved_admission.number), Some(owner(SECOND_OWNER)));
     {
         let mut visit = table.take(Time::ZERO, Wall::EPOCH);
         match visit.next_out().expect("erase without save") {
@@ -280,34 +290,36 @@ fn not_kept_retires_a_parked_request_and_erases_it() {
     table.reclaim();
     assert!(table.is_empty());
     assert_eq!(table.bytes(), 0);
-    assert_eq!(table.not_kept(key), None);
+    assert_eq!(table.not_kept(key, key_admission.number), None);
 }
 
 #[test]
 fn not_kept_makes_a_held_attempt_stale() {
     let mut table = live();
-    let key = table.ask(owner(FIRST_OWNER), 7, 1, 10).expect("fits");
+    let key_admission = table.ask(owner(FIRST_OWNER), 7, 1, 10).expect("fits");
+    let key = key_admission.key;
     let attempt = sent(&mut table, Time::ZERO, Wall::EPOCH).expect("send");
-    assert_eq!(table.not_kept(key), Some(owner(FIRST_OWNER)));
+    assert_eq!(table.not_kept(key, key_admission.number), Some(owner(FIRST_OWNER)));
     assert_eq!(table.answered(Time::ZERO, attempt, RequestEnvelope::Final), RequestAnswered::Stale);
     match table.take(Time::ZERO, Wall::EPOCH).next_out().expect("erase") {
         RequestOut::Erase(erased) => assert_eq!(erased, key),
         RequestOut::Save(_) | RequestOut::Send { .. } => unreachable!("retired"),
     }
-    let final_key = table.ask(owner(SECOND_OWNER), 7, 1, 20).expect("fits");
+    let final_key_admission = table.ask(owner(SECOND_OWNER), 7, 1, 20).expect("fits");
+    let final_key = final_key_admission.key;
     let attempt = sent(&mut table, Time::ZERO, Wall::EPOCH).expect("send");
     assert_eq!(
         table.answered(Time::ZERO, attempt, RequestEnvelope::Final),
         RequestAnswered::Final(owner(SECOND_OWNER))
     );
-    assert_eq!(table.not_kept(final_key), None);
+    assert_eq!(table.not_kept(final_key, final_key_admission.number), None);
 }
 
 #[test]
 fn again_and_live_lost_back_off_with_fresh_attempts_and_one_key() {
     for envelope in [RequestEnvelope::Again, RequestEnvelope::Lost] {
         let mut table = live();
-        let key = table.ask(owner(1), 7, 1, 8).expect("fits");
+        let key = table.ask(owner(1), 7, 1, 8).expect("fits").key;
         let mut now = Time::ZERO;
         let mut attempt = sent(&mut table, now, Wall::EPOCH).expect("send");
         let mut span = Duration::from_secs(1);
@@ -343,7 +355,7 @@ fn again_and_live_lost_back_off_with_fresh_attempts_and_one_key() {
 #[test]
 fn a_down_link_parks_invalidates_attempts_and_resumes_under_new_tokens() {
     let mut table = live();
-    let key = table.ask(owner(1), 7, 1, 5).expect("fits");
+    let key = table.ask(owner(1), 7, 1, 5).expect("fits").key;
     let attempt = sent(&mut table, Time::ZERO, Wall::EPOCH).expect("send");
     assert!(table.progress().is_some());
     table.link(false);
@@ -396,7 +408,7 @@ fn retention_is_strict_and_unknown_is_terminal_even_while_parked() {
     table.retention(Duration::from_nanos(11));
     table.confirmed(Some(7));
     table.link(true);
-    let key = table.ask(owner(1), 7, 1, 5).expect("fits");
+    let key = table.ask(owner(1), 7, 1, 5).expect("fits").key;
     let attempt = sent(&mut table, Time::ZERO, Wall::from_nanos(100)).expect("send");
     assert_eq!(table.next_deadline(), Some(Time::from_nanos(11)));
     table.link(false);
@@ -488,7 +500,7 @@ fn unused_keys_are_never_reused_after_thousands_of_retirements() {
     let mut keys = BTreeSet::new();
     let mut attempts = BTreeSet::new();
     for n in 0..5_000 {
-        let key = table.ask(owner(n), 7, 1, n).expect("room reclaimed");
+        let key = table.ask(owner(n), 7, 1, n).expect("room reclaimed").key;
         assert!(keys.insert(key));
         let attempt = sent(&mut table, Time::ZERO, Wall::EPOCH).expect("send");
         assert!(attempts.insert(attempt));
@@ -546,7 +558,7 @@ fn progress_and_final_answers_reach_each_owner_across_restores() {
                 table.restore(*owner, 1, record).expect("room for three restored requests");
                 key
             } else {
-                table.ask(*owner, 7, 1, request).expect("room for three requests")
+                table.ask(*owner, 7, 1, request).expect("room for three requests").key
             };
             keys.push(key).expect("three keys");
             assert_eq!(table.owner(key), Some(*owner));
@@ -590,7 +602,7 @@ fn progress_and_final_answers_reach_each_owner_across_restores() {
 #[test]
 fn a_saved_request_can_return_to_a_different_owner_after_reload() {
     let mut before = live();
-    let key = before.ask(Owner::First(Token::new(1)), 7, 1, 5).expect("fits");
+    let key = before.ask(Owner::First(Token::new(1)), 7, 1, 5).expect("fits").key;
     let record = match before.take(Time::ZERO, Wall::EPOCH).next_out().expect("saved before sent") {
         RequestOut::Save(record) => record.clone(),
         RequestOut::Erase(_) | RequestOut::Send { .. } => unreachable!("record comes first"),
