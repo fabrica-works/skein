@@ -188,7 +188,7 @@ impl Plan {
             api::Read::Branches => {
                 let room = bounds
                     .answer_bytes
-                    .checked_div(u32::try_from(size_of::<Box<[u8]>>()).expect("box size"))
+                    .checked_div(u32::try_from(crate::measure::STRING_BYTES).expect("box size"))
                     .expect("nonzero width");
                 self.rows = Rows::Branches(List::with_capacity(capacity.min(room)));
                 self.stage = Stage::Branches;
@@ -316,7 +316,7 @@ impl Plan {
                 if self.stage == Stage::User {
                     return Ok(());
                 }
-                let size = u64::try_from(size_of::<api::Collaborator>()).expect("row size");
+                let size = u64::try_from(crate::measure::COLLABORATOR_BYTES).expect("collaborator width");
                 if !self.add_size(size, bounds) {
                     return Err(api::Error::TooLarge);
                 }

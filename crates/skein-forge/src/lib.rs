@@ -7,6 +7,7 @@ extern crate alloc;
 pub mod api;
 pub mod forgejo;
 pub mod locate;
+pub mod measure;
 
 #[cfg(test)]
 mod tests;

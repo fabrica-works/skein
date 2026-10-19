@@ -177,7 +177,7 @@ impl Plan {
                     return Err(api::Error::InvalidAnswer);
                 }
                 self.add_size(
-                    u64::try_from(size_of::<api::File>().saturating_add(file.filename.len())).expect("bounded row"),
+                    u64::try_from(crate::measure::FILE_BYTES.saturating_add(file.filename.len())).expect("bounded row"),
                     bounds,
                 )?;
                 let value = api::File { path: file.filename.clone(), before: None, after: None };
@@ -198,7 +198,7 @@ impl Plan {
                     return Err(api::Error::InvalidAnswer);
                 }
                 let commit = reading::commit(commit, self.row.object_format).ok_or(api::Error::InvalidAnswer)?;
-                self.add_size(u64::try_from(size_of::<api::Commit>()).expect("commit size"), bounds)?;
+                self.add_size(u64::try_from(crate::measure::COMMIT_BYTES).expect("commit width"), bounds)?;
                 match self.commits.push(commit) {
                     Ok(()) => Ok(()),
                     Err(_) => Err(api::Error::TooLarge),

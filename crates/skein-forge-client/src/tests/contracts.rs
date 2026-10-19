@@ -72,3 +72,131 @@ fn binding_past_op_bytes_preserves_the_namespace() {
     assert!(!d.bind_deployment(DEPLOYMENT, &Limits { op_bytes: KIT_BYTES, ..LIMITS }));
     assert_eq!(d.config.expect("configured").namespace.as_ref(), b"kit");
 }
+
+use super::{Harness, REPO, at, keep};
+use crate::{Cached, Condition, Delivery, Echo, Effect, Event, RepositoryRecord, Request, Stored};
+use alloc::boxed::Box;
+use skein_forge::api::{self, Answer, Error, Read, Write};
+use skein_lib::Token;
+
+#[test]
+fn stored_measure_uses_fixed_widths() {
+    let repository = Stored::Repository(RepositoryRecord { repository: REPO, mark: None, clock: at(100) });
+    assert_eq!(crate::measure::stored(&repository), Some(0));
+    let mut row = keep::measure_row();
+    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(3));
+    row.comments = Box::new([Delivery { id: 1, revision: 1 }]);
+    row.echoes = Box::new([Echo::Comment(1)]);
+    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(35));
+    row.reviews = Box::new([Delivery { id: 2, revision: 1 }]);
+    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(51));
+    let mut item = keep::summary();
+    item.title = Box::new([]);
+    item.labels = Box::new([Box::from(&b"kit"[..])]);
+    row.cached = Box::new(Cached { item: Some(item), pull: None, tip: None });
+    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(70));
+    let mut pull = keep::current();
+    pull.head = Box::from(&b"kit"[..]);
+    pull.base = Box::from(&b"kit"[..]);
+    pull.reviewers = Box::new([7, 8]);
+    row.cached.pull = Some(pull);
+    assert_eq!(crate::measure::stored(&Stored::Live(row)), Some(92));
+}
+
+#[test]
+fn effect_measure_uses_fixed_widths() {
+    for (name, write, condition, expected) in [
+        ("reviewers", Write::SetReviewers { number: 1, reviewers: Box::new([7, 8]) }, Condition::None, 16),
+        (
+            "pull",
+            Write::OpenPull {
+                title: Box::new([]),
+                body: Box::new([]),
+                head: Box::from(&b"kit"[..]),
+                base: Box::from(&b"kit"[..]),
+            },
+            Condition::None,
+            6,
+        ),
+        ("merge", Write::Merge { number: 1, head: [1; 32] }, Condition::Merge { base: Box::from(&b"kit"[..]) }, 3),
+    ] {
+        assert_eq!(crate::measure::effect(&Effect { write, condition }), Some(expected), "{name}");
+    }
+}
+
+fn measured_read(read: &Read, answer: &Answer, cap: u32, accepted: bool) {
+    let mut h = Harness::new(Limits { answer_bytes: cap, ..LIMITS });
+    assert!(h.step(Event::Read { owner: Token::new(1), repository: REPO, read: read.clone() }).is_empty());
+    let sent = h.one();
+    let expected = if accepted { Ok(answer.clone()) } else { Err(Error::TooLarge) };
+    assert_eq!(
+        h.answer(&sent, 1, Ok(answer.clone())).as_ref(),
+        &[Request::Read { owner: Token::new(1), result: expected }]
+    );
+}
+
+#[test]
+fn answer_admission_uses_fixed_widths() {
+    let mut item = keep::summary();
+    item.title = Box::from(&b"kit"[..]);
+    let mut empty = item.clone();
+    empty.title = Box::new([]);
+    let mut comment = keep::comment(1);
+    comment.body = Box::from(&b"kit"[..]);
+    comment.key = Some(Box::from(&b"a"[..]));
+    let mut pull = keep::current();
+    pull.head = Box::from(&b"kit"[..]);
+    pull.base = Box::from(&b"kit"[..]);
+    pull.reviewers = Box::new([7, 8]);
+    let attempt = api::JobAttempt { head: [1; 32], run: 1, job: 1, attempt: 1 };
+    for (read, answer, bytes) in [
+        (
+            Read::Items { since: at(0), page: 1, kind: None },
+            Answer::Items { items: Box::new([item]), more: false, now: at(100) },
+            131,
+        ),
+        (
+            Read::Item { number: 9, after: 0 },
+            Answer::Item { item: empty.clone(), comments: Box::new([comment]), more: false },
+            100,
+        ),
+        (Read::Pull { number: 9 }, Answer::Pull(pull.clone()), 22),
+        (
+            Read::Job { attempt, max_bytes: 4 },
+            Answer::Job {
+                attempt,
+                step: Some(api::Step { number: 1, name: Box::from(&b"kit"[..]) }),
+                log: Box::from(&b"ab"[..]),
+                truncated: false,
+            },
+            5,
+        ),
+    ] {
+        assert_eq!(skein_forge::measure::answer(&answer), Some(u64::from(bytes)), "{read:?}");
+        measured_read(&read, &answer, bytes, true);
+        measured_read(&read, &answer, bytes.checked_sub(1).expect("positive cap"), false);
+    }
+    empty.labels = Box::new([Box::new([]), Box::new([]), Box::new([]), Box::new([]), Box::new([])]);
+    pull.reviewers = Box::new([1, 2, 3, 4, 5]);
+    for (read, answer) in [
+        (
+            Read::Branches,
+            Answer::Branches(Box::new([Box::new([]), Box::new([]), Box::new([]), Box::new([]), Box::new([])])),
+        ),
+        (Read::Item { number: 9, after: 0 }, Answer::Item { item: empty, comments: Box::new([]), more: false }),
+        (Read::Pull { number: 9 }, Answer::Pull(pull)),
+        (
+            Read::Protection { branch: Box::from(&b"kit"[..]) },
+            Answer::Protection(Some(api::Protection {
+                branch: Box::from(&b"kit"[..]),
+                contexts: Box::new([Box::new([]), Box::new([]), Box::new([]), Box::new([]), Box::new([])]),
+                approvals: 0,
+                dismiss_stale: false,
+            })),
+        ),
+    ] {
+        assert!(!crate::measure::answer_rows(&answer, LIMITS.rows), "{read:?}");
+        measured_read(&read, &answer, LIMITS.answer_bytes, false);
+    }
+    assert!(crate::measure::answer_rows(&Answer::Done, 0));
+}

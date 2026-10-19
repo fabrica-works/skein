@@ -19,7 +19,7 @@ impl Plan {
                 }
                 let room = u64::from(bounds.answer_bytes)
                     .saturating_sub(self.size)
-                    .checked_div(u64::try_from(size_of::<api::Comment>()).expect("comment size"))
+                    .checked_div(u64::try_from(crate::measure::COMMENT_BYTES).expect("comment width"))
                     .expect("nonzero width");
                 self.rows = Rows::Comments(skein_lib::List::with_capacity(
                     bounds.rows.min(u32::try_from(room).expect("bounded room")),

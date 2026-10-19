@@ -148,7 +148,7 @@ fn branch() -> Resource {
 fn watch(resource: Resource, participating: bool) -> Watch {
     Watch { resource, participating }
 }
-fn summary() -> api::Summary {
+pub(super) fn summary() -> api::Summary {
     api::Summary {
         number: 9,
         kind: api::Kind::Issue,
@@ -161,7 +161,7 @@ fn summary() -> api::Summary {
         updated: at(100),
     }
 }
-fn current() -> api::Pull {
+pub(super) fn current() -> api::Pull {
     api::Pull {
         number: 9,
         state: api::State::Open,
@@ -175,7 +175,7 @@ fn current() -> api::Pull {
         reviewers: Box::new([]),
     }
 }
-fn comment(id: u64) -> api::Comment {
+pub(super) fn comment(id: u64) -> api::Comment {
     api::Comment {
         provenance: api::Provenance::Original,
         id,
@@ -781,4 +781,12 @@ fn writer_moves_require_forward_ancestry_and_authenticated_identity() {
         assert_eq!(h.drift, expected_drift);
         assert_eq!(h.news.as_slice(), &[Answer::Commit([1; 32])]);
     }
+}
+
+/// A row saved by normal Keep admission, shared by the measure contract.
+pub(super) fn measure_row() -> LiveRecord {
+    let mut h = Harness::new();
+    let resource = Resource { repository: REPO, what: What::Branch(Box::from(&b"kit"[..])) };
+    h.keep(Box::new([watch(resource.clone(), false)]));
+    h.record(&resource).clone()
 }

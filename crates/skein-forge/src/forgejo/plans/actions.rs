@@ -66,7 +66,7 @@ impl Plan {
         };
         let room = bounds
             .answer_bytes
-            .checked_div(u32::try_from(size_of::<api::Status>()).expect("status width"))
+            .checked_div(u32::try_from(crate::measure::STATUS_BYTES).expect("status width"))
             .expect("nonzero width");
         let capacity = if stage == Stage::Checks { bounds.rows.min(room) } else { 0 };
         Ok(Self {

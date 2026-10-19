@@ -1,6 +1,5 @@
 //! The client's allocation measure, accumulated as rows arrive.
 use crate::api;
-use alloc::boxed::Box;
 fn length(bytes: &[u8]) -> u64 {
     u64::try_from(bytes.len()).expect("bounded allocation")
 }
@@ -18,7 +17,7 @@ fn rows(count: usize, width: usize, limit: u32) -> Result<u64, api::Error> {
     count.checked_mul(u64::try_from(width).expect("row width")).ok_or(api::Error::TooLarge)
 }
 pub(super) fn summary(item: &api::Summary, limit: u32) -> Result<u64, api::Error> {
-    let mut total = rows(item.labels.len(), size_of::<Box<[u8]>>(), limit)?;
+    let mut total = rows(item.labels.len(), crate::measure::STRING_BYTES, limit)?;
     for label in &item.labels {
         total = total.checked_add(length(label)).ok_or(api::Error::TooLarge)?;
     }
@@ -30,13 +29,13 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
     let mut total = 0_u64;
     match answer {
         api::Answer::Items { items, .. } => {
-            total = rows(items.len(), size_of::<api::Summary>(), limit)?;
+            total = rows(items.len(), crate::measure::SUMMARY_BYTES, limit)?;
             for item in items {
                 total = total.checked_add(summary(item, limit)?).ok_or(api::Error::TooLarge)?;
             }
         }
         api::Answer::Item { item, comments, .. } => {
-            total = rows(comments.len(), size_of::<api::Comment>(), limit)?
+            total = rows(comments.len(), crate::measure::COMMENT_BYTES, limit)?
                 .checked_add(summary(item, limit)?)
                 .ok_or(api::Error::TooLarge)?;
             for comment in comments {
@@ -48,14 +47,14 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
             }
         }
         api::Answer::Pull(pull) => {
-            total = rows(pull.reviewers.len(), size_of::<u64>(), limit)?
+            total = rows(pull.reviewers.len(), crate::measure::ID_BYTES, limit)?
                 .checked_add(length(&pull.head))
                 .ok_or(api::Error::TooLarge)?
                 .checked_add(length(&pull.base))
                 .ok_or(api::Error::TooLarge)?;
         }
         api::Answer::Reviews { reviews, .. } => {
-            total = rows(reviews.len(), size_of::<api::Review>(), limit)?;
+            total = rows(reviews.len(), crate::measure::REVIEW_BYTES, limit)?;
             for review in reviews {
                 total = total
                     .checked_add(optional(review.key.as_deref()))
@@ -65,7 +64,7 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
             }
         }
         api::Answer::Statuses { statuses, .. } | api::Answer::Checks(statuses) => {
-            total = rows(statuses.len(), size_of::<api::Status>(), limit)?;
+            total = rows(statuses.len(), crate::measure::STATUS_BYTES, limit)?;
             for status in statuses {
                 total = total
                     .checked_add(length(&status.context))
@@ -77,7 +76,7 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
             }
         }
         api::Answer::Remarks { remarks, .. } => {
-            total = rows(remarks.len(), size_of::<api::Remark>(), limit)?;
+            total = rows(remarks.len(), crate::measure::REMARK_BYTES, limit)?;
             for remark in remarks {
                 total = total
                     .checked_add(length(&remark.path))
@@ -87,14 +86,14 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
             }
         }
         api::Answer::Branches(branches) => {
-            total = rows(branches.len(), size_of::<Box<[u8]>>(), limit)?;
+            total = rows(branches.len(), crate::measure::STRING_BYTES, limit)?;
             for branch in branches {
                 total = total.checked_add(length(branch)).ok_or(api::Error::TooLarge)?;
             }
         }
         api::Answer::Protection(protection) => {
             if let Some(protection) = protection {
-                total = rows(protection.contexts.len(), size_of::<Box<[u8]>>(), limit)?
+                total = rows(protection.contexts.len(), crate::measure::STRING_BYTES, limit)?
                     .checked_add(length(&protection.branch))
                     .ok_or(api::Error::TooLarge)?;
                 for context in &protection.contexts {
@@ -104,7 +103,7 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
         }
         api::Answer::Settings(settings) => total = length(&settings.default_branch),
         api::Answer::Collaborators { collaborators, .. } => {
-            total = rows(collaborators.len(), size_of::<api::Collaborator>(), limit)?;
+            total = rows(collaborators.len(), crate::measure::COLLABORATOR_BYTES, limit)?;
         }
         api::Answer::Located { .. } | api::Answer::Commit(_) | api::Answer::Permission(_) => {}
         api::Answer::File { path, bytes, .. } => {
@@ -116,7 +115,7 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
         api::Answer::PullFiles { files, .. } => total = files_size(files, limit)?,
         api::Answer::Compare { files, commits, .. } => {
             total = files_size(files, limit)?
-                .checked_add(rows(commits.len(), size_of::<api::Commit>(), limit)?)
+                .checked_add(rows(commits.len(), crate::measure::COMMIT_BYTES, limit)?)
                 .ok_or(api::Error::TooLarge)?;
         }
         api::Answer::Created(_)
@@ -129,7 +128,7 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
     Ok(total)
 }
 fn files_size(files: &[api::File], limit: u32) -> Result<u64, api::Error> {
-    let mut total = rows(files.len(), size_of::<api::File>(), limit)?;
+    let mut total = rows(files.len(), crate::measure::FILE_BYTES, limit)?;
     for file in files {
         total = total
             .checked_add(length(&file.path))

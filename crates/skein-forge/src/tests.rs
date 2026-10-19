@@ -90,3 +90,205 @@ fn a_full_user_table_keeps_the_most_recent_login_and_replaces_in_place() {
     assert_eq!(tables.user(1, 1), Some(&b"renamed"[..]), "existing login refreshed");
     assert_eq!(tables.user(1, 2), Some(&b"third"[..]), "replacement evicts nothing");
 }
+
+fn measured(answer: &Answer, bytes: u64) {
+    assert_eq!(crate::measure::answer(answer), Some(bytes));
+    assert_eq!(crate::forgejo::plans::reads::size::answer(answer, u32::MAX), Ok(bytes));
+}
+
+#[test]
+fn measure_answer_summary() {
+    let item = api::Summary {
+        labels: Box::new([]),
+        number: 1,
+        kind: api::Kind::Issue,
+        state: api::State::Open,
+        author: 1,
+        key: None,
+        title: Box::from(WORD),
+        body: Box::new([]),
+        updated: skein_lib::Time::ZERO,
+    };
+    measured(&Answer::Items { items: Box::new([item.clone()]), more: false, now: skein_lib::Time::ZERO }, 131);
+    measured(&Answer::Item { item, comments: Box::new([]), more: false }, 3);
+}
+
+#[test]
+fn measure_answer_review() {
+    let review = api::Review {
+        id: 1,
+        provenance: api::Provenance::Original,
+        revision: 1,
+        author: 1,
+        verdict: api::Verdict::Comment,
+        commit: [1; 32],
+        key: None,
+        body: Box::from(WORD),
+        at: skein_lib::Time::ZERO,
+        official: false,
+    };
+    measured(&Answer::Reviews { reviews: Box::new([review]), more: false }, 131);
+}
+
+#[test]
+fn measure_answer_status() {
+    let status = api::Status {
+        at: skein_lib::Time::ZERO,
+        context: Box::from(WORD),
+        check: api::Check::Passed,
+        description: Box::from(&b"ab"[..]),
+        url: Box::from(&b"x"[..]),
+        job: None,
+    };
+    for answer in [
+        Answer::Statuses { ci: api::Ci::Passed, statuses: Box::new([status.clone()]), more: false },
+        Answer::Checks(Box::new([status])),
+    ] {
+        measured(&answer, 166);
+    }
+}
+
+#[test]
+fn measure_answer_comment() {
+    let item = api::Summary {
+        labels: Box::new([]),
+        number: 1,
+        kind: api::Kind::Issue,
+        state: api::State::Open,
+        author: 1,
+        key: None,
+        title: Box::new([]),
+        body: Box::new([]),
+        updated: skein_lib::Time::ZERO,
+    };
+    let comment = api::Comment {
+        id: 1,
+        provenance: api::Provenance::Original,
+        author: 1,
+        created: skein_lib::Time::ZERO,
+        revision: 1,
+        key: Some(Box::from(&b"a"[..])),
+        body: Box::from(WORD),
+    };
+    measured(&Answer::Item { item, comments: Box::new([comment]), more: false }, 100);
+}
+
+#[test]
+fn measure_answer_remark() {
+    let remark = api::Remark { id: 1, author: 1, path: Box::from(WORD), line: 1, body: Box::from(&b"ab"[..]) };
+    measured(&Answer::Remarks { remarks: Box::new([remark]), more: false }, 69);
+}
+
+#[test]
+fn measure_answer_file() {
+    let file =
+        api::File { path: Box::from(WORD), before: Some(Box::from(&b"a"[..])), after: Some(Box::from(&b"bc"[..])) };
+    for answer in [
+        Answer::PullFiles { head: [1; 32], files: Box::new([file.clone()]), more: false },
+        Answer::Compare {
+            before: [1; 32],
+            after: [2; 32],
+            contains_before: true,
+            files: Box::new([file]),
+            commits: Box::new([]),
+        },
+    ] {
+        measured(&answer, 70);
+    }
+}
+
+#[test]
+fn measure_answer_commit() {
+    measured(
+        &Answer::Compare {
+            before: [1; 32],
+            after: [2; 32],
+            contains_before: true,
+            files: Box::new([]),
+            commits: Box::new([[1; 32]]),
+        },
+        32,
+    );
+    measured(&Answer::Commit([1; 32]), 0);
+}
+
+#[test]
+fn measure_answer_collaborator() {
+    measured(
+        &Answer::Collaborators {
+            collaborators: Box::new([api::Collaborator { user: 1, permission: api::Permission::Write }]),
+            more: false,
+        },
+        16,
+    );
+}
+
+#[test]
+fn measure_answer_string() {
+    let item = api::Summary {
+        labels: Box::new([Box::from(WORD)]),
+        number: 1,
+        kind: api::Kind::Issue,
+        state: api::State::Open,
+        author: 1,
+        key: None,
+        title: Box::new([]),
+        body: Box::new([]),
+        updated: skein_lib::Time::ZERO,
+    };
+    measured(&Answer::Branches(Box::new([Box::from(WORD)])), 19);
+    measured(&Answer::Item { item, comments: Box::new([]), more: false }, 19);
+    measured(
+        &Answer::Protection(Some(api::Protection {
+            branch: Box::from(WORD),
+            contexts: Box::new([Box::from(&b"x"[..])]),
+            approvals: 0,
+            dismiss_stale: false,
+        })),
+        20,
+    );
+}
+
+#[test]
+fn measure_answer_reviewer() {
+    measured(
+        &Answer::Pull(api::Pull {
+            reviewers: Box::new([7]),
+            number: 1,
+            state: api::State::Open,
+            head: Box::from(WORD),
+            base: Box::from(WORD),
+            commit: [1; 32],
+            base_commit: None,
+            merged: None,
+            mergeable: false,
+            ci: api::Ci::None,
+        }),
+        14,
+    );
+}
+
+#[test]
+fn measure_op_reviewers() {
+    const TWO_IDS_BYTES: u64 = 16;
+    let op = api::Op::Write(api::Write::SetReviewers { number: 1, reviewers: Box::new([7, 8]) });
+    assert_eq!(crate::measure::op(&op), Some(TWO_IDS_BYTES));
+}
+
+#[test]
+fn measure_op_strings() {
+    for (op, expected) in [
+        (api::Op::Read(api::Read::Locate { owner: Box::from(&b"ab"[..]), name: Box::from(WORD) }), 5),
+        (
+            api::Op::Write(api::Write::OpenPull {
+                title: Box::new([]),
+                body: Box::new([]),
+                head: Box::from(WORD),
+                base: Box::from(WORD),
+            }),
+            6,
+        ),
+    ] {
+        assert_eq!(crate::measure::op(&op), Some(expected), "{op:?}");
+    }
+}
