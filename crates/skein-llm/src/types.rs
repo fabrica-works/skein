@@ -286,8 +286,12 @@ pub enum Phase {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Failure {
     Unauthorized,
+    /// The provider refused the call.
+    Refused,
+    /// The provider does not support the requested capability.
+    Unsupported,
     Exhausted {
-        retry_after: Duration,
+        retry_after: Option<Duration>,
     },
     RateLimited {
         retry_after: Duration,
@@ -307,6 +311,20 @@ pub enum Failure {
     TimedOut {
         phase: Phase,
     },
+}
+/// The provider's evidence of a failure; a value is empty if not given.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Report {
+    pub code: Box<[u8]>,
+    pub request: Box<[u8]>,
+    pub field: Box<[u8]>,
+}
+impl Report {
+    /// A failure for which the provider supplied no report values.
+    #[must_use]
+    pub fn none() -> Report {
+        Report { code: Box::new([]), request: Box::new([]), field: Box::new([]) }
+    }
 }
 /// The wire dialect and HTTP destination; transport/TLS are caller-owned.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

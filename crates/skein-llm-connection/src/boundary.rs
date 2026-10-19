@@ -5,7 +5,7 @@
 use alloc::boxed::Box;
 use skein_lib::{Duration, Token};
 use skein_llm::client::Evidence;
-use skein_llm::{self as llm, Block, Completion, Credential, Delta, Failure, Prompt};
+use skein_llm::{self as llm, Block, Completion, Credential, Delta, Failure, Prompt, Report};
 
 /// Optional per-call deadlines, measured from the phase in their names.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -97,7 +97,7 @@ pub enum Event {
     /// The accepted call completed successfully.
     Completed { call: Token, completion: Completion, measures: Measures },
     /// The accepted call failed with the client's sending evidence.
-    Failed { call: Token, failure: Failure, evidence: Evidence, detail: Box<[u8]>, measures: Measures },
+    Failed { call: Token, failure: Failure, evidence: Evidence, report: Report, detail: Box<[u8]>, measures: Measures },
     /// The accepted call ended at the owner's request.
     Cancelled { call: Token, measures: Measures },
 }

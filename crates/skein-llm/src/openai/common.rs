@@ -170,8 +170,12 @@ pub enum Failure {
         bound: u64,
     },
     Unauthorized,
+    /// The provider refused the call.
+    Refused,
+    /// The provider does not support the requested capability.
+    Unsupported,
     Exhausted {
-        retry_after: Duration,
+        retry_after: Option<Duration>,
     },
     RateLimited {
         retry_after: Duration,
@@ -212,21 +216,26 @@ impl RateLimit {
     }
     #[must_use]
     pub fn delay(self, error: Option<&ProviderError>, wall: Wall) -> Duration {
+        self.reset(error, wall).unwrap_or(Duration::ZERO)
+    }
+    /// The first supplied reset, or none when the provider gives no reset.
+    #[must_use]
+    pub fn reset(self, error: Option<&ProviderError>, wall: Wall) -> Option<Duration> {
         if let Some(delay) = self.retry_after {
-            return delay;
+            return Some(delay);
         }
         if let Some(error) = error {
             if let Some(seconds) = error.resets_in_seconds {
-                return Duration::from_secs(seconds);
+                return Some(Duration::from_secs(seconds));
             }
             if let Some(reset) = error.resets_at {
-                return Duration::from_secs(reset.saturating_sub(wall.as_secs()));
+                return Some(Duration::from_secs(reset.saturating_sub(wall.as_secs())));
             }
         }
-        match self.reset {
-            Some(reset) => Duration::from_secs(reset.saturating_sub(wall.as_secs())),
-            None => Duration::ZERO,
+        if let Some(reset) = self.reset {
+            return Some(Duration::from_secs(reset.saturating_sub(wall.as_secs())));
         }
+        None
     }
 }
 #[must_use]
@@ -236,12 +245,13 @@ pub fn classify(status: u16, error: Option<&ProviderError>, rate: RateLimit, wal
         None => b"",
     };
     let delay = rate.delay(error, wall);
+    let reset = rate.reset(error, wall);
     // An HTTP status decides retryability. A parsed body may refine that
     // class. Zero or a successful head carries a native SSE error event.
     match status {
         401 => Failure::Unauthorized,
         403 | 404 | 422 => Failure::Invalid,
-        429 => limited(kind, rate.exhausted, delay),
+        429 => limited(kind, rate.exhausted, delay, reset),
         529 => Failure::Overloaded,
         500..=599 => {
             if kind == b"overloaded_error" {
@@ -257,14 +267,14 @@ pub fn classify(status: u16, error: Option<&ProviderError>, rate: RateLimit, wal
                 Failure::Invalid
             }
         }
-        0 | 200..=299 => native_failure(kind, error, rate.exhausted, delay),
+        0 | 200..=299 => native_failure(kind, error, rate.exhausted, delay, reset),
         _ => Failure::Unavailable,
     }
 }
 
-fn limited(kind: &[u8], exhausted: bool, delay: Duration) -> Failure {
+fn limited(kind: &[u8], exhausted: bool, delay: Duration, reset: Option<Duration>) -> Failure {
     if exhausted || kind == b"usage_limit_reached" {
-        Failure::Exhausted { retry_after: delay }
+        Failure::Exhausted { retry_after: reset }
     } else {
         Failure::RateLimited { retry_after: delay }
     }
@@ -279,12 +289,18 @@ fn context(kind: &[u8], error: Option<&ProviderError>) -> bool {
         }
 }
 
-fn native_failure(kind: &[u8], error: Option<&ProviderError>, exhausted: bool, delay: Duration) -> Failure {
+fn native_failure(
+    kind: &[u8],
+    error: Option<&ProviderError>,
+    exhausted: bool,
+    delay: Duration,
+    reset: Option<Duration>,
+) -> Failure {
     if kind == b"authentication_error" || kind == b"invalid_api_key" {
         return Failure::Unauthorized;
     }
     if kind == b"rate_limit_error" || kind == b"rate_limit_exceeded" || kind == b"usage_limit_reached" {
-        return limited(kind, exhausted, delay);
+        return limited(kind, exhausted, delay, reset);
     }
     if kind == b"overloaded_error" {
         return Failure::Overloaded;

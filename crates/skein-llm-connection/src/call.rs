@@ -390,8 +390,15 @@ impl Connection {
                             );
                         }
                     }
-                    llm::Event::Failed { owner: call, failure, evidence, detail } => {
-                        up.push(Event::Failed { call, failure, evidence, detail, measures: self.deadlines.measures() });
+                    llm::Event::Failed { owner: call, failure, evidence, report, detail } => {
+                        up.push(Event::Failed {
+                            call,
+                            failure,
+                            evidence,
+                            report,
+                            detail,
+                            measures: self.deadlines.measures(),
+                        });
                         self.call = None;
                         self.terminal();
                         if self.closing() && !self.waiting {

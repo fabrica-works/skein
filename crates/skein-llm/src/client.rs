@@ -18,8 +18,8 @@ use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Decimal, Env, List, Queue, Token, Writer, bytes};
 
 use crate::{
-    Block, Call, Completion, Credential, Delta, Endpoint, Error, Failure, Prompt, Provider, Scheme, anthropic, dialect,
-    filter, openai, translate,
+    Block, Call, Completion, Credential, Delta, Endpoint, Error, Failure, Prompt, Provider, Report, Scheme, anthropic,
+    dialect, filter, openai, translate,
 };
 
 /// Startup bounds, unchanged for a client's lifetime and reuse.
@@ -206,6 +206,7 @@ pub enum Event {
         owner: Token,
         failure: Failure,
         evidence: Evidence,
+        report: Report,
         detail: Box<[u8]>,
     },
     Cancelled {
@@ -661,6 +662,8 @@ pub fn abort(
     let detail = match failure {
         Failure::TimedOut { .. } => Box::new([]),
         Failure::Unauthorized
+        | Failure::Refused
+        | Failure::Unsupported
         | Failure::Exhausted { .. }
         | Failure::RateLimited { .. }
         | Failure::Overloaded
@@ -1138,8 +1141,8 @@ fn output(
             clear_requests(client);
             client.requests.push(http::Request::Discard);
         }
-        dialect::Output::Failed { failure, detail } => {
-            fail(client, failure, detail, above);
+        dialect::Output::Failed { failure, report, detail } => {
+            fail_report(client, failure, report, detail, above);
             closing(client, env, above, below);
         }
         dialect::Output::Progress => {}
@@ -1147,6 +1150,10 @@ fn output(
 }
 
 fn fail(client: &mut Client, failure: Failure, detail: Box<[u8]>, above: &mut Queue<Event>) {
+    fail_report(client, failure, Report::none(), detail, above);
+}
+
+fn fail_report(client: &mut Client, failure: Failure, report: Report, detail: Box<[u8]>, above: &mut Queue<Event>) {
     if client.outcome != Outcome::Pending {
         return;
     }
@@ -1172,6 +1179,8 @@ fn fail(client: &mut Client, failure: Failure, detail: Box<[u8]>, above: &mut Qu
         Failure::Limit { which, bound } => openai::limit_detail(which, bound),
         Failure::TimedOut { phase } => openai::clip_detail(timeout_detail(phase), client.limits.detail_bytes),
         Failure::Unauthorized
+        | Failure::Refused
+        | Failure::Unsupported
         | Failure::Exhausted { .. }
         | Failure::RateLimited { .. }
         | Failure::Overloaded
@@ -1182,7 +1191,7 @@ fn fail(client: &mut Client, failure: Failure, detail: Box<[u8]>, above: &mut Qu
         | Failure::Cancelled => detail,
     };
     let detail = openai::clip_detail(&detail, client.limits.detail_bytes);
-    above.push(Event::Failed { owner: client.owner, failure, evidence: client.evidence, detail });
+    above.push(Event::Failed { owner: client.owner, failure, evidence: client.evidence, report, detail });
 }
 
 /// The deadline's name survives owner aborts, within the configured detail cap.

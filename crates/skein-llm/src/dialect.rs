@@ -1,5 +1,7 @@
 //! Internal dispatch from bounded provider codecs to the shared vocabulary.
-use crate::{Block, Error, Failure, Provider, Replay, Stop, Usage, anthropic, client, filter, openai, translate};
+use crate::{
+    Block, Error, Failure, Provider, Replay, Report, Stop, Usage, anthropic, client, filter, openai, translate,
+};
 use alloc::boxed::Box;
 use skein_json::{Document, Kind, collector, tokenizer};
 use skein_lib::{Queue, Wall};
@@ -17,7 +19,7 @@ pub(crate) enum Output {
     ArgumentsDelta { index: u32, delta: Box<[u8]> },
     ReasoningDelta { index: u32, summary_index: u32, text: Box<[u8]> },
     Completed { stop: Stop, usage: Usage },
-    Failed { failure: Failure, detail: Box<[u8]> },
+    Failed { failure: Failure, report: Report, detail: Box<[u8]> },
     Progress,
 }
 impl Decoder {
@@ -138,6 +140,7 @@ fn provider_error(
 ) {
     out.push(Output::Failed {
         failure: translate::failure(openai::classify(status, Some(&error), rate, wall)),
+        report: Report::none(),
         detail: error.message,
     });
 }
@@ -164,7 +167,7 @@ fn codex_outputs(
                 Output::Completed { stop: translate::stop(stop), usage: translate::usage(usage) }
             }
             openai::Output::Failed { failure, detail } => {
-                Output::Failed { failure: translate::failure(failure), detail }
+                Output::Failed { failure: translate::failure(failure), report: Report::none(), detail }
             }
             openai::Output::Progress => Output::Progress,
         };
@@ -189,7 +192,7 @@ fn anthropic_outputs(raw: &mut Queue<anthropic::Output>, limits: &openai::Limits
                 Output::Completed { stop: translate::stop(stop), usage: translate::usage(usage) }
             }
             anthropic::Output::Failed { failure, detail } => {
-                Output::Failed { failure: translate::failure(failure), detail }
+                Output::Failed { failure: translate::failure(failure), report: Report::none(), detail }
             }
             anthropic::Output::Progress => Output::Progress,
         };

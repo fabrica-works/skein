@@ -314,7 +314,7 @@ fn nested_provider_errors_classify_http_and_sse_with_retry_headers() {
             429,
             r#"{"type":"error","error":{"type":"rate_limit_error","message":"subscription spent"}}"#,
             "Retry-After: 17\r\nanthropic-ratelimit-unified-status: rejected\r\n",
-            Failure::Exhausted { retry_after: Duration::from_secs(17) },
+            Failure::Exhausted { retry_after: Some(Duration::from_secs(17)) },
         ),
         (529, r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#, "", Failure::Overloaded),
         (200, r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#, "", Failure::Overloaded),

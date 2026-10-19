@@ -804,6 +804,8 @@ pub(crate) const fn failure(value: openai::Failure) -> Failure {
         openai::Failure::Limit { which, bound } => Failure::Limit { which, bound },
         openai::Failure::Protocol => Failure::Protocol,
         openai::Failure::Unauthorized => Failure::Unauthorized,
+        openai::Failure::Refused => Failure::Refused,
+        openai::Failure::Unsupported => Failure::Unsupported,
         openai::Failure::Exhausted { retry_after } => Failure::Exhausted { retry_after },
         openai::Failure::RateLimited { retry_after } => Failure::RateLimited { retry_after },
         openai::Failure::Overloaded => Failure::Overloaded,

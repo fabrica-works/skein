@@ -537,6 +537,7 @@ impl Component {
                             measures: waiting.deadlines.measures(),
                             failure: llm::Failure::TimedOut { phase: llm::Phase::Whole },
                             evidence: llm::client::Evidence::Unsent,
+                            report: llm::Report::none(),
                             detail: Box::from(detail.get(..take).expect("bounded detail")),
                         });
                     }

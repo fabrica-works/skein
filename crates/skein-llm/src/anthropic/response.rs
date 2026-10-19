@@ -498,6 +498,8 @@ impl StreamDecoder {
             Failure::Limit { which, bound } => crate::openai::limit_detail(which, bound),
             Failure::Protocol
             | Failure::Unauthorized
+            | Failure::Refused
+            | Failure::Unsupported
             | Failure::Exhausted { .. }
             | Failure::RateLimited { .. }
             | Failure::Overloaded

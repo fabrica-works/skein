@@ -398,11 +398,14 @@ fn server_events_roundtrip_echoes_skipped_and_errors_keep_reset_priority() {
     let wall = Wall::from_nanos(100_000_000_000);
     assert_eq!(
         classify(429, Some(&error), RateLimit::NONE, wall),
-        Failure::Exhausted { retry_after: Duration::from_secs(60) }
+        Failure::Exhausted { retry_after: Some(Duration::from_secs(60)) }
     );
     let mut rate = RateLimit::NONE;
     rate.observe(b"Retry-After", b"2");
-    assert_eq!(classify(429, Some(&error), rate, wall), Failure::Exhausted { retry_after: Duration::from_secs(2) });
+    assert_eq!(
+        classify(429, Some(&error), rate, wall),
+        Failure::Exhausted { retry_after: Some(Duration::from_secs(2)) }
+    );
     let echo = encode_event(&Event::Created { echo: Some(request()) }, &LIMITS).unwrap();
     assert!(bytes::find(&echo, b"instructions").is_some());
     assert!(bytes::find(&echo, b"parameters").is_some());
@@ -684,7 +687,7 @@ fn incomplete_and_refused_terminals_override_tools_and_absolute_reset_uses_wall(
     assert_eq!(
         out.pop(),
         Some(Output::Failed {
-            failure: Failure::Exhausted { retry_after: Duration::from_secs(80) },
+            failure: Failure::Exhausted { retry_after: Some(Duration::from_secs(80)) },
             detail: owned(b"spent")
         })
     );
@@ -1566,4 +1569,27 @@ fn an_opted_in_drop_interrupts_a_retained_reasoning_run_without_losing_it() {
     })));
     assert!(trace.contains(&Output::Part(Part::Dropped { bytes: 81 })));
     assert_eq!(trace.last(), Some(&Output::Completed { stop: Stop::EndTurn, usage: Usage::NONE }));
+}
+
+#[test]
+fn a_reset_comes_from_the_first_field_given() {
+    let wall = Wall::from_nanos(100_000_000_000);
+    for (retry_after, seconds, timestamp, head, expected) in [
+        (Some(Duration::from_secs(2)), Some(3), Some(104), Some(105), Some(Duration::from_secs(2))),
+        (None, Some(3), Some(104), Some(105), Some(Duration::from_secs(3))),
+        (None, None, Some(104), Some(105), Some(Duration::from_secs(4))),
+        (None, None, None, Some(105), Some(Duration::from_secs(5))),
+        (None, None, None, None, None),
+        (None, Some(0), None, None, Some(Duration::ZERO)),
+        (None, None, Some(99), None, Some(Duration::ZERO)),
+    ] {
+        let rate = RateLimit { retry_after, reset: head, exhausted: false };
+        let error = ProviderError {
+            kind: owned(b"usage_limit_reached"),
+            message: owned(b"spent"),
+            resets_in_seconds: seconds,
+            resets_at: timestamp,
+        };
+        assert_eq!(rate.reset(Some(&error), wall), expected, "{rate:?} {error:?}");
+    }
 }
