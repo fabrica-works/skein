@@ -11,6 +11,7 @@ mod jwt;
 mod machine;
 mod pkce;
 mod record;
+mod redirect;
 pub use common::{DecodeError, Failure, Limits, classify, worst_case};
 pub use documents::{
     OAuthError, RefreshRequest, TokenResponse, decode_error, decode_request, decode_response, encode_error,
@@ -20,10 +21,11 @@ pub use json::{Collector, Json};
 pub use jwt::{Claims, read_claims};
 pub use machine::{
     Client, ClientLimits, Event, HttpEvidence, HttpRequest, HttpResponse, MAX_OUT, Registration, Request, WireFormat,
-    client_worst_case, redirect_address, validate_registration,
+    client_worst_case,
 };
 pub use pkce::challenge;
 pub use record::{ClaimSelector, RECORD_VERSION, RefreshState, SavedToken, decode_record, encode_record, rotate};
+pub use redirect::{redirect_address, validate_registration};
 
 #[cfg(test)]
 mod machine_tests;
