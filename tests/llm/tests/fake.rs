@@ -975,6 +975,7 @@ fn peer_native_request(
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: bounds };
     let mut service = provider::Service::new(
         provider::Config {
+            without_credential: false,
             echo: skein_llm::openai::Echo::NONE,
             usage_fields: documents::UsageFields::ALL,
             provider: match dialect {
@@ -995,7 +996,14 @@ fn peer_native_request(
     let mut response = Vec::new();
     let mut demand = None;
     let mut grant = 0;
-    provider::start(&mut server, &mut service, skein_llm_world::credential_of(&input), &env, &mut above, &mut below);
+    provider::start(
+        &mut server,
+        &mut service,
+        core::slice::from_ref(skein_llm_world::credential_of(&input)),
+        &env,
+        &mut above,
+        &mut below,
+    );
     for _ in 0..10000 {
         while let Some(event) = above.pop() {
             match event {
@@ -1027,7 +1035,7 @@ fn peer_native_request(
             provider::resume(
                 &mut server,
                 &mut service,
-                skein_llm_world::credential_of(&input),
+                core::slice::from_ref(skein_llm_world::credential_of(&input)),
                 &env,
                 &mut above,
                 &mut below,
@@ -1046,7 +1054,7 @@ fn peer_native_request(
                 provider::up(
                     &mut server,
                     &mut service,
-                    skein_llm_world::credential_of(&input),
+                    core::slice::from_ref(skein_llm_world::credential_of(&input)),
                     &env,
                     event,
                     &mut above,

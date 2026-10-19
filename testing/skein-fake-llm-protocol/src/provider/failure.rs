@@ -1,6 +1,5 @@
 //! Route-specific failure rows and script admission (fake-llm.md, 2.3).
 use super::{Config, Error, Limits, Server, Service, State};
-use crate::documents;
 use alloc::boxed::Box;
 use skein_fake_llm_domain::api;
 use skein_http::{Header, server as http};
@@ -11,14 +10,6 @@ use skein_llm::{Credential, Provider, Scheme, anthropic, openai};
 pub(super) struct Row {
     pub status: u16,
     pub code: &'static [u8],
-}
-
-pub(super) fn route_of(config: &Config, credential: &Credential) -> Provider {
-    match config.provider {
-        documents::Provider::Anthropic => Provider::Anthropic,
-        documents::Provider::OpenAi if credential.account_id.is_empty() => Provider::OpenAi,
-        documents::Provider::OpenAi => Provider::OpenAiCodex,
-    }
 }
 
 pub(super) fn row(route: Provider, error: api::Error) -> Option<Row> {
@@ -54,8 +45,8 @@ pub(super) fn row(route: Provider, error: api::Error) -> Option<Row> {
 /// Refuses scripts whose failure class or reset has no representation on the route.
 ///
 /// Contract: fake-llm.md, section 2.3.
-pub fn scripts(config: &Config, credential: &Credential, scripts: &[api::Script]) -> Result<(), Error> {
-    let route = route_of(config, credential);
+pub fn scripts(config: &Config, accepted: &[Credential], scripts: &[api::Script]) -> Result<(), Error> {
+    let route = super::route(config, accepted)?;
     for script in scripts {
         for turn in &script.turns {
             let mut preceding = false;
@@ -67,9 +58,17 @@ pub fn scripts(config: &Config, credential: &Credential, scripts: &[api::Script]
                         }
                         if route == Provider::Anthropic
                             && let api::Error::Exhausted { retry_after: Some(_) } = error
-                            && (preceding || credentials.is_empty() || credential.scheme != Scheme::Bearer)
                         {
-                            return Err(Error::Limits);
+                            if preceding || credentials.is_empty() {
+                                return Err(Error::Limits);
+                            }
+                            for (index, credential) in accepted.iter().enumerate() {
+                                if credentials.contains(&u32::try_from(index).expect("bounded credential list"))
+                                    && credential.scheme != Scheme::Bearer
+                                {
+                                    return Err(Error::Limits);
+                                }
+                            }
                         }
                     }
                     api::Line::Text { .. }
@@ -213,6 +212,7 @@ fn body(route: Provider, failure: &api::Failure, env: &Env<Limits>) -> Box<[u8]>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::documents;
     use skein_lib::Duration;
     use skein_llm::Provider::{Anthropic, OpenAi, OpenAiCodex};
 
@@ -267,6 +267,7 @@ mod tests {
 
     fn config() -> Config {
         Config {
+            without_credential: false,
             provider: documents::Provider::Anthropic,
             path: b"/v1/messages".as_slice().into(),
             headers: Box::new([]),
@@ -291,7 +292,10 @@ mod tests {
     #[test]
     fn a_class_without_its_row_is_refused() {
         let script = script(api::Error::Unsupported, Box::new([]), false);
-        assert_eq!(scripts(&config(), &Credential::bearer(b"token".as_slice().into()), &[script]), Err(Error::Limits));
+        assert_eq!(
+            scripts(&config(), &[Credential::bearer(b"token".as_slice().into())], &[script]),
+            Err(Error::Limits)
+        );
     }
 
     #[test]
@@ -308,7 +312,7 @@ mod tests {
                 if named { Box::new([0]) } else { Box::new([]) },
                 after,
             );
-            assert_eq!(scripts(&config(), &credential, &[script]), expected, "{after} {named} {scheme:?}");
+            assert_eq!(scripts(&config(), &[credential], &[script]), expected, "{after} {named} {scheme:?}");
         }
     }
 }

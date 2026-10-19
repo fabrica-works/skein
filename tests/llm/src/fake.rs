@@ -340,7 +340,7 @@ impl Exchange {
     ) -> Self {
         let endpoint = input.endpoint.clone();
         let credential = Credential {
-            scheme: skein_llm::Scheme::Bearer,
+            scheme: crate::credential_of(&input).scheme,
             value: crate::credential_of(&input).value.clone(),
             account_id: crate::credential_of(&input).account_id.clone(),
         };
@@ -403,13 +403,15 @@ impl Exchange {
         };
         let peer_limits = limits(&bounds);
         let peer_config = provider::Config {
+            without_credential: false,
             usage_fields: options.usage_fields,
             echo: options.echo,
             provider,
             path: endpoint.target,
             headers: Box::new([]),
         };
-        provider::scripts(&peer_config, &credential, &scripts).expect("scripts represented on the peer route");
+        provider::scripts(&peer_config, core::slice::from_ref(&credential), &scripts)
+            .expect("scripts represented on the peer route");
         let service = provider::Service::new(peer_config, &peer_limits).expect("bounded independent peer");
         let server = provider::Server::new(Token::new(2), &peer_limits).expect("bounded peer connection");
         Self {
@@ -513,7 +515,7 @@ impl Exchange {
         provider::start(
             &mut self.server,
             &mut self.service,
-            &self.credential,
+            core::slice::from_ref(&self.credential),
             &self.peer_env,
             &mut self.peer_above,
             &mut self.peer_below,
@@ -553,7 +555,7 @@ impl Exchange {
         provider::down(
             &mut self.server,
             &mut self.service,
-            &self.credential,
+            core::slice::from_ref(&self.credential),
             &self.peer_env,
             reply,
             &mut self.peer_above,
@@ -689,7 +691,7 @@ impl Exchange {
             provider::resume(
                 &mut self.server,
                 &mut self.service,
-                &self.credential,
+                core::slice::from_ref(&self.credential),
                 &self.peer_env,
                 &mut self.peer_above,
                 &mut self.peer_below,
@@ -704,7 +706,7 @@ impl Exchange {
             provider::down(
                 &mut self.server,
                 &mut self.service,
-                &self.credential,
+                core::slice::from_ref(&self.credential),
                 &self.peer_env,
                 reply,
                 &mut self.peer_above,
@@ -748,7 +750,7 @@ impl Exchange {
                 provider::up(
                     &mut self.server,
                     &mut self.service,
-                    &self.credential,
+                    core::slice::from_ref(&self.credential),
                     &self.peer_env,
                     event,
                     &mut self.peer_above,
@@ -796,7 +798,11 @@ mod tests {
     fn delayed(provider: Provider) -> Exchange {
         let mut input = crate::call(19);
         match provider {
-            Provider::OpenAiCodex | Provider::OpenAi => {}
+            Provider::OpenAiCodex => {}
+            Provider::OpenAi => {
+                input.endpoint = Endpoint::openai();
+                input.credential = Some(Credential::bearer(b"fake-token".as_slice().into()));
+            }
             Provider::Anthropic => {
                 input.endpoint = Endpoint::anthropic();
                 input.credential = Some(Credential::anthropic(b"fake-token".as_slice().into()));
@@ -807,7 +813,7 @@ mod tests {
         input.prompt.instructions = b"clocked-script".as_slice().into();
         let endpoint = input.endpoint.clone();
         let credential = Credential {
-            scheme: skein_llm::Scheme::Bearer,
+            scheme: crate::credential_of(&input).scheme,
             value: crate::credential_of(&input).value.clone(),
             account_id: crate::credential_of(&input).account_id.clone(),
         };

@@ -75,7 +75,7 @@ impl Peer {
         domain: domain::Domain,
         domain_limits: domain::Config,
     ) -> Result<Self, Error> {
-        provider::scripts(&config, &credential, domain.scripts()).map_err(|_| Error::Limits)?;
+        provider::scripts(&config, core::slice::from_ref(&credential), domain.scripts()).map_err(|_| Error::Limits)?;
         transport::validate(&limits, transport)?;
         let bound = worst_case(&limits, &protocol_limits, &domain_limits, transport).ok_or(Error::Limits)?;
         if credential.value.len().checked_add(credential.account_id.len()).ok_or(Error::Limits)?
@@ -189,7 +189,7 @@ impl Peer {
                 provider::start(
                     &mut connection.server,
                     &mut self.service,
-                    &self.credential,
+                    core::slice::from_ref(&self.credential),
                     &Env { now, wall, limits: self.protocol_limits },
                     &mut connection.above,
                     &mut connection.below,
@@ -269,7 +269,7 @@ impl Peer {
                     provider::up(
                         &mut connection.server,
                         &mut self.service,
-                        &self.credential,
+                        core::slice::from_ref(&self.credential),
                         &env,
                         up,
                         &mut connection.above,
@@ -279,7 +279,7 @@ impl Peer {
                     provider::resume(
                         &mut connection.server,
                         &mut self.service,
-                        &self.credential,
+                        core::slice::from_ref(&self.credential),
                         &env,
                         &mut connection.above,
                         &mut connection.below,
@@ -363,7 +363,7 @@ impl Peer {
                 provider::down(
                     &mut connection.server,
                     &mut self.service,
-                    &self.credential,
+                    core::slice::from_ref(&self.credential),
                     &env,
                     reply,
                     &mut connection.above,

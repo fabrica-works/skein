@@ -363,6 +363,7 @@ fn a_request_body_larger_than_one_tls_read_arrives_whole() {
                     observation_bytes: 32_768,
                 },
                 provider::Config {
+                    without_credential: false,
                     provider: documents::Provider::OpenAi,
                     path: skein_llm::Endpoint::codex().target,
                     headers: Box::new([]),

@@ -655,6 +655,7 @@ fn run_configured(
             transport,
             limits,
             provider::Config {
+                without_credential: false,
                 usage_fields: skein_fake_llm_protocol::documents::UsageFields::ALL,
                 echo: skein_llm::openai::Echo::NONE,
                 provider: documents::Provider::OpenAi,

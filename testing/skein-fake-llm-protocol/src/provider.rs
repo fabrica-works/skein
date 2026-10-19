@@ -5,7 +5,9 @@
 
 use crate::documents;
 
+mod credentials;
 mod failure;
+pub use credentials::route;
 #[path = "pieces.rs"]
 mod pieces;
 use alloc::boxed::Box;
@@ -63,6 +65,8 @@ pub struct Limits {
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 #[expect(missing_debug_implementations, reason = "configured header values must not enter traces")]
 pub struct Config {
+    /// Accepts requests with no credential field on public or Anthropic routes.
+    pub without_credential: bool,
     /// Codex metadata echoes; off unless the world explicitly selects them.
     pub echo: openai::Echo,
     /// Usage fields this dialect reports; absent selections are omitted.
@@ -173,7 +177,11 @@ impl Service {
         }
         let mut encoded = config.path.len();
         for (index, header) in config.headers.iter().enumerate() {
-            if header.name.is_empty() || header.is(b"authorization") || header.is(b"chatgpt-account-id") {
+            if header.name.is_empty()
+                || header.is(b"authorization")
+                || header.is(b"x-api-key")
+                || header.is(b"chatgpt-account-id")
+            {
                 return Err(Error::Limits);
             }
             for &byte in &header.name {
@@ -330,7 +338,7 @@ impl Server {
 pub fn start(
     server: &mut Server,
     service: &mut Service,
-    credential: &skein_llm::Credential,
+    credentials: &[skein_llm::Credential],
     env: &Env<Limits>,
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
@@ -340,7 +348,7 @@ pub fn start(
     }
     server.state = State::Reading;
     http_down(server, env, http::Request::Next, below);
-    resume(server, service, credential, env, above, below);
+    resume(server, service, credentials, env, above, below);
 }
 
 /// Consumes one lower transport event and routes bounded HTTP progress or terminals to the owner.
@@ -349,7 +357,7 @@ pub fn start(
 pub fn up(
     server: &mut Server,
     service: &mut Service,
-    credential: &skein_llm::Credential,
+    credentials: &[skein_llm::Credential],
     env: &Env<Limits>,
     event: Up,
     above: &mut Queue<Event>,
@@ -361,7 +369,7 @@ pub fn up(
     }
     let child = Env { now: env.now, wall: env.wall, limits: env.limits.http };
     http::up(&mut server.http, &child, event, &mut server.events, below);
-    resume(server, service, credential, env, above, below);
+    resume(server, service, credentials, env, above, below);
 }
 
 /// Accepts one neutral fake-domain update and schedules its bounded HTTP/SSE response.
@@ -370,7 +378,7 @@ pub fn up(
 pub fn down(
     server: &mut Server,
     service: &mut Service,
-    credential: &skein_llm::Credential,
+    credentials: &[skein_llm::Credential],
     env: &Env<Limits>,
     request: domain::Request,
     above: &mut Queue<Event>,
@@ -380,12 +388,12 @@ pub fn down(
         domain::Request::Reply { to, result } => (to, result),
         domain::Request::Piece { call, usage, text } => {
             pieces::receive(server, service, env, (call, usage, Some(text)), above, below);
-            resume(server, service, credential, env, above, below);
+            resume(server, service, credentials, env, above, below);
             return;
         }
         domain::Request::Hold { call, usage } => {
             pieces::receive(server, service, env, (call, usage, None), above, below);
-            resume(server, service, credential, env, above, below);
+            resume(server, service, credentials, env, above, below);
             return;
         }
     };
@@ -443,7 +451,7 @@ pub fn down(
             }
         }
     }
-    resume(server, service, credential, env, above, below);
+    resume(server, service, credentials, env, above, below);
 }
 
 /// Performs one bounded deferred HTTP/SSE handoff under backpressure; reserve output maxima first.
@@ -452,7 +460,7 @@ pub fn down(
 pub fn resume(
     server: &mut Server,
     service: &mut Service,
-    credential: &skein_llm::Credential,
+    credentials: &[skein_llm::Credential],
     env: &Env<Limits>,
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
@@ -471,7 +479,7 @@ pub fn resume(
                 sse::Event::Closed => {}
             }
         } else if let Some(event) = server.events.pop() {
-            http_event(server, service, credential, env, event, above, below);
+            http_event(server, service, credentials, env, event, above, below);
         } else if let Some(request) = server.requests.pop() {
             http_down(server, env, request, below);
         } else if pieces::ready(server) {
@@ -550,39 +558,18 @@ pub fn closed(
     above.push(Event::Closed);
 }
 
-fn authorized(
-    provider: documents::Provider,
-    credential: &skein_llm::Credential,
-    token: Option<&[u8]>,
-    account: Option<&[u8]>,
-) -> bool {
-    match token {
-        Some(token) => {
-            token == credential.value.as_ref()
-                && match provider {
-                    documents::Provider::Anthropic => true,
-                    documents::Provider::OpenAi => {
-                        if credential.account_id.is_empty() {
-                            account.is_none()
-                        } else {
-                            account == Some(credential.account_id.as_ref())
-                        }
-                    }
-                }
-        }
-        None => false,
-    }
-}
-
 fn entrance(
     server: &mut Server,
     service: &mut Service,
-    credential: &skein_llm::Credential,
+    credentials: &[skein_llm::Credential],
     limits: &Limits,
     call: http::Call,
     above: &mut Queue<Event>,
 ) -> Result<(), api::Error> {
-    server.route = failure::route_of(&service.config, credential);
+    server.route = match route(&service.config, credentials) {
+        Ok(route) => route,
+        Err(Error::Limits | Error::Malformed | Error::TooLarge) => return Err(api::Error::InvalidRequest),
+    };
     server.credential = None;
     let identity = next_response(&mut service.count);
     server.response_id = identity.unwrap_or(0);
@@ -591,10 +578,9 @@ fn entrance(
     } else {
         Some(api::Error::InvalidRequest)
     };
-    let mut authorization = None;
+    let mut fields = credentials::Fields::new();
     server.session = None;
     server.thread = None;
-    let mut account = None;
     let mut content_type = 0_u32;
     for header in &call.headers {
         if service.config.provider == documents::Provider::OpenAi && header.is(b"session-id") {
@@ -615,18 +601,7 @@ fn entrance(
                 server.refused = Some(api::Error::InvalidRequest);
             }
         }
-        if header.is(b"authorization") {
-            if authorization.is_some() {
-                server.refused = Some(api::Error::Unauthorized);
-            }
-            authorization = Some(header.value.as_ref());
-        }
-        if header.is(b"chatgpt-account-id") {
-            if account.is_some() {
-                server.refused = Some(api::Error::Unauthorized);
-            }
-            account = Some(header.value.as_ref());
-        }
+        fields.read(header);
         if header.is(b"content-type") {
             content_type = content_type.saturating_add(1);
             if header.value.as_ref() != b"application/json" {
@@ -637,11 +612,11 @@ fn entrance(
     if content_type != 1 {
         server.refused = Some(api::Error::InvalidRequest);
     }
-    let token = match authorization {
-        Some(value) => value.strip_prefix(b"Bearer "),
-        None => None,
+    let auth = credentials::authorize(server.route, credentials, &fields, service.config.without_credential);
+    server.credential = match auth {
+        credentials::Auth::Matched(index) => Some(index),
+        credentials::Auth::Open | credentials::Auth::Unauthorized => None,
     };
-    let authorized = authorized(service.config.provider, credential, token, account);
     for expected in &service.config.headers {
         let mut count = 0_u32;
         for header in &call.headers {
@@ -656,7 +631,7 @@ fn entrance(
             server.refused = Some(api::Error::InvalidRequest);
         }
     }
-    if !authorized {
+    if auth == credentials::Auth::Unauthorized {
         server.refused = Some(api::Error::Unauthorized);
     }
     server.state = State::Body;
@@ -731,7 +706,7 @@ fn reset_writer(server: &mut Server, env: &Env<Limits>) {
 fn http_event(
     server: &mut Server,
     service: &mut Service,
-    credential: &skein_llm::Credential,
+    credentials: &[skein_llm::Credential],
     env: &Env<Limits>,
     event: http::Event,
     above: &mut Queue<Event>,
@@ -790,8 +765,8 @@ fn http_event(
                 http::Reuse::Close => close(server, service, env, above, below),
             }
         }
-        http::Event::Call(call) => match entrance(server, service, credential, &env.limits, call, above) {
-            Ok(()) => server.credential = Some(0),
+        http::Event::Call(call) => match entrance(server, service, credentials, &env.limits, call, above) {
+            Ok(()) => {}
             Err(error) => server.refused = Some(error),
         },
         http::Event::Ended

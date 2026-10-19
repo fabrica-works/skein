@@ -136,6 +136,7 @@ impl Peer {
             owner,
             service: provider::Service::new(
                 provider::Config {
+                    without_credential: false,
                     usage_fields: skein_fake_llm_protocol::documents::UsageFields::ALL,
                     echo: skein_llm::openai::Echo::NONE,
                     provider: documents::Provider::OpenAi,
@@ -174,7 +175,7 @@ impl Peer {
         provider::start(
             &mut peer.server,
             &mut peer.service,
-            &peer.credential,
+            core::slice::from_ref(&peer.credential),
             &Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             &mut peer.above,
             &mut peer.below,
@@ -203,7 +204,7 @@ impl Peer {
             provider::down(
                 &mut self.server,
                 &mut self.service,
-                &self.credential,
+                core::slice::from_ref(&self.credential),
                 &env,
                 reply,
                 &mut self.above,
@@ -250,7 +251,7 @@ impl Peer {
                 provider::up(
                     &mut self.server,
                     &mut self.service,
-                    &self.credential,
+                    core::slice::from_ref(&self.credential),
                     &env,
                     answer,
                     &mut self.above,
@@ -262,7 +263,7 @@ impl Peer {
             provider::resume(
                 &mut self.server,
                 &mut self.service,
-                &self.credential,
+                core::slice::from_ref(&self.credential),
                 &env,
                 &mut self.above,
                 &mut self.below,
