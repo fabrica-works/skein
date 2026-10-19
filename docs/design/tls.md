@@ -40,6 +40,7 @@ pub fn down(client: &mut Client, env: &Env<Limits>, rq: Request,
 Config::from_der(roots: &[Box<[u8]>], alpn: &[&[u8]]) -> Result<(Config, Parsed), Refusal>
 Config::new(roots: RootCertStore, alpn: &[&[u8]]) -> Result<Config, Refusal>
 Name::new(text: &str) -> Option<Name>
+Name::server(&self) -> Server<'_>   // Dns(&str) or Ip(core::net::IpAddr)
 Client::new(&config, name, &limits) -> Client
 ```
 
@@ -184,7 +185,12 @@ with both versions of TLS, no client certificate, and no session
 resumed, as a session cache would be state shared between connections.
 It refuses roots of none, and protocols empty, longer than 255 bytes, or
 of more than `ALPN` (256) bytes in all. Each connection gets the server's
-`Name`: a DNS name, sent by SNI, or an IP address.
+`Name`: a DNS name, sent by SNI, or an IP address. Whoever holds a
+name reads it back with `Name::server`, as what it is, borrowed:
+`Server::Dns`, the DNS name's text as it was given, or `Server::Ip`,
+core's `IpAddr`. A name is one or the other, and reading it allocates
+nothing; an address is never handed over as text, so that its reader
+writes it in its own form.
 
 - **From DER bytes.** The shell reads the roots as bytes and needs no TLS
   crate (shell.md, 6.2): the certificates of the machine's bundle, each
@@ -532,6 +538,11 @@ a wall time each test chooses.
 - **A truncation fails the stream as invalid,** never ends it, once what
   was deciphered is delivered; a peer's fatal alert is a reset.
 - **No session resumed,** and no alert sent after a failure.
+- **A name reads back as what it is,** not as text. rustls's `to_str`
+  writes an IP address with std's `Display`, which a crate without std
+  lacks, allocates to do it, and writes IPv6 compressed (`::1`), a form
+  no reader chose: an owner that writes addresses as it does a socket's
+  (forge.md, 5.1) would hold two forms of one address.
 - **rustls is built as it ships in every dev build,** not only the
   tests', without its debug assertions (`[profile.dev.package.rustls]` in
   the workspace's `Cargo.toml`): one holds any alert after `close_notify`

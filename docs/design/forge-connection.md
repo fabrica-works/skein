@@ -106,7 +106,14 @@ The values of forge.md, section 2.2, from no file:
 - **the limits** (7.2) and **the shared values** (7.3).
 
 The component makes each request's `Host` from the address and the
-transport's name (forge.md, section 5.1); the owner hands no `Host`.
+transport's name (forge.md, section 5.1); the owner hands no `Host`. It
+reads a TLS name back (`Name::server`, tls.md, 3.4): a DNS name goes to
+`host` as the name, and an IP name in place of the address's IP, with
+the address's port, so that it is written as an address is. An IP name
+that differs from the address's IP is the `Host`, as a DNS name is: the
+name names the forge, and the address only reaches it. Start's check and
+each request make it by the same function, from the same values, so they
+agree.
 
 ### 3.2 What start checks
 
@@ -121,6 +128,9 @@ which skein-http would refuse in every request's head; a secret for no
 configured forge, empty or past `hook_secret_bytes`; a listener that is
 not a loopback IP socket; a word that is not 1 to 16 bytes of
 lowercase ASCII letters, digits and `-`; and the limits 7.4 checks.
+A TLS name is refused by none of them: `Name` holds only a DNS name or
+an IP address, and either makes a `Host`. The check makes each forge's
+`Host` as its requests will (3.1), for 7.4's head.
 
 ### 3.3 Each forge's start
 
@@ -365,7 +375,9 @@ It is the sum of:
   the check knows the forges' number, not their transports;
 - for each of `calls`: its record, plan and copy of the operation, and
   its held answer, at most `answer_bytes`;
-- the two tables, full, and each forge's credential and secret;
+- the two tables, full; each forge's credential, secret and name, a
+  TLS name's DNS text or a plaintext name (an IP name holds none); and
+  the word and the user agent;
 - for each of `hooks`: its stack, HMAC state, decoded fields and held
   hint; and the listener.
 

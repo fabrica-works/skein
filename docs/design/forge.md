@@ -520,9 +520,14 @@ section 4.3, lists them.
   logs. `Host` is the transport's name, the TLS server name or the name
   a plaintext forge was configured by, else the address's IP, an IPv6
   one in brackets; either with `:port` when the port is not the scheme's
-  default (443, 80). `skein-forge`'s `host` makes it from the address
-  and the name, for the component and a setup's host alike; no owner
-  writes it. `User-Agent` is the owner's, given at start.
+  default (443, 80). A TLS server name that is an IP address is written
+  as the address's IP is, with the address's port, whichever IP the
+  address holds: IPv4 in dotted decimal, IPv6 in brackets as its eight
+  groups in lowercase hexadecimal without leading zeros, never
+  compressed (`[2001:db8:0:0:0:0:0:7]`); a DNS name is written as it
+  was given. `skein-forge`'s `host` makes it from the address and the
+  name, for the component and a setup's host alike; no owner writes
+  it. `User-Agent` is the owner's, given at start.
 - **JSON in, JSON out.** Bodies are written with skein-json's sized
   writer (`Content-Type: application/json`), and answers decoded from
   its tokens. Raw files and job logs are read as bytes. Strings are
