@@ -360,7 +360,7 @@ check_machine() {
         git config --global --get-regexp '^url\..*\.insteadof$' 2>/dev/null |
             grep -q ' https://git\.ekanayaka\.io/ai/$' &&
             ok "git rewrites git.ekanayaka.io to GitHub" ||
-            fail "Cargo.toml names git.ekanayaka.io: git config --global url.git@github.com:forgetic/.insteadOf https://git.ekanayaka.io/ai/"
+            fail "Cargo.toml names git.ekanayaka.io: git config --global url.git@github.com:fabrig-dev/.insteadOf https://git.ekanayaka.io/ai/"
     fi
     grep -qs 'git-fetch-with-cli *= *true' "$HOME/.cargo/config.toml" &&
         ok "cargo fetches with git" ||
