@@ -1,0 +1,15 @@
+[package]
+name = "skein-forge-setup"
+description = "Pure owner-driven forge reconciliation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-lib.workspace = true
+skein-json.workspace = true
+skein-forge.workspace = true
+
+[lints]
+workspace = true

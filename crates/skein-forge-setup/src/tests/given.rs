@@ -1,0 +1,139 @@
+use super::fixtures::{self, Run, secret};
+use crate::{
+    given::{self, Given, Place, Refused},
+    reconcile::{Event, Failure, Need, Reconcile, Reply, Stage, Why},
+};
+use core::net::{Ipv4Addr, SocketAddr};
+use skein_forge::forgejo::{
+    document::{ApiSettings, Document},
+    request::Request,
+};
+
+#[test]
+fn the_word_derives_only_the_bot_marker() {
+    assert_eq!(given::marker(b"kit").as_ref(), b"kit:bot");
+}
+
+fn other_word() -> Run {
+    let mut given = fixtures::given();
+    given.word = b"other".as_slice().into();
+    Run::with_given(given)
+}
+fn other_bot() -> Event {
+    Event::Reply(Reply::Document(Document::User(fixtures::person(b"kit", b"other:bot"))))
+}
+#[test]
+fn the_given_names_are_used_verbatim() {
+    let mut run = other_word();
+    run.step(Event::Begin);
+    run.step(Event::Read(Some(secret(fixtures::ADMIN))));
+    assert_eq!(
+        run.step(Event::Reply(Reply::Status(401))),
+        Need::Stop(Failure {
+            forge: 1,
+            step: Stage::Admin,
+            subject: b"kit-admin".as_slice().into(),
+            why: Why::Refused(401),
+        })
+    );
+    let prefixes: [(Box<[Event]>, &[u8]); 2] =
+        [(Box::new([]), b"kit-api"), (Box::new([Event::Read(Some(secret(b"api-token"))), other_bot()]), b"kit-git")];
+    for (prefix, name) in prefixes {
+        let mut run = other_word();
+        fixtures::to_bot(&mut run);
+        run.step(other_bot());
+        for event in prefix {
+            run.step(event);
+        }
+        run.step(Event::Read(None));
+        run.step(Event::Reply(Reply::Document(Document::ApiSettings(ApiSettings {
+            max_response_items: 2,
+            default_paging_num: 30,
+        }))));
+        let Need::Send { request: Request::CreateToken { name: found, .. }, .. } =
+            run.step(Event::Reply(Reply::Rows(Box::new([]))))
+        else {
+            panic!("token creation");
+        };
+        assert_eq!(found.as_ref(), name, "{name:?}");
+    }
+}
+
+fn accepted(given: &Given, label: &str) {
+    assert_eq!(given::check(given), Ok(()), "{label}");
+    assert!(Reconcile::new(given).is_ok(), "{label}");
+}
+// Grammar maxima from forge-setup.md, 4.1, and their one-byte overruns.
+const WORD_MAX: usize = 16;
+const LOGIN_MAX: usize = 40;
+const EMAIL_MAX: usize = 254;
+#[test]
+fn valid_given_values_are_accepted() {
+    let mut longest_email = [b'a'; EMAIL_MAX];
+    longest_email[1] = b'@';
+    for (word, login, email) in [
+        (b"kit".as_slice(), b"kit".as_slice(), b"kit@example.invalid".as_slice()),
+        (b"a".as_slice(), b"a".as_slice(), b"a@b".as_slice()),
+        (&[b'a'; WORD_MAX], &[b'a'; LOGIN_MAX], longest_email.as_slice()),
+    ] {
+        let mut given = fixtures::given();
+        given.word = word.into();
+        given.bot_login = login.into();
+        given.bot_email = email.into();
+        accepted(&given, "grammar boundary");
+    }
+    for forge in [0, 65535] {
+        for listener in [
+            None,
+            Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 9898))),
+            Some(SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), 9898))),
+        ] {
+            let mut given = fixtures::given();
+            given.forge = forge;
+            given.listener = listener;
+            accepted(&given, "owner address and number");
+        }
+    }
+}
+fn invalid(place: Place, value: &[u8]) -> Given {
+    let mut given = fixtures::given();
+    match place {
+        Place::Word => given.word = value.into(),
+        Place::BotLogin => given.bot_login = value.into(),
+        Place::BotEmail => given.bot_email = value.into(),
+        Place::Org(_) => given.orgs = Box::new([value.into()]),
+        Place::OrgOwner => given.org_owner = Some(value.into()),
+        Place::AdminName => given.admin_name = value.into(),
+        Place::ApiName => given.api_name = value.into(),
+        Place::GitName => given.git_name = value.into(),
+        Place::Orgs | Place::OrgsLimit | Place::Deadline | Place::Backoff | Place::BackoffMax => {
+            unreachable!("grammar rows")
+        }
+    }
+    given
+}
+#[test]
+fn invalid_given_values_name_their_place() {
+    for (place, value) in [
+        (Place::Word, b"".as_slice()),
+        (Place::Word, &[b'a'; WORD_MAX + 1]),
+        (Place::Word, b"Kit"),
+        (Place::BotLogin, b""),
+        (Place::BotLogin, &[b'a'; LOGIN_MAX + 1]),
+        (Place::BotLogin, b".kit"),
+        (Place::BotEmail, b"a@"),
+        (Place::BotEmail, &[b'a'; EMAIL_MAX + 1]),
+        (Place::BotEmail, b"a@b\n"),
+        (Place::BotEmail, b"a@@b"),
+        (Place::Org(0), b".bad"),
+        (Place::OrgOwner, b".bad"),
+        (Place::AdminName, b""),
+        (Place::ApiName, b""),
+        (Place::GitName, b""),
+    ] {
+        let given = invalid(place, value);
+        let expected = Err(Refused { place, other: None });
+        assert_eq!(given::check(&given), expected, "{place:?} {value:?}");
+        assert_eq!(Reconcile::new(&given).err(), expected.err(), "constructor {place:?} {value:?}");
+    }
+}
