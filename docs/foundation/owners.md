@@ -23,12 +23,13 @@ the repository's own `AGENTS.md`.
   each given to a sub-owner, a session like itself (section 3). Its
   effort is its parent's choice (section 2).
 - **The flow:** design, report, a brief check by the parent, its green
-  light, implementation, landings, a closing note.
+  light, implementation with the QA passes the owner chooses, landings,
+  a closing note.
 - **The compass and the guardrails** are the intended design and
   architecture, and the tests and QA. The bar for tests is
   testing-strategy.md and the project's testing documents (temper's
   `docs/design/domain/testing.md`). Momentum and tokens count more than
-  upfront perfection: QA catches the rest, and what is wrong is
+  upfront perfection: QA (section 4.6) catches the rest, and what is wrong is
   corrected as it shows.
 
 ## 2. The owner's session
@@ -149,6 +150,42 @@ the implementer to, with `land` (development.md, section 9). It updates the repo
   orders owners whose footprints overlap, and one repin at a time per
   repository.
 
+### 4.6 QA passes
+
+An owner or a sub-owner may run QA passes on its part while it
+implements: none, one or several, at any point. It decides when each
+starts and when it is done.
+
+- **The tester** is a session of the owner's choice of model and
+  effort. It reads the design only: the sections its part covers, the
+  testing documents, and the public surface of the world or harness it
+  writes in. It never reads the code under test or its tests.
+- **Its tests are adversarial,** aimed at what the design promises: the
+  edges, the orders, the failures, the limits, and the seams between
+  parts. Each goes in the highest layer that can express it: the real
+  loop or the process tier in temper, a kit's highest world.
+- **On the existing infrastructure.** They use the worlds, harnesses
+  and fakes that exist; a pass builds no test infrastructure of its own.
+  When a test needs a fake or a hook that is missing, the tester says
+  so, and the owner decides whether its layer grows it, as ordinary work
+  under that layer's own tests.
+- **A suite apart.** Their test binaries are named `qa_<area>`. The
+  repository's nextest default and fuzzy profiles exclude
+  `binary(/^qa_/)`, and a `qa` profile selects them: `cargo nextest run
+  --workspace --profile qa`. The gate builds them but does not run them,
+  and no test-time ceiling counts them. The first owner to add one to a
+  repository adds the profiles.
+- **Each failure is the owner's to judge.** A bug is fixed, and its
+  regression test goes in the default suite, in the lowest world that
+  owns the behaviour. A test that misreads the design is corrected or
+  dropped, and a design that let it is made clearer. A gap the owner
+  accepts stays, as `#[ignore = "<why>"]`, listed in its notes. When
+  the owner ends a pass, the `qa` profile passes.
+- **Its tests land** like any other (section 4.4).
+
+Continuous QA, agents using a running build (temper's draft
+`docs/design/draft/qa.md`), is another thing, and still a draft.
+
 ## 5. Escalation
 
 - An implementer asks its owner, a sub-owner its parent, an owner the
@@ -168,6 +205,7 @@ directory, in at most half a page:
 - the wall time from its start to its last landing, and its ledger's
   sessions;
 - for a world it added to, the test time at its start and at its end;
+- its QA passes: how many, what they found, and the tests left ignored;
 - what went well and what didn't, in this process.
 
 It reports to its parent, which folds the note into its own. The
