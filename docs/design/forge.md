@@ -354,6 +354,28 @@ body the forge keeps changes (5.3).
   | `File` | the head and path are the call's, and the bytes are within `max_bytes` |
   | `Locate` | the id is nonzero |
 
+- **The measure.** A call's or an answer's bytes are the lengths of the
+  byte strings it holds, plus a fixed width for each element of each
+  list in it; a value outside a list adds no width. `skein-forge`'s
+  `measure::op(&Op)` and `measure::answer(&Answer)` give them, none when
+  the sum passes a `u64`. The widths:
+
+  | Element | Width |
+  |---|---|
+  | a `Summary`, a `Review` | 128 |
+  | a `Status` | 160 |
+  | a `Comment` | 96 |
+  | a `Remark`, a `File` | 64 |
+  | a `Commit` | 32 |
+  | a `Collaborator`; a string in a list (a label, a branch, a context) | 16 |
+  | an id in a list (a reviewer) | 8 |
+
+  Each width is at least its type's size on the target, asserted when
+  the crate is built, so the measure bounds memory and is one on every
+  target. A row count is no part of it: `rows` is checked beside it.
+  The page size (5.1), the client's checks (forge-client.md, section 2.3)
+  and the component's limits (forge-connection.md, section 7) all use
+  it.
 - **A call is admitted within bounds.** The client admits an op only
   when its bytes are at most `op_bytes`, a `Job` or `File`'s `max_bytes`
   is between 1 and `answer_bytes`, a page is at least 1 and a file's
@@ -493,9 +515,12 @@ section 4.3, lists them.
   the configured server name and trust, or in plaintext to a loopback
   address. Each carries `Authorization: token <t>`, the forge's API
   credential (section 8), which the component holds from start and never
-  logs. `Host` is the TLS server name, or the configured address's host;
-  either with `:port` when the port is not the scheme's default.
-  `User-Agent` is the owner's, given at start.
+  logs. `Host` is the transport's name, the TLS server name or the name
+  a plaintext forge was configured by, else the address's IP, an IPv6
+  one in brackets; either with `:port` when the port is not the scheme's
+  default (443, 80). `skein-forge`'s `host` makes it from the address
+  and the name, for the component and a setup's host alike; no owner
+  writes it. `User-Agent` is the owner's, given at start.
 - **JSON in, JSON out.** Bodies are written with skein-json's sized
   writer (`Content-Type: application/json`), and answers decoded from
   its tokens. Raw files and job logs are read as bytes. Strings are
@@ -532,7 +557,8 @@ section 4.3, lists them.
   is fixed per forge and per listing: the smallest of the client's
   `rows`, the forge's `max_response_items` (read at the forge's start,
   4.1), and the number of that listing's largest rows the client's
-  `answer_bytes` holds (5.3). A listing has
+  `answer_bytes` holds (5.3), each row by the measure of 3.7, so the
+  size is the same on every target. A listing has
   more after it when it came full, or when Forgejo says so (`X-HasMore`
   on a pull request's files, `total_count` on a combined status).
   Listings Forgejo does not page are read whole and cut as they stream.

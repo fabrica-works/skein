@@ -45,7 +45,8 @@ vocabularies with total functions and routes the client's output.
   entry or live resource is handed over** (section 8). An owner that
   learns it after construction sets it with `bind_deployment(id, limits)`,
   a 16-byte id, before that restore. It returns false, changing nothing,
-  with no configuration or when the result breaks section 7.1.
+  once the client has taken any `Restore`, `Keep`, `Make` or `Remake`,
+  with no configuration, or when the result breaks section 7.1.
 - **Calls are the owner's to run.** `Request::Call` carries a token, a
   repository and an `Op` (forge.md, section 3); the owner returns exactly
   one `Event::Answered { call, cost, result }` per token, a cost of 0
@@ -86,7 +87,14 @@ the working set at saturation, the deadlines and the diagnostics.
 
 ### 2.3 Admission and answer checks
 
-- **An operation is admitted** when its owned bytes are at most
+- **The measure** is the vocabulary's (forge.md, section 3.7), which
+  `skein-forge`'s `measure::op` and `measure::answer` give. The owner
+  bounds what it stores of the client's by the same widths, with
+  `skein-forge-client`'s `measure::stored(&Stored)` and
+  `measure::effect(&Effect)`: a comment, a review or an echo a live row
+  keeps counts 16, a label 16 and its length, a reviewer 8, and every
+  string its length.
+- **An operation is admitted** when its bytes are at most
   `op_bytes`, its pages start at 1, a file's path is not empty and a
   `max_bytes` is from 1 to `answer_bytes`; else it is `TooLarge`, with no
   call. `Busy` is the client's own refusal, never a dialect's.

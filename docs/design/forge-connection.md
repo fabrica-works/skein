@@ -93,8 +93,9 @@ The values of forge.md, section 2.2, from no file:
 
 - **for each forge:** its number, unique among the forges; its dialect
   (Forgejo's; GitHub's later); its API's socket address; its transport,
-  TLS with a server name and what to trust, or plaintext to loopback;
-  its credential, a kind and a `Secret`; the forge user id the
+  TLS with a server name and what to trust, or plaintext to loopback
+  with the name the forge was configured by, when it was one; its
+  credential, a kind and a `Secret`; the forge user id the
   credential must stand for, never 0; and its webhook secret, a
   `Secret`, when it has a hook;
 - **the listener's address,** when webhooks are used;
@@ -102,16 +103,20 @@ The values of forge.md, section 2.2, from no file:
   request: temper's are `temper` and `temper/0.0.0`;
 - **the limits** (7.2) and **the shared values** (7.3).
 
+The component makes each request's `Host` from the address and the
+transport's name (forge.md, section 5.1); the owner hands no `Host`.
+
 ### 3.2 What start checks
 
 A refusal names the value, or both limits where two disagree (7.4).
 Nothing starts and no io is requested. It refuses: more forges than
 `forges`, or two with one number; an in-process name for an address, and
-plaintext off loopback; a credential that is empty or past
-`token_bytes`, and a user id of 0; a secret for no configured forge,
-empty or past `hook_secret_bytes`; a listener that is not a loopback IP
-socket; a word that is not 1 to 16 bytes of lowercase ASCII letters,
-digits and `-`; and the limits 7.4 checks.
+plaintext off loopback; a plaintext name that is empty or holds a byte
+at or below a space, at or above DEL, or one of `/:[]`; a credential
+that is empty or past `token_bytes`, and a user id of 0; a secret for no
+configured forge, empty or past `hook_secret_bytes`; a listener that is
+not a loopback IP socket; a word that is not 1 to 16 bytes of
+lowercase ASCII letters, digits and `-`; and the limits 7.4 checks.
 
 ### 3.3 Each forge's start
 
@@ -330,7 +335,7 @@ Each refusal names both limits:
 - `string_bytes` is at least `name_bytes`, and `repositories` at most
   the owner's;
 - each listing holds at least one of its largest rows in `answer_bytes`,
-  so no page size is 0;
+  by the measure of forge.md, section 3.7, so no page size is 0;
 - the dialect's own `check` of its limits (forge.md, section 4.1);
 - for each forge, the request head fits skein-http's `request`, the send
   cap of the stream below: `target_bytes` of target, its `Host`, its
@@ -449,7 +454,9 @@ drain** (8.5). The owner's domain owes:
 - **Step tests:** the start's decision for every state and everything
   heard; the tables' fills, drops and eviction; each limit check, one
   below and at its bound; each listing's page size; the signature check
-  against known HMACs, with a header of 63, 64 and 65 digits. The plans'
+  against known HMACs, with a header of 63, 64 and 65 digits; `Host`
+  for a TLS forge and a named plaintext one, and for an IPv4 and an IPv6
+  address, at the scheme's default port and off it. The plans'
   own are `skein-forge`'s (forge.md, section 11).
 - **The machine world:** the component against a scripted HTTP peer over
   in-memory streams, for a plaintext and a TLS forge: every state of

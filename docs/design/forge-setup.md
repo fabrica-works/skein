@@ -106,10 +106,9 @@ its record.
   - the bot's login and email;
   - the tokens' names, one for the API and one for git;
   - the orgs, at most the limit's;
-  - the orgs' owner: the person's login when the forge is owned, none
-    when managed;
-  - whether an absent org is made: yes when owned, no when managed. It
-    needs the orgs' owner;
+  - the orgs' owner, one optional value: the person's login when the
+    forge is owned, and an absent org is then made, owned by it; none
+    when managed, and an absent org then stops the run (4.3, step 5);
   - the name a failure gives the admin;
   - the listener's address, if any. The hook's URL is derived from it:
     `http://<address>/hooks/<number>`, the number being the forge's
@@ -186,7 +185,7 @@ forge differs.
 4. **The bot's id.** It asks for the id kept, and writes it in decimal
    when it differs.
 5. **Each org,** in the order given.
-   - An absent org (404) is made when so given (`POST
+   - An absent org (404) is made when the orgs have an owner (`POST
      /api/v1/admin/users/{owner}/orgs`), private and owned by the orgs'
      owner. When not, the run stops with `OrgMissing`.
    - In it, a team named the bot's login: found in the org's teams
@@ -282,8 +281,11 @@ Marked later. It says what the plan will ask, and binds no code.
   their tokens, orgs, teams and members, and org hooks (forge.md,
   section 5; section 4.3).
 - **The owner checks the setup's values and limits at its start,** for
-  every command it runs. The crate gives the checks, and a refusal names
-  the value's place, never its content.
+  every command it runs. The crate gives the checks. A refusal names a
+  `Place`, the crate's name for each given value and each limit (an org
+  by its index), which the owner maps to its own path for the person;
+  never a value's content. Two limits out of order name both places, in
+  the order 4.4 writes them (`backoff <= backoff_max < deadline`).
 
 ### 6.2 The host
 
@@ -294,7 +296,8 @@ back the outcome. A service with several forges runs a machine for each.
 Its duties:
 
 - **Run a `Send`:** encode the request with `skein-forge`'s encoder, add
-  the `Host`, `Authorization: token <value>` and the owner's user agent,
+  the `Host` (`skein-forge`'s `host`, forge.md, section 5.1),
+  `Authorization: token <value>` and the owner's user agent,
   make one exchange on a connection closed after it, and decode the
   answer into a `Reply` (4.2).
 - **Keep and give the items.** It decides where each lives, and keeps it

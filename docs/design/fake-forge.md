@@ -168,9 +168,11 @@ domain, and holds no clock of its own.
   returns it whole when that connection has gone. Its `Limits` sit beside
   the domain's, and its `worst_case` is checked.
 - **The scenario's tables** (`Config`): the hooks' `Endpoint { forge, host,
-  secret }`; `base`, an `http://` origin; `tokens`, secrets to user numbers;
-  `users`, numbers to logins; each repository's `id`, full name and
-  protected branch; `max_response_items`, `default_paging_num` and `faults`.
+  secret }`, `host` being the loopback `ip:port` the forge peer connects to
+  and sends as `Host` (section 5); `base`, an `http://` origin; `tokens`,
+  secrets to user numbers; `users`, numbers to logins; each repository's
+  `id`, full name and protected branch; `max_response_items`,
+  `default_paging_num` and `faults`.
 - **Routes.** Outside the setup's, each route is one domain call: decoded by
   the server side of `skein-forge` (forge.md, section 5.2), translated to a
   `Read` or `Write`, and its answer encoded as Forgejo encodes it. A commit
@@ -239,9 +241,14 @@ peers host theirs. The real loop hosts the same one.
   reclaims the domain and the service; `next_deadline` is the earlier of
   io's and the domain's.
 - **It writes the deliveries.** A hook the domain releases is rendered
-  (section 4) and delivered to the configured endpoint over loopback.
-  Delivery is best effort: one that cannot be written (no address, no room,
-  the connection refused or reset) is dropped and observed, never resent.
+  (section 4) and delivered over loopback to the endpoint's `host`, the
+  address it connects to and the request's `Host` alike, as a Forgejo posts
+  to its hook's URL. An owner whose listener binds port 0 sets the endpoint
+  in the forge it shares once the listener's address is known, before a hook
+  is due; until then, and for a `host` that is no loopback `ip:port`, there
+  is no address. Delivery is best effort: one that cannot be written (no
+  address, no room, the connection refused or reset) is dropped and
+  observed, never resent.
 
 ## 6. The throwaway Forgejo
 
@@ -252,7 +259,11 @@ need a real one. It never meets an existing Forgejo.
   reads no environment. It runs `--version` and refuses, naming it
   (`Refusal`), a binary that is unreadable or whose version line does not
   name the pin's `VERSION` (forge.md, section 4.3). It computes the SHA-256.
-  The pin's `RUNNER_VERSION` and `names_runner` are re-exported.
+  The pin's `RUNNER_VERSION` and `names_runner` are re-exported. The kit's
+  tests that need the binaries are ignored by default; their test files
+  read the paths from `SKEIN_FORGEJO` and `SKEIN_FORGEJO_RUNNER`, and fail
+  naming the variable when it is unset. No library code reads a variable,
+  and a service's tests read their own.
 - **The instance.** `start(scratch, &Settings)` writes an `app.ini` for
   loopback, SQLite and the page cap, makes the admin user and its token, and
   waits for the API. The scratch must be empty or absent and not under
@@ -260,6 +271,12 @@ need a real one. It never meets an existing Forgejo.
   `PATH` and `TZ`, and no system or user git configuration.
   `Settings::small()` pages at 2, enables Actions and bounds an answer at
   16 MiB.
+- **Attaching.** `Instance::attach(child, port, scratch, admin_token,
+  &Settings)` takes a Forgejo its caller started and keeps, such as a
+  service's owned forge. It waits for the API and reads the admin's login
+  and id with `GET /api/v1/user`, naming no login of its own. Its `stop`
+  ends the child and leaves the scratch, which stays its caller's, and
+  `cli` refuses, having no work path.
 - **Provisioning:** users, tokens, repositories (`Init::{Readme, Empty,
   Sha256}`), collaborators and `fresh_secret`. `Forgejo::work_path` and
   `Instance::cli` run Forgejo's command line without and with a web
@@ -278,9 +295,9 @@ need a real one. It never meets an existing Forgejo.
 Forgejo with a page cap of 2, so paging shows, and records what the dialect
 relies on (forge.md, section 9). It makes its own admin user and tokens.
 
-- **Inputs:** the Forgejo's path, `--scratch` (empty or absent, not under
-  `/tmp`), `--out`, and optionally the runner's path, checked with the pin's
-  `names_runner`. It reads no variable of a service's name.
+- **Inputs:** `--forgejo <path>`, `--scratch` (empty or absent, not under
+  `/tmp`), `--out`, and optionally `--runner <path>`, checked with the pin's
+  `names_runner`. It reads no variable.
 - **Transcripts:** `transcripts/<case>/{request,response}` are raw HTTP/1.1
   bytes. A response is unframed, with chunking removed and `Content-Length`
   recomputed; JSON key order, whitespace and types stay as received. A case
