@@ -290,7 +290,7 @@ impl Peer {
                         self.reserve_observation(bytes);
                         self.observe(Observation::Head { connection, headers }, bytes);
                     }
-                    provider::Event::Domain(domain::Event::Call { reply_to, query }) => {
+                    provider::Event::Domain(domain::Event::Call { reply_to, call, query }) => {
                         let connection = connection.owner;
                         let bytes = query_bytes(&query).expect("bounded decoded query");
                         // Check before cloning any owned query bytes.
@@ -299,9 +299,12 @@ impl Peer {
                         domain::step(
                             &mut self.domain,
                             &domain_env,
-                            domain::Event::Call { reply_to, query },
+                            domain::Event::Call { reply_to, call, query },
                             &mut self.replies,
                         );
+                    }
+                    provider::Event::Domain(domain::Event::Release { .. }) => {
+                        unreachable!("the wire never releases a hold")
                     }
                     provider::Event::Close => self.connections[index].closing = true,
                     provider::Event::Closed => {}
@@ -321,14 +324,16 @@ impl Peer {
                 Ok((owner, reply)) => (Some(owner), reply),
                 Err(reply) => (None, reply),
             };
-            let domain::Request::Reply { result, .. } = &reply;
-            self.observe(
-                Observation::Answered {
-                    connection: owner,
-                    result: result.as_ref().map(|_| ()).map_err(|error| *error),
-                },
-                0,
-            );
+            match &reply {
+                domain::Request::Reply { result, .. } => self.observe(
+                    Observation::Answered {
+                        connection: owner,
+                        result: result.as_ref().map(|_| ()).map_err(|error| *error),
+                    },
+                    0,
+                ),
+                domain::Request::Piece { .. } | domain::Request::Hold { .. } => {}
+            }
             if let Some(owner) = owner {
                 let connection = self
                     .connections

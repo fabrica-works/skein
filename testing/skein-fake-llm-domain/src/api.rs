@@ -345,6 +345,13 @@ pub struct Turn {
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Line {
+    /// The reply's text in pieces, each its own delta; the turn's first line.
+    ///
+    /// Contract: docs/design/fake-llm.md, section 2.2.
+    Pieces {
+        /// Ordered nonempty pieces, retained within the script byte cap.
+        pieces: Box<[Piece]>,
+    },
     /// Whole provider-owned replay block supplied by the caller's script.
     /// Retained without interpretation within the aggregate script byte cap.
     Opaque {
@@ -375,4 +382,15 @@ pub enum Line {
         /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
         arguments: Box<[u8]>,
     },
+}
+
+/// One piece of reply text, waiting before it when its hold is named.
+///
+/// Contract: docs/design/fake-llm.md, section 2.2.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Piece {
+    /// Nonempty text, sent as one delta before the terminal reply.
+    pub text: Box<[u8]>,
+    /// A name of 1 to 64 bytes that the owner releases before this piece.
+    pub hold: Option<Box<[u8]>>,
 }

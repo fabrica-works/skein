@@ -33,7 +33,7 @@ use skein_lib::{List, Rng};
 
 use crate::api::{Answer, Error, Finish, Line, Message, Part, Query, Role, Script, Turn, Usage};
 use crate::domain::Config;
-use crate::limits;
+use crate::{limits, pieces};
 
 pub(crate) fn respond(
     rng: &mut Rng,
@@ -42,7 +42,7 @@ pub(crate) fn respond(
     scripts: &[Script],
     menu: &crate::api::Menu,
     query: &Query,
-) -> Result<Answer, Error> {
+) -> Result<(Answer, Option<pieces::Place>), Error> {
     let roll = rng.below(1000);
     let failures = [
         (config.overloaded, Error::Overloaded),
@@ -64,17 +64,14 @@ pub(crate) fn respond(
     let roll = rng.below(1000);
     let refused = u64::from(config.refused);
     if roll < refused {
-        return Ok(answer(
-            query,
-            Box::new([Part::Text { text: copy_of(b"no") }]),
-            Finish::ContentFilter,
-            1,
-            cut_text(),
+        return Ok((
+            answer(query, Box::new([Part::Text { text: copy_of(b"no") }]), Finish::ContentFilter, 1, cut_text()),
+            None,
         ));
     }
     if roll < refused.saturating_add(u64::from(config.no_calls)) {
         let parts = Box::new([Part::Text { text: copy_of(b"let me call a tool") }]);
-        return Ok(answer(query, parts, Finish::ToolCalls, 4, cut_text()));
+        return Ok((answer(query, parts, Finish::ToolCalls, 4, cut_text()), None));
     }
     if let Some(script) = cued(scripts, &query.system) {
         let turns = &scripts.get(script).expect("found among the scripts").turns;
@@ -82,9 +79,19 @@ pub(crate) fn respond(
             if !limits::fits(limits::scripted_answer(turn), config.answer_bytes) {
                 return Err(Error::ContextTooLong);
             }
-            return scripted(minted, query, turn);
+            let answer = scripted(minted, query, turn)?;
+            let place = match turn.lines.first() {
+                Some(Line::Pieces { .. }) if turn.tokens <= u64::from(query.max_tokens) => {
+                    Some(pieces::Place { script, turn: said(&query.messages) })
+                }
+                Some(Line::Pieces { .. } | Line::Text { .. } | Line::Opaque { .. } | Line::Call { .. }) | None => None,
+            };
+            return Ok((answer, place));
         }
-        return Ok(answer(query, Box::new([Part::Text { text: copy_of(b"done") }]), Finish::Stop, 1, cut_text()));
+        return Ok((
+            answer(query, Box::new([Part::Text { text: copy_of(b"done") }]), Finish::Stop, 1, cut_text()),
+            None,
+        ));
     }
     let outside = rng.chance(config.outside_choice) && tool_count(query, true) != 0;
     if tool_rounds(&query.messages) < config.tool_rounds
@@ -109,10 +116,10 @@ pub(crate) fn respond(
             }
         };
         let tokens = u64::from(count).saturating_mul(8);
-        return Ok(answer(query, calls.into_boxed(), Finish::ToolCalls, tokens, Box::new([first])));
+        return Ok((answer(query, calls.into_boxed(), Finish::ToolCalls, tokens, Box::new([first])), None));
     }
     let tokens = rng.between(1, config.answer_tokens.max(1).into());
-    Ok(answer(query, Box::new([Part::Text { text: copy_of(b"done") }]), Finish::Stop, tokens, cut_text()))
+    Ok((answer(query, Box::new([Part::Text { text: copy_of(b"done") }]), Finish::Stop, tokens, cut_text()), None))
 }
 
 /// Only names offered distinct tools; the independent domain validates its inputs.
@@ -262,6 +269,7 @@ fn scripted(minted: &mut u64, query: &Query, turn: &Turn) -> Result<Answer, Erro
     let mut parts = List::with_capacity(count);
     for line in &turn.lines {
         let part = match line {
+            Line::Pieces { pieces } => Part::Text { text: pieces::join(pieces) },
             Line::Text { text } => Part::Text { text: copy_of(text) },
             Line::Opaque { bytes } => Part::Opaque { bytes: bytes.clone() },
             Line::Call { name, arguments } => {
@@ -469,33 +477,9 @@ mod tests {
     use skein_lib::{Duration, Rng};
 
     use super::{call_id, respond, valid};
-    use crate::api::{Error, Finish, Line, Message, Part, Query, Role, Script, ToolSpec, Turn};
+    use crate::api::{Error, Finish, Line, Message, Part, Role, ToolSpec, Turn};
     use crate::domain::Config;
-
-    const CONFIG: Config = Config {
-        calls: 4,
-        query_bytes: 1 << 20,
-        script_bytes: 1 << 20,
-        answer_bytes: 1 << 20,
-        latency_min: Duration::ZERO,
-        latency_max: Duration::ZERO,
-        overloaded: 0,
-        rate_limited: 0,
-        retry_after: Duration::ZERO,
-        unavailable: 0,
-        too_long: 0,
-        unauthorized: 0,
-        refused: 0,
-        no_calls: 0,
-        answer_tokens: 1,
-        calls_per_answer: 1,
-        malformed: 0,
-        outside_choice: 0,
-        tool_rounds: 1,
-        cache_lifetime: Duration::from_secs(300),
-        cache_entries: 8,
-        unscoped_reads: 0,
-    };
+    use crate::tests::{CONFIG, query, says, script, user};
 
     fn menu() -> crate::api::Menu {
         crate::api::Menu {
@@ -505,10 +489,6 @@ mod tests {
                 crate::api::InvalidInput { name: None, arguments: copy_of(b"{") },
             ]),
         }
-    }
-
-    fn user(parts: Box<[Part]>) -> Message {
-        Message { role: Role::User, parts }
     }
 
     fn assistant(parts: Box<[Part]>) -> Message {
@@ -525,19 +505,6 @@ mod tests {
 
     fn output(id: &[u8]) -> Part {
         Part::ToolOutput { id: copy_of(id), output: copy_of(b"ok"), is_error: false }
-    }
-
-    fn query(messages: Box<[Message]>) -> Query {
-        let tool = ToolSpec { name: copy_of(b"ls"), description: copy_of(b""), parameters: copy_of(b"{}") };
-        Query {
-            caching: crate::api::Caching::Unscoped,
-            model: copy_of(b"fake"),
-            system: copy_of(b""),
-            tools: Box::new([tool]),
-            messages,
-            max_tokens: 100,
-            choice: crate::api::ToolChoice::Auto,
-        }
     }
 
     #[test]
@@ -581,7 +548,7 @@ mod tests {
         let mut rng = Rng::new(1);
         let mut minted = 0;
         let first = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query(Box::new([user(Box::new([text()]))])));
-        let answer = first.expect("a valid query");
+        let answer = first.expect("a valid query").0;
         assert_eq!(answer.finish, Finish::ToolCalls);
         let (id, name, arguments) = called(answer.parts.first());
         assert_eq!((id, name, arguments.first()), (&b"call_0000000000000001"[..], &b"ls"[..], Some(&b'{')));
@@ -589,7 +556,7 @@ mod tests {
         let called = assistant(answer.parts);
         let messages =
             Box::new([user(Box::new([text()])), called.clone(), user(Box::new([output(b"call_0000000000000001")]))]);
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query(messages)).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query(messages)).expect("a valid query").0;
         assert_eq!(answer.finish, Finish::Stop);
 
         // The client writes again: another round of tools, then the answer.
@@ -600,7 +567,7 @@ mod tests {
             assistant(answer.parts),
             user(Box::new([text()])),
         ]);
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query(messages)).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query(messages)).expect("a valid query").0;
         assert_eq!(answer.finish, Finish::ToolCalls);
     }
 
@@ -633,10 +600,10 @@ mod tests {
         let mut minted = 0;
         let first = || query(Box::new([user(Box::new([text()]))]));
         let config = Config { refused: 1000, ..CONFIG };
-        let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query").0;
         assert_eq!(answer.finish, Finish::ContentFilter);
         let config = Config { no_calls: 1000, ..CONFIG };
-        let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query").0;
         assert_eq!(answer.finish, Finish::ToolCalls);
         assert!(!super::calls_any(&answer.parts), "it names no tool");
     }
@@ -647,13 +614,13 @@ mod tests {
         let mut minted = 0;
         let mut first = query(Box::new([user(Box::new([text()]))]));
         first.max_tokens = 3;
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &first).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &first).expect("a valid query").0;
         assert_eq!((answer.finish, answer.usage.output), (Finish::Length, Some(3)));
         // It was to call a tool, and stops partway into the call.
         assert_eq!(answer.parts.len(), 1);
         assert_eq!(called(answer.parts.first()), (&b"call_0000000000000001"[..], &b"ls"[..], &br#"{"a"#[..]));
         let config = Config { tool_rounds: 0, answer_tokens: 2, ..CONFIG };
-        let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first).expect("a valid query").0;
         assert_eq!(answer.finish, Finish::Stop);
         assert!(answer.usage.output.expect("fake reports output") <= 2, "within the configured answer");
     }
@@ -666,27 +633,19 @@ mod tests {
         let config = Config { calls_per_answer: 3, ..CONFIG };
         let mut most: usize = 0;
         for _ in 0..20_u32 {
-            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query");
+            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query").0;
             assert!((1..=3).contains(&answer.parts.len()), "between one and three calls");
             most = most.max(answer.parts.len());
         }
         assert_eq!(most, 3);
         let config = Config { malformed: 1000, ..CONFIG };
         for _ in 0..20_u32 {
-            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query");
+            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &first()).expect("a valid query").0;
             let (_, name, arguments) = called(answer.parts.first());
             let unknown = name == b"unknown";
             let broken = arguments == b"{";
             assert!(unknown != broken, "malformed one way: {name:?} {arguments:?}");
         }
-    }
-
-    fn script(cue: &[u8], turns: Box<[Turn]>) -> Script {
-        Script { cue: copy_of(cue), turns }
-    }
-
-    fn says(text: &[u8]) -> Turn {
-        Turn { lines: Box::new([Line::Text { text: copy_of(text) }]), finish: Finish::Stop, tokens: 2 }
     }
 
     #[test]
@@ -705,7 +664,7 @@ mod tests {
         let scripts = [script(b"@main", Box::new([calls, says(b"fixed")])), script(b"@child", Box::new([says(b"hi")]))];
         let mut first = query(Box::new([user(Box::new([text()]))]));
         first.system = copy_of(b"Do it. @main");
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &first).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &first).expect("a valid query").0;
         assert_eq!((answer.finish, answer.usage.output), (Finish::ToolCalls, Some(5)));
         let [Part::Text { .. }, Part::ToolCall { id, name, .. }, Part::ToolCall { arguments, .. }] = &*answer.parts
         else {
@@ -718,17 +677,17 @@ mod tests {
         let called = assistant(answer.parts);
         let mut second = query(Box::new([user(Box::new([text()])), called.clone(), outputs()]));
         second.system = copy_of(b"Do it. @main");
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &second).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &second).expect("a valid query").0;
         assert_eq!(&*answer.parts, &[Part::Text { text: copy_of(b"fixed") }]);
 
         // Past its end, it is done; and the cue that comes first wins.
         let history = [user(Box::new([text()])), called, outputs(), assistant(answer.parts), user(Box::new([text()]))];
         let mut third = query(Box::new(history));
         third.system = copy_of(b"Do it. @main");
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &third).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &third).expect("a valid query").0;
         assert_eq!((&*answer.parts, answer.finish), (&[Part::Text { text: copy_of(b"done") }][..], Finish::Stop));
         first.system = copy_of(b"@child, then @main");
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &first).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &first).expect("a valid query").0;
         assert_eq!(&*answer.parts, &[Part::Text { text: copy_of(b"hi") }]);
     }
 
@@ -744,7 +703,7 @@ mod tests {
         let scripts = [script(b"@main", Box::new([calls]))];
         let mut first = query(Box::new([user(Box::new([text()]))]));
         first.system = copy_of(b"@main");
-        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &first).expect("a valid query");
+        let answer = respond(&mut rng, &mut minted, &CONFIG, &scripts, &menu(), &first).expect("a valid query").0;
         assert_eq!((answer.finish, answer.usage.output), (Finish::Length, Some(100)));
         assert_eq!(called(answer.parts.first()), (&b"call_0000000000000001"[..], &b"ls"[..], &b"{}"[..]));
     }
@@ -763,17 +722,17 @@ mod tests {
             query.choice = crate::api::ToolChoice::None;
             let mut rng = Rng::new(seed);
             let mut minted = 0;
-            let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query).expect("valid choice");
+            let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query).expect("valid choice").0;
             assert_eq!(answer.finish, Finish::Stop);
             assert!(!super::calls_any(&answer.parts), "None calls no tool");
             query.choice = crate::api::ToolChoice::Only(Box::new([copy_of(b"other")]));
-            let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query).expect("valid choice");
+            let answer = respond(&mut rng, &mut minted, &CONFIG, &[], &menu(), &query).expect("valid choice").0;
             assert_eq!(called(answer.parts.first()).1, b"other");
             let config = Config { outside_choice: 1000, ..CONFIG };
-            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &query).expect("configured breach");
+            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &query).expect("configured breach").0;
             assert_eq!(called(answer.parts.first()).1, b"ls");
             query.choice = crate::api::ToolChoice::None;
-            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &query).expect("configured breach");
+            let answer = respond(&mut rng, &mut minted, &config, &[], &menu(), &query).expect("configured breach").0;
             assert_eq!(answer.finish, Finish::ToolCalls);
             assert!(super::calls_any(&answer.parts), "None breach still calls an offered tool");
         }

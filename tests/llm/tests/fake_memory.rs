@@ -73,16 +73,28 @@ fn exact_joint_menu_script_cap_and_all_delayed_slots_include_empty_part_wrappers
     let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config };
     for token in 1..=u64::from(config.calls) {
         meter.start();
-        step(&mut domain, &env, Event::Call { reply_to: ReplyTo::new(Token::new(token)), query: query() }, &mut out);
+        step(
+            &mut domain,
+            &env,
+            Event::Call { reply_to: ReplyTo::new(Token::new(token)), call: Token::new(token), query: query() },
+            &mut out,
+        );
         let measured = meter.end();
         assert!(out.pop().is_none(), "every admitted answer waits for its actual timer");
         meter.check(measured, bound, &"empty-part wrapper scratch plus all delayed slots");
     }
     assert_eq!(domain.calls(), config.calls, "every slab and alarm slot is live");
     meter.start();
-    step(&mut domain, &env, Event::Call { reply_to: ReplyTo::new(Token::new(99)), query: query() }, &mut out);
+    step(
+        &mut domain,
+        &env,
+        Event::Call { reply_to: ReplyTo::new(Token::new(99)), call: Token::new(99), query: query() },
+        &mut out,
+    );
     let measured = meter.end();
-    let Request::Reply { result, .. } = out.pop().expect("full slab refuses once");
+    let Request::Reply { result, .. } = out.pop().expect("full slab refuses once") else {
+        panic!("the call ends in one reply")
+    };
     assert_eq!(result, Err(Error::Overloaded));
     meter.check(measured, bound, &"one-over live-slot refusal");
     env.now = Time::from_nanos(1_000_000_000);
@@ -91,7 +103,9 @@ fn exact_joint_menu_script_cap_and_all_delayed_slots_include_empty_part_wrappers
         meter.start();
         fire(&mut domain, &env, &mut out);
         let measured = meter.end();
-        let Request::Reply { result, .. } = out.pop().expect("one actual delayed terminal");
+        let Request::Reply { result, .. } = out.pop().expect("one actual delayed terminal") else {
+            panic!("the call ends in one reply")
+        };
         let answer = result.expect("exact maximum answer cap admitted");
         assert_eq!(answer.parts.len(), ITEMS, "every empty Part wrapper reached output");
         assert!(answer.parts.iter().all(|part| matches!(part, Part::Text { text } if text.is_empty())));
@@ -113,10 +127,17 @@ fn exact_joint_menu_script_cap_and_all_delayed_slots_include_empty_part_wrappers
         limits: skein_fake_llm_domain::Config { answer_bytes: config.answer_bytes - 1, ..config },
     };
     let mut domain = Domain::configured(&env.limits, 7, scripts(), menu()).expect("same admitted input");
-    step(&mut domain, &env, Event::Call { reply_to: ReplyTo::new(Token::new(1)), query: query() }, &mut out);
+    step(
+        &mut domain,
+        &env,
+        Event::Call { reply_to: ReplyTo::new(Token::new(1)), call: Token::new(1), query: query() },
+        &mut out,
+    );
     env.now = Time::from_nanos(1_000_000_000);
     fire(&mut domain, &env, &mut out);
-    let Request::Reply { result, .. } = out.pop().expect("actual refusal terminal");
+    let Request::Reply { result, .. } = out.pop().expect("actual refusal terminal") else {
+        panic!("the call ends in one reply")
+    };
     assert_eq!(result, Err(Error::ContextTooLong), "empty wrappers count toward answer admission");
 }
 
@@ -134,7 +155,12 @@ fn exact_query_cap_is_accepted_and_one_byte_less_returns_one_actual_refusal() {
         meter.check(measured, bound, &"query-cap control startup");
         let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config };
         meter.start();
-        step(&mut domain, &env, Event::Call { reply_to: ReplyTo::new(Token::new(17)), query: query() }, &mut out);
+        step(
+            &mut domain,
+            &env,
+            Event::Call { reply_to: ReplyTo::new(Token::new(17)), call: Token::new(17), query: query() },
+            &mut out,
+        );
         let measured = meter.end();
         assert!(out.pop().is_none(), "query admission preserves actual delayed settlement");
         meter.check(measured, bound, &"exact or one-byte-over query admission");
@@ -144,7 +170,9 @@ fn exact_query_cap_is_accepted_and_one_byte_less_returns_one_actual_refusal() {
         meter.start();
         fire(&mut domain, &env, &mut out);
         let measured = meter.end();
-        let Request::Reply { to, result } = out.pop().expect("one actual query terminal");
+        let Request::Reply { to, result } = out.pop().expect("one actual query terminal") else {
+            panic!("the call ends in one reply")
+        };
         assert_eq!(to.into_token(), Token::new(17));
         if fits {
             let answer = result.expect("exact query cap admits the same query");
@@ -221,7 +249,12 @@ fn random_and_scripted_full_and_truncated_tool_scratch_stays_within_the_bound() 
                 parameters: Box::new([]),
             }]);
             query.max_tokens = max_tokens;
-            step(&mut domain, &env, Event::Call { reply_to: ReplyTo::new(Token::new(token)), query }, &mut out);
+            step(
+                &mut domain,
+                &env,
+                Event::Call { reply_to: ReplyTo::new(Token::new(token)), call: Token::new(token), query },
+                &mut out,
+            );
             let measured = meter.end();
             assert!(out.pop().is_none(), "full and truncated tools both await actual fire");
             meter.check(measured, bound, &"full tool generation and simultaneous truncation scratch");
@@ -232,7 +265,9 @@ fn random_and_scripted_full_and_truncated_tool_scratch_stays_within_the_bound() 
             meter.start();
             fire(&mut domain, &env, &mut out);
             let measured = meter.end();
-            let Request::Reply { to, result } = out.pop().expect("one actual tool terminal");
+            let Request::Reply { to, result } = out.pop().expect("one actual tool terminal") else {
+                panic!("the call ends in one reply")
+            };
             assert_eq!(to.into_token(), Token::new(token), "actual output preserves its reply right");
             let answer = result.expect("both full and truncated caller tools are admitted");
             if token == 1 {
@@ -351,14 +386,23 @@ fn the_cache_table_reaches_its_bound_under_the_counted_domain_footprint() {
         query.messages[0].parts = Box::new([Part::Text { text: b"abcd".as_slice().into() }]);
         let env = Env { now: Time::from_nanos(u64::from(scope) * 2_000_000_000), ..env };
         meter.start();
-        step(&mut domain, &env, Event::Call { reply_to: ReplyTo::new(Token::new(u64::from(scope))), query }, &mut out);
+        step(
+            &mut domain,
+            &env,
+            Event::Call {
+                reply_to: ReplyTo::new(Token::new(u64::from(scope))),
+                call: Token::new(u64::from(scope)),
+                query,
+            },
+            &mut out,
+        );
         let measured = meter.end();
         meter.check(measured, bound, &"full prefix table and oldest replacement");
         let later = Env { now: env.now.saturating_add(Duration::from_secs(1)), ..env };
         meter.start();
         fire(&mut domain, &later, &mut out);
         let measured = meter.end();
-        let Request::Reply { result, .. } = out.pop().unwrap();
+        let Request::Reply { result, .. } = out.pop().unwrap() else { panic!("the call ends in one reply") };
         let answer = result.unwrap();
         assert_eq!(answer.usage.cache_read, Some(0));
         drop(answer);

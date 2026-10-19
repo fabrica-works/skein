@@ -5,9 +5,9 @@
 use alloc::boxed::Box;
 use core::mem::size_of;
 
-use skein_lib::{Deadlines, Id, Slab};
+use skein_lib::{Deadlines, Id, Set, Slab};
 
-use crate::api::{Answer, Line, Message, Part, Query, Script, ToolSpec, Turn};
+use crate::api::{Answer, Line, Message, Part, Piece, Query, Script, ToolSpec, Turn};
 use crate::domain::{Call, Config};
 
 pub(crate) fn fits(bytes: Option<u64>, cap: u32) -> bool {
@@ -81,6 +81,16 @@ pub(crate) fn scripts(scripts: &[Script]) -> Option<u64> {
             total = total.checked_add(array(turn.lines.len(), size_of::<Line>())?)?;
             for line in &turn.lines {
                 let owned = match line {
+                    Line::Pieces { pieces } => {
+                        let mut owned = array(pieces.len(), size_of::<Piece>())?;
+                        for piece in pieces {
+                            owned = owned.checked_add(bytes(&piece.text)?)?;
+                            if let Some(name) = &piece.hold {
+                                owned = owned.checked_add(bytes(name)?)?;
+                            }
+                        }
+                        owned
+                    }
                     Line::Text { text } => bytes(text)?,
                     Line::Opaque { bytes: value } => bytes(value)?,
                     Line::Call { name, arguments } => bytes(name)?.checked_add(bytes(arguments)?)?,
@@ -103,6 +113,13 @@ pub(crate) fn scripted_answer(turn: &Turn) -> Option<u64> {
     let mut total = u64::try_from(turn.lines.len()).ok()?.checked_mul(u64::try_from(size_of::<Part>()).ok()?)?;
     for line in &turn.lines {
         let owned = match line {
+            Line::Pieces { pieces } => {
+                let mut owned: u64 = 0;
+                for piece in pieces {
+                    owned = owned.checked_add(bytes(&piece.text)?)?;
+                }
+                owned
+            }
             Line::Text { text } => bytes(text)?,
             Line::Opaque { bytes: value } => bytes(value)?,
             Line::Call { name, arguments } => bytes(name)?.checked_add(bytes(arguments)?)?.checked_add(21)?,
@@ -171,6 +188,7 @@ pub fn worst_case(config: &Config) -> Option<u64> {
     let scratch = query.checked_add(generated.checked_mul(3)?)?;
     Slab::<Call>::worst_case(config.calls)?
         .checked_add(Deadlines::<Id<Call>>::worst_case(config.calls)?)?
+        .checked_add(Set::<Id<Call>>::worst_case(config.calls)?)?
         .checked_add(scripts)?
         .checked_add(u64::from(config.calls).checked_mul(u64::from(config.answer_bytes))?)?
         .checked_add(scratch)?

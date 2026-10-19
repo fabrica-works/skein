@@ -221,9 +221,14 @@ impl Service {
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     pub fn target(&self, request: domain::Request) -> Result<(Token, domain::Request), domain::Request> {
-        let domain::Request::Reply { to, result } = request;
-        let token = to.into_token();
-        let request = domain::Request::Reply { to: ReplyTo::new(token), result };
+        let (token, request) = match request {
+            domain::Request::Reply { to, result } => {
+                let token = to.into_token();
+                (token, domain::Request::Reply { to: ReplyTo::new(token), result })
+            }
+            domain::Request::Piece { call, usage, text } => (call, domain::Request::Piece { call, usage, text }),
+            domain::Request::Hold { call, usage } => (call, domain::Request::Hold { call, usage }),
+        };
         let Some(call) = self.calls.get(Id::<Call>::from_token(token)) else {
             return Err(request);
         };
@@ -360,6 +365,7 @@ pub fn down(
 ) {
     let (to, result) = match request {
         domain::Request::Reply { to, result } => (to, result),
+        domain::Request::Piece { .. } | domain::Request::Hold { .. } => return,
     };
     let id = Id::<Call>::from_token(to.into_token());
     if server.call != Some(id) || server.state != State::Waiting {
@@ -757,7 +763,11 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
             };
             server.call = Some(id);
             server.state = State::Waiting;
-            above.push(Event::Domain(domain::Event::Call { reply_to: ReplyTo::new(id.token()), query }));
+            above.push(Event::Domain(domain::Event::Call {
+                reply_to: ReplyTo::new(id.token()),
+                call: id.token(),
+                query,
+            }));
         }
         Err(documents::Error::Malformed | documents::Error::TooLarge) => {
             response_error(server, service, env, api::Error::InvalidRequest);

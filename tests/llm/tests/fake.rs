@@ -382,7 +382,7 @@ fn actual_two_connection_routing_preserves_each_terminal_and_returns_a_closed_ro
     let Err(returned) = first.service.target(reply) else {
         panic!("closed actual connection cannot consume a delayed terminal");
     };
-    let skein_fake_llm_domain::Request::Reply { result, .. } = returned;
+    let skein_fake_llm_domain::Request::Reply { result, .. } = returned else { panic!("the call ends in one reply") };
     let answer = result.expect("same owned terminal is returned to caller");
     let [skein_fake_llm_domain::api::Part::Text { text }] = &*answer.parts else {
         panic!("same terminal part");
@@ -999,6 +999,9 @@ fn peer_native_request(
                 provider::Event::Domain(skein_fake_llm_domain::Event::Call { query, .. }) => {
                     return (Some(query), response);
                 }
+                provider::Event::Domain(skein_fake_llm_domain::Event::Release { .. }) => {
+                    unreachable!("the wire never releases a hold")
+                }
                 provider::Event::Head { .. } | provider::Event::Close | provider::Event::Closed => {}
             }
         }
@@ -1206,5 +1209,36 @@ fn actual_scopes_and_marked_tails_read_only_written_prefixes_and_unscoped_reads_
         world.request(client::Request::Close);
         world.settle();
         assert_eq!(domain.calls(), 0);
+    }
+}
+
+#[test]
+fn a_held_reply_reaches_the_client_only_after_its_release() {
+    use skein_fake_llm_domain::api::Piece;
+    for provider in [skein_llm::Provider::Anthropic, skein_llm::Provider::OpenAiCodex] {
+        let scripts = Box::new([Script {
+            cue: b"caller-script".as_slice().into(),
+            turns: Box::new([Turn {
+                lines: Box::new([Line::Pieces {
+                    pieces: Box::new([
+                        Piece { text: b"Hel".as_slice().into(), hold: None },
+                        Piece { text: b"lo".as_slice().into(), hold: Some(b"h".as_slice().into()) },
+                    ]),
+                }]),
+                finish: Finish::Stop,
+                tokens: 2,
+            }]),
+        }]);
+        let mut world = Exchange::new(input(provider, 1), limits(), scripts);
+        world.start();
+        while world.tick(true) {}
+        assert!(!world.seen.iter().any(|event| matches!(event, client::Event::Completed { .. })), "{provider:?}");
+        world.release(b"h");
+        world.run();
+        let answer = completion(&world);
+        assert!(
+            matches!(answer.content.as_ref(), [Block::Text { text, .. }] if text.as_ref() == b"Hello"),
+            "{provider:?}"
+        );
     }
 }

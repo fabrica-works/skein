@@ -581,6 +581,7 @@ impl Exchange {
                 provider::Event::Head { headers } => self.observe_head(headers),
                 provider::Event::Domain(event) => {
                     match &event {
+                        fake::Event::Release { .. } => unreachable!("the wire never releases a hold"),
                         fake::Event::Call { query, .. } => {
                             if let Some(observations) = self.observations {
                                 assert!(self.queries.len() < index(observations.queries), "query observation ceiling");
@@ -749,6 +750,11 @@ impl Exchange {
             }
         }
         false
+    }
+
+    /// Steps the domain with the owner's named release at once.
+    pub fn release(&mut self, name: &[u8]) {
+        fake::step(&mut self.fake, &self.fake_env, fake::Event::Release { name: name.into() }, &mut self.replies);
     }
 
     /// Drives the actual stack through complete HTTP drainage; never synthesizes a terminal.

@@ -33,7 +33,10 @@ pub mod api;
 mod cache;
 mod domain;
 mod limits;
+mod pieces;
 mod respond;
+#[cfg(test)]
+mod tests;
 
 pub use limits::worst_case;
 

@@ -5,10 +5,10 @@
 use alloc::boxed::Box;
 use core::mem;
 
-use skein_lib::{Deadlines, Duration, Env, Id, Queue, ReplyTo, Rng, Slab, Time};
+use skein_lib::{Deadlines, Duration, Env, Id, Queue, ReplyTo, Rng, Set, Slab, Time, Token};
 
-use crate::api::{Answer, Error, Query, Script};
-use crate::{cache, limits, respond};
+use crate::api::{Answer, Error, Query, Script, Usage};
+use crate::{cache, limits, pieces, respond};
 
 /// The most requests an entry point emits per call.
 ///
@@ -122,11 +122,17 @@ pub enum Event {
         ///
         /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
         reply_to: ReplyTo,
+        /// The protocol's stream token, echoed on pieces and holds.
+        call: Token,
         /// Owned bounded neutral provider request, independent of agent vocabulary.
         ///
         /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
         query: Query,
     },
+    /// Releases every call waiting at this name; sends nothing.
+    ///
+    /// Contract: docs/design/fake-llm.md, section 2.2.
+    Release { name: Box<[u8]> },
 }
 
 /// domain -> protocol
@@ -134,6 +140,14 @@ pub enum Event {
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Request {
+    /// One text piece before its call's terminal reply.
+    ///
+    /// Contract: docs/design/fake-llm.md, section 2.2.
+    Piece { call: Token, usage: Usage, text: Box<[u8]> },
+    /// The call waits for its owner to release a named hold.
+    ///
+    /// Contract: docs/design/fake-llm.md, section 2.2.
+    Hold { call: Token, usage: Usage },
     /// The answer to a `Call`: exactly one per call.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
@@ -155,6 +169,7 @@ pub enum Request {
 #[derive(Debug)]
 pub struct Domain {
     calls: Slab<Call>,
+    held: Set<Id<Call>>,
     /// When each call is answered.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
@@ -181,11 +196,16 @@ pub(crate) struct Call {
 }
 
 #[derive(Debug)]
-enum State {
+pub(crate) enum State {
+    Streaming(pieces::Stream),
+    Held(pieces::Stream),
     /// The answer is decided, and goes out when the call's timer fires.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
-    Thinking { reply_to: ReplyTo, result: Result<Answer, Error> },
+    Thinking {
+        reply_to: ReplyTo,
+        result: Result<Answer, Error>,
+    },
     /// Terminal: holds nothing.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
@@ -225,6 +245,9 @@ impl Domain {
         scripts: Box<[Script]>,
         menu: crate::api::Menu,
     ) -> Result<Domain, Error> {
+        if !pieces::valid(&scripts) {
+            return Err(Error::InvalidRequest);
+        }
         let held = match limits::scripts(&scripts) {
             Some(scripts) => match limits::menu(&menu) {
                 Some(menu) => scripts.checked_add(menu),
@@ -237,6 +260,7 @@ impl Domain {
         }
         Ok(Domain {
             calls: Slab::with_capacity(config.calls),
+            held: Set::with_capacity(config.calls),
             timers: Deadlines::with_capacity(config.calls),
             rng: Rng::new(seed),
             minted: 0,
@@ -286,7 +310,8 @@ impl Domain {
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 pub fn step(domain: &mut Domain, env: &Env<Config>, event: Event, out: &mut Queue<Request>) {
     match event {
-        Event::Call { reply_to, query } => call(domain, env, reply_to, &query, out),
+        Event::Call { reply_to, call: token, query } => call(domain, env, reply_to, token, &query, out),
+        Event::Release { name } => release(domain, env, &name),
     }
 }
 
@@ -301,22 +326,44 @@ pub fn fire(domain: &mut Domain, env: &Env<Config>, out: &mut Queue<Request>) {
     let state = mem::replace(&mut call.state, State::Closed);
     call.state = match state {
         State::Thinking { reply_to, result } => answer(reply_to, result, out),
+        State::Streaming(stream) => pieces::fire(stream, &domain.scripts, out),
+        State::Held(_) => unreachable!("a held call has no timer"),
         State::Closed => unreachable!("a closed call has no timer"),
     };
-    domain.calls.retire(id);
+    match &call.state {
+        State::Streaming(_) => arm(&mut domain.timers, &mut domain.rng, id, env),
+        State::Held(_) => {
+            domain.held.insert(id).expect("at most one hold per call");
+        }
+        State::Closed => {
+            domain.calls.retire(id);
+        }
+        State::Thinking { .. } => unreachable!("a fired answer ends its thinking"),
+    }
 }
 
-fn call(domain: &mut Domain, env: &Env<Config>, reply_to: ReplyTo, query: &Query, out: &mut Queue<Request>) {
+fn call(
+    domain: &mut Domain,
+    env: &Env<Config>,
+    reply_to: ReplyTo,
+    token: Token,
+    query: &Query,
+    out: &mut Queue<Request>,
+) {
     if domain.calls.is_full() {
         out.push(Request::Reply { to: reply_to, result: Err(Error::Overloaded) });
         return;
     }
     let config = &env.limits;
+    let mut place = None;
     let mut result = if !cache::valid(query) {
         Err(Error::InvalidRequest)
     } else if limits::fits(limits::query(query), config.query_bytes) {
         match respond::respond(&mut domain.rng, &mut domain.minted, config, &domain.scripts, &domain.menu, query) {
-            Ok(answer) if limits::fits(limits::answer(&answer), config.answer_bytes) => Ok(answer),
+            Ok((answer, position)) if limits::fits(limits::answer(&answer), config.answer_bytes) => {
+                place = position;
+                Ok(answer)
+            }
             Ok(_) => Err(Error::ContextTooLong),
             Err(error) => Err(error),
         }
@@ -340,11 +387,18 @@ fn call(domain: &mut Domain, env: &Env<Config>, reply_to: ReplyTo, query: &Query
         answer.usage.cache_read = Some(read);
         answer.usage.cache_write = Some(written);
     }
-    let latency = domain.rng.between(config.latency_min.as_nanos(), config.latency_max.as_nanos());
-    let call = Call { state: State::Thinking { reply_to, result } };
+    let state = match result {
+        Ok(answer) => match place {
+            Some(place) => {
+                State::Streaming(pieces::Stream { reply_to, call: token, answer, place, next: 0, passed: false })
+            }
+            None => State::Thinking { reply_to, result: Ok(answer) },
+        },
+        Err(error) => State::Thinking { reply_to, result: Err(error) },
+    };
+    let call = Call { state };
     let id = domain.calls.insert(call).expect("checked for room above");
-    let at = env.now.saturating_add(Duration::from_nanos(latency));
-    domain.timers.arm(id, at).expect("one timer per call fits");
+    arm(&mut domain.timers, &mut domain.rng, id, env);
 }
 
 /// Thinking, timer: the answer goes out.
@@ -353,4 +407,35 @@ fn call(domain: &mut Domain, env: &Env<Config>, reply_to: ReplyTo, query: &Query
 fn answer(reply_to: ReplyTo, result: Result<Answer, Error>, out: &mut Queue<Request>) -> State {
     out.push(Request::Reply { to: reply_to, result });
     State::Closed
+}
+
+fn arm(timers: &mut Deadlines<Id<Call>>, rng: &mut Rng, id: Id<Call>, env: &Env<Config>) {
+    let latency = rng.between(env.limits.latency_min.as_nanos(), env.limits.latency_max.as_nanos());
+    timers.arm(id, env.now.saturating_add(Duration::from_nanos(latency))).expect("one timer per call fits");
+}
+
+fn release(domain: &mut Domain, env: &Env<Config>, name: &[u8]) {
+    for _ in 0..domain.held.len() {
+        let mut found = None;
+        for id in &domain.held {
+            if pieces::held_at(&domain.calls.get(*id).expect("held call lives").state, &domain.scripts, name) {
+                found = Some(*id);
+                break;
+            }
+        }
+        let Some(id) = found else {
+            break;
+        };
+        domain.held.remove(&id);
+        let call = domain.calls.get_mut(id).expect("held call lives");
+        let state = mem::replace(&mut call.state, State::Closed);
+        call.state = match state {
+            State::Held(mut stream) => {
+                stream.passed = true;
+                State::Streaming(stream)
+            }
+            State::Streaming(_) | State::Thinking { .. } | State::Closed => unreachable!("found a held call"),
+        };
+        arm(&mut domain.timers, &mut domain.rng, id, env);
+    }
 }
