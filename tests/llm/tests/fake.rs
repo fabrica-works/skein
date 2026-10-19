@@ -1082,7 +1082,7 @@ fn independent_peer_refuses_mismatched_affinity_and_malformed_thread_before_disp
         assert_ne!(changed, wire, "control really mutates actual header bytes");
         let (query, response) = peer_native_request(changed.as_bytes(), skein_llm::Provider::OpenAiCodex);
         assert!(query.is_none(), "invalid affinity never enters the neutral domain");
-        assert!(response.starts_with(b"HTTP/1.1 400 "), "{:?}", String::from_utf8_lossy(&response));
+        assert!(response.starts_with(b"HTTP/1.1 403 "), "{:?}", String::from_utf8_lossy(&response));
     }
 }
 

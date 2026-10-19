@@ -402,17 +402,15 @@ impl Exchange {
             Provider::Anthropic => documents::Provider::Anthropic,
         };
         let peer_limits = limits(&bounds);
-        let service = provider::Service::new(
-            provider::Config {
-                usage_fields: options.usage_fields,
-                echo: options.echo,
-                provider,
-                path: endpoint.target,
-                headers: Box::new([]),
-            },
-            &peer_limits,
-        )
-        .expect("bounded independent peer");
+        let peer_config = provider::Config {
+            usage_fields: options.usage_fields,
+            echo: options.echo,
+            provider,
+            path: endpoint.target,
+            headers: Box::new([]),
+        };
+        provider::scripts(&peer_config, &credential, &scripts).expect("scripts represented on the peer route");
+        let service = provider::Service::new(peer_config, &peer_limits).expect("bounded independent peer");
         let server = provider::Server::new(Token::new(2), &peer_limits).expect("bounded peer connection");
         Self {
             machine,

@@ -5,14 +5,17 @@
 
 use crate::documents;
 
+mod failure;
 #[path = "pieces.rs"]
 mod pieces;
 use alloc::boxed::Box;
 use core::mem::size_of;
+use failure::response_error;
+pub use failure::scripts;
 use skein_fake_llm_domain::{self as domain, api};
 use skein_http::{Header, Method, server as http, sse::writer as sse};
 use skein_lib::stream::{Down, Read, Up};
-use skein_lib::{Decimal, Env, Id, List, Queue, ReplyTo, Slab, Token, bytes};
+use skein_lib::{Env, Id, List, Queue, ReplyTo, Slab, Token, bytes};
 use skein_llm::anthropic;
 use skein_llm::openai;
 
@@ -270,6 +273,8 @@ pub struct Server {
     reply: Option<Box<[u8]>>,
     reply_offset: usize,
     refused: Option<api::Error>,
+    credential: Option<u32>,
+    route: skein_llm::Provider,
     session: Option<[u8; 16]>,
     thread: Option<[u8; 16]>,
     writer_closed: bool,
@@ -302,6 +307,8 @@ impl Server {
             reply: None,
             reply_offset: 0,
             refused: None,
+            credential: None,
+            route: skein_llm::Provider::OpenAi,
             session: None,
             thread: None,
             writer_closed: false,
@@ -528,6 +535,30 @@ pub fn closed(
     above.push(Event::Closed);
 }
 
+fn authorized(
+    provider: documents::Provider,
+    credential: &skein_llm::Credential,
+    token: Option<&[u8]>,
+    account: Option<&[u8]>,
+) -> bool {
+    match token {
+        Some(token) => {
+            token == credential.value.as_ref()
+                && match provider {
+                    documents::Provider::Anthropic => true,
+                    documents::Provider::OpenAi => {
+                        if credential.account_id.is_empty() {
+                            account.is_none()
+                        } else {
+                            account == Some(credential.account_id.as_ref())
+                        }
+                    }
+                }
+        }
+        None => false,
+    }
+}
+
 fn entrance(
     server: &mut Server,
     service: &mut Service,
@@ -535,7 +566,9 @@ fn entrance(
     limits: &Limits,
     call: http::Call,
     above: &mut Queue<Event>,
-) {
+) -> Result<(), api::Error> {
+    server.route = failure::route_of(&service.config, credential);
+    server.credential = None;
     let identity = next_response(&mut service.count);
     server.response_id = identity.unwrap_or(0);
     server.refused = if identity.is_some() && call.method == Method::Post && call.target == service.config.path {
@@ -593,20 +626,7 @@ fn entrance(
         Some(value) => value.strip_prefix(b"Bearer "),
         None => None,
     };
-    let authorized = match token {
-        Some(token) => {
-            token == credential.value.as_ref()
-                && match service.config.provider {
-                    documents::Provider::Anthropic => true,
-                    documents::Provider::OpenAi => {
-                        account.is_some()
-                            && account == Some(credential.account_id.as_ref())
-                            && !credential.account_id.is_empty()
-                    }
-                }
-        }
-        None => false,
-    };
+    let authorized = authorized(service.config.provider, credential, token, account);
     for expected in &service.config.headers {
         let mut count = 0_u32;
         for header in &call.headers {
@@ -632,6 +652,10 @@ fn entrance(
     };
     above.push(Event::Head { headers: call.headers });
     demand_body(server, limits);
+    match server.refused {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 // Known lengths use bounded exact reads; unknown bodies read what has
@@ -751,7 +775,10 @@ fn http_event(
                 http::Reuse::Close => close(server, service, env, above, below),
             }
         }
-        http::Event::Call(call) => entrance(server, service, credential, &env.limits, call, above),
+        http::Event::Call(call) => match entrance(server, service, credential, &env.limits, call, above) {
+            Ok(()) => server.credential = Some(0),
+            Err(error) => server.refused = Some(error),
+        },
         http::Event::Ended
         | http::Event::Failed(_)
         | http::Event::Refused(_)
@@ -771,7 +798,8 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
         server.body.clear();
     }
     match query {
-        Ok(query) => {
+        Ok(mut query) => {
+            query.credential = server.credential;
             let scope = match query.caching {
                 api::Caching::Scope(key) => Some(key),
                 api::Caching::Unscoped | api::Caching::Marks(_) => None,
@@ -856,106 +884,6 @@ fn next_event(
         Ok(None) => writer_down(server, env, sse::Request::Finish),
         Err(documents::Error::Malformed | documents::Error::TooLarge) => close(server, service, env, above, below),
     }
-}
-
-fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, error: api::Error) {
-    let (status, kind, retry) = match error {
-        api::Error::Overloaded => (503, b"overloaded_error".as_slice(), None),
-        api::Error::RateLimited { retry_after } => (429, b"rate_limit_error".as_slice(), Some(retry_after)),
-        api::Error::Unavailable => (500, b"server_error".as_slice(), None),
-        api::Error::ContextTooLong => (400, b"context_length_exceeded".as_slice(), None),
-        api::Error::Unauthorized => (401, b"authentication_error".as_slice(), None),
-        api::Error::Exhausted { retry_after } => (429, b"usage_limit_reached".as_slice(), retry_after),
-        api::Error::Refused => (403, b"permission_error".as_slice(), None),
-        api::Error::Unsupported | api::Error::InvalidRequest => (400, b"invalid_request_error".as_slice(), None),
-    };
-    let body = match service.config.provider {
-        documents::Provider::Anthropic => {
-            let (kind, message) = match error {
-                api::Error::Unavailable => (b"api_error".as_slice(), b"api_error".as_slice()),
-                api::Error::ContextTooLong => (b"invalid_request_error".as_slice(), b"prompt is too long".as_slice()),
-                api::Error::Exhausted { .. } => (b"rate_limit_error".as_slice(), b"rate_limit_error".as_slice()),
-                api::Error::Overloaded
-                | api::Error::RateLimited { .. }
-                | api::Error::Unauthorized
-                | api::Error::Refused
-                | api::Error::Unsupported
-                | api::Error::InvalidRequest => (kind, kind),
-            };
-            let error = anthropic::ProviderError {
-                param: Box::new([]),
-                kind: bytes::copy_of(kind),
-                message: bytes::copy_of(message),
-                resets_in_seconds: None,
-                resets_at: None,
-            };
-            match openai::encode_error(&error, &env.limits.documents.anthropic) {
-                Ok(body) => body,
-                Err(
-                    anthropic::DecodeError::Malformed
-                    | anthropic::DecodeError::Missing
-                    | anthropic::DecodeError::WrongType
-                    | anthropic::DecodeError::TooLarge { .. },
-                ) => bytes::copy_of(b"{}"),
-            }
-        }
-        documents::Provider::OpenAi => {
-            let error = openai::ProviderError {
-                param: Box::new([]),
-                kind: bytes::copy_of(kind),
-                message: bytes::copy_of(kind),
-                resets_in_seconds: None,
-                resets_at: None,
-            };
-            match openai::encode_error(&error, &env.limits.documents.openai) {
-                Ok(body) => body,
-                Err(
-                    openai::DecodeError::Malformed
-                    | openai::DecodeError::Missing
-                    | openai::DecodeError::WrongType
-                    | openai::DecodeError::TooLarge { .. },
-                ) => bytes::copy_of(b"{}"),
-            }
-        }
-    };
-    let mut headers = List::with_capacity(3);
-    headers
-        .push(Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(b"application/json") })
-        .expect("two headers");
-    if let Some(delay) = retry {
-        let seconds = Decimal::of(delay.as_nanos().div_euclid(1_000_000_000));
-        headers
-            .push(Header { name: bytes::copy_of(b"retry-after"), value: bytes::copy_of(seconds.as_bytes()) })
-            .expect("second header");
-    }
-    if service.config.provider == documents::Provider::Anthropic {
-        match error {
-            api::Error::Exhausted { .. } => headers
-                .push(Header {
-                    name: bytes::copy_of(b"anthropic-ratelimit-unified-status"),
-                    value: bytes::copy_of(b"rejected"),
-                })
-                .expect("third header"),
-            api::Error::Overloaded
-            | api::Error::RateLimited { .. }
-            | api::Error::Unavailable
-            | api::Error::ContextTooLong
-            | api::Error::Unauthorized
-            | api::Error::Refused
-            | api::Error::Unsupported
-            | api::Error::InvalidRequest => {}
-        }
-    }
-    server.requests.push(http::Request::Respond(http::Response {
-        status,
-        headers: headers.into_boxed(),
-        body: http::Body::Length(u64::try_from(body.len()).expect("bounded document")),
-        close: false,
-    }));
-    server.reply = Some(body);
-    server.reply_offset = 0;
-    server.state = State::Erring;
-    server.requests.push(http::Request::Reply(Down::Demand { read: Read::Nothing, room: env.limits.http.send }));
 }
 
 fn send_error(server: &mut Server, env: &Env<Limits>) {

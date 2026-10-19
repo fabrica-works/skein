@@ -75,6 +75,7 @@ impl Peer {
         domain: domain::Domain,
         domain_limits: domain::Config,
     ) -> Result<Self, Error> {
+        provider::scripts(&config, &credential, domain.scripts()).map_err(|_| Error::Limits)?;
         transport::validate(&limits, transport)?;
         let bound = worst_case(&limits, &protocol_limits, &domain_limits, transport).ok_or(Error::Limits)?;
         if credential.value.len().checked_add(credential.account_id.len()).ok_or(Error::Limits)?

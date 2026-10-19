@@ -1,0 +1,295 @@
+//! Route-specific failure rows and script admission (fake-llm.md, 2.3).
+use super::{Config, Error, Limits, Server, Service, State};
+use crate::documents;
+use alloc::boxed::Box;
+use skein_fake_llm_domain::api;
+use skein_http::{Header, server as http};
+use skein_lib::stream::{Down, Read};
+use skein_lib::{Decimal, Env, List, bytes};
+use skein_llm::{Credential, Provider, Scheme, anthropic, openai};
+
+pub(super) struct Row {
+    pub status: u16,
+    pub code: &'static [u8],
+}
+
+pub(super) fn route_of(config: &Config, credential: &Credential) -> Provider {
+    match config.provider {
+        documents::Provider::Anthropic => Provider::Anthropic,
+        documents::Provider::OpenAi if credential.account_id.is_empty() => Provider::OpenAi,
+        documents::Provider::OpenAi => Provider::OpenAiCodex,
+    }
+}
+
+pub(super) fn row(route: Provider, error: api::Error) -> Option<Row> {
+    let (status, code): (_, &[u8]) = match route {
+        Provider::OpenAi | Provider::OpenAiCodex => match error {
+            api::Error::Exhausted { .. } if route == Provider::OpenAiCodex => (429, b"usage_limit_reached"),
+            api::Error::Exhausted { .. } => (429, b"subscription_sharing_usage_limit_exceeded"),
+            api::Error::RateLimited { .. } => (429, b"rate_limit_exceeded"),
+            api::Error::Refused => (403, b"subscription_sharing_user_not_eligible"),
+            api::Error::Unsupported => (400, b"subscription_sharing_unsupported_capability"),
+            api::Error::Overloaded => (503, b"overloaded_error"),
+            api::Error::Unavailable => (503, b"subscription_sharing_usage_unavailable"),
+            api::Error::ContextTooLong => (400, b"context_length_exceeded"),
+            api::Error::InvalidRequest => (403, b"subscription_sharing_route_not_supported"),
+            api::Error::Unauthorized => (401, b"invalid_api_key"),
+        },
+        Provider::Anthropic => match error {
+            api::Error::Exhausted { retry_after: Some(_) } | api::Error::RateLimited { .. } => {
+                (429, b"rate_limit_error")
+            }
+            api::Error::Exhausted { retry_after: None } => (402, b"billing_error"),
+            api::Error::Refused => (403, b"permission_error"),
+            api::Error::Overloaded => (529, b"overloaded_error"),
+            api::Error::Unavailable => (500, b"api_error"),
+            api::Error::ContextTooLong | api::Error::InvalidRequest => (400, b"invalid_request_error"),
+            api::Error::Unauthorized => (401, b"authentication_error"),
+            api::Error::Unsupported => return None,
+        },
+    };
+    Some(Row { status, code })
+}
+
+/// Refuses scripts whose failure class or reset has no representation on the route.
+///
+/// Contract: fake-llm.md, section 2.3.
+pub fn scripts(config: &Config, credential: &Credential, scripts: &[api::Script]) -> Result<(), Error> {
+    let route = route_of(config, credential);
+    for script in scripts {
+        for turn in &script.turns {
+            let mut preceding = false;
+            for line in &turn.lines {
+                match line {
+                    api::Line::Fail { error, credentials, .. } => {
+                        if row(route, *error).is_none() {
+                            return Err(Error::Limits);
+                        }
+                        if route == Provider::Anthropic
+                            && let api::Error::Exhausted { retry_after: Some(_) } = error
+                            && (preceding || credentials.is_empty() || credential.scheme != Scheme::Bearer)
+                        {
+                            return Err(Error::Limits);
+                        }
+                    }
+                    api::Line::Text { .. }
+                    | api::Line::Opaque { .. }
+                    | api::Line::Call { .. }
+                    | api::Line::Pieces { .. } => preceding = true,
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, error: api::Error) {
+    let Some(Row { status, code: kind }) = row(server.route, error) else {
+        return;
+    };
+    let retry = match error {
+        api::Error::RateLimited { retry_after } => Some(retry_after),
+        api::Error::Exhausted { .. }
+        | api::Error::Overloaded
+        | api::Error::Unavailable
+        | api::Error::ContextTooLong
+        | api::Error::Unauthorized
+        | api::Error::Refused
+        | api::Error::Unsupported
+        | api::Error::InvalidRequest => None,
+    };
+    let body = body(service.config.provider, error, kind, env);
+    let mut headers = List::with_capacity(3);
+    headers
+        .push(Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(b"application/json") })
+        .expect("two headers");
+    if let Some(delay) = retry {
+        let seconds = Decimal::of(delay.as_nanos().div_euclid(1_000_000_000));
+        headers
+            .push(Header { name: bytes::copy_of(b"retry-after"), value: bytes::copy_of(seconds.as_bytes()) })
+            .expect("second header");
+    }
+    if service.config.provider == documents::Provider::Anthropic {
+        match error {
+            api::Error::Exhausted { .. } => headers
+                .push(Header {
+                    name: bytes::copy_of(b"anthropic-ratelimit-unified-status"),
+                    value: bytes::copy_of(b"rejected"),
+                })
+                .expect("third header"),
+            api::Error::Overloaded
+            | api::Error::RateLimited { .. }
+            | api::Error::Unavailable
+            | api::Error::ContextTooLong
+            | api::Error::Unauthorized
+            | api::Error::Refused
+            | api::Error::Unsupported
+            | api::Error::InvalidRequest => {}
+        }
+    }
+    server.requests.push(http::Request::Respond(http::Response {
+        status,
+        headers: headers.into_boxed(),
+        body: http::Body::Length(u64::try_from(body.len()).expect("bounded document")),
+        close: false,
+    }));
+    server.reply = Some(body);
+    server.reply_offset = 0;
+    server.state = State::Erring;
+    server.requests.push(http::Request::Reply(Down::Demand { read: Read::Nothing, room: env.limits.http.send }));
+}
+
+fn body(provider: documents::Provider, error: api::Error, kind: &[u8], env: &Env<Limits>) -> Box<[u8]> {
+    match provider {
+        documents::Provider::Anthropic => {
+            let message = match error {
+                api::Error::ContextTooLong => b"prompt is too long".as_slice(),
+                api::Error::Exhausted { .. }
+                | api::Error::RateLimited { .. }
+                | api::Error::Overloaded
+                | api::Error::Unavailable
+                | api::Error::Unauthorized
+                | api::Error::Refused
+                | api::Error::Unsupported
+                | api::Error::InvalidRequest => kind,
+            };
+            let error = anthropic::ProviderError {
+                param: Box::new([]),
+                kind: bytes::copy_of(kind),
+                message: bytes::copy_of(message),
+                resets_in_seconds: None,
+                resets_at: None,
+            };
+            match openai::encode_error(&error, &env.limits.documents.anthropic) {
+                Ok(body) => body,
+                Err(
+                    anthropic::DecodeError::Malformed
+                    | anthropic::DecodeError::Missing
+                    | anthropic::DecodeError::WrongType
+                    | anthropic::DecodeError::TooLarge { .. },
+                ) => bytes::copy_of(b"{}"),
+            }
+        }
+        documents::Provider::OpenAi => {
+            let error = openai::ProviderError {
+                param: Box::new([]),
+                kind: bytes::copy_of(kind),
+                message: bytes::copy_of(kind),
+                resets_in_seconds: None,
+                resets_at: None,
+            };
+            match openai::encode_error(&error, &env.limits.documents.openai) {
+                Ok(body) => body,
+                Err(
+                    openai::DecodeError::Malformed
+                    | openai::DecodeError::Missing
+                    | openai::DecodeError::WrongType
+                    | openai::DecodeError::TooLarge { .. },
+                ) => bytes::copy_of(b"{}"),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use skein_lib::Duration;
+    use skein_llm::Provider::{Anthropic, OpenAi, OpenAiCodex};
+
+    fn rows() -> [(Provider, api::Error, u16, &'static [u8]); 29] {
+        let none = api::Error::Exhausted { retry_after: None };
+        let rate = api::Error::RateLimited { retry_after: Duration::ZERO };
+        [
+            (OpenAi, none, 429, b"subscription_sharing_usage_limit_exceeded"),
+            (OpenAiCodex, none, 429, b"usage_limit_reached"),
+            (Anthropic, none, 402, b"billing_error"),
+            (Anthropic, api::Error::Exhausted { retry_after: Some(Duration::ZERO) }, 429, b"rate_limit_error"),
+            (OpenAi, rate, 429, b"rate_limit_exceeded"),
+            (OpenAiCodex, rate, 429, b"rate_limit_exceeded"),
+            (Anthropic, rate, 429, b"rate_limit_error"),
+            (OpenAi, api::Error::Refused, 403, b"subscription_sharing_user_not_eligible"),
+            (OpenAiCodex, api::Error::Refused, 403, b"subscription_sharing_user_not_eligible"),
+            (Anthropic, api::Error::Refused, 403, b"permission_error"),
+            (OpenAi, api::Error::Unsupported, 400, b"subscription_sharing_unsupported_capability"),
+            (OpenAiCodex, api::Error::Unsupported, 400, b"subscription_sharing_unsupported_capability"),
+            (OpenAi, api::Error::Overloaded, 503, b"overloaded_error"),
+            (OpenAiCodex, api::Error::Overloaded, 503, b"overloaded_error"),
+            (Anthropic, api::Error::Overloaded, 529, b"overloaded_error"),
+            (OpenAi, api::Error::Unavailable, 503, b"subscription_sharing_usage_unavailable"),
+            (OpenAiCodex, api::Error::Unavailable, 503, b"subscription_sharing_usage_unavailable"),
+            (Anthropic, api::Error::Unavailable, 500, b"api_error"),
+            (OpenAi, api::Error::ContextTooLong, 400, b"context_length_exceeded"),
+            (OpenAiCodex, api::Error::ContextTooLong, 400, b"context_length_exceeded"),
+            (Anthropic, api::Error::ContextTooLong, 400, b"invalid_request_error"),
+            (OpenAi, api::Error::InvalidRequest, 403, b"subscription_sharing_route_not_supported"),
+            (OpenAiCodex, api::Error::InvalidRequest, 403, b"subscription_sharing_route_not_supported"),
+            (Anthropic, api::Error::InvalidRequest, 400, b"invalid_request_error"),
+            (OpenAi, api::Error::Unauthorized, 401, b"invalid_api_key"),
+            (OpenAiCodex, api::Error::Unauthorized, 401, b"invalid_api_key"),
+            (Anthropic, api::Error::Unauthorized, 401, b"authentication_error"),
+            (
+                OpenAi,
+                api::Error::Exhausted { retry_after: Some(Duration::ZERO) },
+                429,
+                b"subscription_sharing_usage_limit_exceeded",
+            ),
+            (OpenAiCodex, api::Error::Exhausted { retry_after: Some(Duration::ZERO) }, 429, b"usage_limit_reached"),
+        ]
+    }
+
+    #[test]
+    fn each_class_renders_its_routes_status_and_code() {
+        for (route, error, status, code) in rows() {
+            let got = row(route, error).expect("the class has a row");
+            assert_eq!((got.status, got.code), (status, code), "{route:?} {error:?}");
+        }
+    }
+
+    fn config() -> Config {
+        Config {
+            provider: documents::Provider::Anthropic,
+            path: b"/v1/messages".as_slice().into(),
+            headers: Box::new([]),
+            echo: openai::Echo::NONE,
+            usage_fields: documents::UsageFields::ALL,
+        }
+    }
+
+    fn script(error: api::Error, credentials: Box<[u32]>, after: bool) -> api::Script {
+        let fail = api::Line::Fail { error, report: api::Report::none(), credentials };
+        let lines: Box<[_]> = if after {
+            Box::new([api::Line::Text { text: b"text".as_slice().into() }, fail])
+        } else {
+            Box::new([fail])
+        };
+        api::Script {
+            cue: b"cue".as_slice().into(),
+            turns: Box::new([api::Turn { lines, finish: api::Finish::Stop, tokens: 1 }]),
+        }
+    }
+
+    #[test]
+    fn a_class_without_its_row_is_refused() {
+        let script = script(api::Error::Unsupported, Box::new([]), false);
+        assert_eq!(scripts(&config(), &Credential::bearer(b"token".as_slice().into()), &[script]), Err(Error::Limits));
+    }
+
+    #[test]
+    fn an_anthropic_reset_is_refused_off_a_first_bearer_line() {
+        for (after, named, scheme, expected) in [
+            (true, true, Scheme::Bearer, Err(Error::Limits)),
+            (false, false, Scheme::Bearer, Err(Error::Limits)),
+            (false, true, Scheme::Key, Err(Error::Limits)),
+            (false, true, Scheme::Bearer, Ok(())),
+        ] {
+            let credential = Credential { scheme, value: b"token".as_slice().into(), account_id: Box::new([]) };
+            let script = script(
+                api::Error::Exhausted { retry_after: Some(Duration::from_secs(1)) },
+                if named { Box::new([0]) } else { Box::new([]) },
+                after,
+            );
+            assert_eq!(scripts(&config(), &credential, &[script]), expected, "{after} {named} {scheme:?}");
+        }
+    }
+}
