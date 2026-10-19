@@ -50,6 +50,8 @@ pub enum Step {
     },
     Back,
     Forward,
+    /// Read the page's address; the story fails unless its path, query kept, is this one.
+    Address(Box<[u8]>),
 }
 enum Awaited {
     Trouble(Box<[u8]>),
@@ -185,6 +187,7 @@ impl Script {
     }
 }
 impl Play for Script {
+    #[expect(clippy::too_many_lines, reason = "one match lists the script's steps")]
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
         if self.await_step(face, now) {
             return Next::Wait { until: None };
@@ -233,6 +236,10 @@ impl Play for Script {
         match step {
             Step::Key(key) => {
                 face.key(key);
+                self.at += 1;
+            }
+            Step::Address(path) => {
+                face.read_address(&path);
                 self.at += 1;
             }
             Step::Taller { find, words } => self.growth = Some(growth::Growth::new(find, words)),

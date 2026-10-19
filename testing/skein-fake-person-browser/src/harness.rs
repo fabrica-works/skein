@@ -493,6 +493,7 @@ impl Runtime {
             | Event::Missed { .. }
             | Event::Done { .. }
             | Event::Refused { .. }
+            | Event::Address { .. }
             | Event::Snapshot { .. }
             | Event::Screenshot { .. }
             | Event::Closed { .. } => {}

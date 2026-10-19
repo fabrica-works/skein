@@ -34,6 +34,7 @@ pub struct BrowserFace<'a> {
     answer: Option<Found>,
     seen: Vec<(Seen, Option<Role>)>,
     acting: Option<Token>,
+    expected_path: Option<Box<[u8]>>,
     failure: Option<String>,
     trouble: Vec<Box<[u8]>>,
     warned: bool,
@@ -55,6 +56,7 @@ impl<'a> BrowserFace<'a> {
             answer: None,
             seen: Vec::new(),
             acting: None,
+            expected_path: None,
             failure: None,
             trouble: Vec::new(),
             warned: false,
@@ -150,6 +152,13 @@ impl<'a> BrowserFace<'a> {
         let op = self.token();
         self.acting = Some(op);
         self.requests.push(Request::Key { page: self.page, op, key });
+    }
+    /// Read the page's address; the failure names it unless its path, query kept, is `path`.
+    pub(crate) fn read_address(&mut self, path: &[u8]) {
+        let op = self.token();
+        self.acting = Some(op);
+        self.expected_path = Some(path.into());
+        self.requests.push(Request::Address { page: self.page, op });
     }
     pub(crate) fn focused(&self, node: NodeId) -> bool {
         self.seen.get(usize::try_from(node.0).expect("node fits")).is_some_and(|(seen, _)| seen.states.focused)
@@ -252,6 +261,20 @@ impl<'a> BrowserFace<'a> {
                 if self.acting == Some(*op) {
                     self.acting = None;
                     self.choice_key();
+                }
+            }
+            Event::Address { op, url } => {
+                if self.acting == Some(*op) {
+                    self.acting = None;
+                    if let Some(path) = self.expected_path.take()
+                        && url_path(url) != &*path
+                    {
+                        self.failure = Some(format!(
+                            "the page's address was {}, expected the path {}",
+                            String::from_utf8_lossy(url),
+                            String::from_utf8_lossy(&path)
+                        ));
+                    }
                 }
             }
             Event::Refused { op, why } => {
@@ -442,4 +465,11 @@ fn query_parts(target: &Target) -> (&'static [&'static [u8]], &[u8], Match) {
         Target::ExactRole { role, name } => (accessible(*role), name, Match::Exact),
         Target::Text { text } => (&[b"StaticText"], text, Match::Words),
     }
+}
+
+/// The URL from the first `/` after its `://`, query and fragment kept.
+fn url_path(url: &[u8]) -> &[u8] {
+    let rest =
+        url.windows(3).position(|window| window == b"://").map_or(url, |at| url.get(at + 3..).unwrap_or_default());
+    rest.iter().position(|byte| *byte == b'/').map_or(&[], |at| rest.get(at..).unwrap_or_default())
 }

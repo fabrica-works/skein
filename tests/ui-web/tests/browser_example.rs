@@ -87,12 +87,14 @@ fn a_person_opens_a_note_and_comes_back_by_its_link() {
             find: Find::exactly_named(Role::Heading { level: 1 }, b"Groceries"),
             within: SECOND,
         }),
+        harness::Step::Address(b"/notes/1".as_slice().into()),
         harness::Step::Title("Groceries · Notes".as_bytes().into()),
         harness::Step::Person(Step::Press { find: Find::exactly_named(Role::Link, b"Back to notes") }),
         harness::Step::Person(Step::See {
             find: Find::exactly_named(Role::Heading { level: 1 }, b"Notes"),
             within: SECOND,
         }),
+        harness::Step::Address(b"/".as_slice().into()),
     ]));
     assert_eq!(example_harness().run(&mut [&mut person]), Outcome::Done);
 }

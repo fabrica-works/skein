@@ -258,6 +258,9 @@ impl World {
             b"DOM.getNodeForLocation" if self.covered => r#"{"backendNodeId":99}"#,
             b"DOM.getNodeForLocation" => r#"{"backendNodeId":7}"#,
             b"DOM.describeNode" => r#"{"node":{"backendNodeId":7,"children":[]}}"#,
+            b"Page.getNavigationHistory" => {
+                r#"{"currentIndex":1,"entries":[{"id":1,"url":"https://example.test/"},{"id":2,"url":"https://example.test/notes/1"},{"id":3,"url":"https://example.test/notes/2"}]}"#
+            }
             b"Page.captureScreenshot" => r#"{"data":"iVBORw0KGgo="}"#,
             _ => "{}",
         }

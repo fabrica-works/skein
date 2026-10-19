@@ -77,6 +77,40 @@ fn a_navigation_holds_page_reads_until_load() {
     }
 }
 #[test]
+fn an_address_read_gives_the_current_entrys_url() {
+    let mut world = World::new();
+    world.start();
+    world.open();
+    world.sent.clear();
+    world.ask(Request::Address { page: PAGE, op: READ });
+    assert_eq!(methods(&world), vec![Box::from(b"Page.getNavigationHistory".as_slice())]);
+    match world.above.pop() {
+        Some(Event::Address { op, url }) => {
+            assert_eq!((op, &*url), (READ, b"https://example.test/notes/1".as_slice()));
+        }
+        other => panic!("expected Address, got {other:?}"),
+    }
+}
+#[test]
+fn an_address_read_waits_out_a_navigation() {
+    let mut world = navigating();
+    world.ask(Request::Address { page: PAGE, op: READ });
+    let during = methods(&world);
+    loaded(&mut world);
+    assert_eq!((during.len(), methods(&world)), (0, vec![Box::from(b"Page.getNavigationHistory".as_slice())]));
+}
+#[test]
+fn an_address_past_the_text_limit_is_refused() {
+    let mut world = World::with_limits(skein_browser::Limits { text: 16, ..skein_browser::Limits::default() });
+    world.start();
+    world.open();
+    world.ask(Request::Address { page: PAGE, op: READ });
+    match world.above.pop() {
+        Some(Event::Refused { op, why }) => assert_eq!((op, why), (READ, Refusal::Limit)),
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+#[test]
 fn a_held_await_keeps_its_deadline() {
     for expect in [Expect::Present, Expect::Absent] {
         let mut world = navigating();

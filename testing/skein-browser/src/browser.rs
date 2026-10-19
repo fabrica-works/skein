@@ -91,6 +91,7 @@ enum OpKind {
     Press { node: u64, point: Option<Point>, at: Option<(i64, i64)>, hit: Option<u64> },
     Type { text: Box<[u8]>, entry: Entry },
     Key(Key),
+    Address,
     Snapshot,
     Screenshot,
 }
@@ -146,6 +147,7 @@ enum Step {
     KeyDown,
     KeyUp,
     Character { offset: usize, down: bool },
+    Address,
     Snapshot,
     Screenshot,
 }
@@ -414,8 +416,12 @@ impl Browser {
             None => None,
         };
         let queued = self.queue_command(env, method, session.as_deref(), args, kind);
+        let address = if let PendingKind::Step(_, step) = kind { step == Step::Address } else { false };
         if queued
-            && (method.starts_with(b"Accessibility.") || method.starts_with(b"DOM.") || method == b"Runtime.evaluate")
+            && (method.starts_with(b"Accessibility.")
+                || method.starts_with(b"DOM.")
+                || method == b"Runtime.evaluate"
+                || address)
         {
             if let Some(command) = self.outgoing.back_mut() {
                 command.read = Some(page);
@@ -611,6 +617,12 @@ impl Browser {
                     return;
                 }
                 self.issue_key(env, op, key, true);
+            }
+            Request::Address { page, op } => {
+                if !self.admit_op(env, page, op, OpKind::Address) {
+                    return;
+                }
+                self.issue_step(env, op, b"Page.getNavigationHistory", &Params::Empty, Step::Address);
             }
             Request::Snapshot { page, op } => {
                 if !self.admit_op(env, page, op, OpKind::Snapshot) {
@@ -1156,6 +1168,7 @@ pub fn fire(browser: &mut Browser, env: &Env<Limits>, now: Time, above: &mut Que
                         | OpKind::Press { .. }
                         | OpKind::Type { .. }
                         | OpKind::Key(_)
+                        | OpKind::Address
                         | OpKind::Snapshot
                         | OpKind::Screenshot,
                     ..
@@ -1414,6 +1427,7 @@ impl Browser {
                     | OpKind::Press { .. }
                     | OpKind::Type { .. }
                     | OpKind::Key(_)
+                    | OpKind::Address
                     | OpKind::Snapshot
                     | OpKind::Screenshot => {}
                 }
@@ -1931,6 +1945,30 @@ impl Browser {
                     self.issue_key(env, token, key, false);
                 }
             }
+            Step::Address => {
+                let current = field_i64(result, b"currentIndex");
+                let entries = field_array(result, b"entries");
+                let (Some(current), Some(entries)) = (current, entries) else {
+                    self.finish_refused(token, Refusal::Protocol);
+                    return;
+                };
+                let mut url = None;
+                for (index, entry) in entries.enumerate() {
+                    if i64::try_from(index).ok() == Some(current) {
+                        url = field_text(entry, b"url");
+                        break;
+                    }
+                }
+                let Some(url) = url else {
+                    self.finish_refused(token, Refusal::Protocol);
+                    return;
+                };
+                if url.len() > usize::try_from(env.limits.text).expect("text limit fits usize") {
+                    self.finish_refused(token, Refusal::Limit);
+                } else if self.remove_op(token).is_some() {
+                    self.events.push_back(Event::Address { op: token, url });
+                }
+            }
             Step::Snapshot => {
                 let text = snapshot(result, env.limits.snapshot, env.limits.text);
                 if self.remove_op(token).is_some() {
@@ -2033,6 +2071,7 @@ impl Browser {
             | Step::KeyDown
             | Step::KeyUp
             | Step::Character { .. }
+            | Step::Address
             | Step::Snapshot
             | Step::Screenshot => unreachable!("only mouse steps reach mouse"),
         };

@@ -1,6 +1,7 @@
 use super::{Play, Script, Step};
+use crate::BrowserFace;
 use crate::tests::{face, found, seen};
-use skein_browser::boundary::{Key, Request};
+use skein_browser::boundary::{Event, Key, Request};
 use skein_fake_person::Find;
 use skein_lib::{Time, Token};
 use skein_ui::Role;
@@ -68,6 +69,45 @@ fn a_key_step_sends_the_kits_key() {
         face.requests().collect::<Vec<_>>(),
         vec![Request::Key { page: Token::new(7), op: Token::new(7_000_001), key: Key::Escape }]
     );
+}
+const ADDRESS_OP: Token = Token::new(7_000_001);
+fn address_step(path: &[u8]) -> (Script, BrowserFace<'static>) {
+    let mut script = Script::new(Box::new([Step::Address(path.into())]));
+    let mut face = face();
+    script.next(&mut face, Time::ZERO);
+    assert_eq!(face.requests().collect::<Vec<_>>(), vec![Request::Address { page: Token::new(7), op: ADDRESS_OP }]);
+    (script, face)
+}
+#[test]
+fn a_failed_address_step_names_both_addresses() {
+    let (_, mut face) = address_step(b"/notes/1");
+    face.event(&Event::Address { op: ADDRESS_OP, url: b"http://127.0.0.1:9000/notes/2".as_slice().into() });
+    assert!(!face.pending());
+    assert_eq!(
+        face.failure().as_deref(),
+        Some("the page's address was http://127.0.0.1:9000/notes/2, expected the path /notes/1")
+    );
+}
+#[test]
+fn an_address_step_passes_on_its_path() {
+    let (script, mut face) = address_step(b"/notes/1");
+    face.event(&Event::Address { op: ADDRESS_OP, url: b"http://127.0.0.1:9000/notes/1".as_slice().into() });
+    assert_eq!((face.failure(), script.at()), (None, 1));
+}
+#[test]
+fn an_address_step_compares_the_query_too() {
+    let (_, mut face) = address_step(b"/");
+    face.event(&Event::Address { op: ADDRESS_OP, url: b"http://127.0.0.1:9000/?secret=1".as_slice().into() });
+    assert_eq!(
+        face.failure().as_deref(),
+        Some("the page's address was http://127.0.0.1:9000/?secret=1, expected the path /")
+    );
+}
+#[test]
+fn an_address_answer_to_another_op_is_ignored() {
+    let (_, mut face) = address_step(b"/notes/1");
+    face.event(&Event::Address { op: Token::new(7_000_002), url: b"http://127.0.0.1:9000/".as_slice().into() });
+    assert_eq!((face.pending(), face.failure()), (true, None));
 }
 #[test]
 fn a_point_press_uses_the_found_figures_node() {

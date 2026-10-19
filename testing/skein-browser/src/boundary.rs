@@ -24,7 +24,8 @@ pub enum Down {
     Errors(stream::Down),
 }
 
-/// What the test asks a browser to do.
+/// What the test asks a browser to do. `Address` reads the page's address, its history's current
+/// entry; its terminal is `Event::Address` or `Refused`.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Request {
     Person { person: Token },
@@ -37,6 +38,7 @@ pub enum Request {
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Keys { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Key { page: Token, op: Token, key: Key },
+    Address { page: Token, op: Token },
     Snapshot { page: Token, op: Token },
     Screenshot { page: Token, op: Token },
     Close { entity: Token },
@@ -75,6 +77,11 @@ pub enum Event {
     Refused {
         op: Token,
         why: Refusal,
+    },
+    /// The URL an `Address` request read, whole, at most `Limits::text` bytes; terminal.
+    Address {
+        op: Token,
+        url: Box<[u8]>,
     },
     Snapshot {
         op: Token,
