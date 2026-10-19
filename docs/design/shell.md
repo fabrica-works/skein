@@ -474,6 +474,15 @@ every service's `main`.
 - **A supervisor's kill is a backstop** for a process that does not end:
   a bug, or an operation the kernel will not interrupt (notes.md). It is
   never how a healthy process ends.
+- **A crash closes nothing.** A process killed, or aborted by a panic
+  (section 6), runs none of this end: the children it started stay in
+  their own groups (io.md, 6) and outlive it, since io kills a child's
+  group only when it closes the child. A supervisor that restarts a
+  crashed service first ends its whole tree, every descendant at once,
+  as a systemd unit's control group is by default, and starts it again
+  on the same state only once nothing of the old tree runs. A
+  descendant still running at the restart is the supervisor's failure,
+  not the service's.
 - **Checked** in every world, by the teardown invariant
   (testing-strategy.md, 6), and in the real loop by `drive`'s own tests
   (section 9).

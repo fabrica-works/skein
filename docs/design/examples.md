@@ -413,6 +413,15 @@ processes, each a host of an `iterate` (a service, or a fake client):
     test that expects the tree to end with its binary fails on a process
     still running at its exit, naming it; one that measures a binary it
     does not own only kills and counts.
+  - **A crash on purpose.** A test that crashes its binary, to prove
+    what a restart finds, is its supervisor (shell.md, 13). It supervises
+    the tree (`Expectation::Supervise`), kills all of it at once
+    (`signal_tree`: `cgroup.kill`, or every process the walk has found),
+    expects nothing of the close a crash skips, and starts the binary
+    again on its directory only once the tree has settled. A process its
+    kill leaves keeps the tree from settling and fails the test at its
+    deadline, the kit's failure, not the binary's. Every other end of a
+    healthy binary is its own stop, and its tree ends with it.
 
 ## 7. Testing
 
