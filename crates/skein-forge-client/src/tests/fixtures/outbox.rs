@@ -141,7 +141,7 @@ impl Harness {
     }
 }
 pub(in crate::tests) fn comment() -> Write {
-    Write::Post { number: 9, key: Box::from(&b"deployment:task:milestone"[..]), body: Box::from(&b"done"[..]) }
+    Write::Post { number: 9, key: Box::from(&b"\x01\x00\x03kit:task:milestone"[..]), body: Box::from(&b"done"[..]) }
 }
 pub(in crate::tests) fn summary() -> api::Summary {
     api::Summary {
@@ -176,7 +176,7 @@ pub(in crate::tests) fn recovering_review() -> Harness {
         1,
         Write::Review {
             number: 9,
-            key: Box::from(&b"review-key"[..]),
+            key: Box::from(&b"\x01\x00\x03kitreview-key"[..]),
             verdict: api::Verdict::Approve,
             body: Box::from(&b"looks good"[..]),
         },
@@ -201,7 +201,7 @@ pub(in crate::tests) fn recovered_review(id: u64, provenance: api::Provenance, c
         author: 1,
         verdict: api::Verdict::Approve,
         commit,
-        key: Some(Box::from(&b"review-key"[..])),
+        key: Some(Box::from(&b"\x01\x00\x03kitreview-key"[..])),
         body: Box::new([]),
         at: at(100),
         official: true,

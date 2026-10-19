@@ -31,13 +31,14 @@ pub(super) fn listed(
                     d.outbox.entries.get(&number).expect("entry remains").entry.repository,
                     item.author,
                 ) && super::same_key(item.key.as_deref(), expected)
+                    && crate::identity::historical(d, expected)
                 {
                     found = Some(item.number);
                     break;
                 }
             }
             match found {
-                Some(item) => super::finished(d, number, Made::Created(item), true, out),
+                Some(item) => super::finished(d, env, number, Made::Created(item), true, out),
                 None if more => super::next(d, number, Phase::Find { page: page.saturating_add(1), after }),
                 None => super::retry::not_found(d, env, number, out),
             }
@@ -75,13 +76,14 @@ pub(super) fn comments_found(
         if original(comment.provenance)
             && crate::identity::writer(d, w.entry.repository, comment.author)
             && super::same_key(comment.key.as_deref(), expected)
+            && crate::identity::historical(d, expected)
         {
             found = Some(comment.id);
             break;
         }
     }
     match found {
-        Some(comment) => super::finished(d, number, Made::Commented(comment), true, out),
+        Some(comment) => super::finished(d, env, number, Made::Commented(comment), true, out),
         None if more => super::next(d, number, Phase::Find { page: 1, after: last }),
         None => super::retry::not_found(d, env, number, out),
     }
@@ -104,6 +106,7 @@ pub(super) fn reviews_found(
             && original(review.provenance)
             && crate::identity::writer(d, w.entry.repository, review.author)
             && super::same_key(review.key.as_deref(), expected)
+            && crate::identity::historical(d, expected)
         {
             let head = match w.entry.effect.condition {
                 Condition::Review { head } => head,
@@ -112,7 +115,13 @@ pub(super) fn reviews_found(
                 }
             };
             if review.commit != head {
-                super::finish(d, number, Outcome::Raced { made: Made::Reviewed(review.id), why: Error::Stale }, out);
+                super::finish(
+                    d,
+                    env,
+                    number,
+                    Outcome::Raced { made: Made::Reviewed(review.id), why: Error::Stale },
+                    out,
+                );
                 return;
             }
             found = Some(review.id);
@@ -131,7 +140,7 @@ pub(super) fn reviews_found(
         }
     };
     match found {
-        Some(review) => super::finished(d, number, Made::Reviewed(review), true, out),
+        Some(review) => super::finished(d, env, number, Made::Reviewed(review), true, out),
         None if more => super::next(d, number, Phase::Find { page: page.saturating_add(1), after: 0 }),
         None => super::retry::not_found(d, env, number, out),
     }
@@ -162,7 +171,7 @@ pub(super) fn compared(
         }
     };
     if empty {
-        super::finished(d, number, Made::Updated(head), true, out);
+        super::finished(d, env, number, Made::Updated(head), true, out);
     } else {
         super::retry::not_found(d, env, number, out);
     }

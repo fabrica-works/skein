@@ -1,5 +1,6 @@
 pub(super) mod keep;
 pub(super) mod outbox;
+pub(super) mod recovery;
 use super::REPO;
 use crate::{Domain, Event, Fact, Limits, Priority, Request, calls, fire, resume, step};
 use alloc::boxed::Box;
@@ -25,6 +26,9 @@ impl Harness {
     pub(in crate::tests) fn step(&mut self, event: Event) -> Box<[Request]> {
         let mut out = Queue::with_capacity(crate::max_out(&self.env.limits));
         step(&mut self.domain, &self.env, event, &mut out);
+        self.take(&mut out)
+    }
+    fn take(&mut self, out: &mut Queue<Request>) -> Box<[Request]> {
         self.domain.reclaim();
         let mut got = List::with_capacity(out.len());
         for _ in 0..out.len() {

@@ -155,7 +155,7 @@ pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Req
             d.identity_used = true;
             outbox::make(d, env, entry, true, out);
         }
-        Event::Withdraw { entry } => outbox::withdraw(d, entry, out),
+        Event::Withdraw { entry } => outbox::withdraw(d, env, entry, out),
         Event::Restore { record } => {
             d.identity_used = true;
             match record {

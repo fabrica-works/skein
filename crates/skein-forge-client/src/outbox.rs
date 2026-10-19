@@ -224,7 +224,7 @@ pub(crate) fn settle_done(d: &mut Domain) -> bool {
     d.outbox.settling = false;
     true
 }
-pub(crate) fn withdraw(d: &mut Domain, number: u64, out: &mut Queue<Request>) {
+pub(crate) fn withdraw(d: &mut Domain, env: &Env<Limits>, number: u64, out: &mut Queue<Request>) {
     let Some(writing) = d.outbox.entries.get(&number) else {
         return;
     };
@@ -240,7 +240,7 @@ pub(crate) fn withdraw(d: &mut Domain, number: u64, out: &mut Queue<Request>) {
             }
         }
     }
-    finish(d, number, Outcome::Withdrawn, out);
+    finish(d, env, number, Outcome::Withdrawn, out);
 }
 pub(crate) fn pump(d: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) -> bool {
     if !d.outbox.ready || d.outbox.paused || d.calls.is_full() {
@@ -365,13 +365,15 @@ fn check_phase(entry: &Entry) -> Phase {
         Condition::Merge { .. } | Condition::Update { .. } | Condition::Review { .. } => Phase::Check,
     }
 }
-fn finished(d: &mut Domain, number: u64, made: Made, found: bool, out: &mut Queue<Request>) {
-    finish(d, number, Outcome::Made { made, found }, out);
+fn finished(d: &mut Domain, env: &Env<Limits>, number: u64, made: Made, found: bool, out: &mut Queue<Request>) {
+    finish(d, env, number, Outcome::Made { made, found }, out);
 }
-fn finish(d: &mut Domain, number: u64, outcome: Outcome, out: &mut Queue<Request>) {
+fn finish(d: &mut Domain, env: &Env<Limits>, number: u64, outcome: Outcome, out: &mut Queue<Request>) {
     let w = d.outbox.entries.remove(&number).expect("settled entry lives");
     match outcome {
-        Outcome::Made { made, .. } | Outcome::Raced { made, .. } => crate::keep::echo::made(d, &w.entry, made, out),
+        Outcome::Made { made, .. } | Outcome::Raced { made, .. } => {
+            crate::keep::echo::made(d, env, &w.entry, made, out);
+        }
         Outcome::Failed(_) | Outcome::Uncertain | Outcome::Held | Outcome::Withdrawn => {}
     }
     d.alarms.cancel(Alarm::Entry(number));

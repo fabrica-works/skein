@@ -1,5 +1,6 @@
 use super::{
-    Domain, Echo, Entry, Keep, List, Live, Position, Queue, Repository, Request, Resource, Stored, Time, What, api,
+    Domain, Echo, Entry, Env, Keep, Limits, List, Live, Position, Queue, Repository, Request, Resource, Stored, Time,
+    What, api,
 };
 
 pub(super) fn is_echo(echoes: &[Echo], wanted: Echo) -> bool {
@@ -89,7 +90,7 @@ pub(crate) fn echo_room(k: &Keep, entry: &Entry) -> bool {
         None => true,
     }
 }
-pub(crate) fn made(d: &mut Domain, entry: &Entry, made: crate::Made, out: &mut Queue<Request>) {
+pub(crate) fn made(d: &mut Domain, env: &Env<Limits>, entry: &Entry, made: crate::Made, out: &mut Queue<Request>) {
     let Some(key) = live_for_entry(&d.keep, entry) else {
         return;
     };
@@ -119,5 +120,5 @@ pub(crate) fn made(d: &mut Domain, entry: &Entry, made: crate::Made, out: &mut Q
         row.record.echoes = echoes.into_boxed();
         out.push(Request::Save { record: Stored::Live(row.record.clone()) });
     }
-    row.hinted = true;
+    super::poll::nudge_resource(&mut d.alarms, env, &key, row);
 }

@@ -38,7 +38,7 @@ pub(super) fn failed(
         },
         Error::Unavailable => backoff(d, env, number, phase, out),
         Error::TooLarge => match phase {
-            Phase::Clock | Phase::Check | Phase::Make => super::finish(d, number, Outcome::Failed(error), out),
+            Phase::Clock | Phase::Check | Phase::Make => super::finish(d, env, number, Outcome::Failed(error), out),
             Phase::Find { .. } | Phase::Compare { .. } | Phase::AfterUpdate | Phase::AfterMerge { .. } => {
                 backoff(d, env, number, phase, out);
             }
@@ -47,7 +47,7 @@ pub(super) fn failed(
             let w = d.outbox.entries.get(&number).expect("missing answer belongs to live entry");
             match phase {
                 Phase::Find { .. } => match w.entry.effect.write {
-                    Write::DeleteBranch { .. } => super::finished(d, number, Made::Set, true, out),
+                    Write::DeleteBranch { .. } => super::finished(d, env, number, Made::Set, true, out),
                     Write::CreateBranch { .. }
                     | Write::OpenPull { .. }
                     | Write::CreateIssue { .. }
@@ -59,10 +59,10 @@ pub(super) fn failed(
                     | Write::SetReviewers { .. }
                     | Write::Close { .. }
                     | Write::Reopen { .. }
-                    | Write::Status { .. } => super::finish(d, number, Outcome::Failed(error), out),
+                    | Write::Status { .. } => super::finish(d, env, number, Outcome::Failed(error), out),
                 },
                 Phase::Make => match w.entry.effect.write {
-                    Write::DeleteBranch { .. } => super::finished(d, number, Made::Set, false, out),
+                    Write::DeleteBranch { .. } => super::finished(d, env, number, Made::Set, false, out),
                     Write::CreateIssue { .. }
                     | Write::OpenPull { .. }
                     | Write::Post { .. }
@@ -74,10 +74,10 @@ pub(super) fn failed(
                     | Write::Merge { .. }
                     | Write::Update { .. }
                     | Write::Status { .. }
-                    | Write::CreateBranch { .. } => super::finish(d, number, Outcome::Failed(error), out),
+                    | Write::CreateBranch { .. } => super::finish(d, env, number, Outcome::Failed(error), out),
                 },
                 Phase::Clock | Phase::Check | Phase::Compare { .. } | Phase::AfterUpdate | Phase::AfterMerge { .. } => {
-                    super::finish(d, number, Outcome::Failed(error), out);
+                    super::finish(d, env, number, Outcome::Failed(error), out);
                 }
             }
         }
@@ -87,7 +87,7 @@ pub(super) fn failed(
                 let phase = super::find(&w.entry);
                 super::next(d, number, phase);
             } else {
-                super::finish(d, number, Outcome::Failed(error), out);
+                super::finish(d, env, number, Outcome::Failed(error), out);
             }
         }
         Error::Forbidden
@@ -100,7 +100,7 @@ pub(super) fn failed(
         | Error::Conflict
         | Error::Protected
         | Error::Refused
-        | Error::Busy => super::finish(d, number, Outcome::Failed(error), out),
+        | Error::Busy => super::finish(d, env, number, Outcome::Failed(error), out),
     }
 }
 fn backoff(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, out: &mut Queue<Request>) {
@@ -108,7 +108,7 @@ fn backoff(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, out: &m
     w.entry.failures = w.entry.failures.saturating_add(1);
     let uncertain = w.uncertain;
     if w.entry.failures >= env.limits.write_attempts && !uncertain {
-        super::finish(d, number, Outcome::Failed(Error::Unavailable), out);
+        super::finish(d, env, number, Outcome::Failed(Error::Unavailable), out);
         return;
     }
     let mut delay = env.limits.backoff;
@@ -175,7 +175,7 @@ fn retain_uncertain(
         }
         match phase {
             Phase::AfterMerge { merged } => {
-                super::finish(d, number, Outcome::Raced { made: Made::Merged(merged), why: error }, out);
+                super::finish(d, env, number, Outcome::Raced { made: Made::Merged(merged), why: error }, out);
                 return true;
             }
             Phase::Clock
@@ -205,9 +205,9 @@ pub(super) fn not_found(d: &mut Domain, env: &Env<Limits>, number: u64, out: &mu
     let left = remaining(&w.entry, d.outbox.clock, env);
     if left == Duration::ZERO {
         if recovery(&w.entry.effect.write) == Recovery::Unrecoverable && !w.again {
-            super::finish(d, number, Outcome::Held, out);
+            super::finish(d, env, number, Outcome::Held, out);
         } else if w.entry.failures >= env.limits.write_attempts {
-            super::finish(d, number, Outcome::Failed(Error::Timeout), out);
+            super::finish(d, env, number, Outcome::Failed(Error::Timeout), out);
         } else {
             let phase = super::check_phase(&w.entry);
             d.outbox.entries.get_mut(&number).expect("entry remains").uncertain = false;

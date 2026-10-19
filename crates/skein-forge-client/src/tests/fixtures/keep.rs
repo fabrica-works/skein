@@ -16,6 +16,8 @@ pub(in crate::tests) struct Harness {
     pub(in crate::tests) kept: List<Result<(), Error>>,
     pub(in crate::tests) outcomes: List<Outcome>,
     pub(in crate::tests) drift: u32,
+    pub(in crate::tests) fresh_done: u32,
+    pub(in crate::tests) outbox_done: u32,
     pub(in crate::tests) failures: List<Error>,
     pub(in crate::tests) read_refusals: List<Error>,
 }
@@ -35,6 +37,8 @@ impl Harness {
             kept: List::with_capacity(10),
             outcomes: List::with_capacity(10),
             drift: 0,
+            fresh_done: 0,
+            outbox_done: 0,
             failures: List::with_capacity(10),
             read_refusals: List::with_capacity(10),
         };
@@ -80,9 +84,8 @@ impl Harness {
                     self.read_refusals.push(error).expect("read refusals fit");
                 }
                 Request::Read { result: Ok(_), .. } => panic!("no successful fresh parent read"),
-                Request::ReadAfreshDone | Request::OutboxDone => {
-                    panic!("ordinary keep test did not request restart phases")
-                }
+                Request::ReadAfreshDone => self.fresh_done = self.fresh_done.saturating_add(1),
+                Request::OutboxDone => self.outbox_done = self.outbox_done.saturating_add(1),
             }
         }
         self.domain.reclaim();
@@ -90,11 +93,14 @@ impl Harness {
     pub(in crate::tests) fn keep(&mut self, watches: Box<[Watch]>) {
         self.event(Event::Keep { owner: Token::new(1), watches });
     }
-    pub(in crate::tests) fn one(&mut self) -> Sent {
+    pub(in crate::tests) fn send(&mut self) -> Option<Sent> {
         let mut out = Queue::with_capacity(max_out(&self.env.limits));
         resume(&mut self.domain, &self.env, &mut out);
         self.take(&mut out);
-        self.calls.pop().expect("call ready")
+        self.calls.pop()
+    }
+    pub(in crate::tests) fn one(&mut self) -> Sent {
+        self.send().expect("call ready")
     }
     pub(in crate::tests) fn answer(&mut self, sent: Sent, answer: Answer) {
         self.event(Event::Answered { call: sent.call, cost: 1, result: Ok(answer) });

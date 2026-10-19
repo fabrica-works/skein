@@ -57,7 +57,7 @@ fn an_uncertain_comment_is_found_by_key_without_a_second_write() {
         author: 1,
         created: at(100),
         revision: 1,
-        key: Some(Box::from(&b"deployment:task:milestone"[..])),
+        key: Some(Box::from(&b"\x01\x00\x03kit:task:milestone"[..])),
         body: Box::new([]),
     };
     h.answer(find, Ok(Answer::Item { item: summary(), comments: Box::new([comment]), more: false }));
@@ -327,7 +327,7 @@ fn a_review_written_after_the_head_moves_is_classified_as_a_raced_effect() {
         1,
         Write::Review {
             number: 9,
-            key: Box::from(&b"review-key"[..]),
+            key: Box::from(&b"\x01\x00\x03kitreview-key"[..]),
             verdict: api::Verdict::Approve,
             body: Box::from(&b"looks good"[..]),
         },
@@ -346,7 +346,7 @@ fn a_review_written_after_the_head_moves_is_classified_as_a_raced_effect() {
         author: 1,
         verdict: api::Verdict::Approve,
         commit: [3; 32],
-        key: Some(Box::from(&b"review-key"[..])),
+        key: Some(Box::from(&b"\x01\x00\x03kitreview-key"[..])),
         body: Box::new([]),
         at: at(100),
         official: true,
@@ -379,7 +379,7 @@ fn a_copied_pending_key_cannot_establish_the_effects_outcome() {
         author: 2,
         created: at(100),
         revision: 1,
-        key: Some(Box::from(&b"deployment:task:milestone"[..])),
+        key: Some(Box::from(&b"\x01\x00\x03kit:task:milestone"[..])),
         body: Box::new([]),
     };
     h.answer(find, Ok(Answer::Item { item: summary(), comments: Box::new([copied]), more: true }));
@@ -392,7 +392,7 @@ fn a_copied_pending_key_cannot_establish_the_effects_outcome() {
         author: 1,
         created: at(100),
         revision: 1,
-        key: Some(Box::from(&b"deployment:task:milestone"[..])),
+        key: Some(Box::from(&b"\x01\x00\x03kit:task:milestone"[..])),
         body: Box::new([]),
     };
     h.answer(find, Ok(Answer::Item { item: summary(), comments: Box::new([own]), more: false }));
@@ -418,7 +418,7 @@ fn revised_or_unknown_comments_do_not_settle_an_uncertain_creation() {
             author: 1,
             created: at(100),
             revision: 2,
-            key: Some(Box::from(&b"deployment:task:milestone"[..])),
+            key: Some(Box::from(&b"\x01\x00\x03kit:task:milestone"[..])),
             body: Box::new([]),
         };
         h.answer(find, Ok(Answer::Item { item: summary(), comments: Box::new([row]), more: false }));
@@ -434,7 +434,7 @@ fn revised_or_unknown_comments_do_not_settle_an_uncertain_creation() {
             author: 1,
             created: at(100),
             revision: 1,
-            key: Some(Box::from(&b"deployment:task:milestone"[..])),
+            key: Some(Box::from(&b"\x01\x00\x03kit:task:milestone"[..])),
             body: Box::new([]),
         };
         h.answer(find, Ok(Answer::Item { item: summary(), comments: Box::new([original]), more: false }));

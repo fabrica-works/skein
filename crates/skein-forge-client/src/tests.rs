@@ -5,6 +5,7 @@ use fixtures::{Harness, Sent, at, configured, listing_item, terminal};
 mod keep;
 mod locate;
 mod outbox;
+mod recovery;
 use crate::{Domain, Event, Fact, Limits, Priority, Request, worst_case};
 use alloc::boxed::Box;
 use skein_forge::api::{self, Answer, Error, Op, Read, Repository, Write};

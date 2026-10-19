@@ -11,7 +11,7 @@ pub(crate) fn answered(
 ) {
     let w = d.outbox.entries.get(&number).expect("call owner remains");
     if w.withdrawn {
-        super::finish(d, number, Outcome::Withdrawn, out);
+        super::finish(d, env, number, Outcome::Withdrawn, out);
         return;
     }
     let phase = match w.state {
@@ -34,15 +34,15 @@ pub(crate) fn answered(
         Answer::Pull(pull) => pulled(d, env, number, phase, pull, out),
         Answer::Compare { commits, .. } => super::find::compared(d, env, number, phase, commits.is_empty(), out),
         Answer::Commit(commit) => branch_found(d, env, number, commit, out),
-        Answer::Created(item) => super::finished(d, number, Made::Created(item), false, out),
-        Answer::Commented(comment) => super::finished(d, number, Made::Commented(comment), false, out),
+        Answer::Created(item) => super::finished(d, env, number, Made::Created(item), false, out),
+        Answer::Commented(comment) => super::finished(d, env, number, Made::Commented(comment), false, out),
         Answer::Reviewed(_) => super::next(d, number, super::find(&w.entry)),
         Answer::Merged(commit) => {
             d.outbox.entries.get_mut(&number).expect("merge entry remains").uncertain = true;
             super::next(d, number, Phase::AfterMerge { merged: commit });
         }
-        Answer::Branch(created) => branch_created(d, number, created, out),
-        Answer::Done => done(d, number, out),
+        Answer::Branch(created) => branch_created(d, env, number, created, out),
+        Answer::Done => done(d, env, number, out),
         Answer::Statuses { .. }
         | Answer::Branches(_)
         | Answer::Remarks { .. }
@@ -62,9 +62,9 @@ fn branch_found(d: &mut Domain, env: &Env<Limits>, number: u64, commit: Commit, 
     match w.entry.effect.write {
         Write::CreateBranch { commit: expected, .. } => {
             if commit == expected {
-                super::finished(d, number, Made::Branch(commit), true, out);
+                super::finished(d, env, number, Made::Branch(commit), true, out);
             } else {
-                super::finish(d, number, Outcome::Failed(Error::Exists), out);
+                super::finish(d, env, number, Outcome::Failed(Error::Exists), out);
             }
         }
         Write::DeleteBranch { .. } => super::retry::not_found(d, env, number, out),
@@ -81,7 +81,13 @@ fn branch_found(d: &mut Domain, env: &Env<Limits>, number: u64, commit: Commit, 
         | Write::Status { .. } => unreachable!("branch read for branch effect"),
     }
 }
-fn branch_created(d: &mut Domain, number: u64, created: api::BranchCreation, out: &mut Queue<Request>) {
+fn branch_created(
+    d: &mut Domain,
+    env: &Env<Limits>,
+    number: u64,
+    created: api::BranchCreation,
+    out: &mut Queue<Request>,
+) {
     let w = d.outbox.entries.get(&number).expect("creation owns entry");
     match created {
         api::BranchCreation::Created => {
@@ -100,12 +106,12 @@ fn branch_created(d: &mut Domain, number: u64, created: api::BranchCreation, out
                 | Write::Status { .. }
                 | Write::DeleteBranch { .. } => unreachable!("branch creation terminal"),
             };
-            super::finished(d, number, Made::Branch(commit), false, out);
+            super::finished(d, env, number, Made::Branch(commit), false, out);
         }
         api::BranchCreation::Exists => super::next(d, number, super::find(&w.entry)),
     }
 }
-fn done(d: &mut Domain, number: u64, out: &mut Queue<Request>) {
+fn done(d: &mut Domain, env: &Env<Limits>, number: u64, out: &mut Queue<Request>) {
     let w = d.outbox.entries.get(&number).expect("terminal owns entry");
     match w.entry.effect.write {
         Write::Update { .. } => {
@@ -117,7 +123,7 @@ fn done(d: &mut Domain, number: u64, out: &mut Queue<Request>) {
         | Write::Close { .. }
         | Write::Reopen { .. }
         | Write::Status { .. }
-        | Write::DeleteBranch { .. } => super::finished(d, number, Made::Set, false, out),
+        | Write::DeleteBranch { .. } => super::finished(d, env, number, Made::Set, false, out),
         Write::CreateIssue { .. }
         | Write::OpenPull { .. }
         | Write::Post { .. }
@@ -132,7 +138,7 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
     match phase {
         Phase::Check => {
             if pull.state == api::State::Closed {
-                super::finish(d, number, Outcome::Failed(Error::Closed), out);
+                super::finish(d, env, number, Outcome::Failed(Error::Closed), out);
                 return;
             }
             let valid = match &w.entry.effect.condition {
@@ -161,7 +167,7 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
             if valid {
                 super::next(d, number, Phase::Make);
             } else {
-                super::finish(d, number, Outcome::Failed(Error::Stale), out);
+                super::finish(d, env, number, Outcome::Failed(Error::Stale), out);
             }
         }
         Phase::Find { .. } => match &w.entry.effect.write {
@@ -170,12 +176,13 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
                     if pull.state == api::State::Closed {
                         super::finish(
                             d,
+                            env,
                             number,
                             Outcome::Raced { made: Made::Created(pull.number), why: Error::Closed },
                             out,
                         );
                     } else {
-                        super::finished(d, number, Made::Created(pull.number), true, out);
+                        super::finished(d, env, number, Made::Created(pull.number), true, out);
                     }
                 } else {
                     super::retry::not_found(d, env, number, out);
@@ -184,9 +191,9 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
             Write::Merge { head, .. } => {
                 if let Some(merged) = pull.merged {
                     if pull.commit == *head {
-                        merge_verified(d, number, pull, merged, true, out);
+                        merge_verified(d, env, number, pull, merged, true, out);
                     } else {
-                        super::finish(d, number, Outcome::Failed(Error::Stale), out);
+                        super::finish(d, env, number, Outcome::Failed(Error::Stale), out);
                     }
                 } else {
                     super::retry::not_found(d, env, number, out);
@@ -212,7 +219,7 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
             | Write::CreateBranch { .. }
             | Write::DeleteBranch { .. } => unreachable!("pull find belongs to pull creation or transition"),
         },
-        Phase::AfterMerge { merged } => merge_verified(d, number, pull, merged, false, out),
+        Phase::AfterMerge { merged } => merge_verified(d, env, number, pull, merged, false, out),
         Phase::AfterUpdate => {
             let base = match w.entry.effect.condition {
                 Condition::Update { base, .. } => base,
@@ -227,7 +234,15 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
         }
     }
 }
-fn merge_verified(d: &mut Domain, number: u64, pull: api::Pull, merged: Commit, found: bool, out: &mut Queue<Request>) {
+fn merge_verified(
+    d: &mut Domain,
+    env: &Env<Limits>,
+    number: u64,
+    pull: api::Pull,
+    merged: Commit,
+    found: bool,
+    out: &mut Queue<Request>,
+) {
     let w = d.outbox.entries.get(&number).expect("merge entry remains");
     let base = match &w.entry.effect.condition {
         Condition::Merge { base } => base,
@@ -252,8 +267,8 @@ fn merge_verified(d: &mut Domain, number: u64, pull: api::Pull, merged: Commit, 
     };
     let made = Made::Merged(merged);
     if pull.base == *base && pull.commit == head && pull.merged == Some(merged) {
-        super::finished(d, number, made, found, out);
+        super::finished(d, env, number, made, found, out);
     } else {
-        super::finish(d, number, Outcome::Raced { made, why: Error::Stale }, out);
+        super::finish(d, env, number, Outcome::Raced { made, why: Error::Stale }, out);
     }
 }
