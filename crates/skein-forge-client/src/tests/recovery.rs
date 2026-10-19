@@ -21,8 +21,8 @@ fn restart_reads_before_settling_the_outbox() {
     h.event(Event::Make { entry: saved });
     h.event(Event::ReadAfresh);
     let listing = h.one();
-    assert_eq!(listing.op, Op::Read(Read::Items { since: at(100), page: 1, kind: None }));
-    h.answer(listing, Answer::Items { items: Box::new([]), more: false, now: at(100) });
+    assert_eq!(listing.op, Op::Read(Read::Items { since: at(fixture::START_AT), page: 1, kind: None }));
+    h.answer(listing, Answer::Items { items: Box::new([]), more: false, now: at(fixture::START_AT) });
     let object = h.one();
     assert_eq!(object.op, Op::Read(Read::Item { number: 9, after: u64::MAX }));
     h.answer(object, fixture::empty_item());
@@ -38,14 +38,7 @@ fn restart_reads_before_settling_the_outbox() {
 }
 #[test]
 fn remake_releases_a_held_entry() {
-    let mut h = fixture::uncertain_comment();
-    let saved = h.store.get(&1).expect("saved uncertain entry").clone();
-    let find = h.one();
-    h.answer(find, Ok(fixture::empty_item()));
-    h.fire(111);
-    let find = h.one();
-    h.answer(find, Ok(fixture::empty_item()));
-    assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Uncertain), (1, Outcome::Held)]);
+    let (mut h, saved) = fixture::held_comment();
     h.store.insert(1, saved.clone()).expect("durable held entry");
     h.step(Event::Remake { entry: saved });
     let find = h.one();
@@ -60,9 +53,9 @@ fn remake_releases_a_held_entry() {
 fn restore_refuses_bad_pages() {
     for (name, review, page) in [
         ("comment zero", false, 0),
-        ("comment overflow", false, LIMITS.inbox + 1),
+        ("comment overflow", false, fixture::EXCESS_INBOX),
         ("review zero", true, 0),
-        ("review overflow", true, LIMITS.inbox + 1),
+        ("review overflow", true, fixture::EXCESS_INBOX),
     ] {
         let mut row = fixture::live();
         if review {
@@ -76,9 +69,9 @@ fn restore_refuses_bad_pages() {
 #[test]
 fn restore_refuses_bad_stamps() {
     for (name, review, count, duplicate) in [
-        ("comments overflow", false, LIMITS.inbox + 1, false),
+        ("comments overflow", false, fixture::EXCESS_INBOX, false),
         ("comments repeated", false, 2, true),
-        ("reviews overflow", true, LIMITS.inbox + 1, false),
+        ("reviews overflow", true, fixture::EXCESS_INBOX, false),
         ("reviews repeated", true, 2, true),
     ] {
         let mut row = fixture::live();
@@ -102,17 +95,17 @@ fn restore_refuses_oversized_caches() {
         if pull {
             let mut value = kept::current();
             if bytes {
-                value.head = fixture::repeated(b'a', LIMITS.answer_bytes + 1);
+                value.head = fixture::repeated(b'a', fixture::EXCESS_ANSWER_BYTES);
             } else {
-                value.reviewers = fixture::repeated(7, LIMITS.rows + 1);
+                value.reviewers = fixture::repeated(7, fixture::EXCESS_ROWS);
             }
             row.cached.pull = Some(value);
         } else {
             let mut value = kept::summary();
             if bytes {
-                value.title = fixture::repeated(b'a', LIMITS.answer_bytes + 1);
+                value.title = fixture::repeated(b'a', fixture::EXCESS_ANSWER_BYTES);
             } else {
-                value.labels = Box::new([Box::new([]), Box::new([]), Box::new([]), Box::new([]), Box::new([])]);
+                value.labels = fixture::repeated(Box::<[u8]>::default(), fixture::EXCESS_ROWS);
             }
             row.cached.item = Some(value);
         }
@@ -122,7 +115,7 @@ fn restore_refuses_oversized_caches() {
 #[test]
 fn restore_refuses_oversized_echoes() {
     let mut row = fixture::live();
-    row.echoes = fixture::repeated(Echo::Comment(1), LIMITS.rows + 1);
+    row.echoes = fixture::repeated(Echo::Comment(1), fixture::EXCESS_ROWS);
     fixture::bad_live("echo overflow", row);
 }
 #[test]
@@ -133,7 +126,7 @@ fn restore_refuses_unpaired_rows() {
 #[test]
 fn restore_refuses_capacity_overflow() {
     for (name, repositories, count) in
-        [("resources", false, LIMITS.resources + 1), ("repositories", true, LIMITS.repositories + 1)]
+        [("resources", false, fixture::EXCESS_RESOURCES), ("repositories", true, fixture::EXCESS_REPOSITORIES)]
     {
         let mut rows = List::with_capacity(count + 1);
         for index in 0..count {
@@ -157,7 +150,7 @@ fn restore_refuses_capacity_overflow() {
 fn restore_refuses_invalid_watches() {
     for (name, what, participating) in [
         ("empty branch", What::Branch(Box::new([])), false),
-        ("long branch", What::Branch(fixture::repeated(b'a', LIMITS.op_bytes + 1)), false),
+        ("long branch", What::Branch(fixture::repeated(b'a', fixture::EXCESS_OP_BYTES)), false),
         ("participating repository", What::Repository, true),
         ("participating branch", kept::branch().what, true),
     ] {
@@ -180,7 +173,7 @@ fn keep_refuses_invalid_participation() {
 }
 #[test]
 fn keep_refuses_invalid_branch_names() {
-    for branch in [Box::from(&b""[..]), fixture::repeated(b'a', LIMITS.op_bytes + 1)] {
+    for branch in [Box::from(&b""[..]), fixture::repeated(b'a', fixture::EXCESS_OP_BYTES)] {
         let mut h = fixture::ready();
         let watch = kept::watch(Resource { repository: REPO, what: What::Branch(branch) }, false);
         assert_eq!(
@@ -209,15 +202,26 @@ fn keep_is_busy_around_failed_restore() {
 }
 #[test]
 fn oversized_hints_read_nothing() {
-    for (name, resource, change, key) in [
-        ("branch", kept::branch(), Change::Branch(fixture::repeated(b'a', LIMITS.op_bytes + 1)), None),
-        ("key", kept::issue(), Change::Item(9), Some(fixture::repeated(b'a', LIMITS.op_bytes + 1))),
+    for (name, resource, change, key, answer) in [
+        (
+            "branch",
+            kept::branch(),
+            Change::Branch(fixture::repeated(b'a', fixture::EXCESS_OP_BYTES)),
+            None,
+            Answer::Commit([1; 32]),
+        ),
+        (
+            "key",
+            kept::issue(),
+            Change::Item(9),
+            Some(fixture::repeated(b'a', fixture::EXCESS_OP_BYTES)),
+            fixture::empty_item(),
+        ),
     ] {
         let mut h = kept::Harness::new();
         h.keep(Box::new([kept::watch(resource, false)]));
         h.clock();
         let sent = h.one();
-        let answer = if name == "branch" { Answer::Commit([1; 32]) } else { fixture::empty_item() };
         h.answer(sent, answer);
         while h.domain.pop_fact().is_some() {}
         let deadline = h.domain.next_deadline();
@@ -279,7 +283,7 @@ fn max_out_covers_floor_and_batch() {
 #[test]
 fn invalid_reads_make_no_call() {
     for read in [
-        Read::Items { since: at(100), page: 0, kind: None },
+        Read::Items { since: at(fixture::START_AT), page: 0, kind: None },
         Read::Reviews { number: 9, page: 0 },
         Read::Statuses { commit: [1; 32], page: 0 },
         Read::Remarks { number: 9, review: 1, page: 0 },
@@ -287,11 +291,11 @@ fn invalid_reads_make_no_call() {
         Read::Collaborators { page: 0 },
         Read::File { head: [1; 32], path: Box::new([]), max_bytes: 1 },
         Read::File { head: [1; 32], path: Box::from(&b"kit"[..]), max_bytes: 0 },
-        Read::File { head: [1; 32], path: Box::from(&b"kit"[..]), max_bytes: LIMITS.answer_bytes + 1 },
+        Read::File { head: [1; 32], path: Box::from(&b"kit"[..]), max_bytes: fixture::EXCESS_ANSWER_BYTES },
         Read::Job { attempt: api::JobAttempt { head: [1; 32], run: 1, job: 1, attempt: 1 }, max_bytes: 0 },
         Read::Job {
             attempt: api::JobAttempt { head: [1; 32], run: 1, job: 1, attempt: 1 },
-            max_bytes: LIMITS.answer_bytes + 1,
+            max_bytes: fixture::EXCESS_ANSWER_BYTES,
         },
     ] {
         fixture::refused_read(read);
@@ -304,11 +308,11 @@ fn rate_refused_writes_save_a_new_attempt() {
     h.clock();
     let sent = h.one();
     let saved = h.store.get(&1).expect("saved attempt").clone();
-    assert_eq!(saved.attempt.expect("saved attempt").deadline, at(111));
+    assert_eq!(saved.attempt.expect("saved attempt").deadline, at(fixture::ATTEMPT_DEADLINE));
     let call = sent.call;
     h.answer(sent, Err(Error::RateLimited { after: Duration::from_secs(2) }));
-    h.env.wall = Wall::from_nanos(at(102).as_nanos());
-    h.fire(102);
+    h.env.wall = Wall::from_nanos(at(fixture::RETRY_AT).as_nanos());
+    h.fire(fixture::RETRY_AT);
     let resent = h.one();
     assert_ne!(resent.call, call);
     assert_eq!(resent.op, Op::Write(writing::comment()));
@@ -318,16 +322,19 @@ fn rate_refused_writes_save_a_new_attempt() {
     assert_eq!(
         entry.attempt,
         Some(crate::Attempt {
-            sent: at(102),
-            deadline: at(113),
+            sent: at(fixture::RETRY_AT),
+            deadline: at(fixture::RETRY_DEADLINE),
             wall: h.env.wall,
-            expires: Wall::from_nanos(at(113).as_nanos())
+            expires: Wall::from_nanos(at(fixture::RETRY_DEADLINE).as_nanos())
         })
     );
     h.answer(resent, Err(Error::Timeout));
     let find = h.one();
     assert_eq!(find.op, Op::Read(Read::Item { number: 9, after: 0 }));
-    assert_eq!(h.store.get(&1).expect("find keeps attempt").attempt.expect("attempt").deadline, at(113));
+    assert_eq!(
+        h.store.get(&1).expect("find keeps attempt").attempt.expect("attempt").deadline,
+        at(fixture::RETRY_DEADLINE)
+    );
 }
 #[test]
 fn attempted_or_unknown_withdrawals_are_noops() {
@@ -352,15 +359,15 @@ fn attempted_or_unknown_withdrawals_are_noops() {
 fn echo_landing_rearms_the_resting_resource() {
     for (name, review) in [("comment", false), ("review", true)] {
         let (mut h, resource) = fixture::resting_echo(review);
-        assert_eq!(h.domain.next_deadline(), Some(at(160)), "{name}");
+        assert_eq!(h.domain.next_deadline(), Some(at(fixture::RESTING_AT)), "{name}");
         fixture::land_echo(&mut h, review);
         assert_eq!(
             h.record(&resource).echoes.as_ref(),
             &[if review { Echo::Review(9) } else { Echo::Comment(9) }],
             "{name}"
         );
-        assert_eq!(h.domain.next_deadline(), Some(at(101)), "{name}");
-        h.fire(101);
+        assert_eq!(h.domain.next_deadline(), Some(at(fixture::HINT_AT)), "{name}");
+        h.fire(fixture::HINT_AT);
         let object = h.one();
         assert_eq!(object.op, Op::Read(Read::Item { number: 9, after: 0 }), "{name}");
         let mut own = kept::comment(9);
@@ -399,7 +406,7 @@ fn issue_find_requires_a_believed_key_without_provenance() {
         item.key = Some(Box::from(key));
         item.author = author;
         let find = h.one();
-        h.answer(find, Ok(Answer::Items { items: Box::new([item.clone()]), more: false, now: at(100) }));
+        h.answer(find, Ok(Answer::Items { items: Box::new([item.clone()]), more: false, now: at(fixture::START_AT) }));
         if found {
             assert_eq!(
                 h.outcomes.as_slice().last(),
@@ -408,9 +415,12 @@ fn issue_find_requires_a_believed_key_without_provenance() {
             );
         } else {
             assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Uncertain)], "{name}");
-            h.fire(111);
+            h.fire(fixture::ATTEMPT_DEADLINE);
             let find = h.one();
-            h.answer(find, Ok(Answer::Items { items: Box::new([item]), more: false, now: at(111) }));
+            h.answer(
+                find,
+                Ok(Answer::Items { items: Box::new([item]), more: false, now: at(fixture::ATTEMPT_DEADLINE) }),
+            );
             assert_eq!(h.outcomes.as_slice().last(), Some(&(1, Outcome::Held)), "{name}");
         }
         assert_eq!(h.writes, 1, "{name}");
@@ -435,7 +445,7 @@ fn comment_and_review_finds_require_believed_original_keys() {
                 );
             } else {
                 assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Uncertain)], "{name} review={review}");
-                h.fire(111);
+                h.fire(fixture::ATTEMPT_DEADLINE);
                 let find = h.one();
                 h.answer(find, Ok(answer));
                 assert_eq!(h.outcomes.as_slice().last(), Some(&(1, Outcome::Held)), "{name} review={review}");
@@ -481,7 +491,7 @@ fn exists_after_a_write_finds_under_its_attempt() {
     h.clock();
     let write = h.one();
     let saved = h.store.get(&1).expect("durable attempt").clone();
-    assert_eq!(saved.attempt.expect("attempt").deadline, at(111));
+    assert_eq!(saved.attempt.expect("attempt").deadline, at(fixture::ATTEMPT_DEADLINE));
     h.answer(write, Err(Error::Exists));
     let find = h.one();
     assert_eq!(find.op, Op::Read(Read::PullFor { head: Box::from(&b"topic"[..]), base: Box::from(&b"main"[..]) }));
@@ -489,4 +499,70 @@ fn exists_after_a_write_finds_under_its_attempt() {
     h.answer(find, Ok(Answer::Pull(kept::current())));
     assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Made { made: Made::Created(9), found: true })]);
     assert_eq!(h.writes, 1);
+}
+
+#[test]
+fn uncertain_comment_becomes_held_at_its_deadline() {
+    let (h, _) = fixture::held_comment();
+    assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Uncertain), (1, Outcome::Held)]);
+}
+#[test]
+fn fresh_paired_restoration_accepts_keep() {
+    fixture::accepted_live("corrected generic", fixture::live());
+}
+#[test]
+fn restore_accepts_exact_page_and_stamp_bounds() {
+    for review in [false, true] {
+        let mut page = fixture::live();
+        if review {
+            page.review_page = LIMITS.inbox;
+        } else {
+            page.comment_page = LIMITS.inbox;
+        }
+        fixture::accepted_live("exact page", page);
+        let mut stamps = fixture::live();
+        if review {
+            stamps.reviews = fixture::deliveries(LIMITS.inbox, false);
+        } else {
+            stamps.comments = fixture::deliveries(LIMITS.inbox, false);
+        }
+        fixture::accepted_live("exact stamps", stamps);
+    }
+}
+#[test]
+fn restore_accepts_exact_cache_and_echo_row_bounds() {
+    let mut item = fixture::live();
+    let mut summary = kept::summary();
+    summary.labels = fixture::repeated(Box::<[u8]>::default(), LIMITS.rows);
+    item.cached.item = Some(summary);
+    fixture::accepted_live("item rows", item);
+    let mut pull = fixture::live();
+    let mut current = kept::current();
+    current.reviewers = fixture::repeated(7, LIMITS.rows);
+    pull.cached.pull = Some(current);
+    fixture::accepted_live("pull rows", pull);
+    let mut echoes = fixture::live();
+    echoes.echoes = fixture::repeated(Echo::Comment(1), LIMITS.rows);
+    fixture::accepted_live("echo rows", echoes);
+}
+#[test]
+fn restore_accepts_exact_cached_byte_bounds() {
+    let mut item = fixture::live();
+    let mut summary = kept::summary();
+    summary.title = fixture::repeated(b'a', LIMITS.answer_bytes);
+    item.cached.item = Some(summary);
+    fixture::accepted_live("item bytes", item);
+    let mut pull = fixture::live();
+    let mut current = kept::current();
+    current.head = fixture::repeated(b'a', fixture::PULL_HEAD_BOUND);
+    pull.cached.pull = Some(current);
+    fixture::accepted_live("pull bytes", pull);
+}
+#[test]
+fn restore_refuses_exact_one_past_cached_bytes() {
+    let mut pull = fixture::live();
+    let mut current = kept::current();
+    current.head = fixture::repeated(b'a', fixture::PULL_HEAD_BOUND + 1);
+    pull.cached.pull = Some(current);
+    fixture::bad_live("pull exact one past bytes", pull);
 }

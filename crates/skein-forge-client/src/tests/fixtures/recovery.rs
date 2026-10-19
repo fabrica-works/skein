@@ -5,8 +5,32 @@ use alloc::boxed::Box;
 use skein_forge::api::{Answer, Error, Read};
 use skein_lib::{List, Token};
 
+// The default recovery fixture starts at second 100.
+pub(in crate::tests) const START_AT: u64 = 100;
+// LIMITS.hinted is one second after the echo lands at START_AT.
+pub(in crate::tests) const HINT_AT: u64 = 101;
+// RateLimited after two seconds from START_AT.
+pub(in crate::tests) const RETRY_AT: u64 = 102;
+// resting_echo overrides poll to 60 seconds, measured from START_AT.
+pub(in crate::tests) const RESTING_AT: u64 = 160;
+// One-past bounds retain the configured values and isolate each refusal.
+pub(in crate::tests) const EXCESS_INBOX: u32 = LIMITS.inbox + 1;
+pub(in crate::tests) const EXCESS_ANSWER_BYTES: u32 = LIMITS.answer_bytes + 1;
+pub(in crate::tests) const EXCESS_OP_BYTES: u32 = LIMITS.op_bytes + 1;
+pub(in crate::tests) const EXCESS_RESOURCES: u32 = LIMITS.resources + 1;
+pub(in crate::tests) const EXCESS_REPOSITORIES: u32 = LIMITS.repositories + 1;
+// START_AT + LIMITS.lifetime (10s) + LIMITS.clock_margin (1s).
+pub(in crate::tests) const ATTEMPT_DEADLINE: u64 = 111;
+// Rate refusal retries at 102 + the same 11-second saved-attempt span.
+pub(in crate::tests) const RETRY_DEADLINE: u64 = 113;
+// One past the configured nested-row limit (four).
+pub(in crate::tests) const EXCESS_ROWS: u32 = LIMITS.rows + 1;
+// Pull byte accounting is head + base; current() base is b"main" (four bytes).
+pub(in crate::tests) const PULL_BASE_BYTES: u32 = 4;
+pub(in crate::tests) const PULL_HEAD_BOUND: u32 = LIMITS.answer_bytes - PULL_BASE_BYTES;
+
 pub(in crate::tests) fn repository() -> RepositoryRecord {
-    RepositoryRecord { repository: REPO, mark: Some(at(100)), clock: at(100) }
+    RepositoryRecord { repository: REPO, mark: Some(at(START_AT)), clock: at(START_AT) }
 }
 pub(in crate::tests) fn live() -> LiveRecord {
     super::keep::measure_row()
@@ -29,15 +53,6 @@ pub(in crate::tests) fn failed_restore(name: &str, rows: Box<[Stored]>) {
     h.step(Event::Restored { clock: RecoveryClock::Monotonic });
     assert!(h.domain.restoration_failed(), "{name}");
     assert_busy(&mut h, name);
-    let mut fresh = Harness::new(LIMITS);
-    paired(&mut fresh, live());
-    fresh.step(Event::Restored { clock: RecoveryClock::Monotonic });
-    assert!(!fresh.domain.restoration_failed(), "corrected {name}");
-    assert_eq!(
-        fresh.step(Event::Keep { owner: Token::new(1), watches: Box::new([live().watch]) }).as_ref(),
-        &[Request::Kept { owner: Token::new(1), result: Ok(()) }],
-        "corrected {name}"
-    );
     assert!(h.domain.restoration_failed(), "failed instance {name}");
 }
 pub(in crate::tests) fn bad_live(name: &str, row: LiveRecord) {
@@ -174,4 +189,27 @@ pub(in crate::tests) fn land_echo(h: &mut super::keep::Harness, review: bool) {
         let find = h.one();
         h.answer(find, keyed_answer(true, b"\x01\x00\x03kita"));
     }
+}
+
+pub(in crate::tests) fn held_comment() -> (super::outbox::Harness, crate::Entry) {
+    let mut h = uncertain_comment();
+    let saved = h.store.get(&1).expect("saved uncertain entry").clone();
+    let find = h.one();
+    h.answer(find, Ok(empty_item()));
+    h.fire(ATTEMPT_DEADLINE);
+    let find = h.one();
+    h.answer(find, Ok(empty_item()));
+    (h, saved)
+}
+
+pub(in crate::tests) fn accepted_live(name: &str, row: LiveRecord) {
+    let mut fresh = Harness::new(LIMITS);
+    paired(&mut fresh, row);
+    fresh.step(Event::Restored { clock: RecoveryClock::Monotonic });
+    assert!(!fresh.domain.restoration_failed(), "corrected {name}");
+    assert_eq!(
+        fresh.step(Event::Keep { owner: Token::new(1), watches: Box::new([live().watch]) }).as_ref(),
+        &[Request::Kept { owner: Token::new(1), result: Ok(()) }],
+        "corrected {name}"
+    );
 }

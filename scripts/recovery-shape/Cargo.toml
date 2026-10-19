@@ -1,0 +1,9 @@
+[package]
+name = "recovery-shape-check"
+version = "0.0.0"
+edition = "2024"
+[dependencies]
+syn = { version = "=2.0.118", features = ["full", "visit"] }
+quote = "1"
+
+[workspace]
