@@ -82,7 +82,7 @@ pub fn validate_registration(registration: &Registration, limits: &ClientLimits,
 // loopback. Names are not resolved by this sans-IO client: a numeric host
 // proves the address, and userinfo or suffixes cannot change the authority.
 #[expect(clippy::disallowed_methods, reason = "the OAuth protocol machine validates bounded numeric URI hosts")]
-fn issuer_endpoint(uri: &[u8]) -> bool {
+pub(crate) fn issuer_endpoint(uri: &[u8]) -> bool {
     if uri.starts_with(b"https://") {
         return true;
     }
@@ -397,6 +397,11 @@ fn validate_terms(registration: &Registration, limits: &ClientLimits) -> Result<
         if uri.is_empty() || uri.contains(&b'#') || !issuer_endpoint(uri) {
             return Err(Failure::Malformed);
         }
+    }
+    if issuer.is_some()
+        && (limits.keys == 0 || limits.key_set_bytes == 0 || (key_set.is_none() && limits.metadata_bytes == 0))
+    {
+        return Err(Failure::Limit);
     }
     if issuer.is_some() && !scope_contains(&registration.scope, b"openid") {
         return Err(Failure::Malformed);

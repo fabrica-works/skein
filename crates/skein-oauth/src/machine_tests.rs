@@ -15,14 +15,14 @@ fn wall(seconds: u64) -> Wall {
 fn limits() -> ClientLimits {
     ClientLimits {
         document: Limits {
-            document_bytes: 1024,
-            string_bytes: 512,
+            document_bytes: 4096,
+            string_bytes: 1024,
             token_bytes: 256,
             client_bytes: 64,
             detail_bytes: 64,
             record_bytes: 4096,
             depth: 8,
-            tokens: 64,
+            tokens: 128,
             issued_client_bytes: 64,
             granted_bytes: 64,
             subject_bytes: 64,
@@ -37,6 +37,10 @@ fn limits() -> ClientLimits {
         parameter_bytes: 256,
         resource_bytes: 128,
         nonce_bytes: 64,
+        metadata_bytes: 1024,
+        key_set_bytes: 4096,
+        keys: 4,
+        modulus_bits: 4096,
         sign_in_time: Duration::from_secs(120),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(2),
@@ -729,4 +733,5 @@ mod terms;
 
 mod issued;
 
+mod openid;
 mod revoke;

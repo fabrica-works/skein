@@ -45,6 +45,10 @@ pub fn client_limits() -> oauth::ClientLimits {
         parameter_bytes: 256,
         resource_bytes: 128,
         nonce_bytes: 64,
+        metadata_bytes: 1024,
+        key_set_bytes: 2048,
+        keys: 4,
+        modulus_bits: 2048,
         sign_in_time: Duration::from_secs(120),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(2),
@@ -230,27 +234,7 @@ pub fn visit(
     nonce: Option<Box<[u8]>>,
     port: Option<u16>,
 ) -> Box<[u8]> {
-    let verifier = if registration.client_secret.is_none() || registration.pkce_for_confidential {
-        Some(boxed(b"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"))
-    } else {
-        None
-    };
-    let request = client_step(
-        client,
-        oauth::Event::SignIn {
-            issued_client_id: None,
-            id_token: None,
-            subject: None,
-            registration,
-            key: 7,
-            generation: 0,
-            state: boxed(b"0123456789abcdef"),
-            verifier,
-            nonce,
-            port,
-            now: time(1),
-        },
-    );
+    let request = start(client, registration, nonce, port, 1);
     let Some(oauth::Request::Visit { url }) = request else { panic!("visit expected") };
     url
 }
@@ -267,4 +251,67 @@ pub fn planned(registration: &oauth::Registration, plan: fake::Plan) -> (oauth::
     let mut issuer = issuer_for(registration);
     issuer.queue(plan).expect("plan");
     (oauth::Client::new(client_limits()).expect("client"), issuer)
+}
+
+/// Starts an `OpenID` sign-in, returning its first demand.
+#[must_use]
+pub fn begin(client: &mut oauth::Client, registration: oauth::Registration, seconds: u64) -> Option<oauth::Request> {
+    start(client, registration, Some(boxed(b"0123456789abcdef")), None, seconds)
+}
+
+#[must_use]
+pub fn openid_registration() -> oauth::Registration {
+    let mut registration = registration(true);
+    registration.scope = boxed(b"openid read");
+    let mut additions = terms();
+    additions.openid = Some(oauth::OpenId {
+        issuer: boxed(b"https://issuer.example"),
+        key_set: Some(boxed(b"https://issuer.example/keys")),
+    });
+    registration.terms = Some(additions);
+    registration
+}
+
+#[must_use]
+pub fn openid_issuer(fault: Option<fake::Fault>) -> fake::Issuer {
+    let mut additions = issued(&[]);
+    additions.openid = Some(fake::OpenId {
+        issuer: boxed(b"https://issuer.example"),
+        key_set_url: boxed(b"https://issuer.example/keys"),
+        subject: boxed(b"user-42"),
+        lifetime: Duration::from_secs(30),
+        header_kid: true,
+        fault,
+    });
+    configured_issuer(&openid_registration(), Some(additions))
+}
+
+fn start(
+    client: &mut oauth::Client,
+    registration: oauth::Registration,
+    nonce: Option<Box<[u8]>>,
+    port: Option<u16>,
+    seconds: u64,
+) -> Option<oauth::Request> {
+    let verifier = if registration.client_secret.is_none() || registration.pkce_for_confidential {
+        Some(boxed(b"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"))
+    } else {
+        None
+    };
+    client_step(
+        client,
+        oauth::Event::SignIn {
+            issued_client_id: None,
+            id_token: None,
+            subject: None,
+            registration,
+            key: 7,
+            generation: 0,
+            state: boxed(b"0123456789abcdef"),
+            verifier,
+            nonce,
+            port,
+            now: time(seconds),
+        },
+    )
 }

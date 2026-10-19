@@ -8,11 +8,12 @@ mod common;
 mod documents;
 mod json;
 mod jwt;
+mod keys;
 mod machine;
 mod pkce;
 mod record;
 mod redirect;
-pub use common::{DecodeError, Failure, Limits, classify, worst_case};
+pub use common::{Check, DecodeError, Failure, Limits, classify, worst_case};
 pub use documents::{
     OAuthError, RefreshRequest, TokenResponse, decode_error, decode_request, decode_response, encode_error,
     encode_request, encode_response,
@@ -20,8 +21,8 @@ pub use documents::{
 pub use json::{Collector, Json};
 pub use jwt::{Claims, read_claims};
 pub use machine::{
-    Client, ClientLimits, Event, HttpEvidence, HttpRequest, HttpResponse, MAX_OUT, Registration, Request, WireFormat,
-    client_worst_case,
+    Client, ClientLimits, Event, HttpEvidence, HttpRequest, HttpResponse, MAX_OUT, Method, Registration, Request,
+    WireFormat, client_worst_case,
 };
 pub use pkce::challenge;
 pub use record::{ClaimSelector, RECORD_VERSION, RefreshState, SavedToken, decode_record, encode_record, rotate};

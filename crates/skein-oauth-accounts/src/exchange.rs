@@ -145,6 +145,10 @@ pub(crate) struct Web {
 
 impl Web {
     pub(crate) fn new(request: oauth::HttpRequest, endpoint: &Endpoint, limits: &Limits) -> Option<Web> {
+        match request.method {
+            oauth::Method::Post => {}
+            oauth::Method::Get => return None,
+        }
         let authority_start = bytes::find(&request.endpoint, b"://")?.checked_add(3)?;
         let rest = request.endpoint.get(authority_start..)?;
         let slash = bytes::find(rest, b"/")?;
@@ -521,6 +525,7 @@ mod tests {
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *limits };
         let endpoint = Endpoint { address: ([127, 0, 0, 1], 31000).into(), transport: Transport::Plaintext };
         let request = oauth::HttpRequest {
+            method: oauth::Method::Post,
             id: 7,
             endpoint: bytes::copy_of(b"http://127.0.0.1:31000/token"),
             content_type: b"application/x-www-form-urlencoded",

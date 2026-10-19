@@ -42,17 +42,41 @@ pub enum DecodeError {
     TooLarge,
     Version,
 }
+/// The ID-token check that failed (oauth.md, section 4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Check {
+    /// The issuer's keys could not be fetched, read or selected.
+    Keys,
+    /// The token's algorithm or signature was refused.
+    Signature,
+    /// The token named another issuer.
+    Issuer,
+    /// The token did not name this client as its audience.
+    Audience,
+    /// The token expired outside the admitted skew.
+    Expiry,
+    /// The token did not echo this sign-in's nonce.
+    Nonce,
+    /// The answer omitted its ID token or bounded subject.
+    Missing,
+}
 /// Exchange failures, without secret-bearing transport details.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Failure {
     Unavailable,
     TimedOut,
-    RateLimited { retry_after: Duration },
+    RateLimited {
+        retry_after: Duration,
+    },
     Refused,
     ClientRejected,
     Malformed,
     InvalidRedirect,
     Incomplete,
+    /// The issuer's ID token or keys failed the named check.
+    Unverified {
+        check: Check,
+    },
     Limit,
     Cancelled,
 }

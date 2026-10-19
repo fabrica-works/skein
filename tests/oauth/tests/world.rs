@@ -270,6 +270,7 @@ fn authorization_code_cannot_be_redeemed_twice() {
     issuer.queue(success(b"access", Some(b"refresh"), 0)).expect("plan");
     let request = sign_in(&mut client, &mut issuer, true);
     let replay = oauth::HttpRequest {
+        method: oauth::Method::Post,
         id: request.id.saturating_add(1),
         endpoint: request.endpoint.clone(),
         content_type: request.content_type,
@@ -394,15 +395,17 @@ fn the_resource_goes_in_every_request() {
 
 #[test]
 fn an_openid_sign_in_fails_before_its_check_exists() {
-    let mut registration = registration(true);
-    registration.scope = boxed(b"openid");
-    let mut additions = terms();
-    additions.openid = Some(oauth::OpenId { issuer: boxed(b"https://issuer.example"), key_set: None });
-    registration.terms = Some(additions);
-    let mut issuer = issuer_for(&registration);
+    let mut issuer = skein_oauth_world::openid_issuer(None);
     issuer.queue(success(b"access", Some(b"refresh"), 0)).expect("plan");
     let mut client = oauth::Client::new(client_limits()).expect("client");
-    let url = visit(&mut client, registration, Some(boxed(b"0123456789abcdef")), None);
+    let get = http(skein_oauth_world::begin(&mut client, skein_oauth_world::openid_registration(), 1));
+    let answer = response(fake_step(
+        &mut issuer,
+        fake::Event::Get { id: get.id, endpoint: get.endpoint, now: time(1), wall: wall(100) },
+    ));
+    let Some(oauth::Request::Visit { url }) = client_step(&mut client, oauth::Event::Http(answer)) else {
+        panic!("visit")
+    };
     let event = redirected(&mut issuer, url);
     let request = http(client_step(&mut client, event));
     let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(2), wall: wall(100) }));

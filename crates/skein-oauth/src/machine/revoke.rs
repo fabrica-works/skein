@@ -64,6 +64,9 @@ impl Client {
             verifier: None,
             deadline: now.checked_add(self.limits.sign_in_time).ok_or(Failure::Limit)?,
             attempts: 0,
+            visit: None,
+            fetch: None,
+            keys: Box::default(),
         };
         let (request, phase) = self.http_request(&mut exchange, now)?;
         Ok((exchange, Request::Http(request), phase))

@@ -3,14 +3,12 @@
 //! identity or token store. `Client::step` emits visits, HTTP demands and one
 //! terminal. HTTP transport and persistence belong to the caller.
 
+mod fetch;
 mod revoke;
 
-use crate::redirect::{
-    authorization_url, form_fields, has_openid, issued_id, missing_scopes, resource_field, sign_in_values,
-    validate_registration,
-};
+use crate::redirect::{form_fields, has_openid, issued_id, missing_scopes, resource_field, validate_registration};
 use crate::{ClaimSelector, DecodeError, Failure, Json, Limits, OAuthError, RefreshState, SavedToken, TokenResponse};
-use crate::{classify, decode_error, decode_response, pkce, rotate};
+use crate::{classify, decode_error, decode_response, rotate};
 use alloc::boxed::Box;
 use skein_json::writer::Encoder;
 use skein_lib::{Duration, List, Queue, Time, Wall, bytes};
@@ -31,6 +29,10 @@ pub struct ClientLimits {
     pub parameter_bytes: u32,
     pub resource_bytes: u32,
     pub nonce_bytes: u32,
+    pub metadata_bytes: u32,
+    pub key_set_bytes: u32,
+    pub keys: u32,
+    pub modulus_bits: u32,
     pub sign_in_time: Duration,
     pub request_time: Duration,
     pub backoff_base: Duration,
@@ -55,6 +57,14 @@ pub fn client_worst_case(limits: &ClientLimits) -> Option<u64> {
         .checked_add(u64::from(limits.code_bytes))?
         .checked_add(u64::from(limits.url_bytes))?
         .checked_add(u64::from(limits.request_bytes).checked_mul(2)?)?
+        .checked_add(u64::from(limits.metadata_bytes.max(limits.key_set_bytes)).checked_mul(2)?)?
+        .checked_add(List::<crate::keys::Key>::worst_case(limits.keys)?)?
+        .checked_add(
+            u64::from(limits.keys).checked_mul(
+                u64::from(limits.modulus_bits.checked_div(8)?)
+                    .checked_add(u64::from(limits.document.string_bytes).checked_mul(2)?)?,
+            )?,
+        )?
         .checked_add(4096)
 }
 
@@ -79,10 +89,20 @@ pub struct Registration {
     pub terms: Option<crate::Terms>,
 }
 
-/// A complete token POST for the caller's HTTP/TLS stack.
+/// What an HTTP demand asks of the caller's stack (oauth.md, section 3).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Method {
+    /// A token exchange or revocation.
+    Post,
+    /// The issuer's metadata or key set, without a body or secret.
+    Get,
+}
+
+/// A complete bounded request for the caller's HTTP/TLS stack.
 #[expect(missing_debug_implementations, reason = "request body contains credentials")]
 pub struct HttpRequest {
     pub id: u64,
+    pub method: Method,
     pub endpoint: Box<[u8]>,
     pub content_type: &'static [u8],
     pub body: Box<[u8]>,
@@ -162,6 +182,7 @@ pub enum Request {
 enum Phase {
     Idle,
     AwaitRedirect,
+    AwaitKeys { id: u64, deadline: Time },
     AwaitHttp { id: u64, deadline: Time },
     Backoff { due: Time },
     Done,
@@ -193,6 +214,9 @@ struct Exchange {
     verifier: Option<Box<[u8]>>,
     deadline: Time,
     attempts: u32,
+    visit: Option<Box<[u8]>>,
+    fetch: Option<fetch::Fetch>,
+    keys: Box<[crate::keys::Key]>,
 }
 
 /// One sans-IO sign-in, refresh or revocation. The caller reserves `MAX_OUT` output slots.
@@ -209,6 +233,7 @@ impl Client {
         if limits.max_attempts == 0
             || limits.request_time == Duration::ZERO
             || limits.sign_in_time == Duration::ZERO
+            || !(2048..=8192).contains(&limits.modulus_bits)
             || client_worst_case(&limits).is_none()
         {
             return Err(Failure::Limit);
@@ -227,7 +252,7 @@ impl Client {
         match self.phase {
             Phase::Idle | Phase::Done => None,
             Phase::AwaitRedirect => Some(self.active.as_ref()?.deadline),
-            Phase::AwaitHttp { deadline, .. } => Some(deadline),
+            Phase::AwaitHttp { deadline, .. } | Phase::AwaitKeys { deadline, .. } => Some(deadline),
             Phase::Backoff { due } => Some(due),
         }
     }
@@ -310,47 +335,6 @@ impl Client {
         }
     }
 
-    fn sign_in(
-        &mut self,
-        mut registration: Registration,
-        values: SignInValues,
-    ) -> Result<(Exchange, Request, Phase), Failure> {
-        let SignInValues { key, generation, state, verifier, nonce, port, issued_client_id, id_token, subject, now } =
-            values;
-        validate_registration(&registration, &self.limits, true)?;
-        sign_in_values(&mut registration, nonce.as_deref(), port, &self.limits)?;
-        if state.len() < 16 || state.len() > usize::try_from(self.limits.state_bytes).expect("u32 fits") {
-            return Err(Failure::Limit);
-        }
-        let pkce_required = registration.client_secret.is_none() || registration.pkce_for_confidential;
-        let challenge = match (&verifier, pkce_required) {
-            (Some(value), true) => Some(match pkce::challenge(value) {
-                Ok(challenge) => challenge,
-                Err(error) => return Err(admit(error)),
-            }),
-            (None, false) => None,
-            (Some(_), false) | (None, true) => return Err(Failure::Malformed),
-        };
-        let url = authorization_url(
-            &registration,
-            &state,
-            challenge.as_deref(),
-            nonce.as_deref(),
-            [issued_client_id.as_deref(), id_token.as_deref(), subject.as_deref()],
-            &self.limits,
-        )?;
-        let deadline = now.checked_add(self.limits.sign_in_time).ok_or(Failure::Limit)?;
-        let exchange = Exchange {
-            registration,
-            grant: Grant::SignIn { key, generation, code: None },
-            state,
-            verifier,
-            deadline,
-            attempts: 0,
-        };
-        Ok((exchange, Request::Visit { url }, Phase::AwaitRedirect))
-    }
-
     fn refresh(
         &mut self,
         mut registration: Registration,
@@ -381,6 +365,9 @@ impl Client {
             verifier: None,
             deadline,
             attempts: 0,
+            visit: None,
+            fetch: None,
+            keys: Box::default(),
         };
         let (request, phase) = self.http_request(&mut exchange, now)?;
         Ok((exchange, Request::Http(request), phase))
@@ -455,8 +442,15 @@ impl Client {
     }
 
     fn http(&mut self, answer: HttpResponse, out: &mut Queue<Request>) {
-        let Phase::AwaitHttp { id, deadline } = self.phase else {
-            return;
+        let (id, deadline) = match self.phase {
+            Phase::AwaitKeys { id, deadline } => {
+                if answer.id == id {
+                    self.keys_answer(answer, deadline, out);
+                }
+                return;
+            }
+            Phase::AwaitHttp { id, deadline } => (id, deadline),
+            Phase::Idle | Phase::AwaitRedirect | Phase::Backoff { .. } | Phase::Done => return,
         };
         if answer.id != id {
             return;
@@ -575,6 +569,7 @@ impl Client {
             | Failure::ClientRejected
             | Failure::Malformed
             | Failure::Incomplete
+            | Failure::Unverified { .. }
             | Failure::InvalidRedirect
             | Failure::Limit
             | Failure::Cancelled => false,
@@ -595,7 +590,7 @@ impl Client {
         if exchange.revoking() {
             self.revoked(false, out);
         } else {
-            self.finish(failure, out);
+            self.finish(if exchange.fetch.is_some() { fetch::failure() } else { failure }, out);
         }
     }
 
@@ -606,6 +601,11 @@ impl Client {
                     && now >= value.deadline
                 {
                     self.finish(Failure::TimedOut, out);
+                }
+            }
+            Phase::AwaitKeys { deadline, .. } => {
+                if now >= deadline {
+                    self.keys_timeout(now, out);
                 }
             }
             Phase::AwaitHttp { deadline, .. } => {
@@ -631,7 +631,7 @@ impl Client {
                         if exchange.revoking() {
                             self.revoked(false, out);
                         } else {
-                            self.finish(failure, out);
+                            self.finish(if exchange.fetch.is_some() { fetch::failure() } else { failure }, out);
                         }
                     }
                 }
@@ -645,6 +645,9 @@ impl Client {
             return Err(Failure::TimedOut);
         }
         let deadline = now.checked_add(self.limits.request_time).ok_or(Failure::Limit)?.min(exchange.deadline);
+        if exchange.fetch.is_some() {
+            return self.keys_request(exchange, now, deadline);
+        }
         let body = token_body(exchange, &self.limits)?;
         let id = self.next_id;
         self.next_id = self.next_id.checked_add(1).ok_or(Failure::Limit)?;
@@ -657,6 +660,7 @@ impl Client {
         };
         let request = HttpRequest {
             id,
+            method: Method::Post,
             endpoint: bytes::copy_of(if exchange.revoking() {
                 revoke::endpoint(&exchange.registration).ok_or(Failure::Malformed)?
             } else {

@@ -370,6 +370,7 @@ impl Peer {
         self.issuer.step(
             issuer::Event::Post {
                 request: HttpRequest {
+                    method: skein_oauth::Method::Post,
                     id,
                     endpoint: self.token_endpoint.clone(),
                     content_type,

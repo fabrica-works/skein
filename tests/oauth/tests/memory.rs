@@ -28,6 +28,10 @@ fn check_client(document: oauth::Limits) {
         parameter_bytes: 0,
         resource_bytes: 0,
         nonce_bytes: 0,
+        metadata_bytes: 0,
+        key_set_bytes: 0,
+        keys: 0,
+        modulus_bits: 2048,
         sign_in_time: Duration::from_secs(120),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(2),
@@ -112,6 +116,7 @@ fn check_issuer(document: oauth::Limits) {
     issuer.step(fake::Event::Authorize { url: url.into_boxed_slice(), now: Time::ZERO }, &mut authorization);
     drop(authorization.pop());
     let request = oauth::HttpRequest {
+        method: oauth::Method::Post,
         id: 1,
         endpoint: boxed(b"https://issuer.example/token"),
         content_type: b"application/json",
@@ -146,4 +151,37 @@ fn terms_at_their_most_entries_fit_the_worst_case() {
     let measured = meter.end();
     drop(url);
     meter.check(measured, bound, &"OAuth terms at their most entries");
+}
+
+#[test]
+fn a_sign_in_holding_its_keys_fits_the_worst_case() {
+    use skein_oauth_world::{begin, fake_step, http, openid_issuer, openid_registration, response, time, wall};
+    let limits = client_limits();
+    let bound = oauth::client_worst_case(&limits).expect("bound");
+    let meter = Meter::new();
+    let mut client = oauth::Client::new(limits).expect("client");
+    let mut issuer = openid_issuer(None);
+    let get = http(begin(&mut client, openid_registration(), 1));
+    let mut answer = response(fake_step(
+        &mut issuer,
+        fake::Event::Get { id: get.id, endpoint: get.endpoint, now: time(1), wall: wall(100) },
+    ));
+    // The fake's one-key document supplies the key repeated at the admitted cap.
+    let key = answer.body.strip_prefix(b"{\"keys\":[").expect("key array").strip_suffix(b"]}").expect("key array end");
+    let mut set = b"{\"keys\":[".to_vec();
+    for index in 0..limits.keys {
+        if index != 0 {
+            set.push(b',');
+        }
+        set.extend_from_slice(key);
+    }
+    set.extend_from_slice(b"]}");
+    answer.body = set.into_boxed_slice();
+    let mut out = Queue::with_capacity(oauth::MAX_OUT);
+    meter.start();
+    client.step(oauth::Event::Http(answer), &mut out);
+    let measured = meter.end();
+    let visit = matches!(out.pop(), Some(oauth::Request::Visit { .. }));
+    assert!(visit);
+    meter.check(measured, bound, &"OAuth sign-in holding its keys");
 }

@@ -86,6 +86,7 @@ fn post(issuer: &mut Issuer, endpoint: &[u8], body: &[u8]) -> Option<Request> {
         issuer,
         Event::Post {
             request: HttpRequest {
+                method: skein_oauth::Method::Post,
                 id: 1,
                 endpoint: bytes::copy_of(endpoint),
                 content_type: b"application/x-www-form-urlencoded",
@@ -325,6 +326,7 @@ fn exchange(issuer: &mut Issuer) -> Box<[u8]> {
         issuer,
         Event::Post {
             request: HttpRequest {
+                method: skein_oauth::Method::Post,
                 id: 1,
                 endpoint: bytes::copy_of(b"https://issuer.example/token"),
                 content_type: b"application/x-www-form-urlencoded",

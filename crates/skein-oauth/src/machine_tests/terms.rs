@@ -224,7 +224,22 @@ fn nonce_request(length: Option<usize>, enabled: bool) -> Option<Request> {
     if let Some(length) = length {
         nonce = Some(boxed([b'n'; NONCE_CAP + 1].get(..length).expect("nonce row fits")));
     }
-    step(&mut client, start(registration, nonce, None))
+    let first = step(&mut client, start(registration, nonce, None));
+    match first {
+        Some(Request::Http(metadata)) => {
+            let keys = request(step(
+                &mut client,
+                answered(
+                    metadata.id,
+                    200,
+                    br#"{"issuer":"https://issuer.example","jwks_uri":"https://issuer.example/keys"}"#,
+                    2,
+                ),
+            ));
+            step(&mut client, answered(keys.id, 200, &openid::one_key(), 3))
+        }
+        other => other,
+    }
 }
 
 #[test]

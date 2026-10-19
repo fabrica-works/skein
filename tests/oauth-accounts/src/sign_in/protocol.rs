@@ -323,6 +323,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 http::Event::Body(Up::End) => issuer.step(
                     fake::Event::Post {
                         request: oauth::HttpRequest {
+                            method: oauth::Method::Post,
                             id: 0,
                             endpoint: registration.token_endpoint.clone(),
                             content_type: b"application/x-www-form-urlencoded",

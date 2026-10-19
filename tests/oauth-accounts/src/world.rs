@@ -90,6 +90,10 @@ pub fn limits() -> accounts::Limits {
             parameter_bytes: 0,
             resource_bytes: 0,
             nonce_bytes: 0,
+            metadata_bytes: 0,
+            key_set_bytes: 0,
+            keys: 0,
+            modulus_bits: 2048,
             sign_in_time: Duration::from_secs(120),
             request_time: Duration::from_secs(10),
             backoff_base: Duration::from_secs(1),
@@ -1224,6 +1228,7 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
                 http::Event::Body(Up::End) => issuer.step(
                     fake::Event::Post {
                         request: oauth::HttpRequest {
+                            method: oauth::Method::Post,
                             id: 0,
                             endpoint: registration.token_endpoint.clone(),
                             content_type: b"application/x-www-form-urlencoded",
