@@ -25,9 +25,10 @@ pub(crate) enum Output {
 impl Decoder {
     pub(crate) fn new(provider: Provider, limits: &openai::Limits, drop_reasoning: bool) -> Decoder {
         match provider {
-            Provider::OpenAiCodex | Provider::OpenAi => {
-                Decoder::Responses(provider, openai::StreamDecoder::with_reasoning_drop(limits, drop_reasoning))
-            }
+            Provider::OpenAiCodex | Provider::OpenAi => Decoder::Responses(
+                provider,
+                openai::StreamDecoder::with_reasoning_drop(provider, limits, drop_reasoning),
+            ),
             Provider::Anthropic => Decoder::Anthropic(anthropic::StreamDecoder::new(limits)),
         }
     }
@@ -73,7 +74,7 @@ impl Decoder {
                 let mut raw = Queue::with_capacity(openai::MAX_OUT);
                 match event {
                     openai::Event::Failed { error } => {
-                        provider_error(error, status, rate, wall, Provider::OpenAiCodex, out);
+                        provider_error(error, status, rate, wall, *provider, out);
                     }
                     event @ (openai::Event::Created { .. }
                     | openai::Event::InProgress { .. }
@@ -144,7 +145,7 @@ fn provider_error(
     out: &mut Queue<Output>,
 ) {
     out.push(Output::Failed {
-        failure: translate::failure(openai::classify(status, Some(&error), rate, wall)),
+        failure: translate::failure(openai::classify(provider, status, Some(&error), rate, wall)),
         report: error_report(provider, &error),
         detail: error.message,
     });

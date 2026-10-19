@@ -1234,7 +1234,8 @@ fn error_end(client: &mut Client, env: &Env<Limits>, above: &mut Queue<Event>) {
         Err(error) => Err(error),
     };
     let error = decoded.ok();
-    let failure = translate::failure(openai::classify(client.status, error.as_ref(), client.rate, env.wall));
+    let failure =
+        translate::failure(openai::classify(client.provider, client.status, error.as_ref(), client.rate, env.wall));
     let report = match &error {
         Some(error) => dialect::error_report(client.provider, error),
         None => Report::none(),
@@ -1272,7 +1273,7 @@ fn error_cut(client: &mut Client, env: &Env<Limits>, above: &mut Queue<Event>) {
     let prefix =
         client.error.as_slice().get(..client.error.as_slice().len().min(room)).expect("bounded unparsed body prefix");
     detail.put(prefix).expect("prefix within measured detail");
-    let failure = translate::failure(openai::classify(client.status, None, client.rate, env.wall));
+    let failure = translate::failure(openai::classify(client.provider, client.status, None, client.rate, env.wall));
     client.error.clear();
     fail(client, failure, detail.finish(), above);
 }

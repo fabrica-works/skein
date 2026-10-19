@@ -1,5 +1,6 @@
 pub(crate) mod reasoning;
 
+use crate::Provider;
 use crate::openai::{
     DecodeError, Failure, Json, Limits, ProviderError, RateLimit, Request, Stop, Usage, classify, common, json, request,
 };
@@ -131,6 +132,7 @@ pub enum Output {
 pub const MAX_OUT: u32 = 3;
 #[derive(Debug)]
 pub struct StreamDecoder {
+    provider: Provider,
     opened: List<(u32, Opened)>,
     next: u32,
     parts: u32,
@@ -171,13 +173,14 @@ struct Terminal {
 }
 impl StreamDecoder {
     #[must_use]
-    pub fn new(limits: &Limits) -> StreamDecoder {
-        Self::with_reasoning_drop(limits, false)
+    pub fn new(provider: Provider, limits: &Limits) -> StreamDecoder {
+        Self::with_reasoning_drop(provider, limits, false)
     }
     /// Select whether Codex reasoning past the opaque cap may be discarded.
     #[must_use]
-    pub fn with_reasoning_drop(limits: &Limits, enabled: bool) -> StreamDecoder {
+    pub fn with_reasoning_drop(provider: Provider, limits: &Limits, enabled: bool) -> StreamDecoder {
         StreamDecoder {
+            provider,
             reasoning: if enabled { ReasoningPolicy::Drop } else { ReasoningPolicy::Keep },
             opened: List::with_capacity(limits.output_items),
             next: 0,
@@ -385,7 +388,7 @@ impl StreamDecoder {
             Event::Done { index, item } => self.done(index, item, long, limits, out)?,
             Event::Completed { stop, usage } => self.complete(stop, usage, limits, out)?,
             Event::Failed { error } => {
-                let failure = classify(0, Some(&error), RateLimit::NONE, wall);
+                let failure = classify(self.provider, 0, Some(&error), RateLimit::NONE, wall);
                 self.fail(failure, common::clipped(&error.message, limits.detail_bytes), out);
             }
         }

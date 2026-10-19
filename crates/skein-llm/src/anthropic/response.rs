@@ -283,7 +283,7 @@ impl StreamDecoder {
                 out.push(Output::Completed { stop, usage: self.usage });
             }
             Event::Failed { error } => {
-                let failure = classify(0, Some(&error), RateLimit::NONE, wall);
+                let failure = classify(crate::Provider::Anthropic, 0, Some(&error), RateLimit::NONE, wall);
                 self.fail(failure, clip_detail(&error.message, limits.detail_bytes), out);
             }
             Event::Progress | Event::Unknown => {}

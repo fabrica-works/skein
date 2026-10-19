@@ -1,4 +1,7 @@
-use crate::openai::{Input, Tool};
+use crate::{
+    Provider,
+    openai::{Input, Tool},
+};
 use alloc::boxed::Box;
 use skein_json::{Compact, collector, document, tokenizer, writer};
 use skein_lib::{Duration, List, Wall, bytes};
@@ -239,20 +242,37 @@ impl RateLimit {
         None
     }
 }
+/// A route's named error decides before its HTTP status (llm.md, 4.6–4.8).
 #[must_use]
-pub fn classify(status: u16, error: Option<&ProviderError>, rate: RateLimit, wall: Wall) -> Failure {
+pub fn classify(
+    provider: Provider,
+    status: u16,
+    error: Option<&ProviderError>,
+    rate: RateLimit,
+    wall: Wall,
+) -> Failure {
     let kind = match error {
         Some(error) => error.kind.as_ref(),
         None => b"",
     };
-    let delay = rate.delay(error, wall);
-    let reset = rate.reset(error, wall);
-    // An HTTP status decides retryability. A parsed body may refine that
-    // class. Zero or a successful head carries a native SSE error event.
+    let named = match provider {
+        Provider::Anthropic => anthropic_failure(kind, error, rate, wall),
+        Provider::OpenAiCodex => {
+            if kind == b"usage_limit_reached" {
+                Some(Failure::Exhausted { retry_after: error_reset(error, wall) })
+            } else {
+                responses_failure(kind, rate, error, wall)
+            }
+        }
+        Provider::OpenAi => responses_failure(kind, rate, error, wall),
+    };
+    if let Some(failure) = named {
+        return failure;
+    }
     match status {
         401 => Failure::Unauthorized,
         403 | 404 | 422 => Failure::Invalid,
-        429 => limited(kind, rate.exhausted, delay, reset),
+        429 => Failure::RateLimited { retry_after: rate.delay(error, wall) },
         529 => Failure::Overloaded,
         500..=599 => {
             if kind == b"overloaded_error" {
@@ -268,17 +288,61 @@ pub fn classify(status: u16, error: Option<&ProviderError>, rate: RateLimit, wal
                 Failure::Invalid
             }
         }
-        0 | 200..=299 => native_failure(kind, error, rate.exhausted, delay, reset),
         _ => Failure::Unavailable,
     }
 }
 
-fn limited(kind: &[u8], exhausted: bool, delay: Duration, reset: Option<Duration>) -> Failure {
-    if exhausted || kind == b"usage_limit_reached" {
-        Failure::Exhausted { retry_after: reset }
-    } else {
-        Failure::RateLimited { retry_after: delay }
+fn responses_failure(kind: &[u8], rate: RateLimit, error: Option<&ProviderError>, wall: Wall) -> Option<Failure> {
+    if kind == b"rate_limit_exceeded" {
+        return Some(Failure::RateLimited { retry_after: rate.delay(error, wall) });
     }
+    None
+}
+
+fn error_reset(error: Option<&ProviderError>, wall: Wall) -> Option<Duration> {
+    let error = error?;
+    let seconds = match error.resets_in_seconds {
+        Some(seconds) => seconds,
+        None => error.resets_at?.saturating_sub(wall.as_secs()),
+    };
+    if seconds == 0 { None } else { Some(Duration::from_secs(seconds)) }
+}
+
+fn anthropic_failure(kind: &[u8], error: Option<&ProviderError>, rate: RateLimit, wall: Wall) -> Option<Failure> {
+    if kind == b"authentication_error" {
+        return Some(Failure::Unauthorized);
+    }
+    if kind == b"permission_error" {
+        return Some(Failure::Refused);
+    }
+    if kind == b"billing_error" {
+        return Some(Failure::Exhausted { retry_after: None });
+    }
+    if kind == b"rate_limit_error" {
+        return Some(if rate.exhausted {
+            Failure::Exhausted { retry_after: unified_reset(rate, wall) }
+        } else {
+            Failure::RateLimited { retry_after: rate.delay(error, wall) }
+        });
+    }
+    if kind == b"overloaded_error" {
+        return Some(Failure::Overloaded);
+    }
+    if kind == b"api_error" {
+        return Some(Failure::Unavailable);
+    }
+    if context(kind, error) {
+        return Some(Failure::ContextTooLong);
+    }
+    if kind == b"invalid_request_error" {
+        return Some(Failure::Invalid);
+    }
+    None
+}
+
+fn unified_reset(rate: RateLimit, wall: Wall) -> Option<Duration> {
+    let seconds = rate.reset?.saturating_sub(wall.as_secs());
+    if seconds == 0 { None } else { Some(Duration::from_secs(seconds)) }
 }
 
 fn context(kind: &[u8], error: Option<&ProviderError>) -> bool {
@@ -288,28 +352,6 @@ fn context(kind: &[u8], error: Option<&ProviderError>) -> bool {
             Some(error) => bytes::find(&error.message, b"prompt is too long").is_some(),
             None => false,
         }
-}
-
-fn native_failure(
-    kind: &[u8],
-    error: Option<&ProviderError>,
-    exhausted: bool,
-    delay: Duration,
-    reset: Option<Duration>,
-) -> Failure {
-    if kind == b"authentication_error" || kind == b"invalid_api_key" {
-        return Failure::Unauthorized;
-    }
-    if kind == b"rate_limit_error" || kind == b"rate_limit_exceeded" || kind == b"usage_limit_reached" {
-        return limited(kind, exhausted, delay, reset);
-    }
-    if kind == b"overloaded_error" {
-        return Failure::Overloaded;
-    }
-    if context(kind, error) {
-        return Failure::ContextTooLong;
-    }
-    Failure::Unavailable
 }
 
 pub(crate) fn decimal(bytes: &[u8]) -> Option<u64> {

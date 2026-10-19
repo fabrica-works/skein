@@ -81,7 +81,7 @@ fn drain(queue: &mut Queue<Output>, trace: &mut Vec<Output>) {
     }
 }
 fn stream(events: &[Event], limits: &Limits) -> Vec<Output> {
-    let mut decoder = StreamDecoder::new(limits);
+    let mut decoder = StreamDecoder::new(crate::Provider::OpenAiCodex, limits);
     let mut out = Queue::with_capacity(crate::openai::MAX_OUT);
     let mut trace = Vec::new();
     for event in events {
@@ -398,14 +398,14 @@ fn server_events_roundtrip_echoes_skipped_and_errors_keep_reset_priority() {
     assert_eq!(decode_error(&value(&encoded), &LIMITS).unwrap(), error);
     let wall = Wall::from_nanos(100_000_000_000);
     assert_eq!(
-        classify(429, Some(&error), RateLimit::NONE, wall),
+        classify(crate::Provider::OpenAiCodex, 429, Some(&error), RateLimit::NONE, wall),
         Failure::Exhausted { retry_after: Some(Duration::from_secs(60)) }
     );
     let mut rate = RateLimit::NONE;
     rate.observe(b"Retry-After", b"2");
     assert_eq!(
-        classify(429, Some(&error), rate, wall),
-        Failure::Exhausted { retry_after: Some(Duration::from_secs(2)) }
+        classify(crate::Provider::OpenAiCodex, 429, Some(&error), rate, wall),
+        Failure::Exhausted { retry_after: Some(Duration::from_secs(60)) }
     );
     let echo = encode_event(&Event::Created { echo: Some(request()) }, &LIMITS).unwrap();
     assert!(bytes::find(&echo, b"instructions").is_some());
@@ -443,7 +443,10 @@ fn completed_usage_keeps_cached_over_total_and_done_honors_incomplete_status() {
         &LIMITS,
     )
     .unwrap();
-    assert_eq!(classify(400, Some(&error), RateLimit::NONE, Wall::EPOCH), Failure::ContextTooLong);
+    assert_eq!(
+        classify(crate::Provider::OpenAiCodex, 400, Some(&error), RateLimit::NONE, Wall::EPOCH),
+        Failure::ContextTooLong
+    );
 }
 
 #[test]
@@ -520,7 +523,7 @@ fn archived_real_provider_requests_and_answers_match_known_completions() {
         let request = decode_request(&value(body), &LIMITS).unwrap();
         assert!(!request.input.is_empty());
         let captured = dechunk(&fixture(scenario, "response.sse"));
-        let mut decoder = StreamDecoder::new(&LIMITS);
+        let mut decoder = StreamDecoder::new(crate::Provider::OpenAiCodex, &LIMITS);
         let mut out = Queue::with_capacity(crate::openai::MAX_OUT);
         let mut trace = Vec::new();
         for line in core::str::from_utf8(&captured).unwrap().lines() {
@@ -598,7 +601,7 @@ fn archived_real_provider_requests_and_answers_match_known_completions() {
 
 #[test]
 fn out_of_order_done_waits_for_order_and_terminal_waits_for_ready_parts() {
-    let mut decoder = StreamDecoder::new(&LIMITS);
+    let mut decoder = StreamDecoder::new(crate::Provider::OpenAiCodex, &LIMITS);
     let mut out = Queue::with_capacity(crate::openai::MAX_OUT);
     let mut trace = Vec::new();
     for index in 0..3_u32 {
@@ -670,7 +673,7 @@ fn incomplete_and_refused_terminals_override_tools_and_absolute_reset_uses_wall(
         ];
         assert_eq!(stream(&events, &LIMITS).last(), Some(&Output::Completed { stop, usage: Usage::NONE }));
     }
-    let mut decoder = StreamDecoder::new(&LIMITS);
+    let mut decoder = StreamDecoder::new(crate::Provider::OpenAiCodex, &LIMITS);
     let mut out = Queue::with_capacity(crate::openai::MAX_OUT);
     decoder.event(
         Event::Failed {
@@ -1154,7 +1157,7 @@ fn reasoning_drop_is_opt_in_at_one_over_and_never_drops_unknown_items() {
         for (cap, enabled) in [(size, false), (size, true), (size - 1, false), (size - 1, true)] {
             let mut bounds = LIMITS;
             bounds.reasoning = cap;
-            let mut decoder = StreamDecoder::with_reasoning_drop(&bounds, enabled);
+            let mut decoder = StreamDecoder::with_reasoning_drop(crate::Provider::OpenAiCodex, &bounds, enabled);
             let mut out = Queue::with_capacity(crate::openai::MAX_OUT);
             let mut trace = Vec::new();
             for event in [
@@ -1421,14 +1424,20 @@ fn both_native_filters_and_their_receiving_bounds_are_unambiguous() {
 }
 
 #[test]
-fn an_http_error_body_refines_class_without_changing_status_retryability() {
-    for (status, kind, expected) in [
-        (503, b"authentication_error".as_slice(), Failure::Unavailable),
-        (400, b"api_error".as_slice(), Failure::Invalid),
-        (401, b"rate_limit_error".as_slice(), Failure::Unauthorized),
-        (429, b"authentication_error".as_slice(), Failure::RateLimited { retry_after: Duration::from_secs(7) }),
-        (503, b"overloaded_error".as_slice(), Failure::Overloaded),
-        (400, b"context_length_exceeded".as_slice(), Failure::ContextTooLong),
+fn an_http_error_body_refines_class_by_route_before_status() {
+    for (provider, status, kind, expected) in [
+        (crate::Provider::OpenAiCodex, 503, b"authentication_error".as_slice(), Failure::Unavailable),
+        (crate::Provider::OpenAiCodex, 400, b"api_error".as_slice(), Failure::Invalid),
+        (crate::Provider::OpenAiCodex, 401, b"rate_limit_error".as_slice(), Failure::Unauthorized),
+        (
+            crate::Provider::OpenAiCodex,
+            429,
+            b"authentication_error".as_slice(),
+            Failure::RateLimited { retry_after: Duration::from_secs(7) },
+        ),
+        (crate::Provider::OpenAiCodex, 503, b"overloaded_error".as_slice(), Failure::Overloaded),
+        (crate::Provider::OpenAiCodex, 400, b"context_length_exceeded".as_slice(), Failure::ContextTooLong),
+        (crate::Provider::Anthropic, 400, b"api_error".as_slice(), Failure::Unavailable),
     ] {
         let error = ProviderError {
             param: Box::new([]),
@@ -1438,7 +1447,7 @@ fn an_http_error_body_refines_class_without_changing_status_retryability() {
             resets_in_seconds: None,
         };
         let rate = RateLimit { retry_after: Some(Duration::from_secs(7)), ..RateLimit::NONE };
-        assert_eq!(classify(status, Some(&error), rate, Wall::EPOCH), expected);
+        assert_eq!(classify(provider, status, Some(&error), rate, Wall::EPOCH), expected);
     }
 }
 
@@ -1560,7 +1569,7 @@ fn an_opted_in_drop_interrupts_a_retained_reasoning_run_without_losing_it() {
         },
     };
     events.push(Event::Completed { stop: Stop::EndTurn, usage: Usage::NONE });
-    let mut decoder = StreamDecoder::with_reasoning_drop(&limits, true);
+    let mut decoder = StreamDecoder::with_reasoning_drop(crate::Provider::OpenAiCodex, &limits, true);
     let mut out = Queue::with_capacity(crate::openai::MAX_OUT);
     let mut trace = Vec::new();
     for event in events {

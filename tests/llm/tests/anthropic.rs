@@ -2,10 +2,8 @@
 //! complete HTTP/SSE/client stack independently of the product encoders;
 //! they are not captured OAuth subscription traffic.
 use skein_lib::{Duration, Token};
-use skein_llm::{
-    Block, Completion, Credential, Delta, Endpoint, Error, Failure, Message, Provider, Role, Stop, client,
-};
-use skein_llm_world::{World, call, limits_for, response};
+use skein_llm::{Block, Completion, Delta, Endpoint, Error, Failure, Message, Provider, Role, Stop, client};
+use skein_llm_world::{World, anthropic_call, call, limits_for, response};
 
 fn limits() -> client::Limits {
     limits_for(Provider::Anthropic)
@@ -18,15 +16,6 @@ const BLOCK_STOP: &str = r#"{"type":"content_block_stop","index":0}"#;
 const END_TURN: &str =
     r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":9}}"#;
 const STOP: &str = r#"{"type":"message_stop"}"#;
-
-fn anthropic_call(owner: u64) -> skein_llm::Call {
-    let mut input = call(owner);
-    input.endpoint = Endpoint::anthropic();
-    input.credential = Credential::anthropic(b"synthetic-oauth-token".to_vec().into());
-    input.prompt.affinity = None;
-    input.prompt.max_output_tokens = Some(1024);
-    input
-}
 
 fn named_events(documents: &[&str]) -> Vec<u8> {
     // Event names and JSON types agree, as in the Messages stream protocol.
@@ -314,7 +303,7 @@ fn nested_provider_errors_classify_http_and_sse_with_retry_headers() {
             429,
             r#"{"type":"error","error":{"type":"rate_limit_error","message":"subscription spent"}}"#,
             "Retry-After: 17\r\nanthropic-ratelimit-unified-status: rejected\r\n",
-            Failure::Exhausted { retry_after: Some(Duration::from_secs(17)) },
+            Failure::Exhausted { retry_after: None },
         ),
         (529, r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#, "", Failure::Overloaded),
         (200, r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#, "", Failure::Overloaded),

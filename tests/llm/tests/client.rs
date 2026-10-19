@@ -328,7 +328,7 @@ fn error_within_sse_stream_is_terminal_and_uses_headers() {
     world.request(client::Request::Start);
     world.run();
     world.assert_once();
-    assert!(world.seen.iter().any(|e| matches!(e, client::Event::Failed { failure: Failure::Exhausted { retry_after }, .. } if *retry_after == Some(Duration::from_secs(17)))), "{:?}", world.seen);
+    assert!(world.seen.iter().any(|e| matches!(e, client::Event::Failed { failure: Failure::Exhausted { retry_after }, .. } if retry_after.is_none())), "{:?}", world.seen);
     world.settle();
     world.assert_once();
 }

@@ -62,6 +62,17 @@ pub fn call(owner: u64) -> Call {
     }
 }
 
+/// Anthropic Messages call with the fixture bearer and explicit output cap.
+#[must_use]
+pub fn anthropic_call(owner: u64) -> skein_llm::Call {
+    let mut input = call(owner);
+    input.endpoint = Endpoint::anthropic();
+    input.credential = Credential::anthropic(b"synthetic-oauth-token".to_vec().into());
+    input.prompt.affinity = None;
+    input.prompt.max_output_tokens = Some(1024);
+    input
+}
+
 #[must_use]
 pub fn events(documents: &[&str]) -> Vec<u8> {
     documents.iter().flat_map(|document| format!("data: {document}\n\n").into_bytes()).collect()
