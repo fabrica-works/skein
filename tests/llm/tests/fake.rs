@@ -116,7 +116,7 @@ fn prepared_client_is_adopted_and_drives_the_actual_scripted_peer() {
             account_id: skein_llm_world::credential_of(&input).account_id.clone(),
         };
         let machine = client::Client::prepare(input, &limits()).expect("caller prepares its one Client");
-        let mut world = Exchange::prepared(machine, endpoint, credential, limits(), scripts());
+        let mut world = Exchange::prepared(machine, endpoint, Some(credential), limits(), scripts());
         world.start();
         world.run();
         let [query] = world.queries.as_slice() else {
@@ -869,7 +869,7 @@ fn explicit_call_reasoning_policy_overrides_the_default_without_changing_wire_by
         };
         let machine =
             client::Client::prepare_with_reasoning_drop(input, &bounds, enabled).expect("explicit policy admission");
-        let mut world = Exchange::prepared(machine, endpoint, credential, bounds, opaque_script(opaque));
+        let mut world = Exchange::prepared(machine, endpoint, Some(credential), bounds, opaque_script(opaque));
         world.start();
         world.run();
         match &request {

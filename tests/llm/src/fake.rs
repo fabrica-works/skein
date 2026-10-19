@@ -70,7 +70,7 @@ pub fn extra_worst_case(
     bounds: &client::Limits,
     observations: &ObservationLimits,
     endpoint: &Endpoint,
-    credential: &Credential,
+    credentials: &[Credential],
 ) -> Option<u64> {
     let peer = limits(bounds);
     if bounds.http.request.max(bounds.http.send) > 32768 || bounds.http.head.max(bounds.http.read) > 32768 {
@@ -98,13 +98,20 @@ pub fn extra_worst_case(
         .checked_add(wire)?
         .checked_add(traces)?
         .checked_add(bytes(&endpoint.target)?)?
-        .checked_add(bytes(&credential.value)?)?
-        .checked_add(bytes(&credential.account_id)?)
+        .checked_add(cells::<Credential>(provider::MAX_CREDENTIALS)?)?
+        .checked_add(credential_bytes(credentials)?)
+}
+
+fn credential_bytes(credentials: &[Credential]) -> Option<u64> {
+    credentials.iter().try_fold(0_u64, |total, credential| {
+        total.checked_add(bytes(&credential.value)?)?.checked_add(bytes(&credential.account_id)?)
+    })
 }
 
 fn observation_worst_case(observations: &ObservationLimits) -> Option<u64> {
     cells::<client::Event>(observations.events)?
         .checked_add(cells::<Box<[skein_http::Header]>>(observations.heads)?)?
+        .checked_add(cells::<provider::Presented>(observations.heads)?)?
         .checked_add(u64::from(observations.heads).checked_mul(observations.head_bytes)?)?
         .checked_add(u64::from(observations.events).checked_mul(observations.event_bytes)?)?
         .checked_add(cells::<api::Query>(observations.queries)?)?
@@ -235,6 +242,8 @@ pub struct Exchange {
     pub queries: Vec<api::Query>,
     /// Actual ordered HTTP field names and values, before their decoded queries.
     pub heads: Vec<Box<[skein_http::Header]>>,
+    /// Each request's route, presented scheme and accepted index.
+    pub presented: Vec<provider::Presented>,
     pub requests: Vec<u8>,
     pub responses: Vec<u8>,
     pub env: Env<client::Limits>,
@@ -246,7 +255,7 @@ pub struct Exchange {
     fake: fake::Domain,
     fake_env: Env<fake::Config>,
     peer_env: Env<provider::Limits>,
-    credential: Credential,
+    credentials: Vec<Credential>,
     client_above: Queue<client::Event>,
     client_below: Queue<Down>,
     peer_above: Queue<provider::Event>,
@@ -339,11 +348,11 @@ impl Exchange {
         options: documents::Options,
     ) -> Self {
         let endpoint = input.endpoint.clone();
-        let credential = Credential {
-            scheme: crate::credential_of(&input).scheme,
-            value: crate::credential_of(&input).value.clone(),
-            account_id: crate::credential_of(&input).account_id.clone(),
-        };
+        let credential = input.credential.as_ref().map(|credential| Credential {
+            scheme: credential.scheme,
+            value: credential.value.clone(),
+            account_id: credential.account_id.clone(),
+        });
         let machine = client::Client::prepare(input, &bounds).expect("actual shared Client admission");
         Self::prepared_with_options(machine, endpoint, credential, bounds, scripts, options)
     }
@@ -360,7 +369,7 @@ impl Exchange {
     pub fn prepared(
         machine: client::Client,
         endpoint: Endpoint,
-        credential: Credential,
+        credential: Option<Credential>,
         bounds: client::Limits,
         scripts: Box<[api::Script]>,
     ) -> Self {
@@ -372,7 +381,7 @@ impl Exchange {
     pub fn prepared_with_codex_echo(
         machine: client::Client,
         endpoint: Endpoint,
-        credential: Credential,
+        credential: Option<Credential>,
         bounds: client::Limits,
         scripts: Box<[api::Script]>,
         echo: skein_llm::openai::Echo,
@@ -392,7 +401,7 @@ impl Exchange {
     pub fn prepared_with_options(
         machine: client::Client,
         endpoint: Endpoint,
-        credential: Credential,
+        credential: Option<Credential>,
         bounds: client::Limits,
         scripts: Box<[api::Script]>,
         options: documents::Options,
@@ -403,15 +412,17 @@ impl Exchange {
         };
         let peer_limits = limits(&bounds);
         let peer_config = provider::Config {
-            without_credential: false,
+            without_credential: credential.is_none(),
             usage_fields: options.usage_fields,
             echo: options.echo,
             provider,
             path: endpoint.target,
             headers: Box::new([]),
         };
-        provider::scripts(&peer_config, core::slice::from_ref(&credential), &scripts)
-            .expect("scripts represented on the peer route");
+        let mut credentials = Vec::with_capacity(index(provider::MAX_CREDENTIALS));
+        credentials.extend(credential);
+        assert!(credential_bytes(&credentials).is_some_and(|bytes| bytes <= u64::from(peer_limits.http.head)));
+        provider::scripts(&peer_config, &credentials, &scripts).expect("scripts represented on the peer route");
         let service = provider::Service::new(peer_config, &peer_limits).expect("bounded independent peer");
         let server = provider::Server::new(Token::new(2), &peer_limits).expect("bounded peer connection");
         Self {
@@ -419,6 +430,7 @@ impl Exchange {
             seen: Vec::new(),
             queries: Vec::new(),
             heads: Vec::new(),
+            presented: Vec::new(),
             requests: Vec::new(),
             responses: Vec::new(),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: bounds },
@@ -429,7 +441,7 @@ impl Exchange {
             fake: fake::Domain::try_scripted(&config(), 3, scripts).expect("bounded caller scripts"),
             fake_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config() },
             peer_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: peer_limits },
-            credential,
+            credentials,
             client_above: Queue::with_capacity(client::MAX_OUT.above),
             client_below: Queue::with_capacity(client::MAX_OUT.below),
             peer_above: Queue::with_capacity(provider::MAX_UP),
@@ -446,6 +458,28 @@ impl Exchange {
         }
     }
 
+    /// Adds a credential before any request reaches the peer.
+    ///
+    /// # Errors
+    /// As `Peer::accept`: refuses a list the route or scripts cannot serve,
+    /// a request already received, or the credential count or byte bounds.
+    pub fn accept(&mut self, credential: Credential) -> Result<u32, provider::Error> {
+        let index = u32::try_from(self.credentials.len()).map_err(|_| provider::Error::Limits)?;
+        let bytes = credential_bytes(&self.credentials)
+            .and_then(|held| held.checked_add(u64::try_from(credential.value.len()).ok()?))
+            .and_then(|held| held.checked_add(u64::try_from(credential.account_id.len()).ok()?))
+            .ok_or(provider::Error::Limits)?;
+        if index == provider::MAX_CREDENTIALS || bytes > u64::from(self.peer_env.limits.http.head) {
+            return Err(provider::Error::Limits);
+        }
+        self.credentials.push(credential);
+        if self.service.validate_credentials(&self.credentials, self.fake.scripts()).is_err() {
+            self.credentials.pop();
+            return Err(provider::Error::Limits);
+        }
+        Ok(index)
+    }
+
     /// Selects finite observation ownership before Start, without starting or
     /// firing any component. The caller reserves these buffers once; draining
     /// with `mem::take` is supported and the next entry reserves replacements.
@@ -457,7 +491,13 @@ impl Exchange {
         assert_eq!(self.machine.waiting(), client::Waiting::Start, "observation ownership precedes Start");
         assert_eq!(self.ticks, 0, "observation ownership precedes progress");
         assert!(self.observations.is_none(), "observation limits are immutable");
-        assert!(self.seen.is_empty() && self.queries.is_empty() && self.heads.is_empty() && self.pending.is_empty());
+        assert!(
+            self.seen.is_empty()
+                && self.queries.is_empty()
+                && self.heads.is_empty()
+                && self.presented.is_empty()
+                && self.pending.is_empty()
+        );
         assert!(self.requests.is_empty() && self.responses.is_empty());
         // Validate all container/payload products before reserving storage.
         observation_worst_case(&observations).expect("finite configured peer observation ownership");
@@ -487,6 +527,7 @@ impl Exchange {
             reserve(&mut self.seen, observations.events);
             reserve(&mut self.queries, observations.queries);
             reserve(&mut self.heads, observations.heads);
+            reserve(&mut self.presented, observations.heads);
             reserve(&mut self.pending, observations.pending);
             reserve(&mut self.requests, observations.request);
             reserve(&mut self.responses, observations.response_bytes);
@@ -515,7 +556,7 @@ impl Exchange {
         provider::start(
             &mut self.server,
             &mut self.service,
-            core::slice::from_ref(&self.credential),
+            &self.credentials,
             &self.peer_env,
             &mut self.peer_above,
             &mut self.peer_below,
@@ -555,7 +596,7 @@ impl Exchange {
         provider::down(
             &mut self.server,
             &mut self.service,
-            core::slice::from_ref(&self.credential),
+            &self.credentials,
             &self.peer_env,
             reply,
             &mut self.peer_above,
@@ -564,15 +605,17 @@ impl Exchange {
         self.take();
     }
 
-    fn observe_head(&mut self, headers: Box<[skein_http::Header]>, _presented: provider::Presented) {
+    fn observe_head(&mut self, headers: Box<[skein_http::Header]>, presented: provider::Presented) {
         if let Some(observations) = self.observations {
             assert!(self.heads.len() < index(observations.heads), "head observation ceiling");
+            assert!(self.presented.len() < index(observations.heads), "presented observation ceiling");
             assert!(
                 provider::head_bytes(&headers).is_some_and(|bytes| bytes <= observations.head_bytes),
                 "head owned-byte ceiling before retention"
             );
         }
         self.heads.push(headers);
+        self.presented.push(presented);
     }
 
     fn take(&mut self) {
@@ -691,7 +734,7 @@ impl Exchange {
             provider::resume(
                 &mut self.server,
                 &mut self.service,
-                core::slice::from_ref(&self.credential),
+                &self.credentials,
                 &self.peer_env,
                 &mut self.peer_above,
                 &mut self.peer_below,
@@ -706,7 +749,7 @@ impl Exchange {
             provider::down(
                 &mut self.server,
                 &mut self.service,
-                core::slice::from_ref(&self.credential),
+                &self.credentials,
                 &self.peer_env,
                 reply,
                 &mut self.peer_above,
@@ -750,7 +793,7 @@ impl Exchange {
                 provider::up(
                     &mut self.server,
                     &mut self.service,
-                    core::slice::from_ref(&self.credential),
+                    &self.credentials,
                     &self.peer_env,
                     event,
                     &mut self.peer_above,
@@ -827,7 +870,7 @@ mod tests {
                 tokens: 1,
             }]),
         }]);
-        let mut world = Exchange::prepared(machine, endpoint, credential, bounds, scripts);
+        let mut world = Exchange::prepared(machine, endpoint, Some(credential), bounds, scripts);
         // Configure only latency at startup, before any step. The Domain's
         // admitted capacities and owned-byte bounds remain unchanged.
         world.fake_env.limits.latency_min = Duration::from_secs(1);

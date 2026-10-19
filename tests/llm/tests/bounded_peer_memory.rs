@@ -204,8 +204,13 @@ fn actual_native_peer_and_client_fit_checked_prices_until_every_owner_drops() {
         // Client preparation consumes input. The peer retains a second grant
         // and target; its other cloned endpoint fields exist during adoption.
         let caller = input_bytes(&input) + endpoint_bytes(&input.endpoint);
-        let extra = extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input))
-            .expect("checked peer price");
+        let extra = extra_worst_case(
+            &bounds,
+            &caps,
+            &input.endpoint,
+            core::slice::from_ref(skein_llm_world::credential_of(&input)),
+        )
+        .expect("checked peer price");
         let client_price = client::call_worst_case(&bounds).expect("one Client price");
         let bound = client_price
             .checked_add(extra)
@@ -294,6 +299,7 @@ fn actual_connections_reuse_reclaimed_service_routes_past_its_capacity() {
                 .expect("next actual physical peer");
             world.queries.clear();
             world.heads.clear();
+            world.presented.clear();
             world.requests.clear();
             world.responses.clear();
         }
@@ -332,13 +338,37 @@ fn impossible_observation_products_refuse_without_allocating_the_ceiling() {
     let bounds = limits();
     let input = input(1, Provider::Anthropic);
     let mut caps = observations(&bounds);
-    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input)).is_some());
+    assert!(
+        extra_worst_case(
+            &bounds,
+            &caps,
+            &input.endpoint,
+            core::slice::from_ref(skein_llm_world::credential_of(&input))
+        )
+        .is_some()
+    );
     caps.event_bytes = u64::MAX;
-    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input)).is_none());
+    assert!(
+        extra_worst_case(
+            &bounds,
+            &caps,
+            &input.endpoint,
+            core::slice::from_ref(skein_llm_world::credential_of(&input))
+        )
+        .is_none()
+    );
     caps = observations(&bounds);
     caps.queries = 2;
     caps.query_bytes = u64::MAX;
-    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input)).is_none());
+    assert!(
+        extra_worst_case(
+            &bounds,
+            &caps,
+            &input.endpoint,
+            core::slice::from_ref(skein_llm_world::credential_of(&input))
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -431,8 +461,13 @@ fn exact_head_observation_capacity_retains_actual_fields_and_one_less_retains_no
         let call_input = input(1, provider);
         let caller = input_bytes(&call_input) + endpoint_bytes(&call_input.endpoint);
         let bound = client::call_worst_case(&bounds).expect("client price")
-            + extra_worst_case(&bounds, &caps, &call_input.endpoint, skein_llm_world::credential_of(&call_input))
-                .expect("peer price")
+            + extra_worst_case(
+                &bounds,
+                &caps,
+                &call_input.endpoint,
+                core::slice::from_ref(skein_llm_world::credential_of(&call_input)),
+            )
+            .expect("peer price")
             + caller;
         let mut positive = Exchange::new(call_input, bounds, scripts());
         positive.observe(caps);

@@ -342,7 +342,7 @@ fn configured_codex_echo_request_and_entry_scratch_fit_the_peer_price() {
         &bounds,
         &observations,
         &input.endpoint,
-        skein_llm_world::credential_of(&input),
+        core::slice::from_ref(skein_llm_world::credential_of(&input)),
     )
     .unwrap();
     let bound = extra + skein_llm::client::call_worst_case(&bounds).unwrap() + 32768;
@@ -419,4 +419,113 @@ fn the_cache_table_reaches_its_bound_under_the_counted_domain_footprint() {
     drop(domain);
     let measured = meter.end();
     assert_eq!(measured.held(), 0, "the cache retains no ownership after its domain is dropped");
+}
+
+fn credential_list(bounds: &skein_llm::client::Limits) -> Vec<skein_llm::Credential> {
+    let count = skein_fake_llm_protocol::provider::MAX_CREDENTIALS;
+    let head = skein_llm_world::fake::limits(bounds).http.head;
+    let length = usize::try_from(head / count).expect("credential fixture length");
+    (0..count)
+        .map(|index| {
+            let mut value = vec![b'x'; length];
+            value[0] = b'a' + u8::try_from(index).expect("sixteen fixture values");
+            skein_llm::Credential::bearer(value.into())
+        })
+        .collect()
+}
+
+fn full_report_script() -> Box<[Script]> {
+    let count = skein_fake_llm_protocol::provider::MAX_CREDENTIALS;
+    let cue = b"full-report";
+    let wrappers = size_of::<Script>()
+        + cue.len()
+        + size_of::<Turn>()
+        + size_of::<Line>()
+        + usize::try_from(count).expect("credential indices") * size_of::<u32>();
+    let field = usize::try_from(skein_llm_world::fake::config().script_bytes).expect("script bytes") - wrappers;
+    Box::new([Script {
+        cue: cue.as_slice().into(),
+        turns: Box::new([Turn {
+            lines: Box::new([Line::Fail {
+                error: Error::Unauthorized,
+                report: skein_fake_llm_domain::api::Report {
+                    code: Box::new([]),
+                    request: Box::new([]),
+                    field: vec![b'f'; field].into(),
+                },
+                credentials: (0..count).collect(),
+            }]),
+            finish: Finish::Stop,
+            tokens: 1,
+        }]),
+    }])
+}
+
+fn full_list_world() -> (skein_llm_world::fake::Exchange, u64) {
+    use skein_llm_world::fake::{Exchange, ObservationLimits, extra_worst_case};
+    let mut bounds = skein_llm_world::limits();
+    bounds.skip = 65536;
+    let observations = ObservationLimits {
+        heads: 1,
+        head_bytes: 8192,
+        events: 64,
+        event_bytes: 65536,
+        queries: 1,
+        query_bytes: 65536,
+        pending: 0,
+        request: 32768,
+        response_bytes: 65536,
+    };
+    let list = credential_list(&bounds);
+    let mut input = skein_llm_world::public_call(1);
+    input.prompt.instructions = b"full-report".as_slice().into();
+    input.credential = Some(skein_llm::Credential::bearer(list[0].value.clone()));
+    let endpoint = input.endpoint.clone();
+    let price = skein_llm::client::call_worst_case(&bounds).expect("Client price")
+        + extra_worst_case(&bounds, &observations, &endpoint, &list).expect("full list peer price");
+    let machine = skein_llm::client::Client::prepare(input, &bounds).expect("full list Client admission");
+    let mut list = list.into_iter();
+    let mut world = Exchange::prepared(machine, endpoint, list.next(), bounds, full_report_script());
+    for (index, credential) in list.enumerate() {
+        assert_eq!(world.accept(credential), Ok(u32::try_from(index + 1).expect("accepted index")));
+    }
+    world.observe(observations);
+    (world, price)
+}
+
+#[test]
+fn the_largest_list_and_failing_line_fit_the_peer_price() {
+    let meter = Meter::new();
+    meter.start();
+    let (mut world, price) = full_list_world();
+    let construction = meter.end();
+    meter.check(construction, price, &"sixteen credentials and full script report");
+    meter.start();
+    world.start();
+    world.run();
+    let receiving = meter.end();
+    meter.check(receiving, price, &"full failing report through the Client");
+    let failures: Vec<_> = world
+        .seen
+        .iter()
+        .filter_map(|event| match event {
+            skein_llm::client::Event::Failed { failure, .. } => Some(*failure),
+            skein_llm::client::Event::Block { .. }
+            | skein_llm::client::Event::Delta { .. }
+            | skein_llm::client::Event::Completed { .. }
+            | skein_llm::client::Event::Cancelled { .. }
+            | skein_llm::client::Event::Reusable
+            | skein_llm::client::Event::Close
+            | skein_llm::client::Event::Closed => None,
+        })
+        .collect();
+    assert_eq!(failures, [skein_llm::Failure::Unauthorized]);
+    drop(failures);
+    meter.start();
+    world.request(skein_llm::client::Request::Close);
+    world.settle();
+    drop(world);
+    let closed = meter.end();
+    meter.check(closed, price, &"closed full-list world");
+    assert_eq!(meter.held(), 0);
 }
