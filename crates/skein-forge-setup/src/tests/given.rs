@@ -137,3 +137,55 @@ fn invalid_given_values_name_their_place() {
         assert_eq!(Reconcile::new(&given).err(), expected.err(), "constructor {place:?} {value:?}");
     }
 }
+
+fn org_count(count: u32) -> Given {
+    let mut given = fixtures::given();
+    let mut names = skein_lib::List::with_capacity(count);
+    for _ in 0..count {
+        names.push(b"acme".as_slice().into()).expect("fixture org count");
+    }
+    given.orgs = names.into_boxed();
+    given
+}
+fn refused(given: &Given, place: Place) {
+    let expected = Refused { place, other: None };
+    assert_eq!(given::check(given), Err(expected), "{place:?}");
+    assert_eq!(Reconcile::new(given).err(), Some(expected), "constructor {place:?}");
+}
+#[test]
+fn no_org_is_refused_before_the_machine_starts() {
+    refused(&org_count(0), Place::Orgs);
+}
+#[test]
+fn an_org_count_at_the_bound_is_accepted() {
+    accepted(&org_count(fixtures::PROFILE_ORGS), "org bound");
+}
+#[test]
+fn an_org_count_past_the_bound_is_refused() {
+    refused(&org_count(fixtures::PROFILE_ORGS + 1), Place::Orgs);
+}
+#[test]
+fn a_zero_limit_names_its_place() {
+    use crate::limits;
+    use skein_lib::Duration;
+    for place in [Place::OrgsLimit, Place::Deadline, Place::Backoff, Place::BackoffMax] {
+        let mut given = fixtures::given();
+        match place {
+            Place::OrgsLimit => given.limits.orgs = 0,
+            Place::Deadline => given.limits.deadline = Duration::ZERO,
+            Place::Backoff => given.limits.backoff = Duration::ZERO,
+            Place::BackoffMax => given.limits.backoff_max = Duration::ZERO,
+            Place::Word
+            | Place::BotLogin
+            | Place::BotEmail
+            | Place::AdminName
+            | Place::ApiName
+            | Place::GitName
+            | Place::Orgs
+            | Place::Org(_)
+            | Place::OrgOwner => unreachable!("limit rows"),
+        }
+        assert_eq!(limits::check(&given.limits), Err(Refused { place, other: None }), "{place:?}");
+        refused(&given, place);
+    }
+}

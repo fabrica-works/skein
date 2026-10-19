@@ -140,11 +140,11 @@ impl Reconcile {
         Need::Stop(Failure { forge: self.forge, step: stage, subject, why })
     }
     fn id(&mut self, user: skein_forge::forgejo::document::User) -> Need {
+        if !marked(&user.full_name, &self.marker) {
+            return self.stop(Stage::Bot, Why::Unmarked);
+        }
         if user.is_admin {
             return self.stop(Stage::Bot, Why::BotIsAdmin);
-        }
-        if bytes::find(&user.full_name, &self.marker).is_none() {
-            return self.stop(Stage::Bot, Why::Unmarked);
         }
         self.tokens = Some(tokens::Tokens::new(user.id, &self.api_name, &self.git_name));
         self.state = State::Tokens;
@@ -288,6 +288,10 @@ fn account(event: Event) -> Result<skein_forge::forgejo::document::User, Why> {
 }
 /// Consumes one event and emits at most one need; terminal machines ignore later events.
 pub fn step(machine: &mut Reconcile, event: Event, out: &mut Queue<Need>) {
+    let event = match event {
+        Event::Read(Some(value)) if value.is_empty() => Event::Read(None),
+        other @ (Event::Begin | Event::Read(_) | Event::Reply(_) | Event::Written | Event::Drawn(_)) => other,
+    };
     let state = core::mem::replace(&mut machine.state, State::Ended);
     match state {
         State::Ended => (),
@@ -346,5 +350,31 @@ impl Reconcile {
         let Need::Stop(mut failure) = self.stop(stage, why) else { unreachable!("stop") };
         failure.subject = name.into();
         Need::Stop(failure)
+    }
+}
+
+fn marked(full_name: &[u8], marker: &[u8]) -> bool {
+    for (at, candidate) in full_name.windows(marker.len()).enumerate() {
+        if candidate != marker {
+            continue;
+        }
+        let before = match at.checked_sub(1) {
+            Some(index) => full_name.get(index),
+            None => None,
+        };
+        let after = match at.checked_add(marker.len()) {
+            Some(index) => full_name.get(index),
+            None => None,
+        };
+        if edge(before) && edge(after) {
+            return true;
+        }
+    }
+    false
+}
+fn edge(byte: Option<&u8>) -> bool {
+    match byte {
+        None => true,
+        Some(byte) => !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-'),
     }
 }

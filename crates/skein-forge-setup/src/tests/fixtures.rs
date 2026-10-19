@@ -144,7 +144,7 @@ pub fn subscribed() -> Box<[Box<[u8]>]> {
 
 pub fn limits() -> crate::limits::Limits {
     crate::limits::Limits {
-        orgs: 8,
+        orgs: PROFILE_ORGS,
         deadline: Duration::from_secs(120),
         backoff: Duration::from_millis(100),
         backoff_max: Duration::from_secs(5),
@@ -173,4 +173,128 @@ pub fn to_bot(run: &mut Run) {
     run.step(Event::Begin);
     run.step(Event::Read(Some(secret(ADMIN))));
     run.step(Event::Reply(Reply::Document(Document::User(admin()))));
+}
+// Shared profile and small page sizes from forge-setup.md, 4.3 and 4.4.
+pub const PROFILE_ORGS: u32 = 8;
+pub const PAGE_CAP: u32 = 2;
+pub fn bot_event() -> crate::reconcile::Event {
+    user_event(person(b"kit", b"kit:bot"))
+}
+pub fn user_event(user: skein_forge::forgejo::document::User) -> crate::reconcile::Event {
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(skein_forge::forgejo::document::Document::User(
+        user,
+    )))
+}
+pub fn settings_event(cap: u32) -> crate::reconcile::Event {
+    use skein_forge::forgejo::document::{ApiSettings, Document};
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::ApiSettings(ApiSettings {
+        max_response_items: cap,
+        default_paging_num: 30,
+    })))
+}
+pub fn keep_token(run: &mut Run) {
+    run.step(crate::reconcile::Event::Read(Some(secret(b"bot-token"))));
+    run.step(bot_event());
+}
+pub fn token_read(item: crate::item::Item) -> Run {
+    use crate::item::Item;
+    let mut run = Run::managed();
+    to_bot(&mut run);
+    run.step(bot_event());
+    match item {
+        Item::ApiToken => (),
+        Item::GitToken => keep_token(&mut run),
+        Item::AdminToken | Item::User | Item::WebhookSecret => panic!("token fixture"),
+    }
+    run
+}
+pub fn id_read() -> Run {
+    let mut run = token_read(crate::item::Item::ApiToken);
+    keep_token(&mut run);
+    keep_token(&mut run);
+    run
+}
+pub fn to_org(run: &mut Run) {
+    use crate::reconcile::Event;
+    to_bot(run);
+    run.step(bot_event());
+    keep_token(run);
+    keep_token(run);
+    run.step(Event::Read(Some(secret(b"42"))));
+    run.step(settings_event(PAGE_CAP));
+}
+pub fn org_event() -> crate::reconcile::Event {
+    use skein_forge::forgejo::document::{Document, Org};
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::Org(Org {
+        id: 1,
+        name: b"acme".as_slice().into(),
+    })))
+}
+pub fn team_event() -> crate::reconcile::Event {
+    use skein_forge::forgejo::document::{Document, Team};
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::Team(Team { id: 7, spec: team_spec() })))
+}
+pub fn rows(rows: Box<[skein_forge::forgejo::document::Row]>) -> crate::reconcile::Event {
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Rows(rows))
+}
+pub fn hook_secret_read() -> Run {
+    let mut given = given();
+    given.listener = Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 9898)));
+    let mut run = Run::with_given(given);
+    to_org(&mut run);
+    run.step(org_event());
+    run.step(rows(Box::new([])));
+    run.step(team_event());
+    run.step(rows(Box::new([skein_forge::forgejo::document::Row::User(person(b"kit", b"kit:bot"))])));
+    run
+}
+pub fn send(request: skein_forge::forgejo::request::Request) -> crate::reconcile::Need {
+    crate::reconcile::Need::Send { request, token: secret(ADMIN) }
+}
+pub fn token_name(item: crate::item::Item) -> &'static [u8] {
+    use crate::item::Item;
+    match item {
+        Item::ApiToken => b"kit-api",
+        Item::GitToken => b"kit-git",
+        Item::AdminToken | Item::User | Item::WebhookSecret => panic!("token name"),
+    }
+}
+pub fn create_token(item: crate::item::Item) -> skein_forge::forgejo::request::Request {
+    use crate::item::Item;
+    let scopes: Box<[Box<[u8]>]> = match item {
+        Item::ApiToken => Box::new([
+            b"read:user".as_slice().into(),
+            b"write:issue".as_slice().into(),
+            b"write:repository".as_slice().into(),
+        ]),
+        Item::GitToken => Box::new([b"write:repository".as_slice().into(), b"read:user".as_slice().into()]),
+        Item::AdminToken | Item::User | Item::WebhookSecret => panic!("token scopes"),
+    };
+    skein_forge::forgejo::request::Request::CreateToken {
+        login: b"kit".as_slice().into(),
+        name: token_name(item).into(),
+        scopes,
+    }
+}
+pub fn token_event() -> crate::reconcile::Event {
+    use skein_forge::forgejo::document::{AccessToken, Document};
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::Token(AccessToken {
+        id: 7,
+        name: b"unused".as_slice().into(),
+        scopes: Box::new([]),
+        last_eight: Box::new([]),
+        value: Some(secret(b"new-token")),
+    })))
+}
+pub fn named_failure(
+    step: crate::reconcile::Stage,
+    subject: &[u8],
+    why: crate::reconcile::Why,
+) -> crate::reconcile::Need {
+    crate::reconcile::Need::Stop(crate::reconcile::Failure { forge: 1, step, subject: subject.into(), why })
+}
+
+pub fn token_row(id: u64, name: &[u8]) -> skein_forge::forgejo::document::Row {
+    use skein_forge::forgejo::document::{AccessToken, Row};
+    Row::Token(AccessToken { id, name: name.into(), scopes: Box::new([]), last_eight: Box::new([]), value: None })
 }

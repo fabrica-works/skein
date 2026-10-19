@@ -104,7 +104,7 @@ impl Tokens {
             },
             Phase::Check => match super::account(event) {
                 Ok(user) => Ok(if user.id == self.id { self.next(machine) } else { self.remake(machine) }),
-                Err(Why::Refused(401)) => Ok(self.remake(machine)),
+                Err(Why::Refused(401 | 403)) => Ok(self.remake(machine)),
                 Err(why) => Err(why),
             },
             Phase::Settings => match reply(event)? {

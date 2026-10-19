@@ -11,6 +11,16 @@ pub struct Limits {
 }
 /// Checks both relationships, naming the offending pair.
 pub fn check(limits: &Limits) -> Result<(), Refused> {
+    for (zero, place) in [
+        (limits.orgs == 0, Place::OrgsLimit),
+        (limits.deadline == Duration::ZERO, Place::Deadline),
+        (limits.backoff == Duration::ZERO, Place::Backoff),
+        (limits.backoff_max == Duration::ZERO, Place::BackoffMax),
+    ] {
+        if zero {
+            return Err(Refused { place, other: None });
+        }
+    }
     if limits.backoff > limits.backoff_max {
         return Err(Refused { place: Place::Backoff, other: Some(Place::BackoffMax) });
     }

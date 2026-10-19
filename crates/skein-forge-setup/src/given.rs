@@ -65,7 +65,11 @@ pub fn check(given: &Given) -> Result<(), Refused> {
     {
         return Err(Refused { place: Place::OrgOwner, other: None });
     }
-    limits::check(&given.limits)
+    limits::check(&given.limits)?;
+    if given.orgs.is_empty() || given.orgs.len() > usize::try_from(given.limits.orgs).expect("u32 fits") {
+        return Err(Refused { place: Place::Orgs, other: None });
+    }
+    Ok(())
 }
 pub(crate) fn marker(word: &[u8]) -> Box<[u8]> {
     let mut out = Writer::new(word.len().checked_add(4).expect("checked word"));

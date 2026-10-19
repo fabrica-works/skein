@@ -203,3 +203,121 @@ fn a_lower_hook_met_later_deletes_the_higher_one_kept() {
         }
     );
 }
+
+#[test]
+fn a_marker_at_a_word_boundary_is_accepted() {
+    for name in [b"kit:bot".as_slice(), b"(kit:bot)", b"note kit:bot", b"xkit:bot kit:bot", b"kit:botx kit:bot"] {
+        let mut run = Run::managed();
+        fixtures::to_bot(&mut run);
+        assert_eq!(run.step(user(fixtures::person(b"kit", name))), Need::Read(Item::ApiToken), "{name:?}");
+    }
+}
+fn short_word_bot(name: &[u8]) -> Need {
+    let mut given = fixtures::given();
+    given.word = b"b".as_slice().into();
+    let mut run = Run::with_given(given);
+    fixtures::to_bot(&mut run);
+    run.step(user(fixtures::person(b"kit", name)))
+}
+#[test]
+fn a_marker_inside_another_word_is_refused() {
+    for name in [b"ab:bot".as_slice(), b"0b:bot", b"-b:bot"] {
+        assert_eq!(short_word_bot(name), fixtures::named_failure(Stage::Bot, b"kit", Why::Unmarked), "{name:?}");
+    }
+}
+#[test]
+fn a_marker_followed_by_word_bytes_is_refused() {
+    for name in [b"b:botx".as_slice(), b"b:bot0", b"b:bot-"] {
+        assert_eq!(short_word_bot(name), fixtures::named_failure(Stage::Bot, b"kit", Why::Unmarked), "{name:?}");
+    }
+}
+#[test]
+fn an_unmarked_admin_is_refused_as_unmarked() {
+    let mut run = Run::managed();
+    fixtures::to_bot(&mut run);
+    let mut bot = fixtures::person(b"kit", b"a note");
+    bot.is_admin = true;
+    assert_eq!(run.step(user(bot)), fixtures::named_failure(Stage::Bot, b"kit", Why::Unmarked));
+}
+#[test]
+fn an_empty_api_token_is_absent() {
+    let mut run = fixtures::token_read(Item::ApiToken);
+    assert_eq!(run.step(Event::Read(Some(secret(b"")))), fixtures::send(Request::ApiSettings));
+}
+#[test]
+fn an_empty_git_token_is_absent() {
+    let mut run = fixtures::token_read(Item::GitToken);
+    assert_eq!(run.step(Event::Read(Some(secret(b"")))), fixtures::send(Request::ApiSettings));
+}
+#[test]
+fn an_empty_bot_id_is_absent() {
+    let mut run = fixtures::id_read();
+    assert_eq!(run.step(Event::Read(Some(secret(b"")))), Need::Write { item: Item::User, bytes: secret(b"42") });
+}
+#[test]
+fn an_empty_hook_secret_is_absent() {
+    let mut run = fixtures::hook_secret_read();
+    assert_eq!(run.step(Event::Read(Some(secret(b"")))), Need::Draw(32));
+}
+fn remake_script(status: u16) {
+    use skein_forge::forgejo::request::Page;
+    for item in [Item::ApiToken, Item::GitToken] {
+        for deletion in [Reply::Empty, Reply::Status(404)] {
+            let mut run = fixtures::token_read(item);
+            run.step(Event::Read(Some(secret(b"old-token"))));
+            assert_eq!(
+                run.step(Event::Reply(Reply::Status(status))),
+                fixtures::send(Request::ApiSettings),
+                "{item:?} {status}"
+            );
+            assert_eq!(
+                run.step(fixtures::settings_event(fixtures::PAGE_CAP)),
+                fixtures::send(Request::Tokens {
+                    login: b"kit".as_slice().into(),
+                    page: Page { page: Some(1), limit: Some(fixtures::PAGE_CAP) },
+                })
+            );
+            let row = fixtures::token_row(7, fixtures::token_name(item));
+            assert_eq!(
+                run.step(fixtures::rows(Box::new([row]))),
+                fixtures::send(Request::DeleteToken { login: b"kit".as_slice().into(), id: 7 })
+            );
+            assert_eq!(run.step(Event::Reply(deletion)), fixtures::send(fixtures::create_token(item)));
+            assert_eq!(run.step(fixtures::token_event()), Need::Write { item, bytes: secret(b"new-token") });
+        }
+    }
+}
+#[test]
+fn a_revoked_token_is_deleted_made_and_written() {
+    remake_script(401);
+}
+#[test]
+fn a_forbidden_kept_token_is_remade() {
+    remake_script(403);
+}
+#[test]
+fn a_non_auth_status_checking_a_token_stops() {
+    for item in [Item::ApiToken, Item::GitToken] {
+        for status in [404, 429, 500, 502, 503] {
+            let mut run = fixtures::token_read(item);
+            run.step(Event::Read(Some(secret(b"bot-token"))));
+            assert_eq!(
+                run.step(Event::Reply(Reply::Status(status))),
+                fixtures::named_failure(Stage::Token, fixtures::token_name(item), Why::Refused(status)),
+                "{item:?} {status}"
+            );
+        }
+    }
+}
+#[test]
+fn a_down_checking_a_token_stops() {
+    for item in [Item::ApiToken, Item::GitToken] {
+        let mut run = fixtures::token_read(item);
+        run.step(Event::Read(Some(secret(b"bot-token"))));
+        assert_eq!(
+            run.step(Event::Reply(Reply::Down)),
+            fixtures::named_failure(Stage::Token, fixtures::token_name(item), Why::Down),
+            "{item:?}"
+        );
+    }
+}
