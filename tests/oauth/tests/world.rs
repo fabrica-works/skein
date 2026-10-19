@@ -3,7 +3,7 @@ use skein_lib::{Duration, bytes};
 use skein_oauth as oauth;
 use skein_oauth_world::{
     boxed, client_limits, client_step, documents, error, failure, fake_limits, fake_step, http, issuer, issuer_for,
-    record, redirected, registration, response, sign_in, success, terms, time, visit, wall,
+    planned, record, redirected, registration, response, sign_in, success, terms, time, visit, wall,
 };
 
 #[test]
@@ -28,6 +28,9 @@ fn a_localhost_registration_signs_in_through_its_exact_redirect() {
     let Some(oauth::Request::Visit { url }) = client_step(
         &mut client,
         oauth::Event::SignIn {
+            issued_client_id: None,
+            id_token: None,
+            subject: None,
             nonce: None,
             port: None,
             registration,
@@ -48,7 +51,7 @@ fn a_localhost_registration_signs_in_through_its_exact_redirect() {
     assert_eq!(uri.as_ref(), redirect_uri);
     let request = http(client_step(
         &mut client,
-        oauth::Event::Redirected { uri, state, code: Some(code), error: None, now: time(2) },
+        oauth::Event::Redirected { client_id: None, uri, state, code: Some(code), error: None, now: time(2) },
     ));
     assert!(bytes::find(&request.body, b"redirect_uri=http%3A%2F%2Flocalhost%3A1234%2Fcallback").is_some());
     let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(2), wall: wall(100) }));
@@ -282,16 +285,11 @@ fn authorization_code_cannot_be_redeemed_twice() {
 
 const VERSION_TWO: &[u8] = b"SKOT\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x04seed\x00\x00\x00\x00";
 fn refreshed(prior: &oauth::SavedToken, plan: fake::Plan) -> oauth::SavedToken {
-    let mut issuer = issuer(true);
-    issuer.queue(plan).expect("plan");
-    let mut client = oauth::Client::new(client_limits()).expect("client");
+    let registration = registration(true);
+    let (mut client, mut issuer) = planned(&registration, plan);
     let request = http(client_step(
         &mut client,
-        oauth::Event::Refresh {
-            registration: registration(true),
-            prior: prior.refresh_state().expect("refreshable"),
-            now: time(1),
-        },
+        oauth::Event::Refresh { registration, prior: prior.refresh_state().expect("refreshable"), now: time(1) },
     ));
     let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(1), wall: wall(1) }));
     record(client_step(&mut client, oauth::Event::Http(answer)))
@@ -343,7 +341,14 @@ fn a_varying_redirect_refuses_another_ports_redirect() {
     };
     let result = client_step(
         &mut client,
-        oauth::Event::Redirected { uri: boxed(b"http://127.0.0.1:40002/callback"), state, code, error, now },
+        oauth::Event::Redirected {
+            client_id: None,
+            uri: boxed(b"http://127.0.0.1:40002/callback"),
+            state,
+            code,
+            error,
+            now,
+        },
     );
     assert_eq!(failure(result.as_ref()), oauth::Failure::InvalidRedirect);
 }
@@ -402,4 +407,41 @@ fn an_openid_sign_in_fails_before_its_check_exists() {
     let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(2), wall: wall(100) }));
     let result = client_step(&mut client, oauth::Event::Http(answer));
     assert_eq!(failure(result.as_ref()), oauth::Failure::Malformed);
+}
+
+#[test]
+fn an_added_error_name_on_a_refresh_signs_in_again() {
+    let mut registration = registration(true);
+    let mut additions = terms();
+    additions.sign_in_again = Box::new([boxed(b"refresh_gone")]);
+    registration.terms = Some(additions);
+    let (mut client, mut issuer) = planned(&registration, error(500, b"refresh_gone", 0));
+    let prior = oauth::decode_record(VERSION_TWO, &documents()).expect("version two");
+    let request = http(client_step(
+        &mut client,
+        oauth::Event::Refresh { registration, prior: prior.refresh_state().expect("refreshable"), now: time(1) },
+    ));
+    let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(1), wall: wall(1) }));
+    assert_eq!(failure(client_step(&mut client, oauth::Event::Http(answer)).as_ref()), oauth::Failure::Refused);
+}
+
+#[test]
+fn tokens_name_the_required_scopes_the_issuer_withheld() {
+    let mut registration = registration(true);
+    let mut additions = terms();
+    additions.required_scopes = Some(boxed(b"read profile"));
+    registration.terms = Some(additions);
+    let mut plan = success(b"access", Some(b"refresh"), 0);
+    let fake::Body::Token(answer) = &mut plan.body else { panic!("token plan") };
+    answer.scope = Some(boxed(b"read"));
+    let (mut client, mut issuer) = planned(&registration, plan);
+    let url = visit(&mut client, registration, None, None);
+    let event = redirected(&mut issuer, url);
+    let request = http(client_step(&mut client, event));
+    let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(2), wall: wall(100) }));
+    let Some(oauth::Request::Tokens { record, missing }) = client_step(&mut client, oauth::Event::Http(answer)) else {
+        panic!("tokens")
+    };
+    assert_eq!(missing.as_ref(), b"profile");
+    assert_eq!(record.key, 7);
 }

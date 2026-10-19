@@ -4,7 +4,8 @@
 //! terminal. HTTP transport and persistence belong to the caller.
 
 use crate::redirect::{
-    authorization_url, form_fields, has_openid, resource_field, sign_in_values, validate_registration,
+    authorization_url, form_fields, has_openid, issued_id, missing_scopes, resource_field, sign_in_values,
+    validate_registration,
 };
 use crate::{ClaimSelector, DecodeError, Failure, Json, Limits, OAuthError, RefreshState, SavedToken, TokenResponse};
 use crate::{classify, decode_error, decode_response, pkce, rotate};
@@ -45,7 +46,7 @@ pub fn client_worst_case(limits: &ClientLimits) -> Option<u64> {
         .checked_add(
             u64::from(limits.parameter_bytes).checked_mul(u64::try_from(size_of::<crate::Parameter>()).ok()?)?,
         )?
-        .checked_add(List::<Option<(&[u8], &[u8])>>::worst_case(limits.parameter_bytes.checked_add(9)?)?)?
+        .checked_add(List::<Option<(&[u8], &[u8])>>::worst_case(limits.parameter_bytes.checked_add(11)?)?)?
         .checked_add(u64::from(limits.resource_bytes))?
         .checked_add(u64::from(limits.nonce_bytes))?
         .checked_add(u64::from(limits.state_bytes).checked_mul(2)?)?
@@ -115,6 +116,9 @@ pub enum Event {
         verifier: Option<Box<[u8]>>,
         nonce: Option<Box<[u8]>>,
         port: Option<u16>,
+        issued_client_id: Option<Box<[u8]>>,
+        id_token: Option<Box<[u8]>>,
+        subject: Option<Box<[u8]>>,
         now: Time,
     },
     Redirected {
@@ -122,6 +126,7 @@ pub enum Event {
         state: Box<[u8]>,
         code: Option<Box<[u8]>>,
         error: Option<Box<[u8]>>,
+        client_id: Option<Box<[u8]>>,
         now: Time,
     },
     Refresh {
@@ -141,7 +146,7 @@ pub enum Event {
 pub enum Request {
     Visit { url: Box<[u8]> },
     Http(HttpRequest),
-    Tokens { record: SavedToken },
+    Tokens { record: SavedToken, missing: Box<[u8]> },
     Failed { failure: Failure },
 }
 
@@ -161,6 +166,9 @@ struct SignInValues {
     verifier: Option<Box<[u8]>>,
     nonce: Option<Box<[u8]>>,
     port: Option<u16>,
+    issued_client_id: Option<Box<[u8]>>,
+    id_token: Option<Box<[u8]>>,
+    subject: Option<Box<[u8]>>,
     now: Time,
 }
 
@@ -218,12 +226,37 @@ impl Client {
     pub fn step(&mut self, event: Event, out: &mut Queue<Request>) {
         assert!(out.room() >= MAX_OUT, "caller reserves one OAuth output");
         match event {
-            Event::SignIn { registration, key, generation, state, verifier, nonce, port, now } => {
+            Event::SignIn {
+                registration,
+                key,
+                generation,
+                state,
+                verifier,
+                nonce,
+                port,
+                issued_client_id,
+                id_token,
+                subject,
+                now,
+            } => {
                 if self.phase != Phase::Idle {
                     return;
                 }
-                let result =
-                    self.sign_in(registration, SignInValues { key, generation, state, verifier, nonce, port, now });
+                let result = self.sign_in(
+                    registration,
+                    SignInValues {
+                        key,
+                        generation,
+                        state,
+                        verifier,
+                        nonce,
+                        port,
+                        issued_client_id,
+                        id_token,
+                        subject,
+                        now,
+                    },
+                );
                 self.emit_start(result, out);
             }
             Event::Refresh { registration, prior, now } => {
@@ -233,7 +266,9 @@ impl Client {
                 let result = self.refresh(registration, prior, now);
                 self.emit_start(result, out);
             }
-            Event::Redirected { uri, state, code, error, now } => self.redirected(&uri, &state, code, error, now, out),
+            Event::Redirected { uri, state, code, error, client_id, now } => {
+                self.redirected((&uri, &state), code, error, client_id, now, out);
+            }
             Event::Http(answer) => self.http(answer, out),
             Event::Tick { now } => self.tick(now, out),
             Event::Cancel => {
@@ -266,7 +301,8 @@ impl Client {
         mut registration: Registration,
         values: SignInValues,
     ) -> Result<(Exchange, Request, Phase), Failure> {
-        let SignInValues { key, generation, state, verifier, nonce, port, now } = values;
+        let SignInValues { key, generation, state, verifier, nonce, port, issued_client_id, id_token, subject, now } =
+            values;
         validate_registration(&registration, &self.limits, true)?;
         sign_in_values(&mut registration, nonce.as_deref(), port, &self.limits)?;
         if state.len() < 16 || state.len() > usize::try_from(self.limits.state_bytes).expect("u32 fits") {
@@ -281,7 +317,14 @@ impl Client {
             (None, false) => None,
             (Some(_), false) | (None, true) => return Err(Failure::Malformed),
         };
-        let url = authorization_url(&registration, &state, challenge.as_deref(), nonce.as_deref(), &self.limits)?;
+        let url = authorization_url(
+            &registration,
+            &state,
+            challenge.as_deref(),
+            nonce.as_deref(),
+            [issued_client_id.as_deref(), id_token.as_deref(), subject.as_deref()],
+            &self.limits,
+        )?;
         let deadline = now.checked_add(self.limits.sign_in_time).ok_or(Failure::Limit)?;
         let exchange = Exchange {
             registration,
@@ -296,7 +339,7 @@ impl Client {
 
     fn refresh(
         &mut self,
-        registration: Registration,
+        mut registration: Registration,
         prior: RefreshState,
         now: Time,
     ) -> Result<(Exchange, Request, Phase), Failure> {
@@ -308,6 +351,13 @@ impl Client {
         }
         if let Err(error) = crate::record::validate_refresh_additions(&prior, &self.limits.document) {
             return Err(admit(error));
+        }
+        if issued_id(&registration) {
+            let Some(client_id) = &prior.issued_client_id else { return Err(Failure::Refused) };
+            if client_id.is_empty() {
+                return Err(Failure::Refused);
+            }
+            registration.client_id.clone_from(client_id);
         }
         let deadline = now.checked_add(self.limits.sign_in_time).ok_or(Failure::Limit)?;
         let mut exchange = Exchange {
@@ -324,13 +374,14 @@ impl Client {
 
     fn redirected(
         &mut self,
-        uri: &[u8],
-        state: &[u8],
+        redirect: (&[u8], &[u8]),
         code: Option<Box<[u8]>>,
         error: Option<Box<[u8]>>,
+        client_id: Option<Box<[u8]>>,
         now: Time,
         out: &mut Queue<Request>,
     ) {
+        let (uri, state) = redirect;
         if self.phase != Phase::AwaitRedirect {
             return;
         }
@@ -356,6 +407,21 @@ impl Client {
         if code.is_empty() || code.len() > usize::try_from(self.limits.code_bytes).expect("u32 fits") {
             self.finish(Failure::Limit, out);
             return;
+        }
+        if issued_id(&exchange.registration) {
+            let Some(client_id) = client_id else {
+                self.finish(Failure::Incomplete, out);
+                return;
+            };
+            if client_id.is_empty() {
+                self.finish(Failure::Incomplete, out);
+                return;
+            }
+            if client_id.len() > usize::try_from(self.limits.document.issued_client_bytes).expect("u32 fits") {
+                self.finish(Failure::Limit, out);
+                return;
+            }
+            exchange.registration.client_id = client_id;
         }
         match &mut exchange.grant {
             Grant::SignIn { code: slot, .. } => *slot = Some(code),
@@ -406,7 +472,8 @@ impl Client {
                 Ok(tokens) => match self.record(&exchange, &tokens, answer.wall) {
                     Ok(record) => {
                         self.phase = Phase::Done;
-                        out.push(Request::Tokens { record });
+                        let missing = missing_scopes(&exchange.registration, &record);
+                        out.push(Request::Tokens { record, missing });
                     }
                     Err(failure) => self.finish(failure, out),
                 },
@@ -426,7 +493,17 @@ impl Client {
             }
         };
         let failure = match error {
-            Ok(value) => classify(answer.status, value.as_ref(), answer.retry_after),
+            Ok(value) => {
+                let mut added = false;
+                if let (Some(terms), Some(error)) = (&exchange.registration.terms, &value) {
+                    for name in &terms.sign_in_again {
+                        if name == &error.code {
+                            added = true;
+                        }
+                    }
+                }
+                if added { Failure::Refused } else { classify(answer.status, value.as_ref(), answer.retry_after) }
+            }
             Err(_) => Failure::Malformed,
         };
         let safe = answer.status == 429 && answer.evidence == HttpEvidence::Response;
@@ -447,7 +524,11 @@ impl Client {
                     key: *key,
                     generation: *generation,
                     refresh_token: refresh.clone(),
-                    issued_client_id: None,
+                    issued_client_id: if issued_id(&exchange.registration) {
+                        Some(exchange.registration.client_id.clone())
+                    } else {
+                        None
+                    },
                     granted_scopes: None,
                     subject: None,
                     id_token: None,
@@ -474,6 +555,7 @@ impl Client {
             Failure::Refused
             | Failure::ClientRejected
             | Failure::Malformed
+            | Failure::Incomplete
             | Failure::InvalidRedirect
             | Failure::Limit
             | Failure::Cancelled => false,

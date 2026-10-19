@@ -123,7 +123,7 @@ pub fn response(request: Option<fake::Request>) -> oauth::HttpResponse {
 #[must_use]
 pub fn record(request: Option<oauth::Request>) -> oauth::SavedToken {
     match request {
-        Some(oauth::Request::Tokens { record }) => record,
+        Some(oauth::Request::Tokens { record, .. }) => record,
         _ => panic!("token record expected"),
     }
 }
@@ -198,6 +198,9 @@ pub fn visit(
     let request = client_step(
         client,
         oauth::Event::SignIn {
+            issued_client_id: None,
+            id_token: None,
+            subject: None,
             registration,
             key: 7,
             generation: 0,
@@ -216,5 +219,12 @@ pub fn visit(
 pub fn redirected(issuer: &mut fake::Issuer, url: Box<[u8]>) -> oauth::Event {
     let redirect = fake_step(issuer, fake::Event::Authorize { url, now: time(1) });
     let Some(fake::Request::Redirect { uri, state, code }) = redirect else { panic!("redirect expected") };
-    oauth::Event::Redirected { uri, state, code: Some(code), error: None, now: time(2) }
+    oauth::Event::Redirected { client_id: None, uri, state, code: Some(code), error: None, now: time(2) }
+}
+
+#[must_use]
+pub fn planned(registration: &oauth::Registration, plan: fake::Plan) -> (oauth::Client, fake::Issuer) {
+    let mut issuer = issuer_for(registration);
+    issuer.queue(plan).expect("plan");
+    (oauth::Client::new(client_limits()).expect("client"), issuer)
 }

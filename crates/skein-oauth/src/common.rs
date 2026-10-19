@@ -52,6 +52,7 @@ pub enum Failure {
     ClientRejected,
     Malformed,
     InvalidRedirect,
+    Incomplete,
     Limit,
     Cancelled,
 }

@@ -86,12 +86,19 @@ fn failure(result: Option<Request>) -> Failure {
     }
 }
 fn token_body() -> Box<[u8]> {
+    token_body_with_scope(None)
+}
+fn token_body_with_scope(scope: Option<&[u8]>) -> Box<[u8]> {
+    let mut granted = None;
+    if let Some(scope) = scope {
+        granted = Some(boxed(scope));
+    }
     encode_response(
         &TokenResponse {
             access_token: boxed(b"access"),
             refresh_token: Some(boxed(b"refresh-new")),
             expires_in: 30,
-            scope: None,
+            scope: granted,
             id_token: None,
             earliest_refresh_at: None,
         },
@@ -117,6 +124,9 @@ fn public_sign_in_uses_s256_state_and_one_code_exchange() {
     let visit = step(
         &mut client,
         Event::SignIn {
+            issued_client_id: None,
+            id_token: None,
+            subject: None,
             nonce: None,
             port: None,
             registration: registration(true, WireFormat::Form),
@@ -133,11 +143,18 @@ fn public_sign_in_uses_s256_state_and_one_code_exchange() {
     let uri = boxed(b"http://127.0.0.1:2345/callback");
     let http = request(step(
         &mut client,
-        Event::Redirected { uri, state: state(), code: Some(boxed(b"one-use")), error: None, now: time(2) },
+        Event::Redirected {
+            client_id: None,
+            uri,
+            state: state(),
+            code: Some(boxed(b"one-use")),
+            error: None,
+            now: time(2),
+        },
     ));
     assert!(bytes::find(&http.body, b"code_verifier=").is_some());
     assert!(bytes::find(&http.body, b"code=one-use").is_some());
-    let Some(Request::Tokens { record }) = step(&mut client, answered(http.id, 200, &token_body(), 3)) else {
+    let Some(Request::Tokens { record, .. }) = step(&mut client, answered(http.id, 200, &token_body(), 3)) else {
         panic!("tokens expected")
     };
     assert_eq!(record.key, 7);
@@ -153,6 +170,9 @@ fn confidential_sign_in_sends_secret_in_json_only_to_token_endpoint() {
     let visit = step(
         &mut client,
         Event::SignIn {
+            issued_client_id: None,
+            id_token: None,
+            subject: None,
             nonce: None,
             port: None,
             registration: registration(false, WireFormat::Json),
@@ -168,6 +188,7 @@ fn confidential_sign_in_sends_secret_in_json_only_to_token_endpoint() {
     let http = request(step(
         &mut client,
         Event::Redirected {
+            client_id: None,
             uri: boxed(b"https://web.example/callback"),
             state: state(),
             code: Some(boxed(b"grant")),
@@ -177,7 +198,7 @@ fn confidential_sign_in_sends_secret_in_json_only_to_token_endpoint() {
     ));
     assert!(bytes::find(&http.body, b"\"client_secret\":\"secret\"").is_some());
     assert!(bytes::find(&http.body, b"\"grant_type\":\"authorization_code\"").is_some());
-    let Some(Request::Tokens { record }) = step(&mut client, answered(http.id, 200, &token_body(), 3)) else {
+    let Some(Request::Tokens { record, .. }) = step(&mut client, answered(http.id, 200, &token_body(), 3)) else {
         panic!("tokens expected")
     };
     assert_eq!(record.generation, 9);
@@ -191,6 +212,9 @@ fn confidential_registration_can_require_pkce_too() {
     let Some(Request::Visit { url }) = step(
         &mut client,
         Event::SignIn {
+            issued_client_id: None,
+            id_token: None,
+            subject: None,
             nonce: None,
             port: None,
             registration,
@@ -207,6 +231,7 @@ fn confidential_registration_can_require_pkce_too() {
     let http = request(step(
         &mut client,
         Event::Redirected {
+            client_id: None,
             uri: boxed(b"https://web.example/callback"),
             state: state(),
             code: Some(boxed(b"grant")),
@@ -232,6 +257,9 @@ fn public_redirect_spellings_supply_the_exact_loopback_bind_address() {
         let Some(Request::Visit { .. }) = step(
             &mut client,
             Event::SignIn {
+                issued_client_id: None,
+                id_token: None,
+                subject: None,
                 nonce: None,
                 port: None,
                 registration,
@@ -269,6 +297,9 @@ fn localhost_redirect_admission_refuses_other_spellings_and_missing_parts() {
             failure(step(
                 &mut client,
                 Event::SignIn {
+                    issued_client_id: None,
+                    id_token: None,
+                    subject: None,
                     nonce: None,
                     port: None,
                     registration,
@@ -301,6 +332,9 @@ fn localhost_registration_refuses_every_redirect_uri_change_before_exchange() {
         let Some(Request::Visit { .. }) = step(
             &mut client,
             Event::SignIn {
+                issued_client_id: None,
+                id_token: None,
+                subject: None,
                 nonce: None,
                 port: None,
                 registration,
@@ -317,6 +351,7 @@ fn localhost_registration_refuses_every_redirect_uri_change_before_exchange() {
             failure(step(
                 &mut client,
                 Event::Redirected {
+                    client_id: None,
                     uri: boxed(uri),
                     state: state(),
                     code: Some(boxed(b"code")),
@@ -344,6 +379,9 @@ fn public_redirect_must_have_a_numeric_loopback_port() {
             failure(step(
                 &mut client,
                 Event::SignIn {
+                    issued_client_id: None,
+                    id_token: None,
+                    subject: None,
                     nonce: None,
                     port: None,
                     registration,
@@ -366,6 +404,9 @@ fn wrong_state_and_redirect_are_terminal_without_exchange() {
         let _visit = step(
             &mut client,
             Event::SignIn {
+                issued_client_id: None,
+                id_token: None,
+                subject: None,
                 nonce: None,
                 port: None,
                 registration: registration(true, WireFormat::Form),
@@ -382,7 +423,14 @@ fn wrong_state_and_redirect_are_terminal_without_exchange() {
         assert_eq!(
             failure(step(
                 &mut client,
-                Event::Redirected { uri, state: returned_state, code: Some(boxed(b"code")), error: None, now: time(2) }
+                Event::Redirected {
+                    client_id: None,
+                    uri,
+                    state: returned_state,
+                    code: Some(boxed(b"code")),
+                    error: None,
+                    now: time(2)
+                }
             )),
             Failure::InvalidRedirect
         );
@@ -390,6 +438,7 @@ fn wrong_state_and_redirect_are_terminal_without_exchange() {
             step(
                 &mut client,
                 Event::Redirected {
+                    client_id: None,
                     uri: boxed(b"http://127.0.0.1:2345/callback"),
                     state: state(),
                     code: Some(boxed(b"code")),
@@ -434,7 +483,7 @@ fn refresh_rotation_preserves_old_token_when_answer_omits_one() {
         &limits().document,
     )
     .expect("response");
-    let Some(Request::Tokens { record }) = step(&mut client, answered(http.id, 200, &body, 2)) else {
+    let Some(Request::Tokens { record, .. }) = step(&mut client, answered(http.id, 200, &body, 2)) else {
         panic!("tokens expected")
     };
     assert_eq!(record.refresh_token.as_deref().expect("refresh token"), b"old");
@@ -584,6 +633,9 @@ fn issuer_http_endpoints_are_admitted_only_on_numeric_loopback() {
                 let result = step(
                     &mut client,
                     Event::SignIn {
+                        issued_client_id: None,
+                        id_token: None,
+                        subject: None,
                         nonce: None,
                         port: None,
                         registration: configured,
@@ -606,6 +658,7 @@ fn issuer_http_endpoints_are_admitted_only_on_numeric_loopback() {
                     let http = request(step(
                         &mut client,
                         Event::Redirected {
+                            client_id: None,
                             uri: if public {
                                 boxed(b"http://127.0.0.1:2345/callback")
                             } else {
@@ -657,3 +710,5 @@ fn refresh_keeps_its_admitted_http_loopback_endpoint() {
 }
 
 mod terms;
+
+mod issued;

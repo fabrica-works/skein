@@ -127,6 +127,9 @@ impl Component {
         }
         exchange.client.step(
             oauth::Event::SignIn {
+                issued_client_id: None,
+                id_token: None,
+                subject: None,
                 nonce: None,
                 port: None,
                 registration,
@@ -188,6 +191,7 @@ impl Component {
 pub(super) fn deliver(client: &mut oauth::Client, above: &mut Queue<oauth::Request>, redirect: Redirect, now: Time) {
     client.step(
         oauth::Event::Redirected {
+            client_id: None,
             uri: redirect.uri,
             state: redirect.state,
             code: redirect.code,

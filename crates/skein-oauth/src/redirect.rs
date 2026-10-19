@@ -192,11 +192,26 @@ pub(crate) fn authorization_url(
     state: &[u8],
     challenge: Option<&[u8]>,
     nonce: Option<&[u8]>,
+    hints: [Option<&[u8]>; 3],
     limits: &ClientLimits,
 ) -> Result<Box<[u8]>, Failure> {
+    let [held_id, id_token, subject] = hints;
+    for (value, cap) in [
+        (held_id, limits.document.issued_client_bytes),
+        (id_token, limits.document.id_token_bytes),
+        (subject, limits.document.subject_bytes),
+    ] {
+        if let Some(value) = value
+            && value.len() > usize::try_from(cap).expect("u32 fits")
+        {
+            return Err(Failure::Limit);
+        }
+    }
+    let held_id = if issued_id(registration) { held_id } else { None };
+    let client_id = held_id.unwrap_or(&registration.client_id);
     let fields = [
         Some((b"response_type".as_slice(), b"code".as_slice())),
-        Some((b"client_id".as_slice(), registration.client_id.as_ref())),
+        Some((b"client_id".as_slice(), client_id)),
         Some((b"redirect_uri".as_slice(), registration.redirect_uri.as_ref())),
         Some((b"state".as_slice(), state)),
         if registration.scope.is_empty() { None } else { Some((b"scope".as_slice(), registration.scope.as_ref())) },
@@ -214,13 +229,15 @@ pub(crate) fn authorization_url(
         None => &[],
     };
     let Ok(count) = u32::try_from(parameters.len()) else { return Err(Failure::Limit) };
-    let capacity = count.checked_add(9).ok_or(Failure::Limit)?;
+    let capacity = count.checked_add(11).ok_or(Failure::Limit)?;
     let mut all = List::with_capacity(capacity);
     for field in fields {
         all.push(field).expect("measured URL fields");
     }
     for parameter in parameters {
-        all.push(Some((parameter.name.as_ref(), parameter.value.as_ref()))).expect("measured URL fields");
+        if held_id.is_none() || parameter.sent == Sent::EverySignIn {
+            all.push(Some((parameter.name.as_ref(), parameter.value.as_ref()))).expect("measured URL fields");
+        }
     }
     all.push(resource_field(registration)).expect("measured URL fields");
     all.push(match nonce {
@@ -228,6 +245,13 @@ pub(crate) fn authorization_url(
         None => None,
     })
     .expect("measured URL fields");
+    for (name, value) in [(b"id_token_hint".as_slice(), id_token), (b"login_hint".as_slice(), subject)] {
+        if held_id.is_some()
+            && let Some(value) = value
+        {
+            all.push(Some((name, value))).expect("measured URL fields");
+        }
+    }
     let query = form_fields(all.as_slice(), limits.url_bytes)?;
     let prefix = registration.authorization_url.len().checked_add(1).ok_or(Failure::Limit)?;
     let length = prefix.checked_add(query.len()).ok_or(Failure::Limit)?;
@@ -417,4 +441,51 @@ pub(crate) fn scope_contains(scopes: &[u8], wanted: &[u8]) -> bool {
         }
     }
     false
+}
+
+pub(crate) fn issued_id(registration: &Registration) -> bool {
+    match &registration.terms {
+        Some(terms) => terms.issued_client_id,
+        None => false,
+    }
+}
+
+pub(crate) fn missing_scopes(registration: &Registration, record: &crate::SavedToken) -> Box<[u8]> {
+    let required = match &registration.terms {
+        Some(terms) => terms.required_scopes.as_deref().unwrap_or(b""),
+        None => b"",
+    };
+    let granted = record.granted_scopes.as_deref().unwrap_or(&registration.scope);
+    let mut writer = Writer::new(0);
+    let mut length = 0_usize;
+    for writing in [false, true] {
+        let mut start = 0;
+        let mut first = true;
+        for end in 0..=required.len() {
+            if end != required.len() && required.get(end) != Some(&b' ') {
+                continue;
+            }
+            let scope = required.get(start..end).expect("scope endpoints fit");
+            start = end.saturating_add(1);
+            if scope.is_empty() || scope_contains(granted, scope) {
+                continue;
+            }
+            if writing {
+                if !first {
+                    writer.put(b" ").expect("measured missing scopes");
+                }
+                writer.put(scope).expect("measured missing scopes");
+            } else {
+                if !first {
+                    length = length.checked_add(1).expect("within required scopes");
+                }
+                length = length.checked_add(scope.len()).expect("within required scopes");
+            }
+            first = false;
+        }
+        if !writing {
+            writer = Writer::new(length);
+        }
+    }
+    writer.finish()
 }

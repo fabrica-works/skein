@@ -6,7 +6,7 @@ const RESOURCE_CAP: usize = 128; // limits().resource_bytes.
 const NONCE_MIN: usize = 16; // oauth.md, section 2.
 const NONCE_CAP: usize = 64; // limits().nonce_bytes.
 
-fn terms(openid: bool, varying_port: bool) -> Terms {
+pub(super) fn terms(openid: bool, varying_port: bool) -> Terms {
     Terms {
         parameters: Box::new([]),
         openid: if openid { Some(OpenId { issuer: boxed(b"https://issuer.example"), key_set: None }) } else { None },
@@ -71,6 +71,9 @@ fn resource(length: usize) -> Registration {
 }
 fn start(registration: Registration, nonce: Option<Box<[u8]>>, port: Option<u16>) -> Event {
     Event::SignIn {
+        issued_client_id: None,
+        id_token: None,
+        subject: None,
         registration,
         key: 1,
         generation: 0,
@@ -125,13 +128,6 @@ fn admission_rows() -> Box<[Admission]> {
 fn terms_are_refused_where_the_design_refuses() {
     for (name, registration, expected) in admission_rows() {
         assert_eq!(validate_registration(&registration, &limits(), true), expected, "{name}");
-        if name == "empty value" {
-            let mut client = Client::new(limits()).expect("client");
-            let Some(Request::Visit { url }) = step(&mut client, start(registration, None, None)) else {
-                panic!("visit for an empty parameter value")
-            };
-            assert!(url.ends_with(b"&p="));
-        }
     }
 }
 
@@ -196,6 +192,7 @@ fn a_varying_redirect_takes_the_bound_port() {
         let request = request(step(
             &mut client,
             Event::Redirected {
+                client_id: None,
                 uri: boxed(bound_uri),
                 state: state(),
                 code: Some(boxed(b"one-use")),
@@ -250,4 +247,11 @@ fn a_nonce_is_bounded_and_needs_openid() {
         };
         assert_eq!(admitted, expected, "nonce length {length:?}, openid {enabled}");
     }
+}
+
+#[test]
+fn an_empty_parameter_value_is_carried_in_the_url() {
+    let mut client = Client::new(limits()).expect("client");
+    let Some(Request::Visit { url }) = step(&mut client, start(parameters(1), None, None)) else { panic!("visit") };
+    assert!(url.ends_with(b"&p="));
 }

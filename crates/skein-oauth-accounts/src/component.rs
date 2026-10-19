@@ -721,7 +721,7 @@ impl Component {
                     addr: skein_io::Addr::Ip(endpoint.address),
                 });
             }
-            oauth::Request::Tokens { record } => {
+            oauth::Request::Tokens { record, .. } => {
                 let kept = record.clone();
                 exchange.stage = Stage::Keeping { candidate: record };
                 match self.keepers.get_mut(account).expect("account keeper") {

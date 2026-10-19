@@ -82,11 +82,11 @@ fn scenario(seed: u64) {
     let Some(fake::Request::Http(answer)) = answer else { panic!("answer at seed {seed}") };
     let terminal = client_step(&mut client, oauth::Event::Http(answer));
     match (mode, terminal) {
-        (0, Some(oauth::Request::Tokens { record })) => {
+        (0, Some(oauth::Request::Tokens { record, .. })) => {
             assert_eq!(record.refresh_token.as_deref().expect("refresh token"), b"next", "seed {seed}");
             assert_eq!(issuer.generation(), 1, "seed {seed}");
         }
-        (1, Some(oauth::Request::Tokens { record })) => {
+        (1, Some(oauth::Request::Tokens { record, .. })) => {
             assert_eq!(record.refresh_token.as_deref().expect("refresh token"), b"seed", "seed {seed}");
             assert_eq!(issuer.generation(), 0, "seed {seed}");
         }
