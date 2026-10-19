@@ -111,3 +111,5 @@ fn credential_debug_contains_no_secret() {
         assert_eq!(skein_lib::bytes::find(&debug, fixtures::TOKEN), None);
     }
 }
+
+mod calls;

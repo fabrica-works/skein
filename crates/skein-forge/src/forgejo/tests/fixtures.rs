@@ -147,7 +147,7 @@ impl Pump {
     }
 }
 pub fn request(
-    method: crate::forgejo::request::Method,
+    method: Method,
     target: &[u8],
     body: &[u8],
     limits: &Limits,
@@ -250,5 +250,156 @@ pub fn specimen() -> crate::forgejo::plans::tables::Repository {
         object_format: crate::forgejo::id::ObjectFormat::Sha1,
         merge_style: crate::forgejo::document::MergeStyle::Squash,
         html_url: Box::from(&b"http://127.0.0.1:3000/fixture/specimen"[..]),
+    }
+}
+
+use crate::api::Op;
+use crate::forgejo::plans::{
+    Body, Heard,
+    plan::{Bounds, Exchange, Plan, Step as PlanStep},
+    tables::Tables,
+};
+use crate::forgejo::request::Method;
+/// The protocol fixtures' small bounds (forge.md, sections 5.1 and 11).
+pub const ROWS: u32 = 8;
+pub const ANSWER_BYTES: u32 = 65_536;
+pub const BODY_BYTES: u32 = 1045;
+pub const PAGE_SIZE: u32 = 2;
+pub const RAW_BYTES: u32 = 4;
+pub const WORD: &[u8] = b"kit";
+pub const BOUNDS: Bounds =
+    Bounds { page_size: PAGE_SIZE, rows: ROWS, answer_bytes: ANSWER_BYTES, body_bytes: BODY_BYTES };
+pub const HEAD: [u8; 32] = {
+    let mut id = [0; 32];
+    id[0] = 1;
+    id
+};
+pub const BASE: [u8; 32] = {
+    let mut id = [0; 32];
+    id[0] = 3;
+    id
+};
+pub const ATTEMPT: crate::api::JobAttempt = crate::api::JobAttempt { head: HEAD, run: 7, job: 10, attempt: 3 };
+pub const REPOSITORY: &[u8] = br#"{"id":1,"owner":{"id":2,"login":"fixture"},"name":"specimen","object_format_name":"sha1","default_branch":"main","default_merge_style":"squash","allow_merge_commits":true,"allow_squash_merge":false,"allow_rebase":false,"html_url":"http://127.0.0.1:3000/fixture/specimen"}"#;
+pub const PULL: &[u8] = br#"{"number":1,"state":"open","head":{"repo_id":1,"ref":"work","sha":"0100000000000000000000000000000000000000"},"base":{"repo_id":1,"ref":"main","sha":"0300000000000000000000000000000000000000"},"merged":false,"merge_commit_sha":null,"merge_base":"0300000000000000000000000000000000000000","mergeable":true,"requested_reviewers":[]}"#;
+pub const BRANCH: &[u8] = br#"{"name":"work","commit":{"id":"0100000000000000000000000000000000000000"},"effective_branch_protection_name":""}"#;
+pub const EMPTY_STATUS: &[u8] = br#"{"state":"","total_count":0,"statuses":[]}"#;
+pub const RUN: &[u8] = br#"{"id":7,"index_in_repo":5,"commit_sha":"0100000000000000000000000000000000000000"}"#;
+pub const JOB: &[u8] = br#"{"id":10,"run_id":7,"attempt":3,"steps":[{"number":1,"name":"x","status":"failure"}]}"#;
+pub const EMPTY_COMPARE: &[u8] = br#"{"total_commits":0,"commits":[],"files":[]}"#;
+
+/// A pure plan driven by the dialect's own request encoders and answer decoders.
+pub struct Run {
+    plan: Plan,
+    bounds: Bounds,
+    limits: Limits,
+    tables: Tables,
+    exchanges: List<Exchange>,
+    current: Option<Exchange>,
+}
+impl Run {
+    pub fn new(op: Op) -> Self {
+        // Tables and recorded exchanges hold no more than the fixture's row bound.
+        Self {
+            plan: Plan::new(REPO, op),
+            bounds: BOUNDS,
+            limits: limits(),
+            tables: Tables::new(ROWS, ROWS),
+            exchanges: List::with_capacity(ROWS),
+            current: None,
+        }
+    }
+    pub fn known(op: Op) -> Self {
+        Self::with(BOUNDS, op)
+    }
+    pub fn with(bounds: Bounds, op: Op) -> Self {
+        let mut run = Self::new(op);
+        run.bounds = bounds;
+        run.tables.keep_repository(REPO, specimen());
+        run
+    }
+    fn record(&mut self, step: PlanStep) -> PlanStep {
+        if let PlanStep::Send(exchange) = &step {
+            self.exchanges.push(exchange.clone()).expect("fixture exchange bound");
+            self.current = Some(exchange.clone());
+        }
+        step
+    }
+    pub fn begin(&mut self) -> PlanStep {
+        let step = match self.plan.begin(self.bounds, WORD, &mut self.tables) {
+            Ok(step) => step,
+            Err(error) => PlanStep::Done(Err(error)),
+        };
+        self.record(step)
+    }
+    fn hear(&mut self, heard: Heard) -> Option<PlanStep> {
+        let step = match self.plan.heard(heard, self.bounds, WORD, &mut self.tables) {
+            Ok(step) => step,
+            Err(error) => Some(PlanStep::Done(Err(error))),
+        };
+        Some(self.record(step?))
+    }
+    pub fn answer(&mut self, status: u16, bytes: &[u8]) -> PlanStep {
+        let fields = crate::forgejo::plans::Fields { date: Some(Wall::EPOCH), ..fields() };
+        if let Some(step) = self.hear(Heard::Head { status, fields }) {
+            return step;
+        }
+        let request = &self.current.as_ref().expect("sent request").request;
+        let decoder = if status >= 400 {
+            Some(client::error_decoder(&self.limits))
+        } else {
+            client::decoder(request, &self.limits)
+        };
+        let body = if let Some(decoder) = decoder {
+            let result = decode(decoder, bytes, &self.limits);
+            for row in result.rows.into_boxed() {
+                if let Some(step) = self.hear(Heard::Row(row)) {
+                    return step;
+                }
+            }
+            match result.document {
+                Ok(document) => Body::Document(document),
+                Err(error) => Body::Malformed(error),
+            }
+        } else if client::encode(request, &self.limits).unwrap().method == Method::Get {
+            Body::Raw { bytes: Box::from(bytes), more: false }
+        } else {
+            Body::Empty
+        };
+        self.hear(Heard::Done(body)).expect("answer advances the plan")
+    }
+    pub fn tables(&mut self) -> &mut Tables {
+        &mut self.tables
+    }
+    pub fn last_range(&self) -> Option<crate::forgejo::plans::plan::Range> {
+        self.current.as_ref().expect("sent request").range
+    }
+    pub fn assert_listing(&self, prefix: &str, limit: &[u8]) {
+        let exchange = self.current.as_ref().expect("sent request");
+        let encoded = client::encode(&exchange.request, &self.limits).unwrap();
+        assert_eq!(encoded.method, Method::Get);
+        assert_eq!(
+            encoded.target.strip_prefix(b"/api/v1/repos/fixture/specimen/").unwrap().strip_prefix(prefix.as_bytes()),
+            Some(limit)
+        );
+    }
+    fn assert_exchange(exchange: &Exchange, line: &str, limits: &Limits) {
+        let encoded = client::encode(&exchange.request, limits).unwrap();
+        let method = match encoded.method {
+            Method::Get => "GET",
+            Method::Post => "POST",
+            Method::Put => "PUT",
+            Method::Patch => "PATCH",
+            Method::Delete => "DELETE",
+        };
+        let (asked_method, target) = line.split_once(' ').expect("literal request line");
+        assert_eq!(method, asked_method, "{line}");
+        assert_eq!(encoded.target.as_ref(), target.as_bytes(), "{line}");
+    }
+    pub fn assert_sent(&self, expected: &[&str]) {
+        assert_eq!(usize::try_from(self.exchanges.len()).unwrap(), expected.len());
+        for (exchange, line) in self.exchanges.iter().zip(expected) {
+            Self::assert_exchange(exchange, line, &self.limits);
+        }
     }
 }
