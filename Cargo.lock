@@ -662,6 +662,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-forge-client"
+version = "0.0.0"
+dependencies = [
+ "skein-forge",
+ "skein-lib",
+]
+
+[[package]]
 name = "skein-heap"
 version = "0.0.0"
 

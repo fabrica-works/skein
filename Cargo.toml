@@ -71,6 +71,7 @@ skein-ui-example-view = { path = "examples/ui/view" }
 skein-ui-text = { path = "crates/skein-ui-text" }
 skein-ui = { path = "crates/skein-ui" }
 skein-ui-bundle = { path = "crates/skein-ui-bundle" }
+skein-forge-client = { path = "crates/skein-forge-client" }
 skein-forge = { path = "crates/skein-forge" }
 skein-lib = { path = "crates/skein-lib" }
 skein-channel = { path = "crates/skein-channel" }
