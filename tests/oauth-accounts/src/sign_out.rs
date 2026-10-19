@@ -63,14 +63,8 @@ pub(crate) fn start(client: &mut world::Client, env: &Env<accounts::Limits>) {
     let owner = client.sign_out.as_ref().expect("sign-out story");
     let mut registration = world::registration(Transport::Plaintext);
     registration.terms = Some(oauth::Terms {
-        parameters: Box::new([]),
-        openid: None,
-        issued_client_id: false,
-        varying_port: false,
-        resource: None,
-        required_scopes: None,
         revocation_endpoint: (owner.story != Story::NoRevocation).then(|| bytes::copy_of(REVOKE)),
-        sign_in_again: Box::new([]),
+        ..world::terms()
     });
     let keeper = if owner.private {
         accounts::Keeper::Private {

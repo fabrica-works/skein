@@ -12,22 +12,14 @@ const UNCONFIRMED: &[u8] = b"HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r
 fn requests<const N: usize>(requests: [Request; N]) -> Box<[Request]> {
     Box::new(requests)
 }
-fn terms(endpoint: Option<Box<[u8]>>) -> skein_oauth::Terms {
-    skein_oauth::Terms {
-        parameters: Box::new([]),
-        openid: None,
-        issued_client_id: false,
-        varying_port: false,
-        resource: None,
-        required_scopes: None,
-        revocation_endpoint: endpoint,
-        sign_in_again: Box::new([]),
-    }
+fn revocation_terms(endpoint: Option<Box<[u8]>>) -> skein_oauth::Terms {
+    skein_oauth::Terms { revocation_endpoint: endpoint, ..terms() }
 }
 fn configuration(endpoint: bool, access_only: bool) -> Account {
     let mut configuration = refresh_account(0, ADDRESS);
     if let Account::SignIn { registration, keeper: Keeper::Owner { kept: Some(record) }, .. } = &mut configuration {
-        registration.terms = Some(terms(endpoint.then_some(bytes::copy_of(b"http://127.0.0.1:31000/revoke"))));
+        registration.terms =
+            Some(revocation_terms(endpoint.then_some(bytes::copy_of(b"http://127.0.0.1:31000/revoke"))));
         record.expires_at = Wall::from_nanos(Duration::from_secs(30).as_nanos());
         if access_only {
             record.refresh_token = None;
@@ -199,7 +191,7 @@ fn a_sign_in_after_a_sign_out_stores_expecting_no_file() {
 fn a_terms_endpoint_on_another_origin_is_unusable() {
     let mut configuration = configuration(true, false);
     if let Account::SignIn { registration, .. } = &mut configuration {
-        registration.terms = Some(terms(Some(bytes::copy_of(b"https://another.example/revoke"))));
+        registration.terms = Some(revocation_terms(Some(bytes::copy_of(b"https://another.example/revoke"))));
     }
     let mut configured = List::with_capacity(1);
     assert!(configured.push(configuration).is_ok());

@@ -70,29 +70,12 @@ fn registration(story: Story) -> oauth::Registration {
         } else {
             b"http://127.0.0.1:31234/callback"
         });
-        registration.terms = Some(oauth::Terms {
-            parameters: Box::new([]),
-            openid: None,
-            issued_client_id: false,
-            varying_port: true,
-            resource: None,
-            required_scopes: None,
-            revocation_endpoint: None,
-            sign_in_again: Box::new([]),
-        });
+        registration.terms = Some(oauth::Terms { varying_port: true, ..crate::world::terms() });
     }
     if story == Story::RequiredScopes {
-        registration.scope = bytes::copy_of(b"read write");
-        registration.terms = Some(oauth::Terms {
-            parameters: Box::new([]),
-            openid: None,
-            issued_client_id: false,
-            varying_port: false,
-            resource: None,
-            required_scopes: Some(bytes::copy_of(b"read write")),
-            revocation_endpoint: None,
-            sign_in_again: Box::new([]),
-        });
+        registration.scope = bytes::copy_of(REQUIRED_SCOPES);
+        registration.terms =
+            Some(oauth::Terms { required_scopes: Some(bytes::copy_of(REQUIRED_SCOPES)), ..crate::world::terms() });
     }
     registration
 }
@@ -780,3 +763,5 @@ pub fn run_private(seed: u64, private: crate::private::Story) -> Outcome<Process
     outcome.machine.faulted |= stalled;
     outcome
 }
+
+const REQUIRED_SCOPES: &[u8] = b"read write";

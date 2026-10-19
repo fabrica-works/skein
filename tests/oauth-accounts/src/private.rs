@@ -399,16 +399,7 @@ pub fn run(seed: u64, story: Story) -> skein_world::Outcome<Process, FileSystem>
     .with_machine(files);
     world.spawn(|| world::issuer(Transport::Plaintext, owner_story, (Ipv4Addr::LOCALHOST, 31000).into()));
     world.spawn_root(root, |fd| {
-        let terms = (story == Story::NoIssuedId).then(|| oauth::Terms {
-            parameters: Box::new([]),
-            openid: None,
-            issued_client_id: true,
-            varying_port: false,
-            resource: None,
-            required_scopes: None,
-            revocation_endpoint: None,
-            sign_in_again: Box::new([]),
-        });
+        let terms = (story == Story::NoIssuedId).then(|| oauth::Terms { issued_client_id: true, ..world::terms() });
         let mut client = Client::private(fd, owner_story, terms);
         client.stop_at_store = match story {
             Story::CloseKeeping => Some(false),

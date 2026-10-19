@@ -1333,3 +1333,16 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
     }
     panic!("protocol world settles");
 }
+
+pub(crate) fn terms() -> oauth::Terms {
+    oauth::Terms {
+        parameters: Box::new([]),
+        openid: None,
+        issued_client_id: false,
+        varying_port: false,
+        resource: None,
+        required_scopes: None,
+        revocation_endpoint: None,
+        sign_in_again: Box::new([]),
+    }
+}

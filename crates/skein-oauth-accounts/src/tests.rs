@@ -583,16 +583,7 @@ fn a_verifier_is_43_url_safe_characters() {
 }
 
 fn issued_terms() -> skein_oauth::Terms {
-    skein_oauth::Terms {
-        parameters: Box::new([]),
-        openid: None,
-        issued_client_id: true,
-        varying_port: false,
-        resource: None,
-        required_scopes: None,
-        revocation_endpoint: None,
-        sign_in_again: Box::new([]),
-    }
+    skein_oauth::Terms { issued_client_id: true, ..terms() }
 }
 
 #[test]
@@ -697,9 +688,9 @@ fn scope_owner(granted: &[u8], kept: bool) -> private::Owner {
     if let Account::SignIn { registration, keeper, .. } = &mut account {
         let mut terms = issued_terms();
         terms.issued_client_id = false;
-        terms.required_scopes = Some(bytes::copy_of(b"read write"));
+        terms.required_scopes = Some(bytes::copy_of(REQUIRED_SCOPES));
         registration.terms = Some(terms);
-        registration.scope = bytes::copy_of(b"read write");
+        registration.scope = bytes::copy_of(REQUIRED_SCOPES);
         registration.client_secret = Some(bytes::copy_of(b"secret"));
         registration.redirect_uri = bytes::copy_of(b"https://service.example/callback");
         let mut record = tests_record(0);
@@ -724,7 +715,7 @@ fn scope_body(scopes: &[u8]) -> Box<[u8]> {
 }
 #[test]
 fn signed_in_names_the_required_scopes_not_granted() {
-    for (granted, missing) in [(b"read write".as_slice(), b"".as_slice()), (b"read", b"write"), (b"", b"read write")] {
+    for (granted, missing) in [(REQUIRED_SCOPES, b"".as_slice()), (b"read", b"write"), (b"", REQUIRED_SCOPES)] {
         let mut owner = scope_owner(granted, false);
         owner.redirected(b"");
         let identity = owner.sent();
@@ -739,7 +730,7 @@ fn signed_in_names_the_required_scopes_not_granted() {
     }
 }
 fn scope_grant(refresh: bool) -> (Option<Failure>, bool) {
-    let mut owner = scope_owner(if refresh { b"read write" } else { b"read" }, true);
+    let mut owner = scope_owner(if refresh { REQUIRED_SCOPES } else { b"read" }, true);
     owner.ask(Request::Grant { account: 0 });
     let mut events = if refresh {
         drop(owner.above.pop());
@@ -760,5 +751,19 @@ fn a_grant_of_a_record_without_a_required_scope_fails_as_not_granted() {
         ("refresh re-grant", true, (Some(Failure::NotGranted), true)),
     ] {
         assert_eq!(scope_grant(refresh), expected, "{name}");
+    }
+}
+
+const REQUIRED_SCOPES: &[u8] = b"read write";
+pub(crate) fn terms() -> skein_oauth::Terms {
+    skein_oauth::Terms {
+        parameters: Box::new([]),
+        openid: None,
+        issued_client_id: false,
+        varying_port: false,
+        resource: None,
+        required_scopes: None,
+        revocation_endpoint: None,
+        sign_in_again: Box::new([]),
     }
 }

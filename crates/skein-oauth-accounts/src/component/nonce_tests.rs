@@ -1,7 +1,6 @@
 //! Seeded inputs are drawn at admission, before a listener or private load answers.
 use super::*;
 use crate::tests::{crypto, limits, refresh_account};
-use alloc::boxed::Box;
 use skein_lib::{List, Wall, Writer, bytes};
 
 fn openid() -> (Component, Limits) {
@@ -13,14 +12,8 @@ fn openid() -> (Component, Limits) {
     let mut account = refresh_account(0, ([127, 0, 0, 1], 31000).into());
     if let Account::SignIn { registration, .. } = &mut account {
         registration.terms = Some(oauth::Terms {
-            parameters: Box::new([]),
-            issued_client_id: false,
-            varying_port: false,
             openid: Some(oauth::OpenId { issuer: bytes::copy_of(b"http://127.0.0.1:31000/"), key_set: None }),
-            resource: None,
-            required_scopes: None,
-            revocation_endpoint: None,
-            sign_in_again: Box::new([]),
+            ..crate::tests::terms()
         });
         registration.scope = bytes::copy_of(b"openid");
     }
