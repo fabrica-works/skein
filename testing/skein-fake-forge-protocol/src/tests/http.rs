@@ -1,7 +1,93 @@
 use super::fixtures::{self, Harness, boxed};
 use crate::Route;
 use skein_fake_forge_domain::api::{self as a, Op, Read, Write};
+use skein_forge::forgejo::{
+    document::{Document, Row, User},
+    request::Request,
+};
 use skein_lib::{Time, bytes};
+
+#[test]
+fn collaborators_are_listed_without_permissions() {
+    let mut h = Harness::new(fixtures::config());
+    skein_fake_forge_domain::grant(&mut h.domain, b"org/repo", fixtures::ADMIN, a::Permission::Admin);
+    skein_fake_forge_domain::grant(&mut h.domain, b"org/repo", fixtures::PERSON, a::Permission::Write);
+    let request = Request::Collaborators { at: fixtures::at(), page: fixtures::PAGE };
+    h.send(&request);
+    assert_eq!(h.status(), 200);
+    assert_eq!(
+        &*h.decoded(&request).rows,
+        &[
+            Row::User(User { id: fixtures::ADMIN, login: boxed(b"engine"), is_admin: false, full_name: boxed(b"") }),
+            Row::User(User { id: fixtures::PERSON, login: boxed(b"person"), is_admin: false, full_name: boxed(b"") }),
+        ]
+    );
+    assert_eq!(bytes::find(&h.body(), b"permission"), None);
+}
+#[test]
+fn pull_by_branches_answers_the_oldest_pull() {
+    let mut h = Harness::new(fixtures::config());
+    h.push(b"work");
+    let open = || {
+        Op::Write(Write::OpenPull {
+            title: boxed(b"pull"),
+            body: boxed(b"body"),
+            head: boxed(b"work"),
+            base: boxed(b"main"),
+            opens_empty: false,
+        })
+    };
+    h.call(fixtures::PERSON, open()).expect("first pull");
+    h.call(fixtures::PERSON, Op::Write(Write::Close { number: FIRST_PULL })).expect("close pull");
+    h.call(fixtures::PERSON, open()).expect("replacement pull");
+    h.ask(b"GET", b"/api/v1/repos/org/repo/pulls/main/work", b"");
+    assert_eq!(h.status(), 200);
+    let request = Request::PullFor { at: fixtures::at(), base: boxed(b"main"), head: boxed(b"work") };
+    let Document::Pull(pull) = h.decoded(&request).document else { panic!("pull response") };
+    assert_eq!(pull.number, FIRST_PULL);
+}
+// The first item allocated in the fixture repository is pull number one.
+const FIRST_PULL: u64 = 1;
+#[test]
+fn unrouted_paths_increment_only_the_unrouted_count() {
+    let mut h = Harness::new(fixtures::config());
+    h.ask(b"GET", b"/api/v1/not-a-route", b"");
+    assert_eq!(h.status(), 404);
+    assert_eq!(h.service().tally().total, fixtures::ONE_REQUEST);
+    assert_eq!(h.service().tally().unrouted, fixtures::ONE_REQUEST);
+    assert_eq!(h.domain_calls(), fixtures::NO_CALLS);
+}
+#[test]
+fn unavailable_calls_answer_503() {
+    let mut h = Harness::new(fixtures::config());
+    h.fake_env.limits.unavailable = 1000;
+    h.ask(b"POST", b"/api/v1/repos/org/repo/issues", br#"{"title":"created","body":"body"}"#);
+    assert_eq!(h.status(), 503);
+    h.fake_env.limits.unavailable = 0;
+    assert_eq!(
+        h.call(fixtures::PERSON, Op::Read(Read::Item { number: FIRST_PULL, after: 0 })),
+        Err(a::Error::Missing(a::What::Item))
+    );
+}
+#[test]
+fn retry_after_rounds_up_to_whole_seconds() {
+    use skein_lib::Duration;
+    let mut h = Harness::new(fixtures::config());
+    h.fake_env.limits.rate_limit = 1;
+    h.fake_env.limits.rate_window = Duration::from_millis(1501);
+    h.fake_env.limits.resolution = Duration::from_millis(1);
+    h.fake_env.limits.skew = skein_fake_forge_domain::Skew::Ahead(Duration::ZERO);
+    h.fake_env.limits.latency_min = Duration::ZERO;
+    h.fake_env.limits.latency_max = Duration::ZERO;
+    for _ in 0..RATE_REQUESTS {
+        h.request(b"GET /api/v1/repos/org/repo/issues HTTP/1.1\r\nHost: 127.0.0.1:3000\r\nAuthorization: token 1111111111111111111111111111111111111111\r\n\r\n");
+        h.run_at(Time::ZERO);
+    }
+    assert_eq!(h.status(), 429);
+    assert!(bytes::find(&h.head(), b"retry-after: 2\r\n").is_some());
+}
+// One admitted call consumes the only slot; the next receives its reset.
+const RATE_REQUESTS: u32 = 2;
 #[test]
 fn an_unknown_token_is_answered_401_and_counted() {
     let mut h = Harness::new(fixtures::config());
@@ -178,7 +264,7 @@ fn a_rate_refusal_uses_the_forges_clock_for_retry_after() {
 }
 #[test]
 fn ci_statuses_keep_a_null_creator_before_and_after_a_success() {
-    let request = skein_forge::forgejo::request::Request::CombinedStatus {
+    let request = Request::CombinedStatus {
         at: fixtures::at(),
         commit: crate::routes::object(2),
         page: skein_forge::forgejo::request::Page { page: None, limit: None },
@@ -213,7 +299,7 @@ fn an_unpaged_thread_past_the_projection_budget_is_refused() {
         created: Time::ZERO,
         edited: None,
     }]));
-    let request = skein_forge::forgejo::request::Request::Comments { at: fixtures::at(), number: 1 };
+    let request = Request::Comments { at: fixtures::at(), number: 1 };
     let mut limits = fixtures::limits();
     limits.documents.writer.length = 1024;
     assert_eq!(

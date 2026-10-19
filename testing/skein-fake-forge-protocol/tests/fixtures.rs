@@ -143,8 +143,15 @@ impl Harness {
         self.input.append(bytes).expect("request fits");
     }
     pub fn run(&mut self) {
+        self.run_ticking(Duration::from_millis(1));
+    }
+    pub fn run_at(&mut self, now: Time) {
+        self.fake_env.now = now;
+        self.run_ticking(Duration::ZERO);
+    }
+    fn run_ticking(&mut self, tick: Duration) {
         for _ in 0..2048u32 {
-            self.fake_env.now = self.fake_env.now.saturating_add(Duration::from_millis(1));
+            self.fake_env.now = self.fake_env.now.saturating_add(tick);
             self.env.now = fake::time(&self.fake_env.limits, self.fake_env.now);
             self.env.wall = Wall::from_nanos(self.env.now.as_nanos());
             crate::resume(&mut self.server, &mut self.service, &self.env, &mut self.above, &mut self.below);
@@ -346,7 +353,12 @@ impl Harness {
 }
 
 pub fn setup_harness() -> Harness {
-    let mut h = Harness::new(config());
+    setup_accounts(Harness::new(config()))
+}
+pub fn setup_hookable() -> Harness {
+    setup_accounts(Harness::with(config(), true))
+}
+fn setup_accounts(mut h: Harness) -> Harness {
     let admin = h.service.setup_mut().account(b"kit-admin", true, b"");
     h.service.setup_mut().token(admin, b"setup-admin", &[b"all"], Secret::new(boxed(TOKEN)));
     h.service.setup_mut().account(b"kit", false, b"kit:bot");
@@ -363,6 +375,78 @@ pub fn make_setup_token(h: &mut Harness) -> skein_forge::forgejo::document::Acce
         scopes: token.scopes.clone(),
         last_eight: Box::new([]),
         value: Some(token.secret.clone()),
+    }
+}
+
+use skein_forge::forgejo::{
+    client,
+    decode::Step,
+    document::{Document, Row},
+    request::{Method, Page, Request},
+};
+pub const PAGE: Page = Page { page: None, limit: None };
+pub const ADMIN: u64 = 1;
+pub const PERSON: u64 = 2;
+pub const ORGANIZATION: u64 = 1;
+pub const TEAM: u64 = 1;
+pub const HOOK: u64 = 1;
+// Each setup table is bounded by the single fixture's documents.inner.
+pub const SETUP_ROWS: u32 = 32;
+// Empty collections and no domain traffic in the corresponding HTTP stories.
+pub const NO_DELIVERIES: u32 = 0;
+pub const NO_CALLS: u32 = 0;
+pub const ONE_REQUEST: u64 = 1;
+pub fn team_spec() -> skein_forge::forgejo::document::TeamSpec {
+    use skein_forge::forgejo::document::{Access, TeamSpec, Units};
+    TeamSpec {
+        name: boxed(b"kit"),
+        permission: Access::Write,
+        includes_all_repositories: true,
+        units: Units { code: Access::Write, issues: Access::Write, pulls: Access::Write, actions: Access::Read },
+    }
+}
+pub fn hook_spec() -> skein_forge::forgejo::request::HookSpec {
+    skein_forge::forgejo::request::HookSpec {
+        url: boxed(b"http://127.0.0.1:7200/hooks/1"),
+        secret: Secret::new(boxed(FIXTURE_SECRET)),
+        events: Box::new([boxed(b"push")]),
+        active: true,
+    }
+}
+pub struct Decoded {
+    pub rows: Box<[Row]>,
+    pub document: Document,
+}
+impl Harness {
+    pub fn send(&mut self, request: &Request) {
+        let encoded = client::encode(request, &self.env.limits.documents).expect("fixture request");
+        let method: &[u8] = match encoded.method {
+            Method::Get => b"GET",
+            Method::Post => b"POST",
+            Method::Put => b"PUT",
+            Method::Patch => b"PATCH",
+            Method::Delete => b"DELETE",
+        };
+        self.ask(method, &encoded.target, encoded.body.as_deref().unwrap_or(b""));
+    }
+    pub fn decoded(&self, request: &Request) -> Decoded {
+        let limits = &self.env.limits.documents;
+        let mut decoder = client::decoder(request, limits).expect("document decoder");
+        let mut pump = Pump::new(&self.body(), limits);
+        let mut rows = List::with_capacity(limits.inner);
+        let mut demand = client::first(&decoder);
+        loop {
+            let event = pump.next(demand);
+            match client::step(&mut decoder, limits, &event) {
+                Step::Demand(next) => demand = next,
+                Step::Row(row, next) => {
+                    rows.push(row).expect("fixture rows");
+                    demand = next;
+                }
+                Step::Done(document) => return Decoded { rows: rows.into_boxed(), document },
+                Step::Malformed(error) => panic!("malformed fixture response: {error:?}"),
+            }
+        }
     }
 }
 
@@ -412,5 +496,70 @@ pub fn fake_config() -> fake::Config {
         skew: fake::Skew::Ahead(Duration::from_secs(20)),
         status_updates: false,
         edit_updates: false,
+    }
+}
+
+pub fn deliver(
+    header: &[u8],
+    body: &[u8],
+    limits: &skein_forge::forgejo::limits::Limits,
+) -> Result<skein_forge::forgejo::delivery::Delivery, skein_forge::forgejo::decode::Malformed> {
+    use skein_forge::forgejo::client::delivery::{self, Step};
+    let mut decoder = delivery::decoder(header, limits).expect("known delivery");
+    let mut pump = Pump::new(body, limits);
+    let mut demand = delivery::first(&decoder);
+    loop {
+        let event = pump.next(demand);
+        match delivery::step(&mut decoder, limits, &event) {
+            Step::Demand(next) => demand = next,
+            Step::Done(value) => return Ok(value),
+            Step::Malformed(error) => return Err(error),
+        }
+    }
+}
+struct Pump {
+    env: Env<skein_json::tokenizer::Limits>,
+    tokenizer: skein_json::tokenizer::Tokenizer,
+    above: Queue<skein_json::tokenizer::Event>,
+    below: Queue<Down>,
+    intake: Intake,
+    remaining: usize,
+}
+impl Pump {
+    fn new(body: &[u8], limits: &skein_forge::forgejo::limits::Limits) -> Self {
+        let mut intake = Intake::with_capacity(
+            u32::try_from(body.len()).expect("test bytes").max(skein_json::tokenizer::largest_demand(&limits.json)),
+        );
+        intake.append(body).expect("test input");
+        Self {
+            env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json },
+            tokenizer: skein_json::tokenizer::Tokenizer::new(&limits.json),
+            above: Queue::with_capacity(1),
+            below: Queue::with_capacity(1),
+            intake,
+            remaining: body.len().saturating_mul(4).saturating_add(32),
+        }
+    }
+    fn next(&mut self, demand: skein_json::tokenizer::Request) -> skein_json::tokenizer::Event {
+        skein_json::tokenizer::down(&mut self.tokenizer, &self.env, demand, &mut self.above, &mut self.below);
+        while self.remaining > 0 {
+            self.remaining = self.remaining.saturating_sub(1);
+            if let Some(event) = self.above.pop() {
+                return event;
+            }
+            match self.below.pop().expect("tokenizer demand") {
+                Down::Demand { read, room: 0 } => {
+                    let up = match self.intake.meet(read) {
+                        Some(bytes) => Up::Bytes(bytes),
+                        None => Up::End,
+                    };
+                    skein_json::tokenizer::up(&mut self.tokenizer, &self.env, up, &mut self.above, &mut self.below);
+                }
+                other @ (Down::Demand { .. } | Down::Send(_) | Down::Finish) => {
+                    panic!("unexpected stream demand {other:?}")
+                }
+            }
+        }
+        panic!("decoder exhausted the input step bound")
     }
 }
