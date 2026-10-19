@@ -8,6 +8,9 @@ impl Plan {
         word: &[u8],
         tables: &mut Tables,
     ) -> Result<Option<Step>, api::Error> {
+        if let d::Document::Repository(repository) = &document {
+            self.check_repository(repository)?;
+        }
         keep_document(&document, self.repository.forge, tables);
         match document {
             d::Document::Repository(repository) => self.repository_done(repository, bounds, tables),
@@ -102,6 +105,16 @@ impl Plan {
         }
         self.size = size;
         Ok(Some(Step::Done(Ok(answer))))
+    }
+    fn check_repository(&self, repository: &d::Repository) -> Result<(), api::Error> {
+        let Ok(id) = u32::try_from(repository.id) else {
+            return Err(api::Error::TooLarge);
+        };
+        let by_id = self.stage == Stage::Resolve || self.read == api::Read::Settings;
+        if id == 0 || (by_id && id != self.repository.repository) {
+            return Err(api::Error::InvalidAnswer);
+        }
+        Ok(())
     }
     fn repository_done(
         &mut self,

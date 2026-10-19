@@ -328,11 +328,14 @@ pub struct Run {
 }
 impl Run {
     pub fn new(op: Op) -> Self {
+        Self::at_repository(REPO, limits(), BOUNDS, op)
+    }
+    pub fn at_repository(repository: crate::api::Repository, limits: Limits, bounds: Bounds, op: Op) -> Self {
         // Tables and recorded exchanges hold no more than the fixture's row bound.
         Self {
-            plan: Plan::new(REPO, op),
-            bounds: BOUNDS,
-            limits: limits(),
+            plan: Plan::new(repository, op),
+            bounds,
+            limits,
             tables: Tables::new(ROWS, ROWS),
             exchanges: List::with_capacity(ROWS),
             current: None,

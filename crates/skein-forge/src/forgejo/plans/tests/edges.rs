@@ -639,3 +639,55 @@ fn side_cases() -> [SideCase; 2] {
         ),
     ]
 }
+
+// The asked id differs from the response's id; owner 2 is REPOSITORY's fixture owner.
+const ASKED_REPOSITORY: api::Repository = api::Repository { forge: REPO.forge, repository: 7 };
+const ANSWERED_REPOSITORY: api::Repository = api::Repository { forge: REPO.forge, repository: 8 };
+const OWNER_ID: u64 = 2;
+const OTHER_REPOSITORY: &[u8] = br#"{"id":8,"owner":{"id":2,"login":"fixture"},"name":"specimen","object_format_name":"sha1","default_branch":"main","default_merge_style":"squash","allow_merge_commits":true,"allow_squash_merge":false,"allow_rebase":false,"html_url":"http://127.0.0.1:3000/fixture/specimen"}"#;
+fn unresolved(op: Op) -> Run {
+    let mut run = Run::at_repository(ASKED_REPOSITORY, fixtures::limits(), BOUNDS, op);
+    run.begin();
+    run
+}
+fn assert_no_repository(run: &mut Run) {
+    assert_eq!(run.tables().repository(ASKED_REPOSITORY), None);
+    assert_eq!(run.tables().repository(ANSWERED_REPOSITORY), None);
+    assert_eq!(run.tables().user(REPO.forge, OWNER_ID), None);
+}
+
+#[test]
+fn repository_id_mismatch_is_invalid_answer() {
+    for read in [Read::Branches, Read::Settings] {
+        let mut run = unresolved(Op::Read(read));
+        assert_eq!(run.answer(200, OTHER_REPOSITORY), Step::Done(Err(Error::InvalidAnswer)));
+        assert_no_repository(&mut run);
+        run.assert_sent(&["GET /api/v1/repositories/7"]);
+    }
+}
+
+#[test]
+fn write_repository_mismatch_is_timeout() {
+    let mut run = unresolved(Op::Write(write_cases::create_issue()));
+    assert_eq!(run.answer(200, OTHER_REPOSITORY), Step::Done(Err(Error::Timeout)));
+    assert_no_repository(&mut run);
+    run.assert_sent(&["GET /api/v1/repositories/7"]);
+}
+
+#[test]
+fn open_pull_repository_mismatch_is_unavailable() {
+    let mut run = unresolved(Op::Write(write_cases::open_pull()));
+    assert_eq!(run.answer(200, OTHER_REPOSITORY), Step::Done(Err(Error::Unavailable)));
+    assert_no_repository(&mut run);
+    run.assert_sent(&["GET /api/v1/repositories/7"]);
+}
+
+#[test]
+fn locate_accepts_a_nonzero_repository_id() {
+    let mut run =
+        unresolved(Op::Read(Read::Locate { owner: Box::from(&b"fixture"[..]), name: Box::from(&b"specimen"[..]) }));
+    assert_eq!(run.answer(200, OTHER_REPOSITORY), Step::Done(Ok(Answer::Located { repository: 8 })));
+    assert_eq!(run.tables().repository(ANSWERED_REPOSITORY), Some(&fixtures::specimen()));
+    assert_eq!(run.tables().user(REPO.forge, OWNER_ID), Some(&b"fixture"[..]));
+    run.assert_sent(&["GET /api/v1/repos/fixture/specimen"]);
+}

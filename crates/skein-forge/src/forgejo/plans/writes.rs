@@ -268,18 +268,13 @@ impl Plan {
                 };
                 if let Some(document) = &document {
                     self.check_pull_ids(document)?;
+                    self.check_repository(document)?;
                     crate::forgejo::plans::reads::keep::keep_document(document, self.repository.forge, tables);
                 }
                 if self.resolving {
                     let Some(d::Document::Repository(repository)) = document else {
                         return Err(self.error(api::Error::Timeout));
                     };
-                    let Ok(id) = u32::try_from(repository.id) else {
-                        return Err(api::Error::TooLarge);
-                    };
-                    if id != self.repository.repository {
-                        return Err(self.error(api::Error::Timeout));
-                    }
                     let row = reading::repository(repository);
                     tables.keep_repository(self.repository, row.clone());
                     self.row = Some(row);
@@ -293,6 +288,21 @@ impl Plan {
                 Ok(Some(step))
             }
         }
+    }
+    fn check_repository(&self, document: &d::Document) -> Result<(), api::Error> {
+        if !self.resolving {
+            return Ok(());
+        }
+        let d::Document::Repository(repository) = document else {
+            return Err(self.error(api::Error::Timeout));
+        };
+        let Ok(id) = u32::try_from(repository.id) else {
+            return Err(api::Error::TooLarge);
+        };
+        if id != self.repository.repository {
+            return Err(self.error(api::Error::Timeout));
+        }
+        Ok(())
     }
     fn before_write(&self) -> bool {
         match &self.write {
