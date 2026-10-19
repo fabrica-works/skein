@@ -118,6 +118,22 @@ fn answered(id: u64, status: u16, body: &[u8], now: u64) -> Event {
     })
 }
 
+fn refresh(registration: Registration, client_id: Option<Box<[u8]>>) -> Event {
+    Event::Refresh {
+        registration,
+        prior: RefreshState {
+            key: 7,
+            generation: 1,
+            refresh_token: boxed(b"seed"),
+            issued_client_id: client_id,
+            granted_scopes: None,
+            subject: None,
+            id_token: None,
+        },
+        now: time(1),
+    }
+}
+
 #[test]
 fn public_sign_in_uses_s256_state_and_one_code_exchange() {
     let mut client = Client::new(limits()).expect("limits");
@@ -712,3 +728,5 @@ fn refresh_keeps_its_admitted_http_loopback_endpoint() {
 mod terms;
 
 mod issued;
+
+mod revoke;

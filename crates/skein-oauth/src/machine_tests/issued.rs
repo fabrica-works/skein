@@ -45,21 +45,6 @@ fn after_visit(registration: Registration) -> Client {
     drop(step(&mut client, begin(registration, false)));
     client
 }
-fn refresh(registration: Registration, client_id: Option<Box<[u8]>>) -> Event {
-    Event::Refresh {
-        registration,
-        prior: RefreshState {
-            key: 7,
-            generation: 1,
-            refresh_token: boxed(b"seed"),
-            issued_client_id: client_id,
-            granted_scopes: None,
-            subject: None,
-            id_token: None,
-        },
-        now: time(1),
-    }
-}
 
 #[test]
 fn each_form_sends_what_it_must() {
@@ -99,7 +84,9 @@ fn an_issued_client_id_is_bounded_by_its_cap() {
                 Ok(())
             }
             Some(Request::Failed { failure }) => Err(failure),
-            Some(Request::Visit { .. } | Request::Tokens { .. }) | None => panic!("redirect terminal or exchange"),
+            Some(Request::Visit { .. } | Request::Tokens { .. } | Request::Revoked { .. }) | None => {
+                panic!("redirect terminal or exchange")
+            }
         };
         assert_eq!(result, expected, "length: {length}");
     }

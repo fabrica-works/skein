@@ -3,6 +3,8 @@
 //! identity or token store. `Client::step` emits visits, HTTP demands and one
 //! terminal. HTTP transport and persistence belong to the caller.
 
+mod revoke;
+
 use crate::redirect::{
     authorization_url, form_fields, has_openid, issued_id, missing_scopes, resource_field, sign_in_values,
     validate_registration,
@@ -134,6 +136,11 @@ pub enum Event {
         prior: RefreshState,
         now: Time,
     },
+    Revoke {
+        registration: Registration,
+        prior: RefreshState,
+        now: Time,
+    },
     Http(HttpResponse),
     Tick {
         now: Time,
@@ -147,6 +154,7 @@ pub enum Request {
     Visit { url: Box<[u8]> },
     Http(HttpRequest),
     Tokens { record: SavedToken, missing: Box<[u8]> },
+    Revoked { confirmed: bool },
     Failed { failure: Failure },
 }
 
@@ -175,6 +183,7 @@ struct SignInValues {
 enum Grant {
     SignIn { key: u32, generation: u64, code: Option<Box<[u8]>> },
     Refresh { prior: RefreshState },
+    Revoke { prior: RefreshState },
 }
 
 struct Exchange {
@@ -186,7 +195,7 @@ struct Exchange {
     attempts: u32,
 }
 
-/// One sans-IO sign-in or refresh. The caller reserves `MAX_OUT` output slots.
+/// One sans-IO sign-in, refresh or revocation. The caller reserves `MAX_OUT` output slots.
 #[expect(missing_debug_implementations, reason = "machine retains secrets")]
 pub struct Client {
     limits: ClientLimits,
@@ -265,6 +274,11 @@ impl Client {
                 }
                 let result = self.refresh(registration, prior, now);
                 self.emit_start(result, out);
+            }
+            Event::Revoke { registration, prior, now } => {
+                if self.phase == Phase::Idle {
+                    self.revoke(registration, prior, now, out);
+                }
             }
             Event::Redirected { uri, state, code, error, client_id, now } => {
                 self.redirected((&uri, &state), code, error, client_id, now, out);
@@ -425,7 +439,7 @@ impl Client {
         }
         match &mut exchange.grant {
             Grant::SignIn { code: slot, .. } => *slot = Some(code),
-            Grant::Refresh { .. } => {
+            Grant::Refresh { .. } | Grant::Revoke { .. } => {
                 self.finish(Failure::Malformed, out);
                 return;
             }
@@ -451,6 +465,10 @@ impl Client {
             self.finish(Failure::Malformed, out);
             return;
         };
+        if exchange.revoking() {
+            self.revocation_answer(exchange, answer, deadline, out);
+            return;
+        }
         if answer.now >= deadline || answer.now >= exchange.deadline {
             self.finish(Failure::TimedOut, out);
             return;
@@ -513,6 +531,7 @@ impl Client {
     fn record(&self, exchange: &Exchange, response: &TokenResponse, wall: Wall) -> Result<SavedToken, Failure> {
         let prior = match &exchange.grant {
             Grant::Refresh { prior } => prior.clone(),
+            Grant::Revoke { .. } => return Err(Failure::Malformed),
             Grant::SignIn { key, generation, .. } => {
                 if has_openid(&exchange.registration) {
                     return Err(Failure::Malformed);
@@ -573,7 +592,11 @@ impl Client {
                 return;
             }
         }
-        self.finish(failure, out);
+        if exchange.revoking() {
+            self.revoked(false, out);
+        } else {
+            self.finish(failure, out);
+        }
     }
 
     fn tick(&mut self, now: Time, out: &mut Queue<Request>) {
@@ -604,7 +627,13 @@ impl Client {
                         self.active = Some(exchange);
                         out.push(Request::Http(request));
                     }
-                    Err(failure) => self.finish(failure, out),
+                    Err(failure) => {
+                        if exchange.revoking() {
+                            self.revoked(false, out);
+                        } else {
+                            self.finish(failure, out);
+                        }
+                    }
                 }
             }
             Phase::Idle | Phase::Done => {}
@@ -620,13 +649,19 @@ impl Client {
         let id = self.next_id;
         self.next_id = self.next_id.checked_add(1).ok_or(Failure::Limit)?;
         exchange.attempts = exchange.attempts.checked_add(1).ok_or(Failure::Limit)?;
-        let content_type = match exchange.registration.wire {
-            WireFormat::Json => b"application/json".as_slice(),
-            WireFormat::Form => b"application/x-www-form-urlencoded".as_slice(),
+        let content_type = match (exchange.revoking(), exchange.registration.wire) {
+            (false, WireFormat::Json) => b"application/json".as_slice(),
+            (true, WireFormat::Json | WireFormat::Form) | (false, WireFormat::Form) => {
+                b"application/x-www-form-urlencoded".as_slice()
+            }
         };
         let request = HttpRequest {
             id,
-            endpoint: bytes::copy_of(&exchange.registration.token_endpoint),
+            endpoint: bytes::copy_of(if exchange.revoking() {
+                revoke::endpoint(&exchange.registration).ok_or(Failure::Malformed)?
+            } else {
+                &exchange.registration.token_endpoint
+            }),
             content_type,
             body,
             deadline,
@@ -635,6 +670,13 @@ impl Client {
     }
 
     fn finish(&mut self, failure: Failure, out: &mut Queue<Request>) {
+        if failure != Failure::Cancelled
+            && let Some(exchange) = &self.active
+            && exchange.revoking()
+        {
+            self.revoked(false, out);
+            return;
+        }
         self.active = None;
         self.phase = Phase::Done;
         out.push(Request::Failed { failure });
@@ -661,6 +703,7 @@ fn token_body(exchange: &Exchange, limits: &ClientLimits) -> Result<Box<[u8]>, F
             exchange.verifier.as_deref(),
         ),
         Grant::SignIn { code: None, .. } => return Err(Failure::Malformed),
+        Grant::Revoke { prior } => return revoke::body(registration, prior, limits),
         Grant::Refresh { prior } => {
             (b"refresh_token".as_slice(), b"refresh_token".as_slice(), prior.refresh_token.as_ref(), None, None)
         }

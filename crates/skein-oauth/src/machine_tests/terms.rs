@@ -240,7 +240,9 @@ fn a_nonce_is_bounded_and_needs_openid() {
         let admission = match nonce_request(length, enabled) {
             Some(Request::Visit { .. }) => Ok(()),
             Some(Request::Failed { failure }) => Err(failure),
-            Some(Request::Http(_) | Request::Tokens { .. }) | None => panic!("unexpected request"),
+            Some(Request::Http(_) | Request::Tokens { .. } | Request::Revoked { .. }) | None => {
+                panic!("unexpected request")
+            }
         };
         assert_eq!(admission, expected, "nonce length {length:?}, openid {enabled}");
     }

@@ -721,6 +721,7 @@ impl Component {
                     addr: skein_io::Addr::Ip(endpoint.address),
                 });
             }
+            oauth::Request::Revoked { .. } => unreachable!("no revocation is requested"),
             oauth::Request::Tokens { record, .. } => {
                 let kept = record.clone();
                 exchange.stage = Stage::Keeping { candidate: record };
