@@ -73,9 +73,13 @@ pub fn limits() -> accounts::Limits {
                 token_bytes: 256,
                 client_bytes: 64,
                 detail_bytes: 64,
-                record_bytes: 1024,
+                record_bytes: 2048,
                 depth: 8,
                 tokens: 64,
+                issued_client_bytes: 0,
+                granted_bytes: 64,
+                subject_bytes: 0,
+                id_token_bytes: 256,
             },
             uri_bytes: 256,
             scope_bytes: 64,
@@ -248,13 +252,13 @@ pub struct Client {
 
 impl Client {
     pub(crate) fn new(story: Story, transport: Transport) -> Client {
-        Self::with_limits(story, transport, limits(), ROOM)
+        Self::with_limits(story, transport, &limits(), ROOM)
     }
-    pub(crate) fn with_limits(story: Story, transport: Transport, limits: accounts::Limits, room: u32) -> Client {
+    pub(crate) fn with_limits(story: Story, transport: Transport, limits: &accounts::Limits, room: u32) -> Client {
         Client {
             io: io::Io::new(&limits.io),
             component: None,
-            limits,
+            limits: *limits,
             events: Queue::with_capacity(room),
             requests: Queue::with_capacity(room),
             files: Queue::with_capacity(room),
@@ -281,7 +285,13 @@ impl Client {
     }
     pub(crate) fn private(root: kernel::Fd, story: Story) -> Client {
         let mut client = Client::new(story, Transport::Plaintext);
-        client.file_driver = Some(skein_world::files::Driver::new(root, 4, 1024, client.limits.file_stall, 1234));
+        client.file_driver = Some(skein_world::files::Driver::new(
+            root,
+            4,
+            client.limits.client.document.record_bytes,
+            client.limits.file_stall,
+            1234,
+        ));
         client
     }
     pub(crate) fn recovery(root: kernel::Fd) -> Client {
@@ -314,6 +324,11 @@ impl Client {
             expires_at: Wall::from_nanos(
                 env.wall.as_nanos().checked_add(Duration::from_secs(seconds).as_nanos()).expect("wall lifetime"),
             ),
+            issued_client_id: None,
+            granted_scopes: None,
+            subject: None,
+            id_token: None,
+            earliest_refresh_at: None,
         });
         assert!(
             configured
@@ -910,6 +925,9 @@ pub(crate) fn issuer(transport: Transport, story: Story, address: SocketAddr) ->
             access_token: bytes::copy_of(b"new"),
             refresh_token: (story != Story::Omit).then(|| bytes::copy_of(b"next")),
             expires_in: 30,
+            scope: None,
+            id_token: None,
+            earliest_refresh_at: None,
         }),
         delay: Duration::from_millis(5),
         retry_after: Duration::ZERO,
@@ -1007,6 +1025,9 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 access_token: bytes::copy_of(b"new"),
                 refresh_token: (story != Story::Omit).then(|| bytes::copy_of(b"next")),
                 expires_in: 30,
+                scope: None,
+                id_token: None,
+                earliest_refresh_at: None,
             }),
             delay: Duration::from_millis(5),
             retry_after: Duration::ZERO,

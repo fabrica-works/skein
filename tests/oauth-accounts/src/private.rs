@@ -94,12 +94,17 @@ impl FileSystem {
                 )
                 .as_nanos(),
             ),
+            issued_client_id: None,
+            granted_scopes: None,
+            subject: None,
+            id_token: None,
+            earliest_refresh_at: None,
         };
         let encoded = oauth::encode_record(&record, &profile.client.document).expect("planted kept record");
         let mut items = vec![Item::directory(b"secret").mode(if story == Story::RootMode { 0o755 } else { 0o700 })];
         match story {
             Story::Missing => {}
-            Story::TooLarge => items.push(Item::file(b"secret/record", &[b'x'; 1025]).mode(0o600)),
+            Story::TooLarge => items.push(Item::file(b"secret/record", &[b'x'; 2049]).mode(0o600)),
             Story::Unreadable | Story::Fixed => {
                 items.push(Item::file(b"secret/record", b"another version").mode(0o600));
             }
@@ -248,6 +253,11 @@ impl Machine for FileSystem {
                 refresh_token: Some(bytes::copy_of(b"seed")),
                 metadata: None,
                 expires_at: Wall::from_nanos(Duration::from_secs(30).as_nanos()),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+                earliest_refresh_at: None,
             };
             self.person_writes(
                 &oauth::encode_record(&record, &world::limits().client.document).expect("person's replacement record"),
@@ -272,6 +282,11 @@ impl Machine for FileSystem {
                 refresh_token: Some(bytes::copy_of(b"seed")),
                 metadata: None,
                 expires_at: Wall::from_nanos(Duration::from_secs(30).as_nanos()),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+                earliest_refresh_at: None,
             };
             self.person_writes(
                 &oauth::encode_record(&record, &world::limits().client.document).expect("person's record"),

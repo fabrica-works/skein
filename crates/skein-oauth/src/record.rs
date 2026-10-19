@@ -7,9 +7,9 @@ use crate::{DecodeError, Limits, TokenResponse, common, documents, jwt};
 use alloc::boxed::Box;
 use skein_lib::{Duration, Reader, Wall, Writer, bytes};
 
-pub const RECORD_VERSION: u16 = 2;
+pub const RECORD_VERSION: u16 = 3;
 const MAGIC: &[u8] = b"SKOT";
-const FIXED_BYTES: u32 = 38;
+const FIXED_BYTES: u32 = 43;
 /// Caller-selected nested JWT claim to keep as opaque metadata.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ClaimSelector {
@@ -24,6 +24,10 @@ pub struct RefreshState {
     pub key: u32,
     pub generation: u64,
     pub refresh_token: Box<[u8]>,
+    pub issued_client_id: Option<Box<[u8]>>,
+    pub granted_scopes: Option<Box<[u8]>>,
+    pub subject: Option<Box<[u8]>>,
+    pub id_token: Option<Box<[u8]>>,
 }
 /// Token record its owner keeps before lending; access-only records cannot refresh.
 /// `expires_at` is restart metadata, never a cross-host grant deadline.
@@ -36,6 +40,11 @@ pub struct SavedToken {
     pub refresh_token: Option<Box<[u8]>>,
     pub metadata: Option<Box<[u8]>>,
     pub expires_at: Wall,
+    pub issued_client_id: Option<Box<[u8]>>,
+    pub granted_scopes: Option<Box<[u8]>>,
+    pub subject: Option<Box<[u8]>>,
+    pub id_token: Option<Box<[u8]>>,
+    pub earliest_refresh_at: Option<Wall>,
 }
 impl SavedToken {
     /// Returns refresh state only for a record that holds a refresh token.
@@ -43,9 +52,15 @@ impl SavedToken {
     #[expect(clippy::manual_map, reason = "programming-model.md, 10.3 forbids closures in step code")]
     pub fn refresh_state(&self) -> Option<RefreshState> {
         match &self.refresh_token {
-            Some(refresh_token) => {
-                Some(RefreshState { key: self.key, generation: self.generation, refresh_token: refresh_token.clone() })
-            }
+            Some(refresh_token) => Some(RefreshState {
+                key: self.key,
+                generation: self.generation,
+                refresh_token: refresh_token.clone(),
+                issued_client_id: self.issued_client_id.clone(),
+                granted_scopes: self.granted_scopes.clone(),
+                subject: self.subject.clone(),
+                id_token: self.id_token.clone(),
+            }),
             None => None,
         }
     }
@@ -66,6 +81,7 @@ pub fn rotate(
 ) -> Result<SavedToken, DecodeError> {
     common::bounded(&previous.refresh_token, limits.token_bytes)?;
     common::text(&previous.refresh_token)?;
+    validate_refresh_additions(previous, limits)?;
     documents::validate_response(response, limits)?;
     let generation = previous.generation.checked_add(1).ok_or(DecodeError::TooLarge)?;
     let nanos = response.expires_in.checked_mul(1_000_000_000).ok_or(DecodeError::TooLarge)?;
@@ -91,8 +107,14 @@ pub fn rotate(
         refresh_token: Some(refresh_token),
         metadata,
         expires_at,
+        issued_client_id: previous.issued_client_id.clone(),
+        granted_scopes: response.scope.clone().or(previous.granted_scopes.clone()),
+        subject: previous.subject.clone(),
+        id_token: previous.id_token.clone(),
+        earliest_refresh_at: response.earliest_refresh_at,
     };
     validate(&candidate, limits)?;
+    let _length = measured(&candidate, limits)?;
     Ok(candidate)
 }
 fn validate(record: &SavedToken, limits: &Limits) -> Result<(), DecodeError> {
@@ -104,7 +126,16 @@ fn validate(record: &SavedToken, limits: &Limits) -> Result<(), DecodeError> {
     if let Some(id) = &record.metadata {
         jwt::check_metadata(id, limits)?;
     }
-    let _length = measured(record, limits)?;
+    for (value, cap) in [
+        (&record.issued_client_id, limits.issued_client_bytes),
+        (&record.granted_scopes, limits.granted_bytes),
+        (&record.subject, limits.subject_bytes),
+        (&record.id_token, limits.id_token_bytes),
+    ] {
+        if let Some(value) = value {
+            common::optional_text(value, cap)?;
+        }
+    }
     Ok(())
 }
 fn measured(record: &SavedToken, limits: &Limits) -> Result<u32, DecodeError> {
@@ -117,7 +148,20 @@ fn measured(record: &SavedToken, limits: &Limits) -> Result<u32, DecodeError> {
         Some(refresh_token) => u32::try_from(refresh_token.len()).or(Err(DecodeError::TooLarge))?,
         None => 0,
     };
+    let mut additions = 0_u32;
+    for value in
+        [&record.issued_client_id, &record.granted_scopes, &record.subject, &record.id_token].into_iter().flatten()
+    {
+        let len = u32::try_from(value.len()).or(Err(DecodeError::TooLarge))?;
+        additions =
+            additions.checked_add(4).ok_or(DecodeError::TooLarge)?.checked_add(len).ok_or(DecodeError::TooLarge)?;
+    }
+    if record.earliest_refresh_at.is_some() {
+        additions = additions.checked_add(8).ok_or(DecodeError::TooLarge)?;
+    }
     let len = FIXED_BYTES
+        .checked_add(additions)
+        .ok_or(DecodeError::TooLarge)?
         .checked_add(access_len)
         .ok_or(DecodeError::TooLarge)?
         .checked_add(refresh_len)
@@ -147,6 +191,16 @@ pub fn encode_record(record: &SavedToken, limits: &Limits) -> Result<Box<[u8]>, 
         Some(id) => write_field(&mut out, id),
         None => write_field(&mut out, b""),
     }
+    for value in [&record.issued_client_id, &record.granted_scopes, &record.subject, &record.id_token] {
+        out.put(&[u8::from(value.is_some())]).expect("record measured");
+        if let Some(value) = value {
+            write_field(&mut out, value);
+        }
+    }
+    out.put(&[u8::from(record.earliest_refresh_at.is_some())]).expect("record measured");
+    if let Some(wall) = record.earliest_refresh_at {
+        out.put(&wall.as_nanos().to_be_bytes()).expect("record measured");
+    }
     Ok(out.finish())
 }
 fn write_field(out: &mut Writer, value: &[u8]) {
@@ -161,7 +215,8 @@ pub fn decode_record(input: &[u8], limits: &Limits) -> Result<SavedToken, Decode
     if reader.bytes(4).ok_or(DecodeError::Malformed)? != MAGIC {
         return Err(DecodeError::Malformed);
     }
-    if reader.u16().ok_or(DecodeError::Malformed)? != RECORD_VERSION {
+    let version = reader.u16().ok_or(DecodeError::Malformed)?;
+    if version != 2 && version != RECORD_VERSION {
         return Err(DecodeError::Version);
     }
     let key = reader.u32().ok_or(DecodeError::Malformed)?;
@@ -172,10 +227,36 @@ pub fn decode_record(input: &[u8], limits: &Limits) -> Result<SavedToken, Decode
     let refresh_token = if refresh.is_empty() { None } else { Some(refresh) };
     let id = read_field(&mut reader, limits.token_bytes)?;
     let metadata = if id.is_empty() { None } else { Some(id) };
+    let (issued_client_id, granted_scopes, subject, id_token, earliest_refresh_at) = if version == 2 {
+        (None, None, None, None, None)
+    } else {
+        let issued = read_optional(&mut reader, limits.issued_client_bytes)?;
+        let granted = read_optional(&mut reader, limits.granted_bytes)?;
+        let subject = read_optional(&mut reader, limits.subject_bytes)?;
+        let id = read_optional(&mut reader, limits.id_token_bytes)?;
+        let earliest = if presence(&mut reader)? {
+            Some(Wall::from_nanos(reader.u64().ok_or(DecodeError::Malformed)?))
+        } else {
+            None
+        };
+        (issued, granted, subject, id, earliest)
+    };
     if !reader.is_empty() {
         return Err(DecodeError::Malformed);
     }
-    let record = SavedToken { key, generation, access_token, refresh_token, metadata, expires_at };
+    let record = SavedToken {
+        key,
+        generation,
+        access_token,
+        refresh_token,
+        metadata,
+        expires_at,
+        issued_client_id,
+        granted_scopes,
+        subject,
+        id_token,
+        earliest_refresh_at,
+    };
     validate(&record, limits)?;
     Ok(record)
 }
@@ -186,4 +267,30 @@ fn read_field(reader: &mut Reader<'_>, cap: u32) -> Result<Box<[u8]>, DecodeErro
     }
     let value = reader.bytes(len).ok_or(DecodeError::Malformed)?;
     Ok(bytes::copy_of(value))
+}
+
+fn presence(reader: &mut Reader<'_>) -> Result<bool, DecodeError> {
+    match reader.bytes(1).ok_or(DecodeError::Malformed)? {
+        [0] => Ok(false),
+        [1] => Ok(true),
+        _ => Err(DecodeError::Malformed),
+    }
+}
+fn read_optional(reader: &mut Reader<'_>, cap: u32) -> Result<Option<Box<[u8]>>, DecodeError> {
+    if presence(reader)? { Ok(Some(read_field(reader, cap)?)) } else { Ok(None) }
+}
+
+/// Checks held identity fields before the machine retains or copies them.
+pub(crate) fn validate_refresh_additions(state: &RefreshState, limits: &Limits) -> Result<(), DecodeError> {
+    for (value, cap) in [
+        (&state.issued_client_id, limits.issued_client_bytes),
+        (&state.granted_scopes, limits.granted_bytes),
+        (&state.subject, limits.subject_bytes),
+        (&state.id_token, limits.id_token_bytes),
+    ] {
+        if let Some(value) = value {
+            common::optional_text(value, cap)?;
+        }
+    }
+    Ok(())
 }

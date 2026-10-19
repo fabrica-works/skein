@@ -14,9 +14,13 @@ fn every_account_holds_a_maximal_record_within_the_heap_bound() {
         token_bytes: 64,
         client_bytes: 64,
         detail_bytes: 64,
-        record_bytes: 256,
+        record_bytes: 512,
         depth: 8,
         tokens: 64,
+        issued_client_bytes: 0,
+        granted_bytes: 64,
+        subject_bytes: 0,
+        id_token_bytes: 64,
     };
     let limits = Limits {
         accounts: 4,
@@ -76,17 +80,7 @@ fn every_account_holds_a_maximal_record_within_the_heap_bound() {
     for account in 0..limits.accounts {
         component.down(
             &env,
-            Request::HandIn {
-                account,
-                record: SavedToken {
-                    key: account,
-                    generation: 1,
-                    access_token: bytes::copy_of(&[b'x'; 64]),
-                    refresh_token: None,
-                    metadata: Some(bytes::copy_of(&[b'm'; 64])),
-                    expires_at: Wall::from_nanos(30_000_000_000),
-                },
-            },
+            Request::HandIn { account, record: handed_in_record(account) },
             &mut out,
             &mut Queue::with_capacity(MAX_OUT_DOWN.io),
             &mut Queue::with_capacity(1),
@@ -144,6 +138,11 @@ fn every_refresh_slot_holds_its_maximal_records_and_tls_connection() {
                             refresh_token: Some(bytes::copy_of(&[b'r'; 256])),
                             metadata: Some(bytes::copy_of(&[b'm'; 256])),
                             expires_at: Wall::from_nanos(5_000_000_000),
+                            issued_client_id: None,
+                            granted_scopes: None,
+                            subject: None,
+                            id_token: None,
+                            earliest_refresh_at: None,
                         })
                     },
                 })
@@ -408,5 +407,26 @@ fn maximal_private_record(account: u32) -> SavedToken {
         refresh_token: Some(bytes::copy_of(&[b'r'; 256])),
         metadata: Some(bytes::copy_of(&[b'm'; 256])),
         expires_at: Wall::from_nanos(30_000_000_000),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
+    }
+}
+
+fn handed_in_record(account: u32) -> SavedToken {
+    SavedToken {
+        key: account,
+        generation: 1,
+        access_token: bytes::copy_of(&[b'x'; 64]),
+        refresh_token: None,
+        metadata: Some(bytes::copy_of(&[b'm'; 64])),
+        expires_at: Wall::from_nanos(30_000_000_000),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
     }
 }

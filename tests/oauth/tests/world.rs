@@ -1,156 +1,10 @@
 use skein_fake_oauth as fake;
-use skein_lib::{Duration, Queue, Time, Wall, bytes};
+use skein_lib::{Duration, bytes};
 use skein_oauth as oauth;
-
-fn boxed(input: &[u8]) -> Box<[u8]> {
-    bytes::copy_of(input)
-}
-fn time(seconds: u64) -> Time {
-    Time::from_nanos(seconds.saturating_mul(1_000_000_000))
-}
-fn wall(seconds: u64) -> Wall {
-    Wall::from_nanos(seconds.saturating_mul(1_000_000_000))
-}
-fn documents() -> oauth::Limits {
-    oauth::Limits {
-        document_bytes: 1024,
-        string_bytes: 256,
-        token_bytes: 256,
-        client_bytes: 64,
-        detail_bytes: 64,
-        record_bytes: 1024,
-        depth: 8,
-        tokens: 64,
-    }
-}
-fn client_limits() -> oauth::ClientLimits {
-    oauth::ClientLimits {
-        document: documents(),
-        uri_bytes: 256,
-        scope_bytes: 64,
-        state_bytes: 64,
-        code_bytes: 64,
-        url_bytes: 1024,
-        request_bytes: 1024,
-        sign_in_time: Duration::from_secs(120),
-        request_time: Duration::from_secs(10),
-        backoff_base: Duration::from_secs(2),
-        backoff_ceiling: Duration::from_secs(8),
-        max_attempts: 3,
-    }
-}
-fn fake_limits() -> fake::Limits {
-    fake::Limits { document: documents(), uri_bytes: 256, request_bytes: 1024, codes: 8, rotations: 8, plans: 8 }
-}
-fn registration(public: bool) -> oauth::Registration {
-    oauth::Registration {
-        authorization_url: boxed(b"https://issuer.example/authorize"),
-        token_endpoint: boxed(b"https://issuer.example/token"),
-        client_id: boxed(b"client"),
-        redirect_uri: if public {
-            boxed(b"http://127.0.0.1:1234/callback")
-        } else {
-            boxed(b"https://web.example/callback")
-        },
-        scope: boxed(b"read profile"),
-        wire: if public { oauth::WireFormat::Form } else { oauth::WireFormat::Json },
-        client_secret: if public { None } else { Some(boxed(b"secret")) },
-        pkce_for_confidential: false,
-        metadata_claim: None,
-    }
-}
-fn issuer(public: bool) -> fake::Issuer {
-    fake::Issuer::new(
-        fake::Config {
-            authorization_url: boxed(b"https://issuer.example/authorize"),
-            token_endpoint: boxed(b"https://issuer.example/token"),
-            client_id: boxed(b"client"),
-            client_secret: if public { None } else { Some(boxed(b"secret")) },
-            redirect_uri: if public {
-                boxed(b"http://127.0.0.1:1234/callback")
-            } else {
-                boxed(b"https://web.example/callback")
-            },
-            refresh_token: boxed(b"seed"),
-        },
-        fake_limits(),
-    )
-    .expect("issuer")
-}
-fn client_step(client: &mut oauth::Client, event: oauth::Event) -> Option<oauth::Request> {
-    let mut out = Queue::with_capacity(1);
-    client.step(event, &mut out);
-    out.pop()
-}
-fn fake_step(issuer: &mut fake::Issuer, event: fake::Event) -> Option<fake::Request> {
-    let mut out = Queue::with_capacity(1);
-    issuer.step(event, &mut out);
-    out.pop()
-}
-fn http(request: Option<oauth::Request>) -> oauth::HttpRequest {
-    match request {
-        Some(oauth::Request::Http(value)) => value,
-        _ => panic!("HTTP request expected"),
-    }
-}
-fn response(request: Option<fake::Request>) -> oauth::HttpResponse {
-    match request {
-        Some(fake::Request::Http(value)) => value,
-        _ => panic!("HTTP response expected"),
-    }
-}
-fn record(request: Option<oauth::Request>) -> oauth::SavedToken {
-    match request {
-        Some(oauth::Request::Tokens { record }) => record,
-        _ => panic!("token record expected"),
-    }
-}
-fn failure(request: Option<&oauth::Request>) -> oauth::Failure {
-    match request {
-        Some(oauth::Request::Failed { failure }) => *failure,
-        _ => panic!("failure expected"),
-    }
-}
-fn success(access: &[u8], refresh: Option<&[u8]>, delay: u64) -> fake::Plan {
-    fake::Plan {
-        status: 200,
-        body: fake::Body::Token(oauth::TokenResponse {
-            access_token: boxed(access),
-            refresh_token: refresh.map(boxed),
-            expires_in: 30,
-        }),
-        delay: Duration::from_secs(delay),
-        retry_after: Duration::ZERO,
-    }
-}
-fn error(status: u16, code: &[u8], retry_after: u64) -> fake::Plan {
-    fake::Plan {
-        status,
-        body: fake::Body::Error(oauth::OAuthError { code: boxed(code), detail: boxed(b"scripted") }),
-        delay: Duration::ZERO,
-        retry_after: Duration::from_secs(retry_after),
-    }
-}
-fn sign_in(client: &mut oauth::Client, issuer: &mut fake::Issuer, public: bool) -> oauth::HttpRequest {
-    let visit = client_step(
-        client,
-        oauth::Event::SignIn {
-            registration: registration(public),
-            key: 7,
-            generation: 0,
-            state: boxed(b"0123456789abcdef"),
-            verifier: if public { Some(boxed(b"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")) } else { None },
-            now: time(1),
-        },
-    );
-    let Some(oauth::Request::Visit { url }) = visit else { panic!("visit expected") };
-    if public {
-        assert!(bytes::find(&url, b"code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM").is_some());
-    }
-    let redirect = fake_step(issuer, fake::Event::Authorize { url, now: time(1) });
-    let Some(fake::Request::Redirect { uri, state, code }) = redirect else { panic!("redirect expected") };
-    http(client_step(client, oauth::Event::Redirected { uri, state, code: Some(code), error: None, now: time(2) }))
-}
+use skein_oauth_world::{
+    boxed, client_limits, client_step, documents, error, failure, fake_limits, fake_step, http, issuer, record,
+    registration, response, sign_in, success, time, wall,
+};
 
 #[test]
 fn a_localhost_registration_signs_in_through_its_exact_redirect() {
@@ -279,7 +133,15 @@ fn issuer_revocation_error_and_malformed_document_are_typed() {
         &mut client,
         oauth::Event::Refresh {
             registration: registration(true),
-            prior: oauth::RefreshState { key: 1, generation: 0, refresh_token: boxed(b"seed") },
+            prior: oauth::RefreshState {
+                key: 1,
+                generation: 0,
+                refresh_token: boxed(b"seed"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(1),
         },
     ));
@@ -299,7 +161,15 @@ fn issuer_revocation_error_and_malformed_document_are_typed() {
         &mut client,
         oauth::Event::Refresh {
             registration: registration(true),
-            prior: oauth::RefreshState { key: 1, generation: 0, refresh_token: boxed(b"seed") },
+            prior: oauth::RefreshState {
+                key: 1,
+                generation: 0,
+                refresh_token: boxed(b"seed"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(3),
         },
     ));
@@ -316,7 +186,15 @@ fn delayed_rotated_answer_lost_before_delivery_makes_old_grant_revoked() {
         &mut client,
         oauth::Event::Refresh {
             registration: registration(true),
-            prior: oauth::RefreshState { key: 1, generation: 0, refresh_token: boxed(b"seed") },
+            prior: oauth::RefreshState {
+                key: 1,
+                generation: 0,
+                refresh_token: boxed(b"seed"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(1),
         },
     ));
@@ -332,7 +210,15 @@ fn delayed_rotated_answer_lost_before_delivery_makes_old_grant_revoked() {
         &mut client,
         oauth::Event::Refresh {
             registration: registration(true),
-            prior: oauth::RefreshState { key: 1, generation: 0, refresh_token: boxed(b"seed") },
+            prior: oauth::RefreshState {
+                key: 1,
+                generation: 0,
+                refresh_token: boxed(b"seed"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(12),
         },
     ));
@@ -350,7 +236,15 @@ fn issuer_rate_limit_then_client_backoff_reaches_success() {
         &mut client,
         oauth::Event::Refresh {
             registration: registration(true),
-            prior: oauth::RefreshState { key: 1, generation: 0, refresh_token: boxed(b"seed") },
+            prior: oauth::RefreshState {
+                key: 1,
+                generation: 0,
+                refresh_token: boxed(b"seed"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(1),
         },
     ));
@@ -382,4 +276,51 @@ fn authorization_code_cannot_be_redeemed_twice() {
         response(fake_step(&mut issuer, fake::Event::Post { request: replay, now: time(3), wall: wall(101) }));
     assert_eq!(refusal.status, 400);
     assert!(bytes::find(&refusal.body, b"invalid_grant").is_some());
+}
+
+const VERSION_TWO: &[u8] = b"SKOT\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x04seed\x00\x00\x00\x00";
+fn refreshed(prior: &oauth::SavedToken, plan: fake::Plan) -> oauth::SavedToken {
+    let mut issuer = issuer(true);
+    issuer.queue(plan).expect("plan");
+    let mut client = oauth::Client::new(client_limits()).expect("client");
+    let request = http(client_step(
+        &mut client,
+        oauth::Event::Refresh {
+            registration: registration(true),
+            prior: prior.refresh_state().expect("refreshable"),
+            now: time(1),
+        },
+    ));
+    let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(1), wall: wall(1) }));
+    record(client_step(&mut client, oauth::Event::Http(answer)))
+}
+#[test]
+fn a_refresh_naming_no_scope_keeps_the_granted_scopes() {
+    let mut prior = oauth::decode_record(VERSION_TWO, &documents()).expect("version two");
+    prior.granted_scopes = Some(boxed(b"read"));
+    let expected = prior.granted_scopes.clone();
+    let record = refreshed(&prior, success(b"access", Some(b"next"), 0));
+    assert!(record.granted_scopes == expected);
+}
+#[test]
+fn a_refresh_keeps_the_subject_and_id_token() {
+    let mut prior = oauth::decode_record(VERSION_TWO, &documents()).expect("version two");
+    prior.subject = Some(boxed(b"subject"));
+    prior.id_token = Some(boxed(b"held.header.signature"));
+    let expected = (prior.subject.clone(), prior.id_token.clone());
+    let mut plan = success(b"access", Some(b"next"), 0);
+    let fake::Body::Token(answer) = &mut plan.body else { panic!("token plan") };
+    answer.id_token = Some(boxed(b"replacement.header.signature"));
+    let record = refreshed(&prior, plan);
+    assert!((record.subject, record.id_token) == expected);
+}
+#[test]
+fn a_version_two_record_refreshes_into_version_three() {
+    let prior = oauth::decode_record(VERSION_TWO, &documents()).expect("version two");
+    let record = refreshed(&prior, success(b"access", Some(b"next"), 0));
+    let saved = oauth::encode_record(&record, &documents()).expect("saved");
+    assert_eq!(saved.get(..6), Some(b"SKOT\x00\x03".as_slice()));
+    let restored = oauth::decode_record(&saved, &documents()).expect("version three");
+    assert!(restored.refresh_token == Some(boxed(b"next")));
+    assert_eq!(restored.generation, 3);
 }

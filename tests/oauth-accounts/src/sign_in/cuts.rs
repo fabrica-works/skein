@@ -70,11 +70,11 @@ impl Host for Process {
     fn iterate(&mut self, now: Time, wall: Wall) {
         if self.start_sign_in {
             self.start_sign_in = false;
-            let mut client = Client::with_limits(Story::Confidential, false, limits(), 8);
+            let mut client = Client::with_limits(Story::Confidential, false, &limits(), 8);
             client.file_driver = Some(skein_world::files::Driver::new(
                 self.root.expect("owner startup root"),
                 4,
-                1024,
+                client.limits.client.document.record_bytes,
                 client.limits.file_stall,
                 1234,
             ));
@@ -161,15 +161,17 @@ fn limits() -> accounts::Limits {
     limits.client.document.document_bytes = 512;
     limits.client.document.string_bytes = 128;
     limits.client.document.token_bytes = 64;
-    limits.client.document.record_bytes = 256;
+    limits.client.document.record_bytes = 512;
+    limits.client.document.id_token_bytes = 64;
     limits.client.document.tokens = 32;
     limits
 }
 fn recovery(root: Fd) -> Recovery {
     let mut profile = limits();
     profile.refresh_lead = Duration::ZERO;
-    let mut client = Recovery::with_limits(crate::world::Story::NotKept, Transport::Plaintext, profile, 8);
-    client.file_driver = Some(skein_world::files::Driver::new(root, 3, 256, profile.file_stall, 1234));
+    let mut client = Recovery::with_limits(crate::world::Story::NotKept, Transport::Plaintext, &profile, 8);
+    client.file_driver =
+        Some(skein_world::files::Driver::new(root, 3, profile.client.document.record_bytes, profile.file_stall, 1234));
     client
 }
 fn issuer(inherited: &Inherited) -> Process {

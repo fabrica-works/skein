@@ -2,6 +2,7 @@ use skein_fake_oauth as fake;
 use skein_heap::{Counting, Meter};
 use skein_lib::{Duration, Queue, Time, Wall, bytes};
 use skein_oauth as oauth;
+use skein_oauth_world::documents;
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -9,22 +10,17 @@ static HEAP: Counting = Counting;
 fn boxed(input: &[u8]) -> Box<[u8]> {
     bytes::copy_of(input)
 }
-fn documents() -> oauth::Limits {
-    oauth::Limits {
-        document_bytes: 1024,
-        string_bytes: 256,
-        token_bytes: 256,
-        client_bytes: 64,
-        detail_bytes: 64,
-        record_bytes: 1024,
-        depth: 8,
-        tokens: 64,
-    }
-}
 
 #[test]
 fn client_and_rotating_issuer_steps_fit_declared_heap_bounds() {
-    let document = documents();
+    let mut document = documents();
+    document.document_bytes = 2048;
+    document.string_bytes = 1024;
+    check_client(document);
+    check_issuer(document);
+}
+
+fn check_client(document: oauth::Limits) {
     let client_limits = oauth::ClientLimits {
         document,
         uri_bytes: 256,
@@ -55,7 +51,15 @@ fn client_and_rotating_issuer_steps_fit_declared_heap_bounds() {
             pkce_for_confidential: false,
             metadata_claim: None,
         },
-        prior: oauth::RefreshState { key: 1, generation: 0, refresh_token: boxed(b"seed") },
+        prior: oauth::RefreshState {
+            key: 1,
+            generation: 0,
+            refresh_token: boxed(b"seed"),
+            issued_client_id: Some(boxed(&[b'c'; 64])),
+            granted_scopes: Some(boxed(&[b's'; 64])),
+            subject: Some(boxed(&[b'u'; 64])),
+            id_token: Some(boxed(&[b'i'; 1024])),
+        },
         now: Time::ZERO,
     };
     meter.start();
@@ -63,7 +67,9 @@ fn client_and_rotating_issuer_steps_fit_declared_heap_bounds() {
     let measured = meter.end();
     drop(out.pop());
     meter.check(measured, bound, &"OAuth client refresh");
+}
 
+fn check_issuer(document: oauth::Limits) {
     let fake_limits = fake::Limits { document, uri_bytes: 256, request_bytes: 1024, codes: 8, rotations: 8, plans: 8 };
     let bound = fake::worst_case(&fake_limits).expect("bound");
     let meter = Meter::new();
@@ -86,6 +92,9 @@ fn client_and_rotating_issuer_steps_fit_declared_heap_bounds() {
                 access_token: boxed(b"access"),
                 refresh_token: Some(boxed(b"next")),
                 expires_in: 30,
+                scope: Some(boxed(&[b's'; 64])),
+                id_token: Some(boxed(&[b'i'; 1024])),
+                earliest_refresh_at: Some(Wall::from_nanos(10_000_000_000)),
             }),
             delay: Duration::ZERO,
             retry_after: Duration::ZERO,

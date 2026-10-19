@@ -57,6 +57,9 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
                         bytes::copy_of(refresh)
                     }),
                     expires_in: 30,
+                    scope: None,
+                    id_token: None,
+                    earliest_refresh_at: None,
                 }),
                 delay: Duration::from_millis(5),
                 retry_after: Duration::ZERO,

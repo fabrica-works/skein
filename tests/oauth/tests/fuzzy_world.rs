@@ -1,6 +1,7 @@
 use skein_fake_oauth as fake;
-use skein_lib::{Duration, Queue, Time, Wall, bytes};
+use skein_lib::{Duration, Time, Wall, bytes};
 use skein_oauth as oauth;
+use skein_oauth_world::{client_step, documents, fake_step};
 
 fn box_of(input: &[u8]) -> Box<[u8]> {
     bytes::copy_of(input)
@@ -10,28 +11,6 @@ fn at(seconds: u64) -> Time {
 }
 fn wall(seconds: u64) -> Wall {
     Wall::from_nanos(seconds.saturating_mul(1_000_000_000))
-}
-fn documents() -> oauth::Limits {
-    oauth::Limits {
-        document_bytes: 1024,
-        string_bytes: 256,
-        token_bytes: 256,
-        client_bytes: 64,
-        detail_bytes: 64,
-        record_bytes: 1024,
-        depth: 8,
-        tokens: 64,
-    }
-}
-fn client_step(client: &mut oauth::Client, event: oauth::Event) -> Option<oauth::Request> {
-    let mut out = Queue::with_capacity(1);
-    client.step(event, &mut out);
-    out.pop()
-}
-fn fake_step(issuer: &mut fake::Issuer, event: fake::Event) -> Option<fake::Request> {
-    let mut out = Queue::with_capacity(1);
-    issuer.step(event, &mut out);
-    out.pop()
 }
 
 fn registration(seed: u64) -> oauth::Registration {
@@ -79,40 +58,21 @@ fn scenario(seed: u64) {
     .expect("issuer");
     let delay = seed % 5;
     let mode = seed % 3;
-    let plan = match mode {
-        0 => fake::Plan {
-            status: 200,
-            body: fake::Body::Token(oauth::TokenResponse {
-                access_token: box_of(b"access"),
-                refresh_token: Some(box_of(b"next")),
-                expires_in: 30,
-            }),
-            delay: Duration::from_secs(delay),
-            retry_after: Duration::ZERO,
-        },
-        1 => fake::Plan {
-            status: 200,
-            body: fake::Body::Token(oauth::TokenResponse {
-                access_token: box_of(b"access"),
-                refresh_token: None,
-                expires_in: 30,
-            }),
-            delay: Duration::from_secs(delay),
-            retry_after: Duration::ZERO,
-        },
-        _ => fake::Plan {
-            status: 400,
-            body: fake::Body::Error(oauth::OAuthError { code: box_of(b"invalid_grant"), detail: box_of(b"revoked") }),
-            delay: Duration::from_secs(delay),
-            retry_after: Duration::ZERO,
-        },
-    };
+    let plan = plan(mode, delay);
     issuer.queue(plan).expect("plan");
     let Some(oauth::Request::Http(request)) = client_step(
         &mut client,
         oauth::Event::Refresh {
             registration: registration(seed),
-            prior: oauth::RefreshState { key: 1, generation: 3, refresh_token: box_of(b"seed") },
+            prior: oauth::RefreshState {
+                key: 1,
+                generation: 3,
+                refresh_token: box_of(b"seed"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: at(1),
         },
     ) else {
@@ -146,5 +106,42 @@ fn scenario(seed: u64) {
 fn varied_delay_rotation_and_error_body_keep_one_terminal_per_refresh() {
     for seed in 0_u64..192 {
         scenario(seed);
+    }
+}
+
+fn plan(mode: u64, delay: u64) -> fake::Plan {
+    match mode {
+        0 => fake::Plan {
+            status: 200,
+            body: fake::Body::Token(oauth::TokenResponse {
+                access_token: box_of(b"access"),
+                refresh_token: Some(box_of(b"next")),
+                expires_in: 30,
+                scope: None,
+                id_token: None,
+                earliest_refresh_at: None,
+            }),
+            delay: Duration::from_secs(delay),
+            retry_after: Duration::ZERO,
+        },
+        1 => fake::Plan {
+            status: 200,
+            body: fake::Body::Token(oauth::TokenResponse {
+                access_token: box_of(b"access"),
+                refresh_token: None,
+                expires_in: 30,
+                scope: None,
+                id_token: None,
+                earliest_refresh_at: None,
+            }),
+            delay: Duration::from_secs(delay),
+            retry_after: Duration::ZERO,
+        },
+        _ => fake::Plan {
+            status: 400,
+            body: fake::Body::Error(oauth::OAuthError { code: box_of(b"invalid_grant"), detail: box_of(b"revoked") }),
+            delay: Duration::from_secs(delay),
+            retry_after: Duration::ZERO,
+        },
     }
 }

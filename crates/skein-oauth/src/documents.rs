@@ -1,7 +1,7 @@
 use crate::{DecodeError, Json, Limits, common, json};
 use alloc::boxed::Box;
 use skein_json::writer::Encoder;
-use skein_lib::bytes;
+use skein_lib::{Wall, bytes};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 #[expect(missing_debug_implementations, reason = "credential values must never occur in traces")]
@@ -15,6 +15,9 @@ pub struct TokenResponse {
     pub access_token: Box<[u8]>,
     pub refresh_token: Option<Box<[u8]>>,
     pub expires_in: u64,
+    pub scope: Option<Box<[u8]>>,
+    pub id_token: Option<Box<[u8]>>,
+    pub earliest_refresh_at: Option<Wall>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct OAuthError {
@@ -79,6 +82,16 @@ fn write_response(out: &mut Encoder, response: &TokenResponse) {
     }
     out.key(b"expires_in");
     out.unsigned(response.expires_in);
+    for (name, value) in [(b"scope".as_slice(), &response.scope), (b"id_token".as_slice(), &response.id_token)] {
+        if let Some(value) = value {
+            out.key(name);
+            out.string(value);
+        }
+    }
+    if let Some(wall) = response.earliest_refresh_at {
+        out.key(b"earliest_refresh_at");
+        out.unsigned(wall.as_nanos() / 1_000_000_000);
+    }
     out.object_end();
 }
 pub(crate) fn validate_response(response: &TokenResponse, limits: &Limits) -> Result<(), DecodeError> {
@@ -86,6 +99,11 @@ pub(crate) fn validate_response(response: &TokenResponse, limits: &Limits) -> Re
     if let Some(refresh) = &response.refresh_token {
         common::bounded(refresh, limits.token_bytes)?;
         common::text(refresh)?;
+    }
+    for (value, cap) in [(&response.scope, limits.granted_bytes), (&response.id_token, limits.id_token_bytes)] {
+        if let Some(value) = value {
+            common::optional_text(value, cap)?;
+        }
     }
     if response.expires_in == 0 {
         return Err(DecodeError::Malformed);
@@ -114,6 +132,9 @@ pub fn decode_response(value: &Json, limits: &Limits) -> Result<TokenResponse, D
         access_token: bytes::copy_of(access),
         refresh_token,
         expires_in: json::unsigned(json::value_at(tokens, json::required(tokens, b"expires_in")?)?)?,
+        scope: optional_text(tokens, b"scope", limits.granted_bytes)?,
+        id_token: optional_text(tokens, b"id_token", limits.id_token_bytes)?,
+        earliest_refresh_at: earliest(tokens)?,
     };
     validate_response(&response, limits)?;
     Ok(response)
@@ -148,4 +169,27 @@ pub fn decode_error(value: &Json, limits: &Limits) -> Result<OAuthError, DecodeE
         None => bytes::copy_of(b""),
     };
     Ok(OAuthError { code: bytes::copy_of(code), detail })
+}
+
+fn optional_text(tokens: &[skein_json::Token], name: &[u8], cap: u32) -> Result<Option<Box<[u8]>>, DecodeError> {
+    match json::optional_at(tokens, json::field(tokens, name)?)? {
+        Some(value) => {
+            let value = json::text_ref(value)?;
+            common::optional_text(value, cap)?;
+            Ok(Some(bytes::copy_of(value)))
+        }
+        None => Ok(None),
+    }
+}
+fn earliest(tokens: &[skein_json::Token]) -> Result<Option<Wall>, DecodeError> {
+    let Some(value) = json::optional_at(tokens, json::field(tokens, b"earliest_refresh_at")?)? else {
+        return Ok(None);
+    };
+    let Ok(seconds) = json::unsigned(value) else {
+        return Ok(None);
+    };
+    match seconds.checked_mul(1_000_000_000) {
+        Some(nanos) => Ok(Some(Wall::from_nanos(nanos))),
+        None => Ok(None),
+    }
 }

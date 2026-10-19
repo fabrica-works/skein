@@ -158,13 +158,13 @@ pub struct Client {
 }
 impl Client {
     fn new(story: Story, large: bool) -> Self {
-        Self::with_limits(story, large, super::world::limits(), ROOM)
+        Self::with_limits(story, large, &super::world::limits(), ROOM)
     }
-    fn with_limits(story: Story, large: bool, limits: accounts::Limits, room: u32) -> Self {
+    fn with_limits(story: Story, large: bool, limits: &accounts::Limits, room: u32) -> Self {
         Self {
             io: io::Io::new(&limits.io),
             component: None,
-            limits,
+            limits: *limits,
             events: Queue::with_capacity(room),
             requests: Queue::with_capacity(room),
             files: Queue::with_capacity(room),
@@ -835,7 +835,13 @@ pub fn run_private(seed: u64, private: crate::private::Story) -> Outcome<Process
     world.spawn(|| issuer(story, false));
     world.spawn_root(root, |fd| {
         let mut client = Client::new(story, false);
-        client.file_driver = Some(skein_world::files::Driver::new(fd, 4, 1024, client.limits.file_stall, 1234));
+        client.file_driver = Some(skein_world::files::Driver::new(
+            fd,
+            4,
+            client.limits.client.document.record_bytes,
+            client.limits.file_stall,
+            1234,
+        ));
         Process::Client(Box::new(client))
     });
     world.spawn(|| Process::Browser(Box::new(Browser::new(story))));

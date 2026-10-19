@@ -18,9 +18,13 @@ fn limits() -> Limits {
         token_bytes: 512,
         client_bytes: 64,
         detail_bytes: 64,
-        record_bytes: 2048,
+        record_bytes: 4096,
         depth: 8,
         tokens: 128,
+        issued_client_bytes: 64,
+        granted_bytes: 64,
+        subject_bytes: 64,
+        id_token_bytes: 1024,
     }
 }
 fn boxed(input: &[u8]) -> Box<[u8]> {
@@ -39,7 +43,14 @@ fn request() -> RefreshRequest {
     RefreshRequest { client_id: boxed(b"client-1"), refresh_token: boxed(b"refresh-old") }
 }
 fn response() -> TokenResponse {
-    TokenResponse { access_token: boxed(b"access-new"), refresh_token: Some(boxed(b"refresh-new")), expires_in: 30 }
+    TokenResponse {
+        access_token: boxed(b"access-new"),
+        refresh_token: Some(boxed(b"refresh-new")),
+        expires_in: 30,
+        scope: None,
+        id_token: None,
+        earliest_refresh_at: None,
+    }
 }
 fn record() -> SavedToken {
     SavedToken {
@@ -49,6 +60,11 @@ fn record() -> SavedToken {
         refresh_token: Some(boxed(b"refresh-old")),
         metadata: None,
         expires_at: wall(100),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
     }
 }
 
@@ -221,8 +237,13 @@ fn an_access_only_record_round_trips_without_refresh_state() {
         refresh_token: None,
         metadata: None,
         expires_at: Wall::from_nanos(3),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
     };
-    let golden = b"SKOT\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x00\x00\x00\x00\x00";
+    let golden = b"SKOT\x00\x03\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
     assert_eq!(encode_record(&record, &limits()).expect("access-only encoding").as_ref(), golden);
     let restored = decode_record(golden, &limits()).expect("access-only record");
     assert!(restored == record);
@@ -266,8 +287,13 @@ fn saved_record_has_an_independent_big_endian_versioned_golden_and_refuses_corru
         refresh_token: Some(boxed(b"r")),
         metadata: None,
         expires_at: Wall::from_nanos(3),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
     };
-    let golden = b"SKOT\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x01r\x00\x00\x00\x00";
+    let golden = b"SKOT\x00\x03\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x01r\x00\x00\x00\x00\x00\x00\x00\x00\x00";
     assert_eq!(encode_record(&record, &limits()).expect("encode").as_ref(), golden);
     assert!(decode_record(golden, &limits()).expect("golden") == record);
     for len in 0..golden.len() {
@@ -289,7 +315,15 @@ fn saved_record_has_an_independent_big_endian_versioned_golden_and_refuses_corru
 
 #[test]
 fn refresh_only_startup_retains_or_rotates_refresh_and_resumes_saved_generation() {
-    let starting = RefreshState { key: 7, generation: 0, refresh_token: boxed(b"refresh-old") };
+    let starting = RefreshState {
+        key: 7,
+        generation: 0,
+        refresh_token: boxed(b"refresh-old"),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+    };
     let mut answer = response();
     answer.refresh_token = None;
     let first = rotate(&starting, &answer, None, wall(100), &limits()).expect("first refresh requires no access token");
@@ -362,4 +396,146 @@ fn token_collector_rejects_malformed_grammar_and_counts_all_document_caps() {
     assert_eq!(collector.finish(&limits()), Err(DecodeError::Malformed));
     let bound = worst_case(&limits()).expect("checked bound");
     assert!(bound > 15_000, "formula includes tokens, candidates, two generations, documents and saved buffers");
+}
+
+fn additions(present: [bool; 5]) -> SavedToken {
+    let mut value = record();
+    value.issued_client_id = present[0].then_some(boxed(b"client"));
+    value.granted_scopes = present[1].then_some(boxed(b"read"));
+    value.subject = present[2].then_some(boxed(b"subject"));
+    value.id_token = present[3].then_some(boxed(b"header.payload.signature"));
+    value.earliest_refresh_at = present[4].then_some(wall(90));
+    value
+}
+#[test]
+fn a_record_round_trips_each_addition() {
+    for (name, present) in [
+        ("issued", [true, false, false, false, false]),
+        ("granted", [false, true, false, false, false]),
+        ("subject", [false, false, true, false, false]),
+        ("id", [false, false, false, true, false]),
+        ("earliest", [false, false, false, false, true]),
+        ("all", [true; 5]),
+        ("none", [false; 5]),
+        ("granted empty", [false; 5]),
+    ] {
+        let mut value = additions(present);
+        if name == "granted empty" {
+            value.granted_scopes = Some(boxed(b""));
+        }
+        let encoded = encode_record(&value, &limits()).expect("encoded");
+        assert!(decode_record(&encoded, &limits()).expect("decoded") == value, "{name}");
+    }
+}
+const VERSION_TWO: &[u8] = b"SKOT\x00\x02\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x01r\x00\x00\x00\x00";
+fn byte_record() -> SavedToken {
+    SavedToken {
+        key: 1,
+        generation: 2,
+        access_token: boxed(b"a"),
+        refresh_token: Some(boxed(b"r")),
+        metadata: None,
+        expires_at: Wall::from_nanos(3),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
+    }
+}
+#[test]
+fn a_version_two_record_reads_with_no_additions() {
+    assert!(decode_record(VERSION_TWO, &limits()).expect("version two") == byte_record());
+}
+#[test]
+fn a_version_three_record_reads_its_bytes() {
+    let bytes = b"SKOT\x00\x03\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x01a\x00\x00\x00\x01r\x00\x00\x00\x00\x01\x00\x00\x00\x01c\x01\x00\x00\x00\x00\x01\x00\x00\x00\x01s\x01\x00\x00\x00\x01i\x01\x00\x00\x00\x00\x00\x00\x00\x04";
+    let expected = SavedToken {
+        issued_client_id: Some(boxed(b"c")),
+        granted_scopes: Some(boxed(b"")),
+        subject: Some(boxed(b"s")),
+        id_token: Some(boxed(b"i")),
+        earliest_refresh_at: Some(Wall::from_nanos(4)),
+        ..byte_record()
+    };
+    assert!(decode_record(bytes, &limits()).expect("version three") == expected);
+    assert!(encode_record(&expected, &limits()).expect("encoded").as_ref() == bytes);
+}
+#[test]
+fn a_record_of_another_version_is_refused() {
+    for version in [1, 4] {
+        let mut input = boxed(VERSION_TWO);
+        input[5] = version;
+        assert!(decode_record(&input, &limits()) == Err(DecodeError::Version), "version {version}");
+    }
+}
+#[test]
+fn a_token_response_reads_scope_id_token_and_earliest() {
+    let input = br#"{"access_token":"access-new","refresh_token":"refresh-new","expires_in":30,"scope":"read","id_token":"header.payload.signature","earliest_refresh_at":90}"#;
+    let expected = TokenResponse {
+        scope: Some(boxed(b"read")),
+        id_token: Some(boxed(b"header.payload.signature")),
+        earliest_refresh_at: Some(wall(90)),
+        ..response()
+    };
+    assert!(decode_response(&parse(input), &limits()).expect("response") == expected);
+    let encoded = encode_response(&expected, &limits()).expect("encoded");
+    assert!(decode_response(&parse(&encoded), &limits()).expect("round trip") == expected);
+}
+#[test]
+fn an_unreadable_earliest_refresh_time_is_ignored() {
+    for (name, input) in [
+        ("string", br#"{"access_token":"a","expires_in":1,"earliest_refresh_at":"90"}"#.as_slice()),
+        ("negative", br#"{"access_token":"a","expires_in":1,"earliest_refresh_at":-1}"#),
+        ("fraction", br#"{"access_token":"a","expires_in":1,"earliest_refresh_at":1.5}"#),
+        ("overflow", br#"{"access_token":"a","expires_in":1,"earliest_refresh_at":18446744074}"#),
+    ] {
+        assert!(decode_response(&parse(input), &limits()).expect("response").earliest_refresh_at.is_none(), "{name}");
+    }
+}
+#[test]
+fn a_twice_named_addition_is_malformed() {
+    for (name, input) in [
+        ("scope", br#"{"access_token":"a","expires_in":1,"scope":"","scope":""}"#.as_slice()),
+        ("id_token", br#"{"access_token":"a","expires_in":1,"id_token":"i","id_token":"i"}"#),
+        ("earliest", br#"{"access_token":"a","expires_in":1,"earliest_refresh_at":1,"earliest_refresh_at":2}"#),
+    ] {
+        assert!(decode_response(&parse(input), &limits()) == Err(DecodeError::Malformed), "{name}");
+    }
+}
+#[test]
+fn each_new_cap_holds_at_its_boundary() {
+    for (name, field, cap) in [("issued", 0_u8, 64), ("granted", 1, 64), ("subject", 2, 64), ("id", 3, 1024)] {
+        for extra in [0, 1] {
+            let mut value = record();
+            let bytes = Some(boxed(&[b'x'; 1025][..cap + extra]));
+            match field {
+                0 => value.issued_client_id = bytes,
+                1 => value.granted_scopes = bytes,
+                2 => value.subject = bytes,
+                3 => value.id_token = bytes,
+                _ => unreachable!(),
+            }
+            if extra == 0 {
+                let encoded = encode_record(&value, &limits()).expect("at cap");
+                assert!(decode_record(&encoded, &limits()).expect("at cap") == value, "{name}");
+            } else {
+                assert!(encode_record(&value, &limits()) == Err(DecodeError::TooLarge), "{name}");
+                let prior = value.refresh_state().expect("refreshable");
+                assert!(
+                    rotate(&prior, &response(), None, wall(100), &limits()) == Err(DecodeError::TooLarge),
+                    "{name}"
+                );
+                let expanded = Limits {
+                    issued_client_bytes: 65,
+                    granted_bytes: 65,
+                    subject_bytes: 65,
+                    id_token_bytes: 1025,
+                    ..limits()
+                };
+                let encoded = encode_record(&value, &expanded).expect("larger cap");
+                assert!(decode_record(&encoded, &limits()) == Err(DecodeError::TooLarge), "{name}");
+            }
+        }
+    }
 }

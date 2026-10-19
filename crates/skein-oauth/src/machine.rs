@@ -283,6 +283,9 @@ impl Client {
         {
             return Err(Failure::Limit);
         }
+        if let Err(error) = crate::record::validate_refresh_additions(&prior, &self.limits.document) {
+            return Err(admit(error));
+        }
         let deadline = now.checked_add(self.limits.sign_in_time).ok_or(Failure::Limit)?;
         let mut exchange = Exchange {
             registration,
@@ -414,7 +417,15 @@ impl Client {
                 let Some(refresh) = &response.refresh_token else {
                     return Err(Failure::Malformed);
                 };
-                RefreshState { key: *key, generation: *generation, refresh_token: refresh.clone() }
+                RefreshState {
+                    key: *key,
+                    generation: *generation,
+                    refresh_token: refresh.clone(),
+                    issued_client_id: None,
+                    granted_scopes: None,
+                    subject: None,
+                    id_token: None,
+                }
             }
         };
         match rotate(&prior, response, exchange.registration.metadata_claim.as_ref(), wall, &self.limits.document) {

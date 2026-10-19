@@ -20,9 +20,13 @@ fn limits() -> ClientLimits {
             token_bytes: 256,
             client_bytes: 64,
             detail_bytes: 64,
-            record_bytes: 1024,
+            record_bytes: 4096,
             depth: 8,
             tokens: 64,
+            issued_client_bytes: 64,
+            granted_bytes: 64,
+            subject_bytes: 64,
+            id_token_bytes: 1024,
         },
         uri_bytes: 256,
         scope_bytes: 64,
@@ -79,7 +83,14 @@ fn failure(result: Option<Request>) -> Failure {
 }
 fn token_body() -> Box<[u8]> {
     encode_response(
-        &TokenResponse { access_token: boxed(b"access"), refresh_token: Some(boxed(b"refresh-new")), expires_in: 30 },
+        &TokenResponse {
+            access_token: boxed(b"access"),
+            refresh_token: Some(boxed(b"refresh-new")),
+            expires_in: 30,
+            scope: None,
+            id_token: None,
+            earliest_refresh_at: None,
+        },
         &limits().document,
     )
     .expect("response")
@@ -371,13 +382,28 @@ fn refresh_rotation_preserves_old_token_when_answer_omits_one() {
         &mut client,
         Event::Refresh {
             registration: registration(true, WireFormat::Json),
-            prior: RefreshState { key: 3, generation: 4, refresh_token: boxed(b"old") },
+            prior: RefreshState {
+                key: 3,
+                generation: 4,
+                refresh_token: boxed(b"old"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(1),
         },
     ));
     assert!(bytes::find(&http.body, b"\"refresh_token\":\"old\"").is_some());
     let body = encode_response(
-        &TokenResponse { access_token: boxed(b"access"), refresh_token: None, expires_in: 30 },
+        &TokenResponse {
+            access_token: boxed(b"access"),
+            refresh_token: None,
+            expires_in: 30,
+            scope: None,
+            id_token: None,
+            earliest_refresh_at: None,
+        },
         &limits().document,
     )
     .expect("response");
@@ -399,7 +425,15 @@ fn rejected_grant_malformed_answer_and_late_answer_are_distinct() {
             &mut client,
             Event::Refresh {
                 registration: registration(true, WireFormat::Form),
-                prior: RefreshState { key: 1, generation: 0, refresh_token: boxed(b"old") },
+                prior: RefreshState {
+                    key: 1,
+                    generation: 0,
+                    refresh_token: boxed(b"old"),
+                    issued_client_id: None,
+                    granted_scopes: None,
+                    subject: None,
+                    id_token: None,
+                },
                 now: time(1),
             },
         ));
@@ -410,7 +444,15 @@ fn rejected_grant_malformed_answer_and_late_answer_are_distinct() {
         &mut client,
         Event::Refresh {
             registration: registration(true, WireFormat::Form),
-            prior: RefreshState { key: 1, generation: 0, refresh_token: boxed(b"old") },
+            prior: RefreshState {
+                key: 1,
+                generation: 0,
+                refresh_token: boxed(b"old"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(1),
         },
     ));
@@ -424,7 +466,15 @@ fn proved_unsent_attempt_retries_with_bounded_backoff() {
         &mut client,
         Event::Refresh {
             registration: registration(true, WireFormat::Form),
-            prior: RefreshState { key: 1, generation: 0, refresh_token: boxed(b"old") },
+            prior: RefreshState {
+                key: 1,
+                generation: 0,
+                refresh_token: boxed(b"old"),
+                issued_client_id: None,
+                granted_scopes: None,
+                subject: None,
+                id_token: None,
+            },
             now: time(1),
         },
     ));
@@ -558,7 +608,15 @@ fn refresh_keeps_its_admitted_http_loopback_endpoint() {
     ] {
         let mut configured = registration(true, WireFormat::Form);
         configured.token_endpoint = boxed(uri);
-        let prior = RefreshState { key: 7, generation: 1, refresh_token: boxed(b"refresh-old") };
+        let prior = RefreshState {
+            key: 7,
+            generation: 1,
+            refresh_token: boxed(b"refresh-old"),
+            issued_client_id: None,
+            granted_scopes: None,
+            subject: None,
+            id_token: None,
+        };
         let mut client = Client::new(limits()).expect("limits");
         let result = step(&mut client, Event::Refresh { registration: configured, prior, now: time(1) });
         if admitted {

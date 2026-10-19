@@ -9,6 +9,10 @@ pub struct Limits {
     pub string_bytes: u32,
     pub token_bytes: u32,
     pub client_bytes: u32,
+    pub issued_client_bytes: u32,
+    pub granted_bytes: u32,
+    pub subject_bytes: u32,
+    pub id_token_bytes: u32,
     pub detail_bytes: u32,
     pub record_bytes: u32,
     pub depth: u32,
@@ -86,6 +90,10 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.document_bytes).checked_mul(6)?)?
         .checked_add(u64::from(limits.token_bytes).checked_mul(12)?)?
         .checked_add(u64::from(limits.client_bytes))?
+        .checked_add(u64::from(limits.issued_client_bytes).checked_mul(6)?)?
+        .checked_add(u64::from(limits.granted_bytes).checked_mul(6)?)?
+        .checked_add(u64::from(limits.subject_bytes).checked_mul(6)?)?
+        .checked_add(u64::from(limits.id_token_bytes).checked_mul(6)?)?
         .checked_add(u64::from(limits.detail_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.record_bytes).checked_mul(2)?)?
         .checked_add(crate::json::validation_worst_case(limits)?)?
@@ -142,4 +150,11 @@ pub(crate) fn clipped(input: &[u8], cap: u32) -> Box<[u8]> {
         }
     }
     bytes::copy_of(input.get(..count).expect("within input"))
+}
+
+pub(crate) fn optional_text(input: &[u8], cap: u32) -> Result<(), DecodeError> {
+    if input.len() > usize::try_from(cap).expect("u32 fits usize") {
+        return Err(DecodeError::TooLarge);
+    }
+    text(input)
 }

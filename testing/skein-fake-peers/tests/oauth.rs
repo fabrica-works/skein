@@ -17,9 +17,13 @@ fn make(transport: Transport) -> oauth::Peer {
         token_bytes: 256,
         client_bytes: 64,
         detail_bytes: 64,
-        record_bytes: 1024,
+        record_bytes: 2048,
         depth: 8,
         tokens: 64,
+        issued_client_bytes: 0,
+        granted_bytes: 64,
+        subject_bytes: 0,
+        id_token_bytes: 256,
     };
     let limits = Limits {
         io: skein_io::Limits {

@@ -39,9 +39,13 @@ pub(crate) fn limits() -> Limits {
                 token_bytes: 64,
                 client_bytes: 64,
                 detail_bytes: 64,
-                record_bytes: 256,
+                record_bytes: 512,
                 depth: 8,
                 tokens: 64,
+                issued_client_bytes: 0,
+                granted_bytes: 64,
+                subject_bytes: 0,
+                id_token_bytes: 64,
             },
             uri_bytes: 256,
             scope_bytes: 64,
@@ -79,6 +83,11 @@ fn tests_record(generation: u64) -> SavedToken {
         refresh_token: None,
         metadata: None,
         expires_at: Wall::from_nanos(30_000_000_000),
+        issued_client_id: None,
+        granted_scopes: None,
+        subject: None,
+        id_token: None,
+        earliest_refresh_at: None,
     }
 }
 fn hand_in(component: &mut Component, env: &Env<Limits>, out: &mut Queue<Event>, generation: u64) {
