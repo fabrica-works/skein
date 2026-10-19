@@ -198,6 +198,14 @@ section 3.3).
 - **Heap handed between services in one thread** (`testing.md`, section
   9; `http.md`, section 6): the protocol worlds unmetered. Waits for a way
   to count the hand-off.
+- **A checked world that knows a shared handle's owner**
+  (`testing-strategy.md`, section 6; `fake-forge.md`, section 5): memory a
+  hosted program allocates in a peer's shared handle outlives the
+  program, as temper's fake git's does in the forge peer's `Forge`, and
+  skein-world's checked world (`World::new_checked`, its `Heap::release`)
+  fails it. temper's real-loop forge
+  stories run on `World::new_controlled` until it knows the owner
+  (temper's real-loop plan, its `later.md`). Waits for a plan of its own.
 - **Rules held by a checker** (`programming-model.md`, section 10.3;
   `notes.md`): a `syn` checker and two more lints. Waits for review to
   prove not enough.
