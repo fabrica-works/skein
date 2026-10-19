@@ -6,7 +6,7 @@ use skein_lib::stream::Fault;
 
 use super::{LIMITS, fixture, roots};
 use crate::client::{self, Certificate, Error, Limits};
-use crate::{ALPN, Config, Name, Parsed, Refusal, roots_worst_case};
+use crate::{ALPN, Config, Name, Parsed, Refusal, Server, roots_worst_case};
 
 #[test]
 fn der_roots_count_supported_certificates_and_skip_the_rest() {
@@ -105,9 +105,14 @@ fn a_configuration_trusts_some_root_and_offers_protocols_that_fit() {
 
 #[test]
 fn a_name_is_a_dns_name_or_an_ip_address() {
-    assert!(Name::new("skein.test").is_some());
-    assert!(Name::new("127.0.0.1").is_some());
-    assert!(Name::new("::1").is_some());
+    for (text, expected) in [
+        ("skein.test", Server::Dns("skein.test")),
+        ("Skein.Test", Server::Dns("Skein.Test")),
+        ("127.0.0.1", Server::Ip(core::net::Ipv4Addr::LOCALHOST.into())),
+        ("::1", Server::Ip(core::net::Ipv6Addr::LOCALHOST.into())),
+    ] {
+        assert_eq!(Name::new(text).expect("valid name").server(), expected, "{text}");
+    }
     assert_eq!(Name::new(""), None);
     assert_eq!(Name::new("not a name"), None);
     let name = Name::new("skein.test").unwrap();

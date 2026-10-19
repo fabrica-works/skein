@@ -63,6 +63,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-forge-connection = { path = "crates/skein-forge-connection" }
 skein-throwaway-forgejo = { path = "testing/skein-throwaway-forgejo" }
 skein-fake-person-browser = { path = "testing/skein-fake-person-browser" }
 skein-ui-example-server = { path = "examples/ui/server" }

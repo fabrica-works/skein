@@ -15,7 +15,7 @@ use core::time::Duration;
 
 use rustls::client::Resumption;
 use rustls::crypto::{CryptoProvider, ring};
-use rustls::pki_types::{CertificateDer, ServerName, TrustAnchor, UnixTime};
+use rustls::pki_types::{CertificateDer, DnsName, IpAddr, ServerName, TrustAnchor, UnixTime};
 use rustls::time_provider::TimeProvider;
 use rustls::{ClientConfig, RootCertStore};
 use skein_lib::Wall;
@@ -172,20 +172,49 @@ fn supports_key(spki: &[u8], provider: &CryptoProvider) -> bool {
 /// `ClientHello` (SNI) and which its certificate must be valid for, or an IP
 /// address, which its certificate must name.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Name(ServerName<'static>);
+pub struct Name(Named);
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+enum Named {
+    Dns(DnsName<'static>),
+    Ip(IpAddr),
+}
+
+/// A borrowed server name, preserving DNS text and the IP address's type.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Server<'a> {
+    Dns(&'a str),
+    Ip(core::net::IpAddr),
+}
 
 impl Name {
     /// `text` as a DNS name or an IP address, or `None` if it is neither.
     #[must_use]
     pub fn new(text: &str) -> Option<Name> {
-        match ServerName::try_from(text) {
-            Ok(name) => Some(Name(name.to_owned())),
+        if let Ok(name) = DnsName::try_from(text) {
+            return Some(Name(Named::Dns(name.to_owned())));
+        }
+        match IpAddr::try_from(text) {
+            Ok(ip) => Some(Name(Named::Ip(ip))),
             Err(_) => None,
         }
     }
 
+    /// Reads this name without allocating (tls.md, 3.4).
+    #[must_use]
+    pub fn server(&self) -> Server<'_> {
+        match &self.0 {
+            Named::Dns(name) => Server::Dns(name.as_ref()),
+            Named::Ip(IpAddr::V4(ip)) => Server::Ip(core::net::Ipv4Addr::from(*ip.as_ref()).into()),
+            Named::Ip(IpAddr::V6(ip)) => Server::Ip(core::net::Ipv6Addr::from(*ip.as_ref()).into()),
+        }
+    }
+
     pub(crate) fn into_server_name(self) -> ServerName<'static> {
-        self.0
+        match self.0 {
+            Named::Dns(name) => ServerName::DnsName(name),
+            Named::Ip(ip) => ServerName::IpAddress(ip),
+        }
     }
 }
 

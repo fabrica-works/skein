@@ -1,0 +1,420 @@
+mod connection;
+mod contents;
+mod fixtures;
+mod hooks;
+mod reads;
+mod writes;
+use crate::{
+    StartRead, Stopped,
+    start::{self, Start},
+};
+use alloc::boxed::Box;
+use core::net::{Ipv4Addr, SocketAddr};
+use skein_lib::{Duration, Time};
+
+#[test]
+fn the_start_stops_on_another_user_or_a_4xx_and_waits_otherwise() {
+    let limits = fixtures::limits();
+    let now = Time::from_nanos(1_000_000_000);
+    let checking = Start::Checking { next: limits.start_backoff };
+    let settings = Start::Settings { next: limits.start_backoff };
+    let again = Start::Waiting { until: Time::from_nanos(2_000_000_000), next: Duration::from_secs(2) };
+    let rows = [
+        ("configured user", checking, Heard::User { id: fixtures::WRITER }, settings),
+        ("another user", checking, Heard::User { id: 1 }, Start::Stopped(Stopped::OtherUser { user: 1 })),
+        (
+            "refused token",
+            checking,
+            Heard::Status { status: 401, retry: None },
+            Start::Stopped(Stopped::Refused { read: StartRead::User, status: 401 }),
+        ),
+        (
+            "no API",
+            settings,
+            Heard::Status { status: 404, retry: None },
+            Start::Stopped(Stopped::Refused { read: StartRead::ApiSettings, status: 404 }),
+        ),
+        ("page cap", settings, Heard::ApiSettings { max_response_items: 2 }, Start::Ready { cap: 2 }),
+        ("5xx", checking, Heard::Status { status: 503, retry: None }, again),
+        (
+            "429",
+            checking,
+            Heard::Status { status: 429, retry: Some(Duration::from_secs(5)) },
+            Start::Waiting { until: Time::from_nanos(6_000_000_000), next: Duration::from_secs(2) },
+        ),
+        ("unreachable", checking, Heard::Unanswered, again),
+        ("empty cap", settings, Heard::ApiSettings { max_response_items: 0 }, again),
+        ("wrong document", settings, Heard::User { id: fixtures::WRITER }, again),
+        ("redirect", checking, Heard::Status { status: 301, retry: None }, again),
+        ("ready stays ready", Start::Ready { cap: 2 }, Heard::Unanswered, Start::Ready { cap: 2 }),
+    ];
+    for (name, state, heard, expected) in rows {
+        assert_eq!(start::heard(state, heard, fixtures::WRITER, now, &limits), expected, "{name}");
+    }
+}
+
+use crate::{
+    Answered, Event, Limits, Request, Unusable,
+    limits::{self, Listing},
+};
+use skein_forge::{api, forgejo::plans::start::Heard};
+use skein_lib::{Secret, Token};
+
+#[test]
+fn limits_that_disagree_with_the_client_name_both_limits() {
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    let short_answer = crate::Shared { answer_bytes: 64, ..s };
+    let rows = [
+        ("connections", Limits { connections: 3, ..l }, s, Unusable::Connections { connections: 3, calls: 2 }),
+        (
+            "deadline",
+            Limits { deadline: Duration::from_secs(11), ..l },
+            s,
+            Unusable::Deadline { deadline: Duration::from_secs(11), lifetime: Duration::from_secs(10) },
+        ),
+        ("body", Limits { body_bytes: 1041, ..l }, s, Unusable::BodyBytes { body_bytes: 1041, needed: 1042 }),
+        ("name", Limits { string_bytes: 127, ..l }, s, Unusable::StringBytes { string_bytes: 127, name_bytes: 128 }),
+        ("repositories", Limits { repositories: 3, ..l }, s, Unusable::Repositories { repositories: 3, forge: 2 }),
+        ("answer", l, short_answer, Unusable::PageSize { listing: Listing::Items }),
+    ];
+    for (name, limits, shared, expected) in rows {
+        assert_eq!(limits::check(&limits, &shared, &fixtures::settings()), Err(expected), "{name}");
+    }
+    assert_eq!(limits::check(&l, &s, &fixtures::settings()), Ok(()), "fixture agrees");
+}
+
+#[test]
+fn a_page_is_the_smallest_of_rows_cap_and_answer_room() {
+    let limits = fixtures::limits();
+    let shared = fixtures::shared();
+    let rows = [("forge cap", 2, 65_536, 2), ("client rows", 50, 65_536, 8), ("answer room", 50, 4096, 1)];
+    for (name, cap, answer_bytes, expected) in rows {
+        let shared = crate::Shared { answer_bytes, ..shared };
+        assert_eq!(limits::page_size(Listing::Items, cap, &limits, &shared), expected, "{name}");
+    }
+}
+
+#[test]
+fn a_call_waiting_for_its_forge_is_unavailable_at_its_deadline() {
+    let mut h = fixtures::Harness::new(fixtures::settings());
+    assert_eq!(h.start(fixtures::FORGE), Start::Checking { next: Duration::from_secs(1) }, "start checking");
+    h.call(1, fixtures::REPO, api::Op::Read(api::Read::Settings));
+    assert_eq!(h.component.next_deadline(), Some(Time::from_nanos(10_000_000_000)), "arrival plus deadline");
+    h.run(Duration::from_secs(9));
+    assert_eq!(h.answered(1), None, "before deadline");
+    h.run(Duration::from_secs(1));
+    assert_eq!(
+        h.answered(1),
+        Some(&Answered { call: Token::new(1), cost: 0, result: Err(api::Error::Unavailable) }),
+        "at deadline"
+    );
+    h.run(Duration::from_secs(1));
+    assert_eq!(h.answers.len(), 1, "answered once");
+    assert_eq!(h.component.next_deadline(), Some(Time::from_nanos(21_000_000_000)), "only the new start waits");
+    assert_eq!(h.io.len(), 0, "nothing sent");
+}
+
+#[test]
+fn refused_answers_are_offered_once_and_returned_answers_stay_until_close() {
+    let mut h = fixtures::Harness::new(fixtures::settings());
+    let answer = Answered { call: Token::new(1), cost: 0, result: Err(api::Error::Unavailable) };
+    h.send(Request::Refused(answer.clone()));
+    h.send(Request::Offer);
+    let Some(Event::Answered(offered)) = h.up.pop() else {
+        unreachable!("one offered answer");
+    };
+    assert_eq!(offered, answer, "same answer offered");
+    h.send(Request::Returned(offered));
+    h.send(Request::Offer);
+    assert_eq!(h.up.len(), 0, "returned answer never offered");
+    h.send(Request::Close);
+    assert_eq!(h.up.len(), 0, "connections close before the terminal");
+    h.run(Duration::ZERO);
+    assert!(h.closed, "closed emitted after io closed");
+    h.send(Request::Offer);
+    h.send(Request::Close);
+    assert_eq!(h.up.len(), 0, "nothing after closed");
+}
+
+#[test]
+fn closing_waiting_calls_emits_only_the_close_terminal() {
+    let mut h = fixtures::Harness::new(fixtures::settings());
+    h.call(1, fixtures::REPO, api::Op::Read(api::Read::Settings));
+    h.send(Request::Close);
+    assert_eq!(h.up.len(), 0, "close waits for io");
+    h.run(Duration::ZERO);
+    assert!(h.closed, "close terminal after last socket");
+    h.run(Duration::from_secs(20));
+    assert_eq!(h.answered(1), None, "no call answer after root stopped");
+    assert_eq!(h.component.next_deadline(), None, "no live deadlines");
+}
+
+#[test]
+#[expect(clippy::manual_map, reason = "step fixtures use explicit matches without closures")]
+fn unusable_forge_settings_name_the_forge() {
+    let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 3000));
+    let remote = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), 3000));
+    let rows = [
+        ("empty token", skein_io::Addr::Ip(loopback), b"".as_slice(), 2, Unusable::Token { forge: 1 }),
+        ("zero user", skein_io::Addr::Ip(loopback), fixtures::TOKEN, 0, Unusable::User { forge: 1 }),
+        ("remote plaintext", skein_io::Addr::Ip(remote), fixtures::TOKEN, 2, Unusable::Address { forge: 1 }),
+        (
+            "in process",
+            skein_io::Addr::InProcess(skein_io::Name::EMPTY),
+            fixtures::TOKEN,
+            2,
+            Unusable::Address { forge: 1 },
+        ),
+    ];
+    for (name, address, token, user, expected) in rows {
+        let mut settings = fixtures::settings();
+        let forge = settings.forges.get_mut(0).expect("one forge");
+        forge.address = address;
+        forge.credential = skein_forge::credential::Credential::Token(Secret::new(Box::from(token)));
+        forge.user = user;
+        assert_eq!(limits::check(&fixtures::limits(), &fixtures::shared(), &settings), Err(expected), "{name}");
+    }
+    for (name, expected) in [
+        (None, Ok(())),
+        (Some(b"".as_slice()), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"\0"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"\t"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"\x1f"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b" "), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"\x7f"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"\x80"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"\xff"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"/"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b":"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"["), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"]"), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
+        (Some(b"!"), Ok(())),
+        (Some(b"~"), Ok(())),
+        (Some(b"."), Ok(())),
+        (Some(b"0"), Ok(())),
+        (Some(b"9"), Ok(())),
+        (Some(b";"), Ok(())),
+        (Some(b"Z"), Ok(())),
+        (Some(b"\\"), Ok(())),
+        (Some(b"^"), Ok(())),
+    ] {
+        let mut settings = fixtures::settings();
+        settings.forges.get_mut(0).expect("one forge").transport = crate::settings::Transport::Plaintext {
+            name: match name {
+                Some(name) => Some(Box::from(name)),
+                None => None,
+            },
+        };
+        fixtures::admission(settings, &fixtures::limits(), expected, name.unwrap_or(b"unnamed"));
+    }
+}
+
+#[test]
+fn zero_documents_and_stacked_demands_are_refused_in_order() {
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    let rows = [
+        ("zero chunk", Limits { chunk: 0, ..l }, s, Unusable::Zero),
+        (
+            "document depth",
+            Limits { depth: 7, ..l },
+            s,
+            Unusable::Documents(skein_forge::forgejo::limits::Problem::Depth),
+        ),
+        (
+            "HTTP over TLS",
+            Limits { head_bytes: 16_385, ..l },
+            s,
+            Unusable::Stack { stacked: limits::Stacked::HttpOverTls, demand: 16_385, cap: 16_384 },
+        ),
+        (
+            "TLS over io",
+            l,
+            crate::Shared { io: skein_io::Limits { intake: 18_431, ..s.io }, ..s },
+            Unusable::Stack { stacked: limits::Stacked::TlsOverIo, demand: 18_432, cap: 18_431 },
+        ),
+    ];
+    for (name, limits, shared, expected) in rows {
+        assert_eq!(limits::check(&limits, &shared, &fixtures::settings()), Err(expected), "{name}");
+    }
+}
+
+#[test]
+fn duplicate_forge_numbers_are_refused_before_any_connection() {
+    let mut settings = fixtures::settings();
+    let extra = fixtures::settings().forges.into_boxed();
+    for forge in extra {
+        settings.forges.push(forge).expect("two fixture forges fit");
+    }
+    assert_eq!(
+        limits::check(&fixtures::limits(), &fixtures::shared(), &settings),
+        Err(Unusable::Duplicate { forge: 1 }),
+        "duplicate forge"
+    );
+}
+
+#[test]
+fn the_worst_case_counts_answers_and_refuses_overflow() {
+    let limits = fixtures::limits();
+    let shared = fixtures::shared();
+    let bytes = limits::worst_case(
+        &limits,
+        &shared,
+        1,
+        crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes"),
+    )
+    .expect("fixture bound fits");
+    assert_eq!(bytes, 2_812_047, "complete owner-value fixture bound");
+    let owner_bytes = u64::try_from(fixtures::WORD.len() + fixtures::USER_AGENT.len()).expect("fixture lengths");
+    assert_eq!(crate::settings::owned_bytes(&fixtures::settings()), Some(owner_bytes));
+    assert_eq!(limits::worst_case(&limits, &shared, 1, 0).expect("fixed bound") + owner_bytes, bytes);
+    assert_eq!(limits::worst_case(&limits, &shared, 1, u64::MAX), None, "owner bytes cannot overflow");
+    let trust = fixtures::trust();
+    for (name, extra) in [("forge.example", 13), ("192.0.2.7", 0), ("2001:db8::7", 0)] {
+        let mut settings = fixtures::settings();
+        settings.forges.get_mut(0).expect("one forge").transport = crate::settings::Transport::Tls {
+            server_name: skein_tls::Name::new(name).expect("valid name"),
+            trust: trust.clone(),
+        };
+        assert_eq!(crate::settings::owned_bytes(&settings), Some(owner_bytes + extra), "{name}");
+    }
+    let mut settings = fixtures::settings();
+    settings.forges.get_mut(0).expect("one forge").transport =
+        crate::settings::Transport::Plaintext { name: Some(Box::from(&b"forge.example"[..])) };
+    assert_eq!(crate::settings::owned_bytes(&settings), Some(owner_bytes + 13));
+    let huge = Limits { string_bytes: u32::MAX, inner: u32::MAX, connections: u32::MAX, ..limits };
+    assert_eq!(
+        limits::worst_case(
+            &huge,
+            &shared,
+            1,
+            crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes")
+        ),
+        None,
+        "multipliers overflow checked"
+    );
+}
+
+#[test]
+fn many_due_calls_keep_the_timer_output_bound() {
+    let limits = Limits { connections: 20, ..fixtures::limits() };
+    let shared = fixtures::shared();
+    let shared = crate::Shared { calls: 20, ..shared };
+    let mut h = fixtures::Harness::with(limits, shared, fixtures::settings());
+    for call in 0..20 {
+        h.call(call, fixtures::REPO, api::Op::Read(api::Read::Settings));
+    }
+    for (name, span, count, deadline) in [
+        ("first batch", Duration::from_secs(10), 16, Some(Time::from_nanos(10_000_000_000))),
+        ("rest", Duration::ZERO, 20, Some(Time::from_nanos(11_000_000_000))),
+    ] {
+        h.run(span);
+        assert_eq!(h.answers.len(), count, "{name}: calls ended");
+        assert_eq!(h.component.next_deadline(), deadline, "{name}: earliest remaining");
+    }
+}
+
+#[test]
+fn many_held_answers_keep_the_offer_output_bound() {
+    let limits = Limits { connections: 20, ..fixtures::limits() };
+    let shared = fixtures::shared();
+    let shared = crate::Shared { calls: 20, ..shared };
+    let mut h = fixtures::Harness::with(limits, shared, fixtures::settings());
+    for call in 0..20 {
+        h.send(Request::Refused(Answered { call: Token::new(call), cost: 0, result: Err(api::Error::Unavailable) }));
+    }
+    for (name, count) in [("first batch", 16), ("second batch", 4), ("empty", 0)] {
+        h.send(Request::Offer);
+        assert_eq!(h.up.len(), count, "{name}: offer batch");
+        for _ in 0..count {
+            drop(h.up.pop());
+        }
+    }
+}
+
+#[test]
+fn owner_words_are_checked_before_io() {
+    // forge.md 6 admits one through sixteen lowercase letters, digits or hyphens.
+    const LONGEST: &[u8] = b"a0123456789-abcd";
+    const TOO_LONG: &[u8] = b"a0123456789-abcde";
+    let limits = Limits { body_bytes: fixtures::MAX_WORD_BODY_ROOM, ..fixtures::limits() };
+    for (word, expected) in [
+        (b"".as_slice(), Err(Unusable::Word)),
+        (b"a".as_slice(), Ok(())),
+        (LONGEST, Ok(())),
+        (TOO_LONG, Err(Unusable::Word)),
+        (b"K".as_slice(), Err(Unusable::Word)),
+    ] {
+        let mut settings = fixtures::settings();
+        settings.word = Box::from(word);
+        fixtures::admission(settings, &limits, expected, word);
+    }
+}
+
+#[test]
+fn body_room_includes_the_owner_word() {
+    let shared = fixtures::shared();
+    let settings = fixtures::settings();
+    for (body_bytes, expected) in [
+        (
+            fixtures::BODY_ROOM_SHORT,
+            Err(Unusable::BodyBytes { body_bytes: fixtures::BODY_ROOM_SHORT, needed: u64::from(fixtures::BODY_ROOM) }),
+        ),
+        (fixtures::BODY_ROOM, Ok(())),
+    ] {
+        let limits = Limits { body_bytes, ..fixtures::limits() };
+        assert_eq!(limits::check(&limits, &shared, &settings), expected, "body bytes {body_bytes}");
+    }
+}
+
+#[test]
+#[expect(clippy::manual_map, reason = "step fixtures use explicit matches without closures")]
+fn each_request_carries_the_host_its_transport_derives() {
+    use crate::settings::Transport;
+    let trust = fixtures::trust();
+    let v4 = core::net::IpAddr::V4(Ipv4Addr::LOCALHOST);
+    let v6 = core::net::IpAddr::V6(core::net::Ipv6Addr::LOCALHOST);
+    let cases = [
+        (SocketAddr::new(v4, 80), None, false, "127.0.0.1"),
+        (SocketAddr::new(v4, 443), None, false, "127.0.0.1"),
+        (SocketAddr::new(v4, 3000), None, false, "127.0.0.1:3000"),
+        (SocketAddr::new(v6, 80), None, false, "[0:0:0:0:0:0:0:1]"),
+        (SocketAddr::new(v6, 3000), None, false, "[0:0:0:0:0:0:0:1]:3000"),
+        (SocketAddr::new(v4, 80), Some("forge.example"), false, "forge.example"),
+        (SocketAddr::new(v6, 443), Some("forge.example"), false, "forge.example"),
+        (SocketAddr::new(v6, 3000), Some("forge.example"), false, "forge.example:3000"),
+        (SocketAddr::new(v4, 80), Some("forge.example"), true, "forge.example"),
+        (SocketAddr::new(v4, 443), Some("forge.example"), true, "forge.example"),
+        (SocketAddr::new(v6, 3000), Some("forge.example"), true, "forge.example:3000"),
+        (SocketAddr::new(v4, 3000), Some("192.0.2.7"), true, "192.0.2.7:3000"),
+        (SocketAddr::new(v4, 443), Some("2001:db8::7"), true, "[2001:db8:0:0:0:0:0:7]"),
+        (SocketAddr::new(v6, 443), Some("::1"), true, "[0:0:0:0:0:0:0:1]"),
+    ];
+    for (address, name, tls, expected) in cases {
+        let mut settings = fixtures::settings();
+        let forge = settings.forges.get_mut(0).expect("one forge");
+        forge.address = skein_io::Addr::Ip(address);
+        forge.transport = if tls {
+            Transport::Tls {
+                server_name: skein_tls::Name::new(name.expect("TLS name")).expect("valid name"),
+                trust: trust.clone(),
+            }
+        } else {
+            Transport::Plaintext {
+                name: match name {
+                    Some(text) => Some(Box::from(text.as_bytes())),
+                    None => None,
+                },
+            }
+        };
+        assert_eq!(
+            limits::check(&fixtures::limits(), &fixtures::shared(), &settings),
+            Ok(()),
+            "{address} {name:?} TLS={tls}"
+        );
+        let sent = fixtures::request_bytes(settings);
+        assert_eq!(fixtures::header(&sent, b"Host: "), expected.as_bytes(), "{address} {name:?} TLS={tls}");
+        assert_eq!(fixtures::header(&sent, b"User-Agent: "), fixtures::USER_AGENT, "{address} {name:?} TLS={tls}");
+    }
+}
