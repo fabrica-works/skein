@@ -107,32 +107,59 @@ answer ownership is checked before effects or payload copies.
   The domain's error has `Refused` and `Unsupported`, and `Exhausted`'s
   reset is optional, as skein-llm's failure has them (llm.md, section
   2.5). Exhausted with a reset or without, refused, unsupported and
-  unauthorized are its point; any class may be scripted.
-- **Where it falls.** A failing line ends its turn; a line after it is
-  refused when the script is configured. First in its turn, it answers
-  before any stream, with its route's status and error body; after other
-  lines, it ends the stream as its route fails one (`response.failed` on
-  Responses, an `error` event on Anthropic), once their pieces are sent,
-  a hold's included when released (2.2).
+  unauthorized are its point; any class with a row on its route may be
+  scripted (below).
+- **Where it falls.** A failing line that names no credential ends its
+  turn: a line after it is refused when the script is configured. One
+  that names credentials (below) ends the turn for their calls alone,
+  and may be followed by lines, which the calls that pass over it
+  answer. Reached before any other line of its call's reply, a failing
+  line answers before any stream, with its route's status and error
+  body; after other lines, it ends the stream as its route fails one
+  (`response.failed` on Responses, an `error` event on Anthropic), once
+  their pieces are sent, a hold's included when released (2.2).
 - **As the route says it.** The byte peer renders the class as its
-  route's table names it (llm.md, sections 4.6 to 4.8): the status, a code
-  the table maps to that class unless the script gives one, the reset
-  where the route carries one, and the field as `error.param`. A class
-  the route has no row for is refused at configuration. So the client's
-  own classification reads back the class the script gave.
+  route's section names it (llm.md, sections 4.6 to 4.8): the status, a
+  code the section maps to that class unless the script gives one, the
+  reset as the next bullet says, and the field as `error.param`. Where
+  the section reads the class from the error's message, as Anthropic's
+  context too long (llm.md, section 4.7), the peer sends that message.
+  So the client's own classification reads back the class the script
+  gave.
+- **A reset, per route.** On the public and the withdrawn Codex routes,
+  `Exhausted`'s reset goes in the error's `resets_in_seconds`, in whole
+  seconds rounded up, never in `retry-after`, before a stream as in
+  `response.failed`. On Anthropic only the withdrawn bearer route
+  carries one: the reply's head gives
+  `anthropic-ratelimit-unified-status: rejected` and
+  `anthropic-ratelimit-unified-reset`, the reply's wall time in whole
+  seconds since the epoch plus the reset rounded up to whole seconds
+  (llm.md, section 4.7). Such a line must answer before any stream and
+  fail bearers alone: on Anthropic it is refused at configuration where
+  a line of its turn that is not a failing line comes before it, or
+  where it names no credential or a key's index, and `Peer::accept`
+  refuses a key at an index such a line names.
+- **A class needs its row.** A class has a row on a route where the
+  route's section names an error for it, not a status alone; a failing
+  line of a class without one on its peer's route is refused at
+  configuration. `Unsupported` has none on Anthropic, whose refused
+  fields are `Invalid`. `Overloaded` has one on every route: on
+  Responses, a 503 whose error is `overloaded_error` (llm.md, section
+  4.8).
 - **Whose calls it fails.** A failing line may name the accepted
   credentials it answers, by index (section 3), which the byte peer puts
   in each query; it fails only their calls, and a call with another
-  credential passes over it to the rest of its turn. Naming none, it
-  fails every call. A failure adds no assistant message, so the same turn
-  answers the call made again: a story fails one account's calls, lets
-  another's through, and so drives each account's state deterministically.
+  credential, or with none, passes over it to the rest of its turn.
+  Naming none, it fails every call. A failure adds no assistant message,
+  so the same turn answers the call made again: a story fails one
+  account's calls, lets another's through, and so drives each account's
+  state deterministically.
 - **The evidence is the script's.** The code, the request id and the
   field are sent as given, past the client's bounds too, so that a story
   sees the client keep each or leave it empty (llm.md, section 2.5). An
   empty request id is the peer's own (section 3.1).
-- **The chances stay,** for soak runs: a seeded failure carries the
-  table's code for its class and the peer's own request id, and names no
+- **The chances stay,** for soak runs: a seeded failure carries its
+  route's code for its class and the peer's own request id, and names no
   field.
 
 ## 3. Byte peer
@@ -149,15 +176,23 @@ owned terminal. Looking up a route never discards its reply right.
 **Credentials.** The peer accepts several credentials, each a
 `skein_llm::Credential` with its scheme (llm.md, section 2.6), so that one
 peer serves several accounts. `Peer::new` takes one, the index 0, and
-`Peer::accept` adds another and returns its index. Each entry
-receives the accepted credentials, borrowed. A request is authorized when
-it presents one of them as its route sends it: on Responses, either
-scheme as `Authorization: Bearer`; on Anthropic, a key as `x-api-key` and
-a bearer as `Authorization` (the withdrawn route, llm.md, section 4.7),
-never both. Anything else is answered as unauthorized. The fake compares
-bytes; it owns no sign-in, refresh, JWT parser, credential generation or
-durable credential record. The caller remains the credential owner. The
-peer's provider selection is wire configuration, never application policy.
+`Peer::accept` adds another and returns its index. Every credential is
+accepted before the peer serves its first request, and none after. Each
+entry receives the accepted credentials, borrowed. A request is
+authorized when it presents one of them as its route sends it: on
+Responses, either scheme as `Authorization: Bearer`; on Anthropic, a key
+as `x-api-key` and a bearer as `Authorization` (the withdrawn route,
+llm.md, section 4.7), never both. A peer whose wire configuration takes
+calls with no credential, as a local model's server does, also
+authorizes a request that presents no credential field (llm.md, section
+2.6); that configuration is the public route's or Anthropic's, and
+refused on a peer of the Codex route. Anything else, a credential it
+does not hold or no credential without that configuration, is answered
+as unauthorized.
+The fake compares bytes; it owns no sign-in, refresh, JWT parser,
+credential generation or durable credential record. The caller remains
+the credential owner. The peer's provider selection is wire
+configuration, never application policy.
 
 **On OpenAI's dialect the route follows the credential.** A credential
 with an account id is the withdrawn Codex route (llm.md, section 4.6),
@@ -168,9 +203,11 @@ configured path is that route's; a mix is refused at configuration.
 **No observation holds a credential's value.** The head observation
 leaves out the credential's fields (`Authorization`, `x-api-key`,
 `chatgpt-account-id`). `Observation::Credential` records, for each
-request, its route (`skein_llm::Provider`), the scheme of the accepted
-credential it matched and that credential's index, or none when it matched
-none.
+request, its route (`skein_llm::Provider`) and what it presented,
+each distinct: an accepted credential, by its scheme and its index; a
+credential that matched none, by the scheme its field shows (a key in
+`x-api-key`, else a bearer) and no index; or no credential field at
+all, as the scheme none and no index.
 
 `Close` requests lower settlement; `closed` acknowledges actual settlement.
 A lost connection cannot authorize effects or turn a withdrawal into a
@@ -262,13 +299,13 @@ Cancellation has no terminal before actual lower settlement; repeated close
 settlement produces no second terminal.
 
 `Exchange::prepared` adopts an application's already prepared actual Client.
-The caller moves the exact endpoint, credential and unchanged receiving limits
-used at admission as independent peer metadata, released after configuring
-the peer. It creates no second Client and performs no second preparation;
-`Exchange::new` prepares once and delegates to the same constructor. The
-Client is priced once. Peer credential bytes and the retained target are
-separate ownership, as are the caller's retained application declarations,
-decoded results and observation buffers.
+The caller moves the exact endpoint, credential, if any, and unchanged
+receiving limits used at admission as independent peer metadata, released
+after configuring the peer. It creates no second Client and performs no
+second preparation; `Exchange::new` prepares once and delegates to the
+same constructor. The Client is priced once. Peer credential bytes and
+the retained target are separate ownership, as are the caller's retained
+application declarations, decoded results and observation buffers.
 
 `Exchange::at(now, wall)` installs the caller's one iteration snapshot in
 the actual Client, independent script domain and byte peer before their
@@ -310,9 +347,17 @@ credentials of both schemes on one endpoint answers each as its own, and
 observes which by index; each scripted failure reaches the client's
 terminal with its class and report, and a code, request id or field past
 the report's bound arrives empty; a failing line naming one credential
-fails its calls and lets another's through; a public-route request with a
-refused field is answered as unsupported, naming it; and no observation
-holds a credential's value.
+fails its calls and lets another's through to the lines after it; a
+scripted reset reaches the client's `Exhausted` in whole seconds, on
+each route that carries one; a line after a failing line naming no
+credential, a class without its row, and an Anthropic reset on a key or
+after the stream has begun are each refused at configuration; a call
+with no credential is observed as the scheme none, and answered by a
+peer configured to take such calls and as unauthorized by another; a
+credential the peer does not hold is observed apart from both, by its
+scheme with no index, and answered as unauthorized; a public-route
+request with a refused field is answered as unsupported, naming it; and
+no observation holds a credential's value.
 
 The redacted Anthropic captures beside the shared codec keep their
 provenance. They flow through the actual Client under fragmentation and
@@ -328,10 +373,17 @@ the same observations.
 
 - **Most stories give an account a key** (llm.md, section 2.6), which the
   peer accepts: no sign-in is driven.
+- **Stories of an account with no credential** configure the peer to
+  take calls with none (section 3).
 - **Stories that sign a person in** run the fake issuer beside the peer,
-  and the test drives the redirect. The access tokens the issuer's script
-  grants are among the peer's accepted credentials, as bearers, so a
-  signed-in account's calls are accepted without the test reading a token.
+  and the test drives the redirect. The issuer mints no token: its
+  script lists every access token it grants, each refresh's included
+  (oauth.md, section 5). The world that runs both gives the peer that
+  list, as bearers, when it starts it (`Peer::new` and `Peer::accept`,
+  before it serves, section 3). So a signed-in account's calls are
+  accepted without the test reading a token. A token the issuer revokes
+  stays accepted by the peer: a story that wants it refused scripts an
+  `Unauthorized` line naming its index (section 2.3).
 - **Stories of a program that signs in by itself** use a fake program; the
   credential it hands over is one the peer accepts.
 - **An account's state is the script's:** failing lines that name a
@@ -348,7 +400,8 @@ the same observations.
   content, not the content itself, to keep its bound small. A collision
   would show as a false hit; with a 64-bit digest and a world's few
   prefixes, it is accepted rather than paid for in memory.
-- **A failure's reset as a header.** A scripted reset on the public route
-  goes in the error's `resets_in_seconds`, never in `retry-after`, which
-  the client also reads (llm.md, section 4.8). Default: the error's field
-  alone, until a capture shows which the route sends.
+- **A failure's reset as a header.** Section 2.3 renders a reset on the
+  public route as the Codex route's, in the error's `resets_in_seconds`,
+  though the client also reads `retry-after` (llm.md, section 4.8). What
+  stays open is which the public route sends. Default: the error's field
+  alone, until a capture shows it.

@@ -365,8 +365,12 @@ explicit port and path, and refuse `localhost.evil`, `localhost.`,
 for a `localhost` registration. Record tests round-trip access-only records. A
 separate fake issuer drives sign-in, refresh, revocation, delay, replay, and
 transport faults through the real client machine. It also runs as a process on
-loopback, as the fake LLM peer does (fake-llm.md, 3). Randomized cases use the
-fuzzy profile. Memory high water is checked against `worst_case`.
+loopback, as the fake LLM peer does (fake-llm.md, 3). It mints no token: each
+token response, to a sign-in or a refresh, is one its script queues, so its
+script lists every access token it grants, each refresh's included, before
+a world starts. A world that runs it beside the fake LLM peer gives the peer
+that list (fake-llm.md, 6). Randomized cases use the fuzzy profile. Memory
+high water is checked against `worst_case`.
 
 **The issuer's terms** are tested the same way: a new registration and
 signing in again, each sending what section 2.1 says and nothing else; an

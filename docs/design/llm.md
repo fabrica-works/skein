@@ -40,7 +40,9 @@ section, which says what replaces it.
   Anthropic's Messages.
 - **A credential says how it is sent.** A bearer or a key, which the
   route puts where its provider takes it. A credential carries no
-  account id, the withdrawn Codex route's aside (section 2.6).
+  account id, the withdrawn Codex route's aside. A call to an endpoint
+  that takes none, such as a local model's server, carries none
+  (section 2.6).
 - **Per-call outcomes are not failures.** A tool call too large to keep
   arrives as an oversize block with its byte count; a tool call the
   provider cut at its output cap arrives marked as cut. The completion
@@ -335,8 +337,8 @@ pub struct Credential {
 
 - **A credential is a value with its scheme, `bearer` or `key`, and no
   account id.** The caller obtains it, a key from its holder or an access
-  token from a sign-in (oauth.md), and hands it with each call
-  (llm-connection.md, section 4.2). The client keeps it no longer than
+  token from a sign-in (oauth.md), and hands it with each call that has
+  one (llm-connection.md, section 4.2). The client keeps it no longer than
   its call, and no `Debug` shows it. `Credential::bearer` and
   `Credential::key` make one; the field `account_id` is the withdrawn
   Codex route's alone (below).
@@ -345,6 +347,14 @@ pub struct Credential {
   same request for a key as for a plan's token (section 4.8). Anthropic
   takes a key in `x-api-key`, with no authorization field; a bearer there
   is the withdrawn subscription route (section 4.7).
+- **Or none.** A call's credential is optional (`Option<Credential>`),
+  for an endpoint that takes none, such as a local model's server on
+  loopback (llm-connection.md, section 3). A call without one sends no
+  credential field: no `Authorization` on the public route, and neither
+  `x-api-key` nor `Authorization` on Anthropic, whose `anthropic-version`
+  is sent. The withdrawn Codex route refuses a call without one at
+  admission, as `Invalid`. The client never makes one up: a provider
+  that wants one answers `Unauthorized`.
 - **No account id.** The account id is the withdrawn Codex route's alone
   (section 4.6), made with `Credential::codex`. The other routes refuse a
   credential that carries one, and the Codex route one without, at
@@ -643,10 +653,11 @@ in these alone:
   are skein's per-call headers.
 - **Identity headers** are optional data (`openai::identity`), never
   installed by default.
-- **Failures.** `usage_limit_reached` is `Exhausted`, with the reset the
-  error gives in `resets_in_seconds` or `resets_at`; another 429 is
-  `RateLimited`; the rest is classed as on the public route. The request
-  id is the head's `x-oai-request-id`.
+- **Failures.** `usage_limit_reached`, in an HTTP error or in
+  `response.failed`, is `Exhausted`, with the reset the error gives in
+  `resets_in_seconds` or `resets_at`; another 429 is `RateLimited`; the
+  rest is classed as on the public route. The request id is the head's
+  `x-oai-request-id`.
 - **Head bounds** are its own (section 7).
 
 ### 4.7 The Anthropic dialect
@@ -716,10 +727,14 @@ ordering, delta types, cumulative usage patches and completion at `message_stop`
   withdrawn route's plan limit), its reset from
   `anthropic-ratelimit-unified-reset`; `billing_error` is `Exhausted`
   with no reset (section 7); `overloaded_error` is `Overloaded`;
-  `api_error` is `Unavailable`; a context too long is `ContextTooLong`;
-  any other `invalid_request_error` is `Invalid`. Anthropic names no
-  field, so its report's field is empty, and a field it will not take is
-  `Invalid`. The request id is the head's `request-id`.
+  `api_error` is `Unavailable`; a context too long, an
+  `invalid_request_error` whose message says `prompt is too long`, or a
+  `request_too_large`, is `ContextTooLong`; any other
+  `invalid_request_error` is `Invalid`. An `error` event in the
+  stream, after a head that said 200, of a type this list does not name
+  is `Unavailable`, its type kept in the report (section 2.5). Anthropic
+  names no field, so its report's field is empty, and a field it will
+  not take is `Invalid`. The request id is the head's `request-id`.
 
 Bodies are uploaded in bounded pieces using HTTP room.
 Responses must be identity-encoded SSE on success; non-success responses
@@ -780,8 +795,13 @@ bounds still hold.
   `type`, decides where the table names it. Otherwise the status does:
   401 is `Unauthorized`; 403, 404 and 422 `Invalid`; 400 and 413
   `ContextTooLong` where the error says so, else `Invalid`; 429
-  `RateLimited`; a 5xx `Unavailable`, or `Overloaded` where the provider
-  says so.
+  `RateLimited`; a 5xx `Unavailable`, or `Overloaded` where it is 529 or
+  its error's code, else type, is `overloaded_error`. In the stream,
+  after a head that said 200, no status applies: a `response.failed` or
+  `error` event whose code, else type, neither this section nor, on the
+  Codex route, section 4.6 names is `Unavailable`, the code kept in the
+  report (section 2.5). A well-formed failure event is the provider's
+  answer, never `Protocol`.
 
 | Code (status) | Failure |
 |---|---|
@@ -854,21 +874,28 @@ unless marked:
   its status and its own clipped text as the detail; each deadline's
   phase reaches the failure.
 - **Failure classes:** each row of section 4.8's table, as an HTTP error
-  and, for the plan's limit, inside `response.failed`, and each of
-  section 4.7's types; a code the table names wins over its status;
+  and, for the plan's limit, inside `response.failed`, the Codex route's
+  `usage_limit_reached` in both, and each of section 4.7's types; a code
+  the table names wins over its status;
   `Exhausted` carries a reset where the response gives one and `None`
   where it does not, never zero; each route's request id reaches the
   report, with or without a decodable body; the report's code, request id
   and field at their bound are kept and one over are empty; a failure
   before a head has an empty report, and a local one after it the
-  request id alone.
+  request id alone; in the stream after a 200 head, a `response.failed`
+  or `error` event of a code neither section 4.8 nor, on the Codex
+  route, section 4.6 names, and an Anthropic `error` event of a type
+  section 4.7 does not list, are `Unavailable` with that code or type in
+  the report.
 - **Credentials:** a key on Anthropic goes as `x-api-key` with neither an
   authorization field nor a beta, and a bearer with both; the public
   route sends a key and a token alike as a bearer, the two requests'
   bodies byte-identical; an account id is refused on the public and
   Anthropic routes and required on the Codex route; an endpoint header
   named `x-api-key`, `Authorization` or `chatgpt-account-id` is refused;
-  a value or account id past its bound is refused by name.
+  a value or account id past its bound is refused by name; a call
+  without a credential sends no credential field on the public and
+  Anthropic routes, and is refused on the Codex route.
 - **The public route:** over drawn prompts, no request carries a field
   of section 4.8's refused list or `previous_response_id`, and every one
   carries `store:false` and `stream:true`; an explicit output cap is

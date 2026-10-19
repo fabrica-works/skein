@@ -26,8 +26,9 @@ protocol layer is its first user.
   - skein's TLS machine;
   - skein's LLM client.
 - **Calls in, answers out.** The owner starts a call with an endpoint, a
-  prompt, a credential and its deadlines. It hears the call's deltas,
-  completed blocks and one terminal: completed, failed or cancelled.
+  prompt, a credential where the endpoint takes one, and its deadlines.
+  It hears the call's deltas, completed blocks and one terminal:
+  completed, failed or cancelled.
 - **Connections are its own:**
   - a bounded pool per endpoint;
   - one call per connection at a time;
@@ -57,8 +58,8 @@ protocol layer is its first user.
 - **No retries and no policy.** Whether to call again is the owner's
   domain's.
 - **Credentials pass through.** The owner hands a credential, its value
-  and how it is sent, with each call (4.2). This component keeps none
-  beyond the call's request, and never chooses one.
+  and how it is sent, with each call that has one (4.2). This component
+  keeps none beyond the call's request, and never chooses one.
 
 ## 2. In skein
 
@@ -98,7 +99,7 @@ The owner names an endpoint by its index in that configuration.
 
 | From the owner | What it does |
 |---|---|
-| start | a call: its token, the endpoint, the prompt, the credential and its deadlines |
+| start | a call: its token, the endpoint, the prompt, the credential if any, and its deadlines |
 | next | ask for one more delta, block or the terminal, as skein's client does |
 | cancel | end the call; its terminal follows |
 | close | the owner close: refuse new calls, drain the rest (5.1) |
@@ -172,20 +173,24 @@ Once it runs, a call that waited is a call like any other.
 
 ### 4.2 Credentials
 
-- **A credential goes with its call.** A start carries one credential:
-  its value, its scheme, a bearer or a key, and, on the withdrawn Codex
-  route alone, an account id (llm.md, section 2.6). skein's client writes
-  it where the endpoint's route takes it. The component holds it in the
-  call's request only, and drops it at the call's terminal: it is never
-  kept on a connection, nor used for another call.
+- **A credential goes with its call.** A start carries at most one
+  credential: its value, its scheme, a bearer or a key, and, on the
+  withdrawn Codex route alone, an account id (llm.md, section 2.6).
+  skein's client writes it where the endpoint's route takes it. The
+  component holds it in the call's request only, and drops it at the
+  call's terminal: it is never kept on a connection, nor used for
+  another call.
+- **Or none.** A start for an endpoint that takes no credential, such as
+  a local model's server (section 3), carries none, and its request no
+  credential field (llm.md, section 2.6).
 - **Connections are not an account's.** A request authenticates itself,
   and a connection holds no session, so the calls of several accounts
   share an endpoint's pool. A connection reused for the next call carries
-  that call's credential, whichever it is.
+  that call's credential, whichever it is, or none.
 - **Admission checks it.** A credential past the owner's bounds, or one
   its endpoint's route refuses (a key on the Codex route, an account id
-  on another), is refused at the entrance by skein's client, naming why;
-  no terminal follows.
+  on another), or none on the Codex route, is refused at the entrance by
+  skein's client, naming why; no terminal follows.
 - **Which account a failure concerns** is the owner's to know: it chose
   the credential. The failure carries the class and the provider's
   report (llm.md, section 2.5), never the credential.
@@ -344,6 +349,9 @@ client's evidence: unsent, possibly sent, or a response received.
     endpoint's connections, each request carrying its own call's
     credential, which the fake peer observes by index (fake-llm.md,
     section 3);
+  - a call with no credential, to a fake peer configured to take such
+    calls, its request carrying no credential field, which the peer
+    observes as none (fake-llm.md, section 3);
   - each provider failure the fake peer scripts (fake-llm.md, section
     2), reaching the owner with its class and report;
   - a pool at its limit: more calls to one endpoint than it may hold
