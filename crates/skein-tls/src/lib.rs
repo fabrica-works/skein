@@ -26,9 +26,12 @@ extern crate alloc;
 pub mod client;
 mod config;
 mod held;
+mod rs256;
 mod session;
 #[cfg(test)]
 mod tests;
+
+pub use rs256::verify_rs256;
 
 pub use config::{ALPN, Config, Name, Parsed, Refusal, Server, roots_worst_case};
 /// What [`Config::new`] takes: the roots a service trusts, which its shell
