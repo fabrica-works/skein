@@ -561,6 +561,14 @@ impl Component {
                         self.collect(id, up);
                         return;
                     }
+                    if let OwnerLock::Waiting { until } = exchange.lock
+                        && env.now >= until
+                    {
+                        exchange.lock = OwnerLock::Released;
+                        self.fail_exchange(env, id, Failure::Busy, up, io);
+                        self.collect(id, up);
+                        return;
+                    }
                     if exchange.has_work()
                         || (!web_closing(exchange.web.as_ref()) && due(exchange.client.next_deadline(), env.now))
                     {
@@ -765,7 +773,7 @@ impl Component {
             oauth::Request::Revoked { confirmed } => self.forget(env, id, confirmed, up, io),
             oauth::Request::Tokens { record, missing } => {
                 exchange.lock_candidate = Some((record, missing));
-                if !self.lock_write(id, up) {
+                if !self.lock_write(env, id, up) {
                     self.keep_candidate(id, up);
                 }
             }
@@ -959,6 +967,7 @@ impl Component {
             Store::Owner => {}
         }
         exchange.stage = Stage::Finished;
+        exchange.pending_grant = false;
         exchange.received();
         exchange.visit = None;
         exchange.sign_in = None;
@@ -1102,6 +1111,9 @@ impl Component {
         for account in 0..self.accounts.len() {
             if let Some(id) = *self.bindings.get(account).expect("account binding") {
                 let exchange = self.exchanges.get(id).expect("bound exchange");
+                if let OwnerLock::Waiting { until } = exchange.lock {
+                    earlier(&mut earliest, until);
+                }
                 if !web_closing(exchange.web.as_ref())
                     && let Some(next) = exchange.client.next_deadline()
                 {

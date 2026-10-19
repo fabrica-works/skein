@@ -11,7 +11,7 @@ use alloc::boxed::Box;
 use skein_http::{Header, Method, client as http};
 use skein_io::{Event as IoEvent, Request as IoRequest};
 use skein_lib::stream::{Down, Read, Up};
-use skein_lib::{Duration, Env, List, Queue, Token, bytes};
+use skein_lib::{Duration, Env, List, Queue, Time, Token, bytes};
 use skein_oauth as oauth;
 use skein_tls::client as tls;
 
@@ -36,6 +36,7 @@ pub(crate) enum Purpose {
 #[derive(PartialEq, Eq)]
 pub(crate) enum OwnerLock {
     Released,
+    Waiting { until: Time },
     Held,
 }
 
@@ -124,7 +125,10 @@ impl Exchange {
     pub(crate) fn settled(&self) -> bool {
         match self.stage {
             Stage::Finished => {
-                !self.file_active
+                (match self.lock {
+                    OwnerLock::Waiting { .. } => false,
+                    OwnerLock::Released | OwnerLock::Held => true,
+                }) && !self.file_active
                     && self.web.is_none()
                     && match &self.listener {
                         Some(listener) => listener.settled(),

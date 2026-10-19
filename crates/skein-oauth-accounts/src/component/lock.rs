@@ -9,7 +9,7 @@ use skein_lib::{Env, Id, Queue};
 use skein_oauth as oauth;
 
 impl Component {
-    pub(super) fn lock_write(&mut self, id: Id<Exchange>, up: &mut Queue<Event>) -> bool {
+    pub(super) fn lock_write(&mut self, env: &Env<Limits>, id: Id<Exchange>, up: &mut Queue<Event>) -> bool {
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         let shared = match self.sources.get(exchange.account).expect("account source") {
             Source::SignIn { shared, .. } => *shared,
@@ -18,6 +18,7 @@ impl Component {
         if !shared || exchange.lock == OwnerLock::Held {
             return false;
         }
+        exchange.lock = OwnerLock::Waiting { until: env.now.saturating_add(env.limits.lock_wait) };
         exchange.stage = Stage::Locking;
         up.push(Event::Lock { account: number(&self.names, exchange.account) });
         true
@@ -36,14 +37,9 @@ impl Component {
         }
         let binding = *self.bindings.get(account).expect("account binding");
         let pending = match binding {
-            Some(id) => match self.exchanges.get(id).expect("bound exchange").stage {
-                Stage::Locking => Some(id),
-                Stage::Loading
-                | Stage::Reading
-                | Stage::Running
-                | Stage::Keeping { .. }
-                | Stage::Forgetting { .. }
-                | Stage::Finished => None,
+            Some(id) => match self.exchanges.get(id).expect("bound exchange").lock {
+                OwnerLock::Waiting { .. } => Some(id),
+                OwnerLock::Released | OwnerLock::Held => None,
             },
             None => None,
         };
@@ -55,12 +51,17 @@ impl Component {
         };
         match answer {
             Locked::Busy => {
+                self.exchanges.get_mut(id).expect("bound exchange").lock = OwnerLock::Released;
                 self.fail_exchange(env, id, Failure::Busy, up, io);
                 self.collect(id, up);
             }
             Locked::Held { record } => {
                 let exchange = self.exchanges.get_mut(id).expect("bound exchange");
                 exchange.lock = OwnerLock::Held;
+                if let Stage::Finished = exchange.stage {
+                    self.collect(id, up);
+                    return;
+                }
                 match self.keepers.get_mut(account).expect("account keeper") {
                     Store::Owner => self.read_locked(env, id, record, up, io),
                     Store::Private(keeper) => {
@@ -122,7 +123,23 @@ impl Component {
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         exchange.file_active = false;
         let account = exchange.account;
+        let different = match self.accounts.get(account).expect("account state") {
+            State::Record { record: prior, .. } => match &record {
+                Some(record) => record.subject != prior.subject,
+                None => false,
+            },
+            State::Empty | State::Loaded { .. } => false,
+        };
+        if different && !exchange.signing_in() {
+            self.fail_exchange(env, id, Failure::AnotherSubject, up, io);
+            *self.accounts.get_mut(account).expect("account state") = State::Empty;
+            self.collect(id, up);
+            return;
+        }
         if let Some((candidate, _)) = &mut exchange.lock_candidate {
+            if record.is_none() {
+                *self.accounts.get_mut(account).expect("account state") = State::Empty;
+            }
             if let Some(record) = record {
                 let Some(next) = record.generation.checked_add(1) else {
                     self.fail_exchange(env, id, Failure::Exchange(oauth::Failure::Limit), up, io);
@@ -218,7 +235,7 @@ impl Component {
             Err(_) => unreachable!("exchange slot admitted"),
         };
         *self.bindings.get_mut(account).expect("account binding") = Some(id);
-        if !self.lock_write(id, up) {
+        if !self.lock_write(env, id, up) {
             self.begin_refresh(env, id);
         }
     }

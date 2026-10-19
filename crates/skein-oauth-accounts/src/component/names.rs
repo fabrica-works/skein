@@ -39,7 +39,20 @@ impl Component {
             Request::Kept { account, generation, keeping } => {
                 Request::Kept { account: self.terminal_place(account)?, generation, keeping }
             }
-            Request::Locked { account, answer } => Request::Locked { account: self.terminal_place(account)?, answer },
+            Request::Locked { account, answer } => {
+                if self.lifecycle == Lifecycle::Closed {
+                    return None;
+                }
+                match self.terminal_place(account) {
+                    Some(place) => Request::Locked { account: place, answer },
+                    None => {
+                        if let crate::Locked::Held { .. } = answer {
+                            up.push(Event::Unlock { account });
+                        }
+                        return None;
+                    }
+                }
+            }
             Request::Close => Request::Close,
             Request::Abort => Request::Abort,
         })

@@ -376,6 +376,7 @@ impl Component {
                 | Failure::Exchange(_)
                 | Failure::NotKept
                 | Failure::NotGranted
+                | Failure::AnotherSubject
                 | Failure::Busy,
             ) => false,
         };

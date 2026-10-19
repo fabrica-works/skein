@@ -89,6 +89,8 @@ pub enum Failure {
     Busy,
     /// The record lacks a scope the registration requires; sign in again.
     NotGranted,
+    /// A sign-in or shared record has another subject than expected.
+    AnotherSubject,
     /// A sign-in's candidate could not be durably kept; nothing of it is lent.
     NotKept,
     /// The issuer exchange failed, as named by the OAuth client.

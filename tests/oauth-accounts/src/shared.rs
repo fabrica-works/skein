@@ -13,7 +13,13 @@ const ACCOUNT: u32 = 0;
 #[derive(Clone, Copy, Debug)]
 pub enum Story {
     Busy,
+    Slow,
     Newer,
+    NoRecord,
+    Subject,
+    Cancelled,
+    Removed,
+    Aborted,
 }
 pub(crate) struct Owner {
     story: Story,
@@ -68,22 +74,36 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
     match event {
         accounts::Event::Lock { account } => {
             client.facts.push(Fact::Lock);
-            let answer = match client.shared.as_ref().expect("story").story {
-                Story::Busy => accounts::Locked::Busy,
-                Story::Newer => accounts::Locked::Held { record: Some(record(1, 30)) },
-            };
-            client.ask(env, accounts::Request::Locked { account, answer });
+            lock_answer(client, env, account);
         }
         accounts::Event::Granted { generation, .. } => {
+            client.contracts.read(generation);
+            client.contracts.granted(generation);
             client.facts.push(Fact::Granted(generation));
             client.close(env);
         }
         accounts::Event::Failed { failure, .. } => {
+            client.contracts.failed();
             client.facts.push(Fact::Failed(failure));
-            client.close(env);
+            let story = client.shared.as_ref().expect("story").story;
+            match story {
+                Story::Cancelled | Story::Removed | Story::Aborted => held(client, env, ACCOUNT, None),
+                Story::Busy | Story::Slow | Story::Newer | Story::NoRecord | Story::Subject => {}
+            }
+            if failure == accounts::Failure::AnotherSubject {
+                client.contracts.requesting();
+                client.ask(env, accounts::Request::Grant { account: ACCOUNT });
+            } else {
+                client.close(env);
+            }
         }
-        accounts::Event::Unlock { .. } => client.facts.push(Fact::Unlock),
+        accounts::Event::Unlock { account } => {
+            client.contracts.unlocked(account);
+            client.facts.push(Fact::Unlock);
+        }
+        accounts::Event::Removed { account } => client.facts.push(Fact::Removed(account)),
         accounts::Event::Closed => {
+            client.contracts.closed();
             client.facts.push(Fact::Closed);
             client.closed = true;
         }
@@ -91,9 +111,28 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
         | accounts::Event::SignedIn { .. }
         | accounts::Event::SignedOut { .. }
         | accounts::Event::Visit { .. }
-        | accounts::Event::Removed { .. }
         | accounts::Event::Expiring { .. }
         | accounts::Event::Refused { .. } => panic!("shared refresh must settle from its lock answer"),
+    }
+}
+fn held(client: &mut world::Client, env: &Env<accounts::Limits>, account: u32, record: Option<oauth::SavedToken>) {
+    client.contracts.locked(account);
+    client.ask(env, accounts::Request::Locked { account, answer: accounts::Locked::Held { record } });
+}
+fn lock_answer(client: &mut world::Client, env: &Env<accounts::Limits>, account: u32) {
+    match client.shared.as_ref().expect("story").story {
+        Story::Busy => client.ask(env, accounts::Request::Locked { account, answer: accounts::Locked::Busy }),
+        Story::Slow => {}
+        Story::Newer => held(client, env, account, Some(record(1, 30))),
+        Story::NoRecord => held(client, env, account, None),
+        Story::Subject => {
+            let mut read = record(1, 30);
+            read.subject = Some(bytes::copy_of(b"other"));
+            held(client, env, account, Some(read));
+        }
+        Story::Cancelled => client.ask(env, accounts::Request::Cancel { account }),
+        Story::Removed => client.ask(env, accounts::Request::Remove { account }),
+        Story::Aborted => client.ask(env, accounts::Request::Abort),
     }
 }
 pub(crate) fn before_socket(client: &world::Client, request: &skein_io::Request) {

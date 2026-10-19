@@ -160,6 +160,8 @@ pub enum Fact {
     Failed(accounts::Failure),
     /// The record was forgotten, with the issuer's revocation outcome.
     SignedOut(bool),
+    /// An account removal settled.
+    Removed(u32),
     /// The component settled its owner close.
     Closed,
 }
@@ -172,6 +174,7 @@ pub struct Contracts {
     kept: Vec<u64>,
     last_generation: Option<u64>,
     closed: bool,
+    locks: Ledger<u32, ()>,
 }
 
 impl Contracts {
@@ -187,6 +190,7 @@ impl Contracts {
             kept: vec![0],
             last_generation: None,
             closed: false,
+            locks: Ledger::new("owner locks"),
         }
     }
     /// Checks a generation before accepting its grant or held notice.
@@ -227,11 +231,30 @@ impl Contracts {
             self.close.open(0, ());
         }
     }
+    /// Opens the next owner grant after its predecessor ended.
+    pub fn requesting(&mut self) {
+        self.grant.open(0, ());
+    }
+    /// Records a shared record read under the owner's lock.
+    pub fn read(&mut self, generation: u64) {
+        self.kept.push(generation);
+    }
+    /// Each held owner lock requires one release before Closed.
+    pub fn locked(&mut self, account: u32) {
+        assert!(!self.closed, "Closed is the last owner event");
+        self.locks.open(account, ());
+    }
+    /// Releases exactly one lock taken by a Held answer.
+    pub fn unlocked(&mut self, account: u32) {
+        assert!(!self.closed, "Closed is the last owner event");
+        self.locks.end(account);
+    }
     /// Settles the owner's close only once, after keeper obligations.
     pub fn closed(&mut self) {
         assert!(!self.closed, "one Closed");
         self.close.end(0);
         self.keeps.assert_settled();
+        self.locks.assert_settled();
         self.grant.assert_settled();
         self.closed = true;
     }
@@ -262,7 +285,7 @@ pub struct Client {
     story: Story,
     pub(crate) facts: Vec<Fact>,
     records: Vec<oauth::SavedToken>,
-    contracts: Contracts,
+    pub(crate) contracts: Contracts,
     pub(crate) closing: bool,
     pub(crate) closed: bool,
     pub(crate) recovered: Option<u64>,

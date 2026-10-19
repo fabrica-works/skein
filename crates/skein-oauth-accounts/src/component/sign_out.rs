@@ -77,7 +77,7 @@ impl Component {
             set_held(slot, false);
             failed(number(&self.names, account), Failure::Expired, up);
         }
-        if self.lock_write(id, up) {
+        if self.lock_write(env, id, up) {
             return;
         }
         let registration = match self.sources.get(account).expect("account source") {

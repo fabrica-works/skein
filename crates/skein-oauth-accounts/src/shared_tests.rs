@@ -18,6 +18,7 @@ enum Seen {
     Granted { generation: u64, valid: Duration },
     Keep(u64),
     SignedIn(u64),
+    SignedOut(bool),
     Failed(Failure),
     None,
     Other,
@@ -29,11 +30,11 @@ fn seen(events: &mut Queue<Event>) -> Seen {
         Some(Event::Granted { generation, valid, .. }) => Seen::Granted { generation, valid },
         Some(Event::Keep { record, .. }) => Seen::Keep(record.generation),
         Some(Event::SignedIn { generation, .. }) => Seen::SignedIn(generation),
+        Some(Event::SignedOut { revoked, .. }) => Seen::SignedOut(revoked),
         Some(Event::Failed { failure, .. }) => Seen::Failed(failure),
         None => Seen::None,
         Some(
             Event::Visit { .. }
-            | Event::SignedOut { .. }
             | Event::Refused { .. }
             | Event::Expiring { .. }
             | Event::Removed { .. }
@@ -195,4 +196,120 @@ fn a_lock_wait_of_zero_is_unusable() {
     profile.lock_wait = Duration::ZERO;
     let result = Component::new(List::with_capacity(0), &profile, crypto(17));
     assert_eq!(result.err(), Some(Unusable::Limits));
+}
+
+fn waiting_refresh() -> Owner {
+    let mut owner = shared_component();
+    owner.ask(Request::Grant { account: ACCOUNT });
+    drop(owner.above.pop());
+    owner
+}
+fn waiting_sign_out() -> Owner {
+    let mut owner = shared_component();
+    owner.ask(Request::SignOut { account: ACCOUNT });
+    drop(owner.above.pop());
+    owner
+}
+struct WriteRow {
+    name: &'static str,
+    owner: Owner,
+    expected: Seen,
+}
+fn lock_outcome(mut row: WriteRow, record: Option<SavedToken>) {
+    drop(row.owner.above.pop());
+    row.owner.ask(Request::Locked { account: ACCOUNT, answer: Locked::Held { record } });
+    assert_eq!(seen(&mut row.owner.above), row.expected, "{}", row.name);
+}
+#[test]
+fn no_record_under_the_lock_ends_each_write() {
+    let rows = [
+        WriteRow { name: "refresh", owner: waiting_refresh(), expected: Seen::Failed(Failure::Expired) },
+        WriteRow { name: "sign-out", owner: waiting_sign_out(), expected: Seen::SignedOut(false) },
+        WriteRow { name: "sign-in", owner: signing_in(), expected: Seen::Keep(1) },
+    ];
+    for row in rows {
+        lock_outcome(row, None);
+    }
+}
+#[test]
+fn another_subject_under_the_lock_ends_each_write() {
+    let rows = [
+        WriteRow { name: "refresh", owner: waiting_refresh(), expected: Seen::Failed(Failure::AnotherSubject) },
+        WriteRow { name: "sign-out", owner: waiting_sign_out(), expected: Seen::Failed(Failure::AnotherSubject) },
+        WriteRow { name: "sign-in", owner: signing_in(), expected: Seen::Keep(KEPT_GENERATION) },
+    ];
+    for row in rows {
+        let mut record = shared_record(READ_GENERATION);
+        record.subject = Some(bytes::copy_of(b"other"));
+        lock_outcome(row, Some(record));
+    }
+}
+#[test]
+fn each_held_lock_is_unlocked_once() {
+    struct Row {
+        name: &'static str,
+        requests: Box<[Request]>,
+        expected: usize,
+    }
+    let kept = || Request::Kept { account: ACCOUNT, generation: KEPT_GENERATION, keeping: Keeping::Kept };
+    let rows = [
+        Row { name: "cancel", requests: Box::new([Request::Cancel { account: ACCOUNT }]), expected: 1 },
+        Row { name: "removal", requests: Box::new([Request::Remove { account: ACCOUNT }, kept()]), expected: 1 },
+        Row { name: "close", requests: Box::new([Request::Close, kept()]), expected: 1 },
+        Row { name: "abort", requests: Box::new([Request::Abort]), expected: 1 },
+    ];
+    for row in rows {
+        let mut owner = signing_in();
+        drop(owner.above.pop());
+        answer(&mut owner, shared_record(READ_GENERATION));
+        drop(owner.above.pop());
+        for request in row.requests {
+            owner.ask(request);
+        }
+        for _ in 0..limits().accounts {
+            owner.fire();
+        }
+        let mut unlocked = 0;
+        while let Some(event) = owner.above.pop() {
+            if event == (Event::Unlock { account: ACCOUNT }) {
+                unlocked += 1;
+            }
+        }
+        assert_eq!(unlocked, row.expected, "{}", row.name);
+    }
+}
+#[test]
+fn a_locked_for_no_pending_lock_is_unlocked_at_once() {
+    let mut owner = shared_component();
+    answer(&mut owner, shared_record(NEWER));
+    assert_event(owner.above.pop(), Event::Unlock { account: ACCOUNT });
+    assert!(owner.above.is_empty());
+}
+#[test]
+fn a_lock_with_no_answer_within_its_wait_fails_as_busy() {
+    let mut owner = waiting_refresh();
+    let deadline = owner.env.now.saturating_add(owner.env.limits.lock_wait);
+    assert_eq!(owner.component.next_deadline(), Some(deadline));
+    owner.env.now = deadline;
+    owner.fire();
+    assert_event(owner.above.pop(), Event::Failed { account: ACCOUNT, ends: Ends::Grant, failure: Failure::Busy });
+    assert!(owner.above.is_empty());
+}
+#[test]
+fn a_locked_after_the_lock_wait_is_unlocked_at_once() {
+    let mut owner = waiting_refresh();
+    owner.env.now = owner.env.now.saturating_add(owner.env.limits.lock_wait);
+    owner.fire();
+    drop(owner.above.pop());
+    answer(&mut owner, shared_record(NEWER));
+    assert_event(owner.above.pop(), Event::Unlock { account: ACCOUNT });
+    assert!(owner.above.is_empty());
+}
+#[test]
+fn a_locked_after_closed_is_left_to_the_owner() {
+    let mut owner = shared_component();
+    owner.ask(Request::Close);
+    drop(owner.above.pop());
+    answer(&mut owner, shared_record(NEWER));
+    assert!(owner.above.is_empty() && owner.io.is_empty() && owner.files.is_empty());
 }

@@ -58,3 +58,26 @@ fn closed_with_a_pending_sign_in_fails_the_referee() {
     let mut referee = skein_oauth_accounts_world::sign_in::Contracts::new();
     referee.closed();
 }
+#[test]
+#[should_panic(expected = "owner locks")]
+fn an_unlock_without_a_held_answer_fails_the_referee() {
+    Contracts::with_pending_grant().unlocked(0);
+}
+#[test]
+#[should_panic(expected = "owner locks")]
+fn closed_with_a_held_lock_fails_the_referee() {
+    let mut referee = Contracts::with_pending_grant();
+    referee.granted(0);
+    referee.locked(0);
+    referee.closing();
+    referee.closed();
+}
+#[test]
+#[should_panic(expected = "Closed is the last owner event")]
+fn an_unlock_after_closed_fails_the_referee() {
+    let mut referee = Contracts::with_pending_grant();
+    referee.granted(0);
+    referee.closing();
+    referee.closed();
+    referee.unlocked(0);
+}
