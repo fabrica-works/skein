@@ -1,7 +1,6 @@
 //! Bound redirect ports, client fields and request-ordered seeded draws.
 use super::private::Owner;
 use super::*;
-use skein_lib::Token;
 
 const ZERO: &[u8] = b"http://127.0.0.1:0/callback";
 const PREFERRED: &[u8] = b"http://127.0.0.1:31234/callback";
@@ -20,82 +19,23 @@ fn varying(mut account: Account, uri: &[u8]) -> Account {
     account
 }
 
-fn owner(accounts: impl IntoIterator<Item = Account>, profile: &Limits) -> Owner {
-    let mut configured = List::with_capacity(profile.accounts);
-    for account in accounts {
-        configured.push(account).ok().expect("configured account room");
-    }
-    Owner {
-        component: Component::new(configured, profile, crypto(17)).expect("valid registrations"),
-        env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: *profile },
-        above: Queue::with_capacity(32),
-        io: Queue::with_capacity(32),
-        files: Queue::with_capacity(32),
-    }
-}
 fn public(uri: &[u8]) -> Owner {
-    owner([varying(refresh_account(0, ADDRESS), uri)], &limits())
-}
-fn fire(owner: &mut Owner) {
-    owner.component.fire(&owner.env, &mut owner.above, &mut owner.io, &mut owner.files);
-}
-fn socket(owner: &mut Owner, event: LowerEvent) {
-    owner.component.up(&owner.env, event, &mut owner.above, &mut owner.io, &mut owner.files);
-}
-fn take_listen(owner: &mut Owner) -> (Token, u16) {
-    let Lower::Listen { owner, addr: skein_io::Addr::Ip(address) } = owner.io.pop().expect("listen effect") else {
-        panic!("IP listen effect")
-    };
-    (owner, address.port())
-}
-fn listen(owner: &mut Owner) -> Token {
-    take_listen(owner).0
-}
-fn listening(owner: &mut Owner, identity: Token, port: u16) {
-    socket(
-        owner,
-        LowerEvent::Listening {
-            owner: identity,
-            listener: Token::new(10),
-            addr: skein_io::Addr::Ip(([127, 0, 0, 1], port).into()),
-        },
-    );
-}
-fn visit(owner: &mut Owner) -> Box<[u8]> {
-    for _ in 0_u32..8 {
-        fire(owner);
-        if let Some(Event::Visit { url, .. }) = owner.above.pop() {
-            return url;
-        }
-    }
-    panic!("visit after listening")
-}
-fn query<'a>(url: &'a [u8], name: &[u8]) -> Option<&'a [u8]> {
-    let mut query = url.get(bytes::find(url, b"?")?.checked_add(1)?..)?;
-    loop {
-        let end = bytes::find(query, b"&").unwrap_or(query.len());
-        let pair = query.get(..end)?;
-        let at = bytes::find(pair, b"=")?;
-        if pair.get(..at)? == name {
-            return pair.get(at.checked_add(1)?..);
-        }
-        query = query.get(end.checked_add(1)?..)?;
-    }
+    Owner::configured([varying(refresh_account(0, ADDRESS), uri)], &limits())
 }
 
 #[test]
 fn an_account_with_port_zero_listens_on_port_zero() {
     let mut owner = public(ZERO);
     owner.ask(Request::SignIn { account: 0 });
-    assert_eq!(take_listen(&mut owner).1, 0);
+    assert_eq!(owner.take_listen().1, 0);
 }
 #[test]
 fn an_account_with_port_zero_visits_at_its_bound_port() {
     let mut owner = public(ZERO);
     owner.ask(Request::SignIn { account: 0 });
-    let identity = listen(&mut owner);
-    listening(&mut owner, identity, 41000);
-    assert!(query(&visit(&mut owner), b"redirect_uri") == Some(b"http%3A%2F%2F127.0.0.1%3A41000%2Fcallback"));
+    let identity = owner.listen();
+    owner.listening(identity, 41000);
+    assert!(Owner::query(&owner.visit(), b"redirect_uri") == Some(b"http%3A%2F%2F127.0.0.1%3A41000%2Fcallback"));
 }
 fn fixed_zero() -> Account {
     let mut account = refresh_account(0, ADDRESS);
@@ -110,7 +50,7 @@ fn new_refuses(account: Account) -> Option<Unusable> {
     Component::new(configured, &limits(), crypto(17)).err()
 }
 fn add_refuses(account: Account) -> Option<Unusable> {
-    let mut owner = owner([], &limits());
+    let mut owner = Owner::configured([], &limits());
     owner.component.add(&owner.env, 0, account, &mut owner.above);
     if let Some((_, _, Refusal::Unusable(why))) = refusal_of(owner.above.pop()) { Some(why) } else { None }
 }
@@ -168,12 +108,12 @@ fn redirected(suffix: &[u8]) -> RedirectOutcome {
         registration.redirect_uri = bytes::copy_of(b"https://service.example/callback");
         *keeper = Keeper::Owner { kept: None };
     }
-    let mut owner = owner([account], &profile);
+    let mut owner = Owner::configured([account], &profile);
     owner.ask(Request::SignIn { account: 0 });
-    let url = visit(&mut owner);
+    let url = owner.visit();
     let parts = [
         b"https://service.example/callback?state=".as_slice(),
-        query(&url, b"state").expect("state"),
+        Owner::query(&url, b"state").expect("state"),
         b"&code=code",
         suffix,
     ];
@@ -186,7 +126,7 @@ fn redirected(suffix: &[u8]) -> RedirectOutcome {
         uri.put(part).expect("fixture URI room");
     }
     owner.ask(Request::Redirected { account: 0, uri: uri.finish() });
-    fire(&mut owner);
+    owner.fire();
     let event = owner.above.pop();
     if let Some(Event::Refused { asked: Asked::Redirected, why: Refusal::Redirect, .. }) = event {
         RedirectOutcome::Refused
@@ -246,19 +186,19 @@ fn a_public_sign_in_visits_only_after_its_listener_listens() {
             [Effect::Listen(31234), Effect::Listening, Effect::Visit],
         ),
     ] {
-        let mut owner = owner([account], &limits());
+        let mut owner = Owner::configured([account], &limits());
         owner.ask(Request::SignIn { account: 0 });
-        let (identity, port) = take_listen(&mut owner);
+        let (identity, port) = owner.take_listen();
         let mut seen = List::with_capacity(8);
         seen.push(Effect::Listen(port)).expect("effect room");
         for _ in 0_u32..4 {
-            fire(&mut owner);
+            owner.fire();
             effects(&mut owner, &mut seen);
         }
         seen.push(Effect::Listening).expect("effect room");
-        listening(&mut owner, identity, 31234);
+        owner.listening(identity, 31234);
         for _ in 0_u32..4 {
-            fire(&mut owner);
+            owner.fire();
             effects(&mut owner, &mut seen);
         }
         assert_eq!(seen.as_slice(), expected, "{name}");
@@ -268,14 +208,14 @@ fn a_public_sign_in_visits_only_after_its_listener_listens() {
 fn a_varying_redirect_falls_back_to_port_zero() {
     let mut owner = public(PREFERRED);
     owner.ask(Request::SignIn { account: 0 });
-    let identity = listen(&mut owner);
-    socket(&mut owner, LowerEvent::Failed { owner: identity, error: skein_io::Error::Other });
-    socket(&mut owner, LowerEvent::Closed { owner: identity });
+    let identity = owner.listen();
+    owner.socket(LowerEvent::Failed { owner: identity, error: skein_io::Error::Other });
+    owner.socket(LowerEvent::Closed { owner: identity });
     let mut seen = List::with_capacity(8);
     effects(&mut owner, &mut seen);
-    listening(&mut owner, identity, 41000);
+    owner.listening(identity, 41000);
     for _ in 0_u32..4 {
-        fire(&mut owner);
+        owner.fire();
         effects(&mut owner, &mut seen);
     }
     assert_eq!(seen.as_slice(), [Effect::Listen(0), Effect::Visit]);
@@ -294,12 +234,12 @@ fn a_listener_that_cannot_bind_ends_the_sign_in_before_its_visit() {
             Failed { account: 0, ends: Ends::SignIn, failure: Failure::Exchange(skein_oauth::Failure::Unavailable) },
         ),
     ] {
-        let mut owner = owner([account], &limits());
+        let mut owner = Owner::configured([account], &limits());
         owner.ask(Request::SignIn { account: 0 });
-        let identity = listen(&mut owner);
-        socket(&mut owner, LowerEvent::Failed { owner: identity, error: skein_io::Error::Other });
-        socket(&mut owner, LowerEvent::Closed { owner: identity });
-        fire(&mut owner);
+        let identity = owner.listen();
+        owner.socket(LowerEvent::Failed { owner: identity, error: skein_io::Error::Other });
+        owner.socket(LowerEvent::Closed { owner: identity });
+        owner.fire();
         let failure = failure_of(owner.above.pop());
         assert_eq!(failure, Some(expected), "{name}");
     }
@@ -309,23 +249,25 @@ fn two_sign_ins_on_a_varying_redirect_own_two_ports() {
     let mut profile = limits();
     profile.listeners = 2;
     profile.io.sockets = 6;
-    let mut owner =
-        owner([varying(refresh_account(0, ADDRESS), ZERO), varying(refresh_account(1, ADDRESS), ZERO)], &profile);
+    let mut owner = Owner::configured(
+        [varying(refresh_account(0, ADDRESS), ZERO), varying(refresh_account(1, ADDRESS), ZERO)],
+        &profile,
+    );
     for account in 0..2 {
         owner.ask(Request::SignIn { account });
     }
-    let first = listen(&mut owner);
-    let second = listen(&mut owner);
-    listening(&mut owner, second, 41001);
-    listening(&mut owner, first, 41000);
+    let first = owner.listen();
+    let second = owner.listen();
+    owner.listening(second, 41001);
+    owner.listening(first, 41000);
     let mut ports = List::with_capacity(2);
     for _ in 0_u32..4 {
-        fire(&mut owner);
+        owner.fire();
         if let Some(Event::Visit { account, url }) = owner.above.pop() {
             ports
                 .push((
                     account,
-                    query(&url, b"redirect_uri")
+                    Owner::query(&url, b"redirect_uri")
                         == Some(if account == 0 {
                             b"http%3A%2F%2F127.0.0.1%3A41000%2Fcallback"
                         } else {
@@ -358,15 +300,15 @@ fn signing_in_again_carries_the_held_records_hints() {
             record.subject = Some(bytes::copy_of(b"person"));
         }
     }
-    let mut owner = owner([account], &profile);
+    let mut owner = Owner::configured([account], &profile);
     owner.ask(Request::SignIn { account: 0 });
-    let identity = listen(&mut owner);
-    listening(&mut owner, identity, 31234);
-    let url = visit(&mut owner);
+    let identity = owner.listen();
+    owner.listening(identity, 31234);
+    let url = owner.visit();
     let seen = Hints {
-        issued: query(&url, b"client_id") == Some(b"issued"),
-        id_token: query(&url, b"id_token_hint") == Some(b"token"),
-        subject: query(&url, b"login_hint") == Some(b"person"),
+        issued: Owner::query(&url, b"client_id") == Some(b"issued"),
+        id_token: Owner::query(&url, b"id_token_hint") == Some(b"token"),
+        subject: Owner::query(&url, b"login_hint") == Some(b"person"),
     };
     assert_eq!(seen, Hints { issued: true, id_token: true, subject: true });
 }

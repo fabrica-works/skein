@@ -22,6 +22,7 @@ impl Component {
                 Request::Want { account: self.lookup(account, Asked::Want, up)?, wanted }
             }
             Request::Remove { account } => Request::Remove { account: self.lookup(account, Asked::Remove, up)? },
+            Request::SignOut { account } => Request::SignOut { account: self.lookup(account, Asked::SignOut, up)? },
             Request::SignIn { account } => Request::SignIn { account: self.lookup(account, Asked::SignIn, up)? },
             Request::Redirected { account, uri } => {
                 Request::Redirected { account: self.lookup(account, Asked::Redirected, up)?, uri }

@@ -21,11 +21,13 @@ pub(crate) enum Stage {
     Loading,
     Running,
     Keeping { candidate: oauth::SavedToken },
+    Forgetting { revoked: bool },
     Finished,
 }
 
 pub(crate) enum Purpose {
     Refresh,
+    SignOut,
     SignIn { waiting: bool },
 }
 
@@ -47,20 +49,26 @@ pub(crate) struct Exchange {
 impl Exchange {
     pub(crate) fn signing_in(&self) -> bool {
         match self.purpose {
-            Purpose::Refresh => false,
+            Purpose::Refresh | Purpose::SignOut => false,
             Purpose::SignIn { .. } => true,
+        }
+    }
+    pub(crate) fn signing_out(&self) -> bool {
+        match self.purpose {
+            Purpose::SignOut => true,
+            Purpose::Refresh | Purpose::SignIn { .. } => false,
         }
     }
     pub(crate) fn waiting(&self) -> bool {
         match self.purpose {
-            Purpose::Refresh => false,
+            Purpose::Refresh | Purpose::SignOut => false,
             Purpose::SignIn { waiting } => waiting,
         }
     }
     pub(crate) fn received(&mut self) {
         match &mut self.purpose {
             Purpose::SignIn { waiting } => *waiting = false,
-            Purpose::Refresh => {}
+            Purpose::Refresh | Purpose::SignOut => {}
         }
     }
 
@@ -108,7 +116,7 @@ impl Exchange {
                     }
                     && self.above.is_empty()
             }
-            Stage::Loading | Stage::Running | Stage::Keeping { .. } => false,
+            Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => false,
         }
     }
 }

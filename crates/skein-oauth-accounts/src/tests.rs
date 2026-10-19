@@ -651,6 +651,7 @@ fn refusal_of(event: Option<Event>) -> Option<(u32, Asked, Refusal)> {
         Some(
             Event::Visit { .. }
             | Event::SignedIn { .. }
+            | Event::SignedOut { .. }
             | Event::Granted { .. }
             | Event::Expiring { .. }
             | Event::Keep { .. }
@@ -673,6 +674,7 @@ fn failure_of(event: Option<Event>) -> Option<Failed> {
         Some(
             Event::Visit { .. }
             | Event::SignedIn { .. }
+            | Event::SignedOut { .. }
             | Event::Granted { .. }
             | Event::Expiring { .. }
             | Event::Keep { .. }
@@ -686,3 +688,6 @@ fn failure_of(event: Option<Event>) -> Option<Failed> {
 
 #[path = "ports_tests.rs"]
 mod ports;
+
+#[path = "sign_out_tests.rs"]
+mod sign_out;

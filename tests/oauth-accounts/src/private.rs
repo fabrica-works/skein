@@ -182,6 +182,18 @@ impl FileSystem {
     pub(crate) fn startup(&mut self) -> Handle {
         Handle::new(self.files.open(self.root, b".", How::Directory).expect("independent startup root").raw())
     }
+    /// Whether the keeper file is absent after its owner settles.
+    #[must_use]
+    pub fn record_absent(&mut self) -> bool {
+        match self.files.open(self.root, b"secret/record", How::Read) {
+            Err(skein_fake_machine::Refusal::NotFound) => true,
+            Ok(file) => {
+                self.files.close(file);
+                false
+            }
+            Err(other) => panic!("record lookup failed: {other:?}"),
+        }
+    }
     /// Reads the kept bytes through an independent observer after owner settlement.
     #[must_use]
     pub fn record(&mut self) -> oauth::SavedToken {

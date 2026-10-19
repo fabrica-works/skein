@@ -22,7 +22,7 @@ impl Component {
         let can_wait = match *self.bindings.get(account).expect("account binding") {
             Some(id) => match self.exchanges.get(id).expect("bound exchange").stage {
                 Stage::Loading | Stage::Finished => true,
-                Stage::Running | Stage::Keeping { .. } => false,
+                Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => false,
             },
             None => true,
         };
@@ -67,7 +67,7 @@ impl Component {
                     if (self.lifecycle == Lifecycle::Aborting || removing)
                         && pending.operation != Operation::Close
                         && match pending.operation {
-                            Operation::Store { .. } => self.lifecycle == Lifecycle::Aborting,
+                            Operation::Store { .. } | Operation::Remove => self.lifecycle == Lifecycle::Aborting,
                             Operation::Open | Operation::Load | Operation::Close => true,
                         }
                     {
@@ -109,39 +109,23 @@ impl Component {
             self.file_owner = self.file_owner.checked_add(1).expect("file owner token space exhausted");
             let owner = Token::new(self.file_owner);
             let deadline = env.now.saturating_add(env.limits.file_stall);
-            let request = match operation {
-                Operation::Open => {
-                    file::Request::OpenPrivate { owner, root: keeper.base, path: keeper.directory.clone() }
-                }
-                Operation::Load => file::Request::Load {
+            if operation == Operation::Remove {
+                keeper.pending =
+                    Some(Pending { operation, owner, deadline: Some(deadline), cancel: false, cancelled: false });
+                files.push(FileLower::Remove {
                     owner,
                     root: keeper.root.expect("private root"),
-                    path: keeper.file.clone(),
-                    max: env.limits.client.document.record_bytes,
-                    no_follow: true,
-                },
-                Operation::Store { generation } => {
-                    let id = binding.expect("keep exchange");
-                    let exchange = self.exchanges.get(id).expect("bound exchange");
-                    let bytes = match &exchange.stage {
-                        Stage::Keeping { candidate } if candidate.generation == generation => {
-                            oauth::encode_record(candidate, &env.limits.client.document).expect("client record bounds")
-                        }
-                        Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Finished => {
-                            unreachable!("private keep retains its candidate until its file terminal")
-                        }
-                    };
-                    file::Request::Store {
-                        owner,
-                        root: keeper.root.expect("private root"),
-                        path: keeper.file.clone(),
-                        bytes,
-                        expected: keeper.expected,
-                        no_follow: true,
-                    }
-                }
-                Operation::Close => file::Request::Close { owner, file: keeper.root.expect("private root") },
+                    name: keeper.file.clone(),
+                    directory: false,
+                    deadline,
+                });
+                return true;
+            }
+            let exchange = match binding {
+                Some(id) => self.exchanges.get(id),
+                None => None,
             };
+            let request = private_request(keeper, operation, exchange, owner, &env.limits);
             keeper.pending =
                 Some(Pending { operation, owner, deadline: Some(deadline), cancel: false, cancelled: false });
             files.push(FileLower::Request { request, deadline });
@@ -270,6 +254,7 @@ impl Component {
                 };
                 self.loaded(env, account, None, failure, up, io);
             }
+            Operation::Remove => self.forgotten(env, account, event, up, io),
             Operation::Store { generation } => self.stored(env, account, generation, event, up, io),
             Operation::Close => {
                 keeper.root = None;
@@ -356,7 +341,7 @@ impl Component {
         let signer = match *self.bindings.get(account).expect("account binding") {
             Some(id) => match self.exchanges.get(id).expect("bound exchange").stage {
                 Stage::Loading => Some(id),
-                Stage::Running | Stage::Keeping { .. } | Stage::Finished => None,
+                Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } | Stage::Finished => None,
             },
             None => None,
         };
@@ -381,6 +366,19 @@ impl Component {
             failed(number(&self.names, account), failure.unwrap_or(Failure::Expired), up);
         }
         match signer {
+            Some(id) if self.exchanges.get(id).expect("loading exchange").signing_out() => {
+                if has_record {
+                    self.begin_sign_out(env, account, up, io);
+                } else {
+                    self.exchanges.get_mut(id).expect("loading exchange").stage = Stage::Finished;
+                    up.push(Event::Refused {
+                        account: number(&self.names, account),
+                        asked: Asked::SignOut,
+                        why: Refusal::NoRecord,
+                    });
+                    self.collect(id, up);
+                }
+            }
             Some(_) if sign_in_allowed => self.begin_sign_in(env, account, io),
             Some(id) => {
                 self.fail_exchange(env, id, failure.expect("unread cause prevents sign-in"), up, io);
@@ -418,5 +416,49 @@ fn unloaded(event: file::Event) -> Unloaded {
         | file::Event::Renamed { .. }
         | file::Event::Removed { .. }
         | file::Event::Listed { .. } => Unloaded::Failed(kernel::Error::InvalidArgument),
+    }
+}
+
+fn private_request(
+    keeper: &crate::keeper::Private,
+    operation: Operation,
+    exchange: Option<&crate::exchange::Exchange>,
+    owner: Token,
+    limits: &Limits,
+) -> file::Request {
+    match operation {
+        Operation::Open => file::Request::OpenPrivate { owner, root: keeper.base, path: keeper.directory.clone() },
+        Operation::Load => file::Request::Load {
+            owner,
+            root: keeper.root.expect("private root"),
+            path: keeper.file.clone(),
+            max: limits.client.document.record_bytes,
+            no_follow: true,
+        },
+        Operation::Store { generation } => {
+            let exchange = exchange.expect("keep exchange");
+            let bytes = match &exchange.stage {
+                Stage::Keeping { candidate } if candidate.generation == generation => {
+                    oauth::encode_record(candidate, &limits.client.document).expect("client record bounds")
+                }
+                Stage::Loading
+                | Stage::Running
+                | Stage::Keeping { .. }
+                | Stage::Forgetting { .. }
+                | Stage::Finished => {
+                    unreachable!("private keep retains its candidate until its file terminal")
+                }
+            };
+            file::Request::Store {
+                owner,
+                root: keeper.root.expect("private root"),
+                path: keeper.file.clone(),
+                bytes,
+                expected: keeper.expected,
+                no_follow: true,
+            }
+        }
+        Operation::Remove => unreachable!("removal uses its owner adapter"),
+        Operation::Close => file::Request::Close { owner, file: keeper.root.expect("private root") },
     }
 }

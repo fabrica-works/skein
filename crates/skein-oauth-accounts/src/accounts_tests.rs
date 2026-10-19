@@ -29,14 +29,6 @@ fn roomy() -> (Component, Env<Limits>) {
     )
 }
 
-fn owner(configuration: Account) -> Owner {
-    let mut owner = Owner::new();
-    let mut configured = List::with_capacity(1);
-    assert!(configured.push(configuration).is_ok());
-    owner.component = Component::new(configured, &owner.env.limits, crypto(1)).expect("configured owner");
-    owner
-}
-
 #[test]
 fn an_added_name_is_refused_while_a_live_account_holds_it() {
     let (mut component, env) = roomy();
@@ -128,7 +120,7 @@ fn an_added_private_account_starts_its_load_at_the_next_fire() {
     component.fire(&env, &mut up, &mut Queue::with_capacity(MAX_OUT_FIRE.io), &mut files);
     match files.pop() {
         Some(FileLower::Request { request: file::Request::OpenPrivate { .. }, .. }) => {}
-        Some(FileLower::Request { .. } | FileLower::Cancel { .. }) | None => {
+        Some(FileLower::Request { .. } | FileLower::Cancel { .. } | FileLower::Remove { .. }) | None => {
             panic!("the next fire starts the added private load")
         }
     }
@@ -149,7 +141,7 @@ fn waiting_sign_in() -> Owner {
     owner
 }
 fn held_grant() -> Owner {
-    let mut owner = owner(Account::HandedIn);
+    let mut owner = Owner::configured([Account::HandedIn], &limits());
     owner.ask(Request::HandIn { account: 0, record: tests_record(0) });
     owner.ask(Request::Grant { account: 0 });
     drop(owner.above.pop());
@@ -161,7 +153,7 @@ fn asked_grant() -> Owner {
     owner
 }
 fn due_refresh() -> Owner {
-    let mut owner = owner(refresh_account(0, ADDRESS));
+    let mut owner = Owner::configured([refresh_account(0, ADDRESS)], &limits());
     owner.ask(Request::Grant { account: 0 });
     owner
 }
@@ -219,7 +211,7 @@ fn a_removing_account_refuses_its_requests() {
 
 #[test]
 fn a_removed_name_is_free_for_add() {
-    let mut owner = owner(Account::HandedIn);
+    let mut owner = Owner::configured([Account::HandedIn], &limits());
     owner.ask(Request::Remove { account: 0 });
     owner.fire();
     let removed = owner.above.pop();
@@ -304,7 +296,7 @@ fn a_removing_number_is_taken_until_its_terminal() {
 
 #[test]
 fn an_add_after_close_is_refused_as_closed() {
-    let mut owner = owner(Account::HandedIn);
+    let mut owner = Owner::configured([Account::HandedIn], &limits());
     owner.ask(Request::Close);
     drop(owner.above.pop());
     owner.component.add(&owner.env, ADDED, Account::HandedIn, &mut owner.above);
@@ -313,14 +305,14 @@ fn an_add_after_close_is_refused_as_closed() {
 
 #[test]
 fn removing_an_unknown_account_is_refused() {
-    let mut owner = owner(Account::HandedIn);
+    let mut owner = Owner::configured([Account::HandedIn], &limits());
     owner.ask(Request::Remove { account: ADDED });
     assert_refused(owner.above.pop(), ADDED, Asked::Remove, Refusal::Account);
 }
 
 #[test]
 fn removing_after_close_is_refused_as_closed() {
-    let mut owner = owner(Account::HandedIn);
+    let mut owner = Owner::configured([Account::HandedIn], &limits());
     owner.ask(Request::Close);
     drop(owner.above.pop());
     owner.ask(Request::Remove { account: ADDED });
@@ -343,7 +335,7 @@ fn at(owner: &mut Owner, seconds: u64) {
     owner.env.wall = Wall::from_nanos(Duration::from_secs(seconds).as_nanos());
 }
 fn wanted_owner() -> Owner {
-    let mut owner = owner(refresh_at(30, None));
+    let mut owner = Owner::configured([refresh_at(30, None)], &limits());
     owner.ask(Request::Want { account: 0, wanted: true });
     owner
 }
@@ -401,9 +393,9 @@ fn a_wanted_account_without_a_refreshable_record_is_left_alone() {
     if let Account::SignIn { keeper, .. } = &mut empty {
         *keeper = Keeper::Owner { kept: None };
     }
-    let mut handed = owner(Account::HandedIn);
+    let mut handed = Owner::configured([Account::HandedIn], &limits());
     handed.ask(Request::HandIn { account: 0, record: tests_record(0) });
-    for (name, mut owner) in [("no record", owner(empty)), ("handed in", handed)] {
+    for (name, mut owner) in [("no record", Owner::configured([empty], &limits())), ("handed in", handed)] {
         owner.ask(Request::Want { account: 0, wanted: true });
         at(&mut owner, 20);
         owner.fire();
@@ -415,12 +407,17 @@ fn a_wanted_account_without_a_refreshable_record_is_left_alone() {
 
 #[test]
 fn a_want_answers_only_when_refused() {
-    let mut closed = owner(Account::HandedIn);
+    let mut closed = Owner::configured([Account::HandedIn], &limits());
     closed.ask(Request::Close);
     drop(closed.above.pop());
     for (name, mut owner, account, expected) in [
-        ("live", owner(Account::HandedIn), 0, None),
-        ("free", owner(Account::HandedIn), ADDED, Some((ADDED, Asked::Want, Refusal::Account))),
+        ("live", Owner::configured([Account::HandedIn], &limits()), 0, None),
+        (
+            "free",
+            Owner::configured([Account::HandedIn], &limits()),
+            ADDED,
+            Some((ADDED, Asked::Want, Refusal::Account)),
+        ),
         ("closed", closed, 0, Some((0, Asked::Want, Refusal::Closed))),
     ] {
         owner.ask(Request::Want { account, wanted: true });
@@ -438,7 +435,7 @@ fn earliest_inputs() -> [RefreshInput; 4] {
         RefreshInput { name: "lead", owner: held_before_earliest(), request: None },
         RefreshInput {
             name: "grant",
-            owner: owner(refresh_at(30, Some(25))),
+            owner: Owner::configured([refresh_at(30, Some(25))], &limits()),
             request: Some(Request::Grant { account: 0 }),
         },
         RefreshInput {
@@ -448,13 +445,13 @@ fn earliest_inputs() -> [RefreshInput; 4] {
         },
         RefreshInput {
             name: "want",
-            owner: owner(refresh_at(30, Some(25))),
+            owner: Owner::configured([refresh_at(30, Some(25))], &limits()),
             request: Some(Request::Want { account: 0, wanted: true }),
         },
     ]
 }
 fn held_before_earliest() -> Owner {
-    let mut owner = owner(refresh_at(30, Some(25)));
+    let mut owner = Owner::configured([refresh_at(30, Some(25))], &limits());
     owner.ask(Request::Grant { account: 0 });
     drop(owner.above.pop());
     owner
@@ -491,7 +488,7 @@ fn a_refresh_starts_at_the_earliest_refresh_time() {
 
 #[test]
 fn a_grant_before_it_is_answered_with_the_held_token() {
-    let mut owner = owner(refresh_at(30, Some(25)));
+    let mut owner = Owner::configured([refresh_at(30, Some(25))], &limits());
     at(&mut owner, 20);
     owner.ask(Request::Grant { account: 0 });
     assert_granted(owner.above.pop(), 0, 10);
@@ -499,7 +496,7 @@ fn a_grant_before_it_is_answered_with_the_held_token() {
 
 #[test]
 fn an_expired_grant_waits_for_its_earliest_refresh() {
-    let mut owner = owner(refresh_at(5, Some(25)));
+    let mut owner = Owner::configured([refresh_at(5, Some(25))], &limits());
     at(&mut owner, 10);
     owner.ask(Request::Grant { account: 0 });
     owner.fire();
@@ -532,7 +529,7 @@ fn a_wanted_name_and_earliest_time_fit_the_account_table_bound() {
 
 #[test]
 fn releasing_a_wanted_grant_keeps_its_rejection_waiting_at_the_earliest_time() {
-    let mut owner = owner(refresh_at(60, Some(25)));
+    let mut owner = Owner::configured([refresh_at(60, Some(25))], &limits());
     owner.ask(Request::Want { account: 0, wanted: true });
     owner.ask(Request::Grant { account: 0 });
     drop(owner.above.pop());
@@ -543,7 +540,7 @@ fn releasing_a_wanted_grant_keeps_its_rejection_waiting_at_the_earliest_time() {
 
 #[test]
 fn an_account_no_longer_wanted_drops_its_unsent_refresh_deadline() {
-    let mut owner = owner(refresh_at(30, Some(25)));
+    let mut owner = Owner::configured([refresh_at(30, Some(25))], &limits());
     owner.ask(Request::Want { account: 0, wanted: true });
     at(&mut owner, 20);
     owner.fire();

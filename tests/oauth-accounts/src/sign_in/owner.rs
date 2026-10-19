@@ -78,6 +78,24 @@ impl Client {
             self.ask(env, accounts::Request::Close);
         }
     }
+    fn keep(&mut self, env: &Env<accounts::Limits>, account: u32, record: skein_oauth::SavedToken) {
+        let generation = record.generation;
+        self.contracts[usize::try_from(account).expect("account index")].keep(generation);
+        self.facts.push(Fact::Keep(generation));
+        let yes = self.story != Story::NotKept;
+        let size = if self.large { 256 } else { 16 };
+        assert_eq!(record.access_token.as_ref(), vec![if generation == 1 { b'a' } else { b'b' }; size]);
+        self.contracts[usize::try_from(account).expect("account index")].kept(generation, yes);
+        self.ask(
+            env,
+            accounts::Request::Kept {
+                account,
+                generation,
+                keeping: if yes { accounts::Keeping::Kept } else { accounts::Keeping::NotKept },
+            },
+        );
+        self.records.push(record);
+    }
     pub(super) fn observe(&mut self, env: &Env<accounts::Limits>) {
         if let Some(event) = self.above.pop() {
             assert!(!self.closed, "Closed once and last");
@@ -88,22 +106,7 @@ impl Client {
                     self.visited(env);
                 }
                 accounts::Event::Keep { account, record } => {
-                    let generation = record.generation;
-                    self.contracts[usize::try_from(account).expect("account index")].keep(generation);
-                    self.facts.push(Fact::Keep(generation));
-                    let yes = self.story != Story::NotKept;
-                    let size = if self.large { 256 } else { 16 };
-                    assert_eq!(record.access_token.as_ref(), vec![if generation == 1 { b'a' } else { b'b' }; size]);
-                    self.contracts[usize::try_from(account).expect("account index")].kept(generation, yes);
-                    self.ask(
-                        env,
-                        accounts::Request::Kept {
-                            account,
-                            generation,
-                            keeping: if yes { accounts::Keeping::Kept } else { accounts::Keeping::NotKept },
-                        },
-                    );
-                    self.records.push(record);
+                    self.keep(env, account, record);
                 }
                 accounts::Event::SignedIn { account, generation } => {
                     self.contracts[usize::try_from(account).expect("account index")].signed_in(generation);
@@ -156,6 +159,7 @@ impl Client {
                 }
                 accounts::Event::Removed { .. }
                 | accounts::Event::Refused { .. }
+                | accounts::Event::SignedOut { .. }
                 | accounts::Event::Expiring { .. } => {
                     panic!("unexpected sign-in owner event")
                 }

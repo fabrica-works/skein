@@ -11,6 +11,8 @@ use skein_oauth::SavedToken;
 pub enum Request {
     /// Refreshes this account at its lead even while nobody holds its grant.
     Want { account: u32, wanted: bool },
+    /// Revokes and forgets this record; ends `SignedOut`, Failed or Refused.
+    SignOut { account: u32 },
     /// Removes this account after its sent exchange and durable keep settle.
     Remove { account: u32 },
     /// Starts this account's sign-in: Visit once, then `SignedIn`, Failed or Refused.
@@ -41,6 +43,8 @@ pub enum Request {
 pub enum Event {
     /// The account has settled and its number is free for another add.
     Removed { account: u32 },
+    /// Ends `SignOut`: the record is forgotten; revocation may be unconfirmed.
+    SignedOut { account: u32, revoked: bool },
     /// The authorization URL for the owner to show, once per admitted sign-in.
     Visit { account: u32, url: Box<[u8]> },
     /// Ends `SignIn` once its record is durably kept, with a grant ready to ask for.
@@ -64,6 +68,8 @@ pub enum Event {
 pub enum Ends {
     /// A refresh while nobody holds the account's grant.
     Refresh,
+    /// The owner's admitted sign-out.
+    SignOut,
     /// The owner's admitted sign-in.
     SignIn,
     /// The owner's requested or held grant.
@@ -88,6 +94,8 @@ pub enum Failure {
 pub enum Asked {
     /// The owner's wanted-account flag.
     Want,
+    /// The owner's sign-out request.
+    SignOut,
     /// The owner's account addition.
     Add,
     /// The owner's account removal.
@@ -121,6 +129,8 @@ pub enum Refusal {
     Account,
     /// The requested operation does not belong to this account's source.
     Source,
+    /// The account has no record once its load has settled.
+    NoRecord,
     /// The account, exchange or public listener bound admits no more work.
     Full { bound: u32 },
     /// A handed-in record carries a refresh token its source alone may rotate.

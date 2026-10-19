@@ -190,7 +190,10 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
                 driver.close_root(env.now);
             }
         }
-        accounts::Event::SignedIn { .. } | accounts::Event::Expiring { .. } | accounts::Event::Refused { .. } => {
+        accounts::Event::SignedOut { .. }
+        | accounts::Event::SignedIn { .. }
+        | accounts::Event::Expiring { .. }
+        | accounts::Event::Refused { .. } => {
             panic!("unexpected added-account terminal")
         }
     }
@@ -250,6 +253,7 @@ pub(crate) fn protocol_files(client: &mut world::Client, env: &Env<accounts::Lim
                     | file::Request::ListPage { .. } => panic!("load and close only"),
                 }
             }
+            accounts::FileLower::Remove { .. } => panic!("no sign-out requested"),
             accounts::FileLower::Cancel { owner } => file::Event::Cancelled { owner },
         };
         client.component.as_mut().expect("component").filed(
@@ -262,11 +266,16 @@ pub(crate) fn protocol_files(client: &mut world::Client, env: &Env<accounts::Lim
     }
 }
 
-struct Judge {
+pub(crate) struct Judge {
     delivered: bool,
     shutdown: bool,
     wake: Option<Time>,
     passed: bool,
+}
+impl Judge {
+    pub(crate) fn new() -> Self {
+        Self { delivered: false, shutdown: false, wake: None, passed: false }
+    }
 }
 impl Referee<world::Process> for Judge {
     fn act(&mut self, _now: Time, processes: &mut [world::Process]) {
@@ -333,9 +342,7 @@ fn run_with_reuse(
     let root = files.startup();
     let mut config = skein_sim::Config::calm();
     config.wall = Wall::EPOCH;
-    let mut world =
-        World::new(seed, config, Judge { delivered: false, shutdown: false, wake: None, passed: false }, memory)
-            .with_machine(files);
+    let mut world = World::new(seed, config, Judge::new(), memory).with_machine(files);
     world.spawn(|| world::issuer(Transport::Plaintext, world::Story::Rotate, (Ipv4Addr::LOCALHOST, 31000).into()));
     world.spawn_root(root, |fd| {
         let mut client = client(story, reuse);

@@ -27,6 +27,9 @@ pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Re
                 Ok(()) => {}
                 Err(failure) => return Err(Unusable::Registration { account, failure }),
             }
+            if !terms_origin(&registration) {
+                return Err(Unusable::Origin { account });
+            }
             let (state, store) = match keeper {
                 Keeper::Owner { kept } => (
                     match kept {
@@ -307,6 +310,40 @@ fn unsent(exchange: &crate::exchange::Exchange) -> bool {
             Some(web) => !web.sent,
             None => true,
         },
-        crate::exchange::Stage::Keeping { .. } | crate::exchange::Stage::Finished => false,
+        crate::exchange::Stage::Keeping { .. }
+        | crate::exchange::Stage::Forgetting { .. }
+        | crate::exchange::Stage::Finished => false,
+    }
+}
+
+fn origin(uri: &[u8]) -> Option<&[u8]> {
+    let start = skein_lib::bytes::find(uri, b"://")?.checked_add(3)?;
+    let rest = uri.get(start..)?;
+    let end = skein_lib::bytes::find(rest, b"/").unwrap_or(rest.len()).checked_add(start)?;
+    uri.get(..end)
+}
+fn terms_origin(registration: &oauth::Registration) -> bool {
+    let expected = origin(&registration.token_endpoint);
+    match &registration.terms {
+        Some(terms) => {
+            if let Some(endpoint) = &terms.revocation_endpoint
+                && origin(endpoint) != expected
+            {
+                return false;
+            }
+            match &terms.openid {
+                Some(openid) => {
+                    if origin(&openid.issuer) != expected {
+                        return false;
+                    }
+                    match &openid.key_set {
+                        Some(endpoint) => origin(endpoint) == expected,
+                        None => true,
+                    }
+                }
+                None => true,
+            }
+        }
+        None => true,
     }
 }

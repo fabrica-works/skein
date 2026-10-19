@@ -1,7 +1,11 @@
 use skein_heap::{Counting, Meter};
+use skein_io::file;
+use skein_lib::Token;
 use skein_lib::{Duration, Env, List, Queue, Time, Wall, bytes};
 use skein_oauth::{ClientLimits, SavedToken};
-use skein_oauth_accounts::{Account, Component, Limits, MAX_OUT_DOWN, Request, worst_case};
+use skein_oauth_accounts::{
+    Account, Component, Endpoint, FileLower, Keeper, Limits, MAX_OUT_DOWN, Request, Transport, worst_case,
+};
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -289,9 +293,6 @@ fn every_listener_slot_keeps_a_bounded_partial_head_within_the_heap_bound() {
 
 #[test]
 fn every_private_keeper_retains_its_maximal_paths_and_pending_load() {
-    use skein_io::file;
-    use skein_lib::Token;
-    use skein_oauth_accounts::{Endpoint, FileLower, Keeper, Transport};
     let mut limits = skein_oauth_accounts_world::world::limits();
     limits.accounts = 4;
     limits.exchanges = 4;
@@ -341,7 +342,9 @@ fn every_private_keeper_retains_its_maximal_paths_and_pending_load() {
     while let Some(lower) = files.pop() {
         match lower {
             FileLower::Request { request: file::Request::OpenPrivate { owner, .. }, .. } => requests.push(owner),
-            FileLower::Request { .. } | FileLower::Cancel { .. } => panic!("expected private opening"),
+            FileLower::Request { .. } | FileLower::Cancel { .. } | FileLower::Remove { .. } => {
+                panic!("expected private opening")
+            }
         }
     }
     for (account, owner) in requests.iter().enumerate() {
@@ -365,7 +368,9 @@ fn every_private_keeper_retains_its_maximal_paths_and_pending_load() {
     while let Some(lower) = files.pop() {
         match lower {
             FileLower::Request { request: file::Request::Load { owner, .. }, .. } => loads.push(owner),
-            FileLower::Request { .. } | FileLower::Cancel { .. } => panic!("expected private loading"),
+            FileLower::Request { .. } | FileLower::Cancel { .. } | FileLower::Remove { .. } => {
+                panic!("expected private loading")
+            }
         }
     }
     for (account, owner) in loads.iter().enumerate() {

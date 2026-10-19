@@ -17,6 +17,7 @@ pub(crate) enum Operation {
     Open,
     Load,
     Store { generation: u64 },
+    Remove,
     Close,
 }
 

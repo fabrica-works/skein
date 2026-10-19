@@ -55,7 +55,9 @@ impl Component {
                                 Source::SignIn { registration, .. } => registration.client_secret.is_none(),
                                 Source::HandedIn => false,
                             },
-                            Stage::Running | Stage::Keeping { .. } | Stage::Finished => false,
+                            Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } | Stage::Finished => {
+                                false
+                            }
                         };
                         let listening = match &exchange.listener {
                             Some(listener) => !listener.settled(),

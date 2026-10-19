@@ -15,10 +15,70 @@ pub(super) struct Owner {
 }
 
 impl Owner {
+    pub(super) fn configured(accounts: impl IntoIterator<Item = Account>, profile: &Limits) -> Owner {
+        let mut configured = List::with_capacity(profile.accounts);
+        for account in accounts {
+            configured.push(account).ok().expect("configured account room");
+        }
+        let mut owner = Owner::new();
+        owner.component = Component::new(configured, profile, crypto(17)).expect("valid registrations");
+        owner.env.limits = *profile;
+        owner
+    }
+    pub(super) fn socket(&mut self, event: LowerEvent) {
+        self.component.up(&self.env, event, &mut self.above, &mut self.io, &mut self.files);
+    }
+    pub(super) fn take_listen(&mut self) -> (Token, u16) {
+        let Lower::Listen { owner, addr: skein_io::Addr::Ip(address) } = self.io.pop().expect("listen effect") else {
+            panic!("IP listen effect")
+        };
+        (owner, address.port())
+    }
+    pub(super) fn listen(&mut self) -> Token {
+        self.take_listen().0
+    }
+    pub(super) fn listening(&mut self, identity: Token, port: u16) {
+        self.socket(LowerEvent::Listening {
+            owner: identity,
+            listener: Token::new(10),
+            addr: skein_io::Addr::Ip(([127, 0, 0, 1], port).into()),
+        });
+    }
+    pub(super) fn visit(&mut self) -> Box<[u8]> {
+        for _ in 0_u32..8 {
+            self.fire();
+            if let Some(Event::Visit { url, .. }) = self.above.pop() {
+                return url;
+            }
+        }
+        panic!("visit after listening")
+    }
+    pub(super) fn query<'a>(url: &'a [u8], name: &[u8]) -> Option<&'a [u8]> {
+        let mut query = url.get(bytes::find(url, b"?")?.checked_add(1)?..)?;
+        loop {
+            let end = bytes::find(query, b"&").unwrap_or(query.len());
+            let pair = query.get(..end)?;
+            let at = bytes::find(pair, b"=")?;
+            if pair.get(..at)? == name {
+                return pair.get(at.checked_add(1)?..);
+            }
+            query = query.get(end.checked_add(1)?..)?;
+        }
+    }
+    pub(super) fn removal(&mut self) -> Token {
+        for _ in 0_u32..16 {
+            self.fire();
+            match self.files.pop() {
+                Some(FileLower::Remove { owner, .. }) => return owner,
+                Some(FileLower::Request { .. } | FileLower::Cancel { .. }) | None => {}
+            }
+        }
+        panic!("private removal")
+    }
     pub(super) fn new() -> Owner {
         Self::with_terms(None)
     }
-    fn with_terms(terms: Option<skein_oauth::Terms>) -> Owner {
+    pub(super) fn with_terms(terms: Option<skein_oauth::Terms>) -> Owner {
         let mut limits = limits();
         limits.client.document.issued_client_bytes = limits.client.document.client_bytes;
         let mut configured = List::with_capacity(1);
@@ -80,7 +140,7 @@ impl Owner {
                     assert_eq!(deadline, self.env.now.saturating_add(self.env.limits.file_stall));
                     return request;
                 }
-                Some(FileLower::Cancel { .. }) => panic!("expected a file request"),
+                Some(FileLower::Remove { .. } | FileLower::Cancel { .. }) => panic!("expected a file request"),
                 None => self.fire(),
             }
         }
@@ -318,7 +378,9 @@ fn abort_cancels_a_load_and_waiters_and_waits_for_its_terminal_before_closed() {
     }
     match owner.files.pop() {
         Some(FileLower::Cancel { owner: token }) => assert_eq!(token, load),
-        Some(FileLower::Request { .. }) | None => panic!("abort cancels the outstanding owner"),
+        Some(FileLower::Request { .. } | FileLower::Remove { .. }) | None => {
+            panic!("abort cancels the outstanding owner")
+        }
     }
     assert!(owner.above.is_empty());
     owner.terminal(file::Event::Cancelled { owner: load });
@@ -333,6 +395,7 @@ fn assert_visit(event: Option<Event>) {
         Some(
             Event::Removed { .. }
             | Event::SignedIn { .. }
+            | Event::SignedOut { .. }
             | Event::Granted { .. }
             | Event::Expiring { .. }
             | Event::Keep { .. }
@@ -465,7 +528,7 @@ impl Owner {
         panic!("refresh sends its HTTP request")
     }
 
-    fn finish_socket(&mut self, identity: Token, response: &mut &[u8]) {
+    pub(super) fn finish_socket(&mut self, identity: Token, response: &mut &[u8]) {
         while let Some(request) = self.io.pop() {
             if let Lower::Close { .. } | Lower::Abort { .. } = request {
                 self.socket_up(LowerEvent::Closed { owner: identity });

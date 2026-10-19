@@ -153,6 +153,8 @@ pub enum Fact {
     Keep(u64),
     /// The owner's hold or pending request failed.
     Failed(accounts::Failure),
+    /// The record was forgotten, with the issuer's revocation outcome.
+    SignedOut(bool),
     /// The component settled its owner close.
     Closed,
 }
@@ -233,6 +235,7 @@ impl Contracts {
 /// The service's owner adapter, running the same component at each tier.
 pub struct Client {
     pub(crate) accounts: Option<crate::accounts::Owner>,
+    pub(crate) sign_out: Option<crate::sign_out::Owner>,
     pub(crate) terms: Option<oauth::Terms>,
     io: io::Io,
     pub(crate) component: Option<accounts::Component>,
@@ -268,6 +271,7 @@ impl Client {
     pub(crate) fn with_limits(story: Story, transport: Transport, limits: &accounts::Limits, room: u32) -> Client {
         Client {
             accounts: None,
+            sign_out: None,
             terms: None,
             io: io::Io::new(&limits.io),
             component: None,
@@ -320,6 +324,10 @@ impl Client {
         self.component.is_none()
     }
     pub(crate) fn start(&mut self, env: &Env<accounts::Limits>) {
+        if self.sign_out.is_some() {
+            crate::sign_out::start(self, env);
+            return;
+        }
         if self.accounts.is_some() {
             crate::accounts::start(self, env);
             return;
@@ -425,6 +433,10 @@ impl Client {
         }
     }
     pub(crate) fn observe(&mut self, env: &Env<accounts::Limits>) {
+        if self.sign_out.is_some() {
+            crate::sign_out::observe(self, env);
+            return;
+        }
         if self.accounts.is_some() {
             crate::accounts::observe(self, env);
             return;
@@ -510,6 +522,7 @@ impl Client {
                 accounts::Event::Removed { .. }
                 | accounts::Event::Refused { .. }
                 | accounts::Event::Visit { .. }
+                | accounts::Event::SignedOut { .. }
                 | accounts::Event::SignedIn { .. } => {
                     panic!("positive story has no such event")
                 }
@@ -547,6 +560,11 @@ impl Client {
                         }
                     }
                     self.file_driver.as_mut().expect("file driver").request(request, deadline);
+                }
+                accounts::FileLower::Remove { owner, root, name, directory, deadline } => {
+                    let driver = self.file_driver.as_mut().expect("file driver");
+                    let root = driver.descriptor(root).expect("private root");
+                    driver.request(io::file::Request::Remove { owner, root, name, directory }, deadline);
                 }
                 accounts::FileLower::Cancel { owner } => self.file_driver.as_mut().expect("file driver").cancel(owner),
             }
@@ -909,7 +927,20 @@ impl Referee<Process> for Judge {
 }
 
 pub(crate) fn issuer(transport: Transport, story: Story, address: SocketAddr) -> Process {
+    issuer_with_terms(transport, story, address, None, 200)
+}
+pub(crate) fn issuer_with_terms(
+    transport: Transport,
+    story: Story,
+    address: SocketAddr,
+    terms: Option<fake::Terms>,
+    status: u16,
+) -> Process {
     let profile = limits();
+    let token_endpoint = terms
+        .as_ref()
+        .and_then(|terms| terms.revocation_endpoint.clone())
+        .unwrap_or_else(|| registration(transport).token_endpoint);
     let mut peer = peer::Peer::new(
         address,
         transport,
@@ -924,12 +955,12 @@ pub(crate) fn issuer(transport: Transport, story: Story, address: SocketAddr) ->
         },
         fake::Config {
             authorization_url: registration(transport).authorization_url,
-            token_endpoint: registration(transport).token_endpoint,
+            token_endpoint,
             client_id: bytes::copy_of(b"client"),
             client_secret: None,
             redirect_uri: bytes::copy_of(REDIRECT),
             refresh_token: bytes::copy_of(if story == Story::SignInAgain { b"revoked" } else { b"seed" }),
-            terms: None,
+            terms,
         },
         fake::Limits {
             document: profile.client.document,
@@ -953,7 +984,7 @@ pub(crate) fn issuer(transport: Transport, story: Story, address: SocketAddr) ->
         .expect("rate limit before rotating refresh");
     }
     peer.queue(fake::Plan {
-        status: 200,
+        status,
         body: fake::Body::Token(oauth::TokenResponse {
             access_token: bytes::copy_of(b"new"),
             refresh_token: (story != Story::Omit).then(|| bytes::copy_of(b"next")),
@@ -1033,17 +1064,23 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
     use skein_world::stream::Wire;
 
     let story = client.story;
+    let sign_out = client.sign_out.as_ref().map(|owner| owner.story);
+    let endpoint = if sign_out.is_some() {
+        b"http://127.0.0.1:31000/revoke".as_slice()
+    } else {
+        b"http://127.0.0.1:31000/token".as_slice()
+    };
     let profile = limits();
     let registration = registration(Transport::Plaintext);
     let mut issuer = fake::Issuer::new(
         fake::Config {
             authorization_url: registration.authorization_url.clone(),
-            token_endpoint: registration.token_endpoint.clone(),
+            token_endpoint: bytes::copy_of(endpoint),
             client_id: registration.client_id.clone(),
             client_secret: None,
             redirect_uri: registration.redirect_uri.clone(),
             refresh_token: bytes::copy_of(b"seed"),
-            terms: None,
+            terms: sign_out.map(crate::sign_out::issuer_terms),
         },
         fake::Limits {
             document: profile.client.document,
@@ -1058,7 +1095,7 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
     .expect("issuer");
     issuer
         .queue(fake::Plan {
-            status: 200,
+            status: sign_out.map_or(200, crate::sign_out::status),
             body: fake::Body::Token(oauth::TokenResponse {
                 access_token: bytes::copy_of(b"new"),
                 refresh_token: (story != Story::Omit).then(|| bytes::copy_of(b"next")),
@@ -1096,6 +1133,7 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
         }
         client.observe(&env);
         crate::accounts::protocol_files(&mut client, &env);
+        crate::sign_out::protocol_files(&mut client, &env);
         if story == Story::Released && now >= Time::ZERO.saturating_add(Duration::from_secs(40)) {
             client.close(&env);
         }
@@ -1198,7 +1236,10 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
             match event {
                 http::Event::Call(call) => {
                     assert_eq!(call.method, skein_http::Method::Post);
-                    assert_eq!(call.target.as_ref(), b"/token");
+                    assert_eq!(
+                        call.target.as_ref(),
+                        if sign_out.is_some() { b"/revoke".as_slice() } else { b"/token".as_slice() }
+                    );
                     assert_eq!(call.header(b"content-type"), Some(b"application/x-www-form-urlencoded".as_slice()));
                     server_requests.push(http::Request::Body(Down::Demand {
                         read: Read::Arrived {
@@ -1231,7 +1272,7 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
                         request: oauth::HttpRequest {
                             method: oauth::Method::Post,
                             id: 0,
-                            endpoint: registration.token_endpoint.clone(),
+                            endpoint: bytes::copy_of(endpoint),
                             content_type: b"application/x-www-form-urlencoded",
                             body: bytes::copy_of(&body),
                             deadline: now.saturating_add(Duration::from_secs(10)),

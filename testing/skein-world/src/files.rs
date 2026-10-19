@@ -55,6 +55,12 @@ impl Driver {
         self.root
     }
 
+    /// Maps an adopted file token for requests whose roots still use descriptors.
+    #[must_use]
+    pub fn descriptor(&self, token: Token) -> Option<Fd> {
+        self.io.descriptor(token)
+    }
+
     /// Admits one bounded request, retaining its stated deadline while queued.
     pub fn request(&mut self, request: Request, deadline: Time) {
         assert!(self.queue.len() < usize::try_from(ROOM).expect("bounded queue"), "file request queue bound");

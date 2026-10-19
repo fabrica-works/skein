@@ -25,6 +25,8 @@ use names::number;
 #[path = "component/nonce_tests.rs"]
 mod nonce_tests;
 mod sign_in;
+mod sign_out;
+use alloc::boxed::Box;
 #[cfg(test)]
 pub(crate) use sign_in::draw;
 
@@ -76,6 +78,8 @@ pub enum FileLower {
     Request { request: skein_io::file::Request, deadline: Time },
     /// Stop this owner token's request; retain it until its file terminal.
     Cancel { owner: skein_lib::Token },
+    /// Remove under this private root; the owner maps its token with `FileIo::descriptor`.
+    Remove { owner: skein_lib::Token, root: skein_lib::Token, name: Box<[u8]>, directory: bool, deadline: Time },
 }
 
 /// Why the component cannot run its owner's configured accounts.
@@ -95,6 +99,8 @@ pub enum Unusable {
     Record { account: u32, why: oauth::DecodeError },
     /// A private directory or file path exceeds io's path bound.
     Path { account: u32 },
+    /// A terms endpoint lies on an origin this account was not given.
+    Origin { account: u32 },
 }
 
 #[derive(Debug)]
@@ -233,6 +239,7 @@ impl Component {
                     self.remove(env, account, up, io);
                 }
             }
+            Request::SignOut { account } => self.sign_out(env, account, up, io),
             Request::SignIn { account } => self.sign_in(env, account, up, io),
             Request::Redirected { account, uri } => self.redirected(env, account, &uri, up),
             Request::Cancel { account } => match self.bindings.get(account) {
@@ -341,7 +348,7 @@ impl Component {
                 let exchange = self.exchanges.get_mut(id).expect("bound exchange");
                 match exchange.stage {
                     Stage::Finished => grant(slot, env.now, number(&self.names, account), up),
-                    Stage::Loading | Stage::Running | Stage::Keeping { .. } => {
+                    Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => {
                         if exchange.pending_grant {
                             up.push(Event::Refused {
                                 account: number(&self.names, account),
@@ -639,7 +646,7 @@ impl Component {
         let account = exchange.account;
         match exchange.stage {
             Stage::Loading => return,
-            Stage::Running | Stage::Keeping { .. } | Stage::Finished => {}
+            Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } | Stage::Finished => {}
         }
         if web_closing(exchange.web.as_ref()) && !exchange.above.is_empty() {
             if let Some(web) = &mut exchange.web {
@@ -674,7 +681,7 @@ impl Component {
                     if waiting {
                         match &mut exchange.purpose {
                             crate::exchange::Purpose::SignIn { waiting } => *waiting = false,
-                            crate::exchange::Purpose::Refresh => {}
+                            crate::exchange::Purpose::Refresh | crate::exchange::Purpose::SignOut => {}
                         }
                         sign_in::deliver(&mut exchange.client, &mut exchange.above, redirect, env.now);
                         listener.stop_waiting();
@@ -691,7 +698,11 @@ impl Component {
         match &mut exchange.web {
             Some(web) => {
                 if let Some(failure) = web.failure.take() {
-                    self.fail_exchange(env, id, Failure::Exchange(failure), up, io);
+                    if exchange.signing_out() {
+                        self.forget(env, id, false, up, io);
+                    } else {
+                        self.fail_exchange(env, id, Failure::Exchange(failure), up, io);
+                    }
                     return;
                 }
                 if let Some(answer) = web.answer.take() {
@@ -755,7 +766,7 @@ impl Component {
                     addr: skein_io::Addr::Ip(endpoint.address),
                 });
             }
-            oauth::Request::Revoked { .. } => unreachable!("no revocation is requested"),
+            oauth::Request::Revoked { confirmed } => self.forget(env, id, confirmed, up, io),
             oauth::Request::Tokens { record, .. } => {
                 let kept = record.clone();
                 exchange.stage = Stage::Keeping { candidate: record };
@@ -795,7 +806,9 @@ impl Component {
         }
         match &exchange.stage {
             Stage::Keeping { candidate } if candidate.generation == generation => {}
-            Stage::Keeping { .. } | Stage::Loading | Stage::Running | Stage::Finished => return,
+            Stage::Keeping { .. } | Stage::Loading | Stage::Running | Stage::Forgetting { .. } | Stage::Finished => {
+                return;
+            }
         }
         let stage = core::mem::replace(&mut exchange.stage, Stage::Finished);
         exchange.received();
@@ -829,7 +842,9 @@ impl Component {
                     }
                 }
             }
-            Stage::Loading | Stage::Running | Stage::Finished => unreachable!("matching pending keep"),
+            Stage::Loading | Stage::Running | Stage::Forgetting { .. } | Stage::Finished => {
+                unreachable!("matching pending keep")
+            }
         }
         match &mut exchange.web {
             Some(web) => web.close(env, false, io),
@@ -846,7 +861,7 @@ impl Component {
         match self.bindings.get(account) {
             Some(Some(id)) => {
                 let exchange = self.exchanges.get_mut(*id).expect("bound exchange");
-                if exchange.signing_in() {
+                if exchange.signing_in() || exchange.signing_out() {
                     return;
                 }
                 exchange.aborted = true;
@@ -892,16 +907,19 @@ impl Component {
         let slot = self.accounts.get_mut(account).expect("account state");
         let unfinished = match exchange.stage {
             Stage::Finished => false,
-            Stage::Loading | Stage::Running | Stage::Keeping { .. } => true,
+            Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => true,
         };
         if unfinished {
+            if exchange.signing_out() {
+                up.push(Event::Failed { account: number(&self.names, account), ends: Ends::SignOut, failure });
+            }
             if exchange.signing_in() {
                 up.push(Event::Failed { account: number(&self.names, account), ends: Ends::SignIn, failure });
             }
-            if !exchange.signing_in() && !exchange.pending_grant && !held(slot) {
+            if !exchange.signing_in() && !exchange.signing_out() && !exchange.pending_grant && !held(slot) {
                 up.push(Event::Failed { account: number(&self.names, account), ends: Ends::Refresh, failure });
             }
-            if exchange.pending_grant || (!exchange.signing_in() && held(slot)) {
+            if exchange.pending_grant || (!exchange.signing_in() && !exchange.signing_out() && held(slot)) {
                 set_held(slot, false);
                 failed(number(&self.names, account), failure, up);
             }

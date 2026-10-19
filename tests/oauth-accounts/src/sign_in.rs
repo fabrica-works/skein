@@ -232,6 +232,11 @@ impl Client {
                     }
                     self.file_driver.as_mut().expect("file driver").request(request, deadline);
                 }
+                accounts::FileLower::Remove { owner, root, name, directory, deadline } => {
+                    let driver = self.file_driver.as_mut().expect("file driver");
+                    let root = driver.descriptor(root).expect("private root");
+                    driver.request(io::file::Request::Remove { owner, root, name, directory }, deadline);
+                }
                 accounts::FileLower::Cancel { owner } => self.file_driver.as_mut().expect("file driver").cancel(owner),
             }
         }
