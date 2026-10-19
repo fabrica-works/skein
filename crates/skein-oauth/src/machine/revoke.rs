@@ -62,6 +62,7 @@ impl Client {
             grant: Grant::Revoke { prior },
             state: bytes::copy_of(b""),
             verifier: None,
+            nonce: None,
             deadline: now.checked_add(self.limits.sign_in_time).ok_or(Failure::Limit)?,
             attempts: 0,
             visit: None,

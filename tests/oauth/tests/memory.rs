@@ -32,6 +32,7 @@ fn check_client(document: oauth::Limits) {
         key_set_bytes: 0,
         keys: 0,
         modulus_bits: 2048,
+        skew: Duration::from_secs(60),
         sign_in_time: Duration::from_secs(120),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(2),

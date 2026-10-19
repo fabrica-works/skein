@@ -6,7 +6,7 @@
 mod fetch;
 mod revoke;
 
-use crate::redirect::{form_fields, has_openid, issued_id, missing_scopes, resource_field, validate_registration};
+use crate::redirect::{form_fields, issued_id, missing_scopes, resource_field, validate_registration};
 use crate::{ClaimSelector, DecodeError, Failure, Json, Limits, OAuthError, RefreshState, SavedToken, TokenResponse};
 use crate::{classify, decode_error, decode_response, rotate};
 use alloc::boxed::Box;
@@ -33,6 +33,7 @@ pub struct ClientLimits {
     pub key_set_bytes: u32,
     pub keys: u32,
     pub modulus_bits: u32,
+    pub skew: Duration,
     pub sign_in_time: Duration,
     pub request_time: Duration,
     pub backoff_base: Duration,
@@ -212,6 +213,7 @@ struct Exchange {
     grant: Grant,
     state: Box<[u8]>,
     verifier: Option<Box<[u8]>>,
+    nonce: Option<Box<[u8]>>,
     deadline: Time,
     attempts: u32,
     visit: Option<Box<[u8]>>,
@@ -363,6 +365,7 @@ impl Client {
             grant: Grant::Refresh { prior },
             state: bytes::copy_of(b""),
             verifier: None,
+            nonce: None,
             deadline,
             attempts: 0,
             visit: None,
@@ -527,9 +530,10 @@ impl Client {
             Grant::Refresh { prior } => prior.clone(),
             Grant::Revoke { .. } => return Err(Failure::Malformed),
             Grant::SignIn { key, generation, .. } => {
-                if has_openid(&exchange.registration) {
-                    return Err(Failure::Malformed);
-                }
+                let identity = match self.identity(exchange, response, wall) {
+                    Ok(value) => value,
+                    Err(check) => return Err(Failure::Unverified { check }),
+                };
                 let Some(refresh) = &response.refresh_token else {
                     return Err(Failure::Malformed);
                 };
@@ -543,8 +547,8 @@ impl Client {
                         None
                     },
                     granted_scopes: None,
-                    subject: None,
-                    id_token: None,
+                    subject: identity.subject,
+                    id_token: identity.token,
                 }
             }
         };

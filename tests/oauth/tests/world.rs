@@ -394,26 +394,6 @@ fn the_resource_goes_in_every_request() {
 }
 
 #[test]
-fn an_openid_sign_in_fails_before_its_check_exists() {
-    let mut issuer = skein_oauth_world::openid_issuer(None);
-    issuer.queue(success(b"access", Some(b"refresh"), 0)).expect("plan");
-    let mut client = oauth::Client::new(client_limits()).expect("client");
-    let get = http(skein_oauth_world::begin(&mut client, skein_oauth_world::openid_registration(), 1));
-    let answer = response(fake_step(
-        &mut issuer,
-        fake::Event::Get { id: get.id, endpoint: get.endpoint, now: time(1), wall: wall(100) },
-    ));
-    let Some(oauth::Request::Visit { url }) = client_step(&mut client, oauth::Event::Http(answer)) else {
-        panic!("visit")
-    };
-    let event = redirected(&mut issuer, url);
-    let request = http(client_step(&mut client, event));
-    let answer = response(fake_step(&mut issuer, fake::Event::Post { request, now: time(2), wall: wall(100) }));
-    let result = client_step(&mut client, oauth::Event::Http(answer));
-    assert_eq!(failure(result.as_ref()), oauth::Failure::Malformed);
-}
-
-#[test]
 fn an_added_error_name_on_a_refresh_signs_in_again() {
     let mut registration = registration(true);
     let mut additions = terms();

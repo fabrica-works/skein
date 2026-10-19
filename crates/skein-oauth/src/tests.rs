@@ -539,3 +539,203 @@ fn each_new_cap_holds_at_its_boundary() {
         }
     }
 }
+
+fn id_expected() -> jwt::Expected<'static> {
+    jwt::Expected { issuer: b"https://issuer.example", client_id: b"client", nonce: b"n-0123456789abcdef" }
+}
+fn claims(exp: u64) -> Box<[u8]> {
+    claims_with(b"https://issuer.example", br#""client""#, exp, b"n-0123456789abcdef", Some(b"user-42"), None)
+}
+fn claims_with(
+    issuer: &[u8],
+    audience: &[u8],
+    exp: u64,
+    nonce: &[u8],
+    subject: Option<&[u8]>,
+    azp: Option<&[u8]>,
+) -> Box<[u8]> {
+    use skein_lib::{Decimal, Writer};
+    let digits = Decimal::of(exp);
+    let parts: [&[u8]; 14] = [
+        br#"{"iss":""#,
+        issuer,
+        br#"","aud":"#,
+        audience,
+        br#", "exp":"#,
+        digits.as_bytes(),
+        br#", "nonce":""#,
+        nonce,
+        b"\"",
+        if subject.is_some() { br#", "sub":""# } else { b"" },
+        subject.unwrap_or(b""),
+        if subject.is_some() { b"\"" } else { b"" },
+        if azp.is_some() { br#", "azp":""# } else { b"" },
+        azp.unwrap_or(b""),
+    ];
+    let tail: &[u8] = if azp.is_some() { b"\"}" } else { b"}" };
+    let mut size = tail.len();
+    for part in parts {
+        size = size.checked_add(part.len()).expect("small fixture");
+    }
+    let mut out = Writer::new(size);
+    for part in parts {
+        out.put(part).expect("measured");
+    }
+    out.put(tail).expect("measured");
+    out.finish()
+}
+fn jws(header: &[u8], payload: &[u8], signature: &[u8]) -> Box<[u8]> {
+    use skein_lib::{
+        Writer,
+        base64::{self, Alphabet},
+    };
+    let mut length = 2_u32;
+    for part in [header, payload, signature] {
+        let encoded = base64::encoded_len(Alphabet::Url, u32::try_from(part.len()).expect("fixture")).expect("fixture");
+        length = length.checked_add(encoded).expect("small fixture");
+    }
+    let mut out = Writer::new(usize::try_from(length).expect("fixture"));
+    for (index, part) in [header, payload, signature].into_iter().enumerate() {
+        if index != 0 {
+            out.put(b".").expect("measured");
+        }
+        base64::encode(Alphabet::Url, part, &mut out).expect("measured");
+    }
+    out.finish()
+}
+#[test]
+fn an_id_tokens_alg_must_be_rs256() {
+    for (name, header, expected) in [
+        ("none", br#"{"alg":"none"}"#.as_slice(), Check::Signature),
+        ("HS256", br#"{"alg":"HS256"}"#, Check::Signature),
+        ("RS384", br#"{"alg":"RS384"}"#, Check::Signature),
+        ("RS256", br#"{"alg":"RS256"}"#, Check::Keys),
+    ] {
+        let token = jws(header, &claims(1100), b"signature");
+        let got = jwt::verify_id_token(&token, &[], &id_expected(), wall(1000), Duration::ZERO, &limits());
+        assert_eq!(got.err(), Some(expected), "{name}");
+    }
+}
+#[test]
+fn the_key_is_chosen_by_kid_else_the_one_key() {
+    fn key(kid: &[u8]) -> keys::Key {
+        keys::Key { kid: Some(boxed(kid)), modulus: boxed(b"n"), exponent: boxed(b"e") }
+    }
+    let keys = [key(b"first"), key(b"second")];
+    for (name, kid, count, expected) in [
+        ("named", Some(b"second".as_slice()), 2, Some(1)),
+        ("unknown", Some(b"unknown".as_slice()), 2, None),
+        ("one", None, 1, Some(0)),
+        ("two", None, 2, None),
+    ] {
+        let held = keys.get(..count).expect("fixture");
+        let got = match jwt::pick_key(kid, held) {
+            Ok(key) => {
+                let mut found = None;
+                for (index, candidate) in held.iter().enumerate() {
+                    if core::ptr::eq(key, candidate) {
+                        found = Some(index);
+                    }
+                }
+                found
+            }
+            Err(_) => None,
+        };
+        assert_eq!(got, expected, "{name}");
+    }
+}
+#[test]
+fn each_claim_is_checked() {
+    for (name, payload, expected) in [
+        (
+            "issuer",
+            claims_with(b"another", br#""client""#, 1100, b"n-0123456789abcdef", Some(b"user-42"), None),
+            Check::Issuer,
+        ),
+        (
+            "audience",
+            claims_with(
+                b"https://issuer.example",
+                br#""another""#,
+                1100,
+                b"n-0123456789abcdef",
+                Some(b"user-42"),
+                None,
+            ),
+            Check::Audience,
+        ),
+        ("expiry", claims(1000), Check::Expiry),
+        (
+            "nonce",
+            claims_with(b"https://issuer.example", br#""client""#, 1100, b"another", Some(b"user-42"), None),
+            Check::Nonce,
+        ),
+        (
+            "subject",
+            claims_with(b"https://issuer.example", br#""client""#, 1100, b"n-0123456789abcdef", None, None),
+            Check::Missing,
+        ),
+    ] {
+        let got = jwt::check_claims(&payload, &id_expected(), wall(1000), Duration::ZERO, &limits());
+        assert_eq!(got.err(), Some(expected), "{name}");
+    }
+}
+#[test]
+fn aud_may_be_a_string_or_an_array() {
+    for (name, audience, azp, expected) in [
+        ("string", br#""client""#.as_slice(), None, None),
+        ("one in array", br#"["client"]"#, None, None),
+        ("two with client azp", br#"["client","other"]"#, Some(b"client".as_slice()), None),
+        ("two with another azp", br#"["client","other"]"#, Some(b"other".as_slice()), Some(Check::Audience)),
+        ("two without azp", br#"["client","other"]"#, None, Some(Check::Audience)),
+    ] {
+        let payload =
+            claims_with(b"https://issuer.example", audience, 1100, b"n-0123456789abcdef", Some(b"user-42"), azp);
+        let got = jwt::check_claims(&payload, &id_expected(), wall(1000), Duration::ZERO, &limits());
+        assert_eq!(got.err(), expected, "{name}");
+    }
+}
+#[test]
+fn an_expiry_on_the_skews_edge_is_expired_and_a_second_later_is_not() {
+    for (skew, exp, expected) in
+        [(60, 940, Some(Check::Expiry)), (60, 941, None), (0, 1000, Some(Check::Expiry)), (0, 1001, None)]
+    {
+        let got = jwt::check_claims(&claims(exp), &id_expected(), wall(1000), Duration::from_secs(skew), &limits());
+        assert_eq!(got.err(), expected, "skew {skew}, exp {exp}");
+    }
+}
+
+const N: &str = "ofgWCuLjybRlzo0tZWJjNiuSfb4p4fAkd_wWJcyQoTbji9k0l8W26mPddxHmfHQp-Vaw-4qPCJrcS2mJPMEzP1Pt0Bm4d4QlL-yRT-SFd2lZS-pCgNMsD1W_YpRPEwOWvG6b32690r2jZ47soMZo9wGzjb_7OMg0LOL-bSf63kpaSHSXndS5z5rexMdbBYUsLA9e-KXBdQOS-UTo7WTBEMa2R2CapHg665xsmtdVMTBQY4uDZlxvb3qCo5ZwKh9kG4LT6_I5IhlJH7aGhyxXFvUK-DWNmoudF8NAco9_h9iaGNj8q2ethFkMLs91kzk2PAcDTW9gb54h4FRWyuXpoQ";
+const INPUT: &[u8] = b"eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ";
+const SIGNATURE: &str = "cC4hiUPoj9Eetdgtv3hF80EGrhuB__dzERat0XF9g2VtQgr9PJbu3XOiZj5RZmh7AAuHIm4Bh-0Qc_lF5YKt_O8W2Fp5jujGbds9uJdbF9CUAr7t1dnZcAcQjbKBYNX4BAynRFdiuB--f_nZLgrnbyTyWzO75vRK5h6xBArLIARNPvkSjtQBMHlb1L07Qe7K0GarZRmB_eSN9383LcOLn6_dO--xi12jzDwusC-eOkHWEsqtFZESc6BfI7noOPqvhJ1phCnvWh6IeYI2w9QOYEUipUTI8np6LbgGY9Fs98rqVt5AXLIhWkWywlVmtVrBp0igcN_IoypGlUPQGe77Rw";
+#[test]
+fn rfc_7515_a2_passes_the_signature_check() {
+    use skein_lib::base64::{self, Alphabet};
+    let key = keys::Key {
+        kid: None,
+        modulus: base64::decode(Alphabet::Url, N.as_bytes(), 1024).expect("vector"),
+        exponent: boxed(&[1, 0, 1]),
+    };
+    let signature = base64::decode(Alphabet::Url, SIGNATURE.as_bytes(), 1024).expect("vector");
+    let mut flipped = signature.clone();
+    *flipped.first_mut().expect("vector") ^= 1;
+    let split = bytes::find(INPUT, b".").expect("vector");
+    let header = base64::decode(Alphabet::Url, INPUT.get(..split).expect("vector"), 1024).expect("vector");
+    let payload =
+        base64::decode(Alphabet::Url, INPUT.get(split.checked_add(1).expect("small")..).expect("vector"), 1024)
+            .expect("vector");
+    for (name, sig, expected) in
+        [("vector", signature.as_ref(), Check::Issuer), ("flipped", flipped.as_ref(), Check::Signature)]
+    {
+        let token = jws(&header, &payload, sig);
+        let got = jwt::verify_id_token(
+            &token,
+            core::slice::from_ref(&key),
+            &id_expected(),
+            wall(1000),
+            Duration::ZERO,
+            &limits(),
+        );
+        assert_eq!(got.err(), Some(expected), "{name}");
+    }
+}

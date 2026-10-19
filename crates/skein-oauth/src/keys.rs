@@ -4,7 +4,6 @@ use alloc::boxed::Box;
 use skein_json::Token;
 use skein_lib::{List, base64, bytes};
 
-#[expect(dead_code, reason = "held keys expose their components for the ID-token verifier")]
 pub(crate) struct Key {
     pub(crate) kid: Option<Box<[u8]>>,
     /// The modulus without leading zero bytes.

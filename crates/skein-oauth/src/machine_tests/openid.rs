@@ -89,21 +89,31 @@ pub(super) fn one_key() -> Box<[u8]> {
 
 #[test]
 fn an_openid_sign_in_fetches_its_keys_before_the_visit() {
-    for (direct, endpoint) in [
-        (true, b"https://issuer.example/keys".as_slice()),
-        (false, b"https://issuer.example/.well-known/openid-configuration"),
-    ] {
-        let (mut client, get) = fetching(direct);
-        let first_endpoint = get.endpoint.clone();
-        let result = if direct {
-            step(&mut client, answered(get.id, 200, &one_key(), 2))
-        } else {
-            let keys = request(step(&mut client, answered(get.id, 200, METADATA, 2)));
-            step(&mut client, answered(keys.id, 200, &one_key(), 3))
-        };
-        let visit = is_visit(result);
-        assert_eq!((first_endpoint.as_ref(), visit), (endpoint, true), "direct {direct}");
-    }
+    let (mut client, get) = fetching(true);
+    let endpoint = get.endpoint.clone();
+    let visit = is_visit(step(&mut client, answered(get.id, 200, &one_key(), 2)));
+    assert_eq!((endpoint.as_ref(), visit), (b"https://issuer.example/keys".as_slice(), true));
+}
+#[derive(Debug, PartialEq, Eq)]
+struct MetadataVisit {
+    metadata: Box<[u8]>,
+    keys: Box<[u8]>,
+    visited: bool,
+}
+#[test]
+fn an_openid_sign_in_fetches_metadata_then_its_named_key_set_before_the_visit() {
+    let (mut client, metadata) = fetching(false);
+    let keys = request(step(&mut client, answered(metadata.id, 200, METADATA, 2)));
+    let visited = is_visit(step(&mut client, answered(keys.id, 200, &one_key(), 3)));
+    let got = MetadataVisit { metadata: metadata.endpoint, keys: keys.endpoint, visited };
+    assert_eq!(
+        got,
+        MetadataVisit {
+            metadata: boxed(b"https://issuer.example/.well-known/openid-configuration"),
+            keys: boxed(b"https://issuer.example/keys"),
+            visited: true,
+        }
+    );
 }
 #[test]
 fn a_get_carries_no_body_or_content_type() {
@@ -120,25 +130,58 @@ fn a_non_openid_sign_in_visits_at_once() {
     let visit = is_visit(step(&mut client, event));
     assert!(visit);
 }
+#[derive(Debug, PartialEq, Eq)]
+struct KeyShape {
+    count: usize,
+    modulus_bytes: usize,
+}
+struct KeyRow {
+    name: &'static str,
+    bits: u32,
+    zero: bool,
+    kty: &'static [u8],
+    use_: Option<&'static [u8]>,
+    count: u32,
+    expected: Option<KeyShape>,
+}
+fn key_shape(bits: u32, count: u32) -> KeyShape {
+    KeyShape {
+        count: usize::try_from(count).expect("fixture"),
+        modulus_bytes: usize::try_from(bits / 8).expect("fixture"),
+    }
+}
+fn key_row(name: &'static str) -> KeyRow {
+    KeyRow {
+        name,
+        bits: MIN_BITS,
+        zero: false,
+        kty: b"RSA",
+        use_: None,
+        count: 1,
+        expected: Some(key_shape(MIN_BITS, 1)),
+    }
+}
 #[test]
 fn the_key_set_keeps_only_keys_that_fit() {
-    for (name, bits, zero, kty, use_, count, expected) in [
-        ("EC", MIN_BITS, false, b"EC".as_slice(), Some(b"sig".as_slice()), 1, None),
-        ("enc", MIN_BITS, false, b"RSA", Some(b"enc"), 1, None),
-        ("no use", MIN_BITS, false, b"RSA", None, 1, Some((1, 256))),
-        ("short", MIN_BITS - 1, false, b"RSA", None, 1, None),
-        ("minimum", MIN_BITS, false, b"RSA", None, 1, Some((1, 256))),
-        ("maximum", MAX_BITS, false, b"RSA", None, 1, Some((1, 512))),
-        ("long", MAX_BITS + 1, false, b"RSA", None, 1, None),
-        ("leading zero", MIN_BITS, true, b"RSA", None, 1, Some((1, 256))),
-        ("key cap", MIN_BITS, false, b"RSA", None, KEY_CAP, Some((4, 256))),
-        ("past key cap", MIN_BITS, false, b"RSA", None, KEY_CAP + 1, None),
+    for row in [
+        KeyRow { kty: b"EC", use_: Some(b"sig"), expected: None, ..key_row("EC") },
+        KeyRow { use_: Some(b"enc"), expected: None, ..key_row("enc") },
+        key_row("no use"),
+        KeyRow { bits: MIN_BITS - 1, expected: None, ..key_row("short") },
+        key_row("minimum"),
+        KeyRow { bits: MAX_BITS, expected: Some(key_shape(MAX_BITS, 1)), ..key_row("maximum") },
+        KeyRow { bits: MAX_BITS + 1, expected: None, ..key_row("long") },
+        KeyRow { zero: true, ..key_row("leading zero") },
+        KeyRow { count: KEY_CAP, expected: Some(key_shape(MIN_BITS, KEY_CAP)), ..key_row("key cap") },
+        KeyRow { count: KEY_CAP + 1, expected: None, ..key_row("past key cap") },
     ] {
-        let got = match keys::fitting_keys(&key_set(bits, zero, kty, use_, count), &limits()) {
-            Ok(keys) => Some((keys.len(), keys.first().expect("kept key").modulus.len())),
+        let got = match keys::fitting_keys(&key_set(row.bits, row.zero, row.kty, row.use_, row.count), &limits()) {
+            Ok(keys) => {
+                Some(KeyShape { count: keys.len(), modulus_bytes: keys.first().expect("kept key").modulus.len() })
+            }
             Err(_) => None,
         };
-        assert_eq!(got, expected, "{name}");
+        assert_eq!(got, row.expected, "{}", row.name);
     }
 }
 
@@ -149,6 +192,18 @@ struct FetchRow {
     status: u16,
     now: u64,
     attempts: u32,
+    expected: Failure,
+}
+fn fetch_row(name: &'static str) -> FetchRow {
+    FetchRow {
+        name,
+        direct: true,
+        body: Box::default(),
+        status: 200,
+        now: 2,
+        attempts: limits().max_attempts,
+        expected: Failure::Unverified { check: Check::Keys },
+    }
 }
 fn failed_fetch(row: FetchRow) -> Option<Request> {
     let mut bounds = limits();
@@ -157,59 +212,43 @@ fn failed_fetch(row: FetchRow) -> Option<Request> {
     let get = request(step(&mut client, sign_in(registration_for_keys(row.direct))));
     step(&mut client, answered(get.id, row.status, &row.body, row.now))
 }
-#[test]
-fn each_keys_failure_is_unverified_before_any_visit() {
-    const METADATA_CAP: usize = 1024; // limits().metadata_bytes.
-    const SET_CAP: usize = 4096; // limits().key_set_bytes.
-    for row in [
-        FetchRow { name: "unreadable metadata", direct: false, body: boxed(b"bad"), status: 200, now: 2, attempts: 3 },
-        FetchRow { name: "unreadable keys", direct: true, body: boxed(b"bad"), status: 200, now: 2, attempts: 3 },
+fn failed_fetch_rows() -> [FetchRow; 10] {
+    let metadata_cap = usize::try_from(limits().metadata_bytes).expect("fixture");
+    let set_cap = usize::try_from(limits().key_set_bytes).expect("fixture");
+    let mut metadata_body = bytes::zeroed(metadata_cap.checked_add(1).expect("small fixture"));
+    let mut set_body = bytes::zeroed(set_cap.checked_add(1).expect("small fixture"));
+    for body in [&mut metadata_body, &mut set_body] {
+        for byte in body.iter_mut() {
+            *byte = b' ';
+        }
+    }
+    [
+        FetchRow { direct: false, body: boxed(b"bad"), ..fetch_row("unreadable metadata") },
+        FetchRow { body: boxed(b"bad"), ..fetch_row("unreadable keys") },
+        FetchRow { direct: false, body: metadata_body, ..fetch_row("metadata cap") },
+        FetchRow { body: set_body, ..fetch_row("keys cap") },
         FetchRow {
-            name: "metadata cap",
-            direct: false,
-            body: boxed(&[b' '; METADATA_CAP + 1]),
-            status: 200,
-            now: 2,
-            attempts: 3,
-        },
-        FetchRow {
-            name: "keys cap",
-            direct: true,
-            body: boxed(&[b' '; SET_CAP + 1]),
-            status: 200,
-            now: 2,
-            attempts: 3,
-        },
-        FetchRow {
-            name: "issuer",
             direct: false,
             body: boxed(br#"{"issuer":"https://other.example","jwks_uri":"https://issuer.example/keys"}"#),
-            status: 200,
-            now: 2,
-            attempts: 3,
+            ..fetch_row("issuer")
         },
         FetchRow {
-            name: "http off loopback",
             direct: false,
             body: boxed(br#"{"issuer":"https://issuer.example","jwks_uri":"http://issuer.example/keys"}"#),
-            status: 200,
-            now: 2,
-            attempts: 3,
+            ..fetch_row("http off loopback")
         },
-        FetchRow {
-            name: "no fitting key",
-            direct: true,
-            body: boxed(br#"{"keys":[]}"#),
-            status: 200,
-            now: 2,
-            attempts: 3,
-        },
-        FetchRow { name: "not found", direct: true, body: boxed(b""), status: 404, now: 2, attempts: 3 },
-        FetchRow { name: "budget", direct: true, body: boxed(b""), status: 503, now: 2, attempts: 1 },
-        FetchRow { name: "deadline", direct: true, body: one_key(), status: 200, now: 121, attempts: 3 },
-    ] {
+        FetchRow { body: boxed(br#"{"keys":[]}"#), ..fetch_row("no fitting key") },
+        FetchRow { status: 404, ..fetch_row("not found") },
+        FetchRow { status: 503, attempts: 1, ..fetch_row("budget") },
+        FetchRow { body: one_key(), now: 121, ..fetch_row("deadline") },
+    ]
+}
+#[test]
+fn each_keys_failure_is_unverified_before_any_visit() {
+    for row in failed_fetch_rows() {
         let name = row.name;
-        assert_eq!(failure(failed_fetch(row)), Failure::Unverified { check: Check::Keys }, "{name}");
+        let expected = row.expected;
+        assert_eq!(failure(failed_fetch(row)), expected, "{name}");
     }
 }
 #[test]
@@ -253,23 +292,29 @@ fn the_key_caps_are_admitted_where_the_design_allows() {
         bounds.modulus_bits = bits;
         assert_eq!(Client::new(bounds).is_ok(), accepted, "bits {bits}");
     }
-    for (direct, metadata, keys, count, expected) in [
-        (false, 0, 4096, 4, Err(Failure::Limit)),
-        (true, 0, 4096, 4, Ok(())),
-        (false, 1024, 0, 4, Err(Failure::Limit)),
-        (true, 1024, 0, 4, Err(Failure::Limit)),
-        (false, 1024, 4096, 0, Err(Failure::Limit)),
-        (true, 1024, 4096, 0, Err(Failure::Limit)),
-    ] {
+}
+#[test]
+fn the_metadata_cap_is_required_only_for_discovery() {
+    for (direct, expected) in [(false, Err(Failure::Limit)), (true, Ok(()))] {
         let mut bounds = limits();
-        bounds.metadata_bytes = metadata;
-        bounds.key_set_bytes = keys;
-        bounds.keys = count;
-        assert_eq!(
-            validate_registration(&registration_for_keys(direct), &bounds, true),
-            expected,
-            "direct {direct}, caps {metadata} {keys} {count}"
-        );
+        bounds.metadata_bytes = 0;
+        assert_eq!(validate_registration(&registration_for_keys(direct), &bounds, true), expected, "direct {direct}");
+    }
+}
+#[test]
+fn the_key_set_cap_is_required_for_each_keys_route() {
+    for (direct, expected) in [(false, Err(Failure::Limit)), (true, Err(Failure::Limit))] {
+        let mut bounds = limits();
+        bounds.key_set_bytes = 0;
+        assert_eq!(validate_registration(&registration_for_keys(direct), &bounds, true), expected, "direct {direct}");
+    }
+}
+#[test]
+fn the_key_count_cap_is_required_for_each_keys_route() {
+    for (direct, expected) in [(false, Err(Failure::Limit)), (true, Err(Failure::Limit))] {
+        let mut bounds = limits();
+        bounds.keys = 0;
+        assert_eq!(validate_registration(&registration_for_keys(direct), &bounds, true), expected, "direct {direct}");
     }
 }
 
@@ -296,4 +341,68 @@ struct RetryOutcome {
     method: Method,
     same_endpoint: bool,
     visited: bool,
+}
+
+fn redeeming() -> (Client, HttpRequest) {
+    let (mut client, get) = fetching(true);
+    let _visit = step(&mut client, answered(get.id, 200, &one_key(), 2));
+    let event = Event::Redirected {
+        client_id: None,
+        uri: boxed(b"http://127.0.0.1:2345/callback"),
+        state: state(),
+        code: Some(boxed(b"code")),
+        error: None,
+        now: time(3),
+    };
+    let request = request(step(&mut client, event));
+    (client, request)
+}
+#[test]
+fn an_openid_exchange_without_an_id_token_is_missing() {
+    let (mut client, post) = redeeming();
+    let terminal = step(&mut client, answered(post.id, 200, &token_body(), 4));
+    assert_eq!(failure(terminal), Failure::Unverified { check: Check::Missing });
+}
+#[test]
+fn an_id_token_past_its_cap_ends_as_limit_before_any_check() {
+    const ID_CAP: usize = 1024; // limits().document.id_token_bytes.
+    let (mut client, post) = redeeming();
+    let mut bounds = limits().document;
+    bounds.id_token_bytes = u32::try_from(ID_CAP.checked_add(1).expect("fixture")).expect("fixture");
+    bounds.string_bytes = bounds.id_token_bytes;
+    let response = TokenResponse {
+        access_token: boxed(b"access"),
+        refresh_token: Some(boxed(b"refresh")),
+        expires_in: 30,
+        scope: None,
+        id_token: Some(boxed(&[b'a'; ID_CAP + 1])),
+        earliest_refresh_at: None,
+    };
+    let body = encode_response(&response, &bounds).expect("answer just past cap");
+    let terminal = step(&mut client, answered(post.id, 200, &body, 4));
+    assert_eq!(failure(terminal), Failure::Limit);
+}
+#[test]
+fn a_refresh_keeps_the_sign_ins_id_token_unchecked() {
+    let mut client = Client::new(limits()).expect("client");
+    let mut event = refresh(registration_for_keys(true), None);
+    if let Event::Refresh { prior, .. } = &mut event {
+        prior.subject = Some(boxed(b"user-42"));
+        prior.id_token = Some(boxed(b"prior-id"));
+    }
+    let post = request(step(&mut client, event));
+    let response = TokenResponse {
+        access_token: boxed(b"access"),
+        refresh_token: Some(boxed(b"refresh")),
+        expires_in: 30,
+        scope: None,
+        id_token: Some(boxed(b"unchecked")),
+        earliest_refresh_at: None,
+    };
+    let body = encode_response(&response, &limits().document).expect("answer");
+    let Some(Request::Tokens { record, .. }) = step(&mut client, answered(post.id, 200, &body, 2)) else {
+        panic!("tokens")
+    };
+    assert!(record.subject.as_deref() == Some(b"user-42"));
+    assert!(record.id_token.as_deref() == Some(b"prior-id"));
 }

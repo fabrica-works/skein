@@ -49,6 +49,7 @@ pub fn client_limits() -> oauth::ClientLimits {
         key_set_bytes: 2048,
         keys: 4,
         modulus_bits: 2048,
+        skew: Duration::from_secs(60),
         sign_in_time: Duration::from_secs(120),
         request_time: Duration::from_secs(10),
         backoff_base: Duration::from_secs(2),
@@ -274,7 +275,12 @@ pub fn openid_registration() -> oauth::Registration {
 
 #[must_use]
 pub fn openid_issuer(fault: Option<fake::Fault>) -> fake::Issuer {
-    let mut additions = issued(&[]);
+    openid_issuer_with(fault, &[])
+}
+
+#[must_use]
+pub fn openid_issuer_with(fault: Option<fake::Fault>, ids: &[&[u8]]) -> fake::Issuer {
+    let mut additions = issued(ids);
     additions.openid = Some(fake::OpenId {
         issuer: boxed(b"https://issuer.example"),
         key_set_url: boxed(b"https://issuer.example/keys"),
@@ -314,4 +320,32 @@ fn start(
             now: time(seconds),
         },
     )
+}
+
+/// Fetches keys and follows the fake's visit, returning the token POST.
+#[must_use]
+pub fn openid_post(
+    client: &mut oauth::Client,
+    issuer: &mut fake::Issuer,
+    registration: oauth::Registration,
+) -> oauth::HttpRequest {
+    let url = openid_visit(client, issuer, registration);
+    let event = redirected(issuer, url);
+    http(client_step(client, event))
+}
+
+/// Fetches keys and returns the sign-in's visit URL.
+#[must_use]
+pub fn openid_visit(
+    client: &mut oauth::Client,
+    issuer: &mut fake::Issuer,
+    registration: oauth::Registration,
+) -> Box<[u8]> {
+    let get = http(begin(client, registration, 1));
+    let answer = response(fake_step(
+        issuer,
+        fake::Event::Get { id: get.id, endpoint: get.endpoint, now: time(1), wall: wall(100) },
+    ));
+    let Some(oauth::Request::Visit { url }) = client_step(client, oauth::Event::Http(answer)) else { panic!("visit") };
+    url
 }

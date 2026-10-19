@@ -69,6 +69,7 @@ impl Client {
             grant: Grant::SignIn { key, generation, code: None },
             state,
             verifier,
+            nonce,
             deadline,
             attempts: 0,
             visit: None,
@@ -168,5 +169,39 @@ impl Client {
             Some(exchange) => self.retry_or_fail(exchange, Failure::TimedOut, now, Duration::ZERO, true, out),
             None => self.finish(failure(), out),
         }
+    }
+}
+
+pub(super) struct Identity {
+    pub(super) subject: Option<Box<[u8]>>,
+    pub(super) token: Option<Box<[u8]>>,
+}
+impl Client {
+    pub(super) fn identity(
+        &self,
+        exchange: &Exchange,
+        response: &crate::TokenResponse,
+        wall: skein_lib::Wall,
+    ) -> Result<Identity, Check> {
+        if !has_openid(&exchange.registration) {
+            return Ok(Identity { subject: None, token: None });
+        }
+        let token = response.id_token.as_deref().ok_or(Check::Missing)?;
+        let terms = exchange.registration.terms.as_ref().ok_or(Check::Issuer)?;
+        let openid = terms.openid.as_ref().ok_or(Check::Issuer)?;
+        let expected = crate::jwt::Expected {
+            issuer: &openid.issuer,
+            client_id: &exchange.registration.client_id,
+            nonce: exchange.nonce.as_deref().ok_or(Check::Nonce)?,
+        };
+        let subject = crate::jwt::verify_id_token(
+            token,
+            &exchange.keys,
+            &expected,
+            wall,
+            self.limits.skew,
+            &self.limits.document,
+        )?;
+        Ok(Identity { subject: Some(subject), token: Some(skein_lib::bytes::copy_of(token)) })
     }
 }
