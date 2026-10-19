@@ -15,42 +15,69 @@ use crate::forgejo::{
 use alloc::boxed::Box;
 use skein_lib::{Wall, Writer};
 #[test]
-fn names_in_paths_are_percent_encoded_one_segment_each() {
+fn path_segments_percent_encode_slashes_spaces_and_utf8() {
     for (name, expected) in [
         (b"main".as_slice(), b"main".as_slice()),
         (b"feature/slash", b"feature%2Fslash"),
         (b"a b", b"a%20b"),
         ("é".as_bytes(), b"%C3%A9"),
     ] {
-        let mut out = Writer::new(expected.len());
+        let encoded_bytes = expected.len();
+        let mut out = Writer::new(encoded_bytes);
         path::segment(name, &mut out).unwrap();
         assert_eq!(&*out.finish(), expected, "{name:?}");
     }
-    let mut out = Writer::new(13);
-    path::file(b"docs/a b.md", &mut out).unwrap();
-    assert_eq!(&*out.finish(), b"docs/a%20b.md");
-    let target = path::read(b"/api/v1/repos/a%2Fb/%C3%A9?q=a+b", &fixtures::limits()).unwrap();
-    assert_eq!(target.segments[3].as_ref(), b"a/b");
-    assert_eq!(target.query[0].value.as_ref(), b"a b");
 }
 #[test]
-fn rfc3339_times_read_with_their_offset_and_write_in_utc() {
-    for (text, seconds) in [
-        (b"2020-01-01T00:00:00Z".as_slice(), 1_577_836_800),
-        (b"2020-01-01T05:30:00+05:30", 1_577_836_800),
-        (b"2019-12-31T17:00:00-07:00", 1_577_836_800),
-        (b"2020-01-01T00:00:00.999Z", 1_577_836_800),
-    ] {
-        let wall = time::read(text).unwrap();
-        assert_eq!(wall.as_secs(), seconds, "{text:?}");
-        assert_eq!(time::write(wall), *b"2020-01-01T00:00:00Z");
+fn file_paths_keep_slashes_and_percent_encode_spaces() {
+    const FILE_TARGET_BYTES: usize = b"docs/a%20b.md".len();
+    let mut out = Writer::new(FILE_TARGET_BYTES);
+    path::file(b"docs/a b.md", &mut out).unwrap();
+    assert_eq!(&*out.finish(), b"docs/a%20b.md");
+}
+fn encoded_target() -> path::Target {
+    path::read(b"/api/v1/repos/a%2Fb/%C3%A9?q=a+b", &fixtures::limits()).unwrap()
+}
+#[test]
+fn target_segments_decode_percent_encoded_slashes() {
+    assert_eq!(encoded_target().segments[3].as_ref(), b"a/b");
+}
+#[test]
+fn target_query_values_decode_plus_as_space() {
+    assert_eq!(encoded_target().query[0].value.as_ref(), b"a b");
+}
+const RFC3339_TIMES: [(&[u8], u64); 4] = [
+    (b"2020-01-01T00:00:00Z", 1_577_836_800),
+    (b"2020-01-01T05:30:00+05:30", 1_577_836_800),
+    (b"2019-12-31T17:00:00-07:00", 1_577_836_800),
+    (b"2020-01-01T00:00:00.999Z", 1_577_836_800),
+];
+#[test]
+fn rfc3339_reads_offsets_and_discards_fractional_seconds() {
+    for (text, seconds) in RFC3339_TIMES {
+        assert_eq!(time::read(text).unwrap().as_secs(), seconds, "{text:?}");
     }
+}
+#[test]
+fn rfc3339_writes_offset_times_in_utc() {
+    for (text, _) in RFC3339_TIMES {
+        assert_eq!(time::write(time::read(text).unwrap()), *b"2020-01-01T00:00:00Z", "{text:?}");
+    }
+}
+#[test]
+fn rfc3339_refuses_invalid_dates_and_times_outside_wall() {
     for text in
         [b"1969-12-31T23:59:59Z".as_slice(), b"2020-02-30T00:00:00Z", b"2020-01-01T00:00:00", b"2554-07-21T23:34:34Z"]
     {
         assert_eq!(time::read(text), None, "{text:?}");
     }
+}
+#[test]
+fn rfc3339_writes_the_last_wall_second_in_utc() {
     assert_eq!(time::write(Wall::from_nanos(u64::MAX)), *b"2554-07-21T23:34:33Z");
+}
+#[test]
+fn rfc3339_reads_the_epoch_at_walls_lower_bound() {
     assert_eq!(time::read(b"1970-01-01T00:00:00Z"), Some(Wall::EPOCH));
 }
 #[test]
@@ -81,29 +108,30 @@ fn a_start_document_missing_a_field_is_malformed_naming_it() {
     }
 }
 #[test]
-fn a_string_past_its_cap_is_malformed_and_a_body_past_its_cap_is_long() {
+fn a_login_at_its_string_cap_is_kept() {
     let limits = fixtures::small();
-    for (text, valid) in
-        [(br#"{"id":2,"login":"12345678"}"#.as_slice(), true), (br#"{"id":2,"login":"123456789"}"#, false)]
-    {
-        let decoder = client::decoder(&Request::User, &limits).unwrap();
-        let result = fixtures::decode(decoder, text, &limits);
-        if valid {
-            assert_eq!(
-                result.document,
-                Ok(Document::User(crate::forgejo::document::User {
-                    id: 2,
-                    login: Box::from(*b"12345678"),
-                    is_admin: false,
-                    full_name: Box::from([])
-                }))
-            );
-        } else {
-            assert_eq!(result.document, Err(Malformed::TooLong { field: b"login" }));
-        }
-    }
+    let decoder = client::decoder(&Request::User, &limits).unwrap();
+    let result = fixtures::decode(decoder, br#"{"id":2,"login":"12345678"}"#, &limits);
+    assert_eq!(result.document, Ok(Document::User(fixtures::user(2, b"12345678"))));
+}
+#[test]
+fn a_login_one_past_its_string_cap_is_malformed() {
+    let limits = fixtures::small();
+    let decoder = client::decoder(&Request::User, &limits).unwrap();
+    let result = fixtures::decode(decoder, br#"{"id":2,"login":"123456789"}"#, &limits);
+    assert_eq!(result.document, Err(Malformed::TooLong { field: b"login" }));
+}
+#[test]
+fn a_body_one_past_its_cap_keeps_its_length() {
+    // The body fixture has the sixteen retained bytes and one more.
+    const LONG_BODY_BYTES: u32 = fixtures::SMALL_BODY_BYTES + 1;
+    let limits = fixtures::small();
     let long = fixtures::capped(br#""12345678901234567""#, limits.body_bytes, &limits);
-    assert_eq!(Body::read(&long, b"body"), Ok(Body::Long(17)));
+    assert_eq!(Body::read(&long, b"body"), Ok(Body::Long(u64::from(LONG_BODY_BYTES))));
+}
+#[test]
+fn a_body_at_its_cap_keeps_its_bytes() {
+    let limits = fixtures::small();
     assert_eq!(
         Body::read(&fixtures::capped(br#""1234567890123456""#, limits.body_bytes, &limits), b"body"),
         Ok(Body::Kept(Box::from(*b"1234567890123456")))
@@ -142,22 +170,40 @@ fn unknown_nested_fields_are_skipped_without_retaining_their_strings() {
     );
     assert!(result.rows.is_empty());
 }
+// The user target is twelve bytes, so eleven is one byte short.
+const USER_TARGET_BYTES: u32 = 12;
+fn user_target_limits() -> crate::forgejo::limits::Limits {
+    crate::forgejo::limits::Limits { target_bytes: USER_TARGET_BYTES - 1, ..fixtures::limits() }
+}
 #[test]
-fn target_bounds_and_malformed_escapes_are_refused_before_routing() {
-    let mut limits = fixtures::limits();
-    limits.target_bytes = 12;
+fn a_user_target_encodes_at_its_byte_bound() {
+    let limits = crate::forgejo::limits::Limits { target_bytes: USER_TARGET_BYTES, ..fixtures::limits() };
     assert_eq!(client::encode(&Request::User, &limits).unwrap().target.as_ref(), b"/api/v1/user");
-    limits.target_bytes = 11;
-    assert_eq!(client::encode(&Request::User, &limits), Err(client::Refusal::TooLong));
-    assert_eq!(path::read(b"/api/v1/user", &limits), Err(path::Unread::TooLong));
+}
+#[test]
+fn a_user_target_one_past_its_cap_cannot_encode() {
+    assert_eq!(client::encode(&Request::User, &user_target_limits()), Err(client::Refusal::TooLong));
+}
+#[test]
+fn a_user_target_one_past_its_cap_cannot_decode() {
+    assert_eq!(path::read(b"/api/v1/user", &user_target_limits()), Err(path::Unread::TooLong));
+}
+#[test]
+fn malformed_percent_escapes_are_refused_before_routing() {
     for target in [b"/bad%".as_slice(), b"/bad%2", b"/bad%GG"] {
-        assert_eq!(path::read(target, &limits), Err(path::Unread::Escape), "{target:?}");
+        assert_eq!(path::read(target, &user_target_limits()), Err(path::Unread::Escape), "{target:?}");
     }
+}
+#[test]
+fn a_user_route_refuses_the_wrong_method() {
     assert_eq!(
         crate::forgejo::server::route(crate::forgejo::request::Method::Post, b"/api/v1/user", &fixtures::limits())
             .unwrap_err(),
         crate::forgejo::server::Unrouted::Method
     );
+}
+#[test]
+fn an_unknown_target_has_no_route() {
     assert_eq!(
         crate::forgejo::server::route(crate::forgejo::request::Method::Get, b"/api/v1/no-route", &fixtures::limits())
             .unwrap_err(),
@@ -167,10 +213,7 @@ fn target_bounds_and_malformed_escapes_are_refused_before_routing() {
 #[test]
 fn a_comment_at_or_below_after_is_skipped_body_unread() {
     let limits = fixtures::small();
-    let request = Request::Comments {
-        at: crate::forgejo::request::Repo { owner: Box::from(*b"fixture"), name: Box::from(*b"specimen") },
-        number: 3,
-    };
+    let request = fixtures::comments(fixtures::COMMENT_THREAD);
     let mut machine = client::decoder(&request, &limits).unwrap();
     client::keep_after(&mut machine, 4);
     let result=fixtures::decode(machine,br#"[{"id":4,"user":{"id":2,"login":"writer"},"body":"12345678901234567"},{"id":5,"user":{"id":2,"login":"writer"},"body":"new"}]"#,&limits);
@@ -194,10 +237,7 @@ fn a_comment_at_or_below_after_is_skipped_body_unread() {
 #[test]
 fn a_cut_thread_counts_the_comments_it_skipped() {
     let limits = fixtures::limits();
-    let request = Request::Comments {
-        at: crate::forgejo::request::Repo { owner: Box::from(*b"fixture"), name: Box::from(*b"specimen") },
-        number: 3,
-    };
+    let request = fixtures::comments(fixtures::COMMENT_THREAD);
     let machine = client::decoder(&request, &limits).unwrap();
     let result=fixtures::decode_cut(machine,br#"[{"id":1,"user":{"id":2,"login":"writer"},"body":"first"},{"id":2,"body":"second"},{"id":3,"body":"third"}]"#,&limits,1);
     assert_eq!(result.document, Ok(Document::Listed { skipped: 2 }));

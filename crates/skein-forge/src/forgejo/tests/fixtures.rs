@@ -20,18 +20,47 @@ pub fn bot() -> crate::forgejo::document::User {
 pub fn user(id: u64, login: &[u8]) -> crate::forgejo::document::User {
     crate::forgejo::document::User { id, login: Box::from(login), is_admin: false, full_name: Box::from([]) }
 }
+// The sampled corpus's largest document is pull_files_decode_forgejos_changed_status_as_modified (347 bytes).
+const DOCUMENT_BYTES: u32 = 347;
+// The longest retained text is MergeProtected's canned refusal (61 bytes).
+const STRING_BYTES: u32 = 61;
+// Eight containers are the dialect's minimum accepted depth (limits::check).
+const JSON_DEPTH: u32 = 8;
+// The malformed-id fixture must tokenize both bytes of -1 before its range check.
+const NUMBER_BYTES: u32 = 2;
+// The comparison target with files=false and verification=false has 153 bytes.
+const TARGET_BYTES: u32 = 153;
+// Ordinary nested lists hold at most one item; the two-item boundary tests choose inner explicitly.
+const INNER_ITEMS: u32 = 1;
+// These are the sampled boundary strings' exact lengths, independent of shipped profiles.
+pub const SMALL_STRING_BYTES: u32 = 8;
+pub const SMALL_BODY_BYTES: u32 = 16;
 pub fn limits() -> Limits {
     Limits {
-        json: tokenizer::Limits { depth: 16, string: 65_536, number: 32, chunk: 4_096, length: 4_194_304 },
-        writer: skein_json::writer::Limits { depth: 16, length: 4_194_304 },
-        string_bytes: 1024,
-        body_bytes: 65_536,
-        inner: 64,
-        target_bytes: 4_096,
+        json: tokenizer::Limits {
+            depth: JSON_DEPTH,
+            string: STRING_BYTES,
+            number: NUMBER_BYTES,
+            chunk: STRING_BYTES,
+            length: DOCUMENT_BYTES,
+        },
+        writer: skein_json::writer::Limits { depth: JSON_DEPTH, length: DOCUMENT_BYTES },
+        string_bytes: STRING_BYTES,
+        body_bytes: SMALL_BODY_BYTES,
+        inner: INNER_ITEMS,
+        target_bytes: TARGET_BYTES,
     }
 }
 pub fn small() -> Limits {
-    Limits { string_bytes: 8, body_bytes: 16, ..limits() }
+    Limits { string_bytes: SMALL_STRING_BYTES, body_bytes: SMALL_BODY_BYTES, ..limits() }
+}
+// Both preserved comment stories use thread three in the fixture/specimen repository.
+pub const COMMENT_THREAD: u64 = 3;
+pub fn repository() -> crate::forgejo::request::Repo {
+    crate::forgejo::request::Repo { owner: Box::from(*b"fixture"), name: Box::from(*b"specimen") }
+}
+pub fn comments(number: u64) -> crate::forgejo::request::Request {
+    crate::forgejo::request::Request::Comments { at: repository(), number }
 }
 pub fn capped(body: &[u8], cap: u32, limits: &Limits) -> tokenizer::Event {
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json };

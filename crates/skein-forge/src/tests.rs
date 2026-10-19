@@ -5,12 +5,18 @@ fn locate_bytes_counts_owner_and_name() {
     assert_eq!(crate::locate::bytes(b"ab", b"cde"), Some(5));
 }
 
+// The preserved positive locate fixture identifies repository seven.
+const LOCATED_REPOSITORY: u32 = 7;
+
 #[test]
-fn locate_accepts_only_nonzero_repository() {
-    for (answer, expected) in
-        [(Answer::Located { repository: 7 }, true), (Answer::Located { repository: 0 }, false), (Answer::Done, false)]
-    {
-        assert_eq!(crate::locate::accepts(&answer), expected, "{answer:?}");
+fn locate_accepts_a_nonzero_repository() {
+    assert!(crate::locate::accepts(&Answer::Located { repository: LOCATED_REPOSITORY }));
+}
+
+#[test]
+fn locate_refuses_zero_and_answers_without_a_repository() {
+    for answer in [Answer::Located { repository: 0 }, Answer::Done] {
+        assert!(!crate::locate::accepts(&answer), "{answer:?}");
     }
 }
 
