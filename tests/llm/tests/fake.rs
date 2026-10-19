@@ -1242,3 +1242,124 @@ fn a_held_reply_reaches_the_client_only_after_its_release() {
         );
     }
 }
+
+// Three short pieces make their order and their joined completion visible.
+const PIECE_OWNER: u64 = 301;
+const PIECE_TOKENS: u64 = 2;
+
+fn piece_exchange(provider: skein_llm::Provider, held: bool, tail: Option<Line>) -> Exchange {
+    use skein_fake_llm_domain::api::Piece;
+    let mut lines = vec![Line::Pieces {
+        pieces: Box::new([
+            Piece { text: b"Hel".as_slice().into(), hold: None },
+            Piece { text: b"lo".as_slice().into(), hold: None },
+            Piece { text: b"!".as_slice().into(), hold: held.then(|| b"h".as_slice().into()) },
+        ]),
+    }];
+    let finish = if let Some(tail) = tail {
+        lines.push(tail);
+        Finish::ToolCalls
+    } else {
+        Finish::Stop
+    };
+    let scripts = Box::new([Script {
+        cue: b"caller-script".as_slice().into(),
+        turns: Box::new([Turn { lines: lines.into_boxed_slice(), finish, tokens: PIECE_TOKENS }]),
+    }]);
+    let mut world = Exchange::new(input(provider, PIECE_OWNER), limits(), scripts);
+    world.start();
+    world
+}
+
+fn text_and_completion(world: &Exchange) -> Vec<Option<&[u8]>> {
+    world
+        .seen
+        .iter()
+        .filter_map(|event| match event {
+            client::Event::Delta { delta: skein_llm::Delta::Text { text, .. }, .. } => Some(Some(text.as_ref())),
+            client::Event::Completed { .. } => Some(None),
+            client::Event::Delta { .. }
+            | client::Event::Block { .. }
+            | client::Event::Failed { .. }
+            | client::Event::Cancelled { .. }
+            | client::Event::Reusable
+            | client::Event::Close
+            | client::Event::Closed => None,
+        })
+        .collect()
+}
+
+#[test]
+fn pieces_reach_the_client_as_deltas_before_the_completion() {
+    for provider in [skein_llm::Provider::Anthropic, skein_llm::Provider::OpenAiCodex] {
+        let mut world = piece_exchange(provider, false, None);
+        world.run();
+        assert_eq!(
+            text_and_completion(&world),
+            [Some(b"Hel".as_slice()), Some(b"lo"), Some(b"!"), None],
+            "{provider:?}"
+        );
+        let [Block::Text { text, .. }] = completion(&world).content.as_ref() else { panic!("one text block") };
+        assert_eq!(text.as_ref(), b"Hello!", "{provider:?}");
+    }
+}
+
+#[test]
+fn a_held_reply_shows_only_the_pieces_before_its_hold() {
+    for provider in [skein_llm::Provider::Anthropic, skein_llm::Provider::OpenAiCodex] {
+        let mut world = piece_exchange(provider, true, None);
+        while world.tick(true) {}
+        assert_eq!(text_and_completion(&world), [Some(b"Hel".as_slice()), Some(b"lo")], "{provider:?}");
+        world.release(b"h");
+        world.run();
+        assert_eq!(
+            text_and_completion(&world),
+            [Some(b"Hel".as_slice()), Some(b"lo"), Some(b"!"), None],
+            "{provider:?}"
+        );
+    }
+}
+
+#[test]
+fn the_lines_after_the_pieces_follow_them_whole() {
+    for provider in [skein_llm::Provider::Anthropic, skein_llm::Provider::OpenAiCodex] {
+        let mut world = piece_exchange(
+            provider,
+            false,
+            Some(Line::Call {
+                name: b"caller_tool".as_slice().into(),
+                arguments: br#"{"opaque":"whole"}"#.as_slice().into(),
+            }),
+        );
+        world.run();
+        let [Block::Text { text, .. }, Block::ToolCall { name, arguments, .. }] = completion(&world).content.as_ref()
+        else {
+            panic!("text and complete tool call");
+        };
+        assert_eq!(
+            (text.as_ref(), name.as_ref(), arguments.as_ref()),
+            (b"Hello!".as_slice(), b"caller_tool".as_slice(), br#"{"opaque":"whole"}"#.as_slice()),
+            "{provider:?}"
+        );
+    }
+}
+
+#[test]
+fn the_stream_opened_by_a_piece_reports_the_replys_usage() {
+    let mut world = piece_exchange(skein_llm::Provider::Anthropic, false, None);
+    world.run();
+    let bounds = limits();
+    let response =
+        skein_http_world::reference::response(&world.responses, skein_http::Method::Post, false, &bounds.http);
+    let events = skein_http_world::reference::events(&response.body, &bounds.sse);
+    let opening = events.events.iter().find(|event| event.name == b"message_start").expect("opening usage");
+    let json = skein_llm::anthropic::Json::from_bytes(&opening.data, &bounds.native().document()).unwrap();
+    let skein_llm::anthropic::Event::Started { usage } =
+        skein_llm::anthropic::decode_event(&json, &bounds.native()).unwrap()
+    else {
+        panic!("message start")
+    };
+    assert_eq!(usage.input, Some(0));
+    assert_eq!(usage.input, completion(&world).usage.input);
+    assert_eq!(usage.cache_write, completion(&world).usage.cache_write);
+}

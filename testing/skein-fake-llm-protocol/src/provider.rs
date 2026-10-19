@@ -4,6 +4,9 @@
 //! Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, sections 4.4 and 6.3.
 
 use crate::documents;
+
+#[path = "pieces.rs"]
+mod pieces;
 use alloc::boxed::Box;
 use core::mem::size_of;
 use skein_fake_llm_domain::{self as domain, api};
@@ -123,6 +126,7 @@ enum State {
     Body,
     Waiting,
     Streaming,
+    Pieces { written: usize },
     Erring,
     Closing,
     Closed,
@@ -215,9 +219,9 @@ impl Service {
         self.calls.len()
     }
 
-    /// Routes one owned fake-domain terminal to its pending HTTP connection.
-    /// Returns the terminal alongside its target, preserving its reply right for
-    /// `down`; an unmatched or closed route returns the same owned terminal as `Err`.
+    /// Routes one owned fake-domain update to its pending HTTP connection.
+    /// Returns the update alongside its target, preserving a terminal's reply right
+    /// for `down`; an unmatched or closed route returns the owned update as `Err`.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     pub fn target(&self, request: domain::Request) -> Result<(Token, domain::Request), domain::Request> {
@@ -260,6 +264,7 @@ pub struct Server {
     remaining_body: Option<u64>,
     call: Option<Id<Call>>,
     answer: Option<api::Answer>,
+    pieces: pieces::Stream,
     sequence: u32,
     response_id: u64,
     reply: Option<Box<[u8]>>,
@@ -291,6 +296,7 @@ impl Server {
             remaining_body: None,
             call: None,
             answer: None,
+            pieces: pieces::Stream::new(&limits.documents),
             sequence: 0,
             response_id: 0,
             reply: None,
@@ -307,7 +313,7 @@ impl Server {
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     #[must_use]
     pub fn has_work(&self) -> bool {
-        !self.events.is_empty() || !self.writer_events.is_empty() || !self.requests.is_empty()
+        !self.events.is_empty() || !self.writer_events.is_empty() || !self.requests.is_empty() || pieces::ready(self)
     }
 }
 
@@ -344,14 +350,14 @@ pub fn up(
 ) {
     match server.state {
         State::New | State::Closing | State::Closed => return,
-        State::Reading | State::Body | State::Waiting | State::Streaming | State::Erring => {}
+        State::Reading | State::Body | State::Waiting | State::Streaming | State::Pieces { .. } | State::Erring => {}
     }
     let child = Env { now: env.now, wall: env.wall, limits: env.limits.http };
     http::up(&mut server.http, &child, event, &mut server.events, below);
     resume(server, service, credential, env, above, below);
 }
 
-/// Accepts one neutral fake-domain terminal and schedules its bounded HTTP/SSE response.
+/// Accepts one neutral fake-domain update and schedules its bounded HTTP/SSE response.
 ///
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 pub fn down(
@@ -365,10 +371,19 @@ pub fn down(
 ) {
     let (to, result) = match request {
         domain::Request::Reply { to, result } => (to, result),
-        domain::Request::Piece { .. } | domain::Request::Hold { .. } => return,
+        domain::Request::Piece { call, usage, text } => {
+            pieces::receive(server, service, env, (call, usage, Some(text)), above, below);
+            resume(server, service, credential, env, above, below);
+            return;
+        }
+        domain::Request::Hold { call, usage } => {
+            pieces::receive(server, service, env, (call, usage, None), above, below);
+            resume(server, service, credential, env, above, below);
+            return;
+        }
     };
     let id = Id::<Call>::from_token(to.into_token());
-    if server.call != Some(id) || server.state != State::Waiting {
+    if server.call != Some(id) || !matches_waiting(server.state) {
         return;
     }
     let Some(call) = service.calls.get_mut(id) else {
@@ -383,24 +398,27 @@ pub fn down(
     match result {
         Ok(answer) => {
             if answer_fits(&answer, &env.limits.documents) {
-                server.state = State::Streaming;
                 server.answer = Some(answer);
-                server.sequence = 0;
-                server.requests.push(http::Request::Respond(http::Response {
-                    status: 200,
-                    headers: Box::new([Header {
-                        name: bytes::copy_of(b"content-type"),
-                        value: bytes::copy_of(b"text/event-stream"),
-                    }]),
-                    body: http::Body::Chunked,
-                    close: false,
-                }));
+                if server.state == State::Waiting {
+                    server.state = State::Streaming;
+                    server.sequence = 0;
+                    pieces::head(server);
+                }
                 next_event(server, service, env, above, below);
+            } else if let State::Pieces { .. } = server.state {
+                close(server, service, env, above, below);
             } else {
                 response_error(server, service, env, api::Error::InvalidRequest);
             }
         }
-        Err(error) => response_error(server, service, env, error),
+        Err(error) => {
+            if let State::Pieces { .. } = server.state {
+                server.pieces.fail(error);
+                next_event(server, service, env, above, below);
+            } else {
+                response_error(server, service, env, error);
+            }
+        }
     }
     resume(server, service, credential, env, above, below);
 }
@@ -422,7 +440,10 @@ pub fn resume(
         }
         if let Some(event) = server.writer_events.pop() {
             match event {
-                sse::Event::Sent => next_event(server, service, env, above, below),
+                sse::Event::Sent => {
+                    server.pieces.sent();
+                    next_event(server, service, env, above, below);
+                }
                 sse::Event::Refused(_) | sse::Event::Failed(_) => close(server, service, env, above, below),
                 sse::Event::Closed => {}
             }
@@ -430,6 +451,8 @@ pub fn resume(
             http_event(server, service, credential, env, event, above, below);
         } else if let Some(request) = server.requests.pop() {
             http_down(server, env, request, below);
+        } else if pieces::ready(server) {
+            next_event(server, service, env, above, below);
         } else {
             break;
         }
@@ -467,6 +490,7 @@ pub fn close(
         }
     }
     server.answer = None;
+    server.pieces.clear();
     server.reply = None;
     server.body.clear();
     if !server.writer_closed {
@@ -696,7 +720,7 @@ fn http_event(
         }
         http::Event::Body(Up::End) => requested(server, service, env, above),
         http::Event::Reply(event) => match server.state {
-            State::Streaming => {
+            State::Streaming | State::Pieces { .. } => {
                 let child = Env { now: env.now, wall: env.wall, limits: env.limits.sse };
                 let mut down = Queue::with_capacity(2);
                 sse::up(&mut server.writer, &child, event, &mut server.writer_events, &mut down);
@@ -714,6 +738,7 @@ fn http_event(
         },
         http::Event::Done(reuse) => {
             server.answer = None;
+            server.pieces.clear();
             server.body.clear();
             server.reply = None;
             match reuse {
@@ -775,6 +800,19 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
     }
 }
 
+fn matches_waiting(state: State) -> bool {
+    match state {
+        State::Waiting | State::Pieces { .. } => true,
+        State::New
+        | State::Reading
+        | State::Body
+        | State::Streaming
+        | State::Erring
+        | State::Closing
+        | State::Closed => false,
+    }
+}
+
 fn next_event(
     server: &mut Server,
     service: &mut Service,
@@ -782,10 +820,19 @@ fn next_event(
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) {
+    if let State::Pieces { .. } = server.state {
+        match pieces::next(server, service, env) {
+            Ok(Some(event)) => writer_down(server, env, sse::Request::Event(event)),
+            Ok(None) => {}
+            Err(documents::Error::Malformed | documents::Error::TooLarge) => close(server, service, env, above, below),
+        }
+        return;
+    }
     if server.state != State::Streaming {
         return;
     }
     let Some(answer) = &server.answer else {
+        writer_down(server, env, sse::Request::Finish);
         return;
     };
     match documents::event_with_options(
@@ -994,6 +1041,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Slab::<Call>::worst_case(limits.calls)?)?
         .checked_add(http::worst_case(&limits.http)?)?
         .checked_add(sse::worst_case(&limits.sse)?)?
+        .checked_add(pieces::worst_case(&limits.documents)?)?
         .checked_add(openai::worst_case(&limits.documents.openai)?)?
         .checked_add(anthropic::worst_case(&limits.documents.anthropic)?)?
         // Configured echoes retain this raw request in the existing body List;
