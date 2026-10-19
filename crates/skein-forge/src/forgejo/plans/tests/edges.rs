@@ -499,3 +499,55 @@ fn partial_reads() -> [PartialRead; 2] {
         ),
     ]
 }
+
+use crate::forgejo::{
+    decode::Malformed,
+    limits::Limits,
+    plans::{Body as AnswerBody, Heard},
+};
+use fixtures::BOUNDS;
+// This response exceeds the local inner bound of two labels by one (forge.md 5.3).
+const INNER_BOUND: u32 = 2;
+const THREE_LABELS: &[u8] = br#"{"number":1,"state":"open","user":{"id":2,"login":"writer"},"labels":[{"name":"a"},{"name":"b"},{"name":"c"}],"updated_at":"1970-01-01T00:00:00Z","title":"t","body":"b"}"#;
+fn bounded_run(op: Op) -> Run {
+    let mut run = Run::with_limits(Limits { inner: INNER_BOUND, ..fixtures::limits() }, BOUNDS, op);
+    run.begin();
+    run
+}
+fn inner_overflow(run: &mut Run) -> Option<Step> {
+    run.hear(Heard::Head { status: 200, fields: fixtures::fields() });
+    run.hear(Heard::Done(AnswerBody::Malformed(Malformed::Bound { field: b"labels" })))
+}
+
+#[test]
+fn write_inner_overflow_is_timeout() {
+    let mut run = bounded_run(Op::Write(write_cases::create_issue()));
+    assert_eq!(run.answer(201, THREE_LABELS), Step::Done(Err(Error::Timeout)));
+}
+
+#[test]
+fn read_inner_overflow_is_too_large() {
+    let mut run = bounded_run(Op::Read(Read::Item { number: ITEM_NUMBER, after: 0 }));
+    assert_eq!(run.answer(200, THREE_LABELS), Step::Done(Err(Error::TooLarge)));
+    for read in [Read::PullFiles { number: ITEM_NUMBER, head: HEAD, page: 1 }, Read::Checks { commit: HEAD }] {
+        let mut run = bounded_run(Op::Read(read));
+        assert_eq!(inner_overflow(&mut run), Some(Step::Done(Err(Error::TooLarge))));
+    }
+}
+
+#[test]
+fn open_pull_inner_overflow_is_too_large() {
+    let mut run = bounded_run(Op::Write(write_cases::open_pull()));
+    assert_eq!(inner_overflow(&mut run), Some(Step::Done(Err(Error::TooLarge))));
+}
+
+#[test]
+fn log_body_overflow_is_invalid_answer() {
+    let mut run = Run::known(Op::Read(Read::Job { attempt: ATTEMPT, max_bytes: RAW_BYTES }));
+    replies(&mut run, &[(200, RUN), (200, JOB)]);
+    run.hear(Heard::Head { status: 200, fields: fixtures::fields() });
+    assert_eq!(
+        run.hear(Heard::Done(AnswerBody::Malformed(Malformed::Bound { field: b"log" }))),
+        Some(Step::Done(Err(Error::InvalidAnswer)))
+    );
+}

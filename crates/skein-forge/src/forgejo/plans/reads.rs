@@ -288,6 +288,9 @@ impl Plan {
                 Ok(None)
             }
             Heard::Done(Body::Document(document)) => self.done(document, bounds, word, tables),
+            Heard::Done(Body::Malformed(crate::forgejo::decode::Malformed::Bound { field })) => {
+                Err(if field == b"log" { api::Error::InvalidAnswer } else { api::Error::TooLarge })
+            }
             Heard::Done(Body::Malformed(_) | Body::Empty | Body::Raw { .. }) => Err(api::Error::InvalidAnswer),
             Heard::Failed(failure) => Err(crate::forgejo::plans::failure::transport(failure)),
         }

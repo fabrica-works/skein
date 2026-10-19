@@ -347,6 +347,11 @@ impl Run {
         run.tables.keep_repository(REPO, specimen());
         run
     }
+    pub fn with_limits(limits: Limits, bounds: Bounds, op: Op) -> Self {
+        let mut run = Self::with(bounds, op);
+        run.limits = limits;
+        run
+    }
     fn record(&mut self, step: PlanStep) -> PlanStep {
         if let PlanStep::Send(exchange) = &step {
             self.exchanges.push(exchange.clone()).expect("fixture exchange bound");
@@ -361,7 +366,7 @@ impl Run {
         };
         self.record(step)
     }
-    fn hear(&mut self, heard: Heard) -> Option<PlanStep> {
+    pub fn hear(&mut self, heard: Heard) -> Option<PlanStep> {
         let step = match self.plan.heard(heard, self.bounds, WORD, &mut self.tables) {
             Ok(step) => step,
             Err(error) => Some(PlanStep::Done(Err(error))),

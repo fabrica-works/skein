@@ -258,7 +258,11 @@ impl Plan {
                     Body::Document(document) => Some(document),
                     Body::Empty => None,
                     Body::Malformed(crate::forgejo::decode::Malformed::Bound { .. }) => {
-                        return Err(self.error(api::Error::TooLarge));
+                        return Err(self.error(if self.before_write() {
+                            api::Error::TooLarge
+                        } else {
+                            api::Error::Timeout
+                        }));
                     }
                     Body::Malformed(_) | Body::Raw { .. } => return Err(self.error(api::Error::Timeout)),
                 };

@@ -161,6 +161,9 @@ impl Plan {
                         self.done(document, bounds)
                     }
                     Body::Raw { bytes, more } => self.raw(bytes, more, bounds),
+                    Body::Malformed(crate::forgejo::decode::Malformed::Bound { field }) => {
+                        Err(if field == b"log" { api::Error::InvalidAnswer } else { api::Error::TooLarge })
+                    }
                     Body::Empty | Body::Malformed(_) => Err(api::Error::InvalidAnswer),
                 }
             }
