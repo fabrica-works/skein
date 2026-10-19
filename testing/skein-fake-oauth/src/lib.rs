@@ -11,6 +11,12 @@ use skein_oauth::{
     encode_error, encode_response,
 };
 
+mod terms;
+pub use terms::{ISSUED, Terms};
+
+#[cfg(test)]
+mod tests;
+
 pub const MAX_OUT: u32 = 1;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -21,11 +27,20 @@ pub struct Limits {
     pub codes: u32,
     pub rotations: u32,
     pub plans: u32,
+    /// Names retained from the last request beyond OAuth’s own fields.
+    pub carried: u32,
 }
 
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
+    let fields = 10_u32.checked_add(limits.carried)?;
     skein_oauth::worst_case(&limits.document)?
+        .checked_add(terms::worst_case(limits)?)?
+        .checked_add(List::<Field>::worst_case(fields)?)?
+        .checked_add(
+            u64::from(limits.codes)
+                .checked_mul(u64::from(limits.uri_bytes).checked_add(u64::from(limits.document.string_bytes))?)?,
+        )?
         .checked_add(List::<Code>::worst_case(limits.codes)?)?
         .checked_add(u64::from(limits.codes).checked_mul(59)?)?
         .checked_add(List::<Box<[u8]>>::worst_case(limits.rotations)?)?
@@ -44,6 +59,8 @@ pub struct Config {
     pub client_secret: Option<Box<[u8]>>,
     pub redirect_uri: Box<[u8]>,
     pub refresh_token: Box<[u8]>,
+    /// Optional issued-registration and revocation terms.
+    pub terms: Option<Terms>,
 }
 
 #[expect(missing_debug_implementations, reason = "response plans contain tokens")]
@@ -71,7 +88,7 @@ pub enum Event {
 
 #[expect(missing_debug_implementations, reason = "outputs contain codes or tokens")]
 pub enum Request {
-    Redirect { uri: Box<[u8]>, state: Box<[u8]>, code: Box<[u8]> },
+    Redirect { uri: Box<[u8]>, state: Box<[u8]>, code: Box<[u8]>, client_id: Option<Box<[u8]>> },
     Http(HttpResponse),
     Refused,
 }
@@ -86,6 +103,9 @@ pub enum Error {
 struct Code {
     value: Box<[u8]>,
     challenge: Option<Box<[u8]>>,
+    redirect_uri: Box<[u8]>,
+    #[expect(dead_code, reason = "the authorization nonce is retained for the ID token")]
+    nonce: Option<Box<[u8]>>,
     used: bool,
     expires: Time,
 }
@@ -95,6 +115,7 @@ struct Pending {
     body: Box<[u8]>,
     retry_after: Duration,
     due: Time,
+    revoke: bool,
 }
 struct Field {
     key: Box<[u8]>,
@@ -112,6 +133,9 @@ pub struct Issuer {
     posts: u64,
     next_code: u64,
     pending: Option<Pending>,
+    carried: List<Box<[u8]>>,
+    authorizations: usize,
+    revoked: bool,
 }
 
 impl Issuer {
@@ -130,6 +154,7 @@ impl Issuer {
             || config.authorization_url.len() > usize::try_from(limits.uri_bytes).expect("u32 fits")
             || config.token_endpoint.len() > usize::try_from(limits.uri_bytes).expect("u32 fits")
             || config.redirect_uri.len() > usize::try_from(limits.uri_bytes).expect("u32 fits")
+            || !terms::valid(config.terms.as_ref(), &limits)
             || secret_too_large
         {
             return Err(Error::Limits);
@@ -144,6 +169,9 @@ impl Issuer {
             posts: 0,
             next_code: 1,
             pending: None,
+            carried: List::with_capacity(limits.carried),
+            authorizations: 0,
+            revoked: false,
         })
     }
 
@@ -188,6 +216,29 @@ impl Issuer {
         Some(self.pending.as_ref()?.due)
     }
 
+    /// Names beyond OAuth’s own fields in the last authorization or POST, in order.
+    #[must_use]
+    pub fn carried(&self) -> &[Box<[u8]>] {
+        self.carried.as_slice()
+    }
+
+    /// Access tokens in queued successful token plans; the script mints none.
+    #[must_use]
+    pub fn granted(&self) -> Box<[Box<[u8]>]> {
+        let mut tokens = List::with_capacity(self.plans.len());
+        for plan in &self.plans {
+            if (200..300).contains(&plan.status) {
+                match &plan.body {
+                    Body::Token(token) => {
+                        tokens.push(token.access_token.clone()).expect("one per plan");
+                    }
+                    Body::Error(_) | Body::Raw(_) => {}
+                }
+            }
+        }
+        tokens.into_boxed()
+    }
+
     pub fn step(&mut self, event: Event, out: &mut Queue<Request>) {
         assert!(out.room() >= MAX_OUT, "world reserves one issuer output");
         match event {
@@ -199,6 +250,7 @@ impl Issuer {
     }
 
     fn authorize(&mut self, url: &[u8], now: Time, out: &mut Queue<Request>) {
+        self.carried.clear();
         let Some(query_at) = bytes::find(url, b"?") else {
             out.push(Request::Refused);
             return;
@@ -219,9 +271,21 @@ impl Issuer {
             out.push(Request::Refused);
             return;
         };
+        if !terms::observe(&fields, &mut self.carried, &self.limits) {
+            out.push(Request::Refused);
+            return;
+        }
+        let redirect = field(&fields, b"redirect_uri");
+        if let Some(nonce) = field(&fields, b"nonce")
+            && nonce.len() > usize::try_from(self.limits.document.string_bytes).expect("u32 fits")
+        {
+            out.push(Request::Refused);
+            return;
+        }
         if field(&fields, b"response_type") != Some(b"code".as_slice())
-            || field(&fields, b"client_id") != Some(self.config.client_id.as_ref())
-            || field(&fields, b"redirect_uri") != Some(self.config.redirect_uri.as_ref())
+            || !terms::authorization_client(&self.config, self.authorizations, field(&fields, b"client_id"))
+            || !terms::redirect(&self.config, redirect)
+            || terms::too_long(redirect, self.limits.uri_bytes)
             || self.codes.room() == 0
         {
             out.push(Request::Refused);
@@ -254,6 +318,8 @@ impl Issuer {
         let entry = Code {
             value: code.clone(),
             challenge: copy_optional(challenge),
+            redirect_uri: bytes::copy_of(redirect.expect("redirect checked")),
+            nonce: copy_optional(field(&fields, b"nonce")),
             used: false,
             expires: now.saturating_add(Duration::from_secs(120)),
         };
@@ -261,14 +327,17 @@ impl Issuer {
             out.push(Request::Refused);
             return;
         }
+        self.authorizations = self.authorizations.saturating_add(1);
         out.push(Request::Redirect {
-            uri: bytes::copy_of(&self.config.redirect_uri),
+            uri: bytes::copy_of(redirect.expect("redirect checked")),
+            client_id: terms::issued(&self.config, self.authorizations),
             state: bytes::copy_of(state),
             code,
         });
     }
 
     fn post(&mut self, request: HttpRequest, now: Time, wall: Wall, out: &mut Queue<Request>) {
+        self.carried.clear();
         if self.pending.is_some() {
             out.push(Request::Refused);
             return;
@@ -278,7 +347,8 @@ impl Issuer {
             return;
         };
         self.posts = posts;
-        if request.endpoint != self.config.token_endpoint
+        let revocation = terms::revocation(&self.config, &request.endpoint);
+        if (!revocation && request.endpoint != self.config.token_endpoint)
             || request.body.len() > usize::try_from(self.limits.request_bytes).expect("u32 fits")
         {
             self.refuse(request.id, now, wall, out);
@@ -295,17 +365,17 @@ impl Issuer {
             self.refuse(request.id, now, wall, out);
             return;
         };
-        if field(&fields, b"client_id") != Some(self.config.client_id.as_ref())
+        if !terms::observe(&fields, &mut self.carried, &self.limits) {
+            out.push(Request::Refused);
+            return;
+        }
+        if field(&fields, b"client_id") != Some(terms::latest(&self.config, self.authorizations))
             || field(&fields, b"client_secret") != self.config.client_secret.as_deref()
         {
             self.refuse(request.id, now, wall, out);
             return;
         }
-        let accepted = match field(&fields, b"grant_type") {
-            Some(b"refresh_token") => self.refresh(&fields),
-            Some(b"authorization_code") => self.redeem(&fields, now),
-            Some(_) | None => false,
-        };
+        let accepted = self.accepted(&fields, revocation, now);
         if !accepted {
             self.refuse(request.id, now, wall, out);
             return;
@@ -316,7 +386,8 @@ impl Issuer {
         };
         let (body, next_refresh) = match plan.body {
             Body::Token(value) => {
-                let next = if (200..300).contains(&plan.status) { value.refresh_token.clone() } else { None };
+                let next =
+                    if !revocation && (200..300).contains(&plan.status) { value.refresh_token.clone() } else { None };
                 let Ok(body) = encode_response(&value, &self.limits.document) else {
                     out.push(Request::Refused);
                     return;
@@ -359,22 +430,37 @@ impl Issuer {
             body,
             retry_after: plan.retry_after,
             due: now.saturating_add(plan.delay),
+            revoke: revocation && (200..300).contains(&plan.status),
         });
         self.deliver(now, wall, out);
     }
 
+    fn accepted(&mut self, fields: &List<Field>, revocation: bool, now: Time) -> bool {
+        if revocation {
+            !self.revoked
+                && field(fields, b"token") == Some(self.config.refresh_token.as_ref())
+                && field(fields, b"token_type_hint") == Some(b"refresh_token".as_slice())
+        } else {
+            match field(fields, b"grant_type") {
+                Some(b"refresh_token") => self.refresh(fields),
+                Some(b"authorization_code") => self.redeem(fields, now),
+                Some(_) | None => false,
+            }
+        }
+    }
+
     fn refresh(&self, fields: &List<Field>) -> bool {
-        field(fields, b"refresh_token") == Some(self.config.refresh_token.as_ref())
+        !self.revoked && field(fields, b"refresh_token") == Some(self.config.refresh_token.as_ref())
     }
 
     fn redeem(&mut self, fields: &List<Field>, now: Time) -> bool {
-        if field(fields, b"redirect_uri") != Some(self.config.redirect_uri.as_ref()) {
-            return false;
-        }
         let Some(code) = field(fields, b"code") else { return false };
         for index in 0..self.codes.len() {
             let Some(entry) = self.codes.get_mut(index) else { return false };
             if entry.value.as_ref() == code && !entry.used && entry.expires > now {
+                if field(fields, b"redirect_uri") != Some(entry.redirect_uri.as_ref()) {
+                    return false;
+                }
                 if let Some(expected) = &entry.challenge {
                     let Some(verifier) = field(fields, b"code_verifier") else { return false };
                     let Ok(got) = challenge(verifier) else { return false };
@@ -396,7 +482,7 @@ impl Issuer {
             Ok(body) => body,
             Err(_) => bytes::copy_of(b"{}"),
         };
-        self.pending = Some(Pending { id, status: 400, body, retry_after: Duration::ZERO, due: now });
+        self.pending = Some(Pending { id, status: 400, body, retry_after: Duration::ZERO, due: now, revoke: false });
         self.deliver(now, wall, out);
     }
 
@@ -405,6 +491,9 @@ impl Issuer {
         if now < pending.due {
             self.pending = Some(pending);
             return;
+        }
+        if pending.revoke {
+            self.revoked = true;
         }
         out.push(Request::Http(HttpResponse {
             id: pending.id,
@@ -448,7 +537,7 @@ fn json_fields(body: &[u8], limits: &Limits) -> Result<List<Field>, Error> {
     if tokens.first() != Some(&Token::ObjectStart) || tokens.last() != Some(&Token::ObjectEnd) {
         return Err(Error::Plan);
     }
-    let mut fields = List::with_capacity(10);
+    let mut fields = List::with_capacity(10_u32.checked_add(limits.carried).ok_or(Error::Limits)?);
     let mut at = 1_usize;
     while at < tokens.len().saturating_sub(1) {
         let Some(Token::Key(key)) = tokens.get(at) else { return Err(Error::Plan) };
@@ -463,7 +552,7 @@ fn form_fields(body: &[u8], limits: &Limits) -> Result<List<Field>, Error> {
     if body.len() > usize::try_from(limits.request_bytes).expect("u32 fits") {
         return Err(Error::Plan);
     }
-    let mut fields = List::with_capacity(10);
+    let mut fields = List::with_capacity(10_u32.checked_add(limits.carried).ok_or(Error::Limits)?);
     let mut at = 0_usize;
     loop {
         let remaining = body.get(at..).ok_or(Error::Plan)?;

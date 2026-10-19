@@ -2,7 +2,7 @@ use skein_fake_oauth as fake;
 use skein_heap::{Counting, Meter};
 use skein_lib::{Duration, Queue, Time, Wall};
 use skein_oauth as oauth;
-use skein_oauth_world::{boxed, client_limits, documents, registration, terms, visit};
+use skein_oauth_world::{boxed, client_limits, documents, issued, registration, terms, visit};
 
 #[global_allocator]
 static HEAP: Counting = Counting;
@@ -70,7 +70,8 @@ fn check_client(document: oauth::Limits) {
 }
 
 fn check_issuer(document: oauth::Limits) {
-    let fake_limits = fake::Limits { document, uri_bytes: 256, request_bytes: 1024, codes: 8, rotations: 8, plans: 8 };
+    let fake_limits =
+        fake::Limits { document, uri_bytes: 256, request_bytes: 16384, codes: 8, rotations: 8, plans: 8, carried: 8 };
     let bound = fake::worst_case(&fake_limits).expect("bound");
     let meter = Meter::new();
     let mut issuer = fake::Issuer::new(
@@ -81,6 +82,7 @@ fn check_issuer(document: oauth::Limits) {
             client_secret: None,
             redirect_uri: boxed(b"http://127.0.0.1:1234/callback"),
             refresh_token: boxed(b"seed"),
+            terms: Some(issued(&[&[b'c'; 1024][..]; fake::ISSUED])),
         },
         fake_limits,
     )
@@ -100,6 +102,15 @@ fn check_issuer(document: oauth::Limits) {
             retry_after: Duration::ZERO,
         })
         .expect("plan");
+    let mut url = b"https://issuer.example/authorize?response_type=code&client_id=client&redirect_uri=http://127.0.0.1:1234/callback&state=0123456789abcdef&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256".to_vec();
+    for index in 0..fake_limits.carried {
+        url.push(b'&');
+        url.extend(std::iter::repeat_n(b'a', usize::try_from(document.string_bytes).expect("u32 fits")));
+        url.extend_from_slice(format!("={index}").as_bytes());
+    }
+    let mut authorization = Queue::with_capacity(fake::MAX_OUT);
+    issuer.step(fake::Event::Authorize { url: url.into_boxed_slice(), now: Time::ZERO }, &mut authorization);
+    drop(authorization.pop());
     let request = oauth::HttpRequest {
         id: 1,
         endpoint: boxed(b"https://issuer.example/token"),

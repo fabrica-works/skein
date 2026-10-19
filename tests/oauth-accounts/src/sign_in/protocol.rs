@@ -26,6 +26,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             client_secret: registration.client_secret.clone(),
             redirect_uri: registration.redirect_uri.clone(),
             refresh_token: bytes::copy_of(b"seed"),
+            terms: None,
         },
         fake::Limits {
             document: profile.client.document,
@@ -34,6 +35,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             codes: 1,
             rotations: 2,
             plans: 2,
+            carried: 0,
         },
     )
     .expect("issuer");
@@ -54,7 +56,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             })
             .expect("plan");
     }
-    let server_limits = http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 2048, send: 256 };
+    let server_limits = http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 2059, send: 256 };
     let mut server = http::Server::new(&server_limits);
     let mut server_events = Queue::with_capacity(ROOM);
     let mut server_requests = Queue::with_capacity(ROOM);
@@ -93,9 +95,10 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             scripted = true;
             if !matches!(story, Story::Cancel | Story::Abort | Story::Timeout) {
                 issuer.step(fake::Event::Authorize { url: url.clone(), now }, &mut issuer_out);
-                let Some(fake::Request::Redirect { uri, state, code }) = issuer_out.pop() else {
+                let Some(fake::Request::Redirect { uri, state, code, client_id }) = issuer_out.pop() else {
                     panic!("authorized fake browser")
                 };
+                drop(client_id);
                 let mut location = uri.to_vec();
                 location.extend_from_slice(b"?state=");
                 location.extend_from_slice(&state);

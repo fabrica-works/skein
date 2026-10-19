@@ -57,9 +57,10 @@ fn make(transport: Transport) -> oauth::Peer {
             client_secret: None,
             redirect_uri: bytes::copy_of(b"http://127.0.0.1:1234/callback"),
             refresh_token: bytes::copy_of(b"seed"),
+            terms: None,
         },
-        issuer::Limits { document, uri_bytes: 256, request_bytes: 1024, codes: 2, rotations: 2, plans: 2 },
-        skein_http::server::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 2048, send: 512 },
+        issuer::Limits { document, uri_bytes: 256, request_bytes: 1024, codes: 2, rotations: 2, plans: 2, carried: 0 },
+        skein_http::server::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 2059, send: 512 },
     )
     .expect("the issuer fixture has usable limits")
 }

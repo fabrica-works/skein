@@ -10,3 +10,8 @@ policy.
 
 It works on records: over a network, the caller's `skein-http` stack frames
 them, as `skein-fake-peers`' `oauth::Peer` does.
+
+Optional terms issue client ids, retain each authorization’s loopback redirect,
+observe added field names, and answer revocation from the same plan queue.
+`granted()` lists the queued successful access tokens for a world’s LLM peer.
+Revocation spends the refresh token when its successful answer is delivered.

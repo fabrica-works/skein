@@ -54,7 +54,15 @@ pub fn client_limits() -> oauth::ClientLimits {
 }
 #[must_use]
 pub fn fake_limits() -> fake::Limits {
-    fake::Limits { document: documents(), uri_bytes: 256, request_bytes: 1024, codes: 8, rotations: 8, plans: 8 }
+    fake::Limits {
+        document: documents(),
+        uri_bytes: 256,
+        request_bytes: 1024,
+        codes: 8,
+        rotations: 8,
+        plans: 8,
+        carried: 8,
+    }
 }
 #[must_use]
 pub fn registration(public: bool) -> oauth::Registration {
@@ -77,10 +85,17 @@ pub fn registration(public: bool) -> oauth::Registration {
 }
 #[must_use]
 pub fn issuer(public: bool) -> fake::Issuer {
-    issuer_for(&registration(public))
+    issuer_with(public, None)
 }
 #[must_use]
 pub fn issuer_for(registration: &oauth::Registration) -> fake::Issuer {
+    configured_issuer(registration, None)
+}
+#[must_use]
+pub fn issuer_with(public: bool, terms: Option<fake::Terms>) -> fake::Issuer {
+    configured_issuer(&registration(public), terms)
+}
+fn configured_issuer(registration: &oauth::Registration, terms: Option<fake::Terms>) -> fake::Issuer {
     fake::Issuer::new(
         fake::Config {
             authorization_url: registration.authorization_url.clone(),
@@ -89,6 +104,7 @@ pub fn issuer_for(registration: &oauth::Registration) -> fake::Issuer {
             client_secret: registration.client_secret.clone(),
             redirect_uri: registration.redirect_uri.clone(),
             refresh_token: boxed(b"seed"),
+            terms,
         },
         fake_limits(),
     )
@@ -161,12 +177,35 @@ pub fn error(status: u16, code: &[u8], retry_after: u64) -> fake::Plan {
 }
 #[must_use]
 pub fn sign_in(client: &mut oauth::Client, issuer: &mut fake::Issuer, public: bool) -> oauth::HttpRequest {
-    let url = visit(client, registration(public), None, None);
-    if public {
-        assert!(bytes::find(&url, b"code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM").is_some());
-    }
+    sign_in_with(client, issuer, registration(public))
+}
+#[must_use]
+pub fn sign_in_with(
+    client: &mut oauth::Client,
+    issuer: &mut fake::Issuer,
+    registration: oauth::Registration,
+) -> oauth::HttpRequest {
+    let url = visit(client, registration, None, None);
     let event = redirected(issuer, url);
     http(client_step(client, event))
+}
+#[must_use]
+pub fn issued(ids: &[&[u8]]) -> fake::Terms {
+    fake::Terms {
+        issued: ids.iter().map(|id| boxed(id)).collect(),
+        omit_issued: false,
+        revocation_endpoint: Some(boxed(b"https://issuer.example/revoke")),
+        varying_port: false,
+    }
+}
+#[must_use]
+pub fn issuing_registration() -> oauth::Registration {
+    let mut registration = registration(true);
+    let mut additions = terms();
+    additions.issued_client_id = true;
+    additions.revocation_endpoint = Some(boxed(b"https://issuer.example/revoke"));
+    registration.terms = Some(additions);
+    registration
 }
 
 #[must_use]
@@ -218,8 +257,8 @@ pub fn visit(
 #[must_use]
 pub fn redirected(issuer: &mut fake::Issuer, url: Box<[u8]>) -> oauth::Event {
     let redirect = fake_step(issuer, fake::Event::Authorize { url, now: time(1) });
-    let Some(fake::Request::Redirect { uri, state, code }) = redirect else { panic!("redirect expected") };
-    oauth::Event::Redirected { client_id: None, uri, state, code: Some(code), error: None, now: time(2) }
+    let Some(fake::Request::Redirect { uri, state, code, client_id }) = redirect else { panic!("redirect expected") };
+    oauth::Event::Redirected { client_id, uri, state, code: Some(code), error: None, now: time(2) }
 }
 
 #[must_use]

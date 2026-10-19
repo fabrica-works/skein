@@ -387,9 +387,9 @@ impl Peer {
     fn deliver(&mut self, origin: Option<usize>) {
         if let Some(output) = self.outgoing.pop() {
             match output {
-                issuer::Request::Redirect { uri, state, code } => {
+                issuer::Request::Redirect { uri, state, code, client_id } => {
                     let index = origin.expect("authorization emits synchronously");
-                    let location = redirect(&uri, &state, &code, self.http_limits.response)
+                    let location = redirect(&uri, &state, &code, client_id.as_deref(), self.http_limits.response)
                         .expect("configured redirect response cap");
                     let payload_bytes = u64::try_from(location.len()).expect("bounded redirect");
                     self.reserve_observation(payload_bytes);
@@ -577,7 +577,11 @@ pub fn worst_case(limits: &Limits, issuer: &issuer::Limits, http: &http::Limits,
         || http.send == 0
         || http.headers < 2
         || http.response
-            < issuer.uri_bytes.checked_add(issuer.document.string_bytes.checked_mul(3)?)?.checked_add(256)?
+            < issuer
+                .uri_bytes
+                .checked_add(issuer.document.string_bytes.checked_mul(3)?)?
+                .checked_add(issuer.document.string_bytes.checked_mul(3)?)?
+                .checked_add(267)?
     {
         return None;
     }
@@ -616,9 +620,14 @@ fn path(url: &[u8], transport: Transport) -> Result<Box<[u8]>, Error> {
     Ok(bytes::copy_of(target))
 }
 
-fn redirect(uri: &[u8], state: &[u8], code: &[u8], cap: u32) -> Option<Box<[u8]>> {
-    let size =
-        uri.len().checked_add(state.len().checked_mul(3)?)?.checked_add(code.len().checked_mul(3)?)?.checked_add(13)?;
+fn redirect(uri: &[u8], state: &[u8], code: &[u8], client_id: Option<&[u8]>, cap: u32) -> Option<Box<[u8]>> {
+    let size = uri
+        .len()
+        .checked_add(state.len().checked_mul(3)?)?
+        .checked_add(code.len().checked_mul(3)?)?
+        .checked_add(13)?
+        .checked_add(client_id.map_or(0, <[u8]>::len).checked_mul(3)?)?
+        .checked_add(11)?;
     if size > usize::try_from(cap).ok()? {
         return None;
     }
@@ -628,6 +637,10 @@ fn redirect(uri: &[u8], state: &[u8], code: &[u8], cap: u32) -> Option<Box<[u8]>
     percent(code, &mut location);
     location.extend_from_slice(b"&state=");
     percent(state, &mut location);
+    if let Some(client_id) = client_id {
+        location.extend_from_slice(b"&client_id=");
+        percent(client_id, &mut location);
+    }
     Some(location.into_boxed_slice())
 }
 
@@ -649,13 +662,19 @@ mod tests {
     #[test]
     fn redirect_preserves_registered_uri_and_escapes_code_and_state() {
         assert_eq!(
-            redirect(b"http://127.0.0.1:1234/callback", b"state with +&%", b"code?=#", 1024).unwrap().as_ref(),
+            redirect(b"http://127.0.0.1:1234/callback", b"state with +&%", b"code?=#", None, 1024).unwrap().as_ref(),
             b"http://127.0.0.1:1234/callback?code=code%3F%3D%23&state=state%20with%20%2B%26%25"
         );
         assert_eq!(
-            redirect(b"http://127.0.0.1:1234/callback?kept=yes", b"0123456789abcdef", b"code", 1024).unwrap().as_ref(),
+            redirect(b"http://127.0.0.1:1234/callback?kept=yes", b"0123456789abcdef", b"code", None, 1024)
+                .unwrap()
+                .as_ref(),
             b"http://127.0.0.1:1234/callback?kept=yes&code=code&state=0123456789abcdef"
         );
-        assert!(redirect(b"http://127.0.0.1:1234/callback", b"state", b"code", 4).is_none());
+        assert_eq!(
+            redirect(b"http://127.0.0.1:1234/callback", b"state", b"code", Some(b"client +"), 1024).unwrap().as_ref(),
+            b"http://127.0.0.1:1234/callback?code=code&state=state&client_id=client%20%2B"
+        );
+        assert!(redirect(b"http://127.0.0.1:1234/callback", b"state", b"code", None, 4).is_none());
     }
 }

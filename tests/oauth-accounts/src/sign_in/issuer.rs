@@ -32,6 +32,7 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             client_secret: registration.client_secret,
             redirect_uri: registration.redirect_uri,
             refresh_token: if large { vec![b's'; 256].into_boxed_slice() } else { bytes::copy_of(b"seed") },
+            terms: None,
         },
         fake::Limits {
             document: profile.client.document,
@@ -40,6 +41,7 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             codes: 1,
             rotations: 2,
             plans: 2,
+            carried: 0,
         },
         profile.server,
     )
