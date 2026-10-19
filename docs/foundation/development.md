@@ -167,12 +167,20 @@ the implementers.
   can neither end its turn and be woken, nor hand over. In smith's parity
   plan, a planner run as a sub-agent reached 572K tokens, with 136 of its
   193 requests past 300K, and waited in polling loops.
+- **Splits a design's steps across plans first** (section 5.1): from the
+  step list and its longest chain, before it drafts any session file, and
+  then drafts only the first plan's sessions. In temper's tools plan,
+  sixteen Opus drafters ran from 22:29 and the split came at 01:46: about
+  $62 of drafts became the next plan's `findings/next/`, to be checked
+  again against the `main` the run left.
 - **Does not change the design while planning.** A gap the plan exposes is
   closed by the designer, under the designer's rules, before the plan
-  relies on it. The planner traces the design (section 5.4) before it
-  drafts the session files, and has every gap the trace finds answered
-  first. In temper's forge-setup plan, the drafts came first: $81 of
-  them raised 45 questions, and their revisions and fixes cost $69 more.
+  relies on it. The planner traces the design, and maps what its output
+  prints to the upstream types that carry it (section 5.4), before it
+  drafts the session files, and has every gap the trace or the map finds
+  answered first. In temper's forge-setup plan, the drafts came first:
+  $81 of them raised 45 questions, and their revisions and fixes cost $69
+  more.
 - **Writes for the executor** (section 4.5). The coordinator and the
   implementers follow the plan's words as written.
 - **Runs what it prescribes** before the plan lands (section 5.4), through
@@ -285,6 +293,10 @@ they are away. Its working files are in `~/src/rust/tmp/director/`.
   minutes of its writing. It relays to the user only the decisions with
   long-term consequences that would be hard to change, and records each
   call it makes, which the user may overturn.
+- **Decides a run's design questions when no designer is joined,** each
+  decision naming the design text it changes, and has a designer land
+  those changes before the next plan on that design is planned (section
+  10.4).
 - **Resumes the roles a usage limit stopped,** at the reset time they
   gave (section 10.5).
 - **Decides the retrospectives' proposals** (section 15.1), and asks the
@@ -442,7 +454,7 @@ machine's run. Nothing here is versioned.
 | `sessions/<repository>-<NN>.md` | the implementer | its session's checkpoint (section 8.6) |
 | `logs/` | `heavy`; the implementers | each heavy command's output, and `heavy.tsv`, the queue's statistics (section 11.2); without an active run, `~/src/rust/tmp/logs/`. Each session's scripts and long outputs, in `logs/<repository>-<NN>/` |
 | `downstream/<repository>/` | `plan downstream` | fresh worktrees of downstream mains, removed on every exit |
-| `wt/<repository>-<NN>/` | `plan worktree` | the session's worktree, with its own `target/`; beside them, the supervisor's `wt/<repository>-tier/` for the process tier (section 14.1) and its "Done when" worktrees (supervisor.md, section 8), all removed at the run's end (section 7.6) |
+| `wt/<repository>-<NN>/` | `plan worktree` | the session's worktree, with its own `target/`; beside them, the supervisor's `wt/<repository>-tier/` for the process tier (section 14.1), its ready checks' `wt/<repository>-<NN>r/` (section 10.4) and its "Done when" worktrees (supervisor.md, section 8), all removed at the run's end (section 7.6) |
 
 The escalation files are written whole and renamed into place, so the
 other side never reads half a file. A writer that finds its file still
@@ -718,6 +730,13 @@ everything those agents read: plans, prompts, unblocks and steers.
   - or a line of `plan pulse` (section 14).
 
   Rules that are only written down drift.
+- **A check fails when it reads nothing.** A command that reads a value
+  out of a file and checks it fails when it reads none: an empty
+  revision, count or line is a failure, never a pass. It matches what
+  names the thing (a repository's name, `/skein.git#`), not what may be
+  renamed (its organization). In temper's tools run, a "Done when" item
+  read an empty revision for hearth and checked skein's index instead
+  (section 5.2).
 - **Repeat what matters where it applies.** Rules buried in a long README
   are missed. A session file repeats the two or three that bind its
   increments.
@@ -775,6 +794,16 @@ user only what they and the design leave open, and asks before writing.
   changed (section 5.7).
 - **Scope.** The plan names the repositories it changes; the others are
   read only, but for its repins.
+- **A plan's size.** A design whose longest chain passes about 20
+  increments, or whose steps pass about 80, runs as consecutive plans.
+  The planner splits it from the step list and its longest chain, before
+  it drafts any session file, and drafts only the first plan's sessions;
+  the rest goes in `later.md` as the next plan's scope, naming where it
+  starts. Each later plan is written once the plan before it has landed,
+  against the `main` it left. In temper's client-api run, 159 steps at
+  0.38 hours a step took 302 rulings, 130 of them correcting Shapes that
+  drifted with each landing; render's 168 steps, at 0.08 hours on a
+  short chain, show that length alone is not the cause.
 - **Credentials and live services.** The plan names each one it uses, how
   it is borrowed (read only, from the user's existing login), that no
   agent signs in, and the budget of calls or tokens each may spend.
@@ -810,9 +839,13 @@ user only what they and the design leave open, and asks before writing.
   Needs at start, and Increments that need more. Then how many sessions
   can start at once, and the order in which to start them when slots are
   short: first the ones others wait on. Then the longest chain of
-  increments that must land one after another, with its hours at the
-  last runs' `step_h` (0.09 to 0.14 hours a step): no run ends before
-  it;
+  increments that must land one after another, step by step (`temper
+  01.1`, `temper 01.2`, …), with its hours at the
+  last runs' `chain_step_min`, the median minutes from a chain step's
+  start to its landing (24 in temper's tools run): no run ends before
+  it. `step_h` falls as steps run at once, and a chain step's own time
+  does not: in temper's tools run, the README projected the chain at 1.9
+  to 2.9 hours from `step_h`, and it took 7.9 of the run's 8.3;
 - **Rules of this plan:** only what this document, the repositories'
   `AGENTS.md` and their workflows do not say. For example: fences ("this
   increment lands after every other skein increment"), version owners,
@@ -869,7 +902,13 @@ user only what they and the design leave open, and asks before writing.
   test, a file or a member that a later session's Files may rename or
   move; a live item's command reads the summary its run committed. In
   temper's forge-setup run, five of seven items failed so, after every
-  step had landed. The supervisor runs each
+  step had landed. A command that reads a value out of a file (a
+  revision, a count, a version) fails when it reads none, and a pin
+  check matches the repository's name in the lock (`/skein.git#`), not
+  its organization (section 4.5). In temper's tools run, item 11 passed
+  for hearth on an empty revision, reading skein's index, and the
+  organization's rename would have passed it, item 12 and the plan's
+  Pins rule for every repository. The supervisor runs each
   once, after `done.md` (section 7.6). A plan that proves with live probes
   counts the probes calibrated in their task files.
 
@@ -1124,7 +1163,8 @@ landed with `land --docs` (section 5.4).
     runs;
   - each "Done when" item, against the Files of the sessions that land
     after what it reads: one that greps the history, counts a whole file,
-    or names a test, a file or a member those Files may rename or move
+    or names a test, a file or a member those Files may rename or move,
+    and each that passes when it reads nothing or names an organization
     (section 5.2);
   - each test-time aim that names no packages, in a plan whose repository
     another run lands on (section 5.2).
@@ -1143,6 +1183,18 @@ landed with `land --docs` (section 5.4).
   four of the seven design questions were in such text: `ui-web.md`,
   section 6, gives `Control+K` or `Meta+K` by platform, and 09.3's Shape
   took no platform.
+- **An upstream map, with the trace.** A sub-agent maps each thing the
+  design's output prints (each field, cursor, bound and act) to the
+  upstream type that carries it, by path and symbol on the upstream
+  `origin/main`, in `findings/`. Each with no carrier (a field with no
+  default and no `Option`, an act no tool performs, a recipient nothing
+  keeps), or past the upstream bound, goes to the designer as the trace's
+  gaps do. Each step's Size counts the types it covers: an encoder for
+  each of 23 types is 23 encoders' lines. In temper's tools run, all
+  eight design questions, J to Q, were such mismatches (50 rows past a
+  ceiling of 32, two cursors for one, a read with no row count), five
+  came up in temper 03 within an hour, and 03.2's Size of 300 covered 23
+  encoders, one per type of jig's contract: 6,008 lines.
 - **The plan's commands, run once.** At the plan's base, the planner runs,
   through `heavy` (section 11.1):
   - every command the plan prescribes: each Proof, each count, each "Done
@@ -2227,6 +2279,17 @@ without `## `, separated by `; `.
   files to `supervision.md` under "Question and answer, <time>", and
   deletes them. In skein-ui, ruling 131's Decision, a whole answer,
   became a 19.6K-character prompt.
+- **A design question decided without the designer reaches the design
+  before the next plan on it is planned.** When no designer is joined,
+  and the director or the user decides it (section 2.7), the decision
+  names the design text it changes: the document, its section, and what
+  that text will say. The supervisor records it in `supervision.md` as
+  it would an answer, and the designer lands the change with `land
+  --docs`, at the latest before a planner starts on that design. In
+  temper's tools run, no designer was joined, the director decided all
+  eight questions as their defaults, and at the run's end five of them,
+  M to Q, were in the code and not in `tools.md`, which the next plan's
+  planner was reading.
 - **A measured aim's first miss goes to the designer at once.** When the
   run that measures a plan's measured aim first (its baseline) misses a
   criterion (section 5.1), the supervisor asks the designer, in
@@ -2242,7 +2305,14 @@ without `## `, separated by `; `.
   (`<repository>-<NN>.s<k>`), before `plan ready`: never "a question to
   raise when reached". In skein-ui, a seed that jig 05's check saw fail
   at 17:05 was ruled such a question, and reached the designer at 17:28,
-  once the session had met it.
+  once the session had met it. A check or re-check finds it by compiling
+  the step's sketches and running only the tests of the crates its Files
+  name and their dependents (`rdeps(…)`), never the whole workspace or
+  its fuzzy and browser profiles, which the step's land gate runs, in the
+  worktree `wt/<repository>-<NN>r` (supervisor.md, section 5). In
+  temper's tools run, the supervisor's 193 scratch tasks, 17 of them
+  whole-workspace runs, were 51% of the build lane's waiting, and a
+  scratch worktree at a session's path blocked temper 02.1 (ruling 111).
 - **Before an answer is sent,** its author checks it against the code
   (the code graph indexes `main`) and quotes the text it rests on.
   - An answer keeps the plan's relative checks ("62 less the removed"). A
@@ -2886,6 +2956,7 @@ counts them by hand.
 | `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes |
 | `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan (a split's lettered parts included), steps added during the run (every `.s<k>` and a lettered part whose parent is not `split`), steps dropped; a `split` row counts in none; `-repin` is planned |
 | `step_h` | `running_h` per landed step |
+| `chain_step_min` | the median minutes from a step's start to its landing, over the steps of the chain the README names: what the next README projects its chain at (section 5.2); the next kit batch computes it |
 | `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing |
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |
 | `blocked_h` | hours in which at least one block was open |

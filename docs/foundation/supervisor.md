@@ -246,12 +246,16 @@ defects came from increments no check had read.
    mismatch: name that increment. For each thing it changes, search its
    name, its copies by content and the values derived from it, in its
    repository and each repository downstream, for users its Files miss.
-   In a scratch worktree, through heavy: compile each Rust sketch that
+   In the scratch worktree <run>/wt/<repository>-<NN>r (plan worktree
+   <repository> <NN>r; once it is there, a checkout of origin/main in
+   it), through heavy: compile each Rust sketch that
    names landed code, under clippy; apply each correction you make to
-   code (a sketch, a fixture, a world's setup), and run each suite it
-   reaches, under each profile the repository's gate runs, fuzzy
-   included. Read nothing else, and change no file outside the scratch
-   worktree. Report at most 30 lines: the commits you checked, each
+   code (a sketch, a fixture, a world's setup), and run only the tests of
+   the crates the step's Files name and their dependents (cargo nextest
+   run -E 'rdeps(<crate>)'), under the gate's default profile: never the
+   whole workspace, nor its fuzzy or browser profiles, which the step's
+   land gate runs. Read nothing else, and change no file outside the
+   scratch worktree. Report at most 30 lines: the commits you checked, each
    mismatch with its file:line and the correction, which names code by
    path and symbol, never by line number, and each suite run
    with its result. Stop at about 25 minutes, and report what you checked
