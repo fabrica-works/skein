@@ -576,6 +576,14 @@ name = "skein-fake-checkout"
 version = "0.0.0"
 
 [[package]]
+name = "skein-fake-forge-domain"
+version = "0.0.0"
+dependencies = [
+ "skein-lib",
+ "skein-world",
+]
+
+[[package]]
 name = "skein-fake-llm-domain"
 version = "0.0.0"
 dependencies = [

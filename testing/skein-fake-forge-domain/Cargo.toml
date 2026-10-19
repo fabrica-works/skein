@@ -1,0 +1,16 @@
+[package]
+name = "skein-fake-forge-domain"
+description = "The domain layer of a fake forge, for simulations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-lib.workspace = true
+
+[dev-dependencies]
+skein-world.workspace = true
+
+[lints]
+workspace = true
