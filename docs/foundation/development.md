@@ -858,8 +858,8 @@ user only what they and the design leave open, and asks before writing.
   short: first the ones others wait on. Then the longest chain of
   increments that must land one after another, step by step (`temper
   01.1`, `temper 01.2`, …), with its hours at the
-  last runs' `chain_step_min`, the median minutes from a chain step's
-  first thread's start to its landing (24 in temper's tools run, 26.6 in
+  last runs' `chain_step_min`, the median minutes from a step's
+  thread's start to its landing (24 in temper's tools run, 26.6 in
   smith's live-text run), and their `chain_step_max`, the longest, as
   its upper bound: no run ends before it. `step_h` falls as steps run at
   once, and a chain step's own time does not: in temper's tools run, the
@@ -3075,7 +3075,8 @@ counts them by hand.
 | `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes: like `wall_h`, it ends at `done.md`'s `Recorded` line |
 | `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan (a split's lettered parts included), steps added during the run (every `.s<k>` and a lettered part whose parent is not `split`), steps dropped; a `split` row counts in none; `-repin` is planned |
 | `step_h` | `running_h` per landed step |
-| `chain_step_min` | the median minutes from a step's start, its first thread's, to its landing, over the steps of the chain the README names: what the next README projects its chain at (section 5.2); the next kit batch computes it |
+| `chain_step_min` | the median minutes from a landed step's start to its last commit on `main`: the start of its thread in the ledger, a UUIDv7's time (the last thread, for a step handed over). A chain's step takes about this whatever runs beside it, so the next README projects its chain at it (section 5.2) |
+| `chain_step_max` | the longest of those spans: the chain's upper bound |
 | `chain_step_max` | the longest of those spans, in minutes; the next kit batch computes it |
 | `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing. A Kind line counts as the kind of section 10.2's set it starts with, whatever follows; one that starts with none is named apart, up to its first full stop or semicolon |
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |

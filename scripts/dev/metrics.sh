@@ -117,6 +117,18 @@ metrics_of() {
     m steps_added "$added" steps
     m steps_dropped "$dropped" steps
     m step_h "$(awk -v r="$running" -v n="$landed" 'BEGIN { printf "%.2f", n ? r / 3600 / n : 0 }')" "h per step"
+    # A landed step's span: from its thread's start, a UUIDv7's first 48
+    # bits in ms (the ledger's thread, the last of a step handed over), to
+    # its last commit on main. A chain's step takes it whatever runs beside.
+    local spans step thread at
+    spans=$(command join -t$'\t' \
+        <(ledger_kinds | awk -F'\t' 'NR > 1 && $4 == "landed" && $6 ~ /^[0-9a-f]{8}-[0-9a-f]{4}-7/ { gsub("-", "", $6); print $1 "\t" $6 }' | sort) \
+        <(plan_commits | awk -F'\t' '{ last[$4] = $3 } END { for (s in last) print s "\t" last[s] }' | sort) |
+        while IFS=$'\t' read -r step thread at; do
+            echo $((at - 16#${thread:0:12} / 1000))
+        done | awk '$1 >= 0 { print $1 / 60 }')
+    m chain_step_min "$(median_and_p90 <<<"$spans" | awk '{ printf "%.1f", $1 }')" "min, median"
+    m chain_step_max "$(sort -n <<<"$spans" | awk '{ v = $1 } END { printf "%.1f", v }')" "min, longest"
 
     # Escalations: each Kind and Since line belongs to the "Blocked and
     # unblocked" heading above it (development.md, section 10.3). One that

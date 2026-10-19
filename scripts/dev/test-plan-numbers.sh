@@ -86,6 +86,15 @@ expect metrics "$metrics" \
     $'proofs\tunit 1, world 1, none 1, 1 below plan' $'report_lines\t1 median, 3 p90' \
     "code +65 -0, tests +6 -0, generated +1 -0, data +61 -0"$'\tlines' \
     $'pin_lag\tnone\t' $'contexts\t260K median, 260K p90 of the sessions\' peaks; 0 handovers'
+# A step's span: from its thread's start, a UUIDv7's time, to its last commit.
+v7() { printf '%012x' "$(($1 * 1000))" | sed -E 's/^(.{8})(.{4})$/\1-\2-7000-8000-000000000000/'; }
+cp "$run/ledger.tsv" "$t/ledger.span"
+for span in alpha-01.1:300 alpha-01.2:1500; do
+    at=$(git -C "$repo" log -n1 --format=%ct --grep="^Step: ${span%:*}\$" main)
+    "$plan" set "${span%:*}" thread="$(v7 $((at - ${span#*:})))"
+done
+expect "a step's span" "$(plan_numbers metrics)" $'chain_step_min\t5.0\t' $'chain_step_max\t25.0\t'
+cp "$t/ledger.span" "$run/ledger.tsv"
 # Model pricing includes each Haiku prompt tier and names an unknown model.
 priced() { printf '{"type":"assistant","message":{"id":"%s","model":"%s","usage":{"input_tokens":%d,"cache_creation":{"ephemeral_5m_input_tokens":%d,"ephemeral_1h_input_tokens":%d},"cache_read_input_tokens":%d,"output_tokens":%d}}}\n' "$@"; }
 m=$t/claude-prices/projects/p; mkdir -p "$m"
