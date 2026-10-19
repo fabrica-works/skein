@@ -536,9 +536,9 @@ impl Component {
         }
     }
     fn open_start(&mut self, at: u32, env: &Env<Limits>, io: &mut Queue<skein_io::Request>) -> Token {
+        assert!(self.next_token < 1_u64.checked_shl(59).expect("token prefix"), "connection token prefix");
         let owner = Token::new(self.next_token);
         self.next_token = self.next_token.checked_add(1).expect("connection token space");
-        assert!(self.next_token < 1_u64.checked_shl(60).expect("token prefix"), "connection token prefix");
         let forge = self.settings.forges.get(at).expect("configured forge");
         self.connection_slab.reclaim();
         let id = self
@@ -604,3 +604,6 @@ fn ready(state: Start) -> bool {
         Start::Checking { .. } | Start::Settings { .. } | Start::Waiting { .. } | Start::Stopped(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests;

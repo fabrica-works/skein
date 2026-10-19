@@ -314,7 +314,7 @@ impl Hooked {
 fn signature(header: Option<&[u8]>) -> Option<[u8; 64]> {
     let bytes = <[u8; 64]>::try_from(header?).ok()?;
     for byte in &bytes {
-        if !byte.is_ascii_hexdigit() {
+        if !byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte) {
             return None;
         }
     }

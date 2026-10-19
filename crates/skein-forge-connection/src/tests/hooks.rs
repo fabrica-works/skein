@@ -144,3 +144,40 @@ fn a_repository_id_past_u32_hints_nothing() {
         skein_forge::forgejo::delivery::Delivery::Pull { repository: u64::MAX, number: fixtures::HOOK_NUMBER };
     assert_eq!(skein_forge::forgejo::plans::hint::hint(1, fixtures::WORD, &delivery), None);
 }
+
+#[test]
+fn signature_shape_is_refused_at_the_head() {
+    // SHA-256 signatures have 64 lowercase hex digits (forge-connection.md 6.2).
+    const DIGITS: usize = 64;
+    let correct = fixtures::hook_signature(fixtures::PULL_PAYLOAD);
+    let mut upper = correct;
+    for byte in &mut upper {
+        *byte = byte.to_ascii_uppercase();
+    }
+    let mut nonhex = correct;
+    nonhex[0] = b'g';
+    let mut wrong = correct;
+    wrong[0] = if wrong[0] == b'0' { b'1' } else { b'0' };
+    for (name, signature, head_status, demands, final_status, hints, closed) in [
+        ("short", correct.get(..DIGITS - 1).expect("short signature"), Some(403), 0, Some(403), 0, true),
+        ("long", [b'a'; DIGITS + 1].as_slice(), Some(403), 0, Some(403), 0, true),
+        ("uppercase", upper.as_slice(), Some(403), 0, Some(403), 0, true),
+        ("nonhex", nonhex.as_slice(), Some(403), 0, Some(403), 0, true),
+        ("correct", correct.as_slice(), None, 1, Some(204), 1, false),
+        ("wrong digest", wrong.as_slice(), None, 1, Some(403), 0, true),
+    ] {
+        let mut h = fixtures::hook();
+        h.write(&fixtures::hook_head(fixtures::PULL_PAYLOAD, Some(b"pull_request"), signature));
+        assert_eq!((h.status(), h.body_demands(), h.hints()), (head_status, demands, 0), "{name}: head only");
+        h.write(fixtures::PULL_PAYLOAD);
+        assert_eq!((h.status(), h.hints(), h.closed()), (final_status, hints, closed), "{name}: terminal");
+    }
+}
+#[test]
+fn a_verified_delivery_without_an_event_is_answered_204_without_a_hint() {
+    let mut h = fixtures::hook();
+    h.write(&fixtures::signed_head(b"{}", None));
+    assert_eq!(h.status(), None);
+    h.write(b"{}");
+    assert_eq!((h.status(), h.hints(), h.closed()), (Some(204), 0, false));
+}

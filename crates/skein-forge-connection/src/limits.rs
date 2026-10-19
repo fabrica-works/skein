@@ -127,13 +127,13 @@ pub enum Unusable {
     Forges { forges: u32 },
     /// Two forges with one number.
     Duplicate { forge: u16 },
-    /// An API token empty or past `token_bytes`.
+    /// An API token empty, past `token_bytes`, or containing unsafe header controls.
     Token { forge: u16 },
     /// A user of 0.
     User { forge: u16 },
     /// Plaintext to an address not on loopback, or an in-process name.
     Address { forge: u16 },
-    /// The longest request head (target, `Host`, token, agent) past HTTP's `request`.
+    /// An empty or unsafe agent, or a request head past HTTP's `request`.
     Request { forge: u16 },
 }
 
@@ -248,7 +248,7 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
             }
         }
         let skein_forge::credential::Credential::Token(token) = &forge.credential;
-        if token.is_empty() || token.len() > usize::try_from(l.token_bytes).expect("u32 fits") {
+        if !header_value(token.expose()) || token.len() > usize::try_from(l.token_bytes).expect("u32 fits") {
             return Err(Unusable::Token { forge: forge.number });
         }
         if forge.user == 0 {
@@ -283,9 +283,11 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
         let head = head
             .checked_add(u64::try_from(token.len()).ok().ok_or(Unusable::Zero)?)
             .ok_or(Unusable::Zero)?
+            .checked_add(u64::try_from(settings.user_agent.len()).ok().ok_or(Unusable::Zero)?)
+            .ok_or(Unusable::Zero)?
             .checked_add(192)
             .ok_or(Unusable::Zero)?;
-        if head > u64::from(http(l, tls, &s.io).request) {
+        if !header_value(&settings.user_agent) || head > u64::from(http(l, tls, &s.io).request) {
             return Err(Unusable::Request { forge: forge.number });
         }
     }
@@ -309,7 +311,7 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
     }
     Ok(())
 }
-fn stack(stacked: Stacked, demand: u32, cap: u32) -> Result<(), Unusable> {
+pub(crate) fn stack(stacked: Stacked, demand: u32, cap: u32) -> Result<(), Unusable> {
     if demand > cap { Err(Unusable::Stack { stacked, demand, cap }) } else { Ok(()) }
 }
 /// A listing's largest fixed row and owned payloads, measured as the client measures them.
@@ -519,6 +521,18 @@ fn plaintext_name(name: &[u8]) -> bool {
     }
     for byte in name {
         if *byte <= b' ' || *byte >= 127 || b"/:[]".contains(byte) {
+            return false;
+        }
+    }
+    true
+}
+
+fn header_value(value: &[u8]) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    for byte in value {
+        if (*byte < 0x20 && *byte != b'\t') || *byte == 0x7f {
             return false;
         }
     }

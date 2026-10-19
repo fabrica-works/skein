@@ -3,7 +3,7 @@ use crate::{Event, Limits};
 use skein_forge::api;
 use skein_io::Addr;
 use skein_lib::{Env, Id, List, Map, Queue, Secret, Slab, Time, Token};
-mod connection;
+pub(crate) mod connection;
 use connection::{Closing, Hooked};
 /// The listener and the secrets it alone owns.
 #[derive(Clone, Debug)]

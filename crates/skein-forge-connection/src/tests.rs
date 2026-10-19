@@ -1,6 +1,6 @@
 mod connection;
 mod contents;
-mod fixtures;
+pub(crate) mod fixtures;
 mod hooks;
 mod reads;
 mod writes;
@@ -151,8 +151,13 @@ fn closing_waiting_calls_emits_only_the_close_terminal() {
 }
 
 #[test]
-#[expect(clippy::manual_map, reason = "step fixtures use explicit matches without closures")]
 fn unusable_forge_settings_name_the_forge() {
+    forge_setting_boundaries();
+    forge_count_token_and_hook_boundaries();
+    plaintext_name_boundaries();
+}
+
+fn forge_setting_boundaries() {
     let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 3000));
     let remote = SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), 3000));
     let rows = [
@@ -175,6 +180,13 @@ fn unusable_forge_settings_name_the_forge() {
         forge.user = user;
         assert_eq!(limits::check(&fixtures::limits(), &fixtures::shared(), &settings), Err(expected), "{name}");
     }
+    let mut settings = fixtures::settings();
+    settings.forges.get_mut(0).expect("forge").address = skein_io::Addr::Ip(([0, 0, 0, 0, 0, 0, 0, 1], 3000).into());
+    fixtures::admission(settings, &fixtures::limits(), Ok(()), b"IPv6 loopback");
+}
+
+#[expect(clippy::manual_map, reason = "step fixtures use explicit matches without closures")]
+fn plaintext_name_boundaries() {
     for (name, expected) in [
         (None, Ok(())),
         (Some(b"".as_slice()), Err(Unusable::PlaintextName { forge: fixtures::FORGE })),
@@ -212,6 +224,9 @@ fn unusable_forge_settings_name_the_forge() {
 
 #[test]
 fn zero_documents_and_stacked_demands_are_refused_in_order() {
+    numeric_boundaries();
+    neighbour_boundaries();
+    stack_boundaries();
     let l = fixtures::limits();
     let s = fixtures::shared();
     let rows = [
@@ -416,5 +431,223 @@ fn each_request_carries_the_host_its_transport_derives() {
         let sent = fixtures::request_bytes(settings);
         assert_eq!(fixtures::header(&sent, b"Host: "), expected.as_bytes(), "{address} {name:?} TLS={tls}");
         assert_eq!(fixtures::header(&sent, b"User-Agent: "), fixtures::USER_AGENT, "{address} {name:?} TLS={tls}");
+    }
+}
+
+#[test]
+fn request_head_counts_user_agent() {
+    for (name, tls, host, room) in [
+        ("forge.example", true, b"forge.example:3000".as_slice(), fixtures::TLS_REQUEST_ROOM),
+        ("2001:db8::7", true, b"[2001:db8:0:0:0:0:0:7]:3000".as_slice(), fixtures::TLS_REQUEST_ROOM),
+        ("forge.example", false, b"forge.example:3000".as_slice(), fixtures::PLAIN_REQUEST_ROOM),
+    ] {
+        let limits = fixtures::limits();
+        let length = room
+            .checked_sub(usize::try_from(limits.target_bytes).expect("target fits"))
+            .expect("target room")
+            .checked_sub(host.len())
+            .expect("host room")
+            .checked_sub(fixtures::TOKEN.len())
+            .expect("token room")
+            .checked_sub(fixtures::HEAD_FRAMING)
+            .expect("framing room");
+        for (bytes, expected) in [
+            (length, Ok(())),
+            (length.checked_add(1).expect("one past"), Err(Unusable::Request { forge: fixtures::FORGE })),
+        ] {
+            fixtures::admission(fixtures::head_settings(name, tls, bytes), &limits, expected, host);
+        }
+    }
+}
+
+#[test]
+fn header_controls_are_refused_before_io() {
+    for (value, valid) in [
+        (b"".as_slice(), false),
+        (b"\0", false),
+        (b"\r", false),
+        (b"\n", false),
+        (b"\x1f", false),
+        (b"\x7f", false),
+        (b"\t", true),
+        (b" ", true),
+        (b"~", true),
+        (b"\x80", true),
+        (b"\xff", true),
+    ] {
+        let mut settings = fixtures::settings();
+        settings.forges.get_mut(0).expect("forge").credential =
+            skein_forge::credential::Credential::Token(Secret::new(Box::from(value)));
+        let expected = if valid { Ok(()) } else { Err(Unusable::Token { forge: fixtures::FORGE }) };
+        fixtures::admission(settings, &fixtures::limits(), expected, value);
+        let mut settings = fixtures::settings();
+        settings.user_agent = Box::from(value);
+        let expected = if valid { Ok(()) } else { Err(Unusable::Request { forge: fixtures::FORGE }) };
+        fixtures::admission(settings, &fixtures::limits(), expected, value);
+    }
+    for (user, expected) in [(0, Err(Unusable::User { forge: fixtures::FORGE })), (1, Ok(()))] {
+        let mut settings = fixtures::settings();
+        settings.forges.get_mut(0).expect("forge").user = user;
+        fixtures::admission(settings, &fixtures::limits(), expected, b"user");
+    }
+}
+
+fn forge_count_token_and_hook_boundaries() {
+    let limits = fixtures::limits();
+    for (count, expected) in [
+        (limits.forges, Ok(())),
+        (limits.forges.checked_add(1).expect("fixture count"), Err(Unusable::Forges { forges: limits.forges })),
+    ] {
+        let mut settings = fixtures::settings();
+        settings.forges = skein_lib::List::with_capacity(count);
+        for number in 1..=count {
+            let mut forge = fixtures::settings().forges.into_boxed().into_iter().next().expect("forge");
+            forge.number = u16::try_from(number).expect("fixture number");
+            settings.forges.push(forge).expect("fixture capacity");
+        }
+        fixtures::admission(settings, &limits, expected, b"forge count");
+    }
+    for (length, expected) in [
+        (0, Err(Unusable::Token { forge: fixtures::FORGE })),
+        (fixtures::TOKEN_BOUND, Ok(())),
+        (fixtures::TOKEN_BOUND + 1, Err(Unusable::Token { forge: fixtures::FORGE })),
+    ] {
+        let mut settings = fixtures::settings();
+        settings.forges.get_mut(0).expect("forge").credential =
+            skein_forge::credential::Credential::Token(Secret::new(fixtures::filled(length, b'a')));
+        fixtures::admission(settings, &limits, expected, b"token bound");
+    }
+    hook_setting_boundaries();
+}
+fn hook_setting_boundaries() {
+    for (listener, expected) in [
+        (skein_io::Addr::Ip(([127, 0, 0, 1], 7200).into()), Ok(())),
+        (skein_io::Addr::Ip(([0, 0, 0, 0, 0, 0, 0, 1], 7200).into()), Ok(())),
+        (skein_io::Addr::Ip(([192, 0, 2, 1], 7200).into()), Err(Unusable::Listener)),
+        (skein_io::Addr::InProcess(skein_io::Name::EMPTY), Err(Unusable::Listener)),
+    ] {
+        let mut settings = fixtures::hook_settings();
+        settings.webhooks.as_mut().expect("hooks").listener = listener;
+        fixtures::admission(settings, &fixtures::limits(), expected, b"listener");
+    }
+    for (forge, length, expected) in [
+        (fixtures::FORGE, 0, Err(Unusable::Secret { forge: fixtures::FORGE })),
+        (fixtures::FORGE, fixtures::SECRET_BOUND, Ok(())),
+        (fixtures::FORGE, fixtures::SECRET_BOUND + 1, Err(Unusable::Secret { forge: fixtures::FORGE })),
+        (99, fixtures::HOOK_SECRET.len(), Err(Unusable::Secret { forge: 99 })),
+    ] {
+        let mut settings = fixtures::hook_settings();
+        *settings.webhooks.as_mut().expect("hooks").secrets.get_mut(0).expect("secret") =
+            (forge, Secret::new(fixtures::filled(length, b'a')));
+        fixtures::admission(settings, &fixtures::limits(), expected, b"secret");
+    }
+}
+
+fn numeric_boundaries() {
+    let l = fixtures::limits();
+    for invalid in [
+        Limits { forges: 0, ..l },
+        Limits { token_bytes: 0, ..l },
+        Limits { connections: 0, ..l },
+        Limits { head_bytes: 0, ..l },
+        Limits { headers: 0, ..l },
+        Limits { body_bytes_in: 0, ..l },
+        Limits { depth: 0, ..l },
+        Limits { chunk: 0, ..l },
+        Limits { string_bytes: 0, ..l },
+        Limits { body_bytes: 0, ..l },
+        Limits { inner: 0, ..l },
+        Limits { target_bytes: 0, ..l },
+        Limits { repositories: 0, ..l },
+        Limits { users: 0, ..l },
+        Limits { hooks: 0, ..l },
+        Limits { hook_head_bytes: 0, ..l },
+        Limits { hook_body_bytes: 0, ..l },
+        Limits { hook_secret_bytes: 0, ..l },
+        Limits { tls: skein_tls::client::Limits { read: 0, ..l.tls }, ..l },
+        Limits { tls: skein_tls::client::Limits { send: 0, ..l.tls }, ..l },
+        Limits { tls: skein_tls::client::Limits { records: 0, ..l.tls }, ..l },
+        Limits { deadline: Duration::ZERO, ..l },
+        Limits { idle: Duration::ZERO, ..l },
+        Limits { start_backoff: Duration::ZERO, ..l },
+        Limits { start_backoff_max: Duration::ZERO, ..l },
+        Limits { hook_deadline: Duration::ZERO, ..l },
+    ] {
+        assert_eq!(
+            limits::check(&invalid, &fixtures::shared(), &fixtures::settings()),
+            Err(Unusable::Zero),
+            "{invalid:?}"
+        );
+    }
+    for (limits, expected) in [
+        (l, Ok(())),
+        (Limits { hook_secret_bytes: 31, ..l }, Err(Unusable::SecretBytes { bytes: 31 })),
+        (Limits { hook_secret_bytes: 32, ..l }, Ok(())),
+        (Limits { depth: 7, ..l }, Err(Unusable::Documents(skein_forge::forgejo::limits::Problem::Depth))),
+        (Limits { depth: 8, ..l }, Ok(())),
+    ] {
+        assert_eq!(limits::check(&limits, &fixtures::shared(), &fixtures::settings()), expected, "{limits:?}");
+    }
+    let overflow = crate::Shared { op_bytes: u32::MAX, ..fixtures::shared() };
+    assert_eq!(limits::check(&l, &overflow, &fixtures::settings()), Err(Unusable::Zero));
+}
+fn neighbour_boundaries() {
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    for (limits, expected) in [
+        (
+            Limits { connections: s.calls.checked_sub(1).expect("fixture calls"), ..l },
+            Err(Unusable::Connections { connections: s.calls.checked_sub(1).expect("fixture calls"), calls: s.calls }),
+        ),
+        (Limits { connections: s.calls, ..l }, Ok(())),
+        (
+            Limits { connections: s.calls.checked_add(1).expect("fixture calls"), ..l },
+            Err(Unusable::Connections { connections: s.calls.checked_add(1).expect("fixture calls"), calls: s.calls }),
+        ),
+        (Limits { deadline: s.lifetime, ..l }, Ok(())),
+        (
+            Limits { deadline: s.lifetime.saturating_add(Duration::from_nanos(1)), ..l },
+            Err(Unusable::Deadline {
+                deadline: s.lifetime.saturating_add(Duration::from_nanos(1)),
+                lifetime: s.lifetime,
+            }),
+        ),
+        (
+            Limits { string_bytes: s.name_bytes.checked_sub(1).expect("fixture name"), ..l },
+            Err(Unusable::StringBytes {
+                string_bytes: s.name_bytes.checked_sub(1).expect("fixture name"),
+                name_bytes: s.name_bytes,
+            }),
+        ),
+        (Limits { string_bytes: s.name_bytes, ..l }, Ok(())),
+        (Limits { repositories: s.repositories, ..l }, Ok(())),
+        (
+            Limits { repositories: s.repositories.checked_add(1).expect("fixture repositories"), ..l },
+            Err(Unusable::Repositories {
+                repositories: s.repositories.checked_add(1).expect("fixture repositories"),
+                forge: s.repositories,
+            }),
+        ),
+    ] {
+        assert_eq!(limits::check(&limits, &s, &fixtures::settings()), expected, "{limits:?}");
+    }
+}
+fn stack_boundaries() {
+    // The JSON caps are derived from the same chunk demand; exercise their
+    // comparison directly as well as the public agreement checks.
+    const DEMAND: u32 = 1024; // fixtures::limits().chunk
+    for stacked in [
+        limits::Stacked::HttpOverTls,
+        limits::Stacked::HttpOverIo,
+        limits::Stacked::TlsOverIo,
+        limits::Stacked::JsonOverHttp,
+        limits::Stacked::ServerOverIo,
+        limits::Stacked::JsonOverServer,
+    ] {
+        for (cap, expected) in
+            [(DEMAND, Ok(())), (DEMAND - 1, Err(Unusable::Stack { stacked, demand: DEMAND, cap: DEMAND - 1 }))]
+        {
+            assert_eq!(limits::stack(stacked, DEMAND, cap), expected, "{stacked:?}/{cap}");
+        }
     }
 }

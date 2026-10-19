@@ -529,3 +529,176 @@ pub fn header<'a>(sent: &'a [u8], name: &[u8]) -> &'a [u8] {
     }
     found.expect("header sent")
 }
+
+// The request caps are the fixture's TLS send and io output bounds.
+pub const TLS_REQUEST_ROOM: usize = 16_384;
+pub const PLAIN_REQUEST_ROOM: usize = 32_768;
+// forge-connection.md 7.4 reserves 192 bytes for head framing.
+pub const HEAD_FRAMING: usize = 192;
+pub const TOKEN_BOUND: usize = 64;
+pub const SECRET_BOUND: usize = 128;
+pub const PULL_PAYLOAD: &[u8] = b"{\"repository\":{\"id\":2},\"number\":7}";
+
+/// Lowercase HMAC text for the configured hook secret.
+pub fn hook_signature(body: &[u8]) -> [u8; 64] {
+    let mut mac = skein_lib::sha256::Hmac::new(HOOK_SECRET);
+    mac.update(body);
+    let mut signature = [0; 64];
+    for (digits, byte) in signature.chunks_exact_mut(2).zip(mac.finish()) {
+        let [high, low] = digits else { unreachable!("hex pair") };
+        *high = *b"0123456789abcdef".get(usize::from(byte / 16)).expect("hex digit");
+        *low = *b"0123456789abcdef".get(usize::from(byte % 16)).expect("hex digit");
+    }
+    signature
+}
+pub fn signed_head(body: &[u8], event: Option<&[u8]>) -> Box<[u8]> {
+    hook_head(body, event, &hook_signature(body))
+}
+pub fn hook_head(body: &[u8], event: Option<&[u8]>, signature: &[u8]) -> Box<[u8]> {
+    use skein_forge::forgejo::delivery::{EVENT_HEADER, SIGNATURE_HEADER};
+    let target = skein_forge::forgejo::delivery::hook_target(FORGE);
+    let length = skein_lib::Decimal::of(u64::try_from(body.len()).expect("body length"));
+    let mut pieces = List::with_capacity(16);
+    for piece in
+        [b"POST ".as_slice(), &target, b" HTTP/1.1\r\nHost: localhost\r\nContent-Length: ", length.as_bytes(), b"\r\n"]
+    {
+        pieces.push(piece).expect("bounded head pieces");
+    }
+    if let Some(event) = event {
+        for piece in [EVENT_HEADER, b": ", event, b"\r\n"] {
+            pieces.push(piece).expect("bounded event pieces");
+        }
+    }
+    for piece in [SIGNATURE_HEADER, b": ", signature, b"\r\n\r\n"] {
+        pieces.push(piece).expect("bounded signature pieces");
+    }
+    let mut bytes = 0_usize;
+    for piece in &pieces {
+        bytes = bytes.checked_add(piece.len()).expect("head length");
+    }
+    let mut out = skein_lib::Writer::new(bytes);
+    for piece in pieces.into_boxed() {
+        out.put(piece).expect("measured head");
+    }
+    out.finish()
+}
+
+#[derive(Debug)]
+pub struct HookHarness {
+    connection: crate::hooks::connection::Hooked,
+    settings: Settings,
+    env: Env<Limits>,
+    wire: skein_world::stream::Wire,
+    closed: bool,
+    hints: u32,
+    body_demands: u32,
+}
+pub fn hook() -> HookHarness {
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits() };
+    HookHarness {
+        connection: crate::hooks::connection::Hooked::new(skein_lib::Token::new(100), &env),
+        settings: hook_settings(),
+        env,
+        wire: skein_world::stream::Wire::new(1),
+        closed: false,
+        hints: 0,
+        body_demands: 0,
+    }
+}
+impl HookHarness {
+    pub fn write(&mut self, bytes: &[u8]) {
+        self.wire.write(bytes);
+        self.pump();
+    }
+    pub fn body_demands(&self) -> u32 {
+        self.body_demands
+    }
+    pub fn hints(&self) -> u32 {
+        self.hints
+    }
+    pub fn closed(&self) -> bool {
+        self.closed
+    }
+    pub fn status(&self) -> Option<u16> {
+        if self.wire.received.len() < b"HTTP/1.1 204".len() {
+            return None;
+        }
+        let text = self.wire.received.get(9..12).expect("HTTP status");
+        let mut value = 0_u16;
+        for digit in text {
+            value = value
+                .checked_mul(10)
+                .expect("status fits")
+                .checked_add(u16::from(digit.checked_sub(b'0').expect("decimal digit")))
+                .expect("status fits");
+        }
+        Some(value)
+    }
+    fn pump(&mut self) {
+        use skein_lib::stream::{Delimiter, Down, Read};
+        let mut up = Queue::with_capacity(16);
+        let mut io = Queue::with_capacity(16);
+        for _ in 0_u32..1024 {
+            self.connection.pump(skein_lib::Token::new(1), &self.env, &self.settings, &mut up, &mut io, (16, 16));
+            for _ in 0..io.len() {
+                match io.pop().expect("queued request") {
+                    skein_io::Request::Stream { down, .. } => {
+                        if let Down::Demand { read, .. } = &down {
+                            let body = match read {
+                                Read::Nothing => false,
+                                Read::Scan { until, .. } => *until != Delimiter::LF,
+                                Read::Fill(_) | Read::Line { .. } | Read::Arrived { .. } => true,
+                            };
+                            self.body_demands = self.body_demands.saturating_add(u32::from(body));
+                        }
+                        self.wire.take(down);
+                    }
+                    skein_io::Request::Close { .. } => self.closed = true,
+                    skein_io::Request::Listen { .. }
+                    | skein_io::Request::Connect { .. }
+                    | skein_io::Request::Bind { .. }
+                    | skein_io::Request::Reject { .. }
+                    | skein_io::Request::Output { .. }
+                    | skein_io::Request::Spawn { .. }
+                    | skein_io::Request::Signal { .. }
+                    | skein_io::Request::Usage { .. }
+                    | skein_io::Request::Window { .. }
+                    | skein_io::Request::Abort { .. } => unreachable!("hook emits stream/close"),
+                }
+            }
+            for _ in 0..up.len() {
+                match up.pop().expect("queued event") {
+                    Event::Hint(_) => self.hints = self.hints.saturating_add(1),
+                    Event::Answered(_) | Event::Stopped { .. } | Event::ListenerLost | Event::Closed => {
+                        unreachable!("hook emits hints")
+                    }
+                }
+            }
+            if self.closed {
+                break;
+            }
+            if let Some(event) = self.wire.answer() {
+                self.connection.stream(&self.env, event);
+            }
+        }
+    }
+}
+
+pub fn filled(length: usize, byte: u8) -> Box<[u8]> {
+    let mut out = skein_lib::Writer::new(length);
+    for _ in 0..length {
+        out.put(&[byte]).expect("measured fill");
+    }
+    out.finish()
+}
+
+pub fn head_settings(name: &str, tls: bool, agent_bytes: usize) -> Settings {
+    let mut settings = settings();
+    settings.forges.get_mut(0).expect("forge").transport = if tls {
+        Transport::Tls { server_name: skein_tls::Name::new(name).expect("TLS name"), trust: trust() }
+    } else {
+        Transport::Plaintext { name: Some(Box::from(name.as_bytes())) }
+    };
+    settings.user_agent = filled(agent_bytes, b'a');
+    settings
+}

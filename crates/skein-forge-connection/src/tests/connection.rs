@@ -383,3 +383,55 @@ fn a_tail_read_past_body_bytes_in_is_malformed_and_closes() {
     );
     assert_eq!(h.connection.phase, Phase::Closed, "Body limit closes");
 }
+
+#[test]
+fn start_retry_after_wins_over_the_backoff_cap() {
+    use crate::{Answered, start::Start};
+    use skein_forge::api;
+    let limits = fixtures::limits();
+    let waiting = Start::Waiting { until: Time::from_nanos(21_000_000_000), next: Duration::from_secs(2) };
+    let mut h = fixtures::Harness::new(fixtures::settings());
+    h.run(Duration::from_secs(1));
+    h.connected(fixtures::FORGE);
+    h.answer(fixtures::FORGE, b"HTTP/1.1 429 Refused\r\nContent-Length: 0\r\nRetry-After: 20\r\n\r\n");
+    assert_eq!(h.start(fixtures::FORGE), waiting);
+    h.call(1, fixtures::REPO, api::Op::Read(api::Read::Settings));
+    h.run(Duration::from_nanos(9_999_999_999));
+    assert_eq!((h.answered(1), h.connections_opened()), (None, 1));
+    h.run(Duration::from_nanos(1));
+    assert_eq!(
+        h.answered(1),
+        Some(&Answered { call: skein_lib::Token::new(1), cost: 0, result: Err(api::Error::Unavailable) })
+    );
+    assert_eq!(h.answers.len(), 1);
+    h.run(Duration::from_nanos(9_999_999_999));
+    assert_eq!(h.connections_opened(), 1);
+    h.run(Duration::from_nanos(1));
+    assert_eq!(h.connections_opened(), 2);
+    retry_after_states(&limits, waiting);
+}
+fn retry_after_states(limits: &crate::Limits, waiting: crate::start::Start) {
+    use crate::start::{self, Start};
+    use skein_forge::forgejo::plans::start::Heard as StartHeard;
+    for state in [Start::Checking { next: limits.start_backoff }, Start::Settings { next: limits.start_backoff }] {
+        for (now, expected) in [
+            (Time::from_nanos(1_000_000_000), waiting),
+            (
+                Time::from_nanos(u64::MAX - 1),
+                Start::Waiting { until: Time::from_nanos(u64::MAX), next: Duration::from_secs(2) },
+            ),
+        ] {
+            assert_eq!(
+                start::heard(
+                    state,
+                    StartHeard::Status { status: 429, retry: Some(Duration::from_secs(20)) },
+                    fixtures::WRITER,
+                    now,
+                    limits
+                ),
+                expected,
+                "{state:?}/{now:?}"
+            );
+        }
+    }
+}
