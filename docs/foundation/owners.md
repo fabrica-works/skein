@@ -31,6 +31,13 @@ the repository's own `AGENTS.md`.
   `docs/design/domain/testing.md`). Momentum and tokens count more than
   upfront perfection: QA (section 4.6) catches the rest, and what is wrong is
   corrected as it shows.
+- **Guidelines, not prescriptions.** What this file says, and what it
+  cites from development.md and the testing documents, is good practice
+  for the owner to apply with judgement, case by case, as the work goes:
+  partly, later, or not at all where it doesn't pay. None of it is
+  upfront work to complete before starting, as the designer's and the
+  planner's was. What the tools enforce still holds: `land` and its
+  gate, `heavy`, the disk floor.
 
 ## 2. The owner's session
 
@@ -103,8 +110,10 @@ After the green light, the owner implements directly what is small.
 Otherwise it breaks the work into tasks, all upfront, as it goes, or
 both, and prepares the next tasks while implementers work.
 
-**The planner's rules hold for its tasks** (development.md, section 5),
-all but those about plan files, sessions and the coordinator:
+**The planner's guidelines serve its tasks too** (development.md,
+section 5), as section 1 says: applied as the work goes and where they
+pay, never as upfront planning. Those about plan files, sessions and
+the coordinator don't apply. The useful ones:
 - 5.1, what is settled first: the scope, the APIs that may break and
   their repair, credentials and live services, the proofs, the
   interface sketches;
@@ -118,7 +127,7 @@ all but those about plan files, sessions and the coordinator:
   shape and ceilings;
 - 5.7: repins.
 
-Above all, **the meeting point comes first** (5.3). Where two parts
+The one that pays most often: **the meeting point comes first** (5.3). Where two parts
 meet (a client and its server, a protocol's two ends, a domain and its
 store, a service and its host), one thin story runs them together, the
 real thing on both sides, as soon as the far side can answer, and each
