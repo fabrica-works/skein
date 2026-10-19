@@ -152,14 +152,18 @@ the implementer to, with `land` (development.md, section 9). It updates the repo
 
 ### 4.6 QA passes
 
-An owner or a sub-owner may run QA passes on its part while it
-implements: none, one or several, at any point. It decides when each
-starts and when it is done.
+An owner or a sub-owner may give its part QA passes while it
+implements, or decide that none is warranted. It decides only when: when
+to start its tester, resume it after more has landed, stop it, and when
+it is happy with what the passes have done.
 
 - **The tester** is a session of the owner's choice of model and
-  effort. It reads the design only: the sections its part covers, the
-  testing documents, and the public surface of the world or harness it
-  writes in. It never reads the code under test or its tests.
+  effort, with its notes beside the owner's, in `qa/`. It reads the
+  design only: the sections its part covers, the testing documents, and
+  the public surface of the world or harness it writes in. It never
+  reads the code under test or its tests.
+- **The tester decides which tests to write,** not the owner: the owner
+  names the part and the design, never the cases.
 - **Its tests are adversarial,** aimed at what the design promises: the
   edges, the orders, the failures, the limits, and the seams between
   parts. Each goes in the highest layer that can express it: the real
