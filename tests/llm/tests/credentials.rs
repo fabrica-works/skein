@@ -1,7 +1,6 @@
 //! Credential schemes follow their route's fields (llm.md, section 2.6).
-use skein_http::Header;
-use skein_llm::{Call, Cap, Credential, Endpoint, Error, Provider, Scheme, client};
-use skein_llm_world::{World, call, fields_holding, limits, response};
+use skein_llm::{Call, Cap, Credential, Endpoint, Error, Provider, Scheme};
+use skein_llm_world::{call, fields_holding, header, limits, rejection, response, run_call};
 
 fn input(provider: Provider, scheme: Scheme) -> Call {
     let mut input = call(1);
@@ -16,12 +15,6 @@ fn input(provider: Provider, scheme: Scheme) -> Call {
     }
     input.prompt.affinity = None;
     input
-}
-fn header(name: &[u8], value: &[u8]) -> Header {
-    Header { name: name.to_vec().into(), value: value.to_vec().into() }
-}
-fn rejection(input: Call, bounds: &client::Limits) -> Option<Error> {
-    client::Client::prepare(input, bounds).err()
 }
 fn head_fields(sent: &[u8]) -> Vec<(&str, &str)> {
     std::str::from_utf8(sent)
@@ -69,9 +62,7 @@ fn each_scheme_goes_where_its_route_takes_it() {
             input.endpoint.headers = Box::new([header(b"anthropic-beta", beta.as_bytes())]);
         }
         let value = input.credential.value.clone();
-        let mut world = World::new(input, limits(), response(401, "", b"{}", false), 1);
-        world.request(client::Request::Start);
-        world.run();
+        let world = run_call(input, limits(), response(401, "", b"{}", false), 1);
         assert_eq!(fields_holding(&world.sent, &value), names, "{provider:?} {scheme:?} {beta:?}");
         assert_eq!(head_fields(&world.sent), fields, "{provider:?} {scheme:?} {beta:?}");
     }
@@ -102,9 +93,7 @@ fn an_endpoint_header_naming_a_credential_field_is_refused() {
 fn a_key_head_at_its_bound_is_admitted() {
     // llm.md 4.7: six fixed fields with a key, including Content-Length.
     const KEY_FIELDS: u32 = 6;
-    let mut world = World::new(input(Provider::Anthropic, Scheme::Key), limits(), response(401, "", b"{}", false), 1);
-    world.request(client::Request::Start);
-    world.run();
+    let world = run_call(input(Provider::Anthropic, Scheme::Key), limits(), response(401, "", b"{}", false), 1);
     let measured =
         u32::try_from(world.sent.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("valid request fixture") + 4)
             .expect("valid request fixture");

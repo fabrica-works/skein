@@ -326,3 +326,24 @@ pub fn fields_holding(sent: &[u8], value: &[u8]) -> Vec<String> {
         })
         .collect()
 }
+
+/// Build a fixture field without repeating its owned wire representation.
+#[must_use]
+pub fn header(name: &[u8], value: &[u8]) -> Header {
+    Header { name: name.to_vec().into(), value: value.to_vec().into() }
+}
+
+/// Observe admission's refusal without exposing the credential-bearing client.
+#[must_use]
+pub fn rejection(input: Call, bounds: &client::Limits) -> Option<skein_llm::Error> {
+    client::Client::prepare(input, bounds).err()
+}
+
+/// Drive one fixture call to its demand-driven terminal.
+#[must_use]
+pub fn run_call(input: Call, bounds: client::Limits, source: Vec<u8>, seed: u64) -> World {
+    let mut world = World::new(input, bounds, source, seed);
+    world.request(client::Request::Start);
+    world.run();
+    world
+}

@@ -786,8 +786,7 @@ fn construction_names_the_largest_call_that_does_not_fit_memory() {
     drop(Component::new(endpoints, &config).expect("one largest call fits exactly"));
 }
 
-#[test]
-fn a_whole_deadline_due_at_admission_fails_without_preparing_a_binding() {
+fn whole_deadline_wait() -> (Component, Env<Limits>, Queue<Event>, Queue<Lower>) {
     let mut component = component();
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits() };
     let mut up = Queue::with_capacity(MAX_OUT.above);
@@ -805,6 +804,12 @@ fn a_whole_deadline_due_at_admission_fails_without_preparing_a_binding() {
         &mut up,
         &mut io,
     );
+    (component, env, up, io)
+}
+
+#[test]
+fn a_whole_deadline_due_at_admission_fails_without_preparing_a_binding() {
+    let (mut component, env, mut up, mut io) = whole_deadline_wait();
     assert!(io.is_empty(), "an expired start never prepares or opens its binding");
     component.fire(&env, &mut up, &mut io);
     match up.pop() {
@@ -884,4 +889,15 @@ fn either_scheme_at_its_bound_fits_the_measured_head() {
         value.scheme = scheme;
         assert_eq!(component.admit(Token::new(7), 0, prompt(), value).err(), None, "{scheme:?}");
     }
+}
+
+#[test]
+fn a_whole_deadline_wait_fails_with_an_empty_report() {
+    let (mut component, env, mut up, mut io) = whole_deadline_wait();
+    component.fire(&env, &mut up, &mut io);
+    let report = match up.pop() {
+        Some(Event::Failed { report, .. }) => report,
+        other => panic!("expected whole timeout, got {other:?}"),
+    };
+    assert_eq!(report, skein_llm::Report::none());
 }

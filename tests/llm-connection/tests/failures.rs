@@ -764,3 +764,28 @@ fn the_terminal_event_is_in_the_largest_gap_for_plaintext_and_tls() {
         );
     }
 }
+
+#[test]
+fn a_provider_failure_reaches_the_owner_with_its_report() {
+    let mut world = World::new(Deadlines::none(), 1, false);
+    world.run_until_request();
+    let body = br#"{"error":{"code":"usage_limit_reached","message":"spent","param":"model"}}"#;
+    let source = skein_llm_world::response(429, "x-oai-request-id: fixture-request\r\n", body, false);
+    world.wire.write(&source);
+    while world.terminals.is_empty() {
+        world.tick();
+    }
+    assert_failure(&world, Failure::Exhausted { retry_after: None }, Evidence::Response { status: 429 });
+    let report = world
+        .terminals
+        .iter()
+        .find_map(|event| if let Event::Failed { report, .. } = event { Some(report) } else { None });
+    assert_eq!(
+        report,
+        Some(&skein_llm::Report {
+            code: b"usage_limit_reached".as_slice().into(),
+            request: b"fixture-request".as_slice().into(),
+            field: b"model".as_slice().into(),
+        })
+    );
+}

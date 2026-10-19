@@ -883,6 +883,7 @@ fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, err
                 | api::Error::InvalidRequest => (kind, kind),
             };
             let error = anthropic::ProviderError {
+                param: Box::new([]),
                 kind: bytes::copy_of(kind),
                 message: bytes::copy_of(message),
                 resets_in_seconds: None,
@@ -900,6 +901,7 @@ fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, err
         }
         documents::Provider::OpenAi => {
             let error = openai::ProviderError {
+                param: Box::new([]),
                 kind: bytes::copy_of(kind),
                 message: bytes::copy_of(kind),
                 resets_in_seconds: None,

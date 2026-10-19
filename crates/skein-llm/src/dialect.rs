@@ -4,7 +4,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use skein_json::{Document, Kind, collector, tokenizer};
-use skein_lib::{Queue, Wall};
+use skein_lib::{Queue, Wall, bytes};
 
 pub(crate) const MAX_OUT: u32 = 3;
 #[derive(Debug)]
@@ -72,7 +72,9 @@ impl Decoder {
                 let event = openai::decode_event(&json, limits)?;
                 let mut raw = Queue::with_capacity(openai::MAX_OUT);
                 match event {
-                    openai::Event::Failed { error } => provider_error(error, status, rate, wall, out),
+                    openai::Event::Failed { error } => {
+                        provider_error(error, status, rate, wall, Provider::OpenAiCodex, out);
+                    }
                     event @ (openai::Event::Created { .. }
                     | openai::Event::InProgress { .. }
                     | openai::Event::Added { .. }
@@ -99,7 +101,9 @@ impl Decoder {
                 let event = anthropic::decode_event(&json, limits)?;
                 let mut raw = Queue::with_capacity(anthropic::MAX_OUT);
                 match event {
-                    anthropic::Event::Failed { error } => provider_error(error, status, rate, wall, out),
+                    anthropic::Event::Failed { error } => {
+                        provider_error(error, status, rate, wall, Provider::Anthropic, out);
+                    }
                     event @ (anthropic::Event::Started { .. }
                     | anthropic::Event::Added { .. }
                     | anthropic::Event::Delta { .. }
@@ -136,14 +140,30 @@ fn provider_error(
     status: u16,
     rate: openai::RateLimit,
     wall: Wall,
+    provider: Provider,
     out: &mut Queue<Output>,
 ) {
     out.push(Output::Failed {
         failure: translate::failure(openai::classify(status, Some(&error), rate, wall)),
-        report: Report::none(),
+        report: error_report(provider, &error),
         detail: error.message,
     });
 }
+pub(crate) fn error_report(provider: Provider, error: &openai::ProviderError) -> Report {
+    let field = match provider {
+        Provider::OpenAi | Provider::OpenAiCodex => report_value(&error.param),
+        Provider::Anthropic => Box::new([]),
+    };
+    Report { code: report_value(&error.kind), request: Box::new([]), field }
+}
+
+pub(crate) fn report_value(value: &[u8]) -> Box<[u8]> {
+    if value.len() > usize::try_from(client::REPORT_BYTES).expect("u32 fits usize") {
+        return Box::new([]);
+    }
+    bytes::copy_of(value)
+}
+
 fn codex_outputs(
     provider: Provider,
     raw: &mut Queue<openai::Output>,

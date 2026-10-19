@@ -255,6 +255,7 @@ fn failed(
         api::Error::Unsupported | api::Error::InvalidRequest => b"invalid_request_error".as_slice(),
     };
     let error = openai::ProviderError {
+        param: Box::new([]),
         kind: bytes::copy_of(kind),
         message: bytes::copy_of(kind),
         resets_in_seconds: None,

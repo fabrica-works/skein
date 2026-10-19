@@ -388,6 +388,7 @@ fn server_events_roundtrip_echoes_skipped_and_errors_keep_reset_priority() {
         assert_eq!(decode_event(&value(&encoded), &LIMITS).unwrap(), event);
     }
     let error = ProviderError {
+        param: Box::new([]),
         kind: owned(b"usage_limit_reached"),
         message: owned(b"spent"),
         resets_in_seconds: Some(60),
@@ -674,6 +675,7 @@ fn incomplete_and_refused_terminals_override_tools_and_absolute_reset_uses_wall(
     decoder.event(
         Event::Failed {
             error: ProviderError {
+                param: Box::new([]),
                 kind: owned(b"usage_limit_reached"),
                 message: owned(b"spent"),
                 resets_in_seconds: None,
@@ -1428,8 +1430,13 @@ fn an_http_error_body_refines_class_without_changing_status_retryability() {
         (503, b"overloaded_error".as_slice(), Failure::Overloaded),
         (400, b"context_length_exceeded".as_slice(), Failure::ContextTooLong),
     ] {
-        let error =
-            ProviderError { kind: owned(kind), message: owned(b"detail"), resets_at: None, resets_in_seconds: None };
+        let error = ProviderError {
+            param: Box::new([]),
+            kind: owned(kind),
+            message: owned(b"detail"),
+            resets_at: None,
+            resets_in_seconds: None,
+        };
         let rate = RateLimit { retry_after: Some(Duration::from_secs(7)), ..RateLimit::NONE };
         assert_eq!(classify(status, Some(&error), rate, Wall::EPOCH), expected);
     }
@@ -1585,6 +1592,7 @@ fn a_reset_comes_from_the_first_field_given() {
     ] {
         let rate = RateLimit { retry_after, reset: head, exhausted: false };
         let error = ProviderError {
+            param: Box::new([]),
             kind: owned(b"usage_limit_reached"),
             message: owned(b"spent"),
             resets_in_seconds: seconds,

@@ -22,6 +22,9 @@ use crate::{
     dialect, filter, openai, translate,
 };
 
+/// Maximum retained bytes of each provider report value (llm.md, section 4.2).
+pub const REPORT_BYTES: u32 = 128;
+
 /// Startup bounds, unchanged for a client's lifetime and reuse.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Limits {
@@ -291,6 +294,7 @@ pub struct Client {
     event_data: EventData,
     error: List<u8>,
     status: u16,
+    request: Box<[u8]>,
     rate: openai::RateLimit,
     asked: bool,
     close_sent: bool,
@@ -437,6 +441,7 @@ impl Client {
             event_data: EventData::Idle,
             error: List::with_capacity(limits.error_bytes),
             status: 0,
+            request: Box::new([]),
             rate: openai::RateLimit { retry_after: None, reset: None, exhausted: false },
             asked: false,
             close_sent: false,
@@ -837,6 +842,7 @@ fn response_head(
 ) {
     client.evidence = Evidence::Response { status: response.status };
     client.status = response.status;
+    client.request = request_id(client.provider, &response.headers);
     for header in &response.headers {
         client.rate.observe(&header.name, &header.value);
     }
@@ -860,6 +866,20 @@ fn response_head(
             room: 0,
         }));
     }
+}
+
+fn request_id(provider: Provider, headers: &[Header]) -> Box<[u8]> {
+    let name: &[u8] = match provider {
+        Provider::OpenAi => b"x-request-id",
+        Provider::OpenAiCodex => b"x-oai-request-id",
+        Provider::Anthropic => b"request-id",
+    };
+    for header in headers {
+        if header.name.eq_ignore_ascii_case(name) {
+            return dialect::report_value(&header.value);
+        }
+    }
+    Box::new([])
 }
 
 fn body_event(client: &mut Client, event: Up, env: &Env<Limits>, above: &mut Queue<Event>, below: &mut Queue<Down>) {
@@ -1153,7 +1173,7 @@ fn fail(client: &mut Client, failure: Failure, detail: Box<[u8]>, above: &mut Qu
     fail_report(client, failure, Report::none(), detail, above);
 }
 
-fn fail_report(client: &mut Client, failure: Failure, report: Report, detail: Box<[u8]>, above: &mut Queue<Event>) {
+fn fail_report(client: &mut Client, failure: Failure, mut report: Report, detail: Box<[u8]>, above: &mut Queue<Event>) {
     if client.outcome != Outcome::Pending {
         return;
     }
@@ -1163,6 +1183,7 @@ fn fail_report(client: &mut Client, failure: Failure, report: Report, detail: Bo
         match event {
             http::Event::Response(response) => {
                 client.status = response.status;
+                client.request = request_id(client.provider, &response.headers);
                 client.evidence = Evidence::Response { status: response.status };
             }
             http::Event::Upload(_)
@@ -1191,6 +1212,7 @@ fn fail_report(client: &mut Client, failure: Failure, report: Report, detail: Bo
         | Failure::Cancelled => detail,
     };
     let detail = openai::clip_detail(&detail, client.limits.detail_bytes);
+    report.request = mem::replace(&mut client.request, Box::new([]));
     above.push(Event::Failed { owner: client.owner, failure, evidence: client.evidence, report, detail });
 }
 
@@ -1213,12 +1235,16 @@ fn error_end(client: &mut Client, env: &Env<Limits>, above: &mut Queue<Event>) {
     };
     let error = decoded.ok();
     let failure = translate::failure(openai::classify(client.status, error.as_ref(), client.rate, env.wall));
+    let report = match &error {
+        Some(error) => dialect::error_report(client.provider, error),
+        None => Report::none(),
+    };
     let detail = match error {
         Some(error) => error.message,
         None => openai::clip_detail(client.error.as_slice(), env.limits.detail_bytes),
     };
     client.error.clear();
-    fail(client, failure, detail, above);
+    fail_report(client, failure, report, detail, above);
 }
 
 fn error_document(limits: &Limits) -> crate::DocumentLimits {
@@ -1370,7 +1396,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<openai::Output>::worst_case(openai::MAX_OUT)?)?
         .checked_add(Queue::<anthropic::Output>::worst_case(anthropic::MAX_OUT)?)?
         .checked_add(Queue::<http::Request>::worst_case(REQUESTS)?)?
-        .checked_add(Queue::<Down>::worst_case(1)?)
+        .checked_add(Queue::<Down>::worst_case(1)?)?
+        .checked_add(u64::from(REPORT_BYTES).checked_mul(3)?)
 }
 /// A standalone call's fixed state, largest reservation and one entrance's
 /// preparation/reuse overlap and codec scratch; a pool prices the scratch once.

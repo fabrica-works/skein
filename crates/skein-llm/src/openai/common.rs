@@ -187,6 +187,7 @@ pub enum Failure {
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct ProviderError {
+    pub param: Box<[u8]>,
     pub kind: Box<[u8]>,
     pub message: Box<[u8]>,
     pub resets_in_seconds: Option<u64>,

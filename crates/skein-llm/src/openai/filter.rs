@@ -38,6 +38,7 @@ pub(crate) const EVENT: Filter = Filter {
         ),
         field(b"error", Keep::Into(ERROR)),
         field(b"code", Keep::Text(STRINGS)),
+        field(b"param", Keep::Text(STRINGS)),
         field(b"message", Keep::Text(STRINGS)),
         field(b"resets_in_seconds", Keep::Value),
         field(b"resets_at", Keep::Value),
@@ -47,6 +48,7 @@ pub(crate) const EVENT: Filter = Filter {
 const ERROR: &[skein_json::collector::Node] = &[
     field(b"type", Keep::Text(STRINGS)),
     field(b"code", Keep::Text(STRINGS)),
+    field(b"param", Keep::Text(STRINGS)),
     field(b"message", Keep::Text(STRINGS)),
     field(b"resets_in_seconds", Keep::Value),
     field(b"resets_at", Keep::Value),

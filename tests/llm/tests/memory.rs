@@ -842,3 +842,33 @@ fn twenty_five_thousand_history_items_allocate_only_the_declared_translation_tab
         declared.history_items, declared.tools, grown.peak
     );
 }
+
+#[test]
+fn a_full_report_stays_within_the_call_worst_case() {
+    // llm.md 4.2: each report value may hold 128 bytes.
+    const REPORT_BOUND: usize = 128;
+    let bounds = limits();
+    let bound = client::call_worst_case(&bounds).expect("representable call bound");
+    let body = format!(
+        r#"{{"error":{{"code":"{}","message":"spent","param":"{}"}}}}"#,
+        "c".repeat(REPORT_BOUND),
+        "f".repeat(REPORT_BOUND)
+    );
+    let headers = format!("x-oai-request-id: {}\r\n", "r".repeat(REPORT_BOUND));
+    let meter = Meter::new();
+    let source = skein_llm_world::response(429, &headers, body.as_bytes(), false);
+    let mut world = World::new(call(1), bounds, source, 1);
+    world.request(client::Request::Start);
+    loop {
+        meter.start();
+        let progress = world.tick(true);
+        let measured = meter.end();
+        assert!(measured.peak() <= bound, "peak {} exceeds {bound}", measured.peak());
+        if !progress {
+            break;
+        }
+    }
+    world.assert_once();
+    drop(world);
+    assert_eq!(meter.held(), 0);
+}

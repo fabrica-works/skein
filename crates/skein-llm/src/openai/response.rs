@@ -939,7 +939,11 @@ fn read_error(tokens: (&Document, json::Span), limits: &Limits) -> Result<Provid
         Some(value) => Some(json::unsigned(value)?),
         None => None,
     };
-    Ok(ProviderError { kind, message, resets_in_seconds, resets_at })
+    let param = match request::optional_text(tokens, b"param")? {
+        Some(param) => param,
+        None => Box::new([]),
+    };
+    Ok(ProviderError { param, kind, message, resets_in_seconds, resets_at })
 }
 pub fn encode_error(error: &ProviderError, limits: &Limits) -> Result<Box<[u8]>, DecodeError> {
     encode_event(&Event::Failed { error: error.clone() }, limits)
