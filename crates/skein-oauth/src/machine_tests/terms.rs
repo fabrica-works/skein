@@ -217,36 +217,39 @@ fn a_sign_in_refuses_a_port_the_redirect_does_not_take() {
     }
 }
 
+fn nonce_request(length: Option<usize>, enabled: bool) -> Option<Request> {
+    let registration = with_terms(terms(enabled, false));
+    let mut client = Client::new(limits()).expect("client");
+    let mut nonce = None;
+    if let Some(length) = length {
+        nonce = Some(boxed([b'n'; NONCE_CAP + 1].get(..length).expect("nonce row fits")));
+    }
+    step(&mut client, start(registration, nonce, None))
+}
+
 #[test]
 fn a_nonce_is_bounded_and_needs_openid() {
     for (length, enabled, expected) in [
-        (None, true, false),
-        (Some(NONCE_MIN - 1), true, false),
-        (Some(NONCE_MIN), true, true),
-        (Some(NONCE_CAP), true, true),
-        (Some(NONCE_CAP + 1), true, false),
-        (Some(NONCE_MIN), false, false),
+        (None, true, Err(Failure::Limit)),
+        (Some(NONCE_MIN - 1), true, Err(Failure::Limit)),
+        (Some(NONCE_MIN), true, Ok(())),
+        (Some(NONCE_CAP), true, Ok(())),
+        (Some(NONCE_CAP + 1), true, Err(Failure::Limit)),
+        (Some(NONCE_MIN), false, Err(Failure::Limit)),
     ] {
-        let registration = with_terms(terms(enabled, false));
-        let mut client = Client::new(limits()).expect("client");
-        let mut nonce = None;
-        if let Some(length) = length {
-            nonce = Some(boxed([b'n'; NONCE_CAP + 1].get(..length).expect("nonce row fits")));
-        }
-        let result = step(&mut client, start(registration, nonce, None));
-        let admitted = match result {
-            Some(Request::Visit { url }) => {
-                assert!(bytes::find(&url, b"&nonce=").is_some());
-                true
-            }
-            Some(Request::Failed { failure }) => {
-                assert_eq!(failure, Failure::Limit);
-                false
-            }
+        let admission = match nonce_request(length, enabled) {
+            Some(Request::Visit { .. }) => Ok(()),
+            Some(Request::Failed { failure }) => Err(failure),
             Some(Request::Http(_) | Request::Tokens { .. }) | None => panic!("unexpected request"),
         };
-        assert_eq!(admitted, expected, "nonce length {length:?}, openid {enabled}");
+        assert_eq!(admission, expected, "nonce length {length:?}, openid {enabled}");
     }
+}
+
+#[test]
+fn an_admitted_nonce_is_sent_in_the_visit_url() {
+    let Some(Request::Visit { url }) = nonce_request(Some(NONCE_MIN), true) else { panic!("visit") };
+    assert!(bytes::find(&url, b"&nonce=").is_some());
 }
 
 #[test]
