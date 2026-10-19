@@ -342,10 +342,8 @@ impl Plan {
                 Mode::File { head, path, max } => (*head, path.clone(), *max),
                 Mode::Pull { .. } | Mode::Compare { .. } => return Err(api::Error::InvalidAnswer),
             };
-            let length = value.len().min(usize::try_from(max).expect("max fits"));
-            if more && length < usize::try_from(max).expect("max fits") {
-                return Err(api::Error::TooLarge);
-            }
+            let room = max.min(self.raw_room(bounds.answer_bytes));
+            let length = value.len().min(usize::try_from(room).expect("bounded raw room"));
             self.add_size(u64::try_from(length).expect("bounded bytes"), bounds)?;
             let truncated = more || value.len() > length;
             let bytes = if value.len() == length {

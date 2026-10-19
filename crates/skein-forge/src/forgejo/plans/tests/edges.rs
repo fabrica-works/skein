@@ -551,3 +551,91 @@ fn log_body_overflow_is_invalid_answer() {
         Some(Step::Done(Err(Error::InvalidAnswer)))
     );
 }
+
+const FILE_PATH: &[u8] = b"x";
+const SHORT_RAW: &[u8] = b"abc";
+const FULL_RAW: &[u8] = b"abcd";
+const JOB_TAIL: &[u8] = b"bcd";
+const CHANGED_FILES: &[u8] = br#"[{"filename":"x","status":"changed","previous_filename":""}]"#;
+const CHANGED_COMPARE: &[u8] =
+    br#"{"total_commits":0,"commits":[],"files":[{"filename":"x","status":"changed","previous_filename":""}]}"#;
+fn raw_body(run: &mut Run, bytes: &[u8], more: bool) -> Option<Step> {
+    run.hear(Heard::Head { status: 200, fields: fixtures::fields() });
+    run.hear(Heard::Done(AnswerBody::Raw { bytes: Box::from(bytes), more }))
+}
+
+#[test]
+fn file_cuts_to_remaining_answer_room() {
+    for (bytes, more) in [(FULL_RAW, false), (SHORT_RAW, true)] {
+        let mut run = Run::with(
+            super::super::plan::Bounds { answer_bytes: RAW_BYTES, ..BOUNDS },
+            Op::Read(Read::File { head: HEAD, path: Box::from(FILE_PATH), max_bytes: RAW_BYTES }),
+        );
+        run.begin();
+        assert_eq!(
+            raw_body(&mut run, bytes, more),
+            Some(Step::Done(Ok(Answer::File {
+                head: HEAD,
+                path: Box::from(FILE_PATH),
+                bytes: Box::from(SHORT_RAW),
+                truncated: true,
+            })))
+        );
+    }
+}
+
+#[test]
+fn job_cuts_to_remaining_answer_room() {
+    let mut run = Run::with(
+        super::super::plan::Bounds { answer_bytes: RAW_BYTES, ..BOUNDS },
+        Op::Read(Read::Job { attempt: ATTEMPT, max_bytes: RAW_BYTES }),
+    );
+    replies(&mut run, &[(200, RUN), (200, JOB)]);
+    assert_eq!(
+        raw_body(&mut run, JOB_TAIL, true),
+        Some(Step::Done(Ok(Answer::Job {
+            attempt: ATTEMPT,
+            step: Some(api::Step { number: STEP_NUMBER, name: Box::from(FILE_PATH) }),
+            log: Box::from(JOB_TAIL),
+            truncated: true,
+        })))
+    );
+}
+
+#[test]
+fn file_sides_past_remaining_room_are_too_large() {
+    // The one-file metadata and its path fit, leaving exactly SHORT_RAW's three bytes.
+    let answer_bytes =
+        u32::try_from(crate::measure::FILE_BYTES.saturating_add(FILE_PATH.len()).saturating_add(SHORT_RAW.len()))
+            .unwrap();
+    for (read, answers, sends) in side_cases() {
+        let mut run = Run::with(super::super::plan::Bounds { answer_bytes, ..BOUNDS }, Op::Read(read));
+        replies(&mut run, answers);
+        assert_eq!(run.answer(200, FULL_RAW), Step::Done(Err(Error::TooLarge)));
+        run.assert_sent(sends);
+    }
+}
+
+type SideCase = (Read, &'static [(u16, &'static [u8])], &'static [&'static str]);
+fn side_cases() -> [SideCase; 2] {
+    [
+        (
+            Read::PullFiles { number: ITEM_NUMBER, head: HEAD, page: 1 },
+            &[(200, PULL), (200, CHANGED_FILES)],
+            &[
+                "GET /api/v1/repos/fixture/specimen/pulls/1",
+                "GET /api/v1/repos/fixture/specimen/pulls/1/files?page=1&limit=2",
+                "GET /api/v1/repos/fixture/specimen/raw/x?ref=0300000000000000000000000000000000000000",
+            ],
+        ),
+        (
+            Read::Compare { before: fixtures::BASE, after: HEAD },
+            &[(200, CHANGED_COMPARE), (200, fixtures::EMPTY_COMPARE)],
+            &[
+                "GET /api/v1/repos/fixture/specimen/compare/0300000000000000000000000000000000000000...0100000000000000000000000000000000000000?verification=false",
+                "GET /api/v1/repos/fixture/specimen/compare/0100000000000000000000000000000000000000...0300000000000000000000000000000000000000?files=false&verification=false",
+                "GET /api/v1/repos/fixture/specimen/raw/x?ref=0300000000000000000000000000000000000000",
+            ],
+        ),
+    ]
+}
