@@ -134,6 +134,21 @@ cp "$run/log.md" "$t/log.save"
 cat >>"$run/log.md" <<'RESTARTS'
 ## Coordinator resumed, 2026-10-11T12:20:00Z: the user's request: a pause
 ## Coordinator loaded, 2026-10-11T12:30:00Z: by plan ring
+## Coordinator resumed, 2026-10-11T12:35:00Z: unknown
+
+pueued died with the disk. Restarted by hand.
+
+## Blocked and unblocked, 2026-10-11T12:50:00Z
+
+## alpha 02.1: a disk, 2026-10-11T12:45:00Z
+
+- Kind: Infrastructure. The disk filled.
+- Since: 2026-10-11T12:45:00Z. Still running: none.
+
+## alpha 02.2: a tool, 2026-10-11T12:46:00Z
+
+- Kind: tooling; the gate
+- Since: 2026-10-11T12:46:00Z. Still running: none.
 RESTARTS
 printf '## Loaded, 2026-10-11T12:40:00Z: by hand\n%.0s' 1 2 >"$run/supervision.md"
 
@@ -150,7 +165,8 @@ git -C "$w" update-ref refs/remotes/origin/main HEAD; lock "$c2"
 shared_metrics=$(CODEX_HOME=$t/codex-records CLAUDE_CONFIG_DIR=$t/claude-prices plan_numbers metrics)
 expect "prices by model" "$shared_metrics" \
     $'cost_claude\t$93: planner $39, supervisor $24, designer $30; cache reads $3, cache writes $18, fresh input $27, output $45; unknown models, priced as Opus: claude-future-9 1; no transcript on this machine, counted as $0: designer design-current, designer agent-a1\t'
-expect "restarts retain causes and hand loads" "$shared_metrics" $'restarts\tloaded 4, reboot 1, the user\'s request: a pause 1\t'
+expect "restarts retain causes and hand loads" "$shared_metrics" $'restarts\tloaded 4, pueued died with the disk 1, reboot 1, the user\'s request: a pause 1\t'
+expect "kinds map onto section 10.2's" "$shared_metrics" $'escalations\tdesign gap 1, infrastructure 1, plan defect 1; not in section 10.2: tooling 1\t'
 expect "usage records" "$shared_metrics" \
     $'tokens_coordinator\t3100 in (58% cached), 310 out' $'coordinator_requests\t3, 0 after a wait ran out'
 
@@ -186,6 +202,8 @@ bcommit beta-01.2 "process-tier, the machinery" passed
 bcommit beta-01.3 "codecs, the wire; Live, one run" passed
 bcommit beta-01.4 "joint, together (in 101 s; first run found it)" passed
 bcommit beta-01.5 "" passed
+bcommit beta-01.7 "browser, the page; one-process, the binary" passed
+bcommit beta-01.8 "gate, the suite" passed
 notes_lines=30
 awk -v lines="$notes_lines" 'BEGIN { for (i=0; i<lines; i++) print "note" }' >"$DEV_ROOT/beta/notes.md"
 bcommit beta-01.6 "" "none, Markdown only"
@@ -194,7 +212,7 @@ bcommit beta-02.1b "unit, the second half" passed
 printf '### 02.1\nProof: process, the whole\n' >"$dir/beta/02-parts.md"
 for part in a b; do printf 'beta-02.1%s\tbeta\t02\tlanded\t\t\t\t\t%s\t\t\n' "$part" "$stamp" >>"$run/ledger.tsv"; done
 expect "every Proof word" "$(DEV_REPOS="alpha beta" plan_numbers metrics)" \
-    $'proofs\tunit 4, world 2, joint 1, process 1, live 1, codecs 1, none 2, 2 below plan' 'data +61 -0'
+    $'proofs\tunit 4, world 2, joint 1, process 2, live 2, none 2, 2 below plan; not a layer: codecs 1, gate 1\t' 'data +61 -0'
 rm "$run/.pulse"
 p=$(DEV_REPOS="alpha beta" plan_numbers pulse | grep '^- Proofs:')
 expect "a gated step without Proof is named" "$p" beta-01.5

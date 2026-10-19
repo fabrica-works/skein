@@ -679,9 +679,8 @@ says what changed and why. Its trailers name each Claude Code session that
 wrote it, the designer's, its successors' and its sub-agents', one
 `Designer-Session: <session id>` line each, as a plan's landing names its
 planner (section 5.4), so that a plan's whole cost, its design included,
-can be counted. `plan metrics` reads those trailers on commits changing
-the Inputs' design documents, after the repository's previous plan
-landing and through this plan's landing (section 15.2).
+can be counted. `plan metrics` reads those trailers on the commits the
+plan's Inputs name, and on no other (sections 5.2 and 15.2).
 
 **A change during another run.** A run keeps the process and the kit of
 its claim: development.md, its cards and `scripts/dev` at the skein
@@ -1353,7 +1352,8 @@ balancing confidence against the run's pace and its tokens.
     that starts with a layer's word counts, so a semicolon in the prose
     names none, and the first part always does, so a line that starts
     with no layer's word shows. A layer is the first word up to its first
-    hyphen (`process-tier` is process). A split increment is judged at its
+    hyphen (`process-tier` is process), save `one-process`, which is
+    process; `browser` is live. A split increment is judged at its
     last part. When the layer is not the highest one that exists, or is
     no higher than the increment's tests, the line says why, in one line.
     In forgejo-17, Proofs that began "the real Forgejo" or "the fake
@@ -1580,8 +1580,9 @@ commits behind smith.
 2. **The machine is ready.** `plan check --fix <plan-dir>` passes. It
    checks:
    - the plan and its `STATUS.md` row, and that the plan is finished: a
-     base run in `findings/`, its design questions answered, and each of
-     its "For the user" items decided (section 5.4);
+     base run in `findings/`, its design questions answered, each of its
+     "For the user" items decided (section 5.4), and its Inputs naming
+     the commits that wrote its design (section 5.2);
    - that the user, or the director, has decided each proposal of the last
      retrospective: the one added last to any repository's `origin/main`
      has a row for each of its proposals in its section 10, and none of
@@ -3015,8 +3016,7 @@ question and its own budget, or waits for the retrospective.
     Code transcripts of the supervisor and the designer (from
     `claude.tsv`) and of the planner (the plan's `Planner-Session:`
     trailer), and the design's sessions (the `Designer-Session:` trailers
-    of commits changing the Inputs' design documents since the previous
-    plan landing), with their sub-agents;
+    of the commits the Inputs name), with their sub-agents;
   - the earlier plans' metrics (`plan metrics --history`) and their
     retrospectives;
   - the skein commit its run's process came from (`supervision.md`'s
@@ -3077,15 +3077,15 @@ counts them by hand.
 | `step_h` | `running_h` per landed step |
 | `chain_step_min` | the median minutes from a step's start, its first thread's, to its landing, over the steps of the chain the README names: what the next README projects its chain at (section 5.2); the next kit batch computes it |
 | `chain_step_max` | the longest of those spans, in minutes; the next kit batch computes it |
-| `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing |
+| `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing. A Kind line counts as the kind of section 10.2's set it starts with, whatever follows; one that starts with none is named apart, up to its first full stop or semicolon |
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |
 | `blocked_h` | hours in which at least one block was open |
 | `answers_reversed` | unblocks and steers whose `Reverses:` line names an earlier ruling or steer |
 | `steers` | steers sent, and points the coordinator refused |
-| `restarts` | `log.md`'s "Coordinator resumed" headings, by the whole cause after the time; its "Coordinator loaded" and `supervision.md`'s "Loaded" headings count as cause `loaded` |
+| `restarts` | `log.md`'s "Coordinator resumed" headings, by the whole cause after the time, or, when that is `unknown`, by the entry's first line up to its first full stop; its "Coordinator loaded" and `supervision.md`'s "Loaded" headings count as cause `loaded` |
 | `tokens_coordinator` | input tokens, with the part read from the cache, and output tokens of the coordinator's threads, from the last `token_usage_record`'s `thread_token_usage`, else the last `total_token_usage` |
 | `tokens_implementers` | the same usage totals, for every thread the coordinator spawned, at any depth |
-| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), and the design's sessions (the `Designer-Session:` trailers of commits changing the Inputs' design paths after the previous plan landing and through this one; the next kit batch finds them also by the file names the Inputs give), their sub-agents and sub-agents of sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (the design and the planning), from the claim to `done.md` (the run), and after (the retrospective) |
+| `tokens_claude` | the same, for the Claude Code sessions in `claude.tsv` and the planner's (the plan's `Planner-Session:` trailer), and the design's sessions (the `Designer-Session:` trailers of the commits the README's Inputs name, and of no other), their sub-agents and sub-agents of sub-agents included, each message counted once across every session, since a resumed or forked session copies the messages before it; the input also in three parts: before the claim (the design and the planning), from the claim to `done.md` (the run), and after (the retrospective) |
 | `cost_claude` | what those tokens cost at list prices for each message's model (Opus 5.5's when absent or unknown, unknown models named), in all, by role, and by kind: cache reads, cache writes, fresh input, output; each session whose transcript is not on this machine is named, counted as $0. At Opus's and Sonnet's rates, a cache read costs a fortieth of a 1-hour cache write and a hundredth of an output token, so token counts alone hide where a long context's cost goes |
 | `tokens_per_step` | the coordinator's, the implementers' and the run's part of the Claude Code sessions', per landed step |
 | `supervisor` | the supervisor's sessions in `claude.tsv`: how many, their hours (each from its first request to its last), their weighted tokens per hour (fresh input 1, cache reads 0.1, cache writes 1.25, output 5; sub-agents left out, each message counted once), the share of those in the 40 requests after each session's start or compaction (the bootstrap), and their compactions (section 10.5); the next kit batch replaces the share with each session's restore cost (the requests and dollars from its start, and from each compaction, to its next `plan watch`) and its sub-agents' count and cost (section 13) |
@@ -3095,7 +3095,7 @@ counts them by hand.
 | `gate_lane_other` | the gate lane's other tasks: measurements, probes, live runs, `plan check`'s gate, including finished tasks pueue still holds since the claim |
 | `queue_wait_ratio` | time waiting in the queue against time running (`logs/heavy.tsv` and finished tasks pueue still holds since the claim); `heavy --task` is counted only from its logged row |
 | `suites` | for each repository, each suite's test count and time at its first and its last landing |
-| `proofs` | landed code steps, each by its last gated commit, by each semicolon part's proof layer, its first word up to the first hyphen (`process-tier` is process), a later part only when that word is a layer's (a semicolon in the prose names none), and those below their increment's highest layer, a split judged only at its last part; docs landings count in none; whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
+| `proofs` | landed code steps, each by its last gated commit, by each semicolon part's proof layer, its first word up to the first hyphen (`process-tier` is process; `one-process` is process, and `browser` live, as section 5.5's table has it), a later part only when that word is a layer's (a semicolon in the prose names none), the first part's words that name no layer named apart, and those below their increment's highest layer, a split judged only at its last part; docs landings count in none; whose heading writes the session with or without its zero (`### 06.1`, `### 6.1`) |
 | `report_lines` | the reports' median and 90th percentile length |
 | `lines` | lines added and removed by gated code landings (docs landings left out), in four kinds: production code, tests, generated code (under a `generated/` directory), and data (any file neither Rust nor the shell kit). The shell kit is a `.sh` file or one under `scripts/` with no extension, and its tests are named `test-*` |
 | `contexts` | the median and 90th percentile of the largest context each session's thread reached, and the handovers (`log.md`'s `Handover` lines) |

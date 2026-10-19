@@ -85,9 +85,16 @@ supervisor_sessions() {
 }
 
 # Restart causes retain their full text; hand loads have the cause loaded.
+# A resume whose heading says unknown takes its entry's first line, up to
+# its first full stop, when the entry has one.
 restart_causes() {
     {
-        sed -nE -e 's/^## Coordinator resumed, [^ ]+Z: //p' -e 's/^## Coordinator loaded, .*/loaded/p' "$run/log.md"
+        awk '/^## / { if (pending) print "unknown"; pending = 0 }
+            /^## Coordinator resumed, [^ ]+Z: / { c = $0; sub(/^## Coordinator resumed, [^ ]+Z: /, "", c)
+                if (c == "unknown") pending = 1; else print c; next }
+            /^## Coordinator loaded, / { print "loaded"; next }
+            pending && NF { c = $0; sub(/\.( .*)?$/, "", c); print c; pending = 0 }
+            END { if (pending) print "unknown" }' "$run/log.md"
         [[ ! -f $run/supervision.md ]] || sed -nE 's/^## Loaded, .*/loaded/p' "$run/supervision.md"
     } | sort | uniq -c | awk '{ n = $1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); printf "%s%s %d", (NR > 1 ? ", " : ""), $0, n }'
 }
@@ -133,7 +140,16 @@ metrics_of() {
             ((a >= b)) || continue
             printf '%s\t%s\t%s\n' "$b" "$a" "${kind:-unknown}"
         done)
-    m escalations "$(cut -f3 <<<"$escalations" | grep . | sort | uniq -c | awk '{ k = $2; for (i = 3; i <= NF; i++) k = k " " $i; printf "%s%s %d", (NR > 1 ? ", " : ""), k, $1 }')" "by kind"
+    # Each kind by the name of section 10.2's it starts with; the rest are
+    # named, up to a full stop (client-api's record split four kinds so).
+    m escalations "$(cut -f3 <<<"$escalations" | grep . | awk '{ k = tolower($0); sub(/^[[:space:]]+/, "", k)
+            n = split("design gap|plan defect|cross-session scope|process|infrastructure|credentials", set, "|")
+            for (i = 1; i <= n; i++) if (index(k, set[i]) == 1) { print set[i]; next }
+            sub(/[.;].*$/, "", k); print "~" k }' | sort | uniq -c |
+        awk '{ k = $2; for (i = 3; i <= NF; i++) k = k " " $i
+            if (k ~ /^~/) other = other (other != "" ? ", " : "") substr(k, 2) " " $1
+            else known = known (known != "" ? ", " : "") k " " $1 }
+            END { printf "%s%s", known, (other != "" ? (known != "" ? "; " : "") "not in section 10.2: " other : "") }')" "by kind"
     m escalation_wait_min "$(awk -F'\t' 'NF == 3 { print ($2 - $1) / 60 }' <<<"$escalations" | median_and_p90 | awk '{ printf "%.1f", $1 }')" "min, median"
     m blocked_h "$(awk -F'\t' 'NF == 3 { print $1 "\t" $2 }' <<<"$escalations" | sort -n |
         awk -F'\t' '{ if ($1 > end) { total += end - start; start = $1; end = $2 } else if ($2 > end) end = $2 }
@@ -203,7 +219,9 @@ metrics_of() {
         [[ -z $want ]] || below=$((below + 1))
     done < <(awk -F'\t' '{ last[$4] = $0; if (!($4 in seen)) { seen[$4] = 1; order[++n] = $4 } }
         END { for (i = 1; i <= n; i++) print last[order[i]] }' <<<"$gated")
-    m proofs "$(for layer in unit world joint process live "${unknown[@]}" none; do [[ -n ${by_layer[$layer]:-} ]] && printf '%s %s, ' "$layer" "${by_layer[$layer]}"; done)$below below plan" steps
+    local others=''
+    for layer in "${unknown[@]}"; do others+="${others:+, }$layer ${by_layer[$layer]}"; done
+    m proofs "$(for layer in unit world joint process live none; do [[ -n ${by_layer[$layer]:-} ]] && printf '%s %s, ' "$layer" "${by_layer[$layer]}"; done)$below below plan${others:+; not a layer: $others}" steps
     m report_lines "$(report_lengths 1 | median_and_p90 | awk '{ print $1 " median, " $2 " p90" }')" lines
     local ca cr ta tr ga gr da dr
     read -r ca cr ta tr ga gr da dr <<<"$(cut -f1,2 <<<"$gated" | grep . | line_counts)"

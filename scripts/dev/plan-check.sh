@@ -120,8 +120,8 @@ check_plan() {
         fail "plan is not on origin/main"
     fi
 
-    [[ -n $(design_inputs "$plan_dir/README.md") ]] ||
-        warn "the README's Inputs name no docs/design/ or docs/foundation/ path: the metrics will count no design session"
+    [[ -n $(design_commits) ]] ||
+        fail "the README's Inputs name no commit that wrote the design: the metrics would count no design session (development.md, section 5.2)"
     check_plan_readiness
     check_pin_names
 

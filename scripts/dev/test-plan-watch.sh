@@ -158,7 +158,7 @@ git -C "$repo" add -A
 git -C "$repo" commit -q -m "An older retrospective"
 sed -i '/^## Inputs/,/^$/d' "$dir/README.md"
 open_decisions=$(plan_check "$dir")
-expect "Inputs with no design warn" "$open_decisions" "warn  the README's Inputs name no docs/design/ or docs/foundation/ path"
+expect "Inputs with no design commit fail" "$open_decisions" "FAIL  the README's Inputs name no commit that wrote the design"
 git -C "$repo" checkout -- "$dir/README.md"
 expect "decisions open" "$open_decisions" "FAIL  the last retrospective, alpha's older, has proposals not yet decided: 2"
 sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.md"

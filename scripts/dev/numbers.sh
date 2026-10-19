@@ -74,15 +74,19 @@ ledger_kinds() {
         }' "$run/ledger.tsv" "$run/ledger.tsv"
 }
 
-# Each semicolon part names a layer; a hyphen ends its first word. A later
-# part counts only when that word is a layer's, so a semicolon in the prose
-# names none; the first always counts, so a line that starts with no
-# layer's word shows (development.md, section 5.5).
+# Each semicolon part names a layer; a hyphen ends its first word, save in
+# one-process, which is process, and browser is live. A later part counts
+# only when that word is a layer's, so a semicolon in the prose names none;
+# the first always counts, so a line that starts with no layer's word shows
+# (development.md, sections 5.5 and 15.2).
 proof_layers() {
     awk -v proof="$1" 'BEGIN {
         n = split(proof, part, ";")
         for (i = 1; i <= n; i++) {
-            sub(/^[ \t]+/, "", part[i]); sub(/[ ,:.\t-].*$/, "", part[i]); w = tolower(part[i])
+            w = tolower(part[i]); sub(/^[ \t]+/, "", w)
+            if (w ~ /^one-process([^a-z]|$)/) w = "process"
+            sub(/[ ,:.\t-].*$/, "", w)
+            if (w == "browser") w = "live"
             if (w != "" && (i == 1 || w ~ /^(unit|world|joint|process|live)$/)) print w
         }
     }'
@@ -254,23 +258,29 @@ claude_compactions() {
     grep -c '"subtype":"compact_boundary"' "$file" || true
 }
 
-# The Inputs' design paths bound the design sessions to this plan's repository.
-design_inputs() {
-    awk '/^## /{inside=($0=="## Inputs")} inside{while(match($0,/`docs\/(design|foundation)\/[^`]*`/)){print substr($0,RSTART+1,RLENGTH-2); $0=substr($0,RSTART+RLENGTH)}}' "$1"
+# The design's commits, which the README's Inputs name (development.md,
+# section 5.2): each hash there that is a commit of one of the plan's
+# repositories, with that repository.
+design_commits() {
+    local top hash dir r
+    top=$(git -C "$plan_dir" rev-parse --show-toplevel 2>/dev/null) || return 0
+    for hash in $(awk '/^## /{inside=($0=="## Inputs")} inside' "$plan_dir/README.md" | grep -oE '\b[0-9a-f]{7,40}\b' | awk '!seen[$0]++'); do
+        for dir in "$top" $(for r in $(plan_repos); do echo "$root/$r"; done); do
+            git -C "$dir" rev-parse -q --verify "$hash^{commit}" >/dev/null 2>&1 || continue
+            printf '%s\t%s\n' "$dir" "$hash"
+            break
+        done
+    done
 }
 
+# The design's sessions: the Designer-Session trailers of those commits
+# alone. In smith's live-text run, a window of commits counted $424 of
+# sessions that designed other plans.
 designer_sessions() {
-    local top prefix inputs landing prev
-    inputs=$(design_inputs "$plan_dir/README.md")
-    [[ -n $inputs ]] || return 0
-    top=$(git -C "$plan_dir" rev-parse --show-toplevel) || return 0
-    prefix=$(cd "$plan_dir" && git rev-parse --show-prefix)
-    landing=$(git -C "$top" log -n1 --format=%H --grep='^Planner-Session:' main -- "${prefix%/}")
-    [[ -n $landing ]] || return 0
-    prev=$(git -C "$top" log -n1 --format=%H --grep='^Planner-Session:' "$landing^" 2>/dev/null || true)
-    # shellcheck disable=SC2086 # one path per line, none with spaces
-    git -C "$top" log "${prev:+$prev..}$landing" --format='%(trailers:key=Designer-Session,valueonly,separator=%x0A)' -- $inputs |
-        awk 'NF { print "designer\t" $1 }'
+    local dir hash
+    while IFS=$'\t' read -r dir hash; do
+        git -C "$dir" log -n1 --format='%(trailers:key=Designer-Session,valueonly,separator=%x0A)' "$hash"
+    done < <(design_commits) | awk 'NF { print "designer\t" $1 }'
 }
 
 # A named agent's descendants share its directory; toolUseId joins them.

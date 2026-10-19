@@ -190,7 +190,7 @@ cat >"$dir/decisions.md" <<'EOF'
 Nothing.
 EOF
 planner=99999999-8888-7777-6666-555555555555
-# Only this design's sessions, after the previous planner, belong to the plan.
+# Only the sessions of the design commits the Inputs name belong to the plan.
 d_old='design-old'; planner_old='planner-old'; designer='design-current'; other='design-other'; host='design-host'
 mkdir -p "$repo/docs/design"
 echo old >"$repo/docs/design/thing.md"
@@ -200,8 +200,9 @@ git -C "$repo" commit -q --allow-empty -m "An earlier plan" -m "Planner-Session:
 echo current >"$repo/docs/design/thing.md"
 git -C "$repo" add docs/design/thing.md
 git -C "$repo" commit -q -m "This design" -m "Designer-Session: $designer"$'\n''Designer-Session: agent-a1'
-echo other >"$repo/docs/design/other.md"
-git -C "$repo" add docs/design/other.md
+sed -i "s|^\`docs/design/thing.md\`\$|&, by $(git -C "$repo" rev-parse --short=9 HEAD)|" "$dir/README.md"
+echo other >>"$repo/docs/design/thing.md"
+git -C "$repo" add docs/design/thing.md
 git -C "$repo" commit -q -m "Another design" -m "Designer-Session: $other"
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "Plan the demo" -m "Planner-Session: $planner"
