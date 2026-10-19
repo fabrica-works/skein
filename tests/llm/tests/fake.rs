@@ -721,6 +721,23 @@ fn echoed_completion_json(world: &Exchange, bounds: &client::Limits) -> skein_ll
 }
 
 #[test]
+fn a_public_call_gets_the_configured_echoes() {
+    let bounds = limits();
+    let mut input = input(skein_llm::Provider::OpenAi, 1);
+    input.endpoint = skein_llm::Endpoint::openai();
+    input.credential = Some(skein_llm::Credential::bearer(b"public-bearer".as_slice().into()));
+    let echo = skein_llm::openai::Echo { instructions: true, tools: true, attribution_bytes: 24 };
+    let mut world = Exchange::new_with_codex_echo(input, bounds, scripts(), echo);
+    world.start();
+    world.run();
+    let _ = completion(&world);
+    let document = echoed_completion_json(&world, &bounds);
+    for name in [b"instructions".as_slice(), b"tools", b"attribution"] {
+        assert_eq!(key_count(document.document(), name), 1, "{name:?}");
+    }
+}
+
+#[test]
 fn configured_codex_echoes_preserve_the_completion_past_the_previous_token_cliff() {
     let mut bounds = limits();
     bounds.output_items = 32;

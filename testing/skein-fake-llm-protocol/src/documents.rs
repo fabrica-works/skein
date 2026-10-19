@@ -109,6 +109,8 @@ pub enum Error {
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
     TooLarge,
+    /// A top-level field refused by the public Responses route.
+    Refused(&'static [u8]),
 }
 
 /// Decodes the selected provider's bounded request body into the neutral fake query, without interpreting agent policy.
@@ -117,7 +119,18 @@ pub enum Error {
 pub fn request(provider: Provider, data: &[u8], limits: &Limits) -> Result<api::Query, Error> {
     match provider {
         Provider::Anthropic => anthropic_request(data, &limits.anthropic),
-        Provider::OpenAi => openai_request(data, limits),
+        Provider::OpenAi => openai_request(data, limits, false),
+    }
+}
+
+/// Decodes the route's request, naming fields refused by public Responses.
+///
+/// Contract: docs/design/fake-llm.md, section 3.1; llm.md, section 4.8.
+pub fn request_on(route: skein_llm::Provider, data: &[u8], limits: &Limits) -> Result<api::Query, Error> {
+    match route {
+        skein_llm::Provider::Anthropic => anthropic_request(data, &limits.anthropic),
+        skein_llm::Provider::OpenAi => openai_request(data, limits, true),
+        skein_llm::Provider::OpenAiCodex => openai_request(data, limits, false),
     }
 }
 
@@ -188,13 +201,16 @@ fn anthropic_request(data: &[u8], limits: &anthropic::Limits) -> Result<api::Que
     })
 }
 
-fn openai_request(data: &[u8], limits: &Limits) -> Result<api::Query, Error> {
+fn openai_request(data: &[u8], limits: &Limits, public: bool) -> Result<api::Query, Error> {
     if limits.model_ceiling == 0 {
         return Err(Error::Malformed);
     }
     let Ok(json) = openai::Json::from_bytes(data, &limits.openai.request_document()) else {
         return Err(Error::Malformed);
     };
+    if public {
+        crate::provider::public::fields(json.document())?;
+    }
     let Ok(request) = openai::decode_request(&json, &limits.openai) else {
         return Err(Error::Malformed);
     };

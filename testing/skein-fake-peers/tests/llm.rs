@@ -404,3 +404,122 @@ fn no_head_observation_holds_a_credential_field() {
         .collect();
     assert_eq!(names, [vec![b"host".as_slice(), b"content-type", b"connection", b"content-length", b"x-visible"]]);
 }
+
+fn body(extra: &str) -> Vec<u8> {
+    format!(r#"{{"model":"gpt","store":false,"stream":true,"instructions":"","input":[{{"role":"user","content":[{{"type":"input_text","text":"hi"}}]}}]{extra}}}"#).into_bytes()
+}
+
+#[test]
+fn a_refused_field_is_named() {
+    let limits = skein_llm_world::fake::limits(&skein_llm_world::limits()).documents;
+    let fields: [&[u8]; 15] = [
+        b"background",
+        b"conversation",
+        b"max_output_tokens",
+        b"max_tool_calls",
+        b"metadata",
+        b"moderation",
+        b"multi_agent",
+        b"prompt",
+        b"prompt_cache_retention",
+        b"safety_identifier",
+        b"temperature",
+        b"top_logprobs",
+        b"top_p",
+        b"truncation",
+        b"user",
+    ];
+    for field in fields {
+        let extra = format!(",\"{}\":null", std::str::from_utf8(field).unwrap());
+        let got = documents::request_on(Provider::OpenAi, &body(&extra), &limits).map(|_| ());
+        assert_eq!(got, Err(documents::Error::Refused(field)));
+    }
+    for (route, extra) in [
+        (Provider::OpenAi, ""),
+        (Provider::OpenAi, r#", "x-extra":{"top_p":null}"#),
+        (Provider::OpenAiCodex, r#", "top_p":null"#),
+    ] {
+        assert_eq!(documents::request_on(route, &body(extra), &limits).map(|_| ()), Ok(()));
+    }
+}
+
+#[test]
+fn a_refused_field_is_answered_unsupported_naming_it() {
+    for (extra, expected) in [
+        (r#", "top_p":0.9"#, br#"{"type":"error","error":{"code":"subscription_sharing_unsupported_capability","message":"subscription_sharing_unsupported_capability","param":"top_p"}}"#.as_slice()),
+        (r#", "prompt_cache_retention":"24h""#, br#"{"type":"error","error":{"code":"subscription_sharing_unsupported_capability","message":"subscription_sharing_unsupported_capability","param":"prompt_cache_retention"}}"#),
+    ] {
+        let endpoint = Endpoint::openai();
+        let mut peer = local_peer(endpoint.clone(), key());
+        let response = send_request(&mut peer, &endpoint, b"authorization: Bearer k0\r\n", &body(extra));
+        let offset = response.windows(4).position(|bytes| bytes == b"\r\n\r\n").unwrap() + 4;
+        assert_eq!(
+            (response.starts_with(b"HTTP/1.1 400 Bad Request\r\n"), &response[offset..]),
+            (true, expected),
+            "{extra}"
+        );
+    }
+}
+
+struct ScopeRow {
+    endpoint: Endpoint,
+    credential: Credential,
+    fields: &'static [u8],
+    extra: &'static str,
+    expected: Vec<api::Caching>,
+}
+
+fn scope_rows() -> [ScopeRow; 4] {
+    let scope = api::Caching::Scope([0xab; 16]);
+    [
+        ScopeRow {
+            endpoint: Endpoint::openai(),
+            credential: key(),
+            fields: b"authorization: Bearer k0\r\n".as_slice(),
+            extra: r#", "prompt_cache_key":"abababab-abab-abab-abab-abababababab""#,
+            expected: vec![scope],
+        },
+        ScopeRow {
+            endpoint: Endpoint::openai(),
+            credential: key(),
+            fields: b"authorization: Bearer k0\r\nsession-id: abababab-abab-abab-abab-abababababab\r\n",
+            extra: r#", "prompt_cache_key":"abababab-abab-abab-abab-abababababab""#,
+            expected: vec![],
+        },
+        ScopeRow {
+            endpoint: Endpoint::openai(),
+            credential: key(),
+            fields: b"authorization: Bearer k0\r\n",
+            extra: r#", "prompt_cache_key":"ABABABAB-ABAB-ABAB-ABAB-ABABABABABAB""#,
+            expected: vec![],
+        },
+        ScopeRow {
+            endpoint: Endpoint::codex(),
+            credential: Credential::codex(b"b1".as_slice().into(), b"a0".as_slice().into()),
+            fields: b"authorization: Bearer b1\r\nchatgpt-account-id: a0\r\n",
+            extra: r#", "prompt_cache_key":"abababab-abab-abab-abab-abababababab""#,
+            expected: vec![],
+        },
+    ]
+}
+
+#[test]
+fn the_public_route_takes_its_scope_from_the_cache_key_alone() {
+    for ScopeRow { endpoint, credential, fields, extra, expected } in scope_rows() {
+        let mut peer = local_peer(endpoint.clone(), credential);
+        send_request(&mut peer, &endpoint, fields, &body(extra));
+        let got: Vec<_> = peer
+            .observations()
+            .iter()
+            .filter_map(|record| match record {
+                llm::Observation::Query { query, .. } => Some(query.caching.clone()),
+                llm::Observation::Accepted { .. }
+                | llm::Observation::Head { .. }
+                | llm::Observation::Credential { .. }
+                | llm::Observation::Answered { .. }
+                | llm::Observation::Closed { .. } => None,
+            })
+            .collect();
+        assert_eq!(got, expected, "{:?} {extra}", endpoint.provider);
+    }
+}

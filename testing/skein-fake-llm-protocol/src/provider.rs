@@ -7,6 +7,7 @@ use crate::documents;
 
 mod credentials;
 mod failure;
+pub(crate) mod public;
 pub use credentials::{MAX_CREDENTIALS, Presented, route};
 #[path = "pieces.rs"]
 mod pieces;
@@ -181,6 +182,9 @@ impl Service {
                 || header.is(b"authorization")
                 || header.is(b"x-api-key")
                 || header.is(b"chatgpt-account-id")
+                || (config.provider == documents::Provider::OpenAi
+                    && config.path.as_ref() == b"/v1/responses"
+                    && public::reserved(&header.name))
             {
                 return Err(Error::Limits);
             }
@@ -598,6 +602,9 @@ fn entrance(
     server.thread = None;
     let mut content_type = 0_u32;
     for header in &call.headers {
+        if server.route == skein_llm::Provider::OpenAi && public::reserved(&header.name) {
+            server.refused = Some(api::Error::InvalidRequest);
+        }
         if service.config.provider == documents::Provider::OpenAi && header.is(b"session-id") {
             if server.session.is_some() {
                 server.refused = Some(api::Error::InvalidRequest);
@@ -799,7 +806,7 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
         response_error(server, service, env, error.into());
         return;
     }
-    let query = documents::request(service.config.provider, server.body.as_slice(), &env.limits.documents);
+    let query = documents::request_on(server.route, server.body.as_slice(), &env.limits.documents);
     if service.config.provider != documents::Provider::OpenAi || !service.config.echo.enabled() {
         server.body.clear();
     }
@@ -810,7 +817,7 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
                 api::Caching::Scope(key) => Some(key),
                 api::Caching::Unscoped | api::Caching::Marks(_) => None,
             };
-            if service.config.provider == documents::Provider::OpenAi
+            if server.route == skein_llm::Provider::OpenAiCodex
                 && (scope != server.session || scope.is_some() != server.thread.is_some())
             {
                 server.body.clear();
@@ -828,6 +835,11 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
                 call: id.token(),
                 query,
             }));
+        }
+        Err(documents::Error::Refused(field)) => {
+            let mut failure: api::Failure = api::Error::Unsupported.into();
+            failure.report.field = bytes::copy_of(field);
+            response_error(server, service, env, failure);
         }
         Err(documents::Error::Malformed | documents::Error::TooLarge) => {
             response_error(server, service, env, api::Error::InvalidRequest.into());
@@ -859,7 +871,9 @@ fn next_event(
         match pieces::next(server, service, env) {
             Ok(Some(event)) => writer_down(server, env, sse::Request::Event(event)),
             Ok(None) => {}
-            Err(documents::Error::Malformed | documents::Error::TooLarge) => close(server, service, env, above, below),
+            Err(documents::Error::Malformed | documents::Error::TooLarge | documents::Error::Refused(_)) => {
+                close(server, service, env, above, below);
+            }
         }
         return;
     }
@@ -872,7 +886,7 @@ fn next_event(
             return;
         }
         Ok(None) => {}
-        Err(documents::Error::Malformed | documents::Error::TooLarge) => {
+        Err(documents::Error::Malformed | documents::Error::TooLarge | documents::Error::Refused(_)) => {
             close(server, service, env, above, below);
             return;
         }
@@ -899,7 +913,9 @@ fn next_event(
             writer_down(server, env, sse::Request::Event(event));
         }
         Ok(None) => writer_down(server, env, sse::Request::Finish),
-        Err(documents::Error::Malformed | documents::Error::TooLarge) => close(server, service, env, above, below),
+        Err(documents::Error::Malformed | documents::Error::TooLarge | documents::Error::Refused(_)) => {
+            close(server, service, env, above, below);
+        }
     }
 }
 
