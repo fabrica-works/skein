@@ -13,6 +13,7 @@ mod browser;
 #[cfg(test)]
 mod cuts;
 mod issuer;
+mod owner;
 mod protocol;
 pub use browser::Browser;
 use issuer::issuer;
@@ -27,6 +28,10 @@ fn io_limits() -> io::Limits {
 pub enum Story {
     /// Public sign-in followed by a rotating refresh.
     Public,
+    /// The preferred loopback port is held by another listener.
+    VaryingTaken,
+    /// Two sign-ins wait together on their own ephemeral ports.
+    TwoPorts,
     /// The owner's web server hands in a confidential redirect.
     Confidential,
     /// A wrong path is refused before the real callback.
@@ -56,6 +61,23 @@ fn registration(story: Story) -> oauth::Registration {
     if confidential(story) {
         registration.client_secret = Some(bytes::copy_of(b"fake-secret"));
         registration.redirect_uri = bytes::copy_of(b"https://service.example/callback");
+    }
+    if matches!(story, Story::VaryingTaken | Story::TwoPorts) {
+        registration.redirect_uri = bytes::copy_of(if story == Story::TwoPorts {
+            b"http://127.0.0.1:0/callback"
+        } else {
+            b"http://127.0.0.1:31234/callback"
+        });
+        registration.terms = Some(oauth::Terms {
+            parameters: Box::new([]),
+            openid: None,
+            issued_client_id: false,
+            varying_port: true,
+            resource: None,
+            required_scopes: None,
+            revocation_endpoint: None,
+            sign_in_again: Box::new([]),
+        });
     }
     registration
 }
@@ -148,8 +170,8 @@ pub struct Client {
     story: Story,
     facts: Vec<Fact>,
     records: Vec<oauth::SavedToken>,
-    contracts: Contracts,
-    visit: Option<Box<[u8]>>,
+    contracts: Vec<Contracts>,
+    visits: Vec<Box<[u8]>>,
     closing: bool,
     closed: bool,
     large: bool,
@@ -161,10 +183,15 @@ impl Client {
         Self::with_limits(story, large, &super::world::limits(), ROOM)
     }
     fn with_limits(story: Story, large: bool, limits: &accounts::Limits, room: u32) -> Self {
+        let mut limits = *limits;
+        if story == Story::TwoPorts {
+            limits.listeners = 2;
+            limits.io.sockets = 6;
+        }
         Self {
             io: io::Io::new(&limits.io),
             component: None,
-            limits: *limits,
+            limits,
             events: Queue::with_capacity(room),
             requests: Queue::with_capacity(room),
             files: Queue::with_capacity(room),
@@ -179,160 +206,13 @@ impl Client {
             story,
             facts: Vec::with_capacity(16),
             records: Vec::with_capacity(2),
-            contracts: Contracts::new(),
-            visit: None,
+            contracts: (0..if story == Story::TwoPorts { 2 } else { 1 }).map(|_| Contracts::new()).collect(),
+            visits: Vec::with_capacity(2),
             closing: false,
             closed: false,
             large,
             redirected: [0; 1024],
             redirected_len: 0,
-        }
-    }
-    fn start(&mut self, env: &Env<accounts::Limits>) {
-        let mut configured = List::with_capacity(1);
-        assert!(
-            configured
-                .push(accounts::Account::SignIn {
-                    registration: registration(self.story),
-                    endpoint: accounts::Endpoint {
-                        address: self.address.expect("issuer address"),
-                        transport: accounts::Transport::Plaintext
-                    },
-                    keeper: match &self.file_driver {
-                        Some(driver) => accounts::Keeper::Private {
-                            root: driver.root(),
-                            directory: bytes::copy_of(b"secret"),
-                            file: bytes::copy_of(b"record")
-                        },
-                        None => accounts::Keeper::Owner { kept: None },
-                    }
-                })
-                .is_ok()
-        );
-        self.component = Some(
-            accounts::Component::new(
-                configured,
-                &self.limits,
-                skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed"),
-            )
-            .expect("accounts"),
-        );
-        self.ask(env, accounts::Request::SignIn { account: 0 });
-    }
-    fn ask(&mut self, env: &Env<accounts::Limits>, request: accounts::Request) {
-        self.component.as_mut().expect("component").down(
-            env,
-            request,
-            &mut self.above,
-            &mut self.requests,
-            &mut self.files,
-        );
-    }
-    fn close(&mut self, env: &Env<accounts::Limits>) {
-        if !self.closing {
-            self.closing = true;
-            self.ask(env, accounts::Request::Close);
-        }
-    }
-    fn observe(&mut self, env: &Env<accounts::Limits>) {
-        if let Some(event) = self.above.pop() {
-            assert!(!self.closed, "Closed once and last");
-            match event {
-                accounts::Event::Visit { url, .. } => {
-                    assert!(self.visit.is_none());
-                    self.visit = Some(url);
-                    self.facts.push(Fact::Visit);
-                    match self.story {
-                        Story::CloseWaiting | Story::CloseConfidential => {
-                            self.close(env);
-                            assert!(!self.closed);
-                        }
-                        Story::Cancel => {
-                            self.ask(env, accounts::Request::Cancel { account: 0 });
-                            self.close(env);
-                        }
-                        Story::Abort => {
-                            self.close(env);
-                            self.ask(env, accounts::Request::Abort);
-                        }
-                        Story::Public
-                        | Story::Confidential
-                        | Story::WrongPath
-                        | Story::WrongHost
-                        | Story::LongHead
-                        | Story::NotKept
-                        | Story::Timeout => {}
-                    }
-                }
-                accounts::Event::Keep { account, record } => {
-                    let generation = record.generation;
-                    self.contracts.keep(generation);
-                    self.facts.push(Fact::Keep(generation));
-                    let yes = self.story != Story::NotKept;
-                    let size = if self.large { 256 } else { 16 };
-                    assert_eq!(record.access_token.as_ref(), vec![if generation == 1 { b'a' } else { b'b' }; size]);
-                    self.contracts.kept(generation, yes);
-                    self.ask(
-                        env,
-                        accounts::Request::Kept {
-                            account,
-                            generation,
-                            keeping: if yes { accounts::Keeping::Kept } else { accounts::Keeping::NotKept },
-                        },
-                    );
-                    self.records.push(record);
-                }
-                accounts::Event::SignedIn { account, generation } => {
-                    self.contracts.signed_in(generation);
-                    self.facts.push(Fact::SignedIn(generation));
-                    assert_eq!(generation, 1);
-                    if !self.closing {
-                        self.ask(env, accounts::Request::Grant { account });
-                    }
-                    if self.story == Story::Confidential {
-                        self.ask(
-                            env,
-                            accounts::Request::Redirected {
-                                account,
-                                uri: bytes::copy_of(b"https://service.example/callback?state=late&code=late"),
-                            },
-                        );
-                    }
-                }
-                accounts::Event::Granted { account, generation, .. } => {
-                    self.contracts.granted(generation);
-                    self.facts.push(Fact::Granted(generation));
-                    if generation == 1 && self.story == Story::Public {
-                        self.ask(env, accounts::Request::Rejected { account, generation });
-                    } else {
-                        self.close(env);
-                    }
-                }
-                accounts::Event::Failed { ends, failure, .. } => {
-                    assert_eq!(ends, accounts::Ends::SignIn);
-                    self.contracts.failed();
-                    self.facts.push(Fact::Failed(failure));
-                    self.close(env);
-                }
-                accounts::Event::Refused {
-                    asked: accounts::Asked::Redirected,
-                    why: accounts::Refusal::NotWaiting,
-                    ..
-                } => self.facts.push(Fact::Late),
-                accounts::Event::Closed => {
-                    self.contracts.closed();
-                    self.facts.push(Fact::Closed);
-                    self.closed = true;
-                    if let Some(driver) = &mut self.file_driver {
-                        driver.close_root(env.now);
-                    }
-                }
-                accounts::Event::Removed { .. }
-                | accounts::Event::Refused { .. }
-                | accounts::Event::Expiring { .. } => {
-                    panic!("unexpected sign-in owner event")
-                }
-            }
         }
     }
     fn private_io(&mut self, env: &Env<accounts::Limits>) {
@@ -345,7 +225,7 @@ impl Client {
                     if let io::file::Request::Store { owner, bytes, .. } = &request {
                         let record =
                             oauth::decode_record(bytes, &env.limits.client.document).expect("candidate record");
-                        self.contracts.keep(record.generation);
+                        self.contracts[0].keep(record.generation);
                         self.facts.push(Fact::Keep(record.generation));
                         assert!(self.file_keep.is_none());
                         self.file_keep = Some((*owner, record));
@@ -368,7 +248,7 @@ impl Client {
             }
             if self.file_keep.as_ref().is_some_and(|(owner, _)| *owner == event.owner()) {
                 let (_, record) = self.file_keep.take().expect("matching keep");
-                self.contracts.kept(record.generation, matches!(event, io::file::Event::Stored { .. }));
+                self.contracts[0].kept(record.generation, matches!(event, io::file::Event::Stored { .. }));
                 self.records.push(record);
             }
             self.component.as_mut().expect("started component").filed(
@@ -593,7 +473,7 @@ impl Host for Process {
 
 #[expect(clippy::struct_excessive_bools, reason = "independent outside delivery, shutdown and success observations")]
 struct Judge {
-    delivered: bool,
+    delivered: usize,
     redirected: bool,
     shutdown: bool,
     wake: Option<Time>,
@@ -607,6 +487,8 @@ impl Referee<Process> for Judge {
             Process::Issuer(peer) => peer.address(),
             Process::Client(_) | Process::Browser(_) => None,
         });
+        let holder_ready =
+            processes.iter().any(|process| matches!(process, Process::Browser(browser) if browser.holder.is_some()));
         let mut visit = [0; 1024];
         let mut visit_len = 0;
         let mut redirect = [0; 1024];
@@ -614,7 +496,7 @@ impl Referee<Process> for Judge {
         for process in processes.iter() {
             match process {
                 Process::Client(client) => {
-                    if let Some(url) = &client.visit {
+                    if let Some(url) = client.visits.get(self.delivered) {
                         visit_len = url.len();
                         visit[..visit_len].copy_from_slice(url);
                     }
@@ -632,7 +514,9 @@ impl Referee<Process> for Judge {
         for process in processes {
             match process {
                 Process::Client(client) => {
-                    client.address = address;
+                    if self.story != Story::VaryingTaken || holder_ready {
+                        client.address = address;
+                    }
                     if confidential(self.story) && !self.redirected && redirect_len > 0 {
                         client.redirected[..redirect_len].copy_from_slice(&redirect[..redirect_len]);
                         client.redirected_len = redirect_len;
@@ -640,13 +524,10 @@ impl Referee<Process> for Judge {
                     }
                 }
                 Process::Browser(browser) => {
-                    if !self.delivered
-                        && !matches!(self.story, Story::Cancel | Story::Abort | Story::Timeout)
-                        && visit_len > 0
-                    {
+                    if !matches!(self.story, Story::Cancel | Story::Abort | Story::Timeout) && visit_len > 0 {
                         browser.inbox[..visit_len].copy_from_slice(&visit[..visit_len]);
                         browser.inbox_len = visit_len;
-                        self.delivered = true;
+                        self.delivered += 1;
                     }
                 }
                 Process::Issuer(peer) => {
@@ -680,9 +561,10 @@ impl Referee<Process> for Judge {
                 Process::Client(_) | Process::Browser(_) => None,
             })
             .expect("issuer");
-        self.wake = ((client.component.is_none() && issuer.address().is_some())
-            || (!self.delivered
-                && client.visit.is_some()
+        self.wake = ((client.component.is_none()
+            && issuer.address().is_some()
+            && (self.story != Story::VaryingTaken || browser.holder.is_some()))
+            || (client.visits.len() > self.delivered
                 && !matches!(self.story, Story::Cancel | Story::Abort | Story::Timeout))
             || (confidential(self.story) && !self.redirected && browser.redirect.is_some())
             || (!self.shutdown && client.is_empty() && browser.is_empty()))
@@ -693,7 +575,7 @@ impl Referee<Process> for Judge {
                 assert!(
                     client.facts.iter().any(|fact| matches!(fact, Fact::Failed(accounts::Failure::Unloaded { .. })))
                 );
-                assert!(client.visit.is_none(), "unsafe loading fails before Visit");
+                assert!(client.visits.is_empty(), "unsafe loading fails before Visit");
             } else {
                 match self.story {
                     Story::Cancel | Story::Abort => assert!(
@@ -716,7 +598,9 @@ impl Referee<Process> for Judge {
                         assert!(client.facts.contains(&Fact::SignedIn(1)));
                         assert!(client.facts.contains(&Fact::Late));
                     }
-                    Story::WrongPath
+                    Story::VaryingTaken
+                    | Story::TwoPorts
+                    | Story::WrongPath
                     | Story::WrongHost
                     | Story::LongHead
                     | Story::CloseWaiting
@@ -731,14 +615,14 @@ impl Referee<Process> for Judge {
             .iter()
             .filter(|observation| matches!(observation, peer::Observation::Post { .. }))
             .count();
-        assert!(posts <= if self.story == Story::Public { 2 } else { 1 });
+        assert!(posts <= if matches!(self.story, Story::Public | Story::TwoPorts) { 2 } else { 1 });
         if !self.private_failure
             && client.closed
             && browser.is_empty()
             && !matches!(self.story, Story::Cancel | Story::Abort | Story::Timeout)
         {
             assert!(browser.done);
-            assert_eq!(posts, if self.story == Story::Public { 2 } else { 1 });
+            assert_eq!(posts, if matches!(self.story, Story::Public | Story::TwoPorts) { 2 } else { 1 });
         }
         self.passed = self.shutdown && processes.iter().all(Host::is_empty);
     }
@@ -765,7 +649,7 @@ pub fn run(seed: u64, story: Story, faulted: bool, large: bool, memory: Memory) 
         seed,
         config,
         Judge {
-            delivered: false,
+            delivered: 0,
             redirected: false,
             shutdown: false,
             wake: None,
@@ -788,7 +672,7 @@ pub fn assert_replay(first: &Outcome<Process>, second: &Outcome<Process>) {
             (Process::Client(first), Process::Client(second)) => {
                 assert_eq!(first.facts, second.facts);
                 assert!(first.records == second.records);
-                assert!(first.visit == second.visit);
+                assert!(first.visits == second.visits);
             }
             (Process::Issuer(first), Process::Issuer(second)) => assert!(first.observations() == second.observations()),
             (Process::Browser(first), Process::Browser(second)) => {
@@ -822,15 +706,7 @@ pub fn run_private(seed: u64, private: crate::private::Story) -> Outcome<Process
     let mut world = World::new(
         seed,
         config,
-        Judge {
-            delivered: false,
-            redirected: false,
-            shutdown: false,
-            wake: None,
-            passed: false,
-            story,
-            private_failure,
-        },
+        Judge { delivered: 0, redirected: false, shutdown: false, wake: None, passed: false, story, private_failure },
         Memory::Checked,
     )
     .with_machine(files);

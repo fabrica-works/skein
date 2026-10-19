@@ -7,6 +7,7 @@ use skein_lib::{Env, Queue, Time, Token, Wall, bytes};
 use skein_world::Host;
 use std::net::{Ipv4Addr, SocketAddr};
 const WEB: Token = Token::new(3);
+const HOLDER: Token = Token::new(4);
 fn http_limits() -> http::Limits {
     http::Limits { request: 4096, ..crate::world::limits().http }
 }
@@ -155,13 +156,19 @@ pub struct Browser {
     stage: u32,
     pub(super) done: bool,
     story: Story,
+    pub(super) holder: Option<Token>,
 }
 impl Browser {
     pub(super) fn new(story: Story) -> Self {
+        let mut requests = Queue::with_capacity(ROOM);
+        if story == Story::VaryingTaken {
+            requests
+                .push(io::Request::Listen { owner: HOLDER, addr: io::Addr::Ip((Ipv4Addr::LOCALHOST, 31234).into()) });
+        }
         Self {
             io: io::Io::new(&io_limits()),
             events: Queue::with_capacity(ROOM),
-            requests: Queue::with_capacity(ROOM),
+            requests,
             submissions: Queue::with_capacity(ROOM),
             completions: Queue::with_capacity(ROOM),
             exchange: None,
@@ -173,6 +180,7 @@ impl Browser {
             stage: 0,
             done: false,
             story,
+            holder: None,
         }
     }
     fn open(&mut self, url: &[u8]) {
@@ -212,6 +220,15 @@ impl Browser {
             }
         }
         if self.exchange.is_none() {
+            if self.story == Story::TwoPorts && self.inbox_len > 0 && self.stage == 6 {
+                self.stage = 0;
+                self.done = false;
+            }
+            if self.done
+                && let Some(entity) = self.holder.take()
+            {
+                self.requests.push(io::Request::Close { entity });
+            }
             match self.stage {
                 0 if self.inbox_len > 0 => {
                     let url = bytes::copy_of(&self.inbox[..self.inbox_len]);
@@ -241,6 +258,8 @@ impl Browser {
                             url.resize(3000, b'x');
                         }
                         Story::Public
+                        | Story::VaryingTaken
+                        | Story::TwoPorts
                         | Story::Confidential
                         | Story::CloseWaiting
                         | Story::CloseConfidential
@@ -288,6 +307,8 @@ impl Host for Browser {
         for _ in 0..ROOM {
             let Some(event) = self.events.pop() else { break };
             match event {
+                io::Event::Listening { owner: HOLDER, listener, .. } => self.holder = Some(listener),
+                io::Event::Closed { owner: HOLDER } => {}
                 io::Event::Connecting { socket, .. } => self.socket = Some(socket),
                 io::Event::Connected { .. } => self.connected = true,
                 io::Event::Stream { up, .. } => self.exchange.as_mut().expect("browser exchange").up(up, now, wall),

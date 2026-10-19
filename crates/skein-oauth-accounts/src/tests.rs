@@ -395,7 +395,7 @@ fn a_released_record_still_announces_its_lead_without_an_expiry_failure() {
     assert_eq!(component.next_deadline(), None);
 }
 
-fn refresh_account(account: u32, address: core::net::SocketAddr) -> Account {
+pub(crate) fn refresh_account(account: u32, address: core::net::SocketAddr) -> Account {
     let mut record = tests_record(0);
     record.key = account;
     record.refresh_token = Some(bytes::copy_of(b"refresh"));
@@ -559,7 +559,7 @@ fn public_sign_in_admission_respects_listener_and_account_bounds() {
 #[path = "private_tests.rs"]
 mod private;
 
-fn crypto(n: u8) -> skein_lib::CryptoRng {
+pub(crate) fn crypto(n: u8) -> skein_lib::CryptoRng {
     let seed = skein_lib::Secret::new(bytes::copy_of(&[n; 32]));
     skein_lib::CryptoRng::new(&seed, 0).expect("a 32-byte fixture seed")
 }
@@ -683,3 +683,6 @@ fn failure_of(event: Option<Event>) -> Option<Failed> {
         | None => None,
     }
 }
+
+#[path = "ports_tests.rs"]
+mod ports;

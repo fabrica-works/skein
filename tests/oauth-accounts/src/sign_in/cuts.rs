@@ -219,7 +219,7 @@ impl Referee<Process> for Judge {
             }
             if let Inner::SignIn(super::Process::Client(client)) = &mut procs[1].inner {
                 client.address = address;
-                if let Some(url) = &client.visit {
+                if let Some(url) = client.visits.first() {
                     visit_len = url.len();
                     visit[..visit_len].copy_from_slice(url);
                 }
@@ -229,13 +229,13 @@ impl Referee<Process> for Judge {
                     self.sign_in.redirected = true;
                 }
             }
-            if !self.sign_in.delivered
+            if self.sign_in.delivered == 0
                 && visit_len > 0
                 && let Inner::SignIn(super::Process::Browser(browser)) = &mut procs[2].inner
             {
                 browser.inbox[..visit_len].copy_from_slice(&visit[..visit_len]);
                 browser.inbox_len = visit_len;
-                self.sign_in.delivered = true;
+                self.sign_in.delivered = 1;
             }
         }
         if procs[1].inner.view().is_empty() && procs[2].inner.view().is_empty() && !procs[0].ending {
@@ -255,7 +255,8 @@ impl Referee<Process> for Judge {
         };
         let owner_ready = match &procs[1].inner {
             Inner::SignIn(super::Process::Client(client)) => {
-                (client.component.is_none() && address_ready) || (client.visit.is_some() && !self.sign_in.delivered)
+                (client.component.is_none() && address_ready)
+                    || (!client.visits.is_empty() && self.sign_in.delivered == 0)
             }
             Inner::Recovery(RecoveryProcess::Client(client)) => client.unstarted() && address_ready,
             Inner::SignIn(super::Process::Issuer(_) | super::Process::Browser(_))
@@ -289,7 +290,7 @@ fn world() -> World<Process, Judge, FileSystem> {
         Judge {
             original: false,
             sign_in: super::Judge {
-                delivered: false,
+                delivered: 0,
                 redirected: false,
                 shutdown: false,
                 wake: None,

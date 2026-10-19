@@ -32,13 +32,13 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             client_secret: registration.client_secret,
             redirect_uri: registration.redirect_uri,
             refresh_token: if large { vec![b's'; 256].into_boxed_slice() } else { bytes::copy_of(b"seed") },
-            terms: None,
+            terms: port_terms(story),
         },
         fake::Limits {
             document: profile.client.document,
             uri_bytes: 256,
             request_bytes: 1024,
-            codes: 1,
+            codes: if story == Story::TwoPorts { 2 } else { 1 },
             rotations: 2,
             plans: 2,
             carried: 0,
@@ -51,8 +51,13 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             .queue(fake::Plan {
                 status: 200,
                 body: fake::Body::Token(oauth::TokenResponse {
-                    access_token: access_token
-                        .map_or_else(|| vec![access; if large { 256 } else { 16 }].into_boxed_slice(), bytes::copy_of),
+                    access_token: access_token.map_or_else(
+                        || {
+                            vec![if story == Story::TwoPorts { b'a' } else { access }; if large { 256 } else { 16 }]
+                                .into_boxed_slice()
+                        },
+                        bytes::copy_of,
+                    ),
                     refresh_token: Some(if large {
                         vec![if access == b'a' { b'r' } else { b't' }; 256].into_boxed_slice()
                     } else {
@@ -69,4 +74,14 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             .expect("plan");
     }
     Process::Issuer(Box::new(issuer))
+}
+
+pub(super) fn port_terms(story: Story) -> Option<fake::Terms> {
+    matches!(story, Story::VaryingTaken | Story::TwoPorts).then(|| fake::Terms {
+        issued: Box::new([]),
+        omit_issued: false,
+        revocation_endpoint: None,
+        varying_port: true,
+        openid: None,
+    })
 }

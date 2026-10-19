@@ -39,6 +39,7 @@ pub(crate) struct Exchange {
     pub(crate) aborted: bool,
     pub(crate) purpose: Purpose,
     pub(crate) visit: Option<Box<[u8]>>,
+    pub(crate) sign_in: Option<oauth::Event>,
     pub(crate) listener: Option<crate::listener::Listener>,
     pub(crate) file_active: bool,
 }
@@ -74,6 +75,7 @@ impl Exchange {
             aborted: false,
             purpose: Purpose::Refresh,
             visit: None,
+            sign_in: None,
             listener: None,
             file_active: false,
         }

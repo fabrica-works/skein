@@ -79,6 +79,7 @@ impl Component {
         }
         let client = oauth::Client::new(env.limits.client).expect("validated client");
         let mut exchange = Exchange::new(account, client, false);
+        exchange.sign_in = Some(prepare_sign_in(registration, number(&self.names, account), env, &mut self.crypto));
         exchange.stage = Stage::Loading;
         exchange.purpose = crate::exchange::Purpose::SignIn { waiting: false };
         let id = match self.exchanges.insert(exchange) {
@@ -101,51 +102,49 @@ impl Component {
         }
     }
 
-    pub(super) fn begin_sign_in(&mut self, env: &Env<Limits>, account: u32, io: &mut Queue<Lower>) {
+    pub(super) fn begin_sign_in(&mut self, _env: &Env<Limits>, account: u32, io: &mut Queue<Lower>) {
         let registration = match self.sources.get(account).expect("configured source") {
             Source::SignIn { registration, .. } => copy_registration(registration),
             Source::HandedIn => unreachable!("admitted sign-in source"),
         };
         let public = registration.client_secret.is_none();
-        let generation = match self.accounts.get(account).expect("account") {
-            State::Record { record, .. } | State::Loaded { record } => record.generation,
-            State::Empty => 0,
-        };
-        let state = draw(
-            &mut self.crypto,
-            env.limits.client.state_bytes.min(32).checked_mul(3).expect("bounded state").div_euclid(4),
-        );
-        let verifier =
-            if public || registration.pkce_for_confidential { Some(draw(&mut self.crypto, 32)) } else { None };
         let id = self.bindings.get(account).expect("account binding").expect("admitted exchange");
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
+        let event = exchange.sign_in.as_mut().expect("prepared sign-in");
+        match event {
+            oauth::Event::SignIn { generation, issued_client_id, id_token, subject, .. } => {
+                match self.accounts.get(account).expect("account") {
+                    State::Record { record, .. } | State::Loaded { record } => {
+                        *generation = record.generation;
+                        issued_client_id.clone_from(&record.issued_client_id);
+                        id_token.clone_from(&record.id_token);
+                        subject.clone_from(&record.subject);
+                    }
+                    State::Empty => {}
+                }
+            }
+            oauth::Event::Redirected { .. }
+            | oauth::Event::Refresh { .. }
+            | oauth::Event::Revoke { .. }
+            | oauth::Event::Http(_)
+            | oauth::Event::Tick { .. }
+            | oauth::Event::Cancel
+            | oauth::Event::Reset => unreachable!("prepared sign-in"),
+        }
         exchange.stage = Stage::Running;
         exchange.purpose = crate::exchange::Purpose::SignIn { waiting: true };
         if public {
-            exchange.listener = Some(Listener::new());
+            let preferred = redirect::port(&registration.redirect_uri).expect("validated public redirect");
+            exchange.listener = Some(Listener::new(&registration.redirect_uri, redirect::varying(&registration)));
             io.push(Lower::Listen {
                 owner: route::owner(id, Socket::Listener),
                 addr: skein_io::Addr::Ip(
-                    oauth::redirect_address(&registration.redirect_uri).expect("validated public redirect"),
+                    redirect::listen_address(&registration.redirect_uri, preferred).expect("validated public redirect"),
                 ),
             });
+        } else {
+            start(exchange, None);
         }
-        exchange.client.step(
-            oauth::Event::SignIn {
-                issued_client_id: None,
-                id_token: None,
-                subject: None,
-                nonce: None,
-                port: None,
-                registration,
-                key: number(&self.names, account),
-                generation,
-                state,
-                verifier,
-                now: env.now,
-            },
-            &mut exchange.above,
-        );
     }
 
     pub(super) fn redirected(&mut self, env: &Env<Limits>, account: u32, uri: &[u8], up: &mut Queue<Event>) {
@@ -216,7 +215,7 @@ impl Component {
 pub(super) fn deliver(client: &mut oauth::Client, above: &mut Queue<oauth::Request>, redirect: Redirect, now: Time) {
     client.step(
         oauth::Event::Redirected {
-            client_id: None,
+            client_id: redirect.client_id,
             uri: redirect.uri,
             state: redirect.state,
             code: redirect.code,
@@ -225,6 +224,58 @@ pub(super) fn deliver(client: &mut oauth::Client, above: &mut Queue<oauth::Reque
         },
         above,
     );
+}
+
+fn prepare_sign_in(
+    registration: oauth::Registration,
+    key: u32,
+    env: &Env<Limits>,
+    crypto: &mut CryptoRng,
+) -> oauth::Event {
+    let state =
+        draw(crypto, env.limits.client.state_bytes.min(32).checked_mul(3).expect("bounded state").div_euclid(4));
+    let verifier = if registration.client_secret.is_none() || registration.pkce_for_confidential {
+        Some(draw(crypto, 32))
+    } else {
+        None
+    };
+    let openid = match &registration.terms {
+        Some(terms) => terms.openid.is_some(),
+        None => false,
+    };
+    let nonce = if openid {
+        Some(draw(crypto, env.limits.client.nonce_bytes.min(32).checked_mul(3).expect("bounded nonce").div_euclid(4)))
+    } else {
+        None
+    };
+    oauth::Event::SignIn {
+        registration,
+        key,
+        generation: 0,
+        state,
+        verifier,
+        nonce,
+        port: None,
+        issued_client_id: None,
+        id_token: None,
+        subject: None,
+        now: env.now,
+    }
+}
+
+pub(super) fn start(exchange: &mut Exchange, bound_port: Option<u16>) {
+    let mut event = exchange.sign_in.take().expect("prepared sign-in");
+    match &mut event {
+        oauth::Event::SignIn { port, .. } => *port = bound_port,
+        oauth::Event::Redirected { .. }
+        | oauth::Event::Refresh { .. }
+        | oauth::Event::Revoke { .. }
+        | oauth::Event::Http(_)
+        | oauth::Event::Tick { .. }
+        | oauth::Event::Cancel
+        | oauth::Event::Reset => unreachable!("prepared sign-in"),
+    }
+    exchange.client.step(event, &mut exchange.above);
 }
 
 pub(crate) fn draw(crypto: &mut CryptoRng, length: u32) -> Box<[u8]> {

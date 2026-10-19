@@ -16,7 +16,11 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     use skein_lib::stream::{Down, Read, Up};
     use skein_world::stream::Wire;
 
-    let profile = crate::world::limits();
+    let mut profile = crate::world::limits();
+    if story == Story::TwoPorts {
+        profile.listeners = 2;
+        profile.io.sockets = 6;
+    }
     let registration = registration(story);
     let mut issuer = fake::Issuer::new(
         fake::Config {
@@ -26,13 +30,13 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             client_secret: registration.client_secret.clone(),
             redirect_uri: registration.redirect_uri.clone(),
             refresh_token: bytes::copy_of(b"seed"),
-            terms: None,
+            terms: super::issuer::port_terms(story),
         },
         fake::Limits {
             document: profile.client.document,
             uri_bytes: 256,
             request_bytes: 1024,
-            codes: 1,
+            codes: if story == Story::TwoPorts { 2 } else { 1 },
             rotations: 2,
             plans: 2,
             carried: 0,
@@ -44,7 +48,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             .queue(fake::Plan {
                 status: 200,
                 body: fake::Body::Token(oauth::TokenResponse {
-                    access_token: vec![access; 16].into_boxed_slice(),
+                    access_token: vec![if story == Story::TwoPorts { b'a' } else { access }; 16].into_boxed_slice(),
                     refresh_token: Some(bytes::copy_of(refresh)),
                     expires_in: 30,
                     scope: None,
@@ -72,13 +76,14 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     let mut body = Vec::new();
     let mut response: Option<(Box<[u8]>, usize)> = None;
     let mut server_closed = false;
-    let mut listener = None;
+    let mut listeners = Vec::new();
+    let mut preferred_failed = false;
     let mut callback = None;
     let mut callback_wire = Wire::new(seed.wrapping_add(2));
     let mut browser_bytes = Vec::new();
     let mut redirect = None;
     let mut callback_count = 0;
-    let mut scripted = false;
+    let mut scripted = 0;
     let mut callback_pending = false;
     let mut trace = Vec::new();
 
@@ -91,8 +96,10 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             component.fire(&env, &mut client.above, &mut client.requests, &mut client.files);
         }
         client.observe(&env);
-        if !scripted && let Some(url) = &client.visit {
-            scripted = true;
+        if (scripted == 0 || client.facts.contains(&Fact::Granted(1)))
+            && let Some(url) = client.visits.get(scripted)
+        {
+            scripted += 1;
             if !matches!(story, Story::Cancel | Story::Abort | Story::Timeout) {
                 issuer.step(fake::Event::Authorize { url: url.clone(), now }, &mut issuer_out);
                 let Some(fake::Request::Redirect { uri, state, code, client_id }) = issuer_out.pop() else {
@@ -110,13 +117,19 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         if !callback_pending
             && callback.is_none()
             && callback_count
-                < if matches!(story, Story::WrongPath | Story::WrongHost | Story::LongHead) { 2 } else { 1 }
+                < if matches!(story, Story::WrongPath | Story::WrongHost | Story::LongHead | Story::TwoPorts) {
+                    2
+                } else {
+                    1
+                }
             && let Some(uri) = &redirect
         {
             if confidential(story) {
                 client.ask(&env, accounts::Request::Redirected { account: 0, uri: uri.clone() });
                 redirect = None;
-            } else if let Some(identity) = listener {
+            } else if let Some((identity, _, _)) =
+                listeners.iter().find(|(_, _, port)| *port == url_parts(uri).0.port()).copied()
+            {
                 client.component.as_mut().expect("component").up(
                     &env,
                     io::Event::Accepted {
@@ -152,6 +165,9 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 browser_bytes.clear();
                 callback_count += 1;
                 callback_pending = true;
+                if story == Story::TwoPorts {
+                    redirect = None;
+                }
             }
         }
         if let Some(request) = client.requests.pop() {
@@ -185,15 +201,38 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     server_requests.push(http::Request::Next);
                 }
                 io::Request::Listen { owner: identity, addr } => {
-                    assert_eq!(addr, io::Addr::Ip((Ipv4Addr::LOCALHOST, 31234).into()));
-                    assert!(listener.replace(identity).is_none());
-                    client.component.as_mut().expect("component").up(
-                        &env,
-                        io::Event::Listening { owner: identity, listener: Token::new(10), addr },
-                        &mut client.above,
-                        &mut client.requests,
-                        &mut client.files,
-                    );
+                    let io::Addr::Ip(mut address) = addr else { panic!("IP listener") };
+                    if story == Story::VaryingTaken && address.port() == 31234 {
+                        preferred_failed = true;
+                        let component = client.component.as_mut().expect("component");
+                        component.up(
+                            &env,
+                            io::Event::Failed { owner: identity, error: io::Error::Other },
+                            &mut client.above,
+                            &mut client.requests,
+                            &mut client.files,
+                        );
+                        component.up(
+                            &env,
+                            io::Event::Closed { owner: identity },
+                            &mut client.above,
+                            &mut client.requests,
+                            &mut client.files,
+                        );
+                    } else {
+                        if address.port() == 0 {
+                            address.set_port(41000 + u16::try_from(listeners.len()).expect("two listeners"));
+                        }
+                        let token = Token::new(20 + u64::try_from(listeners.len()).expect("two listeners"));
+                        listeners.push((identity, token, address.port()));
+                        client.component.as_mut().expect("component").up(
+                            &env,
+                            io::Event::Listening { owner: identity, listener: token, addr: io::Addr::Ip(address) },
+                            &mut client.above,
+                            &mut client.requests,
+                            &mut client.files,
+                        );
+                    }
                 }
                 io::Request::Bind { owner: identity, socket } => {
                     assert_eq!(socket, Token::new(11));
@@ -219,8 +258,8 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                         trace.append(&mut server_wire.trace);
                         server_requests.push(http::Request::Close);
                         owner.take().expect("web owner")
-                    } else if entity == Token::new(10) {
-                        listener.take().expect("listener owner")
+                    } else if let Some(at) = listeners.iter().position(|(_, token, _)| *token == entity) {
+                        listeners.remove(at).0
                     } else {
                         assert_eq!(entity, Token::new(11));
                         if !matches!(story, Story::Cancel | Story::Abort | Story::Timeout) {
@@ -381,17 +420,18 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             && client.requests.is_empty()
             && client.above.is_empty()
             && owner.is_none()
-            && listener.is_none()
+            && listeners.is_empty()
             && callback.is_none()
         {
             assert_eq!(
                 issuer.posts(),
-                if story == Story::Public {
+                if matches!(story, Story::Public | Story::TwoPorts) {
                     2
                 } else {
                     u64::from(!matches!(story, Story::Cancel | Story::Abort | Story::Timeout))
                 }
             );
+            assert_eq!(preferred_failed, story == Story::VaryingTaken);
             trace.append(&mut client_wire.trace);
             trace.append(&mut server_wire.trace);
             trace.append(&mut callback_wire.trace);

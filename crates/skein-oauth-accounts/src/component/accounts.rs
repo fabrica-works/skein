@@ -17,7 +17,10 @@ pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Re
                 }
                 Transport::Plaintext | Transport::Tls { .. } => {}
             }
-            if registration.client_secret.is_none() && oauth::redirect_address(&registration.redirect_uri).is_err() {
+            if registration.client_secret.is_none()
+                && !crate::redirect::varying(&registration)
+                && oauth::redirect_address(&registration.redirect_uri).is_err()
+            {
                 return Err(Unusable::Redirect { account });
             }
             match oauth::validate_registration(&registration, &limits.client, true) {

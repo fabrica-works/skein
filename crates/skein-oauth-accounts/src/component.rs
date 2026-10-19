@@ -21,6 +21,9 @@ mod accounts;
 mod names;
 mod private;
 use names::number;
+#[cfg(test)]
+#[path = "component/nonce_tests.rs"]
+mod nonce_tests;
 mod sign_in;
 #[cfg(test)]
 pub(crate) use sign_in::draw;
@@ -517,7 +520,13 @@ impl Component {
                         None => {}
                     },
                     Socket::Listener | Socket::Callback => match &mut exchange.listener {
-                        Some(listener) => listener.up(env, id, socket, event, io),
+                        Some(listener) => {
+                            listener.up(env, id, socket, event, io);
+                            if listener.ready() && exchange.sign_in.is_some() {
+                                let port = listener.bound_port();
+                                sign_in::start(exchange, port);
+                            }
+                        }
                         None => {}
                     },
                 }
@@ -673,11 +682,7 @@ impl Component {
                     return;
                 }
                 if listener.has_work() {
-                    let registered = match self.sources.get(account).expect("account source") {
-                        Source::SignIn { registration, .. } => registration.redirect_uri.as_ref(),
-                        Source::HandedIn => unreachable!("listener source"),
-                    };
-                    listener.progress(env, registered, io);
+                    listener.progress(env, io);
                     return;
                 }
             }
@@ -919,6 +924,7 @@ impl Component {
         exchange.stage = Stage::Finished;
         exchange.received();
         exchange.visit = None;
+        exchange.sign_in = None;
         for _ in 0..oauth::MAX_OUT {
             drop(exchange.above.pop());
         }

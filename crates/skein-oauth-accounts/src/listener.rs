@@ -39,7 +39,17 @@ enum Head {
     Aborting,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Binding {
+    Fixed,
+    Preferred,
+    Retry,
+    Ephemeral,
+}
+
 pub(crate) struct Listener {
+    registered: Box<[u8]>,
+    binding: Binding,
     socket: Option<Token>,
     close_sent: bool,
     phase: Phase,
@@ -60,8 +70,16 @@ struct Callback {
 }
 
 impl Listener {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(registered: &[u8], varying: bool) -> Self {
         Listener {
+            registered: bytes::copy_of(registered),
+            binding: if !varying {
+                Binding::Fixed
+            } else if redirect::port(registered) == Some(0) {
+                Binding::Ephemeral
+            } else {
+                Binding::Preferred
+            },
             socket: None,
             close_sent: false,
             phase: Phase::Listening,
@@ -69,6 +87,10 @@ impl Listener {
             redirect: None,
             failure: None,
         }
+    }
+
+    pub(crate) fn bound_port(&self) -> Option<u16> {
+        if self.binding == Binding::Fixed { None } else { redirect::port(&self.registered) }
     }
 
     pub(crate) fn ready(&self) -> bool {
@@ -89,7 +111,14 @@ impl Listener {
     ) {
         match socket {
             Socket::Listener => match event {
-                Event::Listening { listener, .. } => {
+                Event::Listening { listener, addr, .. } => {
+                    if let skein_io::Addr::Ip(address) = addr {
+                        self.registered =
+                            redirect::with_port(&self.registered, address.port()).expect("validated redirect");
+                    }
+                    if self.binding != Binding::Fixed {
+                        self.binding = Binding::Ephemeral;
+                    }
                     self.socket = Some(listener);
                     self.end_listener(io);
                 }
@@ -102,11 +131,25 @@ impl Listener {
                     }
                 }
                 Event::Failed { .. } => {
-                    self.failure = Some(skein_oauth::Failure::Unavailable);
+                    if self.socket.is_none() && self.binding == Binding::Preferred && self.phase == Phase::Listening {
+                        self.binding = Binding::Retry;
+                    } else {
+                        self.failure = Some(skein_oauth::Failure::Unavailable);
+                    }
                 }
                 Event::Closed { .. } => {
                     self.socket = None;
-                    self.phase = Phase::Closed;
+                    if self.binding == Binding::Retry && self.phase == Phase::Listening {
+                        self.binding = Binding::Ephemeral;
+                        io.push(Request::Listen {
+                            owner: route::owner(id, Socket::Listener),
+                            addr: skein_io::Addr::Ip(
+                                redirect::listen_address(&self.registered, 0).expect("validated redirect"),
+                            ),
+                        });
+                    } else {
+                        self.phase = Phase::Closed;
+                    }
                 }
                 Event::Connecting { .. }
                 | Event::Connected { .. }
@@ -190,7 +233,7 @@ impl Listener {
         self.redirect = None;
     }
 
-    pub(crate) fn progress(&mut self, env: &Env<Limits>, registered: &[u8], io: &mut Queue<Request>) {
+    pub(crate) fn progress(&mut self, env: &Env<Limits>, io: &mut Queue<Request>) {
         let callback = match &mut self.callback {
             Some(callback) => callback,
             None => return,
@@ -210,7 +253,7 @@ impl Listener {
         if let Some(event) = callback.events.pop() {
             match event {
                 http::Event::Call(call) => {
-                    let redirect = redirect::from_head(&call, registered, &env.limits.client);
+                    let redirect = redirect::from_head(&call, &self.registered, &env.limits.client);
                     let accepted = redirect.is_some() && self.phase == Phase::Listening;
                     if accepted {
                         self.redirect = redirect;
@@ -335,5 +378,7 @@ pub(crate) fn worst_case(limits: &Limits) -> Option<u64> {
                 .checked_mul(u64::from(ROUTES))?,
         )?
         .checked_add(u64::from(limits.client.url_bytes).checked_mul(2)?)?
+        .checked_add(u64::from(limits.client.uri_bytes))?
+        .checked_add(u64::from(limits.client.document.issued_client_bytes))?
         .checked_add(512)
 }

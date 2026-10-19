@@ -3,7 +3,7 @@
 //! machine sees query values; state authentication remains the machine's.
 
 use alloc::boxed::Box;
-use skein_lib::{List, Writer, bytes};
+use skein_lib::{Decimal, List, Writer, bytes};
 use skein_oauth::ClientLimits;
 
 pub(crate) struct Redirect {
@@ -11,6 +11,7 @@ pub(crate) struct Redirect {
     pub(crate) state: Box<[u8]>,
     pub(crate) code: Option<Box<[u8]>>,
     pub(crate) error: Option<Box<[u8]>>,
+    pub(crate) client_id: Option<Box<[u8]>>,
 }
 
 pub(crate) fn parse(uri: &[u8], registered: &[u8], limits: &ClientLimits) -> Option<Redirect> {
@@ -23,7 +24,7 @@ pub(crate) fn parse(uri: &[u8], registered: &[u8], limits: &ClientLimits) -> Opt
         return None;
     }
     let query = rest.get(1..)?;
-    let mut fields = Fields { state: None, code: None, error: None };
+    let mut fields = Fields { state: None, code: None, error: None, client_id: None };
     let mut start = 0;
     for index in 0..query.len() {
         if query.get(index) == Some(&b'&') {
@@ -32,13 +33,20 @@ pub(crate) fn parse(uri: &[u8], registered: &[u8], limits: &ClientLimits) -> Opt
         }
     }
     field(query.get(start..)?, limits, &mut fields)?;
-    Some(Redirect { uri: bytes::copy_of(registered), state: fields.state?, code: fields.code, error: fields.error })
+    Some(Redirect {
+        uri: bytes::copy_of(registered),
+        state: fields.state?,
+        code: fields.code,
+        error: fields.error,
+        client_id: fields.client_id,
+    })
 }
 
 struct Fields {
     state: Option<Box<[u8]>>,
     code: Option<Box<[u8]>>,
     error: Option<Box<[u8]>>,
+    client_id: Option<Box<[u8]>>,
 }
 
 fn field(pair: &[u8], limits: &ClientLimits, fields: &mut Fields) -> Option<()> {
@@ -57,6 +65,12 @@ fn field(pair: &[u8], limits: &ClientLimits, fields: &mut Fields) -> Option<()> 
                 return None;
             }
             fields.code = Some(decode(value, limits.code_bytes)?);
+        }
+        b"client_id" => {
+            if fields.client_id.is_some() {
+                return None;
+            }
+            fields.client_id = Some(decode(value, limits.document.issued_client_bytes)?);
         }
         b"error" => {
             if fields.error.is_some() {
@@ -137,4 +151,65 @@ pub(crate) fn from_head(call: &skein_http::server::Call, registered: &[u8], limi
     }
     uri.put(&call.target).ok()?;
     parse(&uri.finish(), registered, limits)
+}
+
+/// The registered authority's port, including zero for a varying redirect.
+pub(crate) fn port(uri: &[u8]) -> Option<u16> {
+    let (_, authority, _) = parts(uri)?;
+    let at = colon(authority)?;
+    let digits = authority.get(at.checked_add(1)?..)?;
+    if digits.is_empty() {
+        return None;
+    }
+    let mut port = 0_u16;
+    for byte in digits {
+        if !byte.is_ascii_digit() {
+            return None;
+        }
+        port = port.checked_mul(10)?.checked_add(u16::from(byte.checked_sub(b'0')?))?;
+    }
+    Some(port)
+}
+
+fn parts(uri: &[u8]) -> Option<(&[u8], &[u8], &[u8])> {
+    let rest = uri.strip_prefix(b"http://")?;
+    let slash = bytes::find(rest, b"/")?;
+    Some((b"http://", rest.get(..slash)?, rest.get(slash..)?))
+}
+
+pub(crate) fn listen_address(uri: &[u8], port: u16) -> Option<core::net::SocketAddr> {
+    let fixed = with_port(uri, 1)?;
+    let mut address = skein_oauth::redirect_address(&fixed).ok()?;
+    address.set_port(port);
+    Some(address)
+}
+
+pub(crate) fn with_port(uri: &[u8], port: u16) -> Option<Box<[u8]>> {
+    let (scheme, authority, path) = parts(uri)?;
+    let colon = colon(authority)?;
+    let host = authority.get(..colon.checked_add(1)?)?;
+    let digits = Decimal::of(u64::from(port));
+    let length = scheme.len().checked_add(host.len())?.checked_add(digits.as_bytes().len())?.checked_add(path.len())?;
+    let mut writer = Writer::new(length);
+    for part in [scheme, host, digits.as_bytes(), path] {
+        writer.put(part).ok()?;
+    }
+    Some(writer.finish())
+}
+
+pub(crate) fn varying(registration: &skein_oauth::Registration) -> bool {
+    match &registration.terms {
+        Some(terms) => terms.varying_port,
+        None => false,
+    }
+}
+
+fn colon(authority: &[u8]) -> Option<usize> {
+    let mut last = None;
+    for index in 0..authority.len() {
+        if authority.get(index) == Some(&b':') {
+            last = Some(index);
+        }
+    }
+    last
 }

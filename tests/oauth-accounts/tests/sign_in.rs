@@ -52,6 +52,8 @@ fn full_issuer_tokens_plans_codes_and_rotations_fit_the_process_heap() {
 fn protocol_streams_cover_the_owner_redirect_cancel_close_and_keep_terminals() {
     for story in [
         Story::Public,
+        Story::VaryingTaken,
+        Story::TwoPorts,
         Story::Confidential,
         Story::WrongPath,
         Story::WrongHost,
@@ -66,6 +68,27 @@ fn protocol_streams_cover_the_owner_redirect_cancel_close_and_keep_terminals() {
         let first = sign_in::protocol(67, story);
         let second = sign_in::protocol(67, story);
         assert_eq!(first, second);
+    }
+}
+
+#[test]
+fn a_varying_port_signs_in_with_its_preferred_port_taken() {
+    for protocol in [false, true] {
+        if protocol {
+            drop(sign_in::protocol(71, Story::VaryingTaken));
+        } else {
+            drop(sign_in::run(71, Story::VaryingTaken, false, false, Memory::Checked));
+        }
+    }
+}
+#[test]
+fn two_sign_ins_at_once_each_follow_their_own_port() {
+    for protocol in [false, true] {
+        if protocol {
+            drop(sign_in::protocol(73, Story::TwoPorts));
+        } else {
+            drop(sign_in::run(73, Story::TwoPorts, false, false, Memory::Checked));
+        }
     }
 }
 

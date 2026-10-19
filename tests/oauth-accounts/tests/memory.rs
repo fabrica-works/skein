@@ -449,3 +449,14 @@ fn an_added_and_removed_place_fits_the_heap_bound() {
         skein_world::Memory::Checked,
     ));
 }
+
+#[test]
+fn two_varying_sign_ins_fit_the_heap_bound() {
+    drop(skein_oauth_accounts_world::sign_in::run(
+        73,
+        skein_oauth_accounts_world::sign_in::Story::TwoPorts,
+        false,
+        false,
+        skein_world::Memory::Checked,
+    ));
+}

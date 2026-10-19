@@ -66,7 +66,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let payload = u64::from(limits.http.head.max(limits.http.request).max(limits.http.send))
         .checked_mul(u64::from(ROUTES))?
         .checked_add(u64::from(skein_tls::client::largest_room(&limits.tls)).checked_mul(u64::from(ROUTES))?)?;
+    // The client and the prepared SignIn each own a bounded registration and hints.
     let exchange = skein_oauth::client_worst_case(&limits.client)?
+        .checked_mul(2)?
         .checked_add(skein_http::client::worst_case(&limits.http)?)?
         .checked_add(skein_tls::client::worst_case(&limits.tls)?)?
         .checked_add(routes)?
