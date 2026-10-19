@@ -28,6 +28,7 @@ members = [
     "testing/skein-fake-peers",
     "testing/skein-heap",
     "testing/skein-scratch",
+    "testing/skein-throwaway-forgejo",
     "testing/skein-world",
     "tests/conformance/ring",
     "tests/conformance/sim",
@@ -61,6 +62,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-throwaway-forgejo = { path = "testing/skein-throwaway-forgejo" }
 skein-fake-person-browser = { path = "testing/skein-fake-person-browser" }
 skein-ui-example-server = { path = "examples/ui/server" }
 skein-ui-web = { path = "crates/skein-ui-web" }

@@ -942,6 +942,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-throwaway-forgejo"
+version = "0.0.0"
+dependencies = [
+ "skein-forge",
+ "skein-http",
+ "skein-io",
+ "skein-json",
+ "skein-lib",
+ "skein-shell",
+]
+
+[[package]]
 name = "skein-tls"
 version = "0.0.0"
 dependencies = [
