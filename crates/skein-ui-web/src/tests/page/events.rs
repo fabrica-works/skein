@@ -509,3 +509,87 @@ fn a_select_change_presses_the_option_and_puts_the_choice_back() {
         )
     );
 }
+
+// Preorder: page, main, button, its words, disabled button, its words, link, its words,
+// menu, menu item, its words, loose words.
+const HELD_BUTTON: NodeId = NodeId(3);
+const HELD_BUTTON_WORDS: NodeId = NodeId(4);
+const HELD_DISABLED_WORDS: NodeId = NodeId(6);
+const HELD_LINK: NodeId = NodeId(7);
+const HELD_LINK_WORDS: NodeId = NodeId(8);
+const HELD_MENU: NodeId = NodeId(9);
+const HELD_ITEM: NodeId = NodeId(10);
+const HELD_ITEM_WORDS: NodeId = NodeId(11);
+const HELD_LOOSE: NodeId = NodeId(12);
+fn held(builder: &mut Builder) {
+    main(builder);
+    builder.open(Role::Button);
+    builder.bind(fixtures::binding(1));
+    builder.text(Run::Plain, b"Clear");
+    builder.close();
+    builder.open(Role::Button);
+    builder.bind(fixtures::binding(2));
+    builder.state(State::Disabled);
+    builder.text(Run::Plain, b"Locked");
+    builder.close();
+    builder.open(Role::Link);
+    builder.link(fixtures::binding(3));
+    builder.text(Run::Plain, b"Home");
+    builder.close();
+    builder.open(Role::Menu);
+    builder.name(b"Actions");
+    builder.open(Role::MenuItem);
+    builder.bind(fixtures::binding(4));
+    builder.text(Run::Plain, b"Rename");
+    builder.close();
+    builder.close();
+    builder.text(Run::Plain, b"Loose");
+    end(builder);
+}
+fn held_page() -> Page<'static> {
+    let (mut page, mut view) = (page(), View::new(&LIMITS));
+    page.apply(&fixtures::patches(&mut view, 0, held), &mut Vec::new());
+    page
+}
+
+#[test]
+fn a_click_on_the_words_a_button_holds_presses_the_button() {
+    let mut page = held_page();
+    assert_eq!(
+        page.act(Event::Click { node: HELD_BUTTON_WORDS, modifier: false }, &mut Vec::new()),
+        Some((HELD_BUTTON, Act::Press))
+    );
+}
+
+#[test]
+fn a_click_on_the_words_a_disabled_button_holds_does_nothing() {
+    let mut page = held_page();
+    assert_eq!(page.act(Event::Click { node: HELD_DISABLED_WORDS, modifier: false }, &mut Vec::new()), None);
+}
+
+#[test]
+fn a_click_on_the_words_a_link_holds_presses_it_unless_modified() {
+    let mut page = held_page();
+    assert_eq!(
+        page.act(Event::Click { node: HELD_LINK_WORDS, modifier: false }, &mut Vec::new()),
+        Some((HELD_LINK, Act::Press))
+    );
+    assert_eq!(page.act(Event::Click { node: HELD_LINK_WORDS, modifier: true }, &mut Vec::new()), None);
+}
+
+#[test]
+fn a_click_on_the_words_a_menu_item_holds_presses_it() {
+    let (mut page, mut ops) = (held_page(), Vec::new());
+    page.act(Event::Click { node: HELD_MENU, modifier: false }, &mut Vec::new());
+    assert_eq!(
+        page.act(Event::Click { node: HELD_ITEM_WORDS, modifier: false }, &mut ops),
+        Some((HELD_ITEM, Act::Press))
+    );
+    assert_eq!(ops.last(), Some(&Op::Focus { node: HELD_MENU }));
+}
+
+#[test]
+fn a_click_on_loose_words_does_nothing() {
+    let mut page = held_page();
+    assert_eq!(page.act(Event::Click { node: HELD_LOOSE, modifier: false }, &mut Vec::new()), None);
+}

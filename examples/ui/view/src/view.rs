@@ -211,12 +211,14 @@ fn form(state: &State, builder: &mut Builder) {
         builder.close();
     }
     builder.close();
-    for (binding, name) in [(CLEAR, 15), (ADD, 9)] {
-        builder.open(Role::Button);
-        builder.name(&phrase(state, name));
-        builder.bind(binding);
-        builder.close();
-    }
+    builder.open(Role::Button);
+    builder.bind(CLEAR);
+    builder.text(Run::Plain, &phrase(state, 15));
+    builder.close();
+    builder.open(Role::Button);
+    builder.name(&phrase(state, 9));
+    builder.bind(ADD);
+    builder.close();
     builder.close();
 }
 fn invalid(state: &State, builder: &mut Builder, why: Option<u16>) {

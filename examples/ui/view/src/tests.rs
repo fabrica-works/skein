@@ -98,7 +98,7 @@ fn the_views_worst_case_fits_its_limits() {
         .expect("64 notes fit");
     let mut view = View::new(&limits::limits());
     state.build(&mut view, &mut Queue::with_capacity(1200));
-    assert_eq!(view.tree().len(), 486);
+    assert_eq!(view.tree().len(), 487);
     assert!(limits::worst_case().expect("worst case fits u64") < 100_000_000, "view fits its 100 MB memory bound");
 }
 

@@ -631,7 +631,20 @@ impl Page<'_> {
         (enabled(a) && a.bound).then_some((option, Act::Press))
     }
 
+    fn pressed(&self, node: NodeId) -> NodeId {
+        let mut at = node;
+        while at != NodeId(0) {
+            let held = self.held(at);
+            if [Role::Button, Role::Link, Role::Tab, Role::MenuItem].contains(&held.made.attribute.role) {
+                return at;
+            }
+            at = held.parent;
+        }
+        node
+    }
+
     fn click(&mut self, node: NodeId, modifier: bool, ops: &mut Vec<Op>) -> Option<(NodeId, Act)> {
+        let node = self.pressed(node);
         let a = &self.held(node).made.attribute;
         if !enabled(a) {
             return None;
