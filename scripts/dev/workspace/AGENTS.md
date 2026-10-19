@@ -63,7 +63,7 @@ and how it ends with a retrospective and its metrics. Its tools are in
 `~/.local/bin`.
 
 **A new machine.** Clone skein, smith, jig, hearth and temper from
-`git@github.com:forgetic/` into `~/src/rust/`, then run
+`git@github.com:fabrig-dev/` into `~/src/rust/`, then run
 `skein/scripts/dev/plan check --fix`. It links the tools, this file, its
 `CLAUDE.md`, its Claude Code settings (`.claude/settings.json`) and the
 coordinator's Codex profile, sets up the queue, and names what is still

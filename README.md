@@ -61,10 +61,13 @@ through `land`, which runs the gate, `scripts/check.sh`.
 
 ## The family
 
+These are the repositories of [Fabrig](https://github.com/fabrig-dev), an
+agent-driven software factory: write, prove, run.
+
 | Repository | | Builds on |
 |---|---|---|
-| [skein](https://github.com/forgetic/skein) | One thread, one loop, no async | |
-| [smith](https://github.com/forgetic/smith) | Protocol-driven agent loop for AI applications | skein |
-| [jig](https://github.com/forgetic/jig) | Engine for agentic applications | skein, smith |
-| [temper](https://github.com/forgetic/temper) | Agent-driven software development on a forge | skein, smith, jig |
-| [hearth](https://github.com/forgetic/hearth) | Immutable machines, built from a revision | skein |
+| [skein](https://github.com/fabrig-dev/skein) | One thread, one loop, no async | |
+| [smith](https://github.com/fabrig-dev/smith) | Protocol-driven agent loop for AI applications | skein |
+| [jig](https://github.com/fabrig-dev/jig) | Engine for agentic applications | skein, smith |
+| [temper](https://github.com/fabrig-dev/temper) | Agent-driven software development on a forge | skein, smith, jig |
+| [hearth](https://github.com/fabrig-dev/hearth) | Immutable machines, built from a revision | skein |
