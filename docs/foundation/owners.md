@@ -217,6 +217,12 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
 - **`heavy`** is the only way to build and test, for everyone: `heavy
   cargo nextest run -p <crate>`. It queues on pueue in two lanes:
   builds, two at a time, and gates, alone on a quiet machine.
+- **Every machine's gate.** A repository's `main` must pass its gate
+  on every machine that builds it, x1 the slowest. A test that fits
+  its time budget only on a fast machine breaks other owners' and
+  runs' landings: keep a new test well inside its budget (half of it
+  is a good mark), and make a slow one cheaper rather than raise the
+  budget.
 - **The disk floor.** Below the machine's floor, 40 GB unless
   `tmp/machine.env` says otherwise, no new implementer starts, and
   finished targets are cleared. A target grows to about 21 GB.
