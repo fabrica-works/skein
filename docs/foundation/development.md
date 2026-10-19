@@ -907,10 +907,15 @@ user only what they and the design leave open, and asks before writing.
   file-lines: 800
   budgets: 15 60
   aims: hearth 8 30
+  test-names: _and_
   ```
 
   `words` are the words the plan forbids in code, `types` the names that
-  signal a parallel type, `file-lines` the plan's file limit, `budgets`
+  signal a parallel type, `test-names` the pattern no new test
+  function's name matches (`_and_` when the line is absent: a test
+  checks one behaviour, testing-strategy.md, section 10), which `land`
+  refuses (section 9.1) and no Test shape names, `file-lines` the plan's
+  file limit, `budgets`
   the focused and fuzzy suites' budgets in seconds, and `aims` the times
   a repository's focused and fuzzy suites stay within, in seconds: the
   base plus what the run may add (section 5.6), a line for each
@@ -2036,6 +2041,12 @@ From a clean worktree on the branch to land, `land`:
      uncounted;
    - code that adds a word the active plan's Pulse forbids, on a branch
      that carries that plan's steps;
+   - a test function, added on such a branch, whose name the Pulse's
+     `test-names:` pattern matches, `_and_` when it has none (section
+     5.2). In temper's tools run, eight steer points, three README rules
+     and a withdrawn mend on test shape left 19 new tests named with
+     "and"; render's proposal 6, that a rule sent twice becomes a gate
+     check, had not been built;
 2. unless a gate already passed on this tree, or on one that differs from
    it only in Markdown files under `docs/` (section 9.2):
    - in a Cargo repository, builds the tree and runs its lints in the build
@@ -2060,7 +2071,7 @@ tries. Its exit status:
 | Status | Means |
 |---|---|
 | 0 | landed |
-| 2 | refused before starting, a commit's trailers, a forbidden word, or nothing to land |
+| 2 | refused before starting, a commit's trailers, a forbidden word or test name, or nothing to land |
 | 3 | the rebase stopped on conflicts, left in progress |
 | 4 | the build, its lints or the gate failed |
 | 5 | the local `main` could not follow: with a push, the commit landed on `origin/main`; with `--local`, nothing landed |
@@ -3057,7 +3068,7 @@ counts them by hand.
 | Metric | Is |
 |---|---|
 | `wall_h` | hours from the claim to `done.md`'s `Recorded` line (section 7.6), or else to `done.md`'s last change |
-| `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes |
+| `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes: like `wall_h`, it ends at `done.md`'s `Recorded` line |
 | `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan (a split's lettered parts included), steps added during the run (every `.s<k>` and a lettered part whose parent is not `split`), steps dropped; a `split` row counts in none; `-repin` is planned |
 | `step_h` | `running_h` per landed step |
 | `chain_step_min` | the median minutes from a step's start, its first thread's, to its landing, over the steps of the chain the README names: what the next README projects its chain at (section 5.2); the next kit batch computes it |

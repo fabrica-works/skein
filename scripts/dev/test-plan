@@ -309,6 +309,10 @@ base=$(date -u -d '-3 hours' +%s)
     printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call","name":"wait_agent","arguments":"{\\"timeout_ms\\":60000}","call_id":"w1"}}\n' "$(date -u -d "@$((base + 5340))" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call_output","call_id":"w1","output":"{\\"message\\":\\"Wait timed out.\\",\\"timed_out\\":true}"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"compacted","payload":{"message":""}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
+    # Ten minutes around the end that done.md records below: no running time.
+    for offset in 17700 18300; do
+        printf '{"timestamp":"%s","type":"turn_context","payload":{}}\n' "$(date -u -d "@$((base + offset))" +%FT%TZ)"
+    done
 } >"$CODEX_HOME/sessions/2026/10/11/rollout-x-$coordinator.jsonl"
 {
     printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"t-impl-1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"%s"}}}}}\n' "$(date -u -d "@$base" +%FT%TZ)" "$coordinator"

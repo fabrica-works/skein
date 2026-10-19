@@ -371,8 +371,8 @@ run_ended() {
     if [[ -n $at ]]; then date -u -d "$at" +%s; else stat -c %Y "$run/done.md"; fi
 }
 
-# Seconds the coordinator worked: the span of its rollouts' events, less
-# every gap of more than ten minutes.
+# Seconds the coordinator worked: the span of its rollouts' events up to
+# the run's end, less every gap of more than ten minutes.
 running_seconds() {
     local files thread
     files=$(for thread in $( { cat "$run/thread" "$run/threads" 2>/dev/null || true; } | awk 'NF { print $1 }' | sort -u); do
@@ -384,7 +384,7 @@ running_seconds() {
     fi
     # shellcheck disable=SC2086 # one path per line, none with spaces
     jsonl '.timestamp // empty | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601' $files 2>/dev/null | sort -n |
-        awk -v gap="${PLAN_GAP:-600}" 'NR > 1 { d = $1 - last; if (d <= gap) total += d } { last = $1 } END { print total + 0 }'
+        awk -v gap="${PLAN_GAP:-600}" -v end="$(run_ended)" '$1 > end { exit } NR > 1 { d = $1 - last; if (d <= gap) total += d } { last = $1 } END { print total + 0 }'
 }
 
 # The plan's README settings for the pulse (development.md, section 5.2):

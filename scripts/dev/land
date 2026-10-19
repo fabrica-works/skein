@@ -19,7 +19,7 @@
 # moves main under its gate. Before the gate, it refuses a commit whose
 # Plan, Step, Proof, Planner-Session or Designer-Session lines git does
 # not read as trailers, and code that adds a word the active plan's Pulse
-# forbids.
+# forbids or a test whose name its `test-names:` pattern matches.
 #
 # --docs   Markdown only, and a plan's metrics.tsv: check that, and skip
 #          the gate.
@@ -34,8 +34,8 @@
 #
 # Exit status:
 #   0  landed
-#   2  refused: before starting, a commit's trailers, a forbidden word, or
-#      nothing to land
+#   2  refused: before starting, a commit's trailers, a forbidden word or
+#      test name, or nothing to land
 #   3  the rebase stopped on conflicts, left for you to resolve
 #   4  the gate failed
 #   5  the local main could not follow: with a push, the commit landed on
@@ -166,15 +166,39 @@ unread_trailers() {
     done
 }
 
-# The words the active plan's Pulse forbids (development.md, section 5.2),
-# when this branch carries that plan's steps: a regular expression, or
-# nothing.
-forbidden_words() {
-    local active=$tmp/active-plan plan_dir
+# A line of the active plan's Pulse (development.md, section 5.2), when
+# this branch carries that plan's steps: its value, or else the default;
+# nothing on another branch.
+#   pulse_line BASE KEY [DEFAULT]
+pulse_line() {
+    local active=$tmp/active-plan plan_dir value
     [[ -f $active ]] || return 0
     plan_dir=$(sed -n 2p "$active")
     git log --format='%(trailers:key=Plan,valueonly)' "$1..HEAD" | grep -qx "$(basename "$plan_dir")" || return 0
-    sed -nE 's/^ *words: *(.*[^ ]) *$/\1/p' "$plan_dir/README.md" 2>/dev/null | head -n1
+    value=$(sed -nE "s/^ *$2: *(.*[^ ]) *\$/\\1/p" "$plan_dir/README.md" 2>/dev/null | head -n1)
+    echo "${value:-${3:-}}"
+}
+
+# The test functions this branch adds whose names match a pattern, as
+# "path: name": an added `fn` line under a test attribute, which may be a
+# line of context.
+#   added_tests BASE PATTERN
+added_tests() {
+    local name path
+    git diff "$1" HEAD -- '*.rs' | awk '
+        /^\+\+\+ / { path = substr($2, 3); test = 0; next }
+        /^@@/ { test = 0; next }
+        /^-/ { next }
+        { line = substr($0, 2) }
+        line ~ /^[ \t]*#\[([A-Za-z_]+::)*test[]( ]/ { test = 1; next }
+        line ~ /^[ \t]*(#\[|\/\/|$)/ { next }
+        test && /^\+/ && match(line, /fn +[A-Za-z0-9_]+/) {
+            name = substr(line, RSTART, RLENGTH); sub(/^fn +/, "", name); print name "\t" path
+        }
+        { test = 0 }' |
+        while IFS=$'\t' read -r name path; do
+            if grep -qP -- "$2" <<<"$name"; then echo "$path: $name"; fi
+        done
 }
 
 # The build lane's pass before the gate (development.md, section 9.1).
@@ -212,7 +236,7 @@ Resolve them, run git rebase --continue, then land again."
     unread=$(unread_trailers "$base")
     [[ -z $unread ]] || die 2 "git reads no trailer in: $unread. The message's last paragraph holds the trailers alone: one 'Key: value' a line, no blank line among them, no space in a key (implementer.md, section 8.4). Amend it, then land again."
     if ((!docs)); then
-        words=$(forbidden_words "$base")
+        words=$(pulse_line "$base" words)
         if [[ -n $words ]]; then
             found=$(git diff --unified=0 "$base" HEAD -- . ':(exclude)*.md' |
                 awk '/^\+\+\+ / { path = substr($2, 3); next } /^\+/ { print path "\t" substr($0, 2) }' |
@@ -220,6 +244,13 @@ Resolve them, run git rebase --continue, then land again."
             [[ -z $found ]] || die 2 "the plan's Pulse forbids these words ($words), which this branch adds:
 $found
 Say what the code checks instead, never a synonym (development.md, section 4.5); a name another crate defines is a question."
+        fi
+        names=$(pulse_line "$base" test-names _and_)
+        if [[ -n $names ]]; then
+            found=$(added_tests "$base" "$names" | head -n 10 || true)
+            [[ -z $found ]] || die 2 "the plan's Pulse names tests matching ($names) as checking more than one behaviour, and this branch adds:
+$found
+Name each test for its one behaviour, and split one that checks two (testing-strategy.md, section 10)."
         fi
     fi
 

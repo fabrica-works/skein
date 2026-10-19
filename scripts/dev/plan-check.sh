@@ -123,6 +123,7 @@ check_plan() {
     [[ -n $(design_inputs "$plan_dir/README.md") ]] ||
         warn "the README's Inputs name no docs/design/ or docs/foundation/ path: the metrics will count no design session"
     check_plan_readiness
+    check_pin_names
 
     # The plan's row in its repository's STATUS.md: ready, or this
     # machine's run being resumed.
@@ -135,6 +136,20 @@ check_plan() {
     *) fail "STATUS.md says $state" ;;
     esac
     check_status_done "$top_dir/docs/design/STATUS.md"
+}
+
+# A pin check matches the repository's name, never its organization, which
+# may be renamed (development.md, section 5.2): no `<org>/<repository>.git#`
+# in the README or a session file.
+check_pin_names() {
+    local named
+    named=$(grep -noE '[A-Za-z0-9-]+/(\[a-z\]\*|[$A-Za-z0-9_{}-]+)\.git#' "$plan_dir/README.md" "$plan_dir"/*/[0-9][0-9]-*.md 2>/dev/null |
+        sed "s|^$plan_dir/||" | head -n 3 | paste -sd ' ' || true)
+    if [[ -n $named ]]; then
+        fail "the plan's pin checks name an organization: $named; match the repository's name, /skein.git# (development.md, section 5.2)"
+    else
+        ok "the plan's pin checks name no organization"
+    fi
 }
 
 # The items of section 2 of a status file still left to a plan that its

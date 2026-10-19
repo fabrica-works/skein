@@ -46,6 +46,12 @@ out=$(capture status land_run --gate true)
 wait "$turn_pid"
 expect "land refuses a Pulse word" "$out" 'status=2' 'land:' "the plan's Pulse forbids these words (actual|exact)" 'w.rs: let exact = 1;'
 expect "land waits for another landing's turn" "$out" 'land: another landing in clone has its turn; waiting for it'
+land_branch and-name $'A test of two behaviours\n\nPlan: demo'
+printf '#[test]\n#[ignore]\nfn reads_and_writes() {}\n' >"$t/clone/t.rs"
+git -C "$t/clone" add t.rs
+git -C "$t/clone" commit -qm $'Add the test\n\nPlan: demo'
+out=$(capture status land_run --gate true)
+expect "land refuses a test name the Pulse's pattern matches" "$out" 'status=2' 'land:' "the plan's Pulse names tests matching (_and_)" 't.rs: reads_and_writes'
 before=$(cat "$run/ledger.tsv")
 out=$(capture status "$plan" set --help state=ready)
 expect "plan set refuses an option" "$out" 'status=2' 'plan:' 'a step is not an option: --help'
@@ -62,7 +68,11 @@ expect "check --fix fast-forwards" "$(plan_check --fix "$dir")" "ok    alpha: ma
 expect "check --fix links in the world" "$(readlink "$HOME/.local/bin/plan")" "$kit/plan"
 # The code graph's index of the checkout is compared with origin/main's tip.
 graph=$(readlink -f "$repo" | sed 's|^/||; s|/|-|g')
-expect "check says the graph has no index" "$(plan_check "$dir")" "ok    alpha: the graph has no index of it ($graph)"
+echo "grep -o 'forgetic/[a-z]*.git#[0-9a-f]*' Cargo.lock" >"$dir/alpha/02-pins.md"
+out=$(plan_check "$dir")
+rm "$dir/alpha/02-pins.md"
+expect "check says the graph has no index" "$out" "ok    alpha: the graph has no index of it ($graph)"
+expect "check refuses a pin check that names an organization" "$out" "FAIL  the plan's pin checks name an organization: alpha/02-pins.md:1:forgetic/[a-z]*.git#"
 mkdir -p "$HOME/.cache/codebase-memory-mcp"
 touch -d 2020-01-01 "$HOME/.cache/codebase-memory-mcp/$graph.db"
 expect "check warns of an older index" "$(plan_check "$dir")" "warn  alpha: the graph's index is older than origin/main: re-index $repo (project $graph)"
@@ -133,7 +143,7 @@ expect "handed over" "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session "$pla
 echo "- 2026-10-11T12:00:00Z: the coordinator is quiet; plan resume" >"$run/alerts.md"
 expect alerts "$("$plan" status)" "## Alerts" "the coordinator is quiet"
 printf 'Recorded %s.\n\nDone.\n' "$(date -u -d "@$(($(sed -nE 's/^## Claimed, (.*)$/\1/p' "$run/log.md" | xargs -I{} date -u -d {} +%s) + 7200))" +%FT%TZ)" >"$run/done.md"
-expect "the end recorded" "$(plan_numbers metrics)" $'wall_h\t2.0\th'
+expect "the end recorded, where running_h ends too" "$(plan_numbers metrics)" $'wall_h\t2.0\th' $'running_h\t0.5\th'
 
 # User services stay inside this test's world.
 mkdir -p "$t/stub" "$t/config/systemd/user"
