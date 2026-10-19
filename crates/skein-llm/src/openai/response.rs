@@ -994,6 +994,10 @@ fn write_error(out: &mut Encoder, error: &ProviderError) {
     out.string(&error.kind);
     out.key(b"message");
     out.string(&error.message);
+    if !error.param.is_empty() {
+        out.key(b"param");
+        out.string(&error.param);
+    }
     if let Some(reset) = error.resets_in_seconds {
         out.key(b"resets_in_seconds");
         out.unsigned(reset);

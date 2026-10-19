@@ -83,12 +83,55 @@ pub fn scripts(config: &Config, credential: &Credential, scripts: &[api::Script]
     Ok(())
 }
 
-pub(super) fn response_error(server: &mut Server, service: &Service, env: &Env<Limits>, error: api::Error) {
-    let Some(Row { status, code: kind }) = row(server.route, error) else {
-        return;
-    };
-    let retry = match error {
-        api::Error::RateLimited { retry_after } => Some(retry_after),
+pub(super) fn request_header(server: &Server, request: &[u8]) -> Header {
+    let number = Decimal::of(server.response_id);
+    let mut generated = List::with_capacity(24);
+    for byte in b"req_".iter().chain(number.as_bytes()) {
+        generated.push(*byte).expect("bounded request id");
+    }
+    Header {
+        name: bytes::copy_of(match server.route {
+            Provider::OpenAi => b"x-request-id",
+            Provider::OpenAiCodex => b"x-oai-request-id",
+            Provider::Anthropic => b"request-id",
+        }),
+        value: if request.is_empty() { generated.into_boxed() } else { bytes::copy_of(request) },
+    }
+}
+
+pub(super) fn response_error(server: &mut Server, _service: &Service, env: &Env<Limits>, failure: api::Failure) {
+    let error = failure.error;
+    let Some(Row { status, .. }) = row(server.route, error) else { return };
+    let body = body(server.route, &failure, env);
+    let mut headers = List::with_capacity(4);
+    headers
+        .push(Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(b"application/json") })
+        .expect("content type");
+    headers.push(request_header(server, &failure.report.request)).expect("request id");
+    match error {
+        api::Error::RateLimited { retry_after } => {
+            let seconds = Decimal::of(retry_after.as_nanos().div_euclid(1_000_000_000));
+            headers
+                .push(Header { name: bytes::copy_of(b"retry-after"), value: bytes::copy_of(seconds.as_bytes()) })
+                .expect("retry delay");
+        }
+        api::Error::Exhausted { retry_after } if server.route == Provider::Anthropic => {
+            headers
+                .push(Header {
+                    name: bytes::copy_of(b"anthropic-ratelimit-unified-status"),
+                    value: bytes::copy_of(b"rejected"),
+                })
+                .expect("unified status");
+            if let Some(delay) = retry_after {
+                let reset = Decimal::of(env.wall.as_secs().saturating_add(rounded(delay)));
+                headers
+                    .push(Header {
+                        name: bytes::copy_of(b"anthropic-ratelimit-unified-reset"),
+                        value: bytes::copy_of(reset.as_bytes()),
+                    })
+                    .expect("unified reset");
+            }
+        }
         api::Error::Exhausted { .. }
         | api::Error::Overloaded
         | api::Error::Unavailable
@@ -96,36 +139,7 @@ pub(super) fn response_error(server: &mut Server, service: &Service, env: &Env<L
         | api::Error::Unauthorized
         | api::Error::Refused
         | api::Error::Unsupported
-        | api::Error::InvalidRequest => None,
-    };
-    let body = body(service.config.provider, error, kind, env);
-    let mut headers = List::with_capacity(3);
-    headers
-        .push(Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(b"application/json") })
-        .expect("two headers");
-    if let Some(delay) = retry {
-        let seconds = Decimal::of(delay.as_nanos().div_euclid(1_000_000_000));
-        headers
-            .push(Header { name: bytes::copy_of(b"retry-after"), value: bytes::copy_of(seconds.as_bytes()) })
-            .expect("second header");
-    }
-    if service.config.provider == documents::Provider::Anthropic {
-        match error {
-            api::Error::Exhausted { .. } => headers
-                .push(Header {
-                    name: bytes::copy_of(b"anthropic-ratelimit-unified-status"),
-                    value: bytes::copy_of(b"rejected"),
-                })
-                .expect("third header"),
-            api::Error::Overloaded
-            | api::Error::RateLimited { .. }
-            | api::Error::Unavailable
-            | api::Error::ContextTooLong
-            | api::Error::Unauthorized
-            | api::Error::Refused
-            | api::Error::Unsupported
-            | api::Error::InvalidRequest => {}
-        }
+        | api::Error::InvalidRequest => {}
     }
     server.requests.push(http::Request::Respond(http::Response {
         status,
@@ -139,55 +153,60 @@ pub(super) fn response_error(server: &mut Server, service: &Service, env: &Env<L
     server.requests.push(http::Request::Reply(Down::Demand { read: Read::Nothing, room: env.limits.http.send }));
 }
 
-fn body(provider: documents::Provider, error: api::Error, kind: &[u8], env: &Env<Limits>) -> Box<[u8]> {
-    match provider {
-        documents::Provider::Anthropic => {
-            let message = match error {
-                api::Error::ContextTooLong => b"prompt is too long".as_slice(),
-                api::Error::Exhausted { .. }
-                | api::Error::RateLimited { .. }
-                | api::Error::Overloaded
-                | api::Error::Unavailable
-                | api::Error::Unauthorized
-                | api::Error::Refused
-                | api::Error::Unsupported
-                | api::Error::InvalidRequest => kind,
-            };
-            let error = anthropic::ProviderError {
-                param: Box::new([]),
-                kind: bytes::copy_of(kind),
-                message: bytes::copy_of(message),
-                resets_in_seconds: None,
-                resets_at: None,
-            };
-            match openai::encode_error(&error, &env.limits.documents.anthropic) {
-                Ok(body) => body,
-                Err(
-                    anthropic::DecodeError::Malformed
-                    | anthropic::DecodeError::Missing
-                    | anthropic::DecodeError::WrongType
-                    | anthropic::DecodeError::TooLarge { .. },
-                ) => bytes::copy_of(b"{}"),
-            }
+fn rounded(delay: skein_lib::Duration) -> u64 {
+    delay.as_nanos().div_ceil(1_000_000_000)
+}
+
+pub(super) fn provider_error(route: Provider, failure: &api::Failure) -> openai::ProviderError {
+    let kind = if failure.report.code.is_empty() {
+        row(route, failure.error).expect("admitted failure class").code
+    } else {
+        &failure.report.code
+    };
+    let message = if route == Provider::Anthropic && failure.error == api::Error::ContextTooLong {
+        b"prompt is too long".as_slice()
+    } else {
+        kind
+    };
+    let resets_in_seconds = if route == Provider::Anthropic {
+        None
+    } else {
+        match failure.error {
+            api::Error::Exhausted { retry_after: Some(delay) } => Some(rounded(delay)),
+            api::Error::Exhausted { retry_after: None }
+            | api::Error::RateLimited { .. }
+            | api::Error::Overloaded
+            | api::Error::Unavailable
+            | api::Error::ContextTooLong
+            | api::Error::Unauthorized
+            | api::Error::Refused
+            | api::Error::Unsupported
+            | api::Error::InvalidRequest => None,
         }
-        documents::Provider::OpenAi => {
-            let error = openai::ProviderError {
-                param: Box::new([]),
-                kind: bytes::copy_of(kind),
-                message: bytes::copy_of(kind),
-                resets_in_seconds: None,
-                resets_at: None,
-            };
-            match openai::encode_error(&error, &env.limits.documents.openai) {
-                Ok(body) => body,
-                Err(
-                    openai::DecodeError::Malformed
-                    | openai::DecodeError::Missing
-                    | openai::DecodeError::WrongType
-                    | openai::DecodeError::TooLarge { .. },
-                ) => bytes::copy_of(b"{}"),
-            }
-        }
+    };
+    openai::ProviderError {
+        param: failure.report.field.clone(),
+        kind: bytes::copy_of(kind),
+        message: bytes::copy_of(message),
+        resets_in_seconds,
+        resets_at: None,
+    }
+}
+
+fn body(route: Provider, failure: &api::Failure, env: &Env<Limits>) -> Box<[u8]> {
+    let error = provider_error(route, failure);
+    let limits = match route {
+        Provider::Anthropic => &env.limits.documents.anthropic,
+        Provider::OpenAi | Provider::OpenAiCodex => &env.limits.documents.openai,
+    };
+    match openai::encode_error(&error, limits) {
+        Ok(body) => body,
+        Err(
+            anthropic::DecodeError::Malformed
+            | anthropic::DecodeError::Missing
+            | anthropic::DecodeError::WrongType
+            | anthropic::DecodeError::TooLarge { .. },
+        ) => bytes::copy_of(b"{}"),
     }
 }
 

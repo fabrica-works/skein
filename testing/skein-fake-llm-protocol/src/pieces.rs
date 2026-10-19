@@ -73,10 +73,10 @@ pub(super) fn worst_case(limits: &documents::Limits) -> Option<u64> {
 pub(super) fn head(server: &mut Server) {
     server.requests.push(http::Request::Respond(http::Response {
         status: 200,
-        headers: Box::new([Header {
-            name: bytes::copy_of(b"content-type"),
-            value: bytes::copy_of(b"text/event-stream"),
-        }]),
+        headers: Box::new([
+            Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(b"text/event-stream") },
+            super::failure::request_header(server, &[]),
+        ]),
         body: http::Body::Chunked,
         close: false,
     }));

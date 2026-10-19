@@ -415,7 +415,7 @@ pub fn down(
             } else if let State::Pieces { .. } = server.state {
                 close(server, service, env, above, below);
             } else {
-                response_error(server, service, env, api::Error::InvalidRequest);
+                response_error(server, service, env, api::Error::InvalidRequest.into());
             }
         }
         Err(failure) => {
@@ -424,7 +424,7 @@ pub fn down(
                 server.pieces.fail(error);
                 next_event(server, service, env, above, below);
             } else {
-                response_error(server, service, env, error);
+                response_error(server, service, env, failure);
             }
         }
     }
@@ -790,7 +790,7 @@ fn http_event(
 fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, above: &mut Queue<Event>) {
     if let Some(error) = server.refused.take() {
         server.body.clear();
-        response_error(server, service, env, error);
+        response_error(server, service, env, error.into());
         return;
     }
     let query = documents::request(service.config.provider, server.body.as_slice(), &env.limits.documents);
@@ -808,11 +808,11 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
                 && (scope != server.session || scope.is_some() != server.thread.is_some())
             {
                 server.body.clear();
-                response_error(server, service, env, api::Error::InvalidRequest);
+                response_error(server, service, env, api::Error::InvalidRequest.into());
                 return;
             }
             let Ok(id) = service.calls.insert(Call { server: server.owner, active: true }) else {
-                response_error(server, service, env, api::Error::Overloaded);
+                response_error(server, service, env, api::Error::Overloaded.into());
                 return;
             };
             server.call = Some(id);
@@ -824,7 +824,7 @@ fn requested(server: &mut Server, service: &mut Service, env: &Env<Limits>, abov
             }));
         }
         Err(documents::Error::Malformed | documents::Error::TooLarge) => {
-            response_error(server, service, env, api::Error::InvalidRequest);
+            response_error(server, service, env, api::Error::InvalidRequest.into());
         }
     }
 }
@@ -989,6 +989,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<sse::Event>::worst_case(1)?)?
         .checked_add(Queue::<Down>::worst_case(2)?)?
         .checked_add(u64::from(limits.http.head).checked_mul(3)?)?
+        .checked_add(4_u64.checked_mul(u64::try_from(size_of::<Header>()).ok()?)?)?
+        .checked_add(192)?
+        .checked_add(u64::from(limits.documents.openai.answer.max(limits.documents.anthropic.answer)))?
         // Queued body events and the current entrance delivery own their
         // batches separately from HTTP's intake and the accumulated document.
         .checked_add(u64::from(request.max(limits.http.read)).checked_mul(u64::from(EVENTS.checked_add(1)?))?)

@@ -470,6 +470,16 @@ impl Exchange {
         self.peer_env.limits.documents.model_ceiling = ceiling;
     }
 
+    /// Sets seeded failure chances before the exchange starts, keeping its bounds.
+    pub fn failure_chances(&mut self, config: &fake::Config) {
+        assert_eq!(self.ticks, 0, "failure configuration precedes progress");
+        self.fake_env.limits.overloaded = config.overloaded;
+        self.fake_env.limits.rate_limited = config.rate_limited;
+        self.fake_env.limits.unavailable = config.unavailable;
+        self.fake_env.limits.too_long = config.too_long;
+        self.fake_env.limits.unauthorized = config.unauthorized;
+    }
+
     fn reserve_observations(&mut self) {
         if let Some(observations) = self.observations {
             reserve(&mut self.seen, observations.events);
