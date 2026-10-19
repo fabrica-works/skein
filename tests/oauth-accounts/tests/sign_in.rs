@@ -147,3 +147,27 @@ fn required_scopes_declined_then_a_grant_is_refused() {
         );
     }
 }
+
+fn openid_story(story: Story) {
+    for protocol in [false, true] {
+        let facts = if protocol {
+            sign_in::protocol(83, story).0
+        } else {
+            let outcome = sign_in::run(83, story, false, false, Memory::Checked);
+            sign_in::facts(&outcome.procs).to_vec()
+        };
+        assert_eq!(facts.last(), Some(&sign_in::Fact::Closed), "{story:?}, protocol {protocol}");
+    }
+}
+#[test]
+fn signing_in_again_fetches_the_issuers_keys_before_each_visit() {
+    openid_story(Story::OpenIdAgain);
+}
+#[test]
+fn a_new_registration_signs_in_with_its_issued_client_id() {
+    openid_story(Story::IssuedClientId);
+}
+#[test]
+fn a_sign_in_of_another_subject_fails_and_keeps_nothing() {
+    openid_story(Story::AnotherSubject);
+}

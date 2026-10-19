@@ -51,6 +51,7 @@ pub(crate) struct Exchange {
     pub(crate) purpose: Purpose,
     pub(crate) visit: Option<Box<[u8]>>,
     pub(crate) sign_in: Option<oauth::Event>,
+    pub(crate) subject: Option<Box<[u8]>>,
     pub(crate) listener: Option<crate::listener::Listener>,
     pub(crate) file_active: bool,
     pub(crate) lock: OwnerLock,
@@ -95,6 +96,7 @@ impl Exchange {
             purpose: Purpose::Refresh,
             visit: None,
             sign_in: None,
+            subject: None,
             listener: None,
             file_active: false,
             lock: OwnerLock::Released,
@@ -180,10 +182,10 @@ pub(crate) struct Web {
 
 impl Web {
     pub(crate) fn new(request: oauth::HttpRequest, endpoint: &Endpoint, limits: &Limits) -> Option<Web> {
-        match request.method {
-            oauth::Method::Post => {}
-            oauth::Method::Get => return None,
-        }
+        let method = match request.method {
+            oauth::Method::Post => Method::Post,
+            oauth::Method::Get => Method::Get,
+        };
         let authority_start = bytes::find(&request.endpoint, b"://")?.checked_add(3)?;
         let rest = request.endpoint.get(authority_start..)?;
         let slash = bytes::find(rest, b"/")?;
@@ -191,18 +193,26 @@ impl Web {
         let target = rest.get(slash..)?;
         let mut headers = List::with_capacity(2);
         headers.push(Header { name: bytes::copy_of(b"host"), value: bytes::copy_of(authority) }).expect("two headers");
-        headers
-            .push(Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(request.content_type) })
-            .expect("two headers");
+        if method == Method::Post {
+            headers
+                .push(Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(request.content_type) })
+                .expect("two headers");
+        }
         let mut requests = Queue::with_capacity(ROUTES);
         requests.push(http::Request::Call(http::Call {
-            method: Method::Post,
+            method,
             target: bytes::copy_of(target),
             headers: headers.into_boxed(),
-            body: http::Body::Length(u64::try_from(request.body.len()).ok()?),
+            body: if method == Method::Post {
+                http::Body::Length(u64::try_from(request.body.len()).ok()?)
+            } else {
+                http::Body::None
+            },
             close: true,
         }));
-        requests.push(http::Request::Upload(Down::Demand { read: Read::Nothing, room: limits.http.send }));
+        if method == Method::Post {
+            requests.push(http::Request::Upload(Down::Demand { read: Read::Nothing, room: limits.http.send }));
+        }
         let tls = match &endpoint.transport {
             Transport::Tls { server_name, trust } => Some(tls::Client::new(trust, server_name.clone(), &limits.tls)),
             Transport::Plaintext => None,
@@ -219,7 +229,14 @@ impl Web {
             cipher: Queue::with_capacity(ROUTES),
             upload: request.body,
             offset: 0,
-            document: List::with_capacity(limits.client.document.document_bytes),
+            document: List::with_capacity(
+                limits
+                    .client
+                    .document
+                    .document_bytes
+                    .max(limits.client.metadata_bytes)
+                    .max(limits.client.key_set_bytes),
+            ),
             response: None,
             answer: None,
             failure: None,

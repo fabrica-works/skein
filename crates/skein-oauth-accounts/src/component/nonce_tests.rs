@@ -28,7 +28,7 @@ fn the_nonce_is_drawn_from_the_seeded_generator() {
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     component.down(
         &env,
-        Request::SignIn { account: 0 },
+        Request::SignIn { account: 0, subject: None },
         &mut Queue::with_capacity(4),
         &mut Queue::with_capacity(4),
         &mut Queue::with_capacity(1),

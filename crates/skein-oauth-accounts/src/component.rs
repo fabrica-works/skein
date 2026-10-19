@@ -241,7 +241,7 @@ impl Component {
                 }
             }
             Request::SignOut { account } => self.sign_out(env, account, up, io),
-            Request::SignIn { account } => self.sign_in(env, account, up, io),
+            Request::SignIn { account, subject } => self.sign_in(env, account, subject, up, io),
             Request::Redirected { account, uri } => self.redirected(env, account, &uri, up),
             Request::Cancel { account } => match self.bindings.get(account) {
                 Some(Some(id)) => {
@@ -753,7 +753,21 @@ impl Component {
         match request {
             oauth::Request::Http(request) => {
                 let endpoint = match self.sources.get(account).expect("account source") {
-                    Source::SignIn { endpoint, .. } => endpoint,
+                    Source::SignIn { registration, endpoint, origins, .. } => {
+                        match accounts::endpoint(&request.endpoint, registration, endpoint, origins) {
+                            Some(endpoint) => endpoint,
+                            None => {
+                                self.fail_exchange(
+                                    env,
+                                    id,
+                                    Failure::Exchange(oauth::Failure::Unverified { check: oauth::Check::Keys }),
+                                    up,
+                                    io,
+                                );
+                                return;
+                            }
+                        }
+                    }
                     Source::HandedIn => unreachable!("exchange source"),
                 };
                 let web = match Web::new(request, endpoint, &env.limits) {
@@ -774,7 +788,7 @@ impl Component {
             oauth::Request::Tokens { record, missing } => {
                 exchange.lock_candidate = Some((record, missing));
                 if !self.lock_write(env, id, up) {
-                    self.keep_candidate(id, up);
+                    self.keep_candidate(env, id, up, io);
                 }
             }
             oauth::Request::Failed { failure } => self.fail_exchange(env, id, Failure::Exchange(failure), up, io),
@@ -825,9 +839,15 @@ impl Component {
                 match keeping {
                     Keeping::Kept => {
                         let generation = candidate.generation;
+                        let subject = candidate.subject.clone();
                         *slot = recorded(candidate, env, held);
                         if exchange.signing_in() {
-                            up.push(Event::SignedIn { account: number(&self.names, account), generation, missing });
+                            up.push(Event::SignedIn {
+                                account: number(&self.names, account),
+                                generation,
+                                missing,
+                                subject,
+                            });
                         }
                         if held {
                             grant(

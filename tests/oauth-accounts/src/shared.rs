@@ -49,6 +49,7 @@ pub(crate) fn start(client: &mut world::Client, env: &Env<accounts::Limits>) {
     assert!(
         configured
             .push(accounts::Account::SignIn {
+                origins: List::with_capacity(0),
                 shared: true,
                 registration: world::registration(Transport::Plaintext),
                 endpoint: accounts::Endpoint {

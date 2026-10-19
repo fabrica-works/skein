@@ -88,6 +88,9 @@ fn a_sign_ins_keep_locks_first() {
     assert!(owner.above.is_empty(), "no Keep before the owner lock");
 }
 fn signing_in() -> Owner {
+    signing_in_as(None)
+}
+fn signing_in_as(subject: Option<Box<[u8]>>) -> Owner {
     let account = shared_account(|account| {
         if let Account::SignIn { registration, .. } = account {
             registration.client_secret = Some(bytes::copy_of(b"fake secret"));
@@ -95,7 +98,7 @@ fn signing_in() -> Owner {
         }
     });
     let mut owner = Owner::configured([account], &limits());
-    owner.redirected(b"");
+    owner.redirected_as(b"", subject);
     let identity = owner.sent();
     owner.above = owner.finish_tokens(identity, private::BODY);
     owner.socket(LowerEvent::Closed { owner: identity });
@@ -310,4 +313,57 @@ fn a_locked_after_closed_is_left_to_the_owner() {
     drop(owner.above.pop());
     answer(&mut owner, shared_record(NEWER));
     assert!(owner.above.is_empty() && owner.io.is_empty() && owner.files.is_empty());
+}
+
+#[test]
+fn a_shared_sign_in_of_another_subject_keeps_nothing() {
+    struct Row {
+        name: &'static str,
+        delay: Duration,
+        before: Box<[Request]>,
+        expected: Box<[Seen]>,
+    }
+    let rows = [
+        Row {
+            name: "held",
+            delay: Duration::ZERO,
+            before: Box::new([]),
+            expected: Box::new([Seen::Failed(Failure::AnotherSubject), Seen::Unlock]),
+        },
+        Row {
+            name: "waiting",
+            delay: Duration::from_millis(10),
+            before: Box::new([]),
+            expected: Box::new([Seen::Failed(Failure::AnotherSubject), Seen::Unlock]),
+        },
+        Row {
+            name: "wait passed",
+            delay: Duration::from_secs(1),
+            before: Box::new([]),
+            expected: Box::new([Seen::Failed(Failure::Busy), Seen::Unlock]),
+        },
+        Row {
+            name: "closed",
+            delay: Duration::from_secs(1),
+            before: Box::new([Request::Abort]),
+            expected: Box::new([Seen::Failed(Failure::Exchange(skein_oauth::Failure::Cancelled)), Seen::Other]),
+        },
+    ];
+    for row in rows {
+        let mut owner = signing_in_as(Some(bytes::copy_of(EXPECTED_SUBJECT)));
+        assert_eq!(seen(&mut owner.above), Seen::Lock, "{}", row.name);
+        for request in row.before {
+            owner.ask(request);
+        }
+        owner.env.now = owner.env.now.saturating_add(row.delay);
+        for _ in 0_u32..4 {
+            owner.fire();
+        }
+        answer(&mut owner, shared_record(READ_GENERATION));
+        let mut observed = List::with_capacity(4);
+        while !owner.above.is_empty() {
+            observed.push(seen(&mut owner.above)).expect("terminal room");
+        }
+        assert_eq!(observed.as_slice(), row.expected.as_ref(), "{}", row.name);
+    }
 }

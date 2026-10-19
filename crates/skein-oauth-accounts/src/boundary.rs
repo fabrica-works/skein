@@ -16,7 +16,7 @@ pub enum Request {
     /// Removes this account after its sent exchange and durable keep settle.
     Remove { account: u32 },
     /// Starts this account's sign-in: Visit once, then `SignedIn`, Failed or Refused.
-    SignIn { account: u32 },
+    SignIn { account: u32, subject: Option<Box<[u8]>> },
     /// The confidential owner's complete redirect URI; refusal leaves a sign-in waiting.
     Redirected { account: u32, uri: Box<[u8]> },
     /// Cancels this account's exchange; its requested or held work hears the terminal.
@@ -49,8 +49,8 @@ pub enum Event {
     SignedOut { account: u32, revoked: bool },
     /// The authorization URL for the owner to show, once per admitted sign-in.
     Visit { account: u32, url: Box<[u8]> },
-    /// Ends `SignIn` once kept, naming required scopes not granted in `missing`.
-    SignedIn { account: u32, generation: u64, missing: Box<[u8]> },
+    /// Ends `SignIn` once kept, naming the record's subject and required scopes not granted in `missing`.
+    SignedIn { account: u32, generation: u64, missing: Box<[u8]>, subject: Option<Box<[u8]>> },
     /// Answers Grant, then announces each new generation while the owner holds it.
     Granted { account: u32, token: Box<[u8]>, generation: u64, valid: Duration },
     /// An access-only record reached its lead; announced once per record.

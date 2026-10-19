@@ -45,7 +45,7 @@ pub(crate) fn limits() -> Limits {
                 tokens: 64,
                 issued_client_bytes: 0,
                 granted_bytes: 64,
-                subject_bytes: 0,
+                subject_bytes: 64,
                 id_token_bytes: 64,
             },
             uri_bytes: 256,
@@ -330,7 +330,7 @@ fn close_and_abort_settle_once_clear_deadlines_and_refuse_new_work_as_closed() {
         assert_refused(out.pop(), 9, Asked::Grant, Refusal::Closed);
         component.down(
             &env,
-            Request::SignIn { account: 9 },
+            Request::SignIn { account: 9, subject: None },
             &mut out,
             &mut Queue::with_capacity(MAX_OUT_DOWN.io),
             &mut Queue::with_capacity(1),
@@ -402,6 +402,7 @@ pub(crate) fn refresh_account(account: u32, address: core::net::SocketAddr) -> A
     record.refresh_token = Some(bytes::copy_of(b"refresh"));
     record.expires_at = Wall::from_nanos(5_000_000_000);
     Account::SignIn {
+        origins: List::with_capacity(0),
         shared: false,
         registration: skein_oauth::Registration {
             authorization_url: bytes::copy_of(b"http://127.0.0.1:31000/authorize"),
@@ -491,73 +492,6 @@ fn a_plaintext_endpoint_off_loopback_is_refused_at_startup() {
     assert_eq!(Component::new(configured, &limits(), crypto(1)).err(), Some(Unusable::Plaintext { account: 0 }));
 }
 
-#[test]
-fn handed_in_accounts_refuse_sign_in_and_redirect_without_child_work() {
-    let (mut component, env, mut above) = setup();
-    let mut below = Queue::with_capacity(MAX_OUT_DOWN.io);
-    component.down(&env, Request::SignIn { account: 0 }, &mut above, &mut below, &mut Queue::with_capacity(1));
-    assert_refused(above.pop(), 0, Asked::SignIn, Refusal::Source);
-    component.down(
-        &env,
-        Request::Redirected { account: 0, uri: bytes::copy_of(b"http://localhost:31234/callback?state=a&code=b") },
-        &mut above,
-        &mut below,
-        &mut Queue::with_capacity(1),
-    );
-    assert_refused(above.pop(), 0, Asked::Redirected, Refusal::Source);
-    assert!(below.is_empty());
-}
-
-#[test]
-fn redirect_uri_is_checked_before_bounded_query_decoding() {
-    let limits = limits();
-    let registered = b"http://localhost:31234/callback";
-    assert!(
-        redirect::parse(b"http://localhost:31234/callback?state=a%2Bb&code=c%20d", registered, &limits.client)
-            .is_some()
-    );
-    for uri in [
-        b"http://127.0.0.1:31234/callback?state=a&code=b".as_slice(),
-        b"http://localhost.:31234/callback?state=a&code=b",
-        b"http://localhost:31234/wrong?state=a&code=b",
-        b"http://localhost:31234/callback?state=a&state=b&code=c",
-        b"http://localhost:31234/callback?state=%xx&code=b",
-        b"http://localhost:31234/callback?state=a&code=b#fragment",
-    ] {
-        assert!(redirect::parse(uri, registered, &limits.client).is_none());
-    }
-}
-
-#[test]
-fn public_sign_in_admission_respects_listener_and_account_bounds() {
-    let mut profile = limits();
-    profile.listeners = 0;
-    let address = core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::LOCALHOST), 31000);
-    let mut configured = List::with_capacity(2);
-    assert!(configured.push(refresh_account(0, address)).is_ok());
-    assert!(configured.push(refresh_account(1, address)).is_ok());
-    let mut component = Component::new(configured, &profile, crypto(17)).expect("component");
-    let mut env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: profile };
-    let mut above = Queue::with_capacity(MAX_OUT_DOWN.above);
-    let mut below = Queue::with_capacity(MAX_OUT_DOWN.io);
-    component.down(&env, Request::SignIn { account: 0 }, &mut above, &mut below, &mut Queue::with_capacity(1));
-    assert_refused(above.pop(), 0, Asked::SignIn, Refusal::Full { bound: 0 });
-    assert!(below.is_empty());
-    env.limits.listeners = 1;
-    let mut configured = List::with_capacity(2);
-    assert!(configured.push(refresh_account(0, address)).is_ok());
-    assert!(configured.push(refresh_account(1, address)).is_ok());
-    component = Component::new(configured, &env.limits, crypto(17)).expect("one listener component");
-    component.down(&env, Request::SignIn { account: 0 }, &mut above, &mut below, &mut Queue::with_capacity(1));
-    assert!(above.is_empty());
-    assert!(below.pop().is_some());
-    component.down(&env, Request::SignIn { account: 0 }, &mut above, &mut below, &mut Queue::with_capacity(1));
-    assert_refused(above.pop(), 0, Asked::SignIn, Refusal::Busy);
-    component.down(&env, Request::SignIn { account: 1 }, &mut above, &mut below, &mut Queue::with_capacity(1));
-    assert_refused(above.pop(), 1, Asked::SignIn, Refusal::Full { bound: 1 });
-    assert!(below.is_empty());
-}
-
 #[path = "private_tests.rs"]
 mod private;
 
@@ -593,7 +527,7 @@ fn a_name_no_live_account_holds_is_refused() {
     const MISSING: u32 = 7;
     let (mut component, env, mut above) = setup();
     for (request, asked) in [
-        (Request::SignIn { account: MISSING }, Asked::SignIn),
+        (Request::SignIn { account: MISSING, subject: None }, Asked::SignIn),
         (
             Request::Redirected { account: MISSING, uri: bytes::copy_of(b"https://service.example/callback") },
             Asked::Redirected,
@@ -776,3 +710,7 @@ pub(crate) fn terms() -> skein_oauth::Terms {
         sign_in_again: Box::new([]),
     }
 }
+
+const EXPECTED_SUBJECT: &[u8] = b"expected-subject";
+#[path = "openid_tests.rs"]
+mod openid;

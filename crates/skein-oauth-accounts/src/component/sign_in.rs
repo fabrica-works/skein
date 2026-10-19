@@ -10,14 +10,31 @@ use crate::keeper::Store;
 use crate::listener::Listener;
 use crate::redirect::{self, Redirect};
 use crate::route::{self, Socket};
-use crate::{Asked, Event, Limits, Lower, Refusal};
+use crate::{Asked, Ends, Event, Failure, Limits, Lower, Refusal};
 use alloc::boxed::Box;
 use skein_lib::{CryptoRng, Env, Queue, Time, Writer};
 use skein_oauth as oauth;
 
 impl Component {
-    pub(super) fn sign_in(&mut self, env: &Env<Limits>, account: u32, up: &mut Queue<Event>, io: &mut Queue<Lower>) {
+    pub(super) fn sign_in(
+        &mut self,
+        env: &Env<Limits>,
+        account: u32,
+        subject: Option<Box<[u8]>>,
+        up: &mut Queue<Event>,
+        io: &mut Queue<Lower>,
+    ) {
         if self.refused(account, Asked::SignIn, up) {
+            return;
+        }
+        if let Some(subject) = &subject
+            && subject.len() > usize::try_from(env.limits.client.document.subject_bytes).expect("u32 fits")
+        {
+            up.push(Event::Failed {
+                account: number(&self.names, account),
+                ends: Ends::SignIn,
+                failure: Failure::Exchange(oauth::Failure::Limit),
+            });
             return;
         }
         let registration = match self.sources.get(account).expect("configured source") {
@@ -84,6 +101,7 @@ impl Component {
         }
         let client = oauth::Client::new(env.limits.client).expect("validated client");
         let mut exchange = Exchange::new(account, client, false);
+        exchange.subject = subject;
         exchange.sign_in = Some(prepare_sign_in(registration, number(&self.names, account), env, &mut self.crypto));
         exchange.stage = Stage::Loading;
         exchange.purpose = crate::exchange::Purpose::SignIn { waiting: false };

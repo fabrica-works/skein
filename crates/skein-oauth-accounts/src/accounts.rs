@@ -2,7 +2,7 @@
 
 use alloc::boxed::Box;
 use skein_io::kernel::Addr;
-use skein_lib::Token;
+use skein_lib::{List, Token};
 use skein_oauth::{Registration, SavedToken};
 use skein_tls::{Config, Name};
 
@@ -16,7 +16,14 @@ pub enum Account {
     /// Access-only records the owner supplies; never refreshed or kept.
     HandedIn,
     /// Issuer records loaded from its keeper, refreshed while held and kept before lending.
-    SignIn { registration: Registration, endpoint: Endpoint, keeper: Keeper, shared: bool },
+    SignIn { registration: Registration, endpoint: Endpoint, keeper: Keeper, shared: bool, origins: List<Origin> },
+}
+
+/// An origin named by the terms, resolved by the owner before the loop.
+#[derive(Debug)]
+pub struct Origin {
+    pub uri: Box<[u8]>,
+    pub endpoint: Endpoint,
 }
 
 /// The token endpoint's address, resolved by the owner before the loop.
@@ -48,7 +55,7 @@ pub enum Keeper {
 #[expect(clippy::large_enum_variant, reason = "bounded account configuration stores its one source in place")]
 pub(crate) enum Source {
     HandedIn,
-    SignIn { registration: Registration, endpoint: Endpoint, shared: bool },
+    SignIn { registration: Registration, endpoint: Endpoint, shared: bool, origins: List<Origin> },
 }
 
 pub(crate) fn copy_registration(registration: &Registration) -> Registration {

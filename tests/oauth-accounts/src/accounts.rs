@@ -95,6 +95,7 @@ fn configuration(client: &world::Client) -> accounts::Account {
         }
     };
     accounts::Account::SignIn {
+        origins: List::with_capacity(0),
         shared: false,
         registration: world::registration(Transport::Plaintext),
         endpoint: accounts::Endpoint {
@@ -123,7 +124,7 @@ pub(crate) fn start(client: &mut world::Client, env: &Env<accounts::Limits>) {
             client.ask(env, accounts::Request::Want { account: ACCOUNT, wanted: true });
         }
         Story::Idle => remove(client, env),
-        Story::SigningIn => client.ask(env, accounts::Request::SignIn { account: ACCOUNT }),
+        Story::SigningIn => client.ask(env, accounts::Request::SignIn { account: ACCOUNT, subject: None }),
         Story::Loading | Story::Refreshing | Story::Keeping | Story::Holding => {
             client.ask(env, accounts::Request::Grant { account: ACCOUNT });
         }

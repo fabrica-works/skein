@@ -63,24 +63,24 @@ pub fn limits() -> accounts::Limits {
             headers: 16,
             body: 1024,
             read: 256,
-            response: 2059,
+            response: 256 + 6 * 1024 + 267,
             send: 256,
         },
         refresh_lead: Duration::from_secs(10),
         client: oauth::ClientLimits {
             document: oauth::Limits {
                 document_bytes: 1024,
-                string_bytes: 256,
+                string_bytes: 1024,
                 token_bytes: 256,
                 client_bytes: 64,
                 detail_bytes: 64,
                 record_bytes: 2048,
                 depth: 8,
                 tokens: 64,
-                issued_client_bytes: 0,
+                issued_client_bytes: 64,
                 granted_bytes: 64,
-                subject_bytes: 0,
-                id_token_bytes: 256,
+                subject_bytes: 64,
+                id_token_bytes: 1024,
             },
             uri_bytes: 256,
             scope_bytes: 64,
@@ -90,10 +90,10 @@ pub fn limits() -> accounts::Limits {
             request_bytes: 1024,
             parameter_bytes: 0,
             resource_bytes: 0,
-            nonce_bytes: 0,
-            metadata_bytes: 0,
-            key_set_bytes: 0,
-            keys: 0,
+            nonce_bytes: 64,
+            metadata_bytes: 1024,
+            key_set_bytes: 2048,
+            keys: 4,
             modulus_bits: 2048,
             skew: Duration::from_secs(0),
             sign_in_time: Duration::from_secs(120),
@@ -396,6 +396,7 @@ impl Client {
                     accounts::Account::HandedIn
                 } else {
                     accounts::Account::SignIn {
+                        origins: List::with_capacity(0),
                         shared: false,
                         registration: {
                             let mut registration = registration(self.transport);
@@ -1020,7 +1021,14 @@ pub(crate) fn issuer_with_terms(
             plans: 2,
             carried: 0,
         },
-        skein_http::server::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 2059, send: 256 },
+        skein_http::server::Limits {
+            head: 2048,
+            headers: 16,
+            body: 1024,
+            read: 256,
+            response: 256 + 6 * 1024 + 267,
+            send: 256,
+        },
     )
     .expect("independent issuer");
     if story == Story::Retry {
@@ -1157,7 +1165,8 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
             retry_after: Duration::ZERO,
         })
         .expect("one issuer response");
-    let server_limits = http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 2059, send: 256 };
+    let server_limits =
+        http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 256 + 6 * 1024 + 267, send: 256 };
     let mut server = http::Server::new(&server_limits);
     let mut server_events = Queue::with_capacity(ROOM);
     let mut server_requests = Queue::with_capacity(ROOM);

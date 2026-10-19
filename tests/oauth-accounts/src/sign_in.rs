@@ -12,11 +12,13 @@ use std::net::{Ipv4Addr, SocketAddr};
 mod browser;
 #[cfg(test)]
 mod cuts;
+mod expected;
 mod issuer;
 mod owner;
 mod protocol;
 pub use browser::Browser;
 use issuer::issuer;
+pub use issuer::key_set;
 pub use protocol::protocol;
 const ROOM: u32 = 64;
 fn io_limits() -> io::Limits {
@@ -26,6 +28,12 @@ fn io_limits() -> io::Limits {
 /// The outside owner's actions during one sign-in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Story {
+    /// Two sign-ins fetch fresh issuer documents before their visits.
+    OpenIdAgain,
+    /// An issued client id completes a new registration.
+    IssuedClientId,
+    /// The returned subject differs from the owner's expectation.
+    AnotherSubject,
     /// Sign-in keeps declined scopes, then its grant is refused.
     RequiredScopes,
     /// Public sign-in followed by a rotating refresh.
@@ -58,7 +66,9 @@ pub enum Story {
 fn confidential(story: Story) -> bool {
     matches!(story, Story::Confidential | Story::CloseConfidential)
 }
-fn registration(story: Story) -> oauth::Registration {
+/// The sign-in story's registration, shared by component heap fixtures.
+#[must_use]
+pub fn registration(story: Story) -> oauth::Registration {
     let mut registration = super::world::registration(Transport::Plaintext);
     if confidential(story) {
         registration.client_secret = Some(bytes::copy_of(b"fake-secret"));
@@ -76,6 +86,14 @@ fn registration(story: Story) -> oauth::Registration {
         registration.scope = bytes::copy_of(REQUIRED_SCOPES);
         registration.terms =
             Some(oauth::Terms { required_scopes: Some(bytes::copy_of(REQUIRED_SCOPES)), ..crate::world::terms() });
+    }
+    if matches!(story, Story::OpenIdAgain | Story::IssuedClientId | Story::AnotherSubject) {
+        registration.scope = bytes::copy_of(b"openid");
+        registration.terms = Some(oauth::Terms {
+            issued_client_id: story == Story::IssuedClientId,
+            openid: Some(oauth::OpenId { issuer: bytes::copy_of(ISSUER), key_set: None }),
+            ..crate::world::terms()
+        });
     }
     registration
 }
@@ -177,6 +195,7 @@ pub struct Client {
     large: bool,
     redirected: [u8; 1024],
     redirected_len: usize,
+    again_at: Option<Time>,
 }
 impl Client {
     fn new(story: Story, large: bool) -> Self {
@@ -213,6 +232,7 @@ impl Client {
             large,
             redirected: [0; 1024],
             redirected_len: 0,
+            again_at: None,
         }
     }
     fn private_io(&mut self, env: &Env<accounts::Limits>) {
@@ -272,6 +292,7 @@ impl Client {
 impl Host for Client {
     fn iterate(&mut self, now: Time, wall: Wall) {
         let env = Env { now, wall, limits: self.limits };
+        self.restart(&env);
         if self.component.is_none() && self.address.is_some() {
             self.start(&env);
         }
@@ -364,6 +385,7 @@ impl Host for Client {
     fn next_deadline(&self) -> Option<Time> {
         [
             self.io.next_deadline(),
+            self.again_at,
             self.component.as_ref().and_then(accounts::Component::next_deadline),
             self.file_driver.as_ref().and_then(skein_world::files::Driver::next_deadline),
         ]
@@ -575,72 +597,26 @@ impl Referee<Process> for Judge {
             || (!self.shutdown && client.is_empty() && browser.is_empty()))
         .then_some(now);
         if client.closed {
-            assert_eq!(client.facts.last(), Some(&Fact::Closed));
-            if self.private_failure {
-                assert!(
-                    client.facts.iter().any(|fact| matches!(fact, Fact::Failed(accounts::Failure::Unloaded { .. })))
-                );
-                assert!(client.visits.is_empty(), "unsafe loading fails before Visit");
-            } else {
-                match self.story {
-                    Story::Cancel | Story::Abort => assert!(
-                        client.facts.contains(&Fact::Failed(accounts::Failure::Exchange(oauth::Failure::Cancelled)))
-                    ),
-                    Story::Timeout => {
-                        assert!(
-                            client.facts.contains(&Fact::Failed(accounts::Failure::Exchange(oauth::Failure::TimedOut)))
-                        );
-                    }
-                    Story::NotKept => {
-                        assert!(client.facts.contains(&Fact::Failed(accounts::Failure::NotKept)));
-                        assert!(!client.facts.iter().any(|fact| matches!(fact, Fact::SignedIn(_) | Fact::Granted(_))));
-                    }
-                    Story::RequiredScopes => {
-                        assert_eq!(
-                            client.facts,
-                            vec![
-                                Fact::Visit,
-                                Fact::Keep(1),
-                                Fact::SignedIn(1),
-                                Fact::Missing(bytes::copy_of(b"write")),
-                                Fact::Failed(accounts::Failure::NotGranted),
-                                Fact::Closed,
-                            ]
-                        );
-                    }
-                    Story::Public => {
-                        assert!(client.facts.contains(&Fact::Granted(2)));
-                        assert_eq!(client.records.len(), 2);
-                    }
-                    Story::Confidential => {
-                        assert!(client.facts.contains(&Fact::SignedIn(1)));
-                        assert!(client.facts.contains(&Fact::Late));
-                    }
-                    Story::VaryingTaken
-                    | Story::TwoPorts
-                    | Story::WrongPath
-                    | Story::WrongHost
-                    | Story::LongHead
-                    | Story::CloseWaiting
-                    | Story::CloseConfidential => {
-                        assert!(client.facts.contains(&Fact::SignedIn(1)));
-                    }
-                }
-            }
+            self.client_closed(client, issuer);
         }
         let posts = issuer
             .observations()
             .iter()
             .filter(|observation| matches!(observation, peer::Observation::Post { .. }))
             .count();
-        assert!(posts <= if matches!(self.story, Story::Public | Story::TwoPorts) { 2 } else { 1 });
+        assert!(
+            posts <= if matches!(self.story, Story::Public | Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 }
+        );
         if !self.private_failure
             && client.closed
             && browser.is_empty()
             && !matches!(self.story, Story::Cancel | Story::Abort | Story::Timeout)
         {
             assert!(browser.done);
-            assert_eq!(posts, if matches!(self.story, Story::Public | Story::TwoPorts) { 2 } else { 1 });
+            assert_eq!(
+                posts,
+                if matches!(self.story, Story::Public | Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 }
+            );
         }
         self.passed = self.shutdown && processes.iter().all(Host::is_empty);
     }
@@ -765,3 +741,9 @@ pub fn run_private(seed: u64, private: crate::private::Story) -> Outcome<Process
 }
 
 const REQUIRED_SCOPES: &[u8] = b"read write";
+
+pub(super) const ISSUER: &[u8] = b"http://127.0.0.1:31000";
+pub(super) const KEYS: &[u8] = b"http://127.0.0.1:31000/keys";
+pub(super) const SUBJECT: &[u8] = b"account-subject";
+pub(super) const EXPECTED_SUBJECT: &[u8] = b"expected-subject";
+pub(super) const ISSUED_CLIENT: &[u8] = b"issued-client";

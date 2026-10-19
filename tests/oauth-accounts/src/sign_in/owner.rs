@@ -15,7 +15,10 @@ impl Client {
                 self.close(env);
                 self.ask(env, accounts::Request::Abort);
             }
-            Story::RequiredScopes
+            Story::OpenIdAgain
+            | Story::IssuedClientId
+            | Story::AnotherSubject
+            | Story::RequiredScopes
             | Story::Public
             | Story::VaryingTaken
             | Story::TwoPorts
@@ -35,6 +38,7 @@ impl Client {
             assert!(
                 configured
                     .push(accounts::Account::SignIn {
+                        origins: List::with_capacity(0),
                         shared: false,
                         registration: registration(self.story),
                         endpoint: accounts::Endpoint {
@@ -62,7 +66,20 @@ impl Client {
             .expect("accounts"),
         );
         for account in 0..count {
-            self.ask(env, accounts::Request::SignIn { account });
+            self.ask(
+                env,
+                accounts::Request::SignIn {
+                    account,
+                    subject: (self.story == Story::AnotherSubject).then(|| bytes::copy_of(super::EXPECTED_SUBJECT)),
+                },
+            );
+        }
+    }
+    pub(super) fn restart(&mut self, env: &Env<accounts::Limits>) {
+        if self.again_at.is_some_and(|at| env.now >= at) {
+            self.again_at = None;
+            self.contracts[0] = super::Contracts::new();
+            self.ask(env, accounts::Request::SignIn { account: 0, subject: Some(bytes::copy_of(super::SUBJECT)) });
         }
     }
     pub(super) fn ask(&mut self, env: &Env<accounts::Limits>, request: accounts::Request) {
@@ -101,7 +118,10 @@ impl Client {
     fn signed_in(&mut self, env: &Env<accounts::Limits>, account: u32, generation: u64, missing: Box<[u8]>) {
         self.contracts[usize::try_from(account).expect("account index")].signed_in(generation);
         self.facts.push(Fact::SignedIn(generation));
-        assert_eq!(generation, 1);
+        assert_eq!(
+            generation,
+            if self.story == Story::OpenIdAgain { u64::try_from(self.records.len()).expect("two records") } else { 1 }
+        );
         if !missing.is_empty() {
             self.facts.push(Fact::Missing(missing));
         }
@@ -130,13 +150,19 @@ impl Client {
                 accounts::Event::Keep { account, record } => {
                     self.keep(env, account, record);
                 }
-                accounts::Event::SignedIn { account, generation, missing } => {
+                accounts::Event::SignedIn { account, generation, missing, subject } => {
+                    if matches!(self.story, Story::OpenIdAgain | Story::IssuedClientId) {
+                        assert!(subject.as_deref() == Some(super::SUBJECT));
+                    }
                     self.signed_in(env, account, generation, missing);
                 }
                 accounts::Event::Granted { account, generation, .. } => {
                     self.contracts[usize::try_from(account).expect("account index")].granted(generation);
                     self.facts.push(Fact::Granted(generation));
-                    if generation == 1 && self.story == Story::Public {
+                    if generation == 1 && self.story == Story::OpenIdAgain {
+                        self.ask(env, accounts::Request::Release { account });
+                        self.again_at = Some(env.now.saturating_add(skein_lib::Duration::from_secs(1)));
+                    } else if generation == 1 && self.story == Story::Public {
                         self.ask(env, accounts::Request::Rejected { account, generation });
                     } else if self.story != Story::TwoPorts
                         || self.facts.iter().filter(|fact| matches!(fact, Fact::Granted(_))).count() == 2

@@ -184,7 +184,7 @@ fn a_sign_in_after_a_sign_out_stores_expecting_no_file() {
     owner.ask(Request::SignOut { account: 0 });
     let removal = owner.removal();
     owner.terminal(file::Event::Removed { owner: removal });
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     assert_eq!(owner.component.private_expected(0), file::Expect::Absent);
 }
 #[test]

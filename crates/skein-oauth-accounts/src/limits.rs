@@ -6,6 +6,8 @@ use crate::exchange::{Exchange, ROUTES};
 use skein_lib::{Duration, Id, List, Queue, Slab};
 use skein_oauth::ClientLimits;
 
+pub(crate) const MAX_ORIGINS: u32 = 3;
+
 /// The component's limits supplied by its owner before the loop.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Limits {
@@ -76,9 +78,30 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(skein_tls::client::worst_case(&limits.tls)?)?
         .checked_add(routes)?
         .checked_add(u64::from(limits.client.scope_bytes))?
+        .checked_add(u64::from(limits.client.document.subject_bytes))?
         .checked_add(payload)?
-        .checked_add(u64::from(limits.client.document.document_bytes).checked_mul(2)?)?
-        .checked_add(u64::from(limits.client.document.document_bytes).checked_add(1)?)?;
+        .checked_add(
+            u64::from(
+                limits
+                    .client
+                    .document
+                    .document_bytes
+                    .max(limits.client.metadata_bytes)
+                    .max(limits.client.key_set_bytes),
+            )
+            .checked_mul(2)?,
+        )?
+        .checked_add(
+            u64::from(
+                limits
+                    .client
+                    .document
+                    .document_bytes
+                    .max(limits.client.metadata_bytes)
+                    .max(limits.client.key_set_bytes),
+            )
+            .checked_add(1)?,
+        )?;
     let listener = if limits.listeners == 0 {
         0
     } else {
@@ -86,11 +109,13 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     };
     // Directory, filename and one outstanding request path, plus encoded load/store bytes.
     let private = 4095_u64.checked_mul(3)?.checked_add(record.checked_mul(2)?)?;
+    let origins = List::<crate::Origin>::worst_case(MAX_ORIGINS)?
+        .checked_add(u64::from(MAX_ORIGINS).checked_mul(u64::from(limits.client.uri_bytes).checked_add(253)?)?)?;
     List::<Name>::worst_case(limits.accounts)?
         .checked_add(List::<State>::worst_case(limits.accounts)?)?
         .checked_add(List::<Source>::worst_case(limits.accounts)?)?
         .checked_add(List::<crate::keeper::Store>::worst_case(limits.accounts)?)?
-        .checked_add(u64::from(limits.accounts).checked_mul(private)?)?
+        .checked_add(u64::from(limits.accounts).checked_mul(private.checked_add(origins)?)?)?
         .checked_add(List::<Option<Id<Exchange>>>::worst_case(limits.accounts)?)?
         .checked_add(
             u64::from(limits.accounts)

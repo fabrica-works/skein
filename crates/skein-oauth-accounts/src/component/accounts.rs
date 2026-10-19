@@ -4,13 +4,13 @@ use super::{Component, Lifecycle, Name, State, Unusable, failed, held, set_held}
 use crate::accounts::Source;
 use crate::keeper::{Operation, Private, Store};
 use crate::{Account, Asked, Event, Failure, Keeper, Limits, Lower, Refusal, Transport};
-use skein_lib::{Env, Queue};
+use skein_lib::{Env, List, Queue};
 use skein_oauth as oauth;
 
 pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Result<(Source, State, Store), Unusable> {
     Ok(match configuration {
         Account::HandedIn => (Source::HandedIn, State::Empty, Store::Owner),
-        Account::SignIn { registration, endpoint, keeper, shared } => {
+        Account::SignIn { registration, endpoint, keeper, shared, origins } => {
             match endpoint.transport {
                 Transport::Plaintext if !endpoint.address.ip().is_loopback() => {
                     return Err(Unusable::Plaintext { account });
@@ -27,8 +27,22 @@ pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Re
                 Ok(()) => {}
                 Err(failure) => return Err(Unusable::Registration { account, failure }),
             }
-            if !terms_origin(&registration) {
+            if origins.len() > crate::limits::MAX_ORIGINS || !terms_origin(&registration, &origins) {
                 return Err(Unusable::Origin { account });
+            }
+            let mut bounded = List::with_capacity(crate::limits::MAX_ORIGINS);
+            for origin in origins.into_boxed() {
+                if origin.uri.len() > usize::try_from(limits.client.uri_bytes).expect("u32 fits")
+                    || uri_origin(&origin.uri) != Some(origin.uri.as_ref())
+                {
+                    return Err(Unusable::Origin { account });
+                }
+                if let Transport::Plaintext = origin.endpoint.transport
+                    && !origin.endpoint.address.ip().is_loopback()
+                {
+                    return Err(Unusable::Plaintext { account });
+                }
+                bounded.push(origin).expect("admitted origins");
             }
             let (state, store) = match keeper {
                 Keeper::Owner { kept } => (
@@ -55,7 +69,7 @@ pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Re
                     (State::Empty, Store::Private(Private::new(root, directory, file)))
                 }
             };
-            (Source::SignIn { registration, endpoint, shared }, state, store)
+            (Source::SignIn { registration, endpoint, shared, origins: bounded }, state, store)
         }
     })
 }
@@ -322,34 +336,63 @@ fn unsent(exchange: &crate::exchange::Exchange) -> bool {
     }
 }
 
-fn origin(uri: &[u8]) -> Option<&[u8]> {
+fn uri_origin(uri: &[u8]) -> Option<&[u8]> {
     let start = skein_lib::bytes::find(uri, b"://")?.checked_add(3)?;
     let rest = uri.get(start..)?;
     let end = skein_lib::bytes::find(rest, b"/").unwrap_or(rest.len()).checked_add(start)?;
     uri.get(..end)
 }
-fn terms_origin(registration: &oauth::Registration) -> bool {
-    let expected = origin(&registration.token_endpoint);
+
+pub(super) fn endpoint<'a>(
+    uri: &[u8],
+    registration: &oauth::Registration,
+    token: &'a crate::Endpoint,
+    origins: &'a List<crate::Origin>,
+) -> Option<&'a crate::Endpoint> {
+    let origin = uri_origin(uri)?;
+    if Some(origin) == uri_origin(&registration.token_endpoint) {
+        return Some(token);
+    }
+    for configured in origins {
+        if origin == configured.uri.as_ref() {
+            return Some(&configured.endpoint);
+        }
+    }
+    None
+}
+
+fn terms_origin(registration: &oauth::Registration, origins: &List<crate::Origin>) -> bool {
     match &registration.terms {
         Some(terms) => {
             if let Some(endpoint) = &terms.revocation_endpoint
-                && origin(endpoint) != expected
+                && !given(endpoint, registration, origins)
             {
                 return false;
             }
             match &terms.openid {
                 Some(openid) => {
-                    if origin(&openid.issuer) != expected {
-                        return false;
-                    }
-                    match &openid.key_set {
-                        Some(endpoint) => origin(endpoint) == expected,
-                        None => true,
-                    }
+                    given(&openid.issuer, registration, origins)
+                        && match &openid.key_set {
+                            Some(uri) => given(uri, registration, origins),
+                            None => true,
+                        }
                 }
                 None => true,
             }
         }
         None => true,
     }
+}
+
+fn given(uri: &[u8], registration: &oauth::Registration, origins: &List<crate::Origin>) -> bool {
+    let origin = uri_origin(uri);
+    if origin == uri_origin(&registration.token_endpoint) {
+        return true;
+    }
+    for configured in origins {
+        if Some(configured.uri.as_ref()) == origin {
+            return true;
+        }
+    }
+    false
 }

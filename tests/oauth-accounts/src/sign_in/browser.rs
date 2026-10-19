@@ -220,7 +220,7 @@ impl Browser {
             }
         }
         if self.exchange.is_none() {
-            if self.story == Story::TwoPorts && self.inbox_len > 0 && self.stage == 6 {
+            if matches!(self.story, Story::TwoPorts | Story::OpenIdAgain) && self.inbox_len > 0 && self.stage == 6 {
                 self.stage = 0;
                 self.done = false;
             }
@@ -257,7 +257,10 @@ impl Browser {
                             url.extend_from_slice(b"&padding=");
                             url.resize(3000, b'x');
                         }
-                        Story::RequiredScopes
+                        Story::OpenIdAgain
+                        | Story::IssuedClientId
+                        | Story::AnotherSubject
+                        | Story::RequiredScopes
                         | Story::Public
                         | Story::VaryingTaken
                         | Story::TwoPorts

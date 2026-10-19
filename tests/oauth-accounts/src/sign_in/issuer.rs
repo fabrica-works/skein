@@ -22,7 +22,7 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             queue: ROOM,
             plaintext: 32_768,
             ciphertext: 32_768,
-            observations: 16,
+            observations: ROOM,
             observation_bytes: 4096,
         },
         fake::Config {
@@ -38,10 +38,10 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
             document: profile.client.document,
             uri_bytes: 256,
             request_bytes: 1024,
-            codes: if story == Story::TwoPorts { 2 } else { 1 },
+            codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 },
             rotations: 2,
             plans: 2,
-            carried: 0,
+            carried: 3,
         },
         profile.server,
     )
@@ -77,6 +77,26 @@ fn make(story: Story, large: bool, access_token: Option<&[u8]>) -> Process {
 }
 
 pub(super) fn port_terms(story: Story) -> Option<fake::Terms> {
+    if matches!(story, Story::OpenIdAgain | Story::IssuedClientId | Story::AnotherSubject) {
+        return Some(fake::Terms {
+            issued: if story == Story::IssuedClientId {
+                Box::new([bytes::copy_of(super::ISSUED_CLIENT)])
+            } else {
+                Box::new([])
+            },
+            omit_issued: false,
+            varying_port: false,
+            revocation_endpoint: None,
+            openid: Some(fake::OpenId {
+                issuer: bytes::copy_of(super::ISSUER),
+                key_set_url: bytes::copy_of(super::KEYS),
+                subject: bytes::copy_of(super::SUBJECT),
+                lifetime: Duration::from_secs(60),
+                header_kid: true,
+                fault: None,
+            }),
+        });
+    }
     matches!(story, Story::VaryingTaken | Story::TwoPorts).then(|| fake::Terms {
         issued: Box::new([]),
         omit_issued: false,
@@ -84,4 +104,43 @@ pub(super) fn port_terms(story: Story) -> Option<fake::Terms> {
         varying_port: true,
         openid: None,
     })
+}
+
+/// The independent issuer's fixed signing key set for heap fixtures.
+#[must_use]
+pub fn key_set() -> Box<[u8]> {
+    let registration = registration(Story::OpenIdAgain);
+    let profile = crate::world::limits();
+    let mut issuer = fake::Issuer::new(
+        fake::Config {
+            authorization_url: registration.authorization_url,
+            token_endpoint: registration.token_endpoint,
+            client_id: registration.client_id,
+            client_secret: registration.client_secret,
+            redirect_uri: registration.redirect_uri,
+            refresh_token: bytes::copy_of(b"seed"),
+            terms: port_terms(Story::OpenIdAgain),
+        },
+        fake::Limits {
+            document: profile.client.document,
+            uri_bytes: profile.client.uri_bytes,
+            request_bytes: profile.client.request_bytes,
+            codes: 1,
+            rotations: 1,
+            plans: 1,
+            carried: 3,
+        },
+    )
+    .expect("issuer");
+    let mut out = skein_lib::Queue::with_capacity(fake::MAX_OUT);
+    issuer.step(
+        fake::Event::Get {
+            id: 0,
+            endpoint: bytes::copy_of(super::KEYS),
+            now: skein_lib::Time::ZERO,
+            wall: skein_lib::Wall::EPOCH,
+        },
+        &mut out,
+    );
+    if let Some(fake::Request::Http(answer)) = out.pop() { answer.body } else { panic!("issuer keys") }
 }

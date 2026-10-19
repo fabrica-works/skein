@@ -89,6 +89,7 @@ impl Owner {
         limits.client.document.issued_client_bytes = limits.client.document.client_bytes;
         let mut configured = List::with_capacity(1);
         match configured.push(Account::SignIn {
+            origins: List::with_capacity(0),
             shared,
             registration: skein_oauth::Registration {
                 authorization_url: bytes::copy_of(b"https://issuer.example/authorize"),
@@ -224,7 +225,7 @@ fn a_refresh_refused_as_sign_in_again_loads_the_file_at_the_next_grant() {
 #[test]
 fn requests_during_a_load_join_it_and_end_once() {
     let mut owner = Owner::new();
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     owner.ask(Request::Grant { account: 0 });
     owner.ask(Request::Grant { account: 0 });
     assert_refused(owner.above.pop(), 0, Asked::Grant, Refusal::Held);
@@ -254,7 +255,7 @@ fn requests_during_a_load_join_it_and_end_once() {
 fn missing_and_unreadable_records_end_grants_but_admit_sign_in() {
     for unreadable in [false, true] {
         let mut owner = Owner::new();
-        owner.ask(Request::SignIn { account: 0 });
+        owner.ask(Request::SignIn { account: 0, subject: None });
         owner.ask(Request::Grant { account: 0 });
         let load = owner.opened();
         let event = if unreadable {
@@ -290,7 +291,7 @@ fn an_unread_load_fails_sign_in_before_visit_and_the_next_request_reloads() {
         Unloaded::TooLarge { size: 300 },
     ] {
         let mut owner = Owner::new();
-        owner.ask(Request::SignIn { account: 0 });
+        owner.ask(Request::SignIn { account: 0, subject: None });
         owner.ask(Request::Grant { account: 0 });
         let load = owner.opened();
         let event = match why {
@@ -330,7 +331,7 @@ fn an_unread_load_fails_sign_in_before_visit_and_the_next_request_reloads() {
 #[test]
 fn cancelling_a_sign_in_waiting_on_load_leaves_the_account_load_running() {
     let mut owner = Owner::new();
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     let load = owner.opened();
     owner.ask(Request::Grant { account: 0 });
     owner.ask(Request::Cancel { account: 0 });
@@ -370,7 +371,7 @@ fn close_finishes_the_load_then_closes_only_its_private_root() {
 #[test]
 fn abort_cancels_a_load_and_waiters_and_waits_for_its_terminal_before_closed() {
     let mut owner = Owner::new();
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     owner.ask(Request::Grant { account: 0 });
     let load = owner.opened();
     owner.ask(Request::Abort);
@@ -487,7 +488,7 @@ fn a_record_without_an_issued_id_loads_unreadable() {
 
 #[test]
 fn a_sign_in_replaces_it_expecting_the_digest_it_loaded() {
-    let (owner, digest) = issued_owner(Request::SignIn { account: 0 }, None);
+    let (owner, digest) = issued_owner(Request::SignIn { account: 0, subject: None }, None);
     assert_eq!(owner.component.private_expected(0), file::Expect::Digest(digest));
 }
 
@@ -512,11 +513,16 @@ impl Owner {
     }
 
     pub(super) fn sent(&mut self) -> Token {
+        self.sent_request().0
+    }
+    pub(super) fn sent_request(&mut self) -> (Token, Box<[u8]>, core::net::SocketAddr) {
         let mut identity = None;
+        let mut address = None;
         for _ in 0..DRIVE_STEPS {
             self.fire();
             while let Some(request) = self.io.pop() {
-                if let Lower::Connect { owner: token, .. } = request {
+                if let Lower::Connect { owner: token, addr: skein_io::Addr::Ip(addr) } = request {
+                    address = Some(addr);
                     identity = Some(token);
                     self.socket_up(LowerEvent::Connecting { owner: token, socket: HTTP_SOCKET });
                     self.socket_up(LowerEvent::Connected { owner: token });
@@ -524,7 +530,7 @@ impl Owner {
                     let token = identity.expect("exchange owner");
                     if let Down::Send(bytes) = down {
                         if !bytes.is_empty() {
-                            return token;
+                            return (token, bytes, address.expect("connect address"));
                         }
                     } else if let Down::Demand { room, .. } = down
                         && room != 0
@@ -537,10 +543,12 @@ impl Owner {
         panic!("refresh sends its HTTP request")
     }
 
-    pub(super) fn finish_socket(&mut self, identity: Token, response: &mut &[u8]) {
+    pub(super) fn finish_socket(&mut self, identity: Token, response: &mut &[u8]) -> bool {
+        let mut closed = false;
         while let Some(request) = self.io.pop() {
             if let Lower::Close { .. } | Lower::Abort { .. } = request {
                 self.socket_up(LowerEvent::Closed { owner: identity });
+                closed = true;
             } else if let Lower::Stream { down: Down::Demand { read, room }, .. } = request {
                 if room != 0 {
                     self.socket_up(LowerEvent::Stream { owner: identity, up: Up::Room });
@@ -571,6 +579,19 @@ impl Owner {
                 }
             }
         }
+        closed
+    }
+    pub(super) fn answer_http(&mut self, identity: Token, body: &[u8]) {
+        let response = Self::response(body);
+        let mut remaining = response.as_ref();
+        for _ in 0..DRIVE_STEPS {
+            self.fire();
+            if self.finish_socket(identity, &mut remaining) {
+                assert!(remaining.is_empty());
+                return;
+            }
+        }
+        panic!("HTTP response closes");
     }
 
     fn finish_file(&mut self) -> bool {
@@ -604,7 +625,13 @@ impl Owner {
     }
 
     pub(super) fn redirected(&mut self, suffix: &[u8]) {
-        self.ask(Request::SignIn { account: 0 });
+        self.redirected_as(suffix, None);
+    }
+    pub(super) fn redirected_as(&mut self, suffix: &[u8], subject: Option<Box<[u8]>>) {
+        self.ask(Request::SignIn { account: 0, subject });
+        self.redirect(suffix);
+    }
+    pub(super) fn redirect(&mut self, suffix: &[u8]) {
         let url = self.visit();
         let parts = [
             b"https://service.example/callback?state=".as_slice(),
@@ -728,4 +755,23 @@ fn a_private_sign_in_keeps_above_the_generation_read() {
         None
     };
     assert_eq!(generation, Some(KEPT));
+}
+
+#[test]
+fn a_sign_in_of_another_subject_keeps_nothing() {
+    let mut owner = Owner::new();
+    owner.ask(Request::SignIn { account: 0, subject: Some(bytes::copy_of(EXPECTED_SUBJECT)) });
+    let load = owner.opened();
+    owner.terminal(file::Event::Loaded {
+        owner: load,
+        bytes: skein_oauth::encode_record(&tests_record(0), &owner.env.limits.client.document).expect("record"),
+    });
+    owner.redirect(b"");
+    let identity = owner.sent();
+    let mut events = owner.finish_tokens(identity, BODY);
+    assert_eq!(
+        failure_of(events.pop()),
+        Some(Failed { account: 0, ends: Ends::SignIn, failure: Failure::AnotherSubject })
+    );
+    assert!(events.is_empty() && owner.files.is_empty());
 }

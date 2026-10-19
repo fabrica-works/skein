@@ -128,7 +128,7 @@ fn an_added_private_account_starts_its_load_at_the_next_fire() {
 
 fn waiting_sign_in() -> Owner {
     let mut owner = Owner::new();
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     let load = owner.opened();
     owner.terminal(file::Event::Failed {
         owner: load,
@@ -195,7 +195,7 @@ fn a_removing_account_refuses_its_requests() {
     owner.ask(Request::Remove { account: 0 });
     drop(owner.above.pop());
     for (request, asked) in [
-        (Request::SignIn { account: 0 }, Asked::SignIn),
+        (Request::SignIn { account: 0, subject: None }, Asked::SignIn),
         (
             Request::Redirected { account: 0, uri: bytes::copy_of(b"http://localhost:31234/callback") },
             Asked::Redirected,

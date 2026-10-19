@@ -36,10 +36,10 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             document: profile.client.document,
             uri_bytes: 256,
             request_bytes: 1024,
-            codes: if story == Story::TwoPorts { 2 } else { 1 },
+            codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 },
             rotations: 2,
             plans: 2,
-            carried: 0,
+            carried: 3,
         },
     )
     .expect("issuer");
@@ -60,7 +60,8 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             })
             .expect("plan");
     }
-    let server_limits = http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 2059, send: 256 };
+    let server_limits =
+        http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 256 + 6 * 1024 + 267, send: 256 };
     let mut server = http::Server::new(&server_limits);
     let mut server_events = Queue::with_capacity(ROOM);
     let mut server_requests = Queue::with_capacity(ROOM);
@@ -74,6 +75,8 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     client.start(&Env { now, wall: Wall::EPOCH, limits: profile });
     let mut owner = None;
     let mut body = Vec::new();
+    let mut document = None;
+    let mut document_paths = Vec::new();
     let mut response: Option<(Box<[u8]>, usize)> = None;
     let mut server_closed = false;
     let mut listeners = Vec::new();
@@ -91,6 +94,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         let wall = Wall::from_nanos(now.as_nanos());
         let env = Env { now, wall, limits: profile };
         let server_env = Env { now, wall, limits: server_limits };
+        client.restart(&env);
         let component = client.component.as_mut().expect("component");
         if component.has_work() || component.next_deadline().is_some_and(|due| due <= now) {
             component.fire(&env, &mut client.above, &mut client.requests, &mut client.files);
@@ -105,19 +109,25 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 let Some(fake::Request::Redirect { uri, state, code, client_id }) = issuer_out.pop() else {
                     panic!("authorized fake browser")
                 };
-                drop(client_id);
                 let mut location = uri.to_vec();
                 location.extend_from_slice(b"?state=");
                 location.extend_from_slice(&state);
                 location.extend_from_slice(b"&code=");
                 location.extend_from_slice(&code);
+                if let Some(client_id) = client_id {
+                    location.extend_from_slice(b"&client_id=");
+                    location.extend_from_slice(&client_id);
+                }
                 redirect = Some(location.into_boxed_slice());
             }
         }
         if !callback_pending
             && callback.is_none()
             && callback_count
-                < if matches!(story, Story::WrongPath | Story::WrongHost | Story::LongHead | Story::TwoPorts) {
+                < if matches!(
+                    story,
+                    Story::WrongPath | Story::WrongHost | Story::LongHead | Story::TwoPorts | Story::OpenIdAgain
+                ) {
                     2
                 } else {
                     1
@@ -165,7 +175,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                 browser_bytes.clear();
                 callback_count += 1;
                 callback_pending = true;
-                if story == Story::TwoPorts {
+                if matches!(story, Story::TwoPorts | Story::OpenIdAgain) {
                     redirect = None;
                 }
             }
@@ -330,9 +340,16 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         if let Some(event) = server_events.pop() {
             match event {
                 http::Event::Call(call) => {
-                    assert_eq!(call.method, skein_http::Method::Post);
-                    assert_eq!(call.target.as_ref(), b"/token");
-                    assert_eq!(call.header(b"content-type"), Some(b"application/x-www-form-urlencoded".as_slice()));
+                    if call.method == skein_http::Method::Get {
+                        document_paths.push(call.target.clone());
+                        let mut uri = super::ISSUER.to_vec();
+                        uri.extend_from_slice(&call.target);
+                        document = Some(uri.into_boxed_slice());
+                    } else {
+                        assert_eq!(call.method, skein_http::Method::Post);
+                        assert_eq!(call.target.as_ref(), b"/token");
+                        assert_eq!(call.header(b"content-type"), Some(b"application/x-www-form-urlencoded".as_slice()));
+                    }
                     server_requests.push(http::Request::Body(Down::Demand {
                         read: Read::Arrived {
                             max: profile
@@ -359,6 +376,10 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                         room: 0,
                     }));
                 }
+                http::Event::Body(Up::End) if document.is_some() => issuer.step(
+                    fake::Event::Get { id: 0, endpoint: document.take().expect("document URL"), now, wall },
+                    &mut issuer_out,
+                ),
                 http::Event::Body(Up::End) => issuer.step(
                     fake::Event::Post {
                         request: oauth::HttpRequest {
@@ -425,13 +446,19 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         {
             assert_eq!(
                 issuer.posts(),
-                if matches!(story, Story::Public | Story::TwoPorts) {
+                if matches!(story, Story::Public | Story::TwoPorts | Story::OpenIdAgain) {
                     2
                 } else {
                     u64::from(!matches!(story, Story::Cancel | Story::Abort | Story::Timeout))
                 }
             );
             assert_eq!(preferred_failed, story == Story::VaryingTaken);
+            if story == Story::OpenIdAgain {
+                assert_eq!(
+                    document_paths.iter().map(AsRef::as_ref).collect::<Vec<&[u8]>>(),
+                    [b"/.well-known/openid-configuration".as_slice(), b"/keys"].repeat(2)
+                );
+            }
             trace.append(&mut client_wire.trace);
             trace.append(&mut server_wire.trace);
             trace.append(&mut callback_wire.trace);

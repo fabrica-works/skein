@@ -26,13 +26,13 @@ fn public(uri: &[u8]) -> Owner {
 #[test]
 fn an_account_with_port_zero_listens_on_port_zero() {
     let mut owner = public(ZERO);
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     assert_eq!(owner.take_listen().1, 0);
 }
 #[test]
 fn an_account_with_port_zero_visits_at_its_bound_port() {
     let mut owner = public(ZERO);
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     let identity = owner.listen();
     owner.listening(identity, 41000);
     assert!(Owner::query(&owner.visit(), b"redirect_uri") == Some(b"http%3A%2F%2F127.0.0.1%3A41000%2Fcallback"));
@@ -171,7 +171,7 @@ fn a_public_sign_in_visits_only_after_its_listener_listens() {
         ),
     ] {
         let mut owner = Owner::configured([account], &limits());
-        owner.ask(Request::SignIn { account: 0 });
+        owner.ask(Request::SignIn { account: 0, subject: None });
         let (identity, port) = owner.take_listen();
         let mut seen = List::with_capacity(8);
         seen.push(Effect::Listen(port)).expect("effect room");
@@ -191,7 +191,7 @@ fn a_public_sign_in_visits_only_after_its_listener_listens() {
 #[test]
 fn a_varying_redirect_falls_back_to_port_zero() {
     let mut owner = public(PREFERRED);
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     let identity = owner.listen();
     owner.socket(LowerEvent::Failed { owner: identity, error: skein_io::Error::Other });
     owner.socket(LowerEvent::Closed { owner: identity });
@@ -219,7 +219,7 @@ fn a_listener_that_cannot_bind_ends_the_sign_in_before_its_visit() {
         ),
     ] {
         let mut owner = Owner::configured([account], &limits());
-        owner.ask(Request::SignIn { account: 0 });
+        owner.ask(Request::SignIn { account: 0, subject: None });
         let identity = owner.listen();
         owner.socket(LowerEvent::Failed { owner: identity, error: skein_io::Error::Other });
         owner.socket(LowerEvent::Closed { owner: identity });
@@ -238,7 +238,7 @@ fn two_sign_ins_on_a_varying_redirect_own_two_ports() {
         &profile,
     );
     for account in 0..2 {
-        owner.ask(Request::SignIn { account });
+        owner.ask(Request::SignIn { account, subject: None });
     }
     let first = owner.listen();
     let second = owner.listen();
@@ -285,7 +285,7 @@ fn signing_in_again_carries_the_held_records_hints() {
         }
     }
     let mut owner = Owner::configured([account], &profile);
-    owner.ask(Request::SignIn { account: 0 });
+    owner.ask(Request::SignIn { account: 0, subject: None });
     let identity = owner.listen();
     owner.listening(identity, 31234);
     let url = owner.visit();

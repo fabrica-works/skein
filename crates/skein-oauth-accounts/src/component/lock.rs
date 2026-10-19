@@ -148,7 +148,7 @@ impl Component {
                 };
                 candidate.generation = candidate.generation.max(next);
             }
-            self.keep_candidate(id, up);
+            self.keep_candidate(env, id, up, io);
             return;
         }
         let slot = self.accounts.get_mut(account).expect("account state");
@@ -201,9 +201,22 @@ impl Component {
         }
     }
 
-    pub(super) fn keep_candidate(&mut self, id: Id<Exchange>, up: &mut Queue<Event>) {
+    pub(super) fn keep_candidate(
+        &mut self,
+        env: &Env<Limits>,
+        id: Id<Exchange>,
+        up: &mut Queue<Event>,
+        io: &mut Queue<Lower>,
+    ) {
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         let (record, missing) = exchange.lock_candidate.take().expect("candidate waiting to keep");
+        if let Some(subject) = &exchange.subject
+            && record.subject.as_ref() != Some(subject)
+        {
+            self.fail_exchange(env, id, Failure::AnotherSubject, up, io);
+            self.collect(id, up);
+            return;
+        }
         let generation = record.generation;
         match self.keepers.get_mut(exchange.account).expect("account keeper") {
             Store::Owner => {

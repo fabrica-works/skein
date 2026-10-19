@@ -69,6 +69,7 @@ fn every_refresh_slot_holds_its_maximal_records_and_tls_connection() {
         assert!(
             configured
                 .push(Account::SignIn {
+                    origins: List::with_capacity(0),
                     shared: false,
                     registration,
                     endpoint: Endpoint {
@@ -122,106 +123,167 @@ fn every_refresh_slot_holds_its_maximal_records_and_tls_connection() {
 
 #[test]
 fn every_listener_slot_keeps_a_bounded_partial_head_within_the_heap_bound() {
-    use skein_io::{Event as IoEvent, Request as IoRequest};
-    use skein_lib::Token;
-    use skein_oauth_accounts::{Endpoint, Keeper, MAX_OUT_FIRE, MAX_OUT_UP, Transport};
-    use skein_world::stream::Wire;
     let mut limits = skein_oauth_accounts_world::world::limits();
     limits.accounts = 4;
     limits.exchanges = 4;
     limits.listeners = 4;
     limits.io.sockets = 12;
+    let keys = skein_oauth_accounts_world::sign_in::key_set();
+    limits.client.keys = 1;
+    limits.client.key_set_bytes = u32::try_from(keys.len()).expect("key set length");
+    let response =
+        format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", keys.len()).into_bytes();
+    let mut response = response;
+    response.extend_from_slice(&keys);
     let bound = worst_case(&limits).expect("all listener bounds");
     let meter = Meter::new();
     meter.start();
-    let mut configured = List::with_capacity(4);
-    for account in 0..4 {
-        let uri = format!("http://localhost:{}/callback", 31234 + account).into_bytes().into_boxed_slice();
-        assert!(
-            configured
-                .push(Account::SignIn {
-                    shared: false,
-                    registration: registration(b"client", uri, None, b"read"),
-                    endpoint: Endpoint {
-                        address: "127.0.0.1:31000".parse().expect("loopback"),
-                        transport: Transport::Plaintext
-                    },
-                    keeper: Keeper::Owner { kept: None }
-                })
-                .is_ok()
-        );
-    }
+    let configured = listener_accounts(&limits);
     let crypto = skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed");
     let mut component = Component::new(configured, &limits, crypto).expect("component");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+    drive_partial_heads(&mut component, &env, response);
+    let measured = meter.end();
+    meter.check(measured, bound, &"every OAuth listener and partial head");
+}
+
+const LISTENER_TURNS: usize = 2048;
+
+fn drive_partial_heads(component: &mut Component, env: &Env<Limits>, response: Vec<u8>) {
+    use skein_oauth_accounts::MAX_OUT_FIRE;
     let mut above = Queue::with_capacity(64);
     let mut below = Queue::with_capacity(64);
-    let mut callbacks = Vec::with_capacity(4);
-    let mut wires = Vec::with_capacity(4);
-    for account in 0..4 {
-        component.down(&env, Request::SignIn { account }, &mut above, &mut below, &mut Queue::with_capacity(1));
+    for account in 0..env.limits.accounts {
+        component.down(
+            env,
+            Request::SignIn { account, subject: None },
+            &mut above,
+            &mut below,
+            &mut Queue::with_capacity(1),
+        );
     }
-    for _ in 0..512 {
+    let mut sockets = ListenerSockets::new(response);
+    let mut visits = 0;
+    for _ in 0..LISTENER_TURNS {
         if component.has_work() {
             assert!(above.room() >= MAX_OUT_FIRE.above && below.room() >= MAX_OUT_FIRE.io);
-            component.fire(&env, &mut above, &mut below, &mut Queue::with_capacity(1));
+            component.fire(env, &mut above, &mut below, &mut Queue::with_capacity(1));
         }
         while let Some(event) = above.pop() {
             assert!(matches!(event, skein_oauth_accounts::Event::Visit { .. }));
+            visits += 1;
         }
         while let Some(request) = below.pop() {
-            match request {
-                IoRequest::Listen { owner, addr } => {
-                    let index = u64::try_from(wires.len()).expect("four listeners");
-                    let listener = Token::new(20 + index);
-                    let socket = Token::new(40 + index);
-                    component.up(
-                        &env,
-                        IoEvent::Listening { owner, listener, addr },
-                        &mut above,
-                        &mut below,
-                        &mut Queue::with_capacity(1),
-                    );
-                    component.up(
-                        &env,
-                        IoEvent::Accepted { owner, socket, peer: addr },
-                        &mut above,
-                        &mut below,
-                        &mut Queue::with_capacity(1),
-                    );
-                    let mut wire = Wire::new(index);
-                    let mut partial = b"GET /callback?state=".to_vec();
-                    partial.resize(usize::try_from(limits.server.head - 64).expect("head size"), b'x');
-                    wire.write(&partial);
-                    wires.push((socket, wire));
+            sockets.request(component, env, request, &mut above, &mut below);
+        }
+        sockets.answer(component, env, &mut above, &mut below);
+    }
+    assert_eq!(sockets.callbacks.len(), usize::try_from(env.limits.accounts).expect("account count"));
+    assert_eq!(visits, env.limits.accounts);
+    assert!(sockets.web.is_empty());
+    assert!(component.next_deadline().is_some());
+}
+
+struct ListenerSockets {
+    callbacks: Vec<(Token, Token)>,
+    wires: Vec<(Token, skein_world::stream::Wire)>,
+    web: Vec<(Token, Token, skein_world::stream::Wire)>,
+    response: Vec<u8>,
+}
+
+impl ListenerSockets {
+    fn new(response: Vec<u8>) -> Self {
+        Self { callbacks: Vec::with_capacity(4), wires: Vec::with_capacity(4), web: Vec::with_capacity(4), response }
+    }
+
+    fn request(
+        &mut self,
+        component: &mut Component,
+        env: &Env<Limits>,
+        request: skein_io::Request,
+        above: &mut Queue<skein_oauth_accounts::Event>,
+        below: &mut Queue<skein_io::Request>,
+    ) {
+        use skein_io::{Event as IoEvent, Request as IoRequest};
+        use skein_world::stream::Wire;
+        match request {
+            IoRequest::Connect { owner, .. } => {
+                let socket = Token::new(100 + u64::try_from(self.web.len()).expect("self.web index"));
+                component.up(env, IoEvent::Connecting { owner, socket }, above, below, &mut Queue::with_capacity(1));
+                component.up(env, IoEvent::Connected { owner }, above, below, &mut Queue::with_capacity(1));
+                let mut wire = Wire::new(socket.raw());
+                wire.write(&self.response);
+                self.web.push((owner, socket, wire));
+            }
+            IoRequest::Close { entity } => {
+                let at = self.web.iter().position(|(_, socket, _)| *socket == entity).expect("issuer socket");
+                let (owner, _, _) = self.web.remove(at);
+                component.up(env, IoEvent::Closed { owner }, above, below, &mut Queue::with_capacity(1));
+            }
+            IoRequest::Listen { owner, addr } => {
+                let index = u64::try_from(self.wires.len()).expect("four listeners");
+                let listener = Token::new(20 + index);
+                let socket = Token::new(40 + index);
+                component.up(
+                    env,
+                    IoEvent::Listening { owner, listener, addr },
+                    above,
+                    below,
+                    &mut Queue::with_capacity(1),
+                );
+                component.up(
+                    env,
+                    IoEvent::Accepted { owner, socket, peer: addr },
+                    above,
+                    below,
+                    &mut Queue::with_capacity(1),
+                );
+                let mut wire = Wire::new(index);
+                let mut partial = b"GET /callback?state=".to_vec();
+                partial.resize(usize::try_from(env.limits.server.head - 64).expect("head size"), b'x');
+                wire.write(&partial);
+                self.wires.push((socket, wire));
+            }
+            IoRequest::Bind { socket, owner } => self.callbacks.push((socket, owner)),
+            IoRequest::Stream { stream, down } => {
+                if let Some((_, wire)) = self.wires.iter_mut().find(|(socket, _)| *socket == stream) {
+                    wire.take(down);
+                } else {
+                    self.web.iter_mut().find(|(_, socket, _)| *socket == stream).expect("issuer wire").2.take(down);
                 }
-                IoRequest::Bind { socket, owner } => callbacks.push((socket, owner)),
-                IoRequest::Stream { stream, down } => {
-                    wires.iter_mut().find(|(socket, _)| *socket == stream).expect("callback wire").1.take(down);
-                }
-                other @ (IoRequest::Connect { .. }
-                | IoRequest::Reject { .. }
-                | IoRequest::Output { .. }
-                | IoRequest::Spawn { .. }
-                | IoRequest::Signal { .. }
-                | IoRequest::Window { .. }
-                | IoRequest::Usage { .. }
-                | IoRequest::Close { .. }
-                | IoRequest::Abort { .. }) => panic!("partial head remains live: {other:?}"),
+            }
+            other @ (IoRequest::Reject { .. }
+            | IoRequest::Output { .. }
+            | IoRequest::Spawn { .. }
+            | IoRequest::Signal { .. }
+            | IoRequest::Window { .. }
+            | IoRequest::Usage { .. }
+            | IoRequest::Abort { .. }) => panic!("partial head remains live: {other:?}"),
+        }
+    }
+
+    fn answer(
+        &mut self,
+        component: &mut Component,
+        env: &Env<Limits>,
+        above: &mut Queue<skein_oauth_accounts::Event>,
+        below: &mut Queue<skein_io::Request>,
+    ) {
+        use skein_io::Event as IoEvent;
+        use skein_oauth_accounts::MAX_OUT_UP;
+        for (owner, _, wire) in &mut self.web {
+            if let Some(up) = wire.answer() {
+                component.up(env, IoEvent::Stream { owner: *owner, up }, above, below, &mut Queue::with_capacity(1));
             }
         }
-        for (socket, wire) in &mut wires {
+        for (socket, wire) in &mut self.wires {
             if let Some(up) = wire.answer() {
-                let owner = callbacks.iter().find(|(candidate, _)| candidate == socket).expect("bound callback").1;
+                let owner = self.callbacks.iter().find(|(candidate, _)| candidate == socket).expect("bound callback").1;
                 assert!(above.room() >= MAX_OUT_UP.above && below.room() >= MAX_OUT_UP.io);
-                component.up(&env, IoEvent::Stream { owner, up }, &mut above, &mut below, &mut Queue::with_capacity(1));
+                component.up(env, IoEvent::Stream { owner, up }, above, below, &mut Queue::with_capacity(1));
             }
         }
     }
-    assert_eq!(callbacks.len(), 4);
-    assert!(component.next_deadline().is_some());
-    let measured = meter.end();
-    meter.check(measured, bound, &"every OAuth listener and partial head");
 }
 
 #[test]
@@ -239,6 +301,7 @@ fn every_private_keeper_retains_its_maximal_paths_and_pending_load() {
         assert!(
             configured
                 .push(Account::SignIn {
+                    origins: List::with_capacity(0),
                     shared: false,
                     registration: registration(
                         &[b'c'; 64],
@@ -263,7 +326,7 @@ fn every_private_keeper_retains_its_maximal_paths_and_pending_load() {
     let mut io = Queue::with_capacity(32);
     let mut files = Queue::with_capacity(32);
     for account in 0..4 {
-        component.down(&env, Request::SignIn { account }, &mut above, &mut io, &mut files);
+        component.down(&env, Request::SignIn { account, subject: None }, &mut above, &mut io, &mut files);
         component.down(&env, Request::Grant { account }, &mut above, &mut io, &mut files);
     }
     for _ in 0..4 {
@@ -485,6 +548,7 @@ fn shared_memory_accounts(limits: &Limits) -> List<Account> {
         assert!(
             configured
                 .push(Account::SignIn {
+                    origins: List::with_capacity(0),
                     shared: true,
                     registration: registration(
                         b"client",
@@ -499,4 +563,49 @@ fn shared_memory_accounts(limits: &Limits) -> List<Account> {
         );
     }
     configured
+}
+
+fn listener_accounts(limits: &Limits) -> List<Account> {
+    let mut configured = List::with_capacity(4);
+    for account in 0..4 {
+        let uri = format!("http://localhost:{}/callback", 31234 + account).into_bytes().into_boxed_slice();
+        assert!(
+            configured
+                .push(Account::SignIn {
+                    origins: maximal_origins(limits),
+                    shared: false,
+                    registration: {
+                        let mut registration = skein_oauth_accounts_world::sign_in::registration(
+                            skein_oauth_accounts_world::sign_in::Story::OpenIdAgain,
+                        );
+                        registration.redirect_uri = uri;
+                        registration.terms.as_mut().expect("OpenID terms").openid.as_mut().expect("OpenID").key_set =
+                            Some(bytes::copy_of(b"http://127.0.0.1:31000/keys"));
+                        registration
+                    },
+                    endpoint: Endpoint {
+                        address: "127.0.0.1:31000".parse().expect("loopback"),
+                        transport: Transport::Plaintext
+                    },
+                    keeper: Keeper::Owner { kept: None }
+                })
+                .is_ok()
+        );
+    }
+    configured
+}
+fn maximal_origins(limits: &Limits) -> List<skein_oauth_accounts::Origin> {
+    let mut origins = List::with_capacity(3);
+    for port in 31001..31004 {
+        let base = format!("http://.example:{port}");
+        let length = usize::try_from(limits.client.uri_bytes).expect("URI bound");
+        let uri = format!("http://{}.example:{port}", "o".repeat(length - base.len()));
+        origins
+            .push(skein_oauth_accounts::Origin {
+                uri: uri.into_bytes().into_boxed_slice(),
+                endpoint: Endpoint { address: ([127, 0, 0, 1], port).into(), transport: Transport::Plaintext },
+            })
+            .expect("origins");
+    }
+    origins
 }
