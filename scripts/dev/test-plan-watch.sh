@@ -63,9 +63,14 @@ done <<'ROWS'
 151 1
 ROWS
 rm "$run/blocked.md" "$run/answer.md"
-touch -d '-5 seconds' "$run/heartbeat"
+rollout=$(find "$CODEX_HOME/sessions" -name "rollout-*-$coordinator.jsonl")
+touch -d '-5 seconds' "$run/heartbeat" "$rollout"
 expect "watch quiet" "$(PLAN_QUIET=2 watch)" "quiet: no heartbeat"
 expect "watch quiet again" "$(PLAN_QUIET=2 watch)" "quiet again: no heartbeat"
+# The coordinator's rollout keeps the heartbeat: a wait that ran out needs no touch.
+touch -d '-9 seconds' "$run/heartbeat"
+touch "$rollout"
+expect "the rollout keeps the heartbeat" "$(PLAN_QUIET=2 silent_watch)" "status=124 bytes=0"
 touch "$run/heartbeat"
 echo "# Paused" >"$run/paused.md"
 expect "watch paused" "$(watch)" "paused: $run/paused.md" "context: the supervisor's is 1K (compactions: 2)"

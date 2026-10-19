@@ -480,7 +480,7 @@ roles() {
     echo "## Roles"
     echo
     thread=$(cat "$run/thread" 2>/dev/null || true)
-    echo "- coordinator: ${thread:-not started}, $(coordinator_state); heartbeat $(($(date +%s) - $(stat -c %Y "$run/heartbeat" 2>/dev/null || date +%s))) s ago"
+    echo "- coordinator: ${thread:-not started}, $(coordinator_state); heartbeat $(($(date +%s) - $(coordinator_beat))) s ago"
     local role
     for role in supervisor designer retrospective; do
         session=$(role_session "$role")

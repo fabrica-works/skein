@@ -354,7 +354,10 @@ log_entry() {
     flock -u 7
 }
 
-# File the answer whole, then remove only the block headings it names.
+# File the answer whole, then remove only the block headings it names. The
+# blocked steps they name run again, and the answer's Decision and
+# Instructions are printed for the coordinator to send their sessions
+# (development.md, section 10.3).
 unblocked() {
     load
     [[ -f $run/unblock.md ]] || die "no unblock.md"
@@ -380,13 +383,34 @@ unblocked() {
     else
         grep '^Answer to ' "$run/unblock.md" || true
     fi
+    local steps step
+    steps=$(sed -nE 's/^Answer to [^(]*\((.*)\)\.?$/\1/p' "$run/unblock.md" | tr ';' '\n' |
+        sed -nE 's/^ *([^ ]+) ([0-9]+\.[^: ]+):.*/\1-\2/p')
+    for step in $steps; do
+        if awk -F'\t' -v s="$step" '$1 == s && $4 == "blocked" { f = 1 } END { exit !f }' "$run/ledger.tsv"; then
+            set_step "$step" state=running >/dev/null
+        fi
+    done
+    printf 'Send to the sessions of %s, word for word:\n\n' "$(echo $steps)"
+    awk '/^## / { p = ($0 ~ /^## (Decision|Instructions)/) } p' "$run/unblock.md"
     rm "$run/unblock.md"
 }
 
+# File the steer, and print each point's Pass on, with whom it applies to,
+# for the coordinator to send (development.md, section 10.3).
 steered() {
     load
     [[ -f $run/steer.md ]] || die "no steer.md"
     log_entry "Steered, $(now)" "$run/steer.md"
+    awk 'function flush() {
+            if (key == "Applies to") to = text
+            if (key == "Pass on" && text !~ /^- Pass on: nothing\.?$/) printf "%s\n%s\n%s\n\n", point, to, text
+            key = "" }
+        /^## / { flush(); point = $0; next }
+        /^- [A-Z][a-z ]*:/ { flush(); key = substr($0, 3); sub(/:.*/, "", key); text = $0; next }
+        /^ +[^ ]/ && key != "" { text = text "\n" $0; next }
+        { flush() }
+        END { flush() }' "$run/steer.md"
     rm "$run/steer.md"
 }
 

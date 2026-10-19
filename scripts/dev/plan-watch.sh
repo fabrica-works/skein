@@ -246,7 +246,9 @@ watch_once() {
     ((!shown)) || return 0
     if watch_health "$seen"; then return 0; fi
     if [[ -f $run/heartbeat && ! -f $run/paused.md && ! -f $run/done.md && ! -f $run/idle.md ]]; then
+        # The rollout is searched only once the heartbeat file is old.
         beat=$(stat -c %Y "$run/heartbeat")
+        (($(date +%s) - beat <= quiet)) || beat=$(coordinator_beat)
         age=$(($(date +%s) - beat))
         for sig in quiet2:$beat quiet:$beat; do
             if [[ $sig == quiet2:* ]] && { ((age <= 2 * quiet)) || ! grep -qxF "quiet:$beat" "$seen"; }; then

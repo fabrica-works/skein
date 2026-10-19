@@ -442,7 +442,7 @@ machine's run. Nothing here is versioned.
 | `context.md` | the coordinator | what a restarted coordinator needs; rewritten, never appended |
 | `thread`, `threads` | `plan start`, `plan resume`, the coordinator | the coordinator's Codex thread's id, for the doorbell; every thread it has had, with when, for the metrics. Each starts with the coordinator profile's config settings |
 | `claude.tsv` | `plan start`, `join`, `wake`, `handover`, `retro`, and each `plan` command that finds a role's job on a session id the file lacks | one line per Claude Code session that works on the run, one for each id a role's job takes (a `/resume` gives it a new one): its role, its session id and when, for `plan attach`, `plan wake`, `plan handover` and the metrics; a role's last line is its current session |
-| `heartbeat` | the coordinator | touched at every wake-up |
+| `heartbeat` | `plan claim`, the coordinator | touched at the claim and at each wake-up but a wait that ran out; the coordinator's heartbeat is the newer of it and its thread's rollout, which each of its requests writes (section 7.4) |
 | `alerts.md` | the supervisor | each alert to the user, one line with its UTC time; `plan status` prints its last ten lines first (section 10.5) |
 | `idle.md` | `plan idle`; removed by `plan ring` or the watch’s queue wake | since when, why, and optional third line `tasks: <ids>` naming the queue tasks the coordinator waits on (section 7.4) |
 | `awaits.tsv` | `plan await`; the watch | the landings a role waits for, one line per step: the role, the plan and the step; the watch removes a role's lines once all its steps are on `origin/main` (section 7.4) |
@@ -554,8 +554,8 @@ block of its own.
 | `plan resume [CAUSE]` | after a restart, a crash or a pause, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself; a paused run first moves `kit/` to skein's `origin/main`, adds its Process line to `supervision.md` and resumes with that kit (section 7.6) |
 | `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
 | `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief when none joined or once its session has been idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
-| `plan unblocked` | logs blocked.md and unblock.md whole, removes the answered block headings and deletes unblock.md (section 10.3) |
-| `plan steered` | logs and deletes steer.md (section 10.3) |
+| `plan unblocked` | logs blocked.md and unblock.md whole, removes the answered block headings, sets their blocked steps back to `running`, prints the Decision and Instructions to send their sessions, and deletes unblock.md (section 10.3) |
+| `plan steered` | logs steer.md, prints each point's "Pass on" with whom it applies to, and deletes it (section 10.3) |
 | `plan handover REPOSITORY NN CONTEXT` | appends the session handover line to log.md (section 7.3) |
 | `plan handover supervisor` | from the supervisor's session, starts its successor, and records it (section 10.5) |
 | `plan retro [PLAN_DIR]` | starts the run's retrospective, by default the last run's, released or not (section 15) |
@@ -1852,9 +1852,13 @@ dependency lands.
   Codex role's waits that ran out sooner (section 14.2). In temper's
   forge-setup run, 331 waits of 60 s made 37% of the coordinator's
   requests.
-- **At every wake-up,** run this one command, and act on what it shows:
-  `touch <run>/heartbeat; ls <run>/unblock.md <run>/steer.md 2>/dev/null;
-  free -g; df -h ~/src`.
+- **A wait that runs out** is followed by the next wait alone: the
+  watch takes the coordinator's heartbeat from its thread's rollout too,
+  which each request writes. In temper's client-api run, 230 cycles that
+  only touched the heartbeat took 460 requests and 99M input tokens.
+- **At every other wake-up,** run this one command, and act on what it
+  shows: `touch <run>/heartbeat; ls <run>/unblock.md <run>/steer.md
+  2>/dev/null; free -g; df -h ~/src`.
   - If `unblock.md` is listed, handle it (section 10.3); then `steer.md`,
     if it is listed.
   - Act on memory and disk as section 11.4 says.
@@ -2231,16 +2235,20 @@ without `## `, separated by `; `.
 - **When the coordinator finds `unblock.md`:**
   1. it runs `plan unblocked`, which logs both files whole under
      "Blocked and unblocked, <time>", removes the block headings named
-     by each `Answer to` line and deletes `unblock.md`; it prints an
-     answer line that names no entry and removes none for that line;
+     by each `Answer to` line, `plan set`s each blocked step they name
+     back to `running`, prints the answer's Decision and Instructions,
+     and deletes `unblock.md`; it prints an answer line that names no
+     entry and removes none for that line;
   2. `blocked.md` remains with only the unanswered entries, or is deleted
      when none remains;
-  3. it gives each session the answer concerns its Decision and
-     Instructions, word for word (`send_message`; or `followup_task` if
+  3. it sends what `plan unblocked` printed, word for word, to each
+     session the answer concerns (`send_message`; or `followup_task` if
      the session has ended its turn; or a fresh thread, from its
      checkpoint, if it ended its turn past 100,000 tokens or has stood
-     idle for over an hour, as section 7.3, step 4, says), and `plan
-     set`s its step back to `running`;
+     idle for over an hour, as section 7.3, step 4, says). A ring is
+     one command and the sends: in temper's client-api run, rings took a
+     median of six to seven requests, and copying scripts 29% of the
+     coordinator's output;
   4. it follows the instructions, which take precedence over the plan
      where they differ;
   5. it updates `context.md`.
@@ -2277,14 +2285,15 @@ without `## `, separated by `; `.
   refused because their text was not yet in the README.
 
 - **When the coordinator finds `steer.md`:**
-  1. it runs `plan steered`, which logs it under "Steered, <time>" and
-     deletes it;
+  1. it runs `plan steered`, which logs it under "Steered, <time>",
+     prints each point's "Pass on" with its "Applies to", and deletes
+     it;
   2. it acts on each point;
   3. it logs one line per point: "Steer <its time>, point 1: done, <what
      it did>", or "…: cannot, <why>", which also goes into `blocked.md`
      (kind: process);
-  4. it gives each point's "Pass on" text, word for word, with
-     `send_message`, to the running sessions it applies to;
+  4. it sends each "Pass on" `plan steered` printed, word for word,
+     with `send_message`, to the running sessions it applies to;
   5. it updates `context.md`. A point whose "Until" has come leaves it.
 - **The supervisor follows up.** The next check verifies each point. A
   point not followed is sent again, with what was seen. A test-shape rule

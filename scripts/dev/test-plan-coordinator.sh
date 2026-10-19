@@ -14,7 +14,7 @@ cat >"$run/blocked.md" <<'EOF'
 
 ## first, with a comma
 First question.
-## second heading
+## alpha 01.3: stuck, 2026-10-11T10:00:00Z
 Second question.
 ## third heading
 Third question.
@@ -22,21 +22,33 @@ EOF
 cat >"$run/unblock.md" <<'EOF'
 # Unblock
 
-Answer to the blocked report of 2026-10-11T10:00:00Z (first, with a comma; second heading).
-The answer.
+Answer to the blocked report of 2026-10-11T10:00:00Z (first, with a comma; alpha 01.3: stuck, 2026-10-11T10:00:00Z).
+
+## Decision
+Go on.
+## Checked
+The plan.
+## Instructions
+1. Retry.
 EOF
 cat "$run/blocked.md" "$run/unblock.md" >"$t/answered-body"
 log_lines=$(wc -l <"$run/log.md")
-"$plan" unblocked
+"$plan" set alpha-01.3 state=blocked
+sent=$("$plan" unblocked)
+expect "unblocked prints the message" "$sent" "Send to the sessions of alpha-01.3, word for word:" "## Decision" "1. Retry."
+expect "unblocked sends no check" "$(if [[ $sent != *Checked* ]]; then echo absent; fi)" absent
+expect "unblocked runs the step again" "$(awk -F'\t' '$1 == "alpha-01.3" { print $4 }' "$run/ledger.tsv")" running
 archived=$(tail -n +"$((log_lines + 1))" "$run/log.md")
 retained=$(cat "$run/blocked.md")
 expected_retained=$'# Blocked\n\n## third heading\nThird question.'
 expect "unblocked files the answer" "$(if [[ $archived == *"$(cat "$t/answered-body")"* && $retained == "$expected_retained" && ! -e $run/unblock.md ]]; then echo 'archived=whole retained=third answer=removed'; fi)" 'archived=whole retained=third answer=removed'
 expect "unblocked names its heading" "$archived" '## Blocked and unblocked, '
 rm "$run/blocked.md"
-printf '# Steer\nThe instruction.\n' >"$run/steer.md"
-"$plan" steered
-expect "steered files steer.md" "$(if [[ ! -e $run/steer.md ]]; then tail -n 5 "$run/log.md"; fi)" '## Steered, ' '# Steer' 'The instruction.'
+printf '# Steer\nThe instruction.\n\n## 1. Smaller tests\n- Do: split them.\n- Applies to: alpha 01; from\n  its next increment.\n- Pass on: Split each test\n  that checks two things.\n\n## 2. Quiet\n- Pass on: nothing.\n' >"$run/steer.md"
+sent=$("$plan" steered)
+expect "steered files steer.md" "$(if [[ ! -e $run/steer.md ]]; then tail -n 15 "$run/log.md"; fi)" '## Steered, ' '# Steer' 'The instruction.'
+expect "steered prints what to pass on" "$sent" "## 1. Smaller tests" "  its next increment." "- Pass on: Split each test" "  that checks two things."
+expect "steered passes on no nothing" "$(if [[ $sent != *Quiet* && $sent != *Do:* ]]; then echo absent; fi)" absent
 "$plan" handover alpha 01 151K
 expect "handover logs a session's line" "$(tail -n1 "$run/log.md")" 'Handover, ' ': alpha 01 at 151K'
 

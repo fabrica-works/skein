@@ -157,6 +157,19 @@ rollout_of() {
     find "${dirs[@]}" -name "rollout-*-$1.jsonl" 2>/dev/null || true
 }
 
+# The coordinator's last sign of life, in epoch seconds: the newer of the
+# heartbeat it touches and its thread's rollout, which each of its requests
+# writes, so that a wait that runs out needs no touch (development.md, 7.4).
+coordinator_beat() {
+    local beat file at
+    beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || date +%s)
+    for file in $(rollout_of "$(cat "$run/thread" 2>/dev/null)"); do
+        at=$(stat -c %Y "$file")
+        ((at <= beat)) || beat=$at
+    done
+    echo "$beat"
+}
+
 # The coordinator's threads (the thread file and the history plan keeps),
 # then every thread spawned under them, at any depth.
 run_threads() {
@@ -832,7 +845,7 @@ pulse() {
     echo "- Cost so far: $(awk -v s="$(run_started)" -v n="$now_s" 'BEGIN { printf "%.1f", (n - s) / 3600 }') h since the claim, $(awk -v r="$(running_seconds)" 'BEGIN { printf "%.1f", r / 3600 }') h working; tokens in/out: coordinator $coordinator_in/$coordinator_out, sessions $sessions_in/$sessions_out, Claude Code $claude_in/$claude_out; Claude Code at list prices, since the design: $(claude_cost)."
     echo "- Short waits so far, run out in less than 300 s: coordinator $short_coordinator, sessions $short_sessions."
     local beat mem disk
-    beat=$(stat -c %Y "$run/heartbeat" 2>/dev/null || echo "$now_s")
+    beat=$(coordinator_beat)
     mem=$(awk '/MemAvailable/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
     disk=$(df -BG --output=avail "$root" | tail -n1 | tr -dc 0-9)
     echo "- Pins behind upstream main, in commits: $(pin_lag "")."
