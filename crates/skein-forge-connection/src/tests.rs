@@ -64,7 +64,7 @@ use skein_lib::{Secret, Token};
 fn limits_that_disagree_with_the_client_name_both_limits() {
     let l = fixtures::limits();
     let s = fixtures::shared();
-    let short_answer = crate::Shared { answer_bytes: 64, ..s };
+    let short_answer = crate::Shared { answer_bytes: fixtures::ROW_ITEMS - 1, ..s };
     let rows = [
         ("connections", Limits { connections: 3, ..l }, s, Unusable::Connections { connections: 3, calls: 2 }),
         (
@@ -88,7 +88,8 @@ fn limits_that_disagree_with_the_client_name_both_limits() {
 fn a_page_is_the_smallest_of_rows_cap_and_answer_room() {
     let limits = fixtures::limits();
     let shared = fixtures::shared();
-    let rows = [("forge cap", 2, 65_536, 2), ("client rows", 50, 65_536, 8), ("answer room", 50, 4096, 1)];
+    let rows =
+        [("forge cap", 2, 65_536, 2), ("client rows", 50, 65_536, 8), ("answer room", 50, fixtures::ROW_ITEMS, 1)];
     for (name, cap, answer_bytes, expected) in rows {
         let shared = crate::Shared { answer_bytes, ..shared };
         assert_eq!(limits::page_size(Listing::Items, cap, &limits, &shared), expected, "{name}");

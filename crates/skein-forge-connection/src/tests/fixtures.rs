@@ -107,6 +107,7 @@ pub struct Harness {
     pub io: Queue<skein_io::Request>,
     pub answers: skein_lib::Map<u64, Answered>,
     pub peers: skein_lib::Map<skein_lib::Token, Peer>,
+    pub endpoints: List<(skein_io::Addr, u16)>,
     pub opened: u32,
     pub stopped: Option<(u16, crate::Stopped)>,
     pub closed: bool,
@@ -124,6 +125,10 @@ impl Harness {
     }
     pub fn with(limits: Limits, shared: Shared, settings: Settings) -> Self {
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
+        let mut endpoints = List::with_capacity(settings.forges.len());
+        for forge in &settings.forges {
+            endpoints.push((forge.address, forge.number)).expect("configured endpoints");
+        }
         let mut h = Self {
             component: Component::new(settings, &env.limits, &shared).expect("fixture limits agree"),
             env,
@@ -131,6 +136,7 @@ impl Harness {
             io: Queue::with_capacity(32),
             answers: skein_lib::Map::with_capacity(32),
             peers: skein_lib::Map::with_capacity(32),
+            endpoints,
             opened: 0,
             stopped: None,
             closed: false,
@@ -274,7 +280,14 @@ impl Harness {
         for _ in 0..1024_u32 {
             for _ in 0..self.io.len() {
                 match self.io.pop().expect("queued request") {
-                    skein_io::Request::Connect { owner, .. } => {
+                    skein_io::Request::Connect { owner, addr } => {
+                        let mut forge = None;
+                        for (address, number) in &self.endpoints {
+                            if *address == addr {
+                                forge = Some(*number);
+                            }
+                        }
+                        let forge = forge.expect("connect names a configured endpoint");
                         self.opened = self.opened.saturating_add(1);
                         let socket = skein_lib::Token::new(owner.raw().saturating_add(100));
                         drop(
@@ -282,7 +295,7 @@ impl Harness {
                                 .insert(
                                     owner,
                                     Peer {
-                                        forge: FORGE,
+                                        forge,
                                         socket,
                                         wire: skein_world::stream::Wire::new(owner.raw()),
                                         connected: false,
@@ -701,4 +714,55 @@ pub fn head_settings(name: &str, tls: bool, agent_bytes: usize) -> Settings {
     };
     settings.user_agent = filled(agent_bytes, b'a');
     settings
+}
+
+// forge.md 3.7 fixed widths, with the fixture's string/body/inner bounds.
+pub const ROW_ITEMS: u32 = 2971;
+pub const ROW_REVIEWS: u32 = 1691;
+pub const ROW_STATUSES: u32 = 544;
+pub const ROW_REMARKS: u32 = 1234;
+pub const ROW_BRANCHES: u32 = 144;
+pub const ROW_COLLABORATORS: u32 = 16;
+pub const ROW_PULLFILES: u32 = 2276;
+pub const MAX_ROW: u32 = ROW_ITEMS;
+pub const OTHER_FORGE: u16 = 2;
+pub const OTHER_REPO: api::Repository = api::Repository { forge: OTHER_FORGE, repository: 1 };
+pub const BRANCH: &[u8] = b"main";
+pub const BRANCH_HEAD: [u8; 32] = [0; 32];
+pub const REPOSITORY_BODY: &[u8] = br#"{"id":1,"owner":{"id":2,"login":"fixture"},"name":"specimen","object_format_name":"sha1","default_branch":"main","default_merge_style":"merge","allow_merge_commits":true,"allow_squash_merge":false,"allow_rebase":false,"html_url":"http://127.0.0.1:3000/fixture/specimen"}"#;
+pub const BRANCH_BODY: &[u8] = br#"{"name":"main","commit":{"id":"0000000000000000000000000000000000000000"},"effective_branch_protection_name":""}"#;
+pub fn two_forges() -> Settings {
+    let mut settings = settings();
+    let mut other = self::settings().forges.into_boxed().into_iter().next().expect("forge");
+    other.number = OTHER_FORGE;
+    other.address = skein_io::Addr::Ip(([127, 0, 0, 1], 3001).into());
+    settings.forges.push(other).expect("two forges fit");
+    settings
+}
+pub fn ready_two(limits: Limits, shared: Shared) -> Harness {
+    let mut h = Harness::with(limits, shared, two_forges());
+    for forge in [FORGE, OTHER_FORGE] {
+        h.connected(forge);
+        h.answer(forge, &user_ok());
+        h.answer(forge, &settings_ok());
+        h.run(limits.idle);
+    }
+    h
+}
+pub fn branch_answers(h: &mut Harness, forge: u16) {
+    h.answer(forge, &ok(REPOSITORY_BODY));
+    h.answer(forge, &ok(BRANCH_BODY));
+    h.run(Duration::ZERO);
+}
+
+impl Harness {
+    pub fn connections_for(&self, forge: u16) -> u32 {
+        let mut count = 0_u32;
+        for (_, peer) in &self.peers {
+            if peer.forge == forge {
+                count = count.checked_add(1).expect("bounded peers");
+            }
+        }
+        count
+    }
 }

@@ -324,22 +324,23 @@ pub fn page_size(listing: Listing, cap: u32, l: &Limits, s: &Shared) -> u32 {
     s.rows.min(cap).min(u32::try_from(room).unwrap_or(u32::MAX))
 }
 fn largest_row(listing: Listing, l: &Limits) -> Option<u64> {
+    use skein_forge::measure;
     let string = u64::from(l.string_bytes);
     let body = u64::from(l.body_bytes);
     let key = body / 2; // Every valid marker key is within the retained body's framing.
     let (fixed, payload) = match listing {
         Listing::Items => (
-            size_of::<api::Summary>(),
+            measure::SUMMARY_BYTES,
             body.checked_add(key)?.checked_add(string)?.checked_add(
-                u64::from(l.inner).checked_mul(string.checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?)?,
+                u64::from(l.inner).checked_mul(string.checked_add(u64::try_from(measure::STRING_BYTES).ok()?)?)?,
             )?,
         ),
-        Listing::Reviews => (size_of::<api::Review>(), body.checked_add(key)?),
-        Listing::Statuses => (size_of::<api::Status>(), string.checked_mul(3)?),
-        Listing::Remarks => (size_of::<api::Remark>(), body.checked_add(string)?),
-        Listing::Branches => (size_of::<Box<[u8]>>(), string),
-        Listing::Collaborators => (size_of::<api::Collaborator>(), 0),
-        Listing::PullFiles => (size_of::<api::File>(), string.checked_add(body.checked_mul(2)?)?),
+        Listing::Reviews => (measure::REVIEW_BYTES, body.checked_add(key)?),
+        Listing::Statuses => (measure::STATUS_BYTES, string.checked_mul(3)?),
+        Listing::Remarks => (measure::REMARK_BYTES, body.checked_add(string)?),
+        Listing::Branches => (measure::STRING_BYTES, string),
+        Listing::Collaborators => (measure::COLLABORATOR_BYTES, 0),
+        Listing::PullFiles => (measure::FILE_BYTES, string.checked_add(body.checked_mul(2)?)?),
     };
     u64::try_from(fixed).ok()?.checked_add(payload)
 }
@@ -538,3 +539,6 @@ fn header_value(value: &[u8]) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod tests;
