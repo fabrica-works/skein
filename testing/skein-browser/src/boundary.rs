@@ -37,7 +37,7 @@ pub enum Request {
     Type { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Keys { page: Token, op: Token, node: Node, text: Box<[u8]> },
-    Key { page: Token, op: Token, key: Key },
+    Key { page: Token, op: Token, key: Key, shift: bool },
     Address { page: Token, op: Token },
     Snapshot { page: Token, op: Token },
     Screenshot { page: Token, op: Token },

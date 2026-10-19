@@ -616,11 +616,11 @@ impl Rig {
             Event::Done { op } if matches!(self.scenario, Scenario::Choose) => match self.stage {
                 Stage::Pressing => {
                     self.stage = Stage::Keying;
-                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::ArrowDown });
+                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::ArrowDown, shift: false });
                 }
                 Stage::Keying => {
                     self.stage = Stage::Typing;
-                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::Enter });
+                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::Enter, shift: false });
                 }
                 Stage::Typing => {
                     self.stage = Stage::Capturing;
@@ -632,7 +632,7 @@ impl Rig {
                 Stage::Typing => {
                     assert_eq!(op, PRESS);
                     self.stage = Stage::Keying;
-                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::Enter });
+                    self.ask(Request::Key { page: PAGE, op: KEY, key: Key::Enter, shift: false });
                 }
                 Stage::Keying | Stage::Pressing => {
                     assert_eq!(op, if self.stage == Stage::Keying { KEY } else { PRESS });

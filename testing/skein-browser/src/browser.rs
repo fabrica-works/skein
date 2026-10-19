@@ -31,6 +31,8 @@ pub struct MaxOut {
 pub const UP_MAX_OUT: MaxOut = MaxOut { above: 1, below: 3 };
 pub const DOWN_MAX_OUT: MaxOut = MaxOut { above: 1, below: 2 };
 pub const FIRE_MAX_OUT: MaxOut = MaxOut { above: 1, below: 3 };
+/// CDP's modifier bit for Shift.
+const SHIFT: u64 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
@@ -90,7 +92,7 @@ enum OpKind {
     Find { query: Query, expect: Option<(Expect, Time)>, seen: List<Seen>, more: u32, next: u32 },
     Press { node: u64, point: Option<Point>, at: Option<(i64, i64)>, hit: Option<u64> },
     Type { text: Box<[u8]>, entry: Entry },
-    Key(Key),
+    Key { key: Key, shift: bool },
     Address,
     Snapshot,
     Screenshot,
@@ -612,11 +614,11 @@ impl Browser {
                 }
                 self.issue_step(env, op, b"DOM.focus", &Params::Backend(node), Step::Focus);
             }
-            Request::Key { page, op, key } => {
-                if !self.admit_op(env, page, op, OpKind::Key(key)) {
+            Request::Key { page, op, key, shift } => {
+                if !self.admit_op(env, page, op, OpKind::Key { key, shift }) {
                     return;
                 }
-                self.issue_key(env, op, key, true);
+                self.issue_key(env, op, key, shift, true);
             }
             Request::Address { page, op } => {
                 if !self.admit_op(env, page, op, OpKind::Address) {
@@ -716,7 +718,7 @@ impl Browser {
         }
     }
 
-    fn issue_key(&mut self, env: &Env<Limits>, op: Token, key: Key, down: bool) {
+    fn issue_key(&mut self, env: &Env<Limits>, op: Token, key: Key, shift: bool, down: bool) {
         let (name, code, windows, text) = key_info(key);
         let kind = if down { b"keyDown".as_slice() } else { b"keyUp".as_slice() };
         let step = if down { Step::KeyDown } else { Step::KeyUp };
@@ -724,7 +726,7 @@ impl Browser {
             env,
             op,
             b"Input.dispatchKeyEvent",
-            &Params::Key { kind, key: name, code, windows, text },
+            &Params::Key { kind, key: name, code, windows, text, modifiers: if shift { SHIFT } else { 0 } },
             step,
         );
     }
@@ -763,7 +765,7 @@ impl Browser {
             env,
             op,
             b"Input.dispatchKeyEvent",
-            &Params::Key { kind, key: text, code, windows, text },
+            &Params::Key { kind, key: text, code, windows, text, modifiers: 0 },
             Step::Character { offset: next, down },
         );
     }
@@ -1167,7 +1169,7 @@ pub fn fire(browser: &mut Browser, env: &Env<Limits>, now: Time, above: &mut Que
                         OpKind::Go(_)
                         | OpKind::Press { .. }
                         | OpKind::Type { .. }
-                        | OpKind::Key(_)
+                        | OpKind::Key { .. }
                         | OpKind::Address
                         | OpKind::Snapshot
                         | OpKind::Screenshot,
@@ -1426,7 +1428,7 @@ impl Browser {
                     OpKind::Find { .. }
                     | OpKind::Press { .. }
                     | OpKind::Type { .. }
-                    | OpKind::Key(_)
+                    | OpKind::Key { .. }
                     | OpKind::Address
                     | OpKind::Snapshot
                     | OpKind::Screenshot => {}
@@ -1673,8 +1675,8 @@ impl Browser {
         if let OpKind::Type { text, entry } = &self.op(token)?.kind { Some((text.clone(), *entry)) } else { None }
     }
 
-    fn key_state(&self, token: Token) -> Option<Key> {
-        if let OpKind::Key(key) = &self.op(token)?.kind { Some(*key) } else { None }
+    fn key_state(&self, token: Token) -> Option<(Key, bool)> {
+        if let OpKind::Key { key, shift } = &self.op(token)?.kind { Some((*key, *shift)) } else { None }
     }
 
     fn query_document(&mut self, env: &Env<Limits>, token: Token, object: &[u8]) {
@@ -1941,8 +1943,8 @@ impl Browser {
             Step::Character { offset, down } => self.issue_character(env, token, offset, !down),
             Step::KeyDown => {
                 let key = self.key_state(token);
-                if let Some(key) = key {
-                    self.issue_key(env, token, key, false);
+                if let Some((key, shift)) = key {
+                    self.issue_key(env, token, key, shift, false);
                 }
             }
             Step::Address => {

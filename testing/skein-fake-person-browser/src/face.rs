@@ -148,10 +148,10 @@ impl<'a> BrowserFace<'a> {
         self.requests.push(Request::Press { page: self.page, op, node, at: Some(at) });
         Ok(())
     }
-    pub(crate) fn key(&mut self, key: Key) {
+    pub(crate) fn key(&mut self, key: Key, shift: bool) {
         let op = self.token();
         self.acting = Some(op);
-        self.requests.push(Request::Key { page: self.page, op, key });
+        self.requests.push(Request::Key { page: self.page, op, key, shift });
     }
     /// Read the page's address; the failure names it unless its path, query kept, is `path`.
     pub(crate) fn read_address(&mut self, path: &[u8]) {
@@ -368,7 +368,7 @@ impl<'a> BrowserFace<'a> {
                             Request::Type { page: self.page, op, node: seen.node, text: value }
                         }
                     }
-                    Act::Submit => Request::Key { page: self.page, op, key: Key::Enter },
+                    Act::Submit => Request::Key { page: self.page, op, key: Key::Enter, shift: false },
                     Act::Drawing { .. } => return Err("a person cannot press a drawing mark".into()),
                 }
             }
@@ -422,7 +422,7 @@ impl<'a> BrowserFace<'a> {
         if let Some(key) = choice.keys.pop_front() {
             let op = self.token();
             self.acting = Some(op);
-            self.requests.push(Request::Key { page: self.page, op, key });
+            self.requests.push(Request::Key { page: self.page, op, key, shift: false });
         } else {
             self.choice = None;
         }

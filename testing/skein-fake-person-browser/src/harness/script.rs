@@ -13,6 +13,7 @@ pub enum Step {
     Title(Box<[u8]>),
     Warned(bool),
     Key(skein_browser::boundary::Key),
+    KeyWithShift(skein_browser::boundary::Key),
     Focused(skein_fake_person::Find),
     Taller {
         find: skein_fake_person::Find,
@@ -234,8 +235,8 @@ impl Play for Script {
             return Next::Done;
         };
         match step {
-            Step::Key(key) => {
-                face.key(key);
+            Step::Key(key) | Step::KeyWithShift(key) => {
+                face.key(key, matches!(step, Step::KeyWithShift(_)));
                 self.at += 1;
             }
             Step::Address(path) => {

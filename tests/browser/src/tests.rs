@@ -1,4 +1,4 @@
-use skein_browser::boundary::{Below, Down, Event, Expect, Match, Point, Query, Refusal, Request, Trouble};
+use skein_browser::boundary::{Below, Down, Event, Expect, Key, Match, Point, Query, Refusal, Request, Trouble};
 use skein_browser::wire::decode::Document;
 use skein_browser::{down, fire, up};
 use skein_lib::stream;
@@ -487,6 +487,33 @@ fn keys_type_each_character_as_its_key_down_and_up() {
         Some(Event::Done { op }) => assert_eq!(op, Token::new(4)),
         other => panic!("expected Done, got {other:?}"),
     }
+}
+fn enter_sent(shift: bool) -> World {
+    let mut world = World::new();
+    world.start();
+    world.open();
+    world.sent.clear();
+    world.ask(Request::Key { page: Token::new(3), op: Token::new(4), key: Key::Enter, shift });
+    world
+}
+#[test]
+fn a_key_with_shift_held_sends_shifts_modifier_on_both_commands() {
+    let shifted: Vec<String> = key_commands(&enter_sent(false))
+        .iter()
+        .map(|command| format!("{}{}", &command[..command.len() - 1], r#","modifiers":8}"#))
+        .collect();
+    let mut world = enter_sent(true);
+    assert_eq!(key_commands(&world), shifted);
+    match world.above.pop() {
+        Some(Event::Done { op }) => assert_eq!(op, Token::new(4)),
+        other => panic!("expected Done, got {other:?}"),
+    }
+}
+#[test]
+fn a_key_without_shift_sends_no_modifiers() {
+    let commands = key_commands(&enter_sent(false));
+    assert_eq!(commands.len(), 2);
+    assert!(commands.iter().all(|command| !command.contains("modifiers")), "{commands:?}");
 }
 #[test]
 fn empty_keys_focus_without_typing() {

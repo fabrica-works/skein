@@ -67,7 +67,17 @@ fn a_key_step_sends_the_kits_key() {
     script.next(&mut face, Time::ZERO);
     assert_eq!(
         face.requests().collect::<Vec<_>>(),
-        vec![Request::Key { page: Token::new(7), op: Token::new(7_000_001), key: Key::Escape }]
+        vec![Request::Key { page: Token::new(7), op: Token::new(7_000_001), key: Key::Escape, shift: false }]
+    );
+}
+#[test]
+fn a_key_with_shift_step_sends_the_key_with_shift_held() {
+    let mut script = Script::new(Box::new([Step::KeyWithShift(Key::Enter)]));
+    let mut face = face();
+    script.next(&mut face, Time::ZERO);
+    assert_eq!(
+        face.requests().collect::<Vec<_>>(),
+        vec![Request::Key { page: Token::new(7), op: Token::new(7_000_001), key: Key::Enter, shift: true }]
     );
 }
 const ADDRESS_OP: Token = Token::new(7_000_001);

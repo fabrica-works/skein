@@ -23,7 +23,7 @@ pub(crate) enum Params<'a> {
     Mouse { kind: &'static [u8], x: i64, y: i64, pressed: bool },
     Text(&'a [u8]),
     Composition(&'a [u8]),
-    Key { kind: &'static [u8], key: &'a [u8], code: &'a [u8], windows: u64, text: &'a [u8] },
+    Key { kind: &'static [u8], key: &'a [u8], code: &'a [u8], windows: u64, text: &'a [u8], modifiers: u64 },
     Viewport { width: u64, height: u64 },
     HistoryEntry(u64),
     Describe { backend: u64, depth: i64 },
@@ -138,7 +138,7 @@ impl Params<'_> {
                 json.key(b"selectionEnd");
                 json.unsigned(u64::try_from(text.len()).expect("text length fits u64"));
             }
-            Params::Key { kind, key, code, windows, text } => {
+            Params::Key { kind, key, code, windows, text, modifiers } => {
                 json.key(b"type");
                 json.string(kind);
                 json.key(b"key");
@@ -149,6 +149,10 @@ impl Params<'_> {
                 json.unsigned(*windows);
                 json.key(b"text");
                 json.string(text);
+                if *modifiers != 0 {
+                    json.key(b"modifiers");
+                    json.unsigned(*modifiers);
+                }
             }
             Params::Viewport { width, height } => {
                 json.key(b"width");
