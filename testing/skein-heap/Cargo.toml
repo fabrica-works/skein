@@ -3,6 +3,7 @@ name = "skein-heap"
 description = "The counting allocator: the heap of each thread counted, and a meter that checks a step at the most it held of its own against its worst case"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

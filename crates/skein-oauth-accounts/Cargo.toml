@@ -3,6 +3,7 @@ name = "skein-oauth-accounts"
 description = "Owner-driven OAuth accounts, keeping and lending"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

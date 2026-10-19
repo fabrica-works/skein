@@ -3,6 +3,7 @@ name = "skein-json"
 description = "A bounded JSON tokenizer, pulled by demand, and a sized writer, for a connection's stack of protocol machines"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

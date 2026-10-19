@@ -3,6 +3,7 @@ name = "skein-http-world"
 description = "The machine worlds of the HTTP client and server and of the server-sent events reader and writer: transcripts, generated and mutated responses, requests and streams, reference readers, and the client and the reader stacked with JSON"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

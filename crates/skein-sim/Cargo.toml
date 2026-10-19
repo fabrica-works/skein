@@ -3,6 +3,7 @@ name = "skein-sim"
 description = "The simulated kernel: sockets and a network in one seeded world, faults, and the checks of the kernel boundary"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

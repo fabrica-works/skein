@@ -3,6 +3,7 @@ name = "skein-ui-web"
 description = "Portable browser parts for semantic user interfaces"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

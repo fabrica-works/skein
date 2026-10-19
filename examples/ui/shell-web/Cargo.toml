@@ -3,6 +3,7 @@ name = "skein-ui-example-shell-web"
 description = "The reference browser shell for the notes example"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

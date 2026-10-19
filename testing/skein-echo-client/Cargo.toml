@@ -3,6 +3,7 @@ name = "skein-echo-client"
 description = "The fake echo client: a step machine over io that sends lines, checks their answers, and keeps what it saw for a referee"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

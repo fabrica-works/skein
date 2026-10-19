@@ -3,6 +3,7 @@ name = "skein-channel-world"
 description = "Generic framed channel machine and protocol worlds"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

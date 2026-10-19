@@ -3,6 +3,7 @@ name = "skein-protocol-world"
 description = "Protocol worlds: an LLM client's stack (the HTTP client, the event stream reader, JSON) against a server's (the HTTP server, the event stream writer, JSON), joined by bytes cut at random"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

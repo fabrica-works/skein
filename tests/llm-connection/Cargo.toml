@@ -3,6 +3,7 @@ name = "skein-llm-connection-world"
 description = "Plaintext replay and TLS handshake worlds for the connection component"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

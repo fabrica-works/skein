@@ -3,6 +3,7 @@ name = "skein-conformance-ring"
 description = "The conformance suite against the ring on the real kernel, each scenario once"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

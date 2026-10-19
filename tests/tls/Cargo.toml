@@ -3,6 +3,7 @@ name = "skein-tls-world"
 description = "The TLS client's machine worlds: in-memory handshakes and exchanges against a rustls server, its worst case against the counting allocator, and the HTTP client stacked on it"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

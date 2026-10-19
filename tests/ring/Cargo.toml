@@ -3,6 +3,7 @@ name = "skein-ring-tests"
 description = "The ring adapter's own tests, on the real kernel: its slots and waits, what it completes itself, the invariants it asserts, a listing's position"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

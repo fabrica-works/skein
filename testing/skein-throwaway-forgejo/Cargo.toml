@@ -3,6 +3,7 @@ name = "skein-throwaway-forgejo"
 description = "An isolated Forgejo instance for protocol transcripts and process tests"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 [dependencies]

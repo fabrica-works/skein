@@ -5,6 +5,7 @@ name = "skein-echo-world"
 description = "The echo's simulated worlds and its real loop: the echo and fake clients as processes, a referee beside them, under tiny limits and every fault"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

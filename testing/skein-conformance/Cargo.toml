@@ -3,6 +3,7 @@ name = "skein-conformance"
 description = "The conformance suite of the kernel boundary: scenarios of kernel records, and checks of what any backend answers"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

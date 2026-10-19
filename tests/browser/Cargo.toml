@@ -3,6 +3,7 @@ name = "skein-browser-world"
 description = "A scripted CDP peer exercising the browser step machine"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

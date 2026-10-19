@@ -3,6 +3,7 @@ name = "skein-fake-checkout"
 description = "Deterministic in-memory files, scripted commands and git mechanics for domain worlds"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

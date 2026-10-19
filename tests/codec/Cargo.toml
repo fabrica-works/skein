@@ -3,6 +3,7 @@ name = "skein-codec-tests"
 description = "Generated sample codec and its world tests"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

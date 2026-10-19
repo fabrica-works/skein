@@ -3,6 +3,7 @@ name = "skein-lib-tests"
 description = "lib's comparisons with naive functions, run long: the byte search, and the intake against a plain reference; and each container's worst case against the counting allocator"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

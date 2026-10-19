@@ -3,6 +3,7 @@ name = "skein-tls"
 description = "A TLS client stream for a connection's stack of protocol machines, over rustls's unbuffered connection"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

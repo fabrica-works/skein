@@ -3,6 +3,7 @@ name = "skein-llm"
 description = "Bounded provider-neutral LLM calls over HTTP and server-sent events"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

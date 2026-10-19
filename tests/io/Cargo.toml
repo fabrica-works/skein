@@ -3,6 +3,7 @@ name = "skein-io-world"
 description = "io worlds: io over the simulator, a scripted owner above it, a referee beside it, and the checks every world makes"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

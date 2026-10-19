@@ -3,6 +3,7 @@ name = "skein-llm-world"
 description = "Independent protocol worlds and memory checks for the stacked LLM client"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

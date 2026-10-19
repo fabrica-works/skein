@@ -3,6 +3,7 @@ name = "skein-shell"
 description = "The io_uring adapter for io's kernel records, the clock and the seed: what a service's main runs on"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

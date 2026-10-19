@@ -3,6 +3,7 @@ name = "skein-world-tests"
 description = "The world harness's own tests: scripted processes of raw kernel records, a referee, and what the harness must catch"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

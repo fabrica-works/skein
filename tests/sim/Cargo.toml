@@ -3,6 +3,7 @@ name = "skein-sim-tests"
 description = "The simulator's own tests: kernel records submitted by hand, a client and a server exchanging bytes, and files through the machine seam"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

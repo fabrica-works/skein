@@ -3,6 +3,7 @@ name = "skein-forge-client"
 description = "Bounded forge working set, outbox, API and request budget"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
