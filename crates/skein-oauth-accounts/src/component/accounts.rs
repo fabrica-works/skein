@@ -107,7 +107,13 @@ impl Component {
         let slot = self.accounts.get_mut(account).expect("account state");
         match slot {
             State::Record { expiry, rejected, .. } if env.now < *expiry && !*rejected => {
-                super::grant(slot, env.now, super::names::number(&self.names, account), up);
+                super::grant(
+                    slot,
+                    self.sources.get(account).expect("account source"),
+                    env.now,
+                    super::names::number(&self.names, account),
+                    up,
+                );
             }
             State::Record { held, due, .. } => {
                 *held = true;

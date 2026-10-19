@@ -26,6 +26,8 @@ fn io_limits() -> io::Limits {
 /// The outside owner's actions during one sign-in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Story {
+    /// Sign-in keeps declined scopes, then its grant is refused.
+    RequiredScopes,
     /// Public sign-in followed by a rotating refresh.
     Public,
     /// The preferred loopback port is held by another listener.
@@ -79,6 +81,19 @@ fn registration(story: Story) -> oauth::Registration {
             sign_in_again: Box::new([]),
         });
     }
+    if story == Story::RequiredScopes {
+        registration.scope = bytes::copy_of(b"read write");
+        registration.terms = Some(oauth::Terms {
+            parameters: Box::new([]),
+            openid: None,
+            issued_client_id: false,
+            varying_port: false,
+            resource: None,
+            required_scopes: Some(bytes::copy_of(b"read write")),
+            revocation_endpoint: None,
+            sign_in_again: Box::new([]),
+        });
+    }
     registration
 }
 /// Content-free outside facts.
@@ -90,6 +105,8 @@ pub enum Fact {
     Keep(u64),
     /// The kept sign-in completed.
     SignedIn(u64),
+    /// Required scopes declined by the issuer.
+    Missing(Box<[u8]>),
     /// The owner heard a usable grant.
     Granted(u64),
     /// An admitted request failed.
@@ -595,6 +612,19 @@ impl Referee<Process> for Judge {
                         assert!(client.facts.contains(&Fact::Failed(accounts::Failure::NotKept)));
                         assert!(!client.facts.iter().any(|fact| matches!(fact, Fact::SignedIn(_) | Fact::Granted(_))));
                     }
+                    Story::RequiredScopes => {
+                        assert_eq!(
+                            client.facts,
+                            vec![
+                                Fact::Visit,
+                                Fact::Keep(1),
+                                Fact::SignedIn(1),
+                                Fact::Missing(bytes::copy_of(b"write")),
+                                Fact::Failed(accounts::Failure::NotGranted),
+                                Fact::Closed,
+                            ]
+                        );
+                    }
                     Story::Public => {
                         assert!(client.facts.contains(&Fact::Granted(2)));
                         assert_eq!(client.records.len(), 2);
@@ -668,6 +698,17 @@ pub fn run(seed: u64, story: Story, faulted: bool, large: bool, memory: Memory) 
     world.spawn(|| Process::Client(Box::new(Client::new(story, large))));
     world.spawn(|| Process::Browser(Box::new(Browser::new(story))));
     world.run()
+}
+/// Reads owner facts from a simulated outcome.
+#[must_use]
+pub fn facts(processes: &[Process]) -> &[Fact] {
+    processes
+        .iter()
+        .find_map(|process| match process {
+            Process::Client(client) => Some(client.facts.as_slice()),
+            Process::Issuer(_) | Process::Browser(_) => None,
+        })
+        .expect("client")
 }
 /// Compares the actual wire trace, owner terminals and issuer observations.
 pub fn assert_replay(first: &Outcome<Process>, second: &Outcome<Process>) {

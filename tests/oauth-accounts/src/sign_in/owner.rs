@@ -15,7 +15,8 @@ impl Client {
                 self.close(env);
                 self.ask(env, accounts::Request::Abort);
             }
-            Story::Public
+            Story::RequiredScopes
+            | Story::Public
             | Story::VaryingTaken
             | Story::TwoPorts
             | Story::Confidential
@@ -96,6 +97,26 @@ impl Client {
         );
         self.records.push(record);
     }
+    fn signed_in(&mut self, env: &Env<accounts::Limits>, account: u32, generation: u64, missing: Box<[u8]>) {
+        self.contracts[usize::try_from(account).expect("account index")].signed_in(generation);
+        self.facts.push(Fact::SignedIn(generation));
+        assert_eq!(generation, 1);
+        if !missing.is_empty() {
+            self.facts.push(Fact::Missing(missing));
+        }
+        if !self.closing {
+            self.ask(env, accounts::Request::Grant { account });
+        }
+        if self.story == Story::Confidential {
+            self.ask(
+                env,
+                accounts::Request::Redirected {
+                    account,
+                    uri: bytes::copy_of(b"https://service.example/callback?state=late&code=late"),
+                },
+            );
+        }
+    }
     pub(super) fn observe(&mut self, env: &Env<accounts::Limits>) {
         if let Some(event) = self.above.pop() {
             assert!(!self.closed, "Closed once and last");
@@ -108,22 +129,8 @@ impl Client {
                 accounts::Event::Keep { account, record } => {
                     self.keep(env, account, record);
                 }
-                accounts::Event::SignedIn { account, generation } => {
-                    self.contracts[usize::try_from(account).expect("account index")].signed_in(generation);
-                    self.facts.push(Fact::SignedIn(generation));
-                    assert_eq!(generation, 1);
-                    if !self.closing {
-                        self.ask(env, accounts::Request::Grant { account });
-                    }
-                    if self.story == Story::Confidential {
-                        self.ask(
-                            env,
-                            accounts::Request::Redirected {
-                                account,
-                                uri: bytes::copy_of(b"https://service.example/callback?state=late&code=late"),
-                            },
-                        );
-                    }
+                accounts::Event::SignedIn { account, generation, missing } => {
+                    self.signed_in(env, account, generation, missing);
                 }
                 accounts::Event::Granted { account, generation, .. } => {
                     self.contracts[usize::try_from(account).expect("account index")].granted(generation);
@@ -137,8 +144,15 @@ impl Client {
                     }
                 }
                 accounts::Event::Failed { account, ends, failure } => {
-                    assert_eq!(ends, accounts::Ends::SignIn);
-                    self.contracts[usize::try_from(account).expect("account index")].failed();
+                    let expected = if self.story == Story::RequiredScopes {
+                        accounts::Ends::Grant
+                    } else {
+                        accounts::Ends::SignIn
+                    };
+                    assert_eq!(ends, expected);
+                    if ends == accounts::Ends::SignIn {
+                        self.contracts[usize::try_from(account).expect("account index")].failed();
+                    }
                     self.facts.push(Fact::Failed(failure));
                     self.close(env);
                 }

@@ -51,7 +51,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     access_token: vec![if story == Story::TwoPorts { b'a' } else { access }; 16].into_boxed_slice(),
                     refresh_token: Some(bytes::copy_of(refresh)),
                     expires_in: 30,
-                    scope: None,
+                    scope: (story == Story::RequiredScopes).then(|| bytes::copy_of(b"read")),
                     id_token: None,
                     earliest_refresh_at: None,
                 }),

@@ -72,6 +72,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(skein_http::client::worst_case(&limits.http)?)?
         .checked_add(skein_tls::client::worst_case(&limits.tls)?)?
         .checked_add(routes)?
+        .checked_add(u64::from(limits.client.scope_bytes))?
         .checked_add(payload)?
         .checked_add(u64::from(limits.client.document.document_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.client.document.document_bytes).checked_add(1)?)?;

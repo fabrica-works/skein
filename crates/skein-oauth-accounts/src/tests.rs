@@ -691,3 +691,74 @@ mod ports;
 
 #[path = "sign_out_tests.rs"]
 mod sign_out;
+
+fn scope_owner(granted: &[u8], kept: bool) -> private::Owner {
+    let mut account = refresh_account(0, ([127, 0, 0, 1], 31000).into());
+    if let Account::SignIn { registration, keeper, .. } = &mut account {
+        let mut terms = issued_terms();
+        terms.issued_client_id = false;
+        terms.required_scopes = Some(bytes::copy_of(b"read write"));
+        registration.terms = Some(terms);
+        registration.scope = bytes::copy_of(b"read write");
+        registration.client_secret = Some(bytes::copy_of(b"secret"));
+        registration.redirect_uri = bytes::copy_of(b"https://service.example/callback");
+        let mut record = tests_record(0);
+        record.refresh_token = Some(bytes::copy_of(b"refresh"));
+        record.granted_scopes = Some(bytes::copy_of(granted));
+        *keeper = Keeper::Owner { kept: kept.then_some(record) };
+    }
+    private::Owner::configured([account], &limits())
+}
+fn scope_body(scopes: &[u8]) -> Box<[u8]> {
+    let parts =
+        [br#"{"access_token":"new","refresh_token":"next","expires_in":30,"scope":""#.as_slice(), scopes, br#""}"#];
+    let mut length = 0_usize;
+    for part in parts {
+        length = length.checked_add(part.len()).expect("body fixture length");
+    }
+    let mut body = skein_lib::Writer::new(length);
+    for part in parts {
+        body.put(part).expect("body fixture room");
+    }
+    body.finish()
+}
+#[test]
+fn signed_in_names_the_required_scopes_not_granted() {
+    for (granted, missing) in [(b"read write".as_slice(), b"".as_slice()), (b"read", b"write"), (b"", b"read write")] {
+        let mut owner = scope_owner(granted, false);
+        owner.redirected(b"");
+        let identity = owner.sent();
+        let mut events = owner.finish_tokens(identity, &scope_body(granted));
+        let observed = if let Some(Event::SignedIn { generation, missing, .. }) = events.pop() {
+            Some((generation, missing))
+        } else {
+            None
+        };
+        assert!(events.is_empty());
+        assert_eq!(observed, Some((1, bytes::copy_of(missing))), "granted scopes {granted:?}");
+    }
+}
+fn scope_grant(refresh: bool) -> (Option<Failure>, bool) {
+    let mut owner = scope_owner(if refresh { b"read write" } else { b"read" }, true);
+    owner.ask(Request::Grant { account: 0 });
+    let mut events = if refresh {
+        drop(owner.above.pop());
+        owner.ask(Request::Rejected { account: 0, generation: 0 });
+        let identity = owner.sent();
+        owner.finish_tokens(identity, &scope_body(b"read"))
+    } else {
+        core::mem::replace(&mut owner.above, Queue::with_capacity(32))
+    };
+    let failure =
+        if let Some(Event::Failed { ends: Ends::Grant, failure, .. }) = events.pop() { Some(failure) } else { None };
+    (failure, events.is_empty())
+}
+#[test]
+fn a_grant_of_a_record_without_a_required_scope_fails_as_not_granted() {
+    for (name, refresh, expected) in [
+        ("grant", false, (Some(Failure::NotGranted), true)),
+        ("refresh re-grant", true, (Some(Failure::NotGranted), true)),
+    ] {
+        assert_eq!(scope_grant(refresh), expected, "{name}");
+    }
+}

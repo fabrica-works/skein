@@ -360,7 +360,13 @@ impl Component {
         }
         let sign_in_allowed = match failure {
             None | Some(Failure::Unloaded { why: Unloaded::Unreadable, .. }) => true,
-            Some(Failure::Unloaded { .. } | Failure::Expired | Failure::Exchange(_) | Failure::NotKept) => false,
+            Some(
+                Failure::Unloaded { .. }
+                | Failure::Expired
+                | Failure::Exchange(_)
+                | Failure::NotKept
+                | Failure::NotGranted,
+            ) => false,
         };
         if waiting_grant && !has_record {
             failed(number(&self.names, account), failure.unwrap_or(Failure::Expired), up);
@@ -438,7 +444,7 @@ fn private_request(
         Operation::Store { generation } => {
             let exchange = exchange.expect("keep exchange");
             let bytes = match &exchange.stage {
-                Stage::Keeping { candidate } if candidate.generation == generation => {
+                Stage::Keeping { candidate, .. } if candidate.generation == generation => {
                     oauth::encode_record(candidate, &limits.client.document).expect("client record bounds")
                 }
                 Stage::Loading

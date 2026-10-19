@@ -455,7 +455,9 @@ pub(crate) fn issued_id(registration: &Registration) -> bool {
     }
 }
 
-pub(crate) fn missing_scopes(registration: &Registration, record: &crate::SavedToken) -> Box<[u8]> {
+/// Names required scopes not granted by a record (oauth.md, section 2.2).
+#[must_use]
+pub fn missing_scopes(registration: &Registration, record: &crate::SavedToken) -> Box<[u8]> {
     let required = match &registration.terms {
         Some(terms) => terms.required_scopes.as_deref().unwrap_or(b""),
         None => b"",

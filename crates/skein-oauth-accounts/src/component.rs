@@ -347,7 +347,13 @@ impl Component {
             Some(id) => {
                 let exchange = self.exchanges.get_mut(id).expect("bound exchange");
                 match exchange.stage {
-                    Stage::Finished => grant(slot, env.now, number(&self.names, account), up),
+                    Stage::Finished => grant(
+                        slot,
+                        self.sources.get(account).expect("account source"),
+                        env.now,
+                        number(&self.names, account),
+                        up,
+                    ),
                     Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => {
                         if exchange.pending_grant {
                             up.push(Event::Refused {
@@ -387,7 +393,13 @@ impl Component {
                         self.start_refresh(env, account, true);
                     }
                 } else {
-                    grant(slot, env.now, number(&self.names, account), up);
+                    grant(
+                        slot,
+                        self.sources.get(account).expect("account source"),
+                        env.now,
+                        number(&self.names, account),
+                        up,
+                    );
                 }
             }
         }
@@ -440,7 +452,7 @@ impl Component {
         };
         *slot = recorded(record, env, held);
         if held {
-            grant(slot, env.now, number(&self.names, account), up);
+            grant(slot, self.sources.get(account).expect("account source"), env.now, number(&self.names, account), up);
         }
     }
 
@@ -767,9 +779,9 @@ impl Component {
                 });
             }
             oauth::Request::Revoked { confirmed } => self.forget(env, id, confirmed, up, io),
-            oauth::Request::Tokens { record, .. } => {
+            oauth::Request::Tokens { record, missing } => {
                 let kept = record.clone();
-                exchange.stage = Stage::Keeping { candidate: record };
+                exchange.stage = Stage::Keeping { candidate: record, missing };
                 match self.keepers.get_mut(account).expect("account keeper") {
                     Store::Owner => up.push(Event::Keep { account: number(&self.names, account), record: kept }),
                     Store::Private(keeper) => {
@@ -805,7 +817,7 @@ impl Component {
             Lifecycle::Live | Lifecycle::Closing => {}
         }
         match &exchange.stage {
-            Stage::Keeping { candidate } if candidate.generation == generation => {}
+            Stage::Keeping { candidate, .. } if candidate.generation == generation => {}
             Stage::Keeping { .. } | Stage::Loading | Stage::Running | Stage::Forgetting { .. } | Stage::Finished => {
                 return;
             }
@@ -814,7 +826,7 @@ impl Component {
         exchange.received();
         exchange.visit = None;
         match stage {
-            Stage::Keeping { candidate } => {
+            Stage::Keeping { candidate, missing } => {
                 let slot = self.accounts.get_mut(account).expect("account state");
                 let held = held(slot) || exchange.pending_grant;
                 match keeping {
@@ -822,10 +834,16 @@ impl Component {
                         let generation = candidate.generation;
                         *slot = recorded(candidate, env, held);
                         if exchange.signing_in() {
-                            up.push(Event::SignedIn { account: number(&self.names, account), generation });
+                            up.push(Event::SignedIn { account: number(&self.names, account), generation, missing });
                         }
                         if held {
-                            grant(slot, env.now, number(&self.names, account), up);
+                            grant(
+                                slot,
+                                self.sources.get(account).expect("account source"),
+                                env.now,
+                                number(&self.names, account),
+                                up,
+                            );
                         }
                     }
                     Keeping::NotKept => {
@@ -837,7 +855,13 @@ impl Component {
                             });
                         }
                         if exchange.pending_grant {
-                            grant(slot, env.now, number(&self.names, account), up);
+                            grant(
+                                slot,
+                                self.sources.get(account).expect("account source"),
+                                env.now,
+                                number(&self.names, account),
+                                up,
+                            );
                         }
                     }
                 }
@@ -1188,9 +1212,18 @@ fn set_held(slot: &mut State, value: bool) {
     }
 }
 
-fn grant(slot: &mut State, now: Time, account: u32, up: &mut Queue<Event>) {
+fn grant(slot: &mut State, source: &Source, now: Time, account: u32, up: &mut Queue<Event>) {
     match slot {
         State::Record { record, expiry, held, rejected, .. } if now < *expiry && !*rejected => {
+            let missing = match source {
+                Source::SignIn { registration, .. } => !oauth::missing_scopes(registration, record).is_empty(),
+                Source::HandedIn => false,
+            };
+            if missing {
+                *held = false;
+                failed(account, Failure::NotGranted, up);
+                return;
+            }
             *held = true;
             up.push(Event::Granted {
                 account,

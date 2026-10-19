@@ -577,21 +577,67 @@ impl Owner {
         false
     }
 
-    pub(super) fn finish_refresh(&mut self, identity: Token) -> RefreshOutcome {
+    pub(super) fn response(body: &[u8]) -> Box<[u8]> {
         const PREFIX: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: ";
         const SUFFIX: &[u8] = b"\r\nConnection: close\r\n\r\n";
-        let length = skein_lib::Decimal::of(u64::try_from(BODY.len()).expect("body length fits"));
+        let length = skein_lib::Decimal::of(u64::try_from(body.len()).expect("body length fits"));
         let mut response = skein_lib::Writer::new(
             PREFIX
                 .len()
                 .saturating_add(length.as_bytes().len())
                 .saturating_add(SUFFIX.len())
-                .saturating_add(BODY.len()),
+                .saturating_add(body.len()),
         );
-        for part in [PREFIX, length.as_bytes(), SUFFIX, BODY] {
+        for part in [PREFIX, length.as_bytes(), SUFFIX, body] {
             response.put(part).expect("response measured");
         }
-        let response = response.finish();
+        response.finish()
+    }
+
+    pub(super) fn redirected(&mut self, suffix: &[u8]) {
+        self.ask(Request::SignIn { account: 0 });
+        let url = self.visit();
+        let parts = [
+            b"https://service.example/callback?state=".as_slice(),
+            Self::query(&url, b"state").expect("state"),
+            b"&code=code",
+            suffix,
+        ];
+        let mut length = 0_usize;
+        for part in parts {
+            length = length.checked_add(part.len()).expect("fixture URI length");
+        }
+        let mut uri = skein_lib::Writer::new(length);
+        for part in parts {
+            uri.put(part).expect("fixture URI room");
+        }
+        self.ask(Request::Redirected { account: 0, uri: uri.finish() });
+    }
+
+    pub(super) fn finish_tokens(&mut self, identity: Token, body: &[u8]) -> Queue<Event> {
+        let response = Self::response(body);
+        let mut remaining = response.as_ref();
+        let mut events = Queue::with_capacity(32);
+        for _ in 0..DRIVE_STEPS {
+            self.fire();
+            while let Some(event) = self.above.pop() {
+                if let Event::Keep { account, record } = event {
+                    self.ask(Request::Kept { account, generation: record.generation, keeping: Keeping::Kept });
+                } else {
+                    events.push(event);
+                }
+            }
+            self.finish_socket(identity, &mut remaining);
+            self.component.reclaim();
+            if remaining.is_empty() && !self.component.has_work() && self.io.is_empty() {
+                return events;
+            }
+        }
+        panic!("tokens and their keep settle")
+    }
+
+    pub(super) fn finish_refresh(&mut self, identity: Token) -> RefreshOutcome {
+        let response = Self::response(BODY);
         let mut remaining = response.as_ref();
         let mut outcome = RefreshOutcome { kept: false, removed: 0, granted: false };
         for _ in 0..DRIVE_STEPS {

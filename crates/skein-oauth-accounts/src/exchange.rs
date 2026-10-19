@@ -20,7 +20,7 @@ pub(crate) const ROUTES: u32 = 8;
 pub(crate) enum Stage {
     Loading,
     Running,
-    Keeping { candidate: oauth::SavedToken },
+    Keeping { candidate: oauth::SavedToken, missing: Box<[u8]> },
     Forgetting { revoked: bool },
     Finished,
 }

@@ -47,8 +47,8 @@ pub enum Event {
     SignedOut { account: u32, revoked: bool },
     /// The authorization URL for the owner to show, once per admitted sign-in.
     Visit { account: u32, url: Box<[u8]> },
-    /// Ends `SignIn` once its record is durably kept, with a grant ready to ask for.
-    SignedIn { account: u32, generation: u64 },
+    /// Ends `SignIn` once kept, naming required scopes not granted in `missing`.
+    SignedIn { account: u32, generation: u64, missing: Box<[u8]> },
     /// Answers Grant, then announces each new generation while the owner holds it.
     Granted { account: u32, token: Box<[u8]>, generation: u64, valid: Duration },
     /// An access-only record reached its lead; announced once per record.
@@ -79,6 +79,8 @@ pub enum Ends {
 /// Why the account cannot serve its grant.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Failure {
+    /// The record lacks a scope the registration requires; sign in again.
+    NotGranted,
     /// A sign-in's candidate could not be durably kept; nothing of it is lent.
     NotKept,
     /// The issuer exchange failed, as named by the OAuth client.

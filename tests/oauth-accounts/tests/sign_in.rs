@@ -124,3 +124,26 @@ fn assert_clients_settle_before_issuer(outcome: &skein_world::Outcome<sign_in::P
         .expect("the issuer closed its listener");
     assert!(clients_closed < issuer_closed, "the issuer stays live until all client closes have completed");
 }
+
+#[test]
+fn required_scopes_declined_then_a_grant_is_refused() {
+    for protocol in [false, true] {
+        let facts = if protocol {
+            sign_in::protocol(79, Story::RequiredScopes).0
+        } else {
+            let outcome = sign_in::run(79, Story::RequiredScopes, false, false, Memory::Checked);
+            sign_in::facts(&outcome.procs).to_vec()
+        };
+        assert_eq!(
+            facts,
+            vec![
+                sign_in::Fact::Visit,
+                sign_in::Fact::Keep(1),
+                sign_in::Fact::SignedIn(1),
+                sign_in::Fact::Missing(b"write".as_slice().into()),
+                sign_in::Fact::Failed(skein_oauth_accounts::Failure::NotGranted),
+                sign_in::Fact::Closed,
+            ]
+        );
+    }
+}

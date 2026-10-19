@@ -109,23 +109,7 @@ fn redirected(suffix: &[u8]) -> RedirectOutcome {
         *keeper = Keeper::Owner { kept: None };
     }
     let mut owner = Owner::configured([account], &profile);
-    owner.ask(Request::SignIn { account: 0 });
-    let url = owner.visit();
-    let parts = [
-        b"https://service.example/callback?state=".as_slice(),
-        Owner::query(&url, b"state").expect("state"),
-        b"&code=code",
-        suffix,
-    ];
-    let mut length = 0_usize;
-    for part in parts {
-        length = length.checked_add(part.len()).expect("fixture URI length");
-    }
-    let mut uri = skein_lib::Writer::new(length);
-    for part in parts {
-        uri.put(part).expect("fixture URI room");
-    }
-    owner.ask(Request::Redirected { account: 0, uri: uri.finish() });
+    owner.redirected(suffix);
     owner.fire();
     let event = owner.above.pop();
     if let Some(Event::Refused { asked: Asked::Redirected, why: Refusal::Redirect, .. }) = event {

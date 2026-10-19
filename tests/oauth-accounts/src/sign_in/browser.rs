@@ -257,7 +257,8 @@ impl Browser {
                             url.extend_from_slice(b"&padding=");
                             url.resize(3000, b'x');
                         }
-                        Story::Public
+                        Story::RequiredScopes
+                        | Story::Public
                         | Story::VaryingTaken
                         | Story::TwoPorts
                         | Story::Confidential
