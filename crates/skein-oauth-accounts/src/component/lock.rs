@@ -184,12 +184,12 @@ impl Component {
                 }
             }
             None => {
-                *slot = State::Empty;
                 if exchange.signing_out() {
                     self.finish_sign_out(env, id, false, true, up, io);
                 } else {
                     self.fail_exchange(env, id, Failure::Expired, up, io);
                 }
+                *self.accounts.get_mut(account).expect("account state") = State::Empty;
                 self.collect(id, up);
                 return;
             }

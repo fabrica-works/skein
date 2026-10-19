@@ -222,6 +222,19 @@ fn lock_outcome(mut row: WriteRow, record: Option<SavedToken>) {
     assert_eq!(seen(&mut row.owner.above), row.expected, "{}", row.name);
 }
 #[test]
+fn no_record_under_the_lock_fails_the_held_grant() {
+    let mut owner = lending();
+    owner.ask(Request::Grant { account: ACCOUNT });
+    assert_granted(owner.above.pop(), NEWER, VALIDITY);
+    owner.env.now = Time::from_nanos(
+        Duration::from_secs(VALIDITY).as_nanos().saturating_sub(owner.env.limits.refresh_lead.as_nanos()),
+    );
+    owner.fire();
+    assert_event(owner.above.pop(), Event::Lock { account: ACCOUNT });
+    owner.ask(Request::Locked { account: ACCOUNT, answer: Locked::Held { record: None } });
+    assert_event(owner.above.pop(), Event::Failed { account: ACCOUNT, ends: Ends::Grant, failure: Failure::Expired });
+}
+#[test]
 fn no_record_under_the_lock_ends_each_write() {
     let rows = [
         WriteRow { name: "refresh", owner: waiting_refresh(), expected: Seen::Failed(Failure::Expired) },
