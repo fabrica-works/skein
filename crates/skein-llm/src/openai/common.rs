@@ -293,10 +293,22 @@ pub fn classify(
 }
 
 fn responses_failure(kind: &[u8], rate: RateLimit, error: Option<&ProviderError>, wall: Wall) -> Option<Failure> {
-    if kind == b"rate_limit_exceeded" {
-        return Some(Failure::RateLimited { retry_after: rate.delay(error, wall) });
-    }
-    None
+    Some(match kind {
+        b"subscription_sharing_usage_limit_exceeded" => {
+            Failure::Exhausted { retry_after: error_reset(error, wall).or(rate.retry_after) }
+        }
+        b"insufficient_quota" => Failure::Exhausted { retry_after: None },
+        b"rate_limit_exceeded" => Failure::RateLimited { retry_after: rate.delay(error, wall) },
+        b"subscription_sharing_user_not_eligible"
+        | b"chatpass_v2_scope_not_authorized"
+        | b"chatpass_v2_invalid_authorization_context" => Failure::Refused,
+        b"subscription_sharing_usage_unavailable" | b"subscription_sharing_user_unavailable" => Failure::Unavailable,
+        b"subscription_sharing_unsupported_capability" => Failure::Unsupported,
+        b"subscription_sharing_route_not_supported" => Failure::Invalid,
+        b"subscription_sharing_invalid_user" | b"invalid_api_key" => Failure::Unauthorized,
+        b"context_length_exceeded" => Failure::ContextTooLong,
+        _ => return None,
+    })
 }
 
 fn error_reset(error: Option<&ProviderError>, wall: Wall) -> Option<Duration> {

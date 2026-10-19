@@ -1438,7 +1438,10 @@ fn an_http_error_body_refines_class_by_route_before_status() {
         (crate::Provider::OpenAiCodex, 503, b"overloaded_error".as_slice(), Failure::Overloaded),
         (crate::Provider::OpenAiCodex, 400, b"context_length_exceeded".as_slice(), Failure::ContextTooLong),
         (crate::Provider::Anthropic, 400, b"api_error".as_slice(), Failure::Unavailable),
-    ] {
+    ]
+    .into_iter()
+    .chain(responses_error_cases())
+    {
         let error = ProviderError {
             param: Box::new([]),
             kind: owned(kind),
@@ -1447,8 +1450,34 @@ fn an_http_error_body_refines_class_by_route_before_status() {
             resets_in_seconds: None,
         };
         let rate = RateLimit { retry_after: Some(Duration::from_secs(7)), ..RateLimit::NONE };
-        assert_eq!(classify(provider, status, Some(&error), rate, Wall::EPOCH), expected);
+        assert_eq!(classify(provider, status, Some(&error), rate, Wall::EPOCH), expected, "{provider:?} {kind:?}");
     }
+}
+
+fn responses_error_cases() -> impl Iterator<Item = (crate::Provider, u16, &'static [u8], Failure)> {
+    [
+        (
+            429,
+            b"subscription_sharing_usage_limit_exceeded".as_slice(),
+            Failure::Exhausted { retry_after: Some(Duration::from_secs(7)) },
+        ),
+        (429, b"insufficient_quota".as_slice(), Failure::Exhausted { retry_after: None }),
+        (429, b"rate_limit_exceeded".as_slice(), Failure::RateLimited { retry_after: Duration::from_secs(7) }),
+        (403, b"subscription_sharing_user_not_eligible".as_slice(), Failure::Refused),
+        (403, b"chatpass_v2_scope_not_authorized".as_slice(), Failure::Refused),
+        (403, b"chatpass_v2_invalid_authorization_context".as_slice(), Failure::Refused),
+        (503, b"subscription_sharing_usage_unavailable".as_slice(), Failure::Unavailable),
+        (503, b"subscription_sharing_user_unavailable".as_slice(), Failure::Unavailable),
+        (400, b"subscription_sharing_unsupported_capability".as_slice(), Failure::Unsupported),
+        (403, b"subscription_sharing_route_not_supported".as_slice(), Failure::Invalid),
+        (401, b"subscription_sharing_invalid_user".as_slice(), Failure::Unauthorized),
+        (401, b"invalid_api_key".as_slice(), Failure::Unauthorized),
+        (400, b"context_length_exceeded".as_slice(), Failure::ContextTooLong),
+    ]
+    .into_iter()
+    .flat_map(|(status, kind, expected)| {
+        [crate::Provider::OpenAi, crate::Provider::OpenAiCodex].map(|provider| (provider, status, kind, expected))
+    })
 }
 
 fn reasoning_run_events(final_call: bool) -> Vec<Event> {
