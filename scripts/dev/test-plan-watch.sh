@@ -163,6 +163,12 @@ git -C "$repo" checkout -- "$dir/README.md"
 expect "decisions open" "$open_decisions" "FAIL  the last retrospective, alpha's older, has proposals not yet decided: 2"
 sed -i 's/^| 2 | open | |$/| 2 | rejected: not now | |/' "$older/retrospective.md"
 git -C "$repo" commit -q -am "Decide the older retrospective's proposals"
+expect "an adopted proposal not applied" "$(plan_check "$dir")" "FAIL  the last retrospective, alpha's older, has adopted proposals not yet applied: 1 (no commit on main"
+echo "This run applies older's proposal 1 in its first session." >>"$dir/README.md"
+expect "a README that applies it" "$(plan_check "$dir")" "ok    the last retrospective's proposals are decided (alpha's older)"
+git -C "$repo" checkout -- "$dir/README.md"
+sed -i "s/^| 1 | adopted | here |\$/| 1 | adopted | alpha $(git -C "$repo" rev-parse --short HEAD) |/" "$older/retrospective.md"
+git -C "$repo" commit -q -am "Say where the older retrospective's proposal went"
 
 # A plan is ready only after its base commands and design answers.
 unfinished=$repo/docs/development/plans/unfinished

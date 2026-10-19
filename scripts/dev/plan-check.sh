@@ -239,12 +239,14 @@ check_plan_readiness() {
 # origin/main (its main, without one), other than this plan's own, has a row in its section 10 for
 # each proposal of its section 8, and no row that is still open.
 check_decisions() {
-    local repo ref at path best_at=0 best_repo="" best_ref="" best_path="" text open where
+    local repo ref at path best_at=0 best_repo="" best_ref="" best_path="" text open where mains=()
+    local name n cell hash applied unapplied=""
     # shellcheck disable=SC2086 # the repositories, one word each
     for repo in $(printf '%s\n' $all_repos $repos | awk '!seen[$0]++'); do
         [[ -d $root/$repo/.git ]] || continue
         ref=origin/main
         git -C "$root/$repo" rev-parse --verify --quiet "$ref" >/dev/null || ref=main
+        mains+=("$repo $ref")
         while read -r at path; do
             [[ -n $path && $repo/$path != "$project/$rel/retrospective.md" ]] || continue
             if ((at > best_at)); then best_at=$at; best_repo=$repo; best_ref=$ref; best_path=$path; fi
@@ -267,10 +269,30 @@ check_decisions() {
             if (d != "" && tolower(d) !~ /^open/) decided[n] = 1
         }
         END { for (i = 1; i <= k; i++) if (!(order[i] in decided)) printf "%s%s", (j++ ? ", " : ""), order[i] }' <<<"$text")
+    # An adopted proposal is applied once its last column names a commit on
+    # a repository's main, or the plan's README names it (section 15.1).
+    name=$(basename "$(dirname "$best_path")")
+    while IFS=$'\t' read -r n cell; do
+        applied=0
+        for hash in $(grep -oE '\b[0-9a-f]{7,40}\b' <<<"$cell" || true); do
+            for ref in "${mains[@]}"; do
+                ! git -C "$root/${ref% *}" merge-base --is-ancestor "$hash" "${ref#* }" 2>/dev/null || applied=1
+            done
+        done
+        ((applied)) || grep -qF "$name's proposal $n" "$plan_dir/README.md" || unapplied+="${unapplied:+, }$n"
+    done < <(awk '
+        /^## / { section = $2 }
+        section == "10." && /^\| *[0-9]+ *\|/ {
+            c = split($0, f, "|"); n = f[2]; d = f[3]
+            gsub(/^ +| +$/, "", n); gsub(/^ +| +$/, "", d)
+            if (tolower(d) ~ /^adopted/) print n "\t" f[c - 1]
+        }' <<<"$text")
     if ! grep -q '^## 10\. ' <<<"$text"; then
         fail "the last retrospective, $where, has no section 10 for the user's decisions (development.md, section 15.1)"
     elif [[ -n $open ]]; then
         fail "the last retrospective, $where, has proposals not yet decided: $open (its section 10; development.md, section 15.1)"
+    elif [[ -n $unapplied ]]; then
+        fail "the last retrospective, $where, has adopted proposals not yet applied: $unapplied (no commit on main in their last column, and the README names none as \"$name's proposal <N>\"; development.md, section 15.1)"
     else
         ok "the last retrospective's proposals are decided ($where)"
     fi

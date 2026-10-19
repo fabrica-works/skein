@@ -1585,8 +1585,9 @@ commits behind smith.
    - that the user, or the director, has decided each proposal of the last
      retrospective: the one added last to any repository's `origin/main`
      has a row for each of its proposals in its section 10, and none of
-     them open (section 15.1). A retrospective's proposals left undecided
-     recur: six of jig-protocol's did, in test-budgets;
+     them open, nor any adopted still to apply (section 15.1). A
+     retrospective's proposals left undecided recur: six of
+     jig-protocol's did, in test-budgets;
    - the primary checkouts of the plan's repository and of those upstream
      of it: on `main`, clean, equal to `origin/main`, with an `origin` that
      takes a push (`git push --dry-run`);
@@ -3053,7 +3054,8 @@ question and its own budget, or waits for the retrospective.
   seventeen undecided proposals recurred.
 - **No run is claimed while the last retrospective has an adopted
   proposal still to apply,** its last column empty or naming no commit
-  on `main`, unless the plan's README says how this run applies it. In
+  on `main`, unless the plan's README says how this run applies it,
+  naming it as `<plan>'s proposal <N>`; `plan check` refuses it. In
   smith's live-text run, none of client-api's nine proposals adopted at
   01:43 was applied at the 09:07 claim, and its implementers spent 27.4%
   of their input waiting, which client-api's proposal 3 aimed at.
