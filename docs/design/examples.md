@@ -1,7 +1,7 @@
 # The examples
 
-Provisional, 2026-10-04, revised 2026-10-18. The design of skein's
-example services (testing.md, 3): what each one is, the steps README.md
+Provisional, 2026-10-04, revised 2026-10-19. The design of skein's
+example services (testing.md, 3): what each one is, the steps section 10
 asks for before code (the wire protocol, the limits, the entities, the
 state machines), its fakes, the harness its worlds run on, and how it is
 tested; and of the UI example, an application on skein-ui (section 9).
@@ -10,9 +10,9 @@ them.
 
 ## 1. In one page
 
-- **Laid out as a service is** (README.md, "Building a service on
-  skein"): a domain, a protocol layer, a service with its `iterate` and
-  the sum of its worst cases, and a shell with its `main`, each a crate.
+- **Laid out as a service is** (section 10): a domain, a protocol
+  layer, a service with its `iterate` and the sum of its worst cases,
+  and a shell with its `main`, each a crate.
   The step crates are in the model's subset, under the workspace's lints.
 - **Their fakes are step machines** (testing-strategy.md, 4), so that the
   simulator and the real loop host them as they host the service.
@@ -39,7 +39,7 @@ testing/skein-world         skein-world           the world harness: simulated w
 tests/echo                  skein-echo-world      the echo's simulated worlds, and its real loop
 ```
 
-The crate graph is README.md's: the domain depends on lib; the protocol
+The crate graph is section 10's: the domain depends on lib; the protocol
 layer on lib, io and the domain; the service on all three, and re-exports
 the domain's and the protocol layer's crates; the shell on lib, io, the
 service and `skein-shell`; the worlds on lib, io, the service, the fake
@@ -639,3 +639,57 @@ a service copies that.
   keeping a pending add, which the server makes once; a reload while an
   add is pending meeting the closing warning, and one after the add is
   made, by a person who added it on that page, meeting none.
+
+## 10. Building a service on skein
+
+This section was the repository's `README.md` until 2026-10-19.
+
+| Part | Written by | Crate |
+|---|---|---|
+| lib, io, the machines for foreign protocols | skein | `skein-lib`, `skein-io`, `skein-http`, `skein-json`, `skein-tls` |
+| the protocol layer: its connections, its own machines and decoders | the service | `protocol` |
+| the domain, and its child domains | the service | `domain` |
+| `iterate`, and the sum of the worst cases | the service | `service` |
+| `main`: configuration, startup, the loop | the service | `shell`, on `skein-shell` |
+| the simulator | skein | `skein-sim` |
+| the counting allocator, for memory tests | skein | `skein-heap` |
+| the world harness: the loop, the referee, the heap at every iteration | skein | `skein-world` |
+| the worlds, the fakes, the fake machine | the service | its tests |
+| the lints and `clippy.toml` | copied from skein | the workspace |
+
+```
+crate      depends on
+domain     skein-lib                                  and its child domains
+protocol   skein-lib, skein-io, the skein machines it stacks, domain
+service    skein-lib, skein-io, protocol, domain
+shell      skein-lib, skein-io, service, skein-shell
+tests      skein-lib, skein-io, service, skein-sim, skein-heap, skein-world
+```
+
+Every crate may name `skein-lib`, and every one but the domain's
+`skein-io`, as the role graph has it (programming-model.md, 4). The shell
+and the tests reach the domain and the protocol layer only through the
+service, which re-exports what they name of them, their limits.
+
+Before code:
+
+1. the wire protocol, sized, with every length and limit; or, for a
+   foreign protocol, the skein machines it stacks;
+2. the limits of each layer, and the worst case they imply;
+3. the entities of each layer, who owns each, and how they bind;
+4. the state machines: states, what each holds, the total transition
+   table, and the demands and deadlines of each state.
+
+Then, in order:
+
+1. the domain, with its step tests and domain worlds;
+2. the protocol layer, on skein's machines, its own machines fuzzed alone;
+3. the service and its `main` last, with the simulator standing in for
+   the kernel until then.
+
+What the service finds missing in skein along the way is added to skein,
+with the service as its first user and first test.
+
+skein's own examples are built this way, and a service starts from them:
+the echo in `examples/echo`, with its steps before code (section 3), its
+fake client (section 5) and its worlds (section 7).

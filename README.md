@@ -1,179 +1,70 @@
 # skein
 
-skein is a kit for network services written in Rust as single-threaded
-step machines over Linux io_uring: one thread, one loop, no async. A
-service built on it writes only its domain, its own protocols and a short
-`main`; skein supplies the rest.
+*One thread, one loop, no async.*
 
-Everyone who builds skein, or builds on it, reads the foundation first:
+A Rust kit for network services written as step machines over an I/O
+loop: counted, bounded, and testable whole in a simulated world.
 
-- [`docs/foundation/programming-model.md`](docs/foundation/programming-model.md):
-  how the code is written, in skein and in every service built on it.
-- [`docs/foundation/testing-strategy.md`](docs/foundation/testing-strategy.md):
-  how it is tested.
-- [`docs/foundation/notes.md`](docs/foundation/notes.md): the questions
-  still open about both.
+## The idea
 
-`docs/design/` holds the design of each of skein's parts, one document per
-part, each the brief for the agent that builds it;
-[`testing.md`](docs/design/testing.md): how skein itself is tested; and
-[`examples.md`](docs/design/examples.md): the example services a service
-starts from.
-
-## What skein holds
-
-| Part | Crate | What | Design |
-|---|---|---|---|
-| lib | `skein-lib` | handles, slabs, bounded containers, cursors, streams, deadlines, time | [lib.md](docs/design/lib.md) |
-| the kernel boundary | `skein-io` (`kernel`) | the records io submits to a backend and the completions it gets back | [kernel.md](docs/design/kernel.md) |
-| io | `skein-io` | sockets, pipes, files, processes, signals to the service | [io.md](docs/design/io.md) |
-| the shell kit | `skein-shell` | the io_uring backend, the clock, the seed, startup | [shell.md](docs/design/shell.md) |
-| the simulator | `skein-sim` | the simulated kernel and its faults; beside it, the conformance suite (`skein-conformance`) | [simulator.md](docs/design/simulator.md) |
-| the fake LLM | `skein-fake-llm-domain`, `skein-fake-llm-protocol` | shared bounded scripts and independent byte peers; application worlds supply tools and policy | [fake-llm.md](docs/design/fake-llm.md) |
-| the key-value store | `skein-kv` | ordered byte keys and values in memory, made durable by a commit log and snapshots on io's files | [kv.md](docs/design/kv.md) |
-| the fake checkout | `skein-fake-checkout` | for tests: deterministic files, scripted commands and local git mechanics; worlds own policy and delivery | [fake-checkout.md](docs/design/fake-checkout.md) |
-| the counting allocator | `skein-heap` | for tests: the heap counted, and each step checked against its worst case | [testing.md](docs/design/testing.md) |
-| the world harness | `skein-world` | for tests: each process's `iterate` in one loop, over the simulator or the ring, with a referee | [examples.md](docs/design/examples.md) |
-| HTTP | `skein-http` | HTTP/1.1 client and server, server-sent events | [http.md](docs/design/http.md) |
-| JSON | `skein-json` | a bounded tokenizer, a sized writer | [json.md](docs/design/json.md) |
-| framed channels | `skein-channel` | a framed channel between two peers over a stream: an opening that agrees a version, bounds, flow control | [channel.md](docs/design/channel.md) |
-| codecs | `skein-codec`, `skein-codegen` | records described by schemas, and their codecs, worst cases and golden bytes generated from them | [codec.md](docs/design/codec.md) |
-| TLS | `skein-tls` | the TLS client, a stream over rustls's unbuffered connection, with ring | [tls.md](docs/design/tls.md) |
-| LLM | `skein-llm` | provider-neutral calls, streaming deltas, concrete replay and completions; subscription wire dialects | [llm.md](docs/design/llm.md) |
-| LLM connections | `skein-llm-connection` | a protocol layer's component that runs LLM calls end to end: connecting, TLS, deadlines, reuse | [llm-connection.md](docs/design/llm-connection.md) |
-| OAuth | `skein-oauth`, `skein-fake-oauth` | bounded sign-in and refresh client, with an independent rotating issuer for worlds | [oauth.md](docs/design/oauth.md) |
-| the forge's vocabulary and dialects | `skein-forge` | a code forge's calls and documents, deliveries and credentials, neutral and rendered by a dialect; Forgejo's built, GitHub's later | [forge.md](docs/design/forge.md) |
-| the forge component | `skein-forge-connection` | a protocol layer's component that runs a forge's calls end to end: connecting, TLS, credentials, deliveries | [forge-connection.md](docs/design/forge-connection.md) |
-| the forge client | `skein-forge-client` | a bounded view of a forge for its owner's domain, and each write made at most once | [forge-client.md](docs/design/forge-client.md) |
-| the forge setup | `skein-forge-setup` | makes a forge ready for a service: the identity, credentials, repositories and hooks it acts with | [forge-setup.md](docs/design/forge-setup.md) |
-| the fake forge | `skein-fake-forge-domain`, `skein-fake-forge-protocol`, `skein-throwaway-forgejo` | for tests: a forge's state and git, Forgejo's API over it, a forge peer on loopback, the pinned Forgejo run in a scratch, and the conformance that holds the dialect to it | [fake-forge.md](docs/design/fake-forge.md) |
-| the browser kit | `skein-browser` | for tests: a headless Chromium driven over the DevTools protocol on a pipe, by role and name, from the loop | [browser.md](docs/design/browser.md) |
-| the UI kit | `skein-ui` | a semantic tree of an application's state, by accessibility roles, built, diffed into patches, its acts bound to their owners; words, Markdown, scenes | [ui.md](docs/design/ui.md) |
-| the text shell | `skein-ui-text` | the tree printed as lines, a typed line read as an act, for a terminal or a pipe | [ui-text.md](docs/design/ui-text.md) |
-| the browser parts | `skein-ui-web`, `skein-ui-bundle` | parts an application's browser shell wires into its own loop, compiled to WebAssembly; the bundler | [ui-web.md](docs/design/ui-web.md) |
-| the fake person | `skein-fake-person`, `skein-fake-person-browser` | for tests: a person who finds nodes by role, name and text and acts on them, on the tree or in Chromium | [ui.md](docs/design/ui.md), [ui-web.md](docs/design/ui-web.md) |
-
-```
-crate          depends on
-skein-lib      nothing
-skein-io       lib
-skein-http     lib
-skein-json     lib
-skein-channel  lib
-skein-codec    lib
-skein-codegen  nothing from skein (a generator, in consumers' tests)
-skein-tls      lib, rustls (and ring beneath it)
-skein-llm      lib, http, json
-skein-llm-connection lib, io, tls, llm
-skein-oauth    lib, json
-skein-fake-oauth lib, json, oauth
-skein-forge    lib, json
-skein-forge-client lib, forge
-skein-forge-connection lib, io, http, tls, json, forge
-skein-forge-setup lib, json, forge
-skein-fake-forge-domain lib
-skein-fake-forge-protocol lib, http, json, forge, fake-forge-domain
-skein-throwaway-forgejo lib, io, http, json, shell, forge
-skein-browser  lib, json
-skein-ui       lib
-skein-ui-text  lib, io, ui
-skein-ui-web   lib, ui; on wasm32, wasm-bindgen, js-sys, web-sys
-skein-ui-bundle nothing from skein (a tool), wasm-bindgen-cli-support
-skein-fake-person lib, ui
-skein-fake-person-browser lib, io, ui-web, fake-person, browser
-skein-shell    lib, io, io-uring, libc
-skein-sim      lib, io
-skein-kv       lib, io
-```
-
-The crates from outside skein are few, and each is an exception the
-programming model names (its 2.1 and 3): `io-uring` and `libc`, the
-shell's, for the ring adapter; and `rustls` and its dependencies, `ring`
-among them for its cryptography, the TLS client's; and the browser
-parts' glue, `wasm-bindgen`, `js-sys` and `web-sys`, with the bundler's
-`wasm-bindgen-cli-support`, pinned to exact versions (ui-web.md, 4.1).
-
-- **A kit, not a framework.** skein has no service trait, no generic loop,
-  no scheduler and no callbacks. A service calls the parts by name, in
-  its own loop of about ten lines. Nothing in skein calls into a service,
-  not even the simulator.
-- **io_uring is the kernel interface.** io talks to the kernel in owned
-  records: an operation goes down carrying its memory, and its completion
-  comes back carrying the same memory. The ring backend maps each record
-  onto one submission; the simulator implements the same records; a
-  readiness backend (epoll, kqueue) may later implement them a third
-  time. Nothing above the records changes.
-- **Counted and bounded throughout.** Every part exports its `Limits` and
-  its `worst_case`, and a service adds them up.
+- **Step machines, not async.** A service is plain state machines: a
+  domain that decides, a protocol layer that speaks bytes, and a loop of
+  about ten lines that feeds them what the kernel completed. One thread
+  per process; a service that needs more cores runs more processes.
+- **A kit, not a framework.** skein has no service trait, no scheduler
+  and no callbacks. A service calls its parts by name, and nothing in
+  skein calls into a service.
+- **Counted and bounded.** Every part exports its limits and its worst
+  case, and a service adds them up: what it can hold is known before it
+  runs.
+- **Tested whole, and reproducibly.** io speaks to the kernel in owned
+  records, over io_uring or over a simulator that plays the kernel and
+  its faults. A world runs every process of a system in one seeded loop,
+  over either.
 - **Built when pulled.** A part is built when its first user needs it,
   and that user is its first test.
 
-## Not in skein
+## What it holds
 
-- **Domains, and protocols only one application speaks:** temper's
-  protocol between worker and engine. They are built on skein's machines.
-- **What a service does with an LLM:** its tools and their execution,
-  when to sign in or refresh a credential, and whether to retry. The
-  calls, their connections and OAuth's documents are skein's.
-- **What a service does on a forge:** what it watches, its effects and
-  their purposes, its policy, and what people see. A forge's calls, its
-  component, client and setup, and the fakes of a forge are skein's.
-- **A service's wiring:** its `iterate`, the sum of its worst cases, its
-  `main`.
-- **What a simulated program does.** The simulator plays the kernel; the
-  files and programs a scenario needs come from the service's own fake
-  machine, which plugs into the simulator.
-- **Schedulers, async and threads.** There is one loop per process. A
-  service that needs more cores runs more processes.
+- **The base:** bounded containers, cursors and time; io, from sockets
+  to processes; the shell that runs the loop; a durable key-value store.
+- **Protocols:** HTTP/1.1, JSON, TLS, framed channels, and codecs
+  generated from schemas.
+- **What services share:** LLM calls and their connections, OAuth, and a
+  code forge's calls, client and setup.
+- **Interfaces:** an application's state as a semantic tree, shown in a
+  terminal or a browser.
+- **Testing:** the simulator, the world harness, a counting allocator, a
+  browser driver, and fakes of an LLM, an issuer, a forge, a checkout and
+  a person.
 
-## Building a service on skein
+skein also holds the foundation that every repository of the family
+follows, and the tools of its development process.
 
-| Part | Written by | Crate |
+## Start here
+
+- [`docs/foundation/programming-model.md`](docs/foundation/programming-model.md):
+  how code is written, in skein and in everything built on it;
+  [`testing-strategy.md`](docs/foundation/testing-strategy.md): how it
+  is tested; [`notes.md`](docs/foundation/notes.md): what is still open.
+- [`docs/design/README.md`](docs/design/README.md): the parts, each with
+  its design, and their crates.
+- [`docs/design/examples.md`](docs/design/examples.md): the example
+  services, and how a service is built on skein.
+- [`docs/design/STATUS.md`](docs/design/STATUS.md): how far the code is
+  from the design.
+- [`docs/foundation/development.md`](docs/foundation/development.md):
+  how work goes from an idea to `main`, here and downstream.
+
+Before changing code, read [`AGENTS.md`](AGENTS.md). `main` moves only
+through `land`, which runs the gate, `scripts/check.sh`.
+
+## The family
+
+| Repository | | Builds on |
 |---|---|---|
-| lib, io, the machines for foreign protocols | skein | `skein-lib`, `skein-io`, `skein-http`, `skein-json`, `skein-tls` |
-| the protocol layer: its connections, its own machines and decoders | the service | `protocol` |
-| the domain, and its child domains | the service | `domain` |
-| `iterate`, and the sum of the worst cases | the service | `service` |
-| `main`: configuration, startup, the loop | the service | `shell`, on `skein-shell` |
-| the simulator | skein | `skein-sim` |
-| the counting allocator, for memory tests | skein | `skein-heap` |
-| the world harness: the loop, the referee, the heap at every iteration | skein | `skein-world` |
-| the worlds, the fakes, the fake machine | the service | its tests |
-| the lints and `clippy.toml` | copied from skein | the workspace |
-
-```
-crate      depends on
-domain     skein-lib                                  and its child domains
-protocol   skein-lib, skein-io, the skein machines it stacks, domain
-service    skein-lib, skein-io, protocol, domain
-shell      skein-lib, skein-io, service, skein-shell
-tests      skein-lib, skein-io, service, skein-sim, skein-heap, skein-world
-```
-
-Every crate may name `skein-lib`, and every one but the domain's
-`skein-io`, as the role graph has it (programming-model.md, 4). The shell
-and the tests reach the domain and the protocol layer only through the
-service, which re-exports what they name of them, their limits.
-
-Before code:
-
-1. the wire protocol, sized, with every length and limit; or, for a
-   foreign protocol, the skein machines it stacks;
-2. the limits of each layer, and the worst case they imply;
-3. the entities of each layer, who owns each, and how they bind;
-4. the state machines: states, what each holds, the total transition
-   table, and the demands and deadlines of each state.
-
-Then, in order:
-
-1. the domain, with its step tests and domain worlds;
-2. the protocol layer, on skein's machines, its own machines fuzzed alone;
-3. the service and its `main` last, with the simulator standing in for
-   the kernel until then.
-
-What the service finds missing in skein along the way is added to skein,
-with the service as its first user and first test.
-
-skein's own examples are built this way, and a service starts from them:
-the echo in `examples/echo`, with its steps before code, its fake client
-and its worlds in [examples.md](docs/design/examples.md).
+| [skein](https://github.com/forgetic/skein) | One thread, one loop, no async | |
+| [smith](https://github.com/forgetic/smith) | Protocol-driven agent loop for AI applications | skein |
+| [jig](https://github.com/forgetic/jig) | Engine for agentic applications | skein, smith |
+| [temper](https://github.com/forgetic/temper) | Agent-driven software development on a forge | skein, smith, jig |
+| [hearth](https://github.com/forgetic/hearth) | Immutable machines, built from a revision | skein |

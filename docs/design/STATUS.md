@@ -34,6 +34,7 @@ section 3.3).
 |---|---|---|
 | `foundation/programming-model.md` | partly | 10.3: rules held in review only, with no checker: not planned |
 | `foundation/testing-strategy.md` | partly | 6: state digests in the worlds of skein's services but the echo's (the harness carries them, `testing.md`, 5), transition coverage, `cargo fuzz`: not planned |
+| `README.md` | yes | Nothing: the index of the parts, their crates and what is not in skein |
 | `lib.md` | partly | 12: `RequestTable::not_kept`, a request whose record was not stored retired by its key: temper's client-api (skein-01.s3); keys given by the asker, `ask` and `restore` refusing as `Full` or `Held`, and the admission number they return, which `not_kept` names: temper's tools; 3: `Slab::get2_mut`: not planned |
 | `kernel.md` | partly | 8: the descriptor limit on the ring; 9: fixed files: not planned |
 | `io.md` | partly | 5: a root named by its token in `Create`, `CreateNoFollow`, `OpenRead`, `OpenReadNoFollow`, `OpenWrite`, `OpenWriteNoFollow`, `OpenDirectory`, `SyncDirectory`, `List`, `Rename` and `Remove`, which take its descriptor, read from `FileIo::descriptor`; a `Stat`, `Rename`, `Remove` or `MakeDirectory` that completes past its deadline answers `TimedOut` (`file_layer.rs`'s `stopped`), not its own; streams that read files; 4: DNS and datagram sockets; 6: contained trees: not planned |
