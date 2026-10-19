@@ -514,7 +514,9 @@ A fuzzy test lives beside its world and uses that world's settings,
 random ones included. When a fuzzy seed fails, the bug is fixed and the
 seed kept: as a scenario if it shows behaviour worth naming, or among the
 sweep's pinned seeds. A finding that cannot be fixed yet is replayed by
-an ignored test until it is.
+an ignored test until it is: the ruling that ignores it names the step
+that fixes it, and each hourly check runs it until then (development.md,
+section 5.5).
 
 ## 9. Where a failure is fixed
 

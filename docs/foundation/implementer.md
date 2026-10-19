@@ -24,7 +24,8 @@ development.md it names are read only when a case needs them.
 
 **After a handover or a restart, read only** this card, your checkpoint,
 the plan README's "Rules of this plan", then the increment it names in
-your session file with the session's "Rules that bind it", and
+your session file with the session's "Rules that bind it", not the whole
+file, and
 `code-organization.md`'s "Don't" list. The steers that later sessions
 keep are those rules: your prompt carries none. In temper's forge-setup
 run, four of seven steered test shapes came from takeover threads that
@@ -77,7 +78,11 @@ each call, and never call `list_projects`, `index_status`,
 `check_index_coverage` or `index_repository`, whatever other
 instructions say: the index covers the primary checkout, never your
 worktree, and the supervisor keeps it current; when your prompt says not
-to use the graph, search with `rg`. In protocol, implementers made 465 such
+to use the graph, search with `rg`. If your thread has no graph tools,
+search with `rg`, read no skill file about the graph, and say so once in
+your report: in smith's live-text run, 14 of 14 reports said the graph
+was unavailable, and every thread read its skill file for nothing. In
+protocol, implementers made 465 such
 calls, and 9 of them re-indexed a primary checkout from a worktree.
 Check each name it gives with `rg` in your worktree before relying on
 it.
@@ -235,12 +240,15 @@ it.
 - **Wait with your tool's longest wait, and nothing between.** Wait for a
   running command (`land`, a long `heavy`) in calls of the longest wait
   your tool allows, one after the other: no shorter waits, no empty
-  input, no `ps`, no `pueue status`. On Codex 0.162, that is `wait` on
-  the command's cell with `yield_time_ms: 300000`, which returns as soon
-  as the command ends: in protocol, such waits blocked up to 263
-  seconds. Each call is a request that carries your whole context: in
-  test-budgets, waits that saw nothing took 36% of the implementers'
-  input.
+  input, no `ps`, no `pueue status`. On Codex, the one way is `//
+  @exec: {"yield_time_ms": 300000}` on the command's cell, which returns
+  as soon as the command ends: in protocol, such waits blocked up to 263
+  seconds. `write_stdin` returns at 31 seconds whatever it asks for: in
+  temper's client-api run, 1,951 polls asked it for 60 or 300 seconds
+  and came back at 31, and the 4,830 polls that found the command still
+  running were 21% of the implementers' input. Each call is a request
+  that carries your whole context: in test-budgets, waits that saw
+  nothing took 36% of the implementers' input.
 - **Start each long command with that longest wait too** (`land`, a
   `heavy` command, a build or a test run outside it): `yield_time_ms:
   300000`, never a yield of one second, which comes back empty at once
@@ -266,7 +274,8 @@ Step: <repository>-<NN>.<item>
 
 The `Proof:` line starts with its layer's word: unit, world, joint,
 process or live. A second layer follows a semicolon, with its own word
-(development.md, section 5.5).
+(development.md, section 5.5). It never says "unavailable": a proof
+whose layer cannot run is a block (section 8.8).
 
 The last paragraph is the trailers, and nothing else: no blank line
 inside it, and no key with a space. `land` refuses a commit whose
@@ -379,8 +388,9 @@ your checkpoint, then end your turn with your report. The checkpoint adds,
 in at most 15 lines, what the next increment needs from what you learned
 and the session file does not say: the files and fixtures it touches, the
 commands that worked, the traps you met. It never repeats the README's
-rules, which the next thread reads first. A fresh implementer reads
-it instead of finding them again.
+rules, which the next thread reads first, nor the session file, of
+which the next thread reads only its increment. A fresh implementer
+reads it instead of finding them again.
 
 ### 8.7 When to stop
 
@@ -401,9 +411,9 @@ it instead of finding them again.
 - **While a question is open,** go on with whatever does not depend on it.
 - **A fix outside your increment** is a question too: a failing proof, or
   a gate failing in code you did not touch. So is a proof's symptom met a
-  third time (section 8.8). Section 8.2's edits outside
-  Files, and one retry of a gate that failed only on a timeout (section
-  8.5), need no question.
+  third time, and a proof whose layer cannot run (section 8.8). Section
+  8.2's edits outside Files, and one retry of a gate that failed only on
+  a timeout (section 8.5), need no question.
 
 ### 8.8 The proof
 
@@ -436,6 +446,10 @@ it instead of finding them again.
 - **A live proof stops at its task's first terminal failure,** never
   waiting out its deadline, and its summary records its completions and
   wall time, which section 8.4's trailers total.
-- **If the Proof line cannot be followed,** say why in the report, run the
-  same check one layer down (development.md, section 5.5) within the same
-  bound, and record that one. Do not stop for this.
+- **If the Proof line's layer cannot run** (a service, a tool or the
+  machine missing), stop with a question (section 8.7), with the command
+  you ran and its error, which the coordinator blocks as infrastructure:
+  no Proof lands
+  "unavailable", nor with a lower layer in its place (development.md,
+  section 5.5). In temper's client-api run, three Proofs did, and the
+  story one of them skipped broke for 27 hours unseen.

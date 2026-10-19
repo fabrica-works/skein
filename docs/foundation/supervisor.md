@@ -188,6 +188,14 @@ run's kit to it: `git -C <run>/kit checkout --detach <commit>`. Then
 steer the coordinator to what the step gives, if anything changes for
 it.
 
+**A kit fix on skein's `main`** for a defect the run has met, by hand or
+in a block: at the next hourly check, move the kit to it (`git -C
+<run>/kit checkout --detach <commit>`), run
+`<run>/kit/scripts/dev/test-plan`, and land a ruling, `plan ruling --text <file> "kit <commit>" "kit fix"`,
+that names the commit and the defect. If `test-plan` fails there, move
+the kit back and say so in the ruling. Keep the kit only for a reason
+the ruling writes (development.md, section 3.6).
+
 **The same block twice** becomes a standing rule in the plan's README, and
 a rule that would serve every plan, a proposal for the retrospective
 (development.md, section 14.4).
@@ -215,7 +223,10 @@ a rule that would serve every plan, a proposal for the retrospective
    never typed again. Then `plan ruling`, as
    in section 3. Append `question.md` and `answer.md` to `supervision.md`
    under `## Question and answer, <UTC time>`, with a shell command, and
-   delete them: a fresh designer reads earlier answers there.
+   delete them. A designer reads earlier answers in `decisions.md`'s
+   design rulings, never in `supervision.md`: in temper's client-api run,
+   designers read it 123 times for them, and late questions needed up to
+   217K of reading.
 
 **A measured aim's baseline** that misses a criterion is a question too,
 at once: whether the steps left aim at it (development.md, sections 5.1
@@ -254,7 +265,11 @@ defects came from increments no check had read.
    the crates the step's Files name and their dependents (cargo nextest
    run -E 'rdeps(<crate>)'), under the gate's default profile: never the
    whole workspace, nor its fuzzy or browser profiles, which the step's
-   land gate runs. Read nothing else, and change no file outside the
+   land gate runs. Read the session file, the symbols it names on
+   origin/main, and what changed in its Files since the run's claim (git
+   log -p --since=<the claim's time> origin/main -- <its Files>); never
+   log.md, supervision.md, decisions.md, the README or development.md
+   whole. Read nothing else, and change no file outside the
    scratch worktree. Report at most 30 lines: the commits you checked, each
    mismatch with its file:line and the correction, which names code by
    path and symbol, never by line number, and each suite run
@@ -318,7 +333,10 @@ due 65 minutes after this heading, even if this check stops halfway.
    say, with sections 14.2 and 14.3 and the testing-strategy.md beside
    it; the run's kit commit is <the last Process line's commit>, and the
    process tier last ran at <the commit the last entry names for it>, or
-   never. Return
+   never; the tests rulings ignored, each with the step that restores it:
+   <the list, or none>. Read the log's headings since <the last check's
+   time> and the sections named here, never log.md, supervision.md,
+   decisions.md or development.md whole. Return
    only: the check's entry (at most 15 lines, section 14.1, step 5), and
    the steer's points in section 10.3's shape: one for each finding not
    yet steered (section 14.4), and one for each process change the run
@@ -331,8 +349,9 @@ due 65 minutes after this heading, even if this check stops halfway.
 3. **If it returned steer points,** land what they rest on, and send the
    steer (section 3). For a change to `scripts/dev` that the run takes,
    first move the run's kit to its commit: `git -C <run>/kit checkout
-   --detach <commit>` (development.md, section 3.6). A point you do not
-   send gets one line in the entry: why not.
+   --detach <commit>` (development.md, section 3.6). A kit fix for a
+   defect the run has met moves the kit as section 3 says. A point you
+   do not send gets one line in the entry: why not.
 4. **A story the process tier turned red** (development.md, section
    14.1, step 1), whose range holds only another run's commits, goes to
    the user as an alert: the story, the range, and its commits' `Plan`
@@ -410,7 +429,8 @@ When the watch prints `done:` (development.md, section 7.6):
    or "not in the design yet". Then have a sub-agent on Sonnet run each
    "Done when" command of the plan's README once, as written, through
    `heavy` where it compiles or runs tests, in a detached worktree of each
-   repository's `origin/main` whose path is longer than any session's:
+   repository's `origin/main` whose path is longer than any session's,
+   its prompt naming the README's "Done when" and nothing else to read:
    `git -C ~/src/rust/<repository> worktree add --detach
    <run>/wt/<repository>-done-when-longer-than-any-session origin/main`, and return each command with
    its output; append them to `done.md`, under `## Done when, run <UTC

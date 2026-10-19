@@ -152,7 +152,13 @@ the implementers.
   holds to its files (the design worktree, a handover note in its scratch
   directory) and hands over to a fresh session that starts from them.
   During a run, its answer says so, and the supervisor wakes a fresh
-  designer for the next question, from a brief (section 10.4).
+  designer for the next question, from a brief (section 10.4). A
+  designer woken for a question reads the design sections and files
+  `question.md` names, and earlier answers in `decisions.md`'s design
+  rulings: never `log.md`, `supervision.md`, `decisions.md` or this
+  document whole. In temper's client-api run, designers read
+  `supervision.md` 123 times for earlier answers, and late questions
+  needed up to 217K of reading.
 
 ### 2.2 The planner
 
@@ -505,7 +511,14 @@ kit, and `plan check` still links the tools to the copy on `PATH`. So a
 kit change lands as soon as it is decided, and reaches the runs claimed
 after it. A run that must take it sooner does so by its supervisor's
 ruling, which moves `kit/` to the commit that landed it (`git -C
-<run>/kit checkout --detach <commit>`). A run claimed without `kit/`,
+<run>/kit checkout --detach <commit>`). A fix for a defect the run has
+met is such a change: the supervisor's next hourly check moves `kit/` to
+it, once `<run>/kit/scripts/dev/test-plan` passes there, and keeps the
+kit only for a reason it writes in the ruling. In temper's client-api
+run, five defects met by hand (the ref lock, the coordinator's
+compaction limit, loading before a ring, pueued's restart, the
+65-minute alarm) had their fixes on `main` 2 to 6 hours before the
+workaround. A run claimed without `kit/`,
 before skein e6fd9fb, runs the copy on `PATH`, main's, to its end. A
 paused run is the exception: its `plan resume` moves `kit/` to skein's
 `origin/main`, and the run resumes with that kit and its process
@@ -834,7 +847,12 @@ user only what they and the design leave open, and asks before writing.
 **`README.md`:**
 - the title, and a dated line with each repository's start commit;
 - **Inputs:** each design document by its full path in the repository
-  (`docs/design/` or `docs/foundation/`), `decisions.md`, `findings/`;
+  (`docs/design/` or `docs/foundation/`), with the commits that wrote
+  its design for this plan, `decisions.md`, `findings/`. The design's
+  sessions are those commits' `Designer-Session:` trailers (section
+  15.2): in smith's live-text run, the window of commits counted $424 of
+  three sessions that designed other plans, and likely missed the
+  design's own;
 - **The sessions:** per repository, a table with columns File, Session,
   Needs at start, and Increments that need more. Then how many sessions
   can start at once, and the order in which to start them when slots are
@@ -842,16 +860,26 @@ user only what they and the design leave open, and asks before writing.
   increments that must land one after another, step by step (`temper
   01.1`, `temper 01.2`, …), with its hours at the
   last runs' `chain_step_min`, the median minutes from a chain step's
-  start to its landing (24 in temper's tools run): no run ends before
-  it. `step_h` falls as steps run at once, and a chain step's own time
-  does not: in temper's tools run, the README projected the chain at 1.9
-  to 2.9 hours from `step_h`, and it took 7.9 of the run's 8.3;
+  first thread's start to its landing (24 in temper's tools run, 26.6 in
+  smith's live-text run), and their `chain_step_max`, the longest, as
+  its upper bound: no run ends before it. `step_h` falls as steps run at
+  once, and a chain step's own time does not: in temper's tools run, the
+  README projected the chain at 1.9 to 2.9 hours from `step_h`, and it
+  took 7.9 of the run's 8.3; in smith's live-text run, 0.5 to 0.7 hours,
+  and it took 2.1, its steps spanning 25.7 to 27.1 minutes against the 5
+  to 8 that `step_h` gave;
 - **Rules of this plan:** only what this document, the repositories'
   `AGENTS.md` and their workflows do not say. For example: fences ("this
   increment lands after every other skein increment"), version owners,
   probes. A plan never restates this document, nor the rules of a
   test's shape (testing-strategy.md, section 10), which it cites by
-  name;
+  name. Every implementer thread reads them, so they stay under about
+  300 lines through the run: a rule for one kind of session goes into
+  those sessions' files, and a steer that refines a rule replaces its
+  text (section 10.3). In temper's client-api run, the README grew from
+  457 to 1,217 lines and its rules to 886; threads reached 96K by their
+  30th request, and each 10K less in those requests saves about 5% of
+  implementers' input;
 - **Live services:** each one the plan uses, with its budget of calls or
   tokens;
 - **One test of a suite that needs a built artifact:** for each suite
@@ -908,7 +936,14 @@ user only what they and the design leave open, and asks before writing.
   its organization (section 4.5). In temper's tools run, item 11 passed
   for hearth on an empty revision, reading skein's index, and the
   organization's rename would have passed it, item 12 and the plan's
-  Pins rule for every repository. The supervisor runs each
+  Pins rule for every repository. No command a plan gives writes inside
+  the worktree it builds or measures: its logs go under the run's
+  directory, since `heavy --gate` refuses a tree with changes. A loop of
+  runs fails when any run fails (`|| exit 1` on each), not only when its
+  last does. In smith's live-text run, item 8's logs dirtied the tree it
+  measured, and smith-bench refused it; its focused runs stopped after
+  about 15 of 2,388 tests, and the task exited 0 because the loop's last
+  run passed. The supervisor runs each
   once, after `done.md` (section 7.6). A plan that proves with live probes
   counts the probes calibrated in their task files.
 
@@ -1004,6 +1039,11 @@ holds:
     field, since its counterpart must match it field for field; others
     may elide fields. Where a sketch and landed code disagree, the landed
     code wins, unless the design asks for the change.
+  - A sketch compiles against the base's own crates, which it imports,
+    with stand-ins only for what the run adds (section 5.4). In smith's
+    live-text run, ruling 101's `Time` and ruling 103's `profile::derive`
+    were facts of the base that the sketches' stand-ins hid, and the
+    session file they corrected was corrected four times in all.
 - **Questions to raise when reached:** only those whose answer depends on
   what the run records (a measured time, a probe's result, a recording).
   What the design leaves open is answered before the file is drafted
@@ -1029,6 +1069,11 @@ landed with `land --docs` (section 5.4).
   first thread lands about one increment, and each successor, which reads
   less (implementer.md, 8.1), one or two. An area that needs more is two
   sessions, the second needing the first.
+- **A chain of about 20 increments at most.** The plan's longest chain
+  runs one increment at a time, so at four or five a session it is about
+  five sessions end to end. A step that would make it longer, or a plan
+  past about 80 steps, goes to the next plan (section 5.1), never into a
+  session of this one.
 - **Small, and landed on its own.** Each passes the gate within budget and
   leaves `main` coherent: nothing half-built visible to users, no dead
   code. Prefer several small increments to one large one: parallel
@@ -1166,8 +1211,17 @@ landed with `land --docs` (section 5.4).
     or names a test, a file or a member those Files may rename or move,
     and each that passes when it reads nothing or names an organization
     (section 5.2);
+  - each command that writes inside the worktree it builds or measures,
+    and each loop of runs that fails only when its last run does
+    (section 5.2);
   - each test-time aim that names no packages, in a plan whose repository
-    another run lands on (section 5.2).
+    another run lands on (section 5.2);
+  - each test the plan shows, the reference tests first, against
+    testing-strategy.md's section 10, rule by rule: one line for each
+    rule a test breaks, citing the rule by name. In smith's live-text
+    run, the reference tests had bare literals, three behaviours in one
+    test and a name with "or", and steer point 2 and ruling 102 came
+    after six steps had started.
 
   The planner fixes what it lists.
 - **A design trace, before the session files are drafted.** A third
@@ -1200,7 +1254,9 @@ landed with `land --docs` (section 5.4).
   - every command the plan prescribes: each Proof, each count, each "Done
     when" item, and `cargo doc` where a Proof asks for no warning;
   - each type sketch, compiled under clippy with warnings as errors, in a
-    scratch worktree;
+    scratch worktree, as a module of the crate it extends, or a crate that
+    depends on the base's crates: a stand-in defines only what the run
+    adds, never what the base has (section 5.2);
   - each limit a sketch, a Test shape or a configuration gives, through
     the check that admits the shipped profile with it (temper: the
     start's checks of `configuration.md`, section 7), beside the
@@ -1319,6 +1375,15 @@ balancing confidence against the run's pace and its tokens.
     observers.
 - **A failing proof is a bug.** The implementer fixes it before landing.
   If the fix lies outside its increment, it reports a question.
+- **No Proof lands "unavailable".** A step whose proof's layer cannot run
+  (a service, a tool or the machine missing) blocks as infrastructure
+  (section 10.2), and lands with that layer once it runs, never with a
+  lower layer in its place. A ruling that ignores a test names the step
+  that restores it, and each hourly check runs the ignored test on
+  `main` until that step has landed (section 14.1). In temper's
+  client-api run, three Proofs said "unavailable"; the ignored landing
+  story broke for 27 hours unseen, and fixing it took two added steps
+  and 13 rulings.
 - **It is diagnosed below its layer.** A proof that fails is reproduced
   where a run is cheap, in a world or a focused test in the build lane,
   and runs again only after a change aimed at a cause its log names. The
@@ -1418,9 +1483,10 @@ shows them precisely.
 - **A suite's time is aimed at for the whole run.** The README states what
   the run may add to each suite in all, which the hourly checks follow
   and "Done when" measures by the median of three gate runs on the gate
-  machine. A plan gives a session a share of that aim only where the
-  share is larger than one gate's swing on the gate machine (about 1.3 s
-  on carbon-forge): a smaller share fires on noise. In client-composition,
+  machine, with its logs outside the worktree and a loop that fails on
+  any run (section 5.2). A plan gives a session a share of that aim only
+  where the share is larger than one gate's swing on the gate machine
+  (about 1.3 s on carbon-forge): a smaller share fires on noise. In client-composition,
   shares of 0.2 s to 0.8 s were checked against single gates that swung
   by 1.3 s, and the whole run added 0.69 s.
 - **The Proof bounds of one suite sum within what the run may add to
@@ -2190,7 +2256,11 @@ without `## `, separated by `; `.
   A point that later sessions must keep lands first as a rule of the
   README's "Rules of this plan", with `plan ruling --text`, and its "Pass
   on" names the rule: the sessions started later read it there
-  (section 7.2).
+  (section 7.2). A point that refines a rule replaces that rule's text,
+  never adds beside it, and a point for one kind of session goes into
+  those sessions' files, so the rules stay under about 300 lines
+  (section 5.2). In temper's client-api run, 15 steer points were
+  refused because their text was not yet in the README.
 
 - **When the coordinator finds `steer.md`:**
   1. it runs `plan steered`, which logs it under "Steered, <time>" and
@@ -2575,6 +2645,21 @@ be told from a loaded machine.
   135 GiB against a 74.5 GiB cap, twice. In protocol, disk blocked five
   times before freeing first (rulings 118 and 128), and never after; in
   parity, no disk event followed `kache gc` below 80 GB (ruling 111).
+- **On btrfs, unallocated space is a bound beside disk and memory.**
+  `df` counts the room left inside chunks already allocated, so metadata
+  can run out with much of the disk free. At each disk check, on a btrfs
+  filesystem that holds `~/src` or the caches, the coordinator reads its
+  unallocated space (`sudo -n btrfs filesystem usage -b <mount>`, its
+  `Device unallocated` line). Below 10 GiB, it runs `sudo -n btrfs
+  balance start -dusage=75,limit=10 <mount>`, up to three times, logging
+  each, and blocks as infrastructure if it stays below. pueued is
+  restarted only through `plan resume`, which keeps its cgroup. In
+  temper's client-api run, `/srv` had 1 MiB unallocated with 98 GiB
+  free: mold's links died with bus errors, pueued and Codex's daemon
+  died, four implementer threads were lost, and pueued, restarted by
+  hand, lost the process tier's cgroup for three hours (rulings 309, 331
+  and 334). The next kit batch moves this check into `plan check`, the
+  pulse and `plan resume`.
 
 ### 11.5 Budgets
 
@@ -2609,7 +2694,8 @@ that machine.
   run's supervisor, who handles it as a finding of its own check (section
   14.4).
 - **A kit change from another machine** reaches a run only by its
-  supervisor's ruling (section 3.6), or at its resume after a pause,
+  supervisor's ruling (section 3.6), which its next hourly check makes
+  for a fix of a defect the run has met, or at its resume after a pause,
   which takes skein's `main` as the run's kit and process (section 7.6):
   otherwise each run keeps its claim's kit. This holds for the runs
   claimed after skein e6fd9fb, through their resumes after a restart or
@@ -2702,6 +2788,11 @@ What it reads stays in its own context: in jig-protocol's second
 supervisor session, the checks run in the supervisor's own context cost
 about a fifth of it, and each added 7K to 23K tokens that every later
 request carried. The supervisor appends the entry, and sends the steer.
+Its prompt names the sections and line ranges it reads: no sub-agent
+reads `log.md`, `supervision.md`, `decisions.md` or this document whole.
+In temper's client-api run, the supervisor's sub-agents re-read the 2 MB
+`log.md` 53 times, `supervision.md` 54 times, this document 56 times and
+the README 71 times: $338 of the supervisor's $604.
 
 **A quiet hour needs no sub-agent.** While no session is running and the
 run waits only on queue tasks (a live suite), the supervisor runs `plan
@@ -2734,7 +2825,12 @@ reached its coordinator ten hours after it landed.
    holds only another run's commits goes to that run (section 12). In
    temper's forge-setup run, the landing story was red on `main` for at
    least 4.5 hours before a ready check saw it, and 40 gate-lane runs
-   bisected the cause, while 29 quiet checks ran nothing.
+   bisected the cause, while 29 quiet checks ran nothing. Each test that
+   a ruling ignored runs at every check too, run alone or not, on
+   `origin/main` in that worktree, until the step the ruling names to
+   restore it has landed (section 5.5): in temper's client-api run, the
+   ignored landing story broke for 27 hours unseen, and another run's
+   director found it.
 2. **Read** the log's headings since the last check, the first five
    lines of each report, and the coordinator's acknowledgement of the
    last steer. Then list the process changes since the run's kit:
@@ -2745,7 +2841,9 @@ reached its coordinator ten hours after it landed.
    commit whose body says the run takes it, and that no steer has passed
    on, is a steer point (section 4.4), sent with this check's steer: a
    change reaches the run's coordinator at the first check after its
-   landing. Then compare each plan repository's graph index with its
+   landing. Each commit that fixes a defect the run has met, the
+   supervisor takes into `kit/` itself, once `test-plan` passes there
+   (section 3.6). Then compare each plan repository's graph index with its
    `origin/main`, as `plan check` does (section 6). The supervisor
    re-indexes one that is older. Until it has, a ruling adds to the
    README's rules, and a steer point passes on to the running
@@ -2942,6 +3040,12 @@ question and its own budget, or waits for the retrospective.
   a plan while the last retrospective lacks section 10 or has a proposal
   still open (section 6). In test-budgets, six of jig-protocol's
   seventeen undecided proposals recurred.
+- **No run is claimed while the last retrospective has an adopted
+  proposal still to apply,** its last column empty or naming no commit
+  on `main`, unless the plan's README says how this run applies it. In
+  smith's live-text run, none of client-api's nine proposals adopted at
+  01:43 was applied at the 09:07 claim, and its implementers spent 27.4%
+  of their input waiting, which client-api's proposal 3 aimed at.
 
 ### 15.2 Metrics
 
@@ -2956,7 +3060,8 @@ counts them by hand.
 | `running_h` | `wall_h`, less pauses and the time the heartbeat was older than ten minutes |
 | `steps_planned`, `steps_added`, `steps_dropped` | steps landed from the plan (a split's lettered parts included), steps added during the run (every `.s<k>` and a lettered part whose parent is not `split`), steps dropped; a `split` row counts in none; `-repin` is planned |
 | `step_h` | `running_h` per landed step |
-| `chain_step_min` | the median minutes from a step's start to its landing, over the steps of the chain the README names: what the next README projects its chain at (section 5.2); the next kit batch computes it |
+| `chain_step_min` | the median minutes from a step's start, its first thread's, to its landing, over the steps of the chain the README names: what the next README projects its chain at (section 5.2); the next kit batch computes it |
+| `chain_step_max` | the longest of those spans, in minutes; the next kit batch computes it |
 | `escalations` | blocks, by kind (section 10.2), each counted once: one listed again in later sections, while it stays open, counts at its last listing |
 | `escalation_wait_min` | the median time from a block to its answer, in minutes |
 | `blocked_h` | hours in which at least one block was open |
