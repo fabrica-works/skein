@@ -156,9 +156,10 @@ call's cost. The component decides from what a plan heard (8.3).
   whose repository has no path kept resolves it (4.2), and one that
   needs a login not held looks it up (4.3). A locate, which finds a
   repository by owner and name, names repository 0 (forge.md, 3).
-- **Cost** is one for each request whose first byte was written, the
-  requests that resolve a path or a login included. It goes up with the
-  one terminal (forge.md, section 5.4).
+- **Cost** is the component's count, never a plan's (forge.md, 4.2):
+  one for each request whose first byte was written, the requests that
+  resolve a path or a login included. It goes up with the one terminal
+  (forge.md, section 5.4).
 - **The deadline** is `deadline` from admission, at most the owner's
   `lifetime`, so no byte of a write goes out past the time the owner
   counts on. A call still waiting at it ends `Unavailable`. An exchange

@@ -476,9 +476,10 @@ dialect knowledge it keeps is in the plans it is handed.
   format, the merge style and the `html_url`. The tables are bounded and
   evict the row
   used longest ago.
-- **It ends with the call's result and its cost,** the number of
-  requests it sent (5.2). A plan ends on the first failure, except where
-  5.2 says otherwise.
+- **It ends with the call's result,** its `Done`, and counts nothing:
+  the call's cost is the component's, one for each request whose first
+  byte it wrote (forge-connection.md, section 4.1). A plan ends on the
+  first failure, except where 5.2 says otherwise.
 - **It maps a failure to an `Error`.** `classify` maps a status, a
   refusal's message and `Retry-After` to an `Error`, and says whether
   the path or the row is dropped (5.4).
@@ -1226,7 +1227,7 @@ Nothing here is contract for Forgejo's code.
 - **A provider is documents plus call plans.** Nothing above the
   Forgejo dialect and its plans assumes Forgejo, so a provider is its
   documents and a set of call plans, each call made of whatever requests
-  it takes, its cost reported as Forgejo's is (4.2).
+  it takes, its cost counted by the component as Forgejo's is (4.2).
 - **The vocabulary may gain three things:**
   - validators for conditional requests, whose `304` GitHub does not
     count against the rate;
@@ -1270,7 +1271,7 @@ The dialect's step tests, in `skein-forge`, with no io:
   - names percent-encoded, a slash in a branch's name `%2F`;
   - times read and written, 2554 included;
   - each failure of 5.4, in the status and the message that tell it;
-  - the first failure ending a call, and the cost counted;
+  - the first failure ending a call;
   - a request that was never seen and one that may have been, for a
     write and for `OpenPull`'s reads;
   - the tables filled from the answers heard, and a row dropped.
