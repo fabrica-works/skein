@@ -55,6 +55,10 @@ vocabularies with total functions and routes the client's output.
   or `Repository`) and `Erase` of its `Key`. The owner commits an outbox
   `Entry` and hands it over with `Make`; the client returns `Progress`
   and, when the entry settles, an `Outcome`.
+- **Preconditions,** asserted and never answered, since breaking one is
+  the owner's bug: a `Make` whose entry's number is not above every
+  held one (7.2); a `Restore` of a row already restored, or after
+  `Restored` (section 8); an `Answered` for a token with no call out.
 
 ### 2.1 The commit rule
 
@@ -97,11 +101,13 @@ the working set at saturation, the deadlines and the diagnostics.
 - **An operation is admitted** when its bytes are at most
   `op_bytes`, its pages start at 1, a file's path is not empty and a
   `max_bytes` is from 1 to `answer_bytes`; else it is `TooLarge`, with no
-  call. `Busy` is the client's own refusal, never a dialect's.
+  call.
 - **An answer is checked** against its call before anyone takes it, by
   forge.md, section 3.7's table. Past `answer_bytes` or `rows` it is
-  `TooLarge` for a read and `InvalidAnswer` for a write. Any other
-  mismatch is `InvalidAnswer`.
+  `TooLarge` for a read and, for a write, `InvalidAnswer`: a lost
+  answer, since the write may have been done (7.4, step 5). Any other
+  mismatch is `InvalidAnswer`, and so is an answered `Busy`: `Busy` is
+  the client's own refusal, never a dialect's.
 
 ## 3. The working set
 
@@ -117,12 +123,15 @@ The client holds the resources the owner names, and nothing else.
   (id, revision) of comments and reviews delivered (at most `inbox`
   each), cached values, pushed head and echo ledger (section 7.6).
 - **`Event::Keep { owner, watches }`** names the complete set the owner
-  needs. `Kept` answers once, and anything but `Ok` changes nothing:
-  - `TooLarge`: over `resources` watches, or a branch name empty or over
-    `op_bytes`;
-  - `Busy`: before restore, after a failed one (section 8), or when the
-    set plus the leavers still busy passes `resources` or `repositories`;
-  - `Refused`: participation on a repository or branch, or a duplicate.
+  needs. `Kept` answers once, and anything but `Ok` changes nothing. Its
+  refusal is the first of these that applies:
+  1. `TooLarge`: over `resources` watches;
+  2. `Busy`: before restore, or after a failed one (section 8);
+  3. each watch in turn: `TooLarge` for a branch name empty or over
+     `op_bytes`, then `Refused` for participation on a repository or
+     branch, then `Refused` for a duplicate of an earlier watch;
+  4. `Busy`: the set plus the leavers still busy passing `resources` or
+     `repositories`.
 - **Leaving.** A resource the owner stops naming is erased and gets no
   further call; a call already out keeps its one terminal, its answer
   dropped, and counts against capacity until then. A closed item is not
@@ -196,9 +205,9 @@ Before a decision depends on a fact, the owner asks for it afresh with
 (forge.md, section 3).
 
 - **One terminal:** exactly one `Request::Read`, an answer or an error.
-- **Refused at the entrance,** with no API call: `TooLarge` by section
-  2.3; `Busy` when the call slab is full or when the foreground share is
-  spent and a keeping read is due (section 6).
+- **Refused at the entrance,** with no API call, `TooLarge` by section
+  2.3 first, then `Busy` when the call slab is full or when the
+  foreground share is spent and a keeping read is due (section 6).
 - **Retries.** `Unavailable` and `Timeout` are tried again, `read_attempts`
   tries in all, after `backoff` doubling to `backoff_max` plus a draw
   below that delay, capped at `backoff_max`. A rate refusal queues the
@@ -257,12 +266,14 @@ a marker (forge.md, section 6).
 
 ### 7.2 Entries and lanes
 
-- **Admission.** `Make { entry }` is refused with `Outcome::Failed`:
-  `Busy` before restore ends or with `entries` held; `Forbidden` where
-  the forge has no configured writer; `TooLarge` over `op_bytes`, with an
-  attempt but no start, an empty key, or a condition its write does not
-  take (a merge takes a base, an update a head and a base, a review a
-  head, the rest none). A new entry's number is above every held one.
+- **Admission.** `Make { entry }` is refused with `Outcome::Failed`, by
+  the first of these that applies: `Busy` before restore ends;
+  `Forbidden` where the forge has no configured writer; `TooLarge` over
+  `op_bytes`, with an attempt but no start, an empty key, or a condition
+  its write does not take (a merge takes a base, an update a head and a
+  base, a review a head, the rest none); `Busy` with `entries` held. A
+  new entry's number is above every held one (section 2,
+  "Preconditions").
 - **A lane** is a repository and an item number for a write that names an
   item (comment, review, edit, reviewers, close, reopen, merge, update),
   else the repository alone.
@@ -270,7 +281,9 @@ a marker (forge.md, section 6).
   its lane remains. An uncertain entry holds its lane until found or
   settled, so a later write cannot overtake one that may still land.
 - **Withdrawal.** `Withdraw { entry }` works only for an entry with no
-  attempt. A call already out ends it `Withdrawn` at its answer.
+  attempt: of one with an attempt, or one the client does not hold, it
+  changes nothing and says nothing. A call already out ends it
+  `Withdrawn` at its answer.
 
 ### 7.3 Recovery classes
 
@@ -296,8 +309,10 @@ repeating gives the same state. **Unrecoverable:** none of these.
 A branch can be deleted by another hand and nothing then shows it was
 made; Forgejo's update checks neither the old head nor an operation id.
 Of several pulls for its branches, the open one is found, else the
-oldest. A row settles a find only if it is original (not revised,
-provenance known) and carries the entry's key, believed (section 7.1).
+oldest. A comment or a review settles a find only if it is original (not
+revised, provenance known) and carries the entry's key, believed
+(section 7.1). An issue, whose summary carries no provenance, settles
+it by its key, believed, alone.
 
 ### 7.4 One write's way
 
@@ -310,7 +325,10 @@ provenance known) and carries the entry's key, believed (section 7.1).
    `Progress` with the entry's `start` (a `Position`, fixed once) and its
    `attempt`: the send, its monotonic `deadline` and its absolute
    `expires`, both `lifetime + clock_margin` after it. The owner commits
-   it first (section 2.1).
+   it first (section 2.1). Each send is an attempt: a write sent again
+   after a rate refusal (section 6), which the forge did not act on
+   (forge.md, section 5.4), saves a new attempt in place of the last,
+   its deadline from the new send.
 4. **Answer.** A typed answer ends in `Outcome::Made { made, found }`.
    A review, merge and update are proved by a read after the answer: the
    review by its key, the merge by its pull request merged at the entry's
@@ -319,8 +337,8 @@ provenance known) and carries the entry's key, believed (section 7.1).
    not so proved is not found (section 7.5).
 5. **A lost answer.** `Timeout` or `InvalidAnswer` on a write may have
    reached the forge: the entry counts a failure, emits `Progress` and
-   `Outcome::Uncertain`, and is looked for (section 7.5). `Exists` after
-   an attempt is looked for too; before one it fails `Exists`.
+   `Outcome::Uncertain`, and is looked for (section 7.5). `Exists` is
+   looked for too, since every write is sent under an attempt.
 6. **A typed refusal** (conflict, protected branch, stale head, `Closed`
    and the like) is final, never retried blind. `Unavailable` did not
    reach the forge: it is tried again after `backoff` doubling to
@@ -368,11 +386,11 @@ before it writes.
 
 1. **Restore.** The namespace is given first (section 2).
    `Restore { record }` for each stored row, then `Restored { clock }`.
-   A row that breaks a limit or is inconsistent (a
-   bad page or stamps, a cache or echoes over bounds, a live row without
-   its repository's, or the reverse) makes `restoration_failed()` true.
-   The owner reconciles its store with its limits; meanwhile `Keep` is
-   `Busy`.
+   A row that breaks a limit or is inconsistent (a bad page or stamps, a
+   cache or echoes over bounds, a live row without its repository's, or
+   the reverse) makes `restoration_failed()` true, for good: `Keep` is
+   `Busy` from then on. The owner reconciles its store with its limits
+   and builds a new client, which it restores again.
 2. **The recovery clock** (`clock`): `Monotonic` while the saved origin
    survives, else `Wall`, when a find's remaining lifetime is the saved
    `expires` less the wall clock.
@@ -402,7 +420,8 @@ before it writes.
   overlap; drift against the owner's pushes; the start and attempt saved
   before the first write; original deadlines across a restart and a
   changed clock; copied, revised and unknown rows never settling; golden
-  bytes for keys; every table full at once against `worst_case`.
+  bytes for keys; the refusals' order, a pair each for `Keep`, `Make`
+  and `Read`; a write rate-refused, then sent under a new attempt.
 - **The client world** (testing-strategy.md, section 2.2) runs the client
   alone under a durable scripted parent that commits a decision whole
   before it releases any call, over skein's fake forge domain
@@ -413,7 +432,8 @@ before it writes.
   branch deleted before its find is held after its deadline; a
   conditional merge lands once; a late set reaches its final state; a
   branch name taken by another writer is reported, not overwritten;
-  every fresh read finishes once; no comment or review is delivered twice.
+  every fresh read finishes once; no comment or review is delivered
+  twice; every table full at once, within `worst_case`.
 - **Its referee** reads no client state. It checks that every write
   released was planned by the parent and had its start and attempt saved
   first, that a keyed creation happens once on the fake, that news is

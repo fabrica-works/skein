@@ -43,7 +43,9 @@ so. A service that works on a forge writes no connection code.
 - **The owner's protocol layer:**
   - gives io its own tokens for the component's entities, keeping the
     component's token in each, so io's events reach the component that
-    asked;
+    asked. The component's tokens are below 2^60, so 60 bits keep one:
+    its API connections from 1, its listener 2^59, and its webhook
+    connections above it;
   - reports the component's earliest deadline, and fires its deadlines
     where it fires its own;
   - routes what passes between the component, io and the owner's
@@ -113,7 +115,9 @@ Nothing starts and no io is requested. It refuses: more forges than
 `forges`, or two with one number; an in-process name for an address, and
 plaintext off loopback; a plaintext name that is empty or holds a byte
 at or below a space, at or above DEL, or one of `/:[]`; a credential
-that is empty or past `token_bytes`, and a user id of 0; a secret for no
+past `token_bytes`, and a user id of 0; a credential or a user agent
+that is empty or holds a byte below a space other than tab, or DEL,
+which skein-http would refuse in every request's head; a secret for no
 configured forge, empty or past `hook_secret_bytes`; a listener that is
 not a loopback IP socket; a word that is not 1 to 16 bytes of
 lowercase ASCII letters, digits and `-`; and the limits 7.4 checks.
@@ -135,7 +139,9 @@ call's cost. The component decides from what a plan heard (8.3).
   the id it heard, or the read and the status.
 - **Asked again** for anything else (8.3), after `start_backoff`, then
   at double the wait up to `start_backoff_max`, or a `429`'s
-  `Retry-After` when longer.
+  `Retry-After` when longer, however long: the rate is honoured (2.3),
+  the sum saturates, and the forge's calls meanwhile end at their
+  deadlines (`Unavailable`, forge.md, section 5.4).
 
 ## 4. Calls, repositories and users
 
@@ -168,9 +174,10 @@ plan reads a row and fills it from the answers it hears (forge.md, 4.2).
 
 - **Filled** by the read of the repository by id, counted in the call
   that needed it; by a locate; and by a read of its settings.
-- **Dropped** when a call by its path is answered `404` or a redirect,
-  or a merge is refused its style (forge.md, 5.4); the next call
-  resolves the id again.
+- **Dropped** when a call by its path ends on a `404` or is answered a
+  redirect, or a merge is refused its style (forge.md, 5.4); the next
+  call resolves the id again. A `404` that is an answer (forge.md, 5.2)
+  keeps it.
 - **At most `repositories` rows;** the one used longest ago goes first.
 
 ### 4.3 Users
@@ -240,8 +247,9 @@ and the fields are the dialect's (forge.md, section 7).
 
 Once the body is read and verified, the `204` is queued, and only then
 does the hint go up, so the owner never makes the forge wait on its work
-(http.md, 5.4). A verified delivery that hints nothing is answered `204`
-too. A hint names the forge's number and the payload's repository id;
+(http.md, 5.4). A verified delivery that hints nothing, one without the
+dialect's event header (`X-Forgejo-Event`) among them, is answered
+`204` too. A hint names the forge's number and the payload's repository id;
 one for a repository the owner has not adopted goes up all the same.
 
 ### 6.3 What it answers
@@ -251,10 +259,10 @@ discarded, and the connection closed.
 
 | The request | Answer |
 |---|---|
-| a head the server itself refuses | a `4xx` |
+| a head the server itself refuses | skein-http's own answer: a `4xx`, or `501` or `505` |
 | a path that names no forge, or a forge with no secret | `404` |
 | a method other than `POST` on a forge's path | `405` |
-| no signature, or one that is not 64 hexadecimal digits | `403`, body unread |
+| no signature, or one that is not 64 lowercase hexadecimal digits | `403`, body unread |
 
 A body is read within `hook_body_bytes`. A body too long (`413`), a
 wrong signature (`403`) and a verified body the decoder finds malformed
@@ -454,10 +462,10 @@ drain** (8.5). The owner's domain owes:
 - **Step tests:** the start's decision for every state and everything
   heard; the tables' fills, drops and eviction; each limit check, one
   below and at its bound; each listing's page size; the signature check
-  against known HMACs, with a header of 63, 64 and 65 digits; `Host`
-  for a TLS forge and a named plaintext one, and for an IPv4 and an IPv6
-  address, at the scheme's default port and off it. The plans'
-  own are `skein-forge`'s (forge.md, section 11).
+  against known HMACs, with a header of 63, 64 and 65 digits and one of 64
+  uppercase; `Host` for a TLS forge and a named plaintext one, and for an
+  IPv4 and an IPv6 address, at the scheme's default port and off it. The
+  plans' own are `skein-forge`'s (forge.md, section 11).
 - **The machine world:** the component against a scripted HTTP peer over
   in-memory streams, for a plaintext and a TLS forge: every state of
   section 8, with faults at every byte and each deadline passing; a

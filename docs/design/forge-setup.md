@@ -105,7 +105,7 @@ its record.
   - the forge's number;
   - the bot's login and email;
   - the tokens' names, one for the API and one for git;
-  - the orgs, at most the limit's;
+  - the orgs, at least one and at most the limit's;
   - the orgs' owner, one optional value: the person's login when the
     forge is owned, and an absent org is then made, owned by it; none
     when managed, and an absent org then stops the run (4.3, step 5);
@@ -122,8 +122,9 @@ its record.
 - **Asked of its host, as needs,** when a step reaches them: the admin's
   token, the API and git tokens, the bot's id as last kept, and the
   webhooks' secret. These are the items. Each is named by what it is,
-  never by where it lives. The host gives it, or says it has none. The
-  admin's token is asked for like the rest and held to the run's end.
+  never by where it lives. The host gives it, or says it has none; an
+  empty value is none, for every item. The admin's token is asked for
+  like the rest and held to the run's end.
 - **The API's address and transport are its host's:** reconcile says a
   request, never an address. Plaintext to loopback (section 9).
 
@@ -163,21 +164,27 @@ forge differs.
 2. **The bot.** It reads the user of the bot's login.
    - Absent (404): it draws 32 bytes and makes the user (`POST
      /api/v1/admin/users`) with them as 64 lowercase hex digits for a
-     password nobody keeps. The user is never a site admin, and its full
-     name carries `<word>:bot`, set by the request that makes it, so no
-     run cut short leaves the bot unmarked.
-   - Present: a full name without `<word>:bot` stops the run with
+     password nobody keeps, and `must_change_password` false, since
+     nobody signs in to change it. The user is never a site admin, and
+     its full name carries the mark, `<word>:bot`, set by the request
+     that makes it, so no run cut short leaves the bot unmarked.
+   - Present: a full name without the mark stops the run with
      `Unmarked`, so a login written wrong never takes over a person's
-     account. A site admin stops it with `BotIsAdmin`.
+     account; a marked user that is a site admin stops it with
+     `BotIsAdmin`. The mark is found whole: at the name's start or after
+     a byte outside `[a-z0-9-]`, and at its end or before such a byte,
+     so the word `b` is not found in `ab:bot`.
    - A bot that passes is never edited: its email is set at its making.
 3. **Its two tokens,** the API's, then git's. It asks for the one kept,
    which stays when `GET /api/v1/user` with it answers as the bot.
-   - Otherwise (none kept, a 401, or another user's answer) it is made
-     again by the admin's token alone: the bot's tokens are listed
+   - Otherwise (none kept, a 401 or a 403, or another user's answer) it
+     is made again by the admin's token alone: the bot's tokens are listed
      (`GET /api/v1/admin/users/{login}/tokens`, paged) for the one of
      the token's name, which is deleted (`DELETE .../tokens/{id}`; a 404
      is as good); then made again (`POST` to the list's path) and the
-     value in the answer is written to the host.
+     value in the answer is written to the host. A 403 is a token
+     without `read:user`, as one made for git alone is. Any other
+     status stops the run (`Refused`), and so does a `Down` (4.4).
    - The scopes: `read:user`, `write:issue` and `write:repository` for
      the API token; `write:repository` and `read:user` for git's, so
      that this step can ask whose it is.
@@ -316,11 +323,14 @@ Its duties:
 The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
 
 - **Step tests,** reconcile driven by answers: each step read, then
-  written only where the forge differs; the marker's refusal; a site
-  admin bot refused; a revoked token made again; the hooks patched; an
-  event out of order; the hook's URL for loopback addresses alone; the
-  limits' relation at its bound and one past. The documents are tested
-  with `skein-forge` (forge.md, section 11).
+  written only where the forge differs; the marker's refusal, and the
+  mark found only whole; a site admin bot refused, and a user both
+  unmarked and a site admin refused `Unmarked`; a revoked token made
+  again, and one answered `403`; an empty item taken as none; the hooks
+  patched; an event out of order; the hook's URL for loopback addresses
+  alone; the check refusing no org, and the limits' relation at its
+  bound and one past. The documents are tested with `skein-forge`
+  (forge.md, section 11).
 - **Reconcile's world** (testing-strategy.md, 2.4) plays the host over a
   store of items and the fake forge's setup routes (fake-forge.md,
   section 4). It checks:

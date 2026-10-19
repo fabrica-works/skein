@@ -166,7 +166,7 @@ domain, and holds no clock of its own.
   18). `Service::new(config, &limits, seed)` owns routing, the tally and the
   setup store; `Service::target` hands a domain reply to its connection, or
   returns it whole when that connection has gone. Its `Limits` sit beside
-  the domain's, and its `worst_case` is checked.
+  the domain's, and `new` refuses limits whose `worst_case` is none.
 - **The scenario's tables** (`Config`): the hooks' `Endpoint { forge, host,
   secret }`, `host` being the loopback `ip:port` the forge peer connects to
   and sends as `Host` (section 5); `base`, an `http://` origin; `tokens`,
@@ -175,9 +175,12 @@ domain, and holds no clock of its own.
   `default_paging_num` and `faults`.
 - **Routes.** Outside the setup's, each route is one domain call: decoded by
   the server side of `skein-forge` (forge.md, section 5.2), translated to a
-  `Read` or `Write`, and its answer encoded as Forgejo encodes it. A commit
-  is a 40-digit SHA-1 id with the domain's count big-endian in its first
-  eight bytes and zeros after; any other id names none.
+  `Read` or `Write`, and its answer encoded as Forgejo encodes it. A write
+  Forgejo answers with what it made or changed (an issue, a pull request,
+  a comment, a review, an edited issue, a status, a branch) makes one call
+  more, the domain's read of that, on the same request. A commit is a
+  40-digit SHA-1 id with the domain's count big-endian in its first eight
+  bytes and zeros after; any other id names none.
 - **Credentials.** The header is `Authorization: token <value>`; an unknown
   token is `401`. Tokens stay in this layer: no domain call, observation or
   tally holds one. The tally counts requests at the entrance: total, by route
@@ -199,13 +202,18 @@ domain, and holds no clock of its own.
   faults: `reset` closes the connection before the next request is read;
   `drop` closes it, and `server_error` answers `500`, after the domain
   answered, so the call is made and its answer lost.
-- **Deliveries.** `Service::delivery(&hook, &limits)` renders a domain hook
-  as a `Post { head, body }`: a `POST` to `/hooks/<number>` with the event
-  header and an HMAC-SHA256 signature of the body in lowercase hexadecimal,
-  by the endpoint's secret (forge.md, section 7). A status the fake's CI made
-  is delivered as its job's end; a status anyone else reports sends nothing,
-  as on Forgejo. Deliveries go to the configured endpoint only; a hook made
-  through the setup routes is stored and routes nothing.
+- **Deliveries.** `Service::delivery(&hook, &limits)` renders a domain hook as
+  a `Post { head, body }`: a `POST` to `/hooks/<number>` with the event header
+  and an HMAC-SHA256 signature of the body in lowercase hexadecimal, by the
+  endpoint's secret (forge.md, section 7). A status the fake's CI made is
+  delivered as its job's end; a status anyone else reports sends nothing, as
+  on Forgejo. Of forge.md's table (section 7) it renders `issues`,
+  `pull_request`, `issue_comment`, `pull_request_approved` for every review
+  whatever its verdict (the hint is the same), `push` of a branch, `delete` of
+  a branch, and `workflow_job_success` and `workflow_job_failure`; never
+  `pull_request_rejected`, `pull_request_comment`, `create`, a tag's events,
+  or a job cancelled or skipped. Deliveries go to the configured endpoint
+  only; a hook made through the setup routes is stored and routes nothing.
 - **The setup's routes** (accounts, tokens, organizations, teams, members and
   organization hooks) are served from this layer's own bounded store, not the
   domain's (forge-setup.md, section 4).

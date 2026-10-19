@@ -210,7 +210,8 @@ and no policy. Every type is a plain value.
   and a base, else the oldest.
 - **`Job { attempt, max_bytes }`** asks for the end of one failed job
   attempt's log; `File { head, path, max_bytes }` for the start of one
-  file at a commit. Both are cut to `max_bytes` and say when they cut.
+  file at a commit. Both are cut to `max_bytes`, or to what the answer
+  has left (5.3), and say when they cut.
 - **`Merge { number, head }`** is conditional on the head. A merge's
   base is the client's precondition, checked by reading the pull
   request afresh (forge-client.md, section 7).
@@ -342,7 +343,7 @@ body the forge keeps changes (5.3).
 
   | Call | An answer fits when |
   |---|---|
-  | any | it has the shape in 3.2's table; a read's answer past `answer_bytes` or `rows` is `TooLarge`, a write's `InvalidAnswer`; any other mismatch is `InvalidAnswer` |
+  | any | it has the shape in 3.2's table; a read's answer past `answer_bytes` or `rows` is `TooLarge`, a write's `InvalidAnswer`, a lost answer (forge-client.md, 7.4); any other mismatch is `InvalidAnswer` |
   | `Items` | `updated` never decreases; rows of one time rise strictly by number; numbers are nonzero and unique; each row's kind is the call's, when it names one |
   | `Item` | the number is the call's; comment ids rise strictly and are above `after` |
   | `Reviews` | ids rise strictly |
@@ -736,8 +737,16 @@ Notes on the table:
   `Collaborators`, `OpenPull`, `SetReviewers` and `Merge` make more than
   one; a path to resolve or a login to look up adds one. A `404` on a
   file's side, or on a failing status's run or job, ends nothing: it is
-  an answer. The client asks for what it needs, and the answer's cost
-  tells its budget what that took (forge-client.md, section 6).
+  an answer, and the repository's path stays. The client asks for what
+  it needs, and the answer's cost tells its budget what that took
+  (forge-client.md, section 6).
+- **Success.** Each request succeeds with one status; any other `2xx`
+  is a malformed answer (5.3). A read's is `200`, and a raw file's or a
+  log's `200` or `206`. A write's is `201`, as Forgejo answers its
+  creations and its edits of an issue (`Edit`, `Close`, `Reopen`), but
+  `200` for `Review`, `Merge` and `Update`, and `204` for
+  `DeleteBranch`; `SetReviewers` adds with `201` and removes with
+  `204`. The reads a write makes succeed as reads do.
 
 ### 5.3 Decoding answers
 
@@ -771,7 +780,9 @@ Notes on the table:
   would pass `answer_bytes` or `rows`, and `more` is then set. Raw
   contents are read within what is left of `answer_bytes`: a file's
   after its path, a job's log after its step's name, so the answer never
-  passes it.
+  passes it. `File` and `Job` are cut there as at their `max_bytes`, and
+  say so (`truncated`); a side of `PullFiles` or `Compare` is never cut
+  (5.2).
 - **Revisions.** A comment's or a review's revision is the first eight
   bytes, big-endian, of the SHA-256 of its whole body as the forge
   returns it, computed as the string streams past; for a body not kept,
@@ -788,14 +799,20 @@ Notes on the table:
 - **What may follow** is told by the page coming full, `X-HasMore`, or
   `total_count`. For a call made of several requests, `more` is its
   listing's.
-- **A malformed answer** (a document that does not decode, a field
-  missing, a number out of range, a commit id of the wrong length, a
-  string past its cap, a body past the component's `body_bytes_in`, a
-  log read through included) fails a write as `Timeout`: the request
-  reached the forge, so what it asked may have been done. It fails a
-  read as `InvalidAnswer`. Either way the connection is closed, since
-  what followed on it can no longer be trusted. A repository id past the
-  vocabulary's 32 bits fails the call as `TooLarge`.
+- **Absent headers.** An `Items` answer without `Date` is malformed,
+  since its `now` becomes the next listing's `since`. A `429` without
+  `Retry-After` is `RateLimited { after: 0 }`, and a listing without
+  `X-HasMore` has more only when it came full.
+- **A malformed answer** (a success status other than its request's,
+  5.2; a document that does not decode, a field missing, a number out
+  of range, a commit id of the wrong length, a string past its cap, a
+  body past the component's `body_bytes_in`, a log read through
+  included; a repository read by its id answering another) fails a
+  write as `Timeout`: the request reached the forge, so what it asked
+  may have been done. It fails a read as `InvalidAnswer`. Either way the
+  connection is closed, since what followed on it can no longer be
+  trusted. A repository id past the vocabulary's 32 bits fails the call
+  as `TooLarge`.
 
 ### 5.4 Failures
 
@@ -807,11 +824,11 @@ such a request costs nothing.
 |---|---|
 | nothing written: no connection, a refused connect, a TLS handshake that failed; or the server never saw the request (skein-http's `Closed`); or the call's deadline while it waited | `Unavailable` |
 | a `3xx`, as Forgejo answers a moved repository's old path before it acts: the path dropped | `Unavailable` |
-| `429`, with `Retry-After` (seconds or a date) | `RateLimited { after }`: the wait, a date taken from the answer's `Date` |
-| anything after a byte was written: a reset, the end of the stream, the call's deadline, `5xx` | `Timeout` |
+| `429`, with `Retry-After` (seconds or a date), before any of the call's writes succeeded | `RateLimited { after }`: the wait, a date taken from the answer's `Date` |
+| anything after a byte was written: a reset, the end of the stream, the call's deadline, `5xx`; a `429` after one of the call's writes succeeded (`Merge`'s read after its merge) | `Timeout` |
 | a malformed answer (5.3) | `Timeout` on a write; `InvalidAnswer` on a read |
 | `401`, `403` | `Forbidden` |
-| `404` | `Missing`, the repository's path dropped; `MissingJob` on `Job`'s reads |
+| a `404` that ends the call (one 5.2 says ends nothing is an answer, and the path stays) | `Missing`, the repository's path dropped; `MissingJob` on `Job`'s reads |
 | `413` (Forgejo's quota) | `Full` |
 | `423` (the repository is archived) | `Forbidden` |
 | `409` on `OpenPull` (a pull request for the head and base is open) | `Exists` |
@@ -825,7 +842,7 @@ such a request costs nothing.
 | `409` on `Merge`, `head out of date` | `Stale` |
 | `409` on `Update`, `merge failed because of conflict` | `Conflict` |
 | a pull request's head other than `PullFiles` names | `Stale` |
-| an answer past the component's bounds | `TooLarge` |
+| an answer past the component's bounds | `TooLarge` on a read; `Timeout` on a write, which may have been done |
 | a write whose text is not UTF-8, which JSON cannot carry; nothing written | `Refused` |
 | any other `4xx` | `Refused` on a write; `InvalidAnswer` on a read |
 
@@ -927,7 +944,7 @@ forge-connection.md, section 6. This section is what the dialect holds.
   `/hooks/<number>`, the forge's number in decimal with no sign and no
   leading zero, within 16 bits. A path of another shape names no forge.
 - **Signed, and verified as it streams.** Forgejo signs each delivery's
-  body with its hook's secret: HMAC-SHA256, in hexadecimal, in
+  body with its hook's secret: HMAC-SHA256, in lowercase hexadecimal, in
   `X-Forgejo-Signature`. The component computes it as the body arrives,
   with skein lib's `sha256::Hmac` keyed by the forge's secret, and
   decodes the body at the same time into the few fields its hint reads;
@@ -1161,7 +1178,8 @@ on. What no run records yet has its own bullet, near the end.
   `delivery-cancelled-job-end-is-delivered`), with its repository's id
   (`delivery-carries-the-repository-id`); a hook's events read back as
   made (`delivery-subscribed-events-read-back`); the signature is
-  HMAC-SHA256 in hexadecimal (`delivery-signature-is-hmac-sha256-hex`);
+  HMAC-SHA256 in lowercase hexadecimal
+  (`delivery-signature-is-hmac-sha256-hex`);
   refs are full, and a tag's told from a branch's
   (`delivery-refs-are-full-and-tags-are-told-apart`); a branch's
   deletion is delivered as a push too
