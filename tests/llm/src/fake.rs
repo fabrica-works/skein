@@ -564,7 +564,7 @@ impl Exchange {
         self.take();
     }
 
-    fn observe_head(&mut self, headers: Box<[skein_http::Header]>) {
+    fn observe_head(&mut self, headers: Box<[skein_http::Header]>, _presented: provider::Presented) {
         if let Some(observations) = self.observations {
             assert!(self.heads.len() < index(observations.heads), "head observation ceiling");
             assert!(
@@ -589,7 +589,7 @@ impl Exchange {
         }
         while let Some(event) = self.peer_above.pop() {
             match event {
-                provider::Event::Head { headers } => self.observe_head(headers),
+                provider::Event::Head { headers, presented } => self.observe_head(headers, presented),
                 provider::Event::Domain(event) => {
                     match &event {
                         fake::Event::Release { .. } => unreachable!("the wire never releases a hold"),

@@ -7,7 +7,7 @@ use crate::documents;
 
 mod credentials;
 mod failure;
-pub use credentials::route;
+pub use credentials::{MAX_CREDENTIALS, Presented, route};
 #[path = "pieces.rs"]
 mod pieces;
 use alloc::boxed::Box;
@@ -110,8 +110,8 @@ pub enum Error {
 /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
 #[derive(PartialEq, Eq, Debug)]
 pub enum Event {
-    /// Actual HTTP request fields, handed to the owner before its body/query.
-    Head { headers: Box<[Header]> },
+    /// Request fields without credentials, and what was presented, before its body/query.
+    Head { headers: Box<[Header]>, presented: Presented },
     /// Typed request forwarded to the neutral fake provider domain.
     ///
     /// Contract: docs/design/fake-llm.md, sections 2–5; programming-model.md, section 4.4.
@@ -211,6 +211,21 @@ impl Service {
             return Err(Error::Limits);
         }
         Ok(Service { config, calls: Slab::with_capacity(limits.calls), count: 0 })
+    }
+
+    /// Validates a credential list against the configured route and scripts before serving.
+    ///
+    /// # Errors
+    /// Returns `Limits` after the first request or for a list the route cannot serve.
+    pub fn validate_credentials(
+        &self,
+        credentials: &[skein_llm::Credential],
+        scripts: &[api::Script],
+    ) -> Result<(), Error> {
+        if self.count != 0 {
+            return Err(Error::Limits);
+        }
+        self::scripts(&self.config, credentials, scripts)
     }
 
     /// Number of fake provider requests observed since service construction.
@@ -640,7 +655,8 @@ fn entrance(
         http::Body::Length(length) => Some(length),
         http::Body::Chunked => None,
     };
-    above.push(Event::Head { headers: call.headers });
+    let presented = fields.presented(server.route, credentials, auth);
+    above.push(Event::Head { headers: credentials::observed_headers(call.headers), presented });
     demand_body(server, limits);
     match server.refused {
         Some(error) => Err(error),

@@ -23,8 +23,10 @@ use crate::{Error, Limits, Transport};
 pub enum Observation {
     /// The peer accepted this connection from a client.
     Accepted { connection: Token },
-    /// Actual HTTP field names and values received before a query on this connection.
+    /// HTTP fields without credentials received before a query on this connection.
     Head { connection: Token, headers: Box<[skein_http::Header]> },
+    /// The route, scheme and accepted index presented by this request, without bytes.
+    Credential { connection: Token, route: skein_llm::Provider, scheme: Option<skein_llm::Scheme>, index: Option<u32> },
     /// The byte peer decoded this complete call before the script domain received it.
     Query { connection: Token, query: api::Query },
     /// The real script domain emitted this terminal, even after the connection closed.
@@ -48,7 +50,7 @@ pub struct Peer {
     face: Face,
     transport: Transport,
     service: provider::Service,
-    credential: Credential,
+    credentials: Vec<Credential>,
     protocol_limits: provider::Limits,
     domain: domain::Domain,
     domain_limits: domain::Config,
@@ -83,11 +85,13 @@ impl Peer {
         {
             return Err(Error::Limits);
         }
+        let mut credentials = Vec::with_capacity(usize::try_from(provider::MAX_CREDENTIALS).expect("u32 fits"));
+        credentials.push(credential);
         Ok(Self {
             face: Face::new(address, limits)?,
             transport,
             service: provider::Service::new(config, &protocol_limits).map_err(|_| Error::Limits)?,
-            credential,
+            credentials,
             protocol_limits,
             domain,
             domain_limits,
@@ -100,6 +104,33 @@ impl Peer {
             bound,
             ignore_half_close: false,
         })
+    }
+
+    /// Adds a credential before the first request, returning its accepted index.
+    ///
+    /// # Errors
+    /// Returns `Limits` after serving, for an incompatible list or script, or past its bounds.
+    pub fn accept(&mut self, credential: Credential) -> Result<u32, Error> {
+        let index = u32::try_from(self.credentials.len()).map_err(|_| Error::Limits)?;
+        let mut bytes = credential.value.len().checked_add(credential.account_id.len()).ok_or(Error::Limits)?;
+        for accepted in &self.credentials {
+            bytes = bytes
+                .checked_add(accepted.value.len())
+                .ok_or(Error::Limits)?
+                .checked_add(accepted.account_id.len())
+                .ok_or(Error::Limits)?;
+        }
+        if index == provider::MAX_CREDENTIALS
+            || bytes > usize::try_from(self.protocol_limits.http.head).expect("u32 fits")
+        {
+            return Err(Error::Limits);
+        }
+        self.credentials.push(credential);
+        if self.service.validate_credentials(&self.credentials, self.domain.scripts()).is_err() {
+            self.credentials.pop();
+            return Err(Error::Limits);
+        }
+        Ok(index)
     }
 
     /// The actual bound address, available after io's Listening event.
@@ -189,7 +220,7 @@ impl Peer {
                 provider::start(
                     &mut connection.server,
                     &mut self.service,
-                    core::slice::from_ref(&self.credential),
+                    &self.credentials,
                     &Env { now, wall, limits: self.protocol_limits },
                     &mut connection.above,
                     &mut connection.below,
@@ -269,7 +300,7 @@ impl Peer {
                     provider::up(
                         &mut connection.server,
                         &mut self.service,
-                        core::slice::from_ref(&self.credential),
+                        &self.credentials,
                         &env,
                         up,
                         &mut connection.above,
@@ -279,7 +310,7 @@ impl Peer {
                     provider::resume(
                         &mut connection.server,
                         &mut self.service,
-                        core::slice::from_ref(&self.credential),
+                        &self.credentials,
                         &env,
                         &mut connection.above,
                         &mut connection.below,
@@ -296,11 +327,20 @@ impl Peer {
                 && let Some(event) = connection.above.pop()
             {
                 match event {
-                    provider::Event::Head { headers } => {
+                    provider::Event::Head { headers, presented } => {
                         let connection = connection.owner;
                         let bytes = provider::head_bytes(&headers).expect("bounded actual head");
                         self.reserve_observation(bytes);
                         self.observe(Observation::Head { connection, headers }, bytes);
+                        self.observe(
+                            Observation::Credential {
+                                connection,
+                                route: presented.route,
+                                scheme: presented.scheme,
+                                index: presented.index,
+                            },
+                            0,
+                        );
                     }
                     provider::Event::Domain(domain::Event::Call { reply_to, call, query }) => {
                         let connection = connection.owner;
@@ -363,7 +403,7 @@ impl Peer {
                 provider::down(
                     &mut connection.server,
                     &mut self.service,
-                    core::slice::from_ref(&self.credential),
+                    &self.credentials,
                     &env,
                     reply,
                     &mut connection.above,
@@ -466,7 +506,8 @@ pub fn worst_case(
         .checked_add(u64::from(limits.queue).checked_mul(u64::from(domain.answer_bytes))?)?
         .checked_add(u64::from(limits.observations).checked_mul(u64::try_from(size_of::<Observation>()).ok()?)?)?
         .checked_add(u64::from(limits.observation_bytes))?
-        .checked_add(u64::from(peer.http.head))
+        .checked_add(u64::from(peer.http.head))?
+        .checked_add(u64::from(provider::MAX_CREDENTIALS).checked_mul(u64::try_from(size_of::<Credential>()).ok()?)?)
 }
 
 fn skein_http_read(peer: &provider::Limits) -> u32 {

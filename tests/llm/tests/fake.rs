@@ -810,14 +810,23 @@ fn actual_request_heads_match_the_independent_http_reader_on_both_dialects() {
         world.start();
         world.run();
         assert_eq!(world.queries.len(), 1);
-        let [actual] = world.heads.as_slice() else { panic!("one actual request head") };
+        let [head] = world.heads.as_slice() else { panic!("one request head") };
         let parsed =
             skein_http_world::reference::request(&world.requests, &skein_llm_world::fake::limits(&limits()).http);
         let expected = parsed.head.expect("independent whole HTTP head");
-        let actual: Vec<_> = actual.iter().map(|header| (header.name.to_vec(), header.value.to_vec())).collect();
-        assert_eq!(actual, expected.headers);
+        let head_fields: Vec<_> = head.iter().map(|header| (header.name.to_vec(), header.value.to_vec())).collect();
+        let expected: Vec<_> = expected
+            .headers
+            .into_iter()
+            .filter(|(name, _)| {
+                ![b"authorization".as_slice(), b"x-api-key", b"chatgpt-account-id"]
+                    .iter()
+                    .any(|field| name.eq_ignore_ascii_case(field))
+            })
+            .collect();
+        assert_eq!(head_fields, expected);
         assert!(
-            actual
+            head_fields
                 .iter()
                 .any(|(name, value)| name.eq_ignore_ascii_case(b"x-caller-proof") && value == b"actual-field-value")
         );

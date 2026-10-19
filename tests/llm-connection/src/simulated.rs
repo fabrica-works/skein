@@ -488,7 +488,15 @@ impl Referee<Process> for Judge {
                                     headers.iter().any(|field| field.is(b"content-type")
                                         && field.value.as_ref() == b"application/json")
                                 );
-                                assert!(headers.iter().any(|field| field.is(b"authorization")));
+                                assert!(!headers.iter().any(|field| field.is(b"authorization")
+                                    || field.is(b"x-api-key")
+                                    || field.is(b"chatgpt-account-id")));
+                            }
+                            llm::Observation::Credential { route, scheme, index, .. } => {
+                                assert_eq!(
+                                    (*route, *scheme, *index),
+                                    (skein_llm::Provider::OpenAiCodex, Some(skein_llm::Scheme::Bearer), Some(0))
+                                );
                             }
                             llm::Observation::Accepted { .. } | llm::Observation::Closed { .. } => {}
                         }
@@ -573,6 +581,18 @@ pub fn run_held(seed: u64) -> Outcome<Process> {
     )
 }
 
+fn fill_credentials(peer: &mut llm::Peer, protocol_limits: &provider::Limits) {
+    let first = skein_llm_world::call(7).credential.expect("fixture credential");
+    let available =
+        usize::try_from(protocol_limits.http.head).expect("u32 fits") - first.value.len() - first.account_id.len();
+    let count = usize::try_from(provider::MAX_CREDENTIALS - 1).expect("u32 fits");
+    for index in 0..count {
+        let bytes = available / count + usize::from(index < available % count);
+        let credential = skein_llm::Credential::codex(vec![b'x'; bytes - 1].into_boxed_slice(), b"a".as_slice().into());
+        assert_eq!(peer.accept(credential), Ok(u32::try_from(index + 1).expect("bounded index")));
+    }
+}
+
 fn run_configured(
     seed: u64,
     faulted: bool,
@@ -647,7 +667,7 @@ fn run_configured(
             queue: 64,
             plaintext: 32_768,
             ciphertext: 32_768,
-            observations: calls * 5,
+            observations: calls * 6,
             observation_bytes: calls * 32_768,
         };
         let mut peer = llm::Peer::new(
@@ -668,6 +688,9 @@ fn run_configured(
             domain_limits,
         )
         .expect("bounded independent process");
+        if large {
+            fill_credentials(&mut peer, &protocol_limits);
+        }
         if ignore_half_close {
             peer.ignore_half_close();
         }

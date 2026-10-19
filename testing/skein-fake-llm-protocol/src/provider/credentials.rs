@@ -1,8 +1,23 @@
 //! Credential routing and byte comparisons (fake-llm.md, 3; llm.md, 2.6).
 use super::{Config, Error};
 use crate::documents;
+use alloc::boxed::Box;
 use skein_http::Header;
 use skein_llm::{Credential, Provider, Scheme};
+
+/// The most credentials one peer holds.
+pub const MAX_CREDENTIALS: u32 = 16;
+
+/// What one request presented, without any credential bytes (fake-llm.md, 3).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Presented {
+    /// The configured route.
+    pub route: Provider,
+    /// An accepted credential’s scheme, or the scheme its unmatched field shows.
+    pub scheme: Option<Scheme>,
+    /// The credential’s index in the accepted list, if matched.
+    pub index: Option<u32>,
+}
 
 /// Names the configured route, refusing credentials or a path it cannot serve.
 pub fn route(config: &Config, credentials: &[Credential]) -> Result<Provider, Error> {
@@ -59,6 +74,26 @@ impl<'a> Fields<'a> {
         self.repeated |= field.is_some();
         *field = Some(&header.value);
     }
+
+    pub(super) fn presented(&self, route: Provider, list: &[Credential], auth: Auth) -> Presented {
+        let (scheme, index) = match auth {
+            Auth::Matched(index) => {
+                let credential = list.get(usize::try_from(index).expect("u32 fits usize")).expect("matched index");
+                (Some(credential.scheme), Some(index))
+            }
+            Auth::Open | Auth::Unauthorized => {
+                let scheme = if self.api_key.is_some() {
+                    Some(Scheme::Key)
+                } else if self.authorization.is_some() || self.account.is_some() {
+                    Some(Scheme::Bearer)
+                } else {
+                    None
+                };
+                (scheme, None)
+            }
+        };
+        Presented { route, scheme, index }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -100,10 +135,19 @@ pub(super) fn authorize(route: Provider, list: &[Credential], fields: &Fields<'_
     Auth::Unauthorized
 }
 
+pub(super) fn observed_headers(headers: Box<[Header]>) -> Box<[Header]> {
+    let mut observed = skein_lib::List::with_capacity(u32::try_from(headers.len()).expect("bounded headers"));
+    for header in headers {
+        if !header.is(b"authorization") && !header.is(b"x-api-key") && !header.is(b"chatgpt-account-id") {
+            observed.push(header).expect("bounded headers");
+        }
+    }
+    observed.into_boxed()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::boxed::Box;
 
     type Row<'a> = (Provider, &'a [Credential], Option<&'a [u8]>, Option<&'a [u8]>, Option<&'a [u8]>, bool, Auth);
 

@@ -6,8 +6,11 @@ use skein_fake_llm_protocol::{documents, provider};
 use skein_fake_peers::{Limits, Transport, llm};
 use skein_io::kernel::{Done, Family, Op};
 use skein_lib::{Duration, Time};
+use skein_llm::{Credential, Endpoint, Provider, Scheme};
 use skein_world::Host;
 
+#[path = "llm/request.rs"]
+mod request;
 mod support;
 
 fn limits() -> Limits {
@@ -35,15 +38,34 @@ fn limits() -> Limits {
 }
 
 fn make(address: SocketAddr, transport: Transport) -> Result<llm::Peer, skein_fake_peers::Error> {
+    let call = skein_llm_world::call(1);
+    make_on(call.endpoint, call.credential.expect("fixture credential"), address, transport)
+}
+
+fn make_on(
+    endpoint: Endpoint,
+    credential: Credential,
+    address: SocketAddr,
+    transport: Transport,
+) -> Result<llm::Peer, skein_fake_peers::Error> {
+    make_scripted(endpoint, credential, address, transport, Box::new([]))
+}
+
+fn make_scripted(
+    endpoint: Endpoint,
+    credential: Credential,
+    address: SocketAddr,
+    transport: Transport,
+    scripts: Box<[api::Script]>,
+) -> Result<llm::Peer, skein_fake_peers::Error> {
     let machine_limits = skein_llm_world::fake::config();
     let domain = domain::Domain::configured(
         &machine_limits,
         23,
-        Box::new([]),
+        scripts,
         api::Menu { arguments: Box::new([]), invalid: Box::new([]) },
     )
     .expect("configured script domain");
-    let call = skein_llm_world::call(1);
     llm::Peer::new(
         address,
         transport,
@@ -52,11 +74,14 @@ fn make(address: SocketAddr, transport: Transport) -> Result<llm::Peer, skein_fa
             without_credential: false,
             usage_fields: skein_fake_llm_protocol::documents::UsageFields::ALL,
             echo: skein_llm::openai::Echo::NONE,
-            provider: documents::Provider::OpenAi,
-            path: call.endpoint.target,
+            provider: match endpoint.provider {
+                Provider::OpenAi | Provider::OpenAiCodex => documents::Provider::OpenAi,
+                Provider::Anthropic => documents::Provider::Anthropic,
+            },
+            path: endpoint.target,
             headers: Box::new([]),
         },
-        call.credential.expect("fixture credential"),
+        credential,
         skein_llm_world::fake::limits(&skein_llm_world::limits()),
         domain,
         machine_limits,
@@ -185,4 +210,197 @@ fn a_queued_release_keeps_the_peer_working() {
     assert!(peer.work_pending(Time::ZERO));
     peer.iterate(Time::ZERO, skein_lib::Wall::EPOCH);
     assert!(!peer.work_pending(Time::ZERO));
+}
+
+fn key() -> Credential {
+    Credential::key(b"k0".as_slice().into())
+}
+
+fn bearer() -> Credential {
+    Credential::bearer(b"b1".as_slice().into())
+}
+
+fn local_peer(endpoint: Endpoint, credential: Credential) -> llm::Peer {
+    make_on(endpoint, credential, SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), Transport::Plaintext)
+        .expect("configured peer")
+}
+
+#[test]
+fn accept_returns_each_credentials_index_in_order() {
+    let mut peer = local_peer(Endpoint::anthropic(), key());
+    for index in 1..provider::MAX_CREDENTIALS {
+        assert_eq!(peer.accept(bearer()), Ok(index), "index {index}");
+    }
+}
+
+#[test]
+fn accept_refuses_a_list_the_route_cannot_serve() {
+    let codex = || Credential::codex(b"b0".as_slice().into(), b"a0".as_slice().into());
+    let cap = skein_llm_world::fake::limits(&skein_llm_world::limits()).http.head;
+    let rows = [
+        (Endpoint::anthropic(), key(), 1, Credential { account_id: b"a0".as_slice().into(), ..key() }),
+        (Endpoint::openai(), key(), 1, codex()),
+        (Endpoint::codex(), codex(), 1, bearer()),
+        (Endpoint::anthropic(), key(), provider::MAX_CREDENTIALS, bearer()),
+        (
+            Endpoint::anthropic(),
+            key(),
+            1,
+            Credential::key(vec![b'x'; usize::try_from(cap).unwrap() - key().value.len() + 1].into_boxed_slice()),
+        ),
+    ];
+    for (row, (endpoint, first, count, added)) in rows.into_iter().enumerate() {
+        let mut peer = local_peer(endpoint, first);
+        for _ in 1..count {
+            peer.accept(bearer()).expect("list filled to its bound");
+        }
+        assert_eq!(peer.accept(added), Err(skein_fake_peers::Error::Limits), "row {row}");
+    }
+}
+
+#[test]
+fn accept_refuses_a_key_at_an_anthropic_reset_lines_index() {
+    let scripts = Box::new([api::Script {
+        cue: b"hi".as_slice().into(),
+        turns: Box::new([api::Turn {
+            lines: Box::new([api::Line::Fail {
+                error: api::Error::Exhausted { retry_after: Some(Duration::from_secs(1)) },
+                report: api::Report::none(),
+                credentials: Box::new([1]),
+            }]),
+            finish: api::Finish::Stop,
+            tokens: 0,
+        }]),
+    }]);
+    let mut peer = make_scripted(
+        Endpoint::anthropic(),
+        bearer(),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        Transport::Plaintext,
+        scripts,
+    )
+    .unwrap();
+    assert_eq!(peer.accept(key()), Err(skein_fake_peers::Error::Limits));
+}
+
+fn send_request(peer: &mut llm::Peer, endpoint: &Endpoint, fields: &[u8], body: &[u8]) -> Vec<u8> {
+    let mut sim = skein_sim::Sim::new(23, skein_sim::Config::calm());
+    let (server, client) = (sim.spawn_process(), sim.spawn_process());
+    request::request(&mut sim, server, client, peer, &endpoint.target, fields, body)
+}
+
+#[test]
+fn accept_is_refused_once_a_request_has_reached_the_peer() {
+    let endpoint = Endpoint::anthropic();
+    let mut peer = local_peer(endpoint.clone(), key());
+    send_request(&mut peer, &endpoint, b"x-api-key: k0\r\n", b"");
+    assert_eq!(peer.accept(bearer()), Err(skein_fake_peers::Error::Limits));
+}
+
+struct Seen {
+    presented: Option<provider::Presented>,
+    query: Vec<Option<u32>>,
+}
+
+fn seen(peer: &llm::Peer) -> Seen {
+    Seen {
+        presented: peer.observations().iter().find_map(|record| match record {
+            llm::Observation::Credential { route, scheme, index, .. } => {
+                Some(provider::Presented { route: *route, scheme: *scheme, index: *index })
+            }
+            llm::Observation::Accepted { .. }
+            | llm::Observation::Head { .. }
+            | llm::Observation::Query { .. }
+            | llm::Observation::Answered { .. }
+            | llm::Observation::Closed { .. } => None,
+        }),
+        query: peer
+            .observations()
+            .iter()
+            .filter_map(|record| match record {
+                llm::Observation::Query { query, .. } => Some(query.credential),
+                llm::Observation::Accepted { .. }
+                | llm::Observation::Head { .. }
+                | llm::Observation::Credential { .. }
+                | llm::Observation::Answered { .. }
+                | llm::Observation::Closed { .. } => None,
+            })
+            .collect(),
+    }
+}
+
+fn observation_rows() -> [(Endpoint, &'static [u8], [ObservationRow; 5]); 2] {
+    [
+        (
+            Endpoint::anthropic(),
+            br#"{"model":"claude","messages":[{"role":"user","content":"hi"}],"max_tokens":16,"stream":true}"#
+                .as_slice(),
+            [
+                (b"x-api-key: k0\r\n".as_slice(), Some(Scheme::Key), Some(0), &[Some(0)]),
+                (b"authorization: Bearer b1\r\n", Some(Scheme::Bearer), Some(1), &[Some(1)]),
+                (b"x-api-key: unknown\r\n", Some(Scheme::Key), None, &[]),
+                (b"authorization: Bearer unknown\r\n", Some(Scheme::Bearer), None, &[]),
+                (b"", None, None, &[]),
+            ],
+        ),
+        (
+            Endpoint::openai(),
+            br#"{"model":"gpt","store":false,"instructions":"","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":true}"#
+                .as_slice(),
+            [
+                (b"authorization: Bearer k0\r\n".as_slice(), Some(Scheme::Key), Some(0), &[Some(0)]),
+                (b"authorization: Bearer b1\r\n", Some(Scheme::Bearer), Some(1), &[Some(1)]),
+                (b"authorization: Bearer unknown-key\r\n", Some(Scheme::Bearer), None, &[]),
+                (b"authorization: Bearer unknown\r\n", Some(Scheme::Bearer), None, &[]),
+                (b"", None, None, &[]),
+            ],
+        ),
+    ]
+}
+
+type ObservationRow = (&'static [u8], Option<Scheme>, Option<u32>, &'static [Option<u32>]);
+
+#[test]
+fn each_request_is_observed_by_route_scheme_and_index() {
+    for (endpoint, body, rows) in observation_rows() {
+        for (row, (fields, scheme, index, query)) in rows.into_iter().enumerate() {
+            let mut peer = local_peer(endpoint.clone(), key());
+            peer.accept(bearer()).expect("second credential accepted");
+            send_request(&mut peer, &endpoint, fields, body);
+            let got = seen(&peer);
+            assert_eq!(
+                (got.presented, got.query.as_slice()),
+                (Some(provider::Presented { route: endpoint.provider, scheme, index }), query),
+                "{:?} row {row}",
+                endpoint.provider
+            );
+        }
+    }
+}
+
+#[test]
+fn no_head_observation_holds_a_credential_field() {
+    let endpoint = Endpoint::anthropic();
+    let mut peer = local_peer(endpoint.clone(), key());
+    send_request(
+        &mut peer,
+        &endpoint,
+        b"Authorization: Bearer b1\r\nX-API-Key: k0\r\nChatgpt-Account-Id: a0\r\nx-visible: visible\r\n",
+        b"",
+    );
+    let names: Vec<_> = peer
+        .observations()
+        .iter()
+        .filter_map(|record| match record {
+            llm::Observation::Head { headers, .. } => {
+                Some(headers.iter().map(|header| header.name.as_ref()).collect::<Vec<_>>())
+            }
+            llm::Observation::Accepted { .. }
+            | llm::Observation::Credential { .. }
+            | llm::Observation::Query { .. }
+            | llm::Observation::Answered { .. }
+            | llm::Observation::Closed { .. } => None,
+        })
+        .collect();
+    assert_eq!(names, [vec![b"host".as_slice(), b"content-type", b"connection", b"content-length", b"x-visible"]]);
 }
