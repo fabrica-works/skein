@@ -6,6 +6,11 @@ use crate::{
 use alloc::boxed::Box;
 use skein_forge::api::{self, Answer, Error, Op, Read};
 use skein_lib::{Env, List, Map, Queue, Token, Wall};
+// Fixture observation room: twenty records/calls, thirty changes and ten
+// terminals cover the keep stories without changing their protocol limits.
+const RECORD_ROOM: u32 = 20;
+const CHANGE_ROOM: u32 = 30;
+const TERMINAL_ROOM: u32 = 10;
 pub(in crate::tests) struct Harness {
     pub(in crate::tests) domain: Domain,
     pub(in crate::tests) env: Env<Limits>,
@@ -30,17 +35,17 @@ impl Harness {
         let mut h = Harness {
             domain: super::super::configured(&limits),
             env: Env { now: at(100), wall: Wall::EPOCH, limits },
-            records: Map::with_capacity(20),
-            entries: Map::with_capacity(20),
-            calls: Queue::with_capacity(20),
-            news: List::with_capacity(30),
-            kept: List::with_capacity(10),
-            outcomes: List::with_capacity(10),
+            records: Map::with_capacity(RECORD_ROOM),
+            entries: Map::with_capacity(RECORD_ROOM),
+            calls: Queue::with_capacity(RECORD_ROOM),
+            news: List::with_capacity(CHANGE_ROOM),
+            kept: List::with_capacity(TERMINAL_ROOM),
+            outcomes: List::with_capacity(TERMINAL_ROOM),
             drift: 0,
             fresh_done: 0,
             outbox_done: 0,
-            failures: List::with_capacity(10),
-            read_refusals: List::with_capacity(10),
+            failures: List::with_capacity(TERMINAL_ROOM),
+            read_refusals: List::with_capacity(TERMINAL_ROOM),
         };
         h.event(Event::Restored { clock: RecoveryClock::Monotonic });
         h
@@ -127,7 +132,7 @@ impl Harness {
             saved.push(record.clone()).expect("store bounded");
         }
         self.domain = super::super::configured(&self.env.limits);
-        self.calls = Queue::with_capacity(20);
+        self.calls = Queue::with_capacity(RECORD_ROOM);
         for record in saved.into_boxed() {
             self.event(Event::Restore { record });
         }
@@ -180,6 +185,14 @@ pub(in crate::tests) fn current() -> api::Pull {
         ci: api::Ci::Passed,
         reviewers: Box::new([]),
     }
+}
+/// A current pull whose branch names use the owner's word.
+pub(in crate::tests) fn reviewed_pull(reviewers: Box<[u64]>) -> api::Pull {
+    let mut pull = current();
+    pull.head = Box::from(&b"kit"[..]);
+    pull.base = Box::from(&b"kit"[..]);
+    pull.reviewers = reviewers;
+    pull
 }
 pub(in crate::tests) fn comment(id: u64) -> api::Comment {
     api::Comment {

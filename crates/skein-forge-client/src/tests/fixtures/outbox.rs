@@ -5,6 +5,9 @@ use crate::{
 use alloc::boxed::Box;
 use skein_forge::api::{self, Answer, Error, Op, Read, Write};
 use skein_lib::{Env, List, Map, Queue, Wall};
+// Observation room for twenty outcomes and eight queued calls in outbox stories.
+const OUTCOME_ROOM: u32 = 20;
+const CALL_ROOM: u32 = 8;
 #[derive(Debug)]
 pub(in crate::tests) struct Harness {
     pub(in crate::tests) domain: Domain,
@@ -24,8 +27,8 @@ impl Harness {
                 limits: Limits { rate: 100, reserve: 0, ..LIMITS },
             },
             store: Map::with_capacity(LIMITS.entries),
-            outcomes: List::with_capacity(20),
-            calls: Queue::with_capacity(8),
+            outcomes: List::with_capacity(OUTCOME_ROOM),
+            calls: Queue::with_capacity(CALL_ROOM),
             writes: 0,
         };
         h.step(Event::Restored { clock: RecoveryClock::Monotonic });

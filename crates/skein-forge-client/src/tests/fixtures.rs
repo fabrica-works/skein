@@ -14,6 +14,7 @@ pub(in crate::tests) struct Sent {
     pub(in crate::tests) call: Token,
     pub(in crate::tests) op: Op,
 }
+const CALL_ROOM: u32 = 1; // resume emits one call at a time
 #[derive(Debug)]
 pub(in crate::tests) struct Harness {
     pub(in crate::tests) domain: Domain,
@@ -52,7 +53,7 @@ impl Harness {
         calls::queue(&mut self.domain.calls, calls::Owner::Read(Token::new(owner)), REPO, op, priority);
     }
     pub(in crate::tests) fn send(&mut self) -> Option<Sent> {
-        let mut out = Queue::with_capacity(1);
+        let mut out = Queue::with_capacity(CALL_ROOM);
         resume(&mut self.domain, &self.env, &mut out);
         match out.pop() {
             Some(Request::Call { call, repository, op }) => {
@@ -77,7 +78,7 @@ impl Harness {
         }
     }
     pub(in crate::tests) fn sent(&mut self) -> (Sent, Repository) {
-        let mut out = Queue::with_capacity(1);
+        let mut out = Queue::with_capacity(CALL_ROOM);
         resume(&mut self.domain, &self.env, &mut out);
         let Some(Request::Call { call, repository, op }) = out.pop() else {
             panic!("a locate sends its call");
@@ -91,7 +92,7 @@ impl Harness {
         self.step(Event::Answered { call: sent.call, cost, result })
     }
     pub(in crate::tests) fn fire(&mut self) {
-        let mut out = Queue::with_capacity(1);
+        let mut out = Queue::with_capacity(CALL_ROOM);
         fire(&mut self.domain, &self.env, &mut out);
         assert!(out.is_empty());
     }

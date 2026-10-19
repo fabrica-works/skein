@@ -3,6 +3,27 @@ use super::{LIMITS, configured};
 use crate::{Domain, Limits};
 
 const KEY_BYTES: u32 = 7; // version + two length bytes + kit + one identity byte
+const NAMESPACE_BYTES: u32 = 65535; // namespace length field
+const MAX_KEY: u32 = 65539; // version + length + largest namespace + identity
+const PREFIX_BYTES: usize = 3; // version and two namespace-length bytes
+const REVIEWERS: [u64; 2] = [7, 8]; // two distinct reviewer identities
+const REVIEWER_BYTES: u32 = 16; // two protocol u64 reviewer slots
+const BRANCH_BYTES: u32 = 3; // kit
+const STAMP_BYTES: u64 = 35; // kit + comment and echo's two 16-byte stamps
+const REVIEW_BYTES: u64 = 51; // STAMP_BYTES + one 16-byte review stamp
+const LABEL_BYTES: u64 = 70; // REVIEW_BYTES + label's 16-byte slot + kit
+const CACHED_PULL_BYTES: u64 = 92; // LABEL_BYTES + kit head/base + two u64 reviewers
+const ITEMS_BYTES: u32 = 131; // 128-byte summary slot + kit title
+const ITEM_BYTES: u32 = 100; // 96-byte comment slot + kit body + one-byte key
+const PULL_BYTES: u32 = 22; // kit head/base + two u64 reviewers
+const JOB_BYTES: u32 = 5; // kit step name + ab log
+const JOB_LOG_ROOM: u32 = 4; // job request's four-byte log allowance
+const ROW_BOUND: u32 = 4; // LIMITS.rows: four rows per answer
+const OVER_ROWS: u32 = 5; // one past ROW_BOUND
+const ROW_BYTE_ROOM: u32 = 83; // five 16-byte context slots + kit branch
+const NO_ROWS: u32 = 0; // scalar answers carry no rows
+const OVER_WATCHES: u32 = 5; // one past LIMITS.resources (four)
+const OVER_BRANCH_BYTES: usize = 257; // one past LIMITS.op_bytes (256)
 const DEPLOYMENT: [u8; 16] = [7; 16];
 
 #[test]
@@ -28,16 +49,15 @@ fn invalid_key_frames_are_refused() {
 #[test]
 fn the_largest_namespace_keeps_its_identity() {
     const REPEATS: usize = 21845; // 65535 bytes / kit's three bytes
-    const MAX_KEY: u32 = 65539; // version + length + largest namespace + identity
-    let mut namespace = skein_lib::List::with_capacity(65535);
+    let mut namespace = skein_lib::List::with_capacity(NAMESPACE_BYTES);
     for _ in 0..REPEATS {
         for byte in b"kit" {
             namespace.push(*byte).expect("largest namespace room");
         }
     }
     let key = crate::effect_key(namespace.as_slice(), b"a", MAX_KEY).expect("largest namespace fits");
-    assert_eq!(key.len(), 65539);
-    assert_eq!(key.get(..3), Some([1, 255, 255].as_slice()));
+    assert_eq!(key.len(), usize::try_from(MAX_KEY).expect("key bound fits usize"));
+    assert_eq!(key.get(..PREFIX_BYTES), Some([1, 255, 255].as_slice()));
     assert_eq!(key.last(), Some(&b'a'));
 }
 
@@ -82,34 +102,71 @@ use alloc::boxed::Box;
 use skein_forge::api::{self, Answer, Error, Read, Write};
 use skein_lib::Token;
 
-#[test]
-fn stored_measure_uses_fixed_widths() {
-    let repository = Stored::Repository(RepositoryRecord { repository: REPO, mark: None, clock: at(100) });
-    assert_eq!(crate::measure::stored(&repository), Some(0));
+fn stamped_row() -> crate::LiveRecord {
     let mut row = super::fixtures::keep::measure_row();
-    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(3));
     row.comments = Box::new([Delivery { id: 1, revision: 1 }]);
     row.echoes = Box::new([Echo::Comment(1)]);
-    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(35));
+    row
+}
+
+fn reviewed_row() -> crate::LiveRecord {
+    let mut row = stamped_row();
     row.reviews = Box::new([Delivery { id: 2, revision: 1 }]);
-    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(51));
-    let mut item = super::fixtures::keep::summary();
-    item.title = Box::new([]);
+    row
+}
+
+fn labelled_row() -> crate::LiveRecord {
+    let mut row = reviewed_row();
+    let mut item = empty_summary();
     item.labels = Box::new([Box::from(&b"kit"[..])]);
     row.cached = Box::new(Cached { item: Some(item), pull: None, tip: None });
-    assert_eq!(crate::measure::stored(&Stored::Live(row.clone())), Some(70));
-    let mut pull = super::fixtures::keep::current();
-    pull.head = Box::from(&b"kit"[..]);
-    pull.base = Box::from(&b"kit"[..]);
-    pull.reviewers = Box::new([7, 8]);
-    row.cached.pull = Some(pull);
-    assert_eq!(crate::measure::stored(&Stored::Live(row)), Some(92));
+    row
+}
+
+#[test]
+fn repository_measure_has_no_payload() {
+    let repository = Stored::Repository(RepositoryRecord { repository: REPO, mark: None, clock: at(100) });
+    assert_eq!(crate::measure::stored(&repository), Some(0));
+}
+
+#[test]
+fn branch_measure_counts_its_name() {
+    let row = super::fixtures::keep::measure_row();
+    assert_eq!(crate::measure::stored(&Stored::Live(row)), Some(u64::from(BRANCH_BYTES)));
+}
+
+#[test]
+fn stored_measure_counts_comment_and_echo_stamps() {
+    assert_eq!(crate::measure::stored(&Stored::Live(stamped_row())), Some(STAMP_BYTES));
+}
+
+#[test]
+fn stored_measure_counts_review_stamps() {
+    assert_eq!(crate::measure::stored(&Stored::Live(reviewed_row())), Some(REVIEW_BYTES));
+}
+
+#[test]
+fn stored_measure_counts_cached_label_width() {
+    assert_eq!(crate::measure::stored(&Stored::Live(labelled_row())), Some(LABEL_BYTES));
+}
+
+#[test]
+fn stored_measure_counts_cached_pull_reviewers() {
+    let mut row = labelled_row();
+    row.cached.pull = Some(super::fixtures::keep::reviewed_pull(Box::new(REVIEWERS)));
+    assert_eq!(crate::measure::stored(&Stored::Live(row)), Some(CACHED_PULL_BYTES));
 }
 
 #[test]
 fn effect_measure_uses_fixed_widths() {
+    const OPEN_PULL_BYTES: u32 = 6; // kit head and kit base
     for (name, write, condition, expected) in [
-        ("reviewers", Write::SetReviewers { number: 1, reviewers: Box::new([7, 8]) }, Condition::None, 16),
+        (
+            "reviewers",
+            Write::SetReviewers { number: 1, reviewers: Box::new(REVIEWERS) },
+            Condition::None,
+            REVIEWER_BYTES,
+        ),
         (
             "pull",
             Write::OpenPull {
@@ -119,96 +176,204 @@ fn effect_measure_uses_fixed_widths() {
                 base: Box::from(&b"kit"[..]),
             },
             Condition::None,
-            6,
+            OPEN_PULL_BYTES,
         ),
-        ("merge", Write::Merge { number: 1, head: [1; 32] }, Condition::Merge { base: Box::from(&b"kit"[..]) }, 3),
+        (
+            "merge",
+            Write::Merge { number: 1, head: [1; 32] },
+            Condition::Merge { base: Box::from(&b"kit"[..]) },
+            BRANCH_BYTES,
+        ),
     ] {
-        assert_eq!(crate::measure::effect(&Effect { write, condition }), Some(expected), "{name}");
+        assert_eq!(crate::measure::effect(&Effect { write, condition }), Some(u64::from(expected)), "{name}");
     }
 }
 
-fn measured_read(read: &Read, answer: &Answer, cap: u32, accepted: bool) {
-    let mut h = Harness::new(Limits { answer_bytes: cap, ..LIMITS });
-    assert!(h.step(Event::Read { owner: Token::new(1), repository: REPO, read: read.clone() }).is_empty());
-    let sent = h.one();
-    let expected = if accepted { Ok(answer.clone()) } else { Err(Error::TooLarge) };
-    assert_eq!(
-        h.answer(&sent, 1, Ok(answer.clone())).as_ref(),
-        &[Request::Read { owner: Token::new(1), result: expected }]
-    );
+fn empty_summary() -> api::Summary {
+    let mut item = super::fixtures::keep::summary();
+    item.title = Box::new([]);
+    item
 }
 
-#[test]
-fn answer_admission_uses_fixed_widths() {
-    let mut item = super::fixtures::keep::summary();
+fn items_answer() -> Answer {
+    let mut item = empty_summary();
     item.title = Box::from(&b"kit"[..]);
-    let mut empty = item.clone();
-    empty.title = Box::new([]);
+    Answer::Items { items: Box::new([item]), more: false, now: at(100) }
+}
+
+fn item_answer() -> Answer {
     let mut comment = super::fixtures::keep::comment(1);
     comment.body = Box::from(&b"kit"[..]);
     comment.key = Some(Box::from(&b"a"[..]));
-    let mut pull = super::fixtures::keep::current();
-    pull.head = Box::from(&b"kit"[..]);
-    pull.base = Box::from(&b"kit"[..]);
-    pull.reviewers = Box::new([7, 8]);
-    let attempt = api::JobAttempt { head: [1; 32], run: 1, job: 1, attempt: 1 };
-    for (read, answer, bytes) in [
-        (
-            Read::Items { since: at(0), page: 1, kind: None },
-            Answer::Items { items: Box::new([item]), more: false, now: at(100) },
-            131,
-        ),
-        (
-            Read::Item { number: 9, after: 0 },
-            Answer::Item { item: empty.clone(), comments: Box::new([comment]), more: false },
-            100,
-        ),
-        (Read::Pull { number: 9 }, Answer::Pull(pull.clone()), 22),
-        (
-            Read::Job { attempt, max_bytes: 4 },
-            Answer::Job {
-                attempt,
-                step: Some(api::Step { number: 1, name: Box::from(&b"kit"[..]) }),
-                log: Box::from(&b"ab"[..]),
-                truncated: false,
-            },
-            5,
-        ),
-    ] {
-        assert_eq!(skein_forge::measure::answer(&answer), Some(u64::from(bytes)), "{read:?}");
-        measured_read(&read, &answer, bytes, true);
-        measured_read(&read, &answer, bytes.checked_sub(1).expect("positive cap"), false);
+    Answer::Item { item: empty_summary(), comments: Box::new([comment]), more: false }
+}
+
+fn pull_answer() -> Answer {
+    Answer::Pull(super::fixtures::keep::reviewed_pull(Box::new(REVIEWERS)))
+}
+
+const ATTEMPT: api::JobAttempt = api::JobAttempt { head: [1; 32], run: 1, job: 1, attempt: 1 };
+fn job_answer() -> Answer {
+    Answer::Job {
+        attempt: ATTEMPT,
+        step: Some(api::Step { number: 1, name: Box::from(&b"kit"[..]) }),
+        log: Box::from(&b"ab"[..]),
+        truncated: false,
     }
-    empty.labels = Box::new([Box::new([]), Box::new([]), Box::new([]), Box::new([]), Box::new([])]);
-    pull.reviewers = Box::new([1, 2, 3, 4, 5]);
-    for (read, answer) in [
-        (
-            Read::Branches,
-            Answer::Branches(Box::new([Box::new([]), Box::new([]), Box::new([]), Box::new([]), Box::new([])])),
-        ),
-        (Read::Item { number: 9, after: 0 }, Answer::Item { item: empty, comments: Box::new([]), more: false }),
-        (Read::Pull { number: 9 }, Answer::Pull(pull)),
-        (
-            Read::Protection { branch: Box::from(&b"kit"[..]) },
-            Answer::Protection(Some(api::Protection {
-                branch: Box::from(&b"kit"[..]),
-                contexts: Box::new([Box::new([]), Box::new([]), Box::new([]), Box::new([]), Box::new([])]),
-                approvals: 0,
-                dismiss_stale: false,
-            })),
-        ),
-    ] {
-        assert!(!crate::measure::answer_rows(&answer, LIMITS.rows), "{read:?}");
-        measured_read(&read, &answer, LIMITS.answer_bytes, false);
+}
+
+#[test]
+fn items_measure_uses_fixed_summary_width() {
+    assert_eq!(skein_forge::measure::answer(&items_answer()), Some(u64::from(ITEMS_BYTES)));
+}
+
+#[test]
+fn item_measure_uses_fixed_comment_width() {
+    assert_eq!(skein_forge::measure::answer(&item_answer()), Some(u64::from(ITEM_BYTES)));
+}
+
+#[test]
+fn pull_measure_uses_fixed_reviewer_width() {
+    assert_eq!(skein_forge::measure::answer(&pull_answer()), Some(u64::from(PULL_BYTES)));
+}
+
+#[test]
+fn job_measure_counts_step_and_log() {
+    assert_eq!(skein_forge::measure::answer(&job_answer()), Some(u64::from(JOB_BYTES)));
+}
+
+const BYTE_CASES: usize = 4; // items, item, pull, job
+type ByteCase = (&'static str, Read, fn() -> Answer, u32);
+fn byte_cases() -> [ByteCase; BYTE_CASES] {
+    [
+        ("items", Read::Items { since: at(0), page: 1, kind: None }, items_answer, ITEMS_BYTES),
+        ("item", Read::Item { number: 9, after: 0 }, item_answer, ITEM_BYTES),
+        ("pull", Read::Pull { number: 9 }, pull_answer, PULL_BYTES),
+        ("job", Read::Job { attempt: ATTEMPT, max_bytes: JOB_LOG_ROOM }, job_answer, JOB_BYTES),
+    ]
+}
+
+fn admitted(read: Read, answer: Answer, cap: u32) -> Box<[Request]> {
+    let mut h = Harness::new(Limits { answer_bytes: cap, ..LIMITS });
+    h.step(Event::Read { owner: Token::new(1), repository: REPO, read });
+    let sent = h.one();
+    h.answer(&sent, 1, Ok(answer))
+}
+
+#[test]
+fn answer_bytes_at_bound_are_admitted() {
+    for (name, read, answer, bytes) in byte_cases() {
+        let answer = answer();
+        let expected = Request::Read { owner: Token::new(1), result: Ok(answer.clone()) };
+        assert_eq!(admitted(read, answer, bytes).as_ref(), &[expected], "{name}");
     }
-    assert!(crate::measure::answer_rows(&Answer::Done, 0));
+}
+
+#[test]
+fn answer_bytes_past_bound_are_refused() {
+    for (name, read, answer, bytes) in byte_cases() {
+        let answer = answer();
+        let expected = Request::Read { owner: Token::new(1), result: Err(Error::TooLarge) };
+        assert_eq!(admitted(read, answer, bytes - 1).as_ref(), &[expected], "{name}");
+    }
+}
+
+fn empty_rows(rows: u32) -> Box<[Box<[u8]>]> {
+    let mut values = skein_lib::List::with_capacity(rows);
+    for _ in 0..rows {
+        values.push(Box::from([])).expect("row fixture fits");
+    }
+    values.into_boxed()
+}
+
+const ROW_CASES: usize = 4; // branches, labels, reviewers, protection contexts
+fn row_reads() -> [(&'static str, Read); ROW_CASES] {
+    [
+        ("branches", Read::Branches),
+        ("labels", Read::Item { number: 9, after: 0 }),
+        ("reviewers", Read::Pull { number: 9 }),
+        ("protection", Read::Protection { branch: Box::from(&b"kit"[..]) }),
+    ]
+}
+fn row_cases(rows: u32) -> [(&'static str, Read, Answer); ROW_CASES] {
+    let mut item = empty_summary();
+    item.labels = empty_rows(rows);
+    let mut reviewers = skein_lib::List::with_capacity(rows);
+    for reviewer in 1..=u64::from(rows) {
+        reviewers.push(reviewer).expect("reviewer fixture fits");
+    }
+    let answers = [
+        Answer::Branches(empty_rows(rows)),
+        Answer::Item { item, comments: Box::new([]), more: false },
+        Answer::Pull(super::fixtures::keep::reviewed_pull(reviewers.into_boxed())),
+        Answer::Protection(Some(api::Protection {
+            branch: Box::from(&b"kit"[..]),
+            contexts: empty_rows(rows),
+            approvals: 0,
+            dismiss_stale: false,
+        })),
+    ];
+    let mut answers = answers.into_iter();
+    row_reads().map(|(name, read)| (name, read, answers.next().expect("one answer per row case")))
+}
+
+#[test]
+fn answer_rows_at_bound_fit() {
+    for (name, _, answer) in row_cases(ROW_BOUND) {
+        assert!(crate::measure::answer_rows(&answer, ROW_BOUND), "{name}");
+    }
+}
+
+#[test]
+fn answer_rows_past_bound_do_not_fit() {
+    for (name, _, answer) in row_cases(OVER_ROWS) {
+        assert!(!crate::measure::answer_rows(&answer, ROW_BOUND), "{name}");
+    }
+}
+
+#[test]
+fn row_answers_at_bound_are_admitted() {
+    for (name, read, answer) in row_cases(ROW_BOUND) {
+        let expected = Request::Read { owner: Token::new(1), result: Ok(answer.clone()) };
+        assert_eq!(admitted(read, answer, ROW_BYTE_ROOM).as_ref(), &[expected], "{name}");
+    }
+}
+
+#[test]
+fn row_answers_past_bound_are_refused() {
+    for (name, read, answer) in row_cases(OVER_ROWS) {
+        let expected = Request::Read { owner: Token::new(1), result: Err(Error::TooLarge) };
+        assert_eq!(admitted(read, answer, ROW_BYTE_ROOM).as_ref(), &[expected], "{name}");
+    }
+}
+
+#[test]
+fn scalar_answers_need_no_row_room() {
+    assert!(crate::measure::answer_rows(&Answer::Done, NO_ROWS));
+}
+
+#[test]
+fn scheduling_reads_emit_no_terminal() {
+    for (name, read, _, bytes) in byte_cases() {
+        for cap in [bytes, bytes - 1] {
+            let mut h = Harness::new(Limits { answer_bytes: cap, ..LIMITS });
+            assert!(
+                h.step(Event::Read { owner: Token::new(1), repository: REPO, read: read.clone() }).is_empty(),
+                "{name} {cap}"
+            );
+        }
+    }
+    for (name, read) in row_reads() {
+        let mut h = Harness::new(LIMITS);
+        assert!(h.step(Event::Read { owner: Token::new(1), repository: REPO, read }).is_empty(), "{name}");
+    }
 }
 
 #[test]
 fn keep_count_refusal_precedes_restore_busy() {
     let mut h = Harness::new(LIMITS);
-    let mut watches = skein_lib::List::with_capacity(5);
-    for number in 0..5 {
+    let mut watches = skein_lib::List::with_capacity(OVER_WATCHES);
+    for number in 0..u64::from(OVER_WATCHES) {
         watches
             .push(crate::Watch {
                 resource: crate::Resource { repository: REPO, what: crate::What::Issue(number) },
@@ -243,7 +408,7 @@ fn read_size_refusal_precedes_full_slab() {
     let got = h.step(Event::Read {
         owner: Token::new(9),
         repository: REPO,
-        read: Read::Branch { branch: Box::new([b'a'; 257]) },
+        read: Read::Branch { branch: Box::new([b'a'; OVER_BRANCH_BYTES]) },
     });
     assert_eq!(got.as_ref(), &[Request::Read { owner: Token::new(9), result: Err(Error::TooLarge) }]);
 }

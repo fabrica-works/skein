@@ -6,6 +6,10 @@ set -eu
 cd "$(dirname "$0")/.."
 
 cargo fmt --all --check
+# testing-strategy.md 10: A setup written once; Named fixtures and sizes.
+mkdir -p target
+rustc --edition=2024 -D warnings scripts/check-contracts.rs -o target/check-contracts
+target/check-contracts
 cargo clippy --workspace --all-targets -- -D warnings
 # The portable libraries and the browser-only halves on their shipping target.
 cargo check --target wasm32-unknown-unknown -p skein-lib -p skein-codec -p skein-http
