@@ -55,6 +55,7 @@ pub fn limits() -> accounts::Limits {
     accounts::Limits {
         accounts: 2,
         file_stall: Duration::from_secs(1),
+        lock_wait: Duration::from_secs(1),
         exchanges: 2,
         listeners: 1,
         server: skein_http::server::Limits {
@@ -145,6 +146,10 @@ pub(crate) fn registration(transport: Transport) -> oauth::Registration {
 /// Content-free facts retained at the actual owner boundary.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Fact {
+    /// The owner was asked to lock the shared record.
+    Lock,
+    /// The shared write released its owner lock.
+    Unlock,
     /// The owner heard a usable generation.
     Granted(u64),
     /// The access-only generation reached its refresh lead once.
@@ -235,6 +240,7 @@ impl Contracts {
 /// The service's owner adapter, running the same component at each tier.
 pub struct Client {
     pub(crate) accounts: Option<crate::accounts::Owner>,
+    pub(crate) shared: Option<crate::shared::Owner>,
     pub(crate) sign_out: Option<crate::sign_out::Owner>,
     pub(crate) terms: Option<oauth::Terms>,
     io: io::Io,
@@ -271,6 +277,7 @@ impl Client {
     pub(crate) fn with_limits(story: Story, transport: Transport, limits: &accounts::Limits, room: u32) -> Client {
         Client {
             accounts: None,
+            shared: None,
             sign_out: None,
             terms: None,
             io: io::Io::new(&limits.io),
@@ -324,6 +331,10 @@ impl Client {
         self.component.is_none()
     }
     pub(crate) fn start(&mut self, env: &Env<accounts::Limits>) {
+        if self.shared.is_some() {
+            crate::shared::start(self, env);
+            return;
+        }
         if self.sign_out.is_some() {
             crate::sign_out::start(self, env);
             return;
@@ -362,6 +373,7 @@ impl Client {
                     accounts::Account::HandedIn
                 } else {
                     accounts::Account::SignIn {
+                        shared: false,
                         registration: {
                             let mut registration = registration(self.transport);
                             registration.terms.clone_from(&self.terms);
@@ -432,13 +444,24 @@ impl Client {
             self.ask(env, accounts::Request::Close);
         }
     }
-    pub(crate) fn observe(&mut self, env: &Env<accounts::Limits>) {
+    fn observe_story(&mut self, env: &Env<accounts::Limits>) -> bool {
+        if self.shared.is_some() {
+            crate::shared::observe(self, env);
+            return true;
+        }
         if self.sign_out.is_some() {
             crate::sign_out::observe(self, env);
-            return;
+            return true;
         }
         if self.accounts.is_some() {
             crate::accounts::observe(self, env);
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn observe(&mut self, env: &Env<accounts::Limits>) {
+        if self.observe_story(env) {
             return;
         }
         if let Some(event) = self.above.pop() {
@@ -522,6 +545,8 @@ impl Client {
                 accounts::Event::Removed { .. }
                 | accounts::Event::Refused { .. }
                 | accounts::Event::Visit { .. }
+                | accounts::Event::Lock { .. }
+                | accounts::Event::Unlock { .. }
                 | accounts::Event::SignedOut { .. }
                 | accounts::Event::SignedIn { .. } => {
                     panic!("positive story has no such event")
@@ -678,6 +703,7 @@ impl Host for Client {
                 }
             }
             crate::accounts::before_socket(self, &env, &request);
+            crate::shared::before_socket(self, &request);
             io::down(&mut self.io, &io_env, request, &mut self.submissions);
         }
         self.private_io(&env);
@@ -1139,6 +1165,7 @@ pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<Str
         }
         if let Some(request) = client.requests.pop() {
             crate::accounts::before_socket(&mut client, &env, &request);
+            crate::shared::before_socket(&client, &request);
             if !client.closing
                 && ((matches!(request, io::Request::Connect { .. })
                     && matches!(story, Story::CloseConnecting | Story::Abort))

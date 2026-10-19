@@ -39,6 +39,7 @@ impl Component {
             Request::Kept { account, generation, keeping } => {
                 Request::Kept { account: self.terminal_place(account)?, generation, keeping }
             }
+            Request::Locked { account, answer } => Request::Locked { account: self.terminal_place(account)?, answer },
             Request::Close => Request::Close,
             Request::Abort => Request::Abort,
         })

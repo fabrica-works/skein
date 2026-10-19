@@ -22,7 +22,9 @@ impl Component {
         let can_wait = match *self.bindings.get(account).expect("account binding") {
             Some(id) => match self.exchanges.get(id).expect("bound exchange").stage {
                 Stage::Loading | Stage::Finished => true,
-                Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => false,
+                Stage::Locking | Stage::Reading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => {
+                    false
+                }
             },
             None => true,
         };
@@ -320,7 +322,7 @@ impl Component {
         up: &mut Queue<Event>,
         io: &mut Queue<Lower>,
     ) {
-        let (record, failure) = match record {
+        let (mut record, failure) = match record {
             Some(record) => match self.sources.get(account).expect("account source") {
                 crate::accounts::Source::SignIn { registration, .. } if missing_id(registration, &record) => {
                     (None, Some(Failure::Unloaded { at: Place::File, why: Unloaded::Unreadable }))
@@ -329,6 +331,9 @@ impl Component {
             },
             None => (None, failure),
         };
+        if self.lock_loaded(env, account, &mut record, failure, up, io) {
+            return;
+        }
         let waiting_grant = match self.keepers.get_mut(account).expect("account keeper") {
             Store::Private(keeper) => core::mem::replace(&mut keeper.waiting_grant, false),
             Store::Owner => unreachable!("private loading"),
@@ -341,7 +346,12 @@ impl Component {
         let signer = match *self.bindings.get(account).expect("account binding") {
             Some(id) => match self.exchanges.get(id).expect("bound exchange").stage {
                 Stage::Loading => Some(id),
-                Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } | Stage::Finished => None,
+                Stage::Locking
+                | Stage::Reading
+                | Stage::Running
+                | Stage::Keeping { .. }
+                | Stage::Forgetting { .. }
+                | Stage::Finished => None,
             },
             None => None,
         };
@@ -365,7 +375,8 @@ impl Component {
                 | Failure::Expired
                 | Failure::Exchange(_)
                 | Failure::NotKept
-                | Failure::NotGranted,
+                | Failure::NotGranted
+                | Failure::Busy,
             ) => false,
         };
         if waiting_grant && !has_record {
@@ -448,6 +459,8 @@ fn private_request(
                     oauth::encode_record(candidate, &limits.client.document).expect("client record bounds")
                 }
                 Stage::Loading
+                | Stage::Locking
+                | Stage::Reading
                 | Stage::Running
                 | Stage::Keeping { .. }
                 | Stage::Forgetting { .. }

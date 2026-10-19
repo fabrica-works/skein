@@ -31,6 +31,8 @@ pub enum Request {
     Release { account: u32 },
     /// Answers the owner-store Keep of this generation, with no event of its own.
     Kept { account: u32, generation: u64, keeping: Keeping },
+    /// Answers the owner lock before a shared write.
+    Locked { account: u32, answer: Locked },
     /// Drains the component; Closed is its terminal.
     Close,
     /// Ends the component immediately; Closed is its terminal.
@@ -59,6 +61,10 @@ pub enum Event {
     Failed { account: u32, ends: Ends, failure: Failure },
     /// Refuses a request before work starts; its one terminal.
     Refused { account: u32, asked: Asked, why: Refusal },
+    /// Take the shared record lock and read its record.
+    Lock { account: u32 },
+    /// Release the owner lock once its write settles.
+    Unlock { account: u32 },
     /// Ends Close or Abort once, after all admitted work has settled.
     Closed,
 }
@@ -79,6 +85,8 @@ pub enum Ends {
 /// Why the account cannot serve its grant.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Failure {
+    /// The shared record lock could not be taken; transient.
+    Busy,
     /// The record lacks a scope the registration requires; sign in again.
     NotGranted,
     /// A sign-in's candidate could not be durably kept; nothing of it is lent.
@@ -174,4 +182,14 @@ pub enum Unloaded {
     Stalled,
     /// io observed more bytes than the record bound; sign-in fails before Visit.
     TooLarge { size: u64 },
+}
+
+/// The owner's answer to a shared record lock (oauth.md, section 6.4).
+#[derive(PartialEq, Eq, Hash)]
+#[expect(missing_debug_implementations, reason = "credential values must never occur in traces")]
+pub enum Locked {
+    /// The lock is held; private keepers load their own record.
+    Held { record: Option<SavedToken> },
+    /// No lock was taken; the write fails as busy.
+    Busy,
 }

@@ -19,7 +19,7 @@ mod redirect;
 mod route;
 
 pub use accounts::{Account, Endpoint, Keeper, Transport};
-pub use boundary::{Asked, Ends, Event, Failure, Keeping, Place, Refusal, Request, Unloaded};
+pub use boundary::{Asked, Ends, Event, Failure, Keeping, Locked, Place, Refusal, Request, Unloaded};
 pub use component::{
     Component, FileLower, Lower, LowerEvent, MAX_OUT_DOWN, MAX_OUT_FILED, MAX_OUT_FIRE, MAX_OUT_UP, MaxOut, Unusable,
 };

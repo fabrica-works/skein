@@ -35,6 +35,7 @@ impl Client {
             assert!(
                 configured
                     .push(accounts::Account::SignIn {
+                        shared: false,
                         registration: registration(self.story),
                         endpoint: accounts::Endpoint {
                             address: self.address.expect("issuer address"),
@@ -173,6 +174,8 @@ impl Client {
                 }
                 accounts::Event::Removed { .. }
                 | accounts::Event::Refused { .. }
+                | accounts::Event::Lock { .. }
+                | accounts::Event::Unlock { .. }
                 | accounts::Event::SignedOut { .. }
                 | accounts::Event::Expiring { .. } => {
                     panic!("unexpected sign-in owner event")

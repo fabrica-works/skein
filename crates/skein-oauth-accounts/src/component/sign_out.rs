@@ -71,15 +71,20 @@ impl Component {
         up: &mut Queue<Event>,
         _io: &mut Queue<Lower>,
     ) {
-        let registration = match self.sources.get(account).expect("account source") {
-            Source::SignIn { registration, .. } => copy_registration(registration),
-            Source::HandedIn => unreachable!("sign-out source"),
-        };
+        let id = self.bindings.get(account).expect("binding").expect("sign-out exchange");
         let slot = self.accounts.get_mut(account).expect("account state");
         if held(slot) {
             set_held(slot, false);
             failed(number(&self.names, account), Failure::Expired, up);
         }
+        if self.lock_write(id, up) {
+            return;
+        }
+        let registration = match self.sources.get(account).expect("account source") {
+            Source::SignIn { registration, .. } => copy_registration(registration),
+            Source::HandedIn => unreachable!("sign-out source"),
+        };
+        let slot = self.accounts.get_mut(account).expect("account state");
         let prior = match slot {
             State::Record { record, .. } => record.refresh_state(),
             State::Empty | State::Loaded { .. } => unreachable!("loaded sign-out record"),
@@ -88,7 +93,6 @@ impl Component {
             Some(terms) => terms.revocation_endpoint.is_some(),
             None => false,
         };
-        let id = self.bindings.get(account).expect("binding").expect("sign-out exchange");
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         exchange.stage = Stage::Running;
         match prior {
@@ -137,7 +141,9 @@ impl Component {
                 self.collect(id, up);
                 return;
             }
-            Stage::Loading | Stage::Running | Stage::Keeping { .. } => unreachable!("sign-out removal"),
+            Stage::Loading | Stage::Locking | Stage::Reading | Stage::Running | Stage::Keeping { .. } => {
+                unreachable!("sign-out removal")
+            }
         };
         let removed = match event {
             file::Event::Removed { .. } => true,
@@ -172,7 +178,7 @@ impl Component {
         self.collect(id, up);
     }
 
-    fn finish_sign_out(
+    pub(super) fn finish_sign_out(
         &mut self,
         env: &Env<Limits>,
         id: Id<Exchange>,

@@ -78,11 +78,18 @@ impl Owner {
     pub(super) fn new() -> Owner {
         Self::with_terms(None)
     }
+    pub(super) fn shared() -> Owner {
+        Self::private_configuration(None, true)
+    }
     pub(super) fn with_terms(terms: Option<skein_oauth::Terms>) -> Owner {
+        Self::private_configuration(terms, false)
+    }
+    fn private_configuration(terms: Option<skein_oauth::Terms>, shared: bool) -> Owner {
         let mut limits = limits();
         limits.client.document.issued_client_bytes = limits.client.document.client_bytes;
         let mut configured = List::with_capacity(1);
         match configured.push(Account::SignIn {
+            shared,
             registration: skein_oauth::Registration {
                 authorization_url: bytes::copy_of(b"https://issuer.example/authorize"),
                 token_endpoint: bytes::copy_of(b"http://127.0.0.1:31000/token"),
@@ -395,6 +402,8 @@ fn assert_visit(event: Option<Event>) {
         Some(
             Event::Removed { .. }
             | Event::SignedIn { .. }
+            | Event::Lock { .. }
+            | Event::Unlock { .. }
             | Event::SignedOut { .. }
             | Event::Granted { .. }
             | Event::Expiring { .. }
@@ -488,7 +497,7 @@ pub(super) fn private_keeper(directory: Box<[u8]>) -> Keeper {
 
 const DRIVE_STEPS: u32 = 128; // One tiny HTTP exchange and its close transitions.
 const HTTP_SOCKET: Token = Token::new(98);
-const BODY: &[u8] = br#"{"access_token":"new","refresh_token":"next","expires_in":30}"#;
+pub(super) const BODY: &[u8] = br#"{"access_token":"new","refresh_token":"next","expires_in":30}"#;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RefreshOutcome {
@@ -629,7 +638,7 @@ impl Owner {
             }
             self.finish_socket(identity, &mut remaining);
             self.component.reclaim();
-            if remaining.is_empty() && !self.component.has_work() && self.io.is_empty() {
+            if remaining.is_empty() && !self.component.has_work() && self.io.is_empty() && self.above.is_empty() {
                 return events;
             }
         }
@@ -663,4 +672,60 @@ impl Owner {
         }
         panic!("refresh and its keep settle")
     }
+}
+
+#[test]
+fn a_private_keeper_loads_its_file_again_under_the_lock() {
+    let mut owner = Owner::shared();
+    owner.ask(Request::Grant { account: 0 });
+    let load = owner.opened();
+    assert!(owner.above.is_empty(), "a load takes no owner lock");
+    let mut record = tests_record(0);
+    record.refresh_token = Some(bytes::copy_of(b"refresh"));
+    record.expires_at = Wall::from_nanos(Duration::from_secs(5).as_nanos());
+    owner.terminal(file::Event::Loaded {
+        owner: load,
+        bytes: skein_oauth::encode_record(&record, &owner.env.limits.client.document).expect("record"),
+    });
+    assert_event(owner.above.pop(), Event::Lock { account: 0 });
+    owner.ask(Request::Locked { account: 0, answer: Locked::Held { record: None } });
+    let request = owner.next();
+    check_file(&request, 1);
+    owner.terminal(file::Event::Loaded {
+        owner: owner_of(&request),
+        bytes: skein_oauth::encode_record(&tests_record(2), &owner.env.limits.client.document).expect("new record"),
+    });
+    assert_granted(owner.above.pop(), 2, 30);
+    assert_event(owner.above.pop(), Event::Unlock { account: 0 });
+    assert!(owner.io.is_empty() && owner.above.is_empty());
+}
+
+#[test]
+fn a_private_sign_in_keeps_above_the_generation_read() {
+    const READ: u64 = 8;
+    const KEPT: u64 = 9;
+    let mut owner = Owner::shared();
+    let load = owner.opened();
+    owner.terminal(file::Event::Loaded {
+        owner: load,
+        bytes: skein_oauth::encode_record(&tests_record(0), &owner.env.limits.client.document).expect("record"),
+    });
+    owner.redirected(b"");
+    let identity = owner.sent();
+    owner.above = owner.finish_tokens(identity, BODY);
+    assert_event(owner.above.pop(), Event::Lock { account: 0 });
+    owner.ask(Request::Locked { account: 0, answer: Locked::Held { record: None } });
+    let load = owner.next();
+    check_file(&load, 1);
+    owner.terminal(file::Event::Loaded {
+        owner: owner_of(&load),
+        bytes: skein_oauth::encode_record(&tests_record(READ), &owner.env.limits.client.document).expect("new record"),
+    });
+    let store = owner.next();
+    let generation = if let file::Request::Store { bytes, .. } = store {
+        Some(skein_oauth::decode_record(&bytes, &owner.env.limits.client.document).expect("kept record").generation)
+    } else {
+        None
+    };
+    assert_eq!(generation, Some(KEPT));
 }

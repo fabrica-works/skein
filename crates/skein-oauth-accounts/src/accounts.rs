@@ -16,7 +16,7 @@ pub enum Account {
     /// Access-only records the owner supplies; never refreshed or kept.
     HandedIn,
     /// Issuer records loaded from its keeper, refreshed while held and kept before lending.
-    SignIn { registration: Registration, endpoint: Endpoint, keeper: Keeper },
+    SignIn { registration: Registration, endpoint: Endpoint, keeper: Keeper, shared: bool },
 }
 
 /// The token endpoint's address, resolved by the owner before the loop.
@@ -48,7 +48,7 @@ pub enum Keeper {
 #[expect(clippy::large_enum_variant, reason = "bounded account configuration stores its one source in place")]
 pub(crate) enum Source {
     HandedIn,
-    SignIn { registration: Registration, endpoint: Endpoint },
+    SignIn { registration: Registration, endpoint: Endpoint, shared: bool },
 }
 
 pub(crate) fn copy_registration(registration: &Registration) -> Registration {

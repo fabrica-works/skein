@@ -95,6 +95,7 @@ fn configuration(client: &world::Client) -> accounts::Account {
         }
     };
     accounts::Account::SignIn {
+        shared: false,
         registration: world::registration(Transport::Plaintext),
         endpoint: accounts::Endpoint {
             address: client.address.expect("issuer address"),
@@ -190,7 +191,9 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
                 driver.close_root(env.now);
             }
         }
-        accounts::Event::SignedOut { .. }
+        accounts::Event::Lock { .. }
+        | accounts::Event::Unlock { .. }
+        | accounts::Event::SignedOut { .. }
         | accounts::Event::SignedIn { .. }
         | accounts::Event::Expiring { .. }
         | accounts::Event::Refused { .. } => {

@@ -79,6 +79,7 @@ pub(crate) fn start(client: &mut world::Client, env: &Env<accounts::Limits>) {
     assert!(
         configured
             .push(accounts::Account::SignIn {
+                shared: false,
                 registration,
                 endpoint: accounts::Endpoint {
                     address: client.address.expect("issuer address"),
@@ -128,7 +129,9 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
                 driver.close_root(env.now);
             }
         }
-        accounts::Event::Removed { .. }
+        accounts::Event::Lock { .. }
+        | accounts::Event::Unlock { .. }
+        | accounts::Event::Removed { .. }
         | accounts::Event::Visit { .. }
         | accounts::Event::SignedIn { .. }
         | accounts::Event::Granted { .. }

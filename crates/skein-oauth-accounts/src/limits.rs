@@ -13,6 +13,8 @@ pub struct Limits {
     pub accounts: u32,
     /// Deadline stated on each private keeper request, including cleanup.
     pub file_stall: Duration,
+    /// How long a shared write waits for the owner lock.
+    pub lock_wait: Duration,
     pub exchanges: u32,
     /// Public redirect listeners admitted at once; zero permits only confidential sign-ins.
     pub listeners: u32,
@@ -28,6 +30,7 @@ pub struct Limits {
 
 pub(crate) fn usable(limits: &Limits) -> bool {
     limits.file_stall > Duration::ZERO
+        && limits.lock_wait > Duration::ZERO
         && limits.accounts > 0
         && limits.exchanges > 0
         && limits.exchanges <= u32::MAX.checked_div(3).expect("nonzero divisor")
@@ -91,7 +94,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(List::<Option<Id<Exchange>>>::worst_case(limits.accounts)?)?
         .checked_add(
             u64::from(limits.accounts)
-                .checked_mul(record.checked_mul(2)?.checked_add(skein_oauth::client_worst_case(&limits.client)?)?)?,
+                .checked_mul(record.checked_mul(3)?.checked_add(skein_oauth::client_worst_case(&limits.client)?)?)?,
         )?
         .checked_add(Slab::<Exchange>::worst_case(limits.exchanges)?)?
         .checked_add(u64::from(limits.exchanges).checked_mul(exchange)?)?

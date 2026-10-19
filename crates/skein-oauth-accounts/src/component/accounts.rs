@@ -10,7 +10,7 @@ use skein_oauth as oauth;
 pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Result<(Source, State, Store), Unusable> {
     Ok(match configuration {
         Account::HandedIn => (Source::HandedIn, State::Empty, Store::Owner),
-        Account::SignIn { registration, endpoint, keeper } => {
+        Account::SignIn { registration, endpoint, keeper, shared } => {
             match endpoint.transport {
                 Transport::Plaintext if !endpoint.address.ip().is_loopback() => {
                     return Err(Unusable::Plaintext { account });
@@ -55,7 +55,7 @@ pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Re
                     (State::Empty, Store::Private(Private::new(root, directory, file)))
                 }
             };
-            (Source::SignIn { registration, endpoint }, state, store)
+            (Source::SignIn { registration, endpoint, shared }, state, store)
         }
     })
 }
@@ -311,7 +311,7 @@ impl Component {
 
 fn unsent(exchange: &crate::exchange::Exchange) -> bool {
     match exchange.stage {
-        crate::exchange::Stage::Loading => true,
+        crate::exchange::Stage::Loading | crate::exchange::Stage::Locking | crate::exchange::Stage::Reading => true,
         crate::exchange::Stage::Running => match &exchange.web {
             Some(web) => !web.sent,
             None => true,

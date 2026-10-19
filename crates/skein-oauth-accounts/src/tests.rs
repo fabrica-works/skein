@@ -6,6 +6,7 @@ pub(crate) fn limits() -> Limits {
     Limits {
         accounts: 2,
         file_stall: Duration::from_secs(1),
+        lock_wait: Duration::from_secs(1),
         exchanges: 2,
         listeners: 1,
         server: skein_http::server::Limits {
@@ -401,6 +402,7 @@ pub(crate) fn refresh_account(account: u32, address: core::net::SocketAddr) -> A
     record.refresh_token = Some(bytes::copy_of(b"refresh"));
     record.expires_at = Wall::from_nanos(5_000_000_000);
     Account::SignIn {
+        shared: false,
         registration: skein_oauth::Registration {
             authorization_url: bytes::copy_of(b"http://127.0.0.1:31000/authorize"),
             token_endpoint: bytes::copy_of(b"http://127.0.0.1:31000/token"),
@@ -642,6 +644,8 @@ fn refusal_of(event: Option<Event>) -> Option<(u32, Asked, Refusal)> {
         Some(
             Event::Visit { .. }
             | Event::SignedIn { .. }
+            | Event::Lock { .. }
+            | Event::Unlock { .. }
             | Event::SignedOut { .. }
             | Event::Granted { .. }
             | Event::Expiring { .. }
@@ -665,6 +669,8 @@ fn failure_of(event: Option<Event>) -> Option<Failed> {
         Some(
             Event::Visit { .. }
             | Event::SignedIn { .. }
+            | Event::Lock { .. }
+            | Event::Unlock { .. }
             | Event::SignedOut { .. }
             | Event::Granted { .. }
             | Event::Expiring { .. }
@@ -753,6 +759,9 @@ fn a_grant_of_a_record_without_a_required_scope_fails_as_not_granted() {
         assert_eq!(scope_grant(refresh), expected, "{name}");
     }
 }
+
+#[path = "shared_tests.rs"]
+mod shared;
 
 const REQUIRED_SCOPES: &[u8] = b"read write";
 pub(crate) fn terms() -> skein_oauth::Terms {

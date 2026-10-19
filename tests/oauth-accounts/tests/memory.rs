@@ -12,91 +12,17 @@ static HEAP: Counting = Counting;
 
 #[test]
 fn every_account_holds_a_maximal_record_within_the_heap_bound() {
-    let document = skein_oauth::Limits {
-        document_bytes: 512,
-        string_bytes: 64,
-        token_bytes: 64,
-        client_bytes: 64,
-        detail_bytes: 64,
-        record_bytes: 512,
-        depth: 8,
-        tokens: 64,
-        issued_client_bytes: 0,
-        granted_bytes: 64,
-        subject_bytes: 0,
-        id_token_bytes: 64,
-    };
-    let limits = Limits {
-        accounts: 4,
-        file_stall: Duration::from_secs(1),
-        exchanges: 4,
-        listeners: 0,
-        server: skein_http::server::Limits {
-            head: 2048,
-            headers: 16,
-            body: 1024,
-            read: 256,
-            response: 2048,
-            send: 256,
-        },
-        http: skein_http::client::Limits { request: 2048, head: 2048, headers: 16, read: 256, send: 256 },
-        tls: skein_tls::client::Limits { read: 2048, send: 2048, records: 131_072 },
-        io: skein_io::Limits {
-            sockets: 4,
-            refusals: 1,
-            intake: 32_768,
-            receive: 1024,
-            output: 32_768,
-            sends: 4,
-            accepts: 1,
-            backlog: 2,
-            close_timeout: Duration::from_secs(1),
-            names: 0,
-            retry: Duration::from_millis(1),
-        },
-        refresh_lead: Duration::from_secs(10),
-        client: ClientLimits {
-            document,
-            uri_bytes: 256,
-            scope_bytes: 64,
-            state_bytes: 64,
-            code_bytes: 64,
-            url_bytes: 512,
-            request_bytes: 512,
-            parameter_bytes: 0,
-            resource_bytes: 0,
-            nonce_bytes: 0,
-            metadata_bytes: 0,
-            key_set_bytes: 0,
-            keys: 0,
-            modulus_bits: 2048,
-            skew: Duration::from_secs(0),
-            sign_in_time: Duration::from_secs(120),
-            request_time: Duration::from_secs(10),
-            backoff_base: Duration::from_secs(2),
-            backoff_ceiling: Duration::from_secs(8),
-            max_attempts: 3,
-        },
-    };
+    let limits = shared_memory_limits();
     let bound = worst_case(&limits).expect("heap bound");
     let meter = Meter::new();
     meter.start();
-    let mut configured = List::with_capacity(limits.accounts);
-    for _ in 0..limits.accounts {
-        assert!(configured.push(Account::HandedIn).is_ok(), "account slot");
-    }
+    let configured = shared_memory_accounts(&limits);
     let crypto = skein_lib::CryptoRng::new(&skein_world::crypto_seed(17), 0).expect("32-byte world seed");
     let mut component = Component::new(configured, &limits, crypto).expect("component");
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
     let mut out = Queue::with_capacity(MAX_OUT_DOWN.above);
+    let mut shared_reads = Queue::with_capacity(limits.accounts);
     for account in 0..limits.accounts {
-        component.down(
-            &env,
-            Request::HandIn { account, record: handed_in_record(account) },
-            &mut out,
-            &mut Queue::with_capacity(MAX_OUT_DOWN.io),
-            &mut Queue::with_capacity(1),
-        );
         component.down(
             &env,
             Request::Grant { account },
@@ -104,10 +30,15 @@ fn every_account_holds_a_maximal_record_within_the_heap_bound() {
             &mut Queue::with_capacity(MAX_OUT_DOWN.io),
             &mut Queue::with_capacity(1),
         );
-        drop(out.pop());
+        assert!(out.pop() == Some(skein_oauth_accounts::Event::Lock { account }));
+        shared_reads.push(Request::Locked {
+            account,
+            answer: skein_oauth_accounts::Locked::Held { record: Some(shared_memory_record(account)) },
+        });
     }
+    assert_eq!(shared_reads.len(), limits.accounts, "every pending lock owns its bounded read");
     let measured = meter.end();
-    meter.check(measured, bound, &"OAuth handed-in accounts");
+    meter.check(measured, bound, &"OAuth shared accounts and their reads");
 }
 
 #[test]
@@ -138,6 +69,7 @@ fn every_refresh_slot_holds_its_maximal_records_and_tls_connection() {
         assert!(
             configured
                 .push(Account::SignIn {
+                    shared: false,
                     registration,
                     endpoint: Endpoint {
                         address: "127.0.0.1:31000".parse().expect("loopback"),
@@ -208,6 +140,7 @@ fn every_listener_slot_keeps_a_bounded_partial_head_within_the_heap_bound() {
         assert!(
             configured
                 .push(Account::SignIn {
+                    shared: false,
                     registration: registration(b"client", uri, None, b"read"),
                     endpoint: Endpoint {
                         address: "127.0.0.1:31000".parse().expect("loopback"),
@@ -306,6 +239,7 @@ fn every_private_keeper_retains_its_maximal_paths_and_pending_load() {
         assert!(
             configured
                 .push(Account::SignIn {
+                    shared: false,
                     registration: registration(
                         &[b'c'; 64],
                         bytes::copy_of(b"https://service.example/callback"),
@@ -464,4 +398,105 @@ fn two_varying_sign_ins_fit_the_heap_bound() {
         false,
         skein_world::Memory::Checked,
     ));
+}
+
+fn shared_memory_record(account: u32) -> SavedToken {
+    let mut record = handed_in_record(account);
+    record.refresh_token = Some(bytes::copy_of(&[b'r'; 64]));
+    record.granted_scopes = Some(bytes::copy_of(&[b's'; 64]));
+    record.id_token = Some(bytes::copy_of(&[b'i'; 64]));
+    record.expires_at = Wall::from_nanos(Duration::from_secs(5).as_nanos());
+    record
+}
+
+fn shared_memory_limits() -> Limits {
+    let document = skein_oauth::Limits {
+        document_bytes: 512,
+        string_bytes: 64,
+        token_bytes: 64,
+        client_bytes: 64,
+        detail_bytes: 64,
+        record_bytes: 512,
+        depth: 8,
+        tokens: 64,
+        issued_client_bytes: 0,
+        granted_bytes: 64,
+        subject_bytes: 0,
+        id_token_bytes: 64,
+    };
+    Limits {
+        accounts: 4,
+        file_stall: Duration::from_secs(1),
+        lock_wait: Duration::from_secs(1),
+        exchanges: 4,
+        listeners: 0,
+        server: skein_http::server::Limits {
+            head: 2048,
+            headers: 16,
+            body: 1024,
+            read: 256,
+            response: 2048,
+            send: 256,
+        },
+        http: skein_http::client::Limits { request: 2048, head: 2048, headers: 16, read: 256, send: 256 },
+        tls: skein_tls::client::Limits { read: 2048, send: 2048, records: 131_072 },
+        io: skein_io::Limits {
+            sockets: 4,
+            refusals: 1,
+            intake: 32_768,
+            receive: 1024,
+            output: 32_768,
+            sends: 4,
+            accepts: 1,
+            backlog: 2,
+            close_timeout: Duration::from_secs(1),
+            names: 0,
+            retry: Duration::from_millis(1),
+        },
+        refresh_lead: Duration::from_secs(10),
+        client: ClientLimits {
+            document,
+            uri_bytes: 256,
+            scope_bytes: 64,
+            state_bytes: 64,
+            code_bytes: 64,
+            url_bytes: 512,
+            request_bytes: 512,
+            parameter_bytes: 0,
+            resource_bytes: 0,
+            nonce_bytes: 0,
+            metadata_bytes: 0,
+            key_set_bytes: 0,
+            keys: 0,
+            modulus_bits: 2048,
+            skew: Duration::from_secs(0),
+            sign_in_time: Duration::from_secs(120),
+            request_time: Duration::from_secs(10),
+            backoff_base: Duration::from_secs(2),
+            backoff_ceiling: Duration::from_secs(8),
+            max_attempts: 3,
+        },
+    }
+}
+
+fn shared_memory_accounts(limits: &Limits) -> List<Account> {
+    let mut configured = List::with_capacity(limits.accounts);
+    for account in 0..limits.accounts {
+        assert!(
+            configured
+                .push(Account::SignIn {
+                    shared: true,
+                    registration: registration(
+                        b"client",
+                        bytes::copy_of(b"https://service.example/callback"),
+                        Some(bytes::copy_of(b"secret")),
+                        b"read"
+                    ),
+                    endpoint: Endpoint { address: ([127, 0, 0, 1], 31000).into(), transport: Transport::Plaintext },
+                    keeper: Keeper::Owner { kept: Some(shared_memory_record(account)) },
+                })
+                .is_ok()
+        );
+    }
+    configured
 }

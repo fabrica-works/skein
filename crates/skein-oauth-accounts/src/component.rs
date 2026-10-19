@@ -9,8 +9,8 @@
     reason = "explicit optional entity and socket presence cases at the owner boundary"
 )]
 
-use crate::accounts::{Source, copy_registration};
-use crate::exchange::{Exchange, Stage, Web};
+use crate::accounts::Source;
+use crate::exchange::{Exchange, OwnerLock, Stage, Web};
 use crate::keeper::Store;
 use crate::route::{self, Socket};
 use crate::{Account, Asked, Ends, Event, Failure, Keeping, Limits, Refusal, Request, worst_case};
@@ -18,6 +18,7 @@ use skein_lib::{CryptoRng, Duration, Env, Id, List, Queue, Slab, Time};
 use skein_oauth::{self as oauth, SavedToken};
 
 mod accounts;
+mod lock;
 mod names;
 mod private;
 use names::number;
@@ -292,7 +293,7 @@ impl Component {
                     && self.refreshable(account)
                     && self.refresh_ready(account, env.now)
                 {
-                    self.start_refresh(env, account, false);
+                    self.start_refresh(env, account, false, up);
                 }
             }
             Request::Release { account } => self.release(account),
@@ -300,6 +301,7 @@ impl Component {
                 Some(Store::Owner) => self.kept(env, account, generation, keeping, up, io),
                 Some(Store::Private(_)) | None => {}
             },
+            Request::Locked { account, answer } => self.locked(env, account, answer, up, io),
             Request::Close => match self.lifecycle {
                 Lifecycle::Live => {
                     self.lifecycle = Lifecycle::Closing;
@@ -354,7 +356,12 @@ impl Component {
                         number(&self.names, account),
                         up,
                     ),
-                    Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => {
+                    Stage::Loading
+                    | Stage::Locking
+                    | Stage::Reading
+                    | Stage::Running
+                    | Stage::Keeping { .. }
+                    | Stage::Forgetting { .. } => {
                         if exchange.pending_grant {
                             up.push(Event::Refused {
                                 account: number(&self.names, account),
@@ -390,7 +397,7 @@ impl Component {
                         });
                     } else {
                         set_held(slot, true);
-                        self.start_refresh(env, account, true);
+                        self.start_refresh(env, account, true, up);
                     }
                 } else {
                     grant(
@@ -481,29 +488,6 @@ impl Component {
             Some(State::Record { record, .. }) => record.refresh_token.is_some(),
             Some(State::Empty | State::Loaded { .. }) | None => false,
         }
-    }
-
-    fn start_refresh(&mut self, env: &Env<Limits>, account: u32, pending_grant: bool) {
-        let prior = match self.accounts.get_mut(account).expect("account") {
-            State::Record { record, due, attempted, .. } => {
-                *due = false;
-                *attempted = true;
-                record.refresh_state().expect("refreshable account")
-            }
-            State::Empty | State::Loaded { .. } => unreachable!("refreshable account"),
-        };
-        let registration = match self.sources.get(account).expect("account source") {
-            Source::SignIn { registration, .. } => copy_registration(registration),
-            Source::HandedIn => unreachable!("sign-in source"),
-        };
-        let client = oauth::Client::new(env.limits.client).expect("validated client limits");
-        let mut exchange = Exchange::new(account, client, pending_grant);
-        exchange.client.step(oauth::Event::Refresh { registration, prior, now: env.now }, &mut exchange.above);
-        let id = match self.exchanges.insert(exchange) {
-            Ok(id) => id,
-            Err(_) => unreachable!("exchange slot admitted"),
-        };
-        *self.bindings.get_mut(account).expect("account binding") = Some(id);
     }
 
     /// Routes one socket event by its component owner token, with `MAX_OUT_UP` room.
@@ -643,7 +627,7 @@ impl Component {
                         && !self.exchanges.is_full()
                         && record.refresh_token.is_some()
                     {
-                        self.start_refresh(env, account, false);
+                        self.start_refresh(env, account, false, up);
                         return;
                     }
                 }
@@ -657,7 +641,7 @@ impl Component {
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         let account = exchange.account;
         match exchange.stage {
-            Stage::Loading => return,
+            Stage::Loading | Stage::Locking | Stage::Reading => return,
             Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } | Stage::Finished => {}
         }
         if web_closing(exchange.web.as_ref()) && !exchange.above.is_empty() {
@@ -780,14 +764,9 @@ impl Component {
             }
             oauth::Request::Revoked { confirmed } => self.forget(env, id, confirmed, up, io),
             oauth::Request::Tokens { record, missing } => {
-                let kept = record.clone();
-                exchange.stage = Stage::Keeping { candidate: record, missing };
-                match self.keepers.get_mut(account).expect("account keeper") {
-                    Store::Owner => up.push(Event::Keep { account: number(&self.names, account), record: kept }),
-                    Store::Private(keeper) => {
-                        keeper.next = Some(crate::keeper::Operation::Store { generation: kept.generation });
-                        exchange.file_active = true;
-                    }
+                exchange.lock_candidate = Some((record, missing));
+                if !self.lock_write(id, up) {
+                    self.keep_candidate(id, up);
                 }
             }
             oauth::Request::Failed { failure } => self.fail_exchange(env, id, Failure::Exchange(failure), up, io),
@@ -818,7 +797,13 @@ impl Component {
         }
         match &exchange.stage {
             Stage::Keeping { candidate, .. } if candidate.generation == generation => {}
-            Stage::Keeping { .. } | Stage::Loading | Stage::Running | Stage::Forgetting { .. } | Stage::Finished => {
+            Stage::Keeping { .. }
+            | Stage::Loading
+            | Stage::Locking
+            | Stage::Reading
+            | Stage::Running
+            | Stage::Forgetting { .. }
+            | Stage::Finished => {
                 return;
             }
         }
@@ -866,7 +851,12 @@ impl Component {
                     }
                 }
             }
-            Stage::Loading | Stage::Running | Stage::Forgetting { .. } | Stage::Finished => {
+            Stage::Loading
+            | Stage::Locking
+            | Stage::Reading
+            | Stage::Running
+            | Stage::Forgetting { .. }
+            | Stage::Finished => {
                 unreachable!("matching pending keep")
             }
         }
@@ -931,7 +921,12 @@ impl Component {
         let slot = self.accounts.get_mut(account).expect("account state");
         let unfinished = match exchange.stage {
             Stage::Finished => false,
-            Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => true,
+            Stage::Loading
+            | Stage::Locking
+            | Stage::Reading
+            | Stage::Running
+            | Stage::Keeping { .. }
+            | Stage::Forgetting { .. } => true,
         };
         if unfinished {
             if exchange.signing_out() {
@@ -997,6 +992,10 @@ impl Component {
             Some(_) | None => {}
         }
         if exchange.settled() {
+            if exchange.lock == OwnerLock::Held {
+                exchange.lock = OwnerLock::Released;
+                up.push(Event::Unlock { account: number(&self.names, exchange.account) });
+            }
             *self.bindings.get_mut(exchange.account).expect("account binding") = None;
             self.exchanges.retire(id);
         }

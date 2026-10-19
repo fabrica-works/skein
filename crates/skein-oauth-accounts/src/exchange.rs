@@ -19,6 +19,8 @@ pub(crate) const ROUTES: u32 = 8;
 
 pub(crate) enum Stage {
     Loading,
+    Locking,
+    Reading,
     Running,
     Keeping { candidate: oauth::SavedToken, missing: Box<[u8]> },
     Forgetting { revoked: bool },
@@ -29,6 +31,12 @@ pub(crate) enum Purpose {
     Refresh,
     SignOut,
     SignIn { waiting: bool },
+}
+
+#[derive(PartialEq, Eq)]
+pub(crate) enum OwnerLock {
+    Released,
+    Held,
 }
 
 pub(crate) struct Exchange {
@@ -44,6 +52,8 @@ pub(crate) struct Exchange {
     pub(crate) sign_in: Option<oauth::Event>,
     pub(crate) listener: Option<crate::listener::Listener>,
     pub(crate) file_active: bool,
+    pub(crate) lock: OwnerLock,
+    pub(crate) lock_candidate: Option<(oauth::SavedToken, Box<[u8]>)>,
 }
 
 impl Exchange {
@@ -86,10 +96,16 @@ impl Exchange {
             sign_in: None,
             listener: None,
             file_active: false,
+            lock: OwnerLock::Released,
+            lock_candidate: None,
         }
     }
 
     pub(crate) fn has_work(&self) -> bool {
+        match self.stage {
+            Stage::Locking | Stage::Reading => return false,
+            Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } | Stage::Finished => {}
+        }
         if self.settled()
             || !self.above.is_empty()
             || match &self.listener {
@@ -116,7 +132,12 @@ impl Exchange {
                     }
                     && self.above.is_empty()
             }
-            Stage::Loading | Stage::Running | Stage::Keeping { .. } | Stage::Forgetting { .. } => false,
+            Stage::Loading
+            | Stage::Locking
+            | Stage::Reading
+            | Stage::Running
+            | Stage::Keeping { .. }
+            | Stage::Forgetting { .. } => false,
         }
     }
 }
