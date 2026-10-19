@@ -82,7 +82,8 @@ fn back_and_forward_move_between_the_list_and_a_note() {
             stories::Shown {
                 address: b"/notes/7",
                 sees: Find::exactly_named(Role::Heading { level: 1 }, b"No such note.")
-            }
+            },
+            Find::text(b"Live")
         ),
         Outcome::Done
     );

@@ -166,11 +166,13 @@ pub struct Shown<'a> {
     pub address: &'a [u8],
     pub sees: Find,
 }
+/// The story awaits `loaded` before its first move.
 #[must_use]
-pub fn back_and_forward(setup: &Setup<'_>, first: Shown<'_>, second: Shown<'_>) -> Outcome {
+pub fn back_and_forward(setup: &Setup<'_>, first: Shown<'_>, second: Shown<'_>, loaded: Find) -> Outcome {
     let see = |find| Step::Person(PersonStep::See { find, within: Duration::from_secs(5) });
     let go = |address: &[u8]| Step::Person(PersonStep::Go { address: address.into() });
     let mut script = Script::new(Box::new([
+        see(loaded),
         go(first.address),
         see(first.sees.clone()),
         go(second.address),
