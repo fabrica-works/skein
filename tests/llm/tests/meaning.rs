@@ -86,7 +86,7 @@ fn sent_text_uses_the_request_budget_beside_tiny_receiving_strings() {
         input.prompt.instructions = vec![b'x'; 512].into();
         if provider == skein_llm::Provider::Anthropic {
             input.endpoint = skein_llm::Endpoint::anthropic();
-            input.credential = skein_llm::Credential::anthropic(b"test".as_slice().into());
+            input.credential = Some(skein_llm::Credential::anthropic(b"test".as_slice().into()));
             input.prompt.affinity = None;
         }
         assert!(client::Client::prepare(input, &bounds).is_ok());

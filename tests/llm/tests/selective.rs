@@ -120,7 +120,7 @@ fn a_long_messages_argument_delta_counts_the_whole_scanned_fragment() {
     ];
     let mut input = call(5);
     input.endpoint = skein_llm::Endpoint::anthropic();
-    input.credential = skein_llm::Credential::anthropic(b"test-oauth".as_slice().into());
+    input.credential = Some(skein_llm::Credential::anthropic(b"test-oauth".as_slice().into()));
     input.prompt.affinity = None;
     let wire = response(200, "Content-Type: text/event-stream\r\n", &events(&documents), true);
     let mut world = World::new(input, tiny(), wire, 11);

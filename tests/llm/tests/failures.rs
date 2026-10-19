@@ -8,7 +8,7 @@ type ResetCase = (Call, &'static str, &'static str, Option<Duration>, &'static [
 fn anthropic_input() -> Call {
     let mut input = call(1);
     input.endpoint = Endpoint::anthropic();
-    input.credential.account_id = Box::new([]);
+    input.credential.as_mut().expect("fixture credential").account_id = Box::new([]);
     input
 }
 

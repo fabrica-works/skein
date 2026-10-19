@@ -47,7 +47,7 @@ fn run(dialect: Provider, seed: u64) -> (Vec<String>, (u32, u32)) {
         Provider::OpenAiCodex | Provider::OpenAi => {}
         Provider::Anthropic => {
             call.endpoint = skein_llm::Endpoint::anthropic();
-            call.credential = Credential::anthropic(b"fake-token".as_slice().into());
+            call.credential = Some(Credential::anthropic(b"fake-token".as_slice().into()));
             call.prompt.affinity = None;
         }
     }
@@ -55,8 +55,8 @@ fn run(dialect: Provider, seed: u64) -> (Vec<String>, (u32, u32)) {
     call.prompt.instructions = b"connection-world".as_slice().into();
     let peer_credential = Credential {
         scheme: skein_llm::Scheme::Bearer,
-        value: call.credential.value.clone(),
-        account_id: call.credential.account_id.clone(),
+        value: skein_llm_world::credential_of(&call).value.clone(),
+        account_id: skein_llm_world::credential_of(&call).account_id.clone(),
     };
     let peer_limits = skein_llm_world::fake::limits(&skein_llm_world::limits());
     let provider_kind = match dialect {

@@ -504,7 +504,7 @@ fn explicit_call_reasoning_policy_never_drops_anthropic_thinking() {
         bounds.reasoning = 24;
         let mut input = skein_llm_world::call(78);
         input.endpoint = skein_llm::Endpoint::anthropic();
-        input.credential = skein_llm::Credential::anthropic(b"fake-token".as_slice().into());
+        input.credential = Some(skein_llm::Credential::anthropic(b"fake-token".as_slice().into()));
         input.prompt.affinity = None;
         input.prompt.output_ceiling(skein_llm::Provider::Anthropic, 4096).expect("configured output");
         let machine = client::Client::prepare_with_reasoning_drop(input, &bounds, enabled).expect("explicit policy");

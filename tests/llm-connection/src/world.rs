@@ -159,7 +159,7 @@ impl Peer {
                 }]),
             )
             .expect("script"),
-            credential: call.credential,
+            credential: call.credential.expect("fixture credential"),
             input: Intake::with_capacity(32768),
             above: Queue::with_capacity(provider::MAX_UP),
             below: Queue::with_capacity(provider::MAX_DOWN),
@@ -370,7 +370,7 @@ impl World {
         token: u64,
         endpoint: u32,
         prompt: skein_llm::Prompt,
-        credential: Credential,
+        credential: Option<Credential>,
         deadlines: Deadlines,
     ) {
         self.component.down(

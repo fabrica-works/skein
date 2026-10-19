@@ -57,7 +57,7 @@ fn input(owner: u64, provider: Provider) -> Call {
     let mut input = skein_llm_world::call(owner);
     if provider == Provider::Anthropic {
         input.endpoint = Endpoint::anthropic();
-        input.credential = Credential::anthropic(b"fixture-token".as_slice().into());
+        input.credential = Some(Credential::anthropic(b"fixture-token".as_slice().into()));
         input.prompt.affinity = None;
     }
     input.prompt.output_ceiling(provider, 4096).expect("caller output configuration");
@@ -91,8 +91,8 @@ fn input_bytes(input: &Call) -> u64 {
     assert!(input.prompt.tools.is_empty());
     assert!(input.prompt.reasoning_effort.is_none());
     let mut owned = endpoint_bytes(&input.endpoint)
-        + bytes(&input.credential.value)
-        + bytes(&input.credential.account_id)
+        + bytes(&skein_llm_world::credential_of(input).value)
+        + bytes(&skein_llm_world::credential_of(input).account_id)
         + bytes(&input.prompt.model)
         + bytes(&input.prompt.instructions)
         + u64::try_from(input.prompt.messages.len()).expect("bounded messages") * size::<skein_llm::Message>();
@@ -204,7 +204,8 @@ fn actual_native_peer_and_client_fit_checked_prices_until_every_owner_drops() {
         // Client preparation consumes input. The peer retains a second grant
         // and target; its other cloned endpoint fields exist during adoption.
         let caller = input_bytes(&input) + endpoint_bytes(&input.endpoint);
-        let extra = extra_worst_case(&bounds, &caps, &input.endpoint, &input.credential).expect("checked peer price");
+        let extra = extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input))
+            .expect("checked peer price");
         let client_price = client::call_worst_case(&bounds).expect("one Client price");
         let bound = client_price
             .checked_add(extra)
@@ -331,13 +332,13 @@ fn impossible_observation_products_refuse_without_allocating_the_ceiling() {
     let bounds = limits();
     let input = input(1, Provider::Anthropic);
     let mut caps = observations(&bounds);
-    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, &input.credential).is_some());
+    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input)).is_some());
     caps.event_bytes = u64::MAX;
-    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, &input.credential).is_none());
+    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input)).is_none());
     caps = observations(&bounds);
     caps.queries = 2;
     caps.query_bytes = u64::MAX;
-    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, &input.credential).is_none());
+    assert!(extra_worst_case(&bounds, &caps, &input.endpoint, skein_llm_world::credential_of(&input)).is_none());
 }
 
 #[test]
@@ -430,7 +431,8 @@ fn exact_head_observation_capacity_retains_actual_fields_and_one_less_retains_no
         let call_input = input(1, provider);
         let caller = input_bytes(&call_input) + endpoint_bytes(&call_input.endpoint);
         let bound = client::call_worst_case(&bounds).expect("client price")
-            + extra_worst_case(&bounds, &caps, &call_input.endpoint, &call_input.credential).expect("peer price")
+            + extra_worst_case(&bounds, &caps, &call_input.endpoint, skein_llm_world::credential_of(&call_input))
+                .expect("peer price")
             + caller;
         let mut positive = Exchange::new(call_input, bounds, scripts());
         positive.observe(caps);

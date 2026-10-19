@@ -83,7 +83,7 @@ fn anthropic_seeded_fragmentation_and_grants_preserve_completion() {
     for seed in 1..=128 {
         let mut input = call(seed);
         input.endpoint = skein_llm::Endpoint::anthropic();
-        input.credential = skein_llm::Credential::anthropic(b"synthetic-oauth-token".to_vec().into());
+        input.credential = Some(skein_llm::Credential::anthropic(b"synthetic-oauth-token".to_vec().into()));
         input.prompt.affinity = None;
         input.prompt.max_output_tokens = Some(1024);
         let wire = skein_llm_world::response(
@@ -255,7 +255,7 @@ fn selective_known_events_ignore_seeded_extensions_and_field_order() {
             let mut input = call(seed);
             if provider == skein_llm::Provider::Anthropic {
                 input.endpoint = skein_llm::Endpoint::anthropic();
-                input.credential = skein_llm::Credential::anthropic(b"test-oauth".to_vec().into());
+                input.credential = Some(skein_llm::Credential::anthropic(b"test-oauth".to_vec().into()));
                 input.prompt.affinity = None;
             }
             let mut world = World::new(input, bounds, wire, seed);

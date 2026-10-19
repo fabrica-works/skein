@@ -338,8 +338,13 @@ fn configured_codex_echo_request_and_entry_scratch_fit_the_peer_price() {
             content: Box::new([skein_llm::Block::Text { text: vec![b'h'; 64].into_boxed_slice(), replay: None }]),
         })
         .collect();
-    let extra =
-        skein_llm_world::fake::extra_worst_case(&bounds, &observations, &input.endpoint, &input.credential).unwrap();
+    let extra = skein_llm_world::fake::extra_worst_case(
+        &bounds,
+        &observations,
+        &input.endpoint,
+        skein_llm_world::credential_of(&input),
+    )
+    .unwrap();
     let bound = extra + skein_llm::client::call_worst_case(&bounds).unwrap() + 32768;
     let scripts = Box::new([Script {
         cue: input.prompt.instructions.clone(),

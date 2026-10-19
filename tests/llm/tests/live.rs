@@ -97,7 +97,7 @@ fn input(provider: Provider, owner: u64) -> Call {
     Call {
         owner: Token::new(owner),
         endpoint,
-        credential,
+        credential: Some(credential),
         prompt: Prompt {
             model: model.into_bytes().into(),
             instructions,
@@ -413,7 +413,7 @@ fn unauthorized(provider: Provider) {
         return;
     }
     let mut call = input(provider, 1);
-    call.credential.value = bytes("skein-live-intentionally-invalid-token");
+    call.credential.as_mut().expect("fixture credential").value = bytes("skein-live-intentionally-invalid-token");
     let mut connection = Connection::new(call);
     let events = connection.exchange();
     let failures: Vec<_> = events

@@ -41,11 +41,11 @@ pub fn call(owner: u64) -> Call {
     Call {
         owner: Token::new(owner),
         endpoint,
-        credential: Credential {
+        credential: Some(Credential {
             scheme: skein_llm::Scheme::Bearer,
             value: b"secret-test-token".to_vec().into(),
             account_id: b"account-test".to_vec().into(),
-        },
+        }),
         prompt: Prompt {
             model: b"fixture-model".to_vec().into(),
             instructions: b"Be brief.".to_vec().into(),
@@ -67,7 +67,7 @@ pub fn call(owner: u64) -> Call {
 pub fn anthropic_call(owner: u64) -> skein_llm::Call {
     let mut input = call(owner);
     input.endpoint = Endpoint::anthropic();
-    input.credential = Credential::anthropic(b"synthetic-oauth-token".to_vec().into());
+    input.credential = Some(Credential::anthropic(b"synthetic-oauth-token".to_vec().into()));
     input.prompt.affinity = None;
     input.prompt.max_output_tokens = Some(1024);
     input
@@ -357,4 +357,10 @@ pub fn run_call(input: Call, bounds: client::Limits, source: Vec<u8>, seed: u64)
     world.request(client::Request::Start);
     world.run();
     world
+}
+
+/// Borrow the credential carried by the authenticated call fixture.
+#[must_use]
+pub fn credential_of(input: &Call) -> &Credential {
+    input.credential.as_ref().expect("fixture credential")
 }

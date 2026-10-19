@@ -5,14 +5,14 @@ use skein_llm_world::{call, header, limits, rejection, response, run_call};
 fn anthropic_call() -> skein_llm::Call {
     let mut input = call(1);
     input.endpoint = Endpoint::anthropic();
-    input.credential = Credential::anthropic(b"test-token".to_vec().into());
+    input.credential = Some(Credential::anthropic(b"test-token".to_vec().into()));
     input.prompt.affinity = None;
     input
 }
 #[test]
 fn credentials_and_reserved_headers_cannot_cross_auth_modes() {
     let mut input = anthropic_call();
-    input.credential.account_id = b"unexpected-account".to_vec().into();
+    input.credential.as_mut().expect("fixture credential").account_id = b"unexpected-account".to_vec().into();
     assert_eq!(rejection(input, &limits()).expect("expected admission rejection"), Error::Invalid);
     for name in [
         b"Authorization".as_slice(),
@@ -27,7 +27,7 @@ fn credentials_and_reserved_headers_cannot_cross_auth_modes() {
         assert_eq!(rejection(input, &limits()).expect("expected admission rejection"), Error::Invalid);
     }
     let mut input = anthropic_call();
-    input.credential.value = b"secret\r\nInjected: header".to_vec().into();
+    input.credential.as_mut().expect("fixture credential").value = b"secret\r\nInjected: header".to_vec().into();
     assert_eq!(rejection(input, &limits()).expect("expected admission rejection"), Error::Invalid);
     let mut input = call(1);
     input.prompt.max_output_tokens = Some(100);

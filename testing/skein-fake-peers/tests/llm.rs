@@ -55,7 +55,7 @@ fn make(address: SocketAddr, transport: Transport) -> Result<llm::Peer, skein_fa
             path: call.endpoint.target,
             headers: Box::new([]),
         },
-        call.credential,
+        call.credential.expect("fixture credential"),
         skein_llm_world::fake::limits(&skein_llm_world::limits()),
         domain,
         machine_limits,

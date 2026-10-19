@@ -67,7 +67,7 @@ fn provider_mismatch_is_rejected_by_actual_client_after_positive_control() {
     assert!(client::Client::prepare(input, &bounds).is_ok(), "matching replay reaches actual Client admission");
     let mut input = call(2);
     input.endpoint = skein_llm::Endpoint::anthropic();
-    input.credential = skein_llm::Credential::anthropic(b"fake-token".as_slice().into());
+    input.credential = Some(skein_llm::Credential::anthropic(b"fake-token".as_slice().into()));
     input.prompt.affinity = None;
     input.prompt.messages = Box::new([Message {
         role: Role::Assistant,

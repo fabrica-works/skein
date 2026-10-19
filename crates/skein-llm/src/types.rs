@@ -416,5 +416,5 @@ pub struct Call {
     pub owner: Token,
     pub prompt: Prompt,
     pub endpoint: Endpoint,
-    pub credential: Credential,
+    pub credential: Option<Credential>,
 }

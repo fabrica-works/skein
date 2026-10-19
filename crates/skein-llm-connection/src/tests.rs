@@ -77,7 +77,7 @@ pub(crate) fn credential() -> Credential {
 fn unknown_endpoint_is_refused() {
     let limits = limits();
     let component = Component::new(List::with_capacity(1), &limits).expect("empty configuration fits");
-    assert_eq!(component.admit(Token::new(7), 0, prompt(), credential()).err(), Some(Refusal::Endpoint));
+    assert_eq!(component.admit(Token::new(7), 0, prompt(), Some(credential())).err(), Some(Refusal::Endpoint));
 }
 
 #[test]
@@ -89,13 +89,13 @@ fn invalid_and_oversized_requests_are_refused() {
     let mut invalid = prompt();
     invalid.model = Box::new([]);
     assert_eq!(
-        component.admit(Token::new(7), 0, invalid, credential()).err(),
+        component.admit(Token::new(7), 0, invalid, Some(credential())).err(),
         Some(Refusal::Client(skein_llm::Error::Invalid))
     );
     let mut oversized = prompt();
     oversized.instructions = Box::new([b'x'; 9000]);
     assert_eq!(
-        component.admit(Token::new(7), 0, oversized, credential()).err(),
+        component.admit(Token::new(7), 0, oversized, Some(credential())).err(),
         Some(Refusal::Client(skein_llm::Error::Limit {
             which: skein_llm::Cap::Request,
             bound: u64::from(client_limits().request)
@@ -138,7 +138,7 @@ fn start(component: &mut Component, up: &mut Queue<Event>, io: &mut Queue<Lower>
             call: Token::new(7),
             endpoint: 0,
             prompt: prompt(),
-            credential: credential(),
+            credential: Some(credential()),
             deadlines: Deadlines::none(),
         },
         up,
@@ -228,7 +228,7 @@ fn connect_and_whole_deadlines_fail_unsent_calls_once() {
                 call: Token::new(7),
                 endpoint: 0,
                 prompt: prompt(),
-                credential: credential(),
+                credential: Some(credential()),
                 deadlines: timed,
             },
             &mut up,
@@ -301,7 +301,7 @@ fn a_start_past_calls_is_refused_by_name() {
             call: Token::new(8),
             endpoint: 0,
             prompt: prompt(),
-            credential: credential(),
+            credential: Some(credential()),
             deadlines: Deadlines::none(),
         },
         &mut up,
@@ -376,7 +376,7 @@ fn plaintext_connect_starts_http_and_never_arms_a_handshake_deadline() {
             call: Token::new(7),
             endpoint: 0,
             prompt: prompt(),
-            credential: credential(),
+            credential: Some(credential()),
             deadlines: Deadlines {
                 connect: Some(Duration::from_secs(2)),
                 handshake: Some(Duration::from_secs(1)),
@@ -441,7 +441,7 @@ fn a_start_after_closed_is_an_asserted_owner_bug() {
             call: Token::new(7),
             endpoint: 0,
             prompt: prompt(),
-            credential: credential(),
+            credential: Some(credential()),
             deadlines: Deadlines::none(),
         },
         &mut up,
@@ -471,7 +471,7 @@ fn abort_starts_one_binding_per_entrance_and_waits_for_physical_settlement() {
                 call: Token::new(call),
                 endpoint: 0,
                 prompt: prompt(),
-                credential: credential(),
+                credential: Some(credential()),
                 deadlines: Deadlines::none(),
             },
             &mut up,
@@ -631,12 +631,14 @@ fn the_measured_head_accepts_a_credential_at_its_bound_and_refuses_one_byte_more
     at_bound.value = Box::new([b'x'; 2048]);
     at_bound.account_id = Box::new([b'y'; 128]);
     drop(
-        component.admit(Token::new(7), 0, prompt(), at_bound).expect("the measured head holds the declared credential"),
+        component
+            .admit(Token::new(7), 0, prompt(), Some(at_bound))
+            .expect("the measured head holds the declared credential"),
     );
     let mut too_long = credential();
     too_long.value = Box::new([b'x'; 2049]);
     assert_eq!(
-        component.admit(Token::new(8), 0, prompt(), too_long).err(),
+        component.admit(Token::new(8), 0, prompt(), Some(too_long)).err(),
         Some(Refusal::Client(skein_llm::Error::Limit { which: skein_llm::Cap::Value, bound: 2048 }))
     );
 }
@@ -667,7 +669,7 @@ fn two_endpoints_drive_uploads_with_their_own_client_limits() {
                 call: Token::new(u64::from(index) + 7),
                 endpoint: index,
                 prompt: prompt(),
-                credential: credential(),
+                credential: Some(credential()),
                 deadlines: Deadlines::none(),
             },
             &mut up,
@@ -797,7 +799,7 @@ fn whole_deadline_wait() -> (Component, Env<Limits>, Queue<Event>, Queue<Lower>)
             call: Token::new(7),
             endpoint: 0,
             prompt: prompt(),
-            credential: credential(),
+            credential: Some(credential()),
             deadlines: Deadlines { whole: Some(Duration::ZERO), ..Deadlines::none() },
             drop_reasoning: false,
         },
@@ -823,8 +825,7 @@ fn a_whole_deadline_due_at_admission_fails_without_preparing_a_binding() {
     assert_eq!(component.reserved(), 0);
 }
 
-#[test]
-fn a_key_on_the_codex_route_is_refused_at_entrance() {
+fn invalid_start(credential: Option<Credential>) {
     let config = limits();
     let mut endpoints = List::with_capacity(config.endpoints);
     endpoints.push(endpoint()).expect("one endpoint fits");
@@ -832,8 +833,6 @@ fn a_key_on_the_codex_route_is_refused_at_entrance() {
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config };
     let mut above = Queue::with_capacity(MAX_OUT.above);
     let mut below = Queue::with_capacity(MAX_OUT.below);
-    let mut key = credential();
-    key.scheme = skein_llm::Scheme::Key;
     component.down(
         &env,
         Request::Start {
@@ -841,7 +840,7 @@ fn a_key_on_the_codex_route_is_refused_at_entrance() {
             call: Token::new(7),
             endpoint: 0,
             prompt: prompt(),
-            credential: key,
+            credential,
             deadlines: Deadlines::none(),
         },
         &mut above,
@@ -859,6 +858,18 @@ fn a_key_on_the_codex_route_is_refused_at_entrance() {
 }
 
 #[test]
+fn a_key_on_the_codex_route_is_refused_at_entrance() {
+    let mut key = credential();
+    key.scheme = skein_llm::Scheme::Key;
+    invalid_start(Some(key));
+}
+
+#[test]
+fn a_start_without_a_credential_on_codex_is_refused() {
+    invalid_start(None);
+}
+
+#[test]
 fn a_value_past_its_bound_is_refused_by_name() {
     const VALUE_BYTES: usize = 2048; // endpoint()'s credential value bound.
     let config = limits();
@@ -868,7 +879,7 @@ fn a_value_past_its_bound_is_refused_by_name() {
     let mut value = credential();
     value.value = Box::new([b'x'; VALUE_BYTES + 1]);
     assert_eq!(
-        component.admit(Token::new(7), 0, prompt(), value).err(),
+        component.admit(Token::new(7), 0, prompt(), Some(value)).err(),
         Some(Refusal::Client(skein_llm::Error::Limit { which: skein_llm::Cap::Value, bound: 2048 }))
     );
 }
@@ -887,7 +898,7 @@ fn either_scheme_at_its_bound_fits_the_measured_head() {
         value.value = Box::new([b'x'; VALUE_BYTES]);
         value.account_id = Box::new([]);
         value.scheme = scheme;
-        assert_eq!(component.admit(Token::new(7), 0, prompt(), value).err(), None, "{scheme:?}");
+        assert_eq!(component.admit(Token::new(7), 0, prompt(), Some(value)).err(), None, "{scheme:?}");
     }
 }
 

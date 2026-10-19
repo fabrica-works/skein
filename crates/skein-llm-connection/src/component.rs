@@ -34,7 +34,7 @@ pub(crate) struct Waiting {
     endpoint: u32,
     order: u64,
     prompt: Prompt,
-    credential: Credential,
+    credential: Option<Credential>,
     drop_reasoning: bool,
     measured: llm::client::Measured,
     reservation: u64,
@@ -188,7 +188,7 @@ impl Component {
         call: Token,
         endpoint: u32,
         prompt: Prompt,
-        credential: Credential,
+        credential: Option<Credential>,
     ) -> Result<llm::client::Client, Refusal> {
         self.admit_policy(call, endpoint, prompt, credential, None)
     }
@@ -199,7 +199,7 @@ impl Component {
         call: Token,
         endpoint: u32,
         prompt: Prompt,
-        credential: Credential,
+        credential: Option<Credential>,
         enabled: bool,
     ) -> Result<llm::client::Client, Refusal> {
         self.admit_policy(call, endpoint, prompt, credential, Some(enabled))
@@ -210,10 +210,10 @@ impl Component {
         call: Token,
         endpoint: u32,
         prompt: Prompt,
-        credential: Credential,
+        credential: Option<Credential>,
         drop_reasoning: Option<bool>,
     ) -> Result<llm::client::Client, Refusal> {
-        self.measure_start(endpoint, &prompt, &credential)?;
+        self.measure_start(endpoint, &prompt, credential.as_ref())?;
         let destination = self.endpoints.get(endpoint).expect("measured endpoint");
         let input = Call { owner: call, prompt, credential, endpoint: destination.llm.clone() };
         let enabled = match drop_reasoning {
@@ -230,7 +230,7 @@ impl Component {
         &self,
         endpoint: u32,
         prompt: &Prompt,
-        credential: &Credential,
+        credential: Option<&Credential>,
     ) -> Result<llm::client::Measured, Refusal> {
         match self.lifecycle {
             Lifecycle::Live => {}
@@ -241,9 +241,11 @@ impl Component {
         if self.outstanding() >= self.limits.calls {
             return Err(Refusal::Calls { bound: self.limits.calls });
         }
-        match llm::client::check_credential(credential, &destination.credential) {
-            Ok(()) => {}
-            Err(error) => return Err(Refusal::Client(error)),
+        if let Some(credential) = credential {
+            match llm::client::check_credential(credential, &destination.credential) {
+                Ok(()) => {}
+                Err(error) => return Err(Refusal::Client(error)),
+            }
         }
         let measured = match llm::client::measure(prompt, credential, &destination.llm, &destination.limits) {
             Ok(measured) => measured,
@@ -686,13 +688,13 @@ impl Component {
         call: Token,
         endpoint: u32,
         prompt: Prompt,
-        credential: Credential,
+        credential: Option<Credential>,
         deadlines: crate::Deadlines,
         drop_reasoning: bool,
         up: &mut Queue<Event>,
         io: &mut Queue<IoRequest>,
     ) {
-        let measured = match self.measure_start(endpoint, &prompt, &credential) {
+        let measured = match self.measure_start(endpoint, &prompt, credential.as_ref()) {
             Ok(measured) => measured,
             Err(why) => {
                 up.push(Event::Refused { call, why });
@@ -961,11 +963,12 @@ mod memory_tests {
         let destination = component.endpoints.get(0).unwrap();
         let input = prompt();
         let secret = credential();
-        let measured = skein_llm::client::measure(&input, &secret, &destination.llm, &destination.limits).unwrap();
+        let measured =
+            skein_llm::client::measure(&input, Some(&secret), &destination.llm, &destination.limits).unwrap();
         let reservation = skein_llm::client::reservation(measured, &destination.limits).unwrap();
         component.limits.memory = reservation - 1;
         assert_eq!(
-            component.admit(Token::new(7), 0, input, secret).err(),
+            component.admit(Token::new(7), 0, input, Some(secret)).err(),
             Some(Refusal::Memory { reservation, bound: reservation - 1 })
         );
         assert_eq!(component.reserved(), 0);
@@ -976,7 +979,7 @@ mod memory_tests {
         let destination = endpoint();
         let mut bounds = destination.limits;
         bounds.http.request = llm::client::request_head(&destination.llm, &destination.credential, &bounds).unwrap();
-        let measured = llm::client::measure(&prompt(), &credential(), &destination.llm, &bounds).unwrap();
+        let measured = llm::client::measure(&prompt(), Some(&credential()), &destination.llm, &bounds).unwrap();
         let reservation = llm::client::reservation(measured, &bounds).unwrap();
         let mut config = limits();
         config.calls = 3;
@@ -1001,7 +1004,7 @@ mod memory_tests {
                     call: Token::new(token),
                     endpoint: 0,
                     prompt: input,
-                    credential: credential(),
+                    credential: Some(credential()),
                     deadlines: crate::Deadlines::none(),
                     drop_reasoning: false,
                 },

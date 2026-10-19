@@ -63,7 +63,13 @@ fn full_pool_stays_within_its_checked_bound() {
     let destination = endpoints.get(0).unwrap();
     let mut client = destination.limits;
     client.http.request = skein_llm::client::request_head(&destination.llm, &destination.credential, &client).unwrap();
-    let measured = skein_llm::client::measure(&first.prompt, &first.credential, &destination.llm, &client).unwrap();
+    let measured = skein_llm::client::measure(
+        &first.prompt,
+        Some(skein_llm_world::credential_of(&first)),
+        &destination.llm,
+        &client,
+    )
+    .unwrap();
     limits.memory = 2 * skein_llm::client::reservation(measured, &client).unwrap();
     let second = skein_llm_world::call(8);
     let third = skein_llm_world::call(9);
@@ -208,7 +214,13 @@ fn every_declared_waiting_start_fits_the_checked_bound() {
         &bounds,
     )
     .unwrap();
-    let measured = skein_llm::client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds).unwrap();
+    let measured = skein_llm::client::measure(
+        &input.prompt,
+        Some(skein_llm_world::credential_of(&input)),
+        &input.endpoint,
+        &bounds,
+    )
+    .unwrap();
     let memory = 2 * skein_llm::client::reservation(measured, &bounds).unwrap();
     drop(input);
     let mut world = World::empty_with_memory(59, 8, 1, 1, memory);

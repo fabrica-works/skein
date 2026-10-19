@@ -22,8 +22,13 @@ fn close_and_abort_cross_racing_call_terminals_without_spin_or_repeated_events()
                 &bounds,
             )
             .unwrap();
-            let measured =
-                skein_llm::client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds).unwrap();
+            let measured = skein_llm::client::measure(
+                &input.prompt,
+                Some(skein_llm_world::credential_of(&input)),
+                &input.endpoint,
+                &bounds,
+            )
+            .unwrap();
             let memory = 2 * skein_llm::client::reservation(measured, &bounds).unwrap();
             let mut world = World::empty_with_memory(seed, 3, per_endpoint, 1, memory);
             for token in 7..10 {

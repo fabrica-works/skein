@@ -132,7 +132,7 @@ pub fn request_head(endpoint: &Endpoint, credential: &CredentialLimits, limits: 
         return Err(Error::limit(crate::Cap::Value, credential.value));
     }
     let maximum_affinity = [[b'0'; 36]; 2];
-    let fields = provider_headers(endpoint, Scheme::Bearer, &[], Some(&maximum_affinity));
+    let fields = provider_headers(endpoint, Some(Scheme::Bearer), &[], Some(&maximum_affinity));
     let account_bytes = match endpoint.provider {
         Provider::OpenAiCodex => usize::try_from(credential.account_id).expect("u32 fits usize"),
         Provider::Anthropic | Provider::OpenAi => 0,
@@ -152,7 +152,7 @@ pub fn request_head(endpoint: &Endpoint, credential: &CredentialLimits, limits: 
         usize::try_from(credential.value).expect("u32 fits usize"),
         account_bytes,
         limits.request,
-        Scheme::Bearer,
+        Some(Scheme::Bearer),
         &fields,
     )?;
     match u32::try_from(measured) {
@@ -317,7 +317,7 @@ pub struct Measured {
 /// The borrowed prompt and credential remain the owner's while it waits.
 pub fn measure(
     prompt: &Prompt,
-    credential: &Credential,
+    credential: Option<&Credential>,
     endpoint: &Endpoint,
     limits: &Limits,
 ) -> Result<Measured, Error> {
@@ -381,14 +381,14 @@ impl Client {
             Provider::OpenAi => return Err(Error::Unsupported),
             Provider::OpenAiCodex => {
                 let length = translate::measure_request(&input.prompt, &limits.native())?;
-                let headers = headers(&input.endpoint, &input.credential, affinity, limits, length)?;
+                let headers = headers(&input.endpoint, input.credential.as_ref(), affinity, limits, length)?;
                 let body = translate::encode_request(&input.prompt, &limits.native())?;
                 (headers, body)
             }
             Provider::Anthropic => {
                 let length =
                     anthropic::measure_request(&input.prompt, limits.declared_output_tokens, &limits.native())?;
-                let headers = headers(&input.endpoint, &input.credential, affinity, limits, length)?;
+                let headers = headers(&input.endpoint, input.credential.as_ref(), affinity, limits, length)?;
                 let body = anthropic::encode_request(&input.prompt, limits.declared_output_tokens, &limits.native())?;
                 (headers, body)
             }
@@ -396,7 +396,7 @@ impl Client {
         let measured = Measured {
             head: measure_headers(
                 &input.endpoint,
-                &input.credential,
+                input.credential.as_ref(),
                 affinity,
                 limits,
                 u32::try_from(body.len()).expect("admitted body"),
@@ -1420,43 +1420,42 @@ pub fn encoding_worst_case(limits: &Limits) -> Option<u64> {
 #[expect(clippy::manual_map, reason = "the strict subset excludes closure-taking maps")]
 fn measure_headers(
     endpoint: &Endpoint,
-    credential: &Credential,
+    credential: Option<&Credential>,
     affinity: Option<crate::Affinity>,
     limits: &Limits,
     body_length: u32,
 ) -> Result<u32, Error> {
-    if endpoint.authority.is_empty()
-        || credential.value.is_empty()
-        || !header_value(&credential.value)
-        || !header_value(&credential.account_id)
-        || !valid_authority(&endpoint.authority)
-        || endpoint.target.first() != Some(&b'/')
+    if let Some(credential) = credential
+        && (credential.value.is_empty() || !header_value(&credential.value) || !header_value(&credential.account_id))
     {
         return Err(Error::Invalid);
     }
-    match endpoint.provider {
-        Provider::OpenAiCodex => {
+    match (endpoint.provider, credential) {
+        (Provider::OpenAiCodex, Some(credential)) => {
             if credential.account_id.is_empty() || credential.scheme == Scheme::Key {
                 return Err(Error::Invalid);
             }
         }
-        Provider::Anthropic | Provider::OpenAi if !credential.account_id.is_empty() => return Err(Error::Invalid),
-        Provider::Anthropic | Provider::OpenAi => {}
+        (Provider::OpenAiCodex, None) => return Err(Error::Invalid),
+        (Provider::Anthropic | Provider::OpenAi, credential) => {
+            if let Some(credential) = credential
+                && !credential.account_id.is_empty()
+            {
+                return Err(Error::Invalid);
+            }
+        }
     }
+    let (scheme, value_bytes, account_id) = match credential {
+        Some(credential) => (Some(credential.scheme), credential.value.len(), credential.account_id.as_ref()),
+        None => (None, 0, b"".as_slice()),
+    };
     let rendered = match affinity {
         Some(affinity) => Some(crate::affinity::rendered(affinity)),
         None => None,
     };
-    let fields = provider_headers(endpoint, credential.scheme, &credential.account_id, rendered.as_ref());
-    let total = head_length(
-        endpoint,
-        credential.value.len(),
-        credential.account_id.len(),
-        body_length,
-        credential.scheme,
-        &fields,
-    )?;
-    let mut fixed_count = 5_usize;
+    let fields = provider_headers(endpoint, scheme, account_id, rendered.as_ref());
+    let total = head_length(endpoint, value_bytes, account_id.len(), body_length, scheme, &fields)?;
+    let mut fixed_count = if credential.is_some() { 5_usize } else { 4_usize };
     for field in &fields {
         if field.is_some() {
             fixed_count =
@@ -1481,7 +1480,7 @@ fn measure_headers(
 #[expect(clippy::manual_map, reason = "the strict subset excludes closure-taking maps")]
 fn headers(
     endpoint: &Endpoint,
-    credential: &Credential,
+    credential: Option<&Credential>,
     affinity: Option<crate::Affinity>,
     limits: &Limits,
     body_length: u32,
@@ -1491,7 +1490,11 @@ fn headers(
         Some(affinity) => Some(crate::affinity::rendered(affinity)),
         None => None,
     };
-    let fields = provider_headers(endpoint, credential.scheme, &credential.account_id, rendered.as_ref());
+    let (scheme, account_id) = match credential {
+        Some(credential) => (Some(credential.scheme), credential.account_id.as_ref()),
+        None => (None, b"".as_slice()),
+    };
+    let fields = provider_headers(endpoint, scheme, account_id, rendered.as_ref());
     let mut headers = List::with_capacity(limits.http.headers);
     for (name, value) in [
         (b"Host".as_slice(), endpoint.authority.as_ref()),
@@ -1508,21 +1511,23 @@ fn headers(
             .push(Header { name: bytes::copy_of(name), value: bytes::copy_of(value) })
             .expect("provider headers fit the checked cap");
     }
-    let field = match credential.scheme {
-        Scheme::Key => Header { name: bytes::copy_of(b"x-api-key"), value: credential.value.clone() },
-        Scheme::Bearer => {
-            let len = credential
-                .value
-                .len()
-                .checked_add(7)
-                .ok_or(Error::limit(crate::Cap::RequestHead, limits.http.request))?;
-            let mut bearer = Writer::new(len);
-            bearer.put(b"Bearer ").expect("the bearer prefix was measured");
-            bearer.put(&credential.value).expect("the credential was measured");
-            Header { name: bytes::copy_of(b"Authorization"), value: bearer.finish() }
-        }
-    };
-    headers.push(field).expect("credential field fits the checked cap");
+    if let Some(credential) = credential {
+        let field = match credential.scheme {
+            Scheme::Key => Header { name: bytes::copy_of(b"x-api-key"), value: credential.value.clone() },
+            Scheme::Bearer => {
+                let len = credential
+                    .value
+                    .len()
+                    .checked_add(7)
+                    .ok_or(Error::limit(crate::Cap::RequestHead, limits.http.request))?;
+                let mut bearer = Writer::new(len);
+                bearer.put(b"Bearer ").expect("the bearer prefix was measured");
+                bearer.put(&credential.value).expect("the credential was measured");
+                Header { name: bytes::copy_of(b"Authorization"), value: bearer.finish() }
+            }
+        };
+        headers.push(field).expect("credential field fits the checked cap");
+    }
     for header in &endpoint.headers {
         headers.push(header.clone()).expect("extra headers fit the checked cap");
     }
@@ -1534,7 +1539,7 @@ fn head_length(
     value_bytes: usize,
     account_bytes: usize,
     body_length: u32,
-    scheme: Scheme,
+    scheme: Option<Scheme>,
     fields: &[Option<(&[u8], &[u8])>],
 ) -> Result<usize, Error> {
     if endpoint.authority.is_empty() || !valid_authority(&endpoint.authority) || endpoint.target.first() != Some(&b'/')
@@ -1577,8 +1582,9 @@ fn head_length(
         total = total.checked_add(fixed.len()).ok_or(Error::Invalid)?;
     }
     let credential_field = match scheme {
-        Scheme::Bearer => b"Authorization: Bearer \r\n".as_slice(),
-        Scheme::Key => b"x-api-key: \r\n".as_slice(),
+        Some(Scheme::Bearer) => b"Authorization: Bearer \r\n".as_slice(),
+        Some(Scheme::Key) => b"x-api-key: \r\n".as_slice(),
+        None => b"".as_slice(),
     };
     total = total.checked_add(credential_field.len()).ok_or(Error::Invalid)?;
     for (name, value) in fields.iter().flatten() {
@@ -1596,7 +1602,7 @@ fn head_length(
 
 fn provider_headers<'a>(
     endpoint: &Endpoint,
-    scheme: Scheme,
+    scheme: Option<Scheme>,
     account_id: &'a [u8],
     affinity: Option<&'a [[u8; 36]; 2]>,
 ) -> [Option<(&'static [u8], &'a [u8])>; 3] {
@@ -1614,8 +1620,8 @@ fn provider_headers<'a>(
             default_header(endpoint, b"anthropic-version", b"2023-06-01"),
             // The bearer route is withdrawn; the second part of LLM accounts removes it.
             match scheme {
-                Scheme::Bearer => default_header(endpoint, b"anthropic-beta", b"oauth-2025-04-20"),
-                Scheme::Key => None,
+                Some(Scheme::Bearer) => default_header(endpoint, b"anthropic-beta", b"oauth-2025-04-20"),
+                Some(Scheme::Key) | None => None,
             },
             None,
         ],

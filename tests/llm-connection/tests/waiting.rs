@@ -149,8 +149,13 @@ fn request_reservation() -> u64 {
         &bounds,
     )
     .expect("the world request fits its declared endpoint");
-    let measured = skein_llm::client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds)
-        .expect("the world request fits its declared endpoint");
+    let measured = skein_llm::client::measure(
+        &input.prompt,
+        Some(skein_llm_world::credential_of(&input)),
+        &input.endpoint,
+        &bounds,
+    )
+    .expect("the world request fits its declared endpoint");
     skein_llm::client::reservation(measured, &bounds).expect("the world request fits its declared endpoint")
 }
 

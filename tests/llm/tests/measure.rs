@@ -10,7 +10,7 @@ fn request(anthropic: bool) -> Call {
     input.prompt.affinity = Some(skein_llm::Affinity { key: [0x42; 16], thread: 19 });
     if anthropic {
         input.endpoint = Endpoint::anthropic();
-        input.credential = Credential::anthropic(b"synthetic-token".as_slice().into());
+        input.credential = Some(Credential::anthropic(b"synthetic-token".as_slice().into()));
     }
     input
 }
@@ -20,7 +20,9 @@ fn measured_head_and_body_equal_the_uploaded_wire() {
     for anthropic in [false, true] {
         let input = request(anthropic);
         let bounds = limits();
-        let measured = client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds).unwrap();
+        let measured =
+            client::measure(&input.prompt, Some(skein_llm_world::credential_of(&input)), &input.endpoint, &bounds)
+                .unwrap();
         let mut world = World::new(input, bounds, text_response(false), 47);
         world.request(client::Request::Start);
         for _ in 0..100_000 {
@@ -47,7 +49,7 @@ fn measurement_and_preparation_make_the_same_entrance_refusals() {
             let mut bounds = limits();
             match case {
                 0 => input.prompt.model = Box::new([]),
-                1 => input.credential.value = b"bad\r\nvalue".as_slice().into(),
+                1 => input.credential.as_mut().expect("fixture credential").value = b"bad\r\nvalue".as_slice().into(),
                 2 => input.endpoint.target = b"bad target".as_slice().into(),
                 3 => bounds.request = 1,
                 4 => bounds.http.request = 1,
@@ -58,7 +60,8 @@ fn measurement_and_preparation_make_the_same_entrance_refusals() {
                 9 => bounds.declared_output_tokens = 0,
                 _ => unreachable!(),
             }
-            let measured = client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds);
+            let measured =
+                client::measure(&input.prompt, Some(skein_llm_world::credential_of(&input)), &input.endpoint, &bounds);
             let prepared = Client::prepare(input, &bounds);
             assert_eq!(measured.err(), prepared.err(), "dialect {anthropic}, case {case}");
         }

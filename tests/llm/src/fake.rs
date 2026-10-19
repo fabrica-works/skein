@@ -341,8 +341,8 @@ impl Exchange {
         let endpoint = input.endpoint.clone();
         let credential = Credential {
             scheme: skein_llm::Scheme::Bearer,
-            value: input.credential.value.clone(),
-            account_id: input.credential.account_id.clone(),
+            value: crate::credential_of(&input).value.clone(),
+            account_id: crate::credential_of(&input).account_id.clone(),
         };
         let machine = client::Client::prepare(input, &bounds).expect("actual shared Client admission");
         Self::prepared_with_options(machine, endpoint, credential, bounds, scripts, options)
@@ -791,7 +791,7 @@ mod tests {
             Provider::OpenAiCodex | Provider::OpenAi => {}
             Provider::Anthropic => {
                 input.endpoint = Endpoint::anthropic();
-                input.credential = Credential::anthropic(b"fake-token".as_slice().into());
+                input.credential = Some(Credential::anthropic(b"fake-token".as_slice().into()));
                 input.prompt.affinity = None;
             }
         }
@@ -800,8 +800,8 @@ mod tests {
         let endpoint = input.endpoint.clone();
         let credential = Credential {
             scheme: skein_llm::Scheme::Bearer,
-            value: input.credential.value.clone(),
-            account_id: input.credential.account_id.clone(),
+            value: crate::credential_of(&input).value.clone(),
+            account_id: crate::credential_of(&input).account_id.clone(),
         };
         let bounds = crate::limits();
         let machine = client::Client::prepare(input, &bounds).expect("one actual adopted Client");

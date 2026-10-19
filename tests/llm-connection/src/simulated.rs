@@ -661,7 +661,7 @@ fn run_configured(
                 path: skein_llm::Endpoint::codex().target,
                 headers: Box::new([]),
             },
-            skein_llm_world::call(7).credential,
+            skein_llm_world::call(7).credential.expect("fixture credential"),
             protocol_limits,
             domain,
             domain_limits,

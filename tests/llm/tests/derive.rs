@@ -135,7 +135,7 @@ fn archived_heads_fit_with_headroom_and_complete_with_derived_limits() {
             let mut input = call(1);
             if provider == Provider::Anthropic {
                 input.endpoint = Endpoint::anthropic();
-                input.credential = skein_llm::Credential::anthropic(b"archive-test".as_slice().into());
+                input.credential = Some(skein_llm::Credential::anthropic(b"archive-test".as_slice().into()));
                 input.prompt.affinity = None;
                 input.prompt.max_output_tokens = Some(TINY_DECL.output);
             }

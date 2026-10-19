@@ -54,7 +54,7 @@ pub enum Request {
         call: Token,
         endpoint: u32,
         prompt: Prompt,
-        credential: Credential,
+        credential: Option<Credential>,
         deadlines: Deadlines,
         drop_reasoning: bool,
     },

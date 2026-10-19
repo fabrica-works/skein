@@ -13,7 +13,7 @@ fn input(provider: skein_llm::Provider, owner: u64) -> skein_llm::Call {
         skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi => {}
         skein_llm::Provider::Anthropic => {
             input.endpoint = skein_llm::Endpoint::anthropic();
-            input.credential = skein_llm::Credential::anthropic(b"fake-token".as_slice().into());
+            input.credential = Some(skein_llm::Credential::anthropic(b"fake-token".as_slice().into()));
             input.prompt.affinity = None;
         }
     }
@@ -112,8 +112,8 @@ fn prepared_client_is_adopted_and_drives_the_actual_scripted_peer() {
         let endpoint = input.endpoint.clone();
         let credential = skein_llm::Credential {
             scheme: skein_llm::Scheme::Bearer,
-            value: input.credential.value.clone(),
-            account_id: input.credential.account_id.clone(),
+            value: skein_llm_world::credential_of(&input).value.clone(),
+            account_id: skein_llm_world::credential_of(&input).account_id.clone(),
         };
         let machine = client::Client::prepare(input, &limits()).expect("caller prepares its one Client");
         let mut world = Exchange::prepared(machine, endpoint, credential, limits(), scripts());
@@ -838,8 +838,8 @@ fn explicit_call_reasoning_policy_overrides_the_default_without_changing_wire_by
         let endpoint = input.endpoint.clone();
         let credential = skein_llm::Credential {
             scheme: skein_llm::Scheme::Bearer,
-            value: input.credential.value.clone(),
-            account_id: input.credential.account_id.clone(),
+            value: skein_llm_world::credential_of(&input).value.clone(),
+            account_id: skein_llm_world::credential_of(&input).account_id.clone(),
         };
         let machine =
             client::Client::prepare_with_reasoning_drop(input, &bounds, enabled).expect("explicit policy admission");
@@ -981,7 +981,7 @@ fn peer_native_request(
                 skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi => documents::Provider::OpenAi,
                 skein_llm::Provider::Anthropic => documents::Provider::Anthropic,
             },
-            path: input.endpoint.target,
+            path: input.endpoint.target.clone(),
             headers: Box::new([]),
         },
         &bounds,
@@ -995,7 +995,7 @@ fn peer_native_request(
     let mut response = Vec::new();
     let mut demand = None;
     let mut grant = 0;
-    provider::start(&mut server, &mut service, &input.credential, &env, &mut above, &mut below);
+    provider::start(&mut server, &mut service, skein_llm_world::credential_of(&input), &env, &mut above, &mut below);
     for _ in 0..10000 {
         while let Some(event) = above.pop() {
             match event {
@@ -1024,7 +1024,14 @@ fn peer_native_request(
             }
         }
         if server.has_work() {
-            provider::resume(&mut server, &mut service, &input.credential, &env, &mut above, &mut below);
+            provider::resume(
+                &mut server,
+                &mut service,
+                skein_llm_world::credential_of(&input),
+                &env,
+                &mut above,
+                &mut below,
+            );
             continue;
         }
         if let Some((read, room)) = demand {
@@ -1036,7 +1043,15 @@ fn peer_native_request(
             };
             if let Some(event) = event {
                 demand = None;
-                provider::up(&mut server, &mut service, &input.credential, &env, event, &mut above, &mut below);
+                provider::up(
+                    &mut server,
+                    &mut service,
+                    skein_llm_world::credential_of(&input),
+                    &env,
+                    event,
+                    &mut above,
+                    &mut below,
+                );
                 continue;
             }
         }

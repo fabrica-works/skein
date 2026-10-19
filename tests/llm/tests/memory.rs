@@ -34,7 +34,7 @@ fn dense_request_encoding(provider: skein_llm::Provider) {
         let mut input = call(1);
         if provider == Provider::Anthropic {
             input.endpoint = skein_llm::Endpoint::anthropic();
-            input.credential.account_id = Box::new([]);
+            input.credential.as_mut().expect("fixture credential").account_id = Box::new([]);
         }
         input.prompt.tools = Box::new([Tool {
             name: b"read".to_vec().into(),
@@ -60,8 +60,9 @@ fn dense_request_encoding(provider: skein_llm::Provider) {
         let original = input.prompt.clone();
         let scratch = client::encoding_worst_case(&bounds).expect("fixed scratch is representable");
         let measuring = Span::start();
-        let measured = client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds)
-            .expect("dense request fits the whole window");
+        let measured =
+            client::measure(&input.prompt, Some(skein_llm_world::credential_of(&input)), &input.endpoint, &bounds)
+                .expect("dense request fits the whole window");
         let growth = measuring.end();
         let measuring_peak = growth.peak;
         assert!(
@@ -505,7 +506,7 @@ fn drive_anthropic_memory(world: &mut World, meter: &Meter, bound: u64) {
 fn memory_anthropic_call(owner: u64) -> skein_llm::Call {
     let mut input = call(owner);
     input.endpoint = skein_llm::Endpoint::anthropic();
-    input.credential = skein_llm::Credential::anthropic(b"synthetic-oauth-token".to_vec().into());
+    input.credential = Some(skein_llm::Credential::anthropic(b"synthetic-oauth-token".to_vec().into()));
     input.prompt.affinity = None;
     input.prompt.max_output_tokens = Some(1024);
     input
@@ -792,12 +793,13 @@ fn measurement_refuses_large_starts_without_copying_their_owned_bytes() {
         let mut input = call(1);
         if anthropic {
             input.endpoint = skein_llm::Endpoint::anthropic();
-            input.credential = skein_llm::Credential::anthropic(b"synthetic-token".as_slice().into());
+            input.credential = Some(skein_llm::Credential::anthropic(b"synthetic-token".as_slice().into()));
         }
         input.prompt.instructions = vec![b'x'; 1024 * 1024].into();
         let bounds = limits();
         let span = Span::start();
-        let result = client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds);
+        let result =
+            client::measure(&input.prompt, Some(skein_llm_world::credential_of(&input)), &input.endpoint, &bounds);
         let measured = span.end();
         assert!(result.is_err());
         assert!(
@@ -829,7 +831,8 @@ fn twenty_five_thousand_history_items_allocate_only_the_declared_translation_tab
     let bound = 2 * tables + 64 * 1024;
     let span = Span::start();
     let measured =
-        client::measure(&input.prompt, &input.credential, &input.endpoint, &bounds).expect("all declared items fit");
+        client::measure(&input.prompt, Some(skein_llm_world::credential_of(&input)), &input.endpoint, &bounds)
+            .expect("all declared items fit");
     let grown = span.end();
     assert!(measured.body <= bounds.request);
     assert!(

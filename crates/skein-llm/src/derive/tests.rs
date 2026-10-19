@@ -196,21 +196,21 @@ fn owner_declared_counts_accept_the_boundary_and_refuse_one_more_by_name() {
             choice: crate::ToolChoice::Auto,
             max_output_tokens: None,
         };
-        client::measure(&prompt, &credential, &endpoint, &bounds).expect("declared counts are accepted");
+        client::measure(&prompt, Some(&credential), &endpoint, &bounds).expect("declared counts are accepted");
         prompt.tools = alloc::vec![tool; 3].into();
         assert_eq!(
-            client::measure(&prompt, &credential, &endpoint, &bounds),
+            client::measure(&prompt, Some(&credential), &endpoint, &bounds),
             Err(crate::Error::Limit { which: crate::Cap::Tools, bound: 2 })
         );
         prompt.tools = Box::new([]);
         prompt.messages[0].content = alloc::vec![block; 4].into();
         assert_eq!(
-            client::measure(&prompt, &credential, &endpoint, &bounds),
+            client::measure(&prompt, Some(&credential), &endpoint, &bounds),
             Err(crate::Error::Limit { which: crate::Cap::HistoryItems, bound: 3 })
         );
         prompt.messages = alloc::vec![crate::Message { role: crate::Role::User, content: Box::new([]) }; 4].into();
         assert_eq!(
-            client::measure(&prompt, &credential, &endpoint, &bounds),
+            client::measure(&prompt, Some(&credential), &endpoint, &bounds),
             Err(crate::Error::Limit { which: crate::Cap::HistoryItems, bound: 3 })
         );
     }

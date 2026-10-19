@@ -275,8 +275,8 @@ fn hostile_request_is_refused_before_connection() {
     for field in 0..4 {
         let mut request = call(1);
         match field {
-            0 => request.credential.value = b"bad\r\ninjected".to_vec().into(),
-            1 => request.credential.account_id = Box::new([]),
+            0 => request.credential.as_mut().expect("fixture credential").value = b"bad\r\ninjected".to_vec().into(),
+            1 => request.credential.as_mut().expect("fixture credential").account_id = Box::new([]),
             2 => request.endpoint.target = b"/bad target".to_vec().into(),
             3 => request.endpoint.authority = b"bad/name".to_vec().into(),
             _ => unreachable!(),
@@ -496,8 +496,8 @@ fn exact_request_head_cap_is_checked_before_transport_binding() {
     let measured = client::request_head(
         &input.endpoint,
         &client::CredentialLimits {
-            value: u32::try_from(input.credential.value.len()).unwrap(),
-            account_id: u32::try_from(input.credential.account_id.len()).unwrap(),
+            value: u32::try_from(skein_llm_world::credential_of(&input).value.len()).unwrap(),
+            account_id: u32::try_from(skein_llm_world::credential_of(&input).account_id.len()).unwrap(),
         },
         &limits(),
     )
@@ -690,7 +690,7 @@ fn undecoded_error_bodies_keep_their_clipped_provider_text_for_both_dialects() {
                     let mut input = call(12);
                     if provider == skein_llm::Provider::Anthropic {
                         input.endpoint = skein_llm::Endpoint::anthropic();
-                        input.credential = skein_llm::Credential::anthropic(b"fixture".as_slice().into());
+                        input.credential = Some(skein_llm::Credential::anthropic(b"fixture".as_slice().into()));
                         input.prompt.affinity = None;
                     }
                     let mut world = World::new(input, bounds, response(400, "", body, chunked), 12);
@@ -728,7 +728,7 @@ fn decoded_error_messages_and_undecoded_utf8_bodies_keep_the_detail_boundary() {
             let mut input = call(13);
             if provider == skein_llm::Provider::Anthropic {
                 input.endpoint = skein_llm::Endpoint::anthropic();
-                input.credential = skein_llm::Credential::anthropic(b"fixture".as_slice().into());
+                input.credential = Some(skein_llm::Credential::anthropic(b"fixture".as_slice().into()));
                 input.prompt.affinity = None;
             }
             let mut world = World::new(input, bounds, response(401, "", body, true), 13);
@@ -770,7 +770,7 @@ fn an_oversized_error_body_keeps_unparsed_detail_and_closes_without_draining() {
                 let mut input = call(11);
                 if provider == skein_llm::Provider::Anthropic {
                     input.endpoint = skein_llm::Endpoint::anthropic();
-                    input.credential = skein_llm::Credential::anthropic(b"fixture".as_slice().into());
+                    input.credential = Some(skein_llm::Credential::anthropic(b"fixture".as_slice().into()));
                     input.prompt.affinity = None;
                 }
                 let mut world = World::new(input, bounds, wire, 11);

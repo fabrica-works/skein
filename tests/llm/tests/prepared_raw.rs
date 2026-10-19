@@ -133,7 +133,7 @@ fn actual_prepared_anthropic_owner_and_request_survive_raw_world_adoption() {
     let bounds = skein_llm_world::limits_for(skein_llm::Provider::Anthropic);
     let mut input = call(99);
     input.endpoint = Endpoint::anthropic();
-    input.credential = Credential::anthropic(b"fixture-token".as_slice().into());
+    input.credential = Some(Credential::anthropic(b"fixture-token".as_slice().into()));
     input.prompt.affinity = None;
     input.prompt.max_output_tokens = Some(128);
     input.prompt.messages[0].content =
