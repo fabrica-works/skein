@@ -603,6 +603,30 @@ land_gates() {
         END { if (!lab) l = g; print l + 0, g - l + 0 }' < <(queue_rows "$run")
 }
 
+# For each landing in a repository whose aims line names packages, their
+# tests' summed time in each suite of the gate's log (development.md,
+# section 5.2): the log of the repository's last land gate that ended by the
+# commit's time, as land amends Gate-Result in after its gate. One
+# "COMMIT FOCUSED FUZZY" per landing.
+aims_sums() {
+    local repo packages commit at log
+    while read -r repo _ _ packages; do
+        [[ -n $packages ]] || continue
+        awk -F'\t' -v r="$repo" '$1 == r && $6 != "" && $6 != "-" { print $2 "\t" $3 }' <<<"$commits" |
+            while IFS=$'\t' read -r commit at; do
+                log=$(awk -F'\t' -v l="land $repo" -v at="$(date -u -d "@$at" +%FT%TZ)" '
+                    $2 == "gate" && $11 == l && $3 <= at && $3 >= end { end = $3; f = $9 } END { print f }' < <(queue_rows "$run"))
+                [[ -f $log ]] || continue
+                awk -v p=" $packages " -v c="$commit" '
+                    /Summary \[/ { s++ }
+                    /PASS \[ *[0-9.]+s\]/ { line = $0; sub(/.*PASS \[ */, "", line); t = line + 0
+                        sub(/^[0-9.]+s\] +(\( *[0-9]+\/[0-9]+\) +)?/, "", line); b = line; sub(/[: ].*/, "", b)
+                        if (index(p, " " b " ")) sum[s + 1] += t }
+                    END { printf "%s %.2f %.2f\n", c, sum[1], sum[2] }' "$log"
+            done
+    done <<<"$1"
+}
+
 # Each long-lived Claude Code role's context: its latest session's, the
 # input of its last request (development.md, section 10.5).
 claude_role_contexts() {
@@ -729,17 +753,21 @@ pulse() {
         echo "- Tests: no gate since"
     fi
     # The landings past their repository's aims, by the times in their own
-    # Gate-Result.
-    local aims past
+    # Gate-Result, or by their packages' summed times when the aims line
+    # names packages.
+    local aims past sums
     aims=$(pulse_lines aims)
     if [[ -n $aims ]]; then
-        past=$(awk -F'\t' -v a="$(paste -sd ';' <<<"$aims")" '
-            BEGIN { n = split(a, line, ";"); for (i = 1; i <= n; i++) { split(line[i], f, " "); focus[f[1]] = f[2]; fuzz[f[1]] = f[3] } }
+        sums=$(aims_sums "$aims" | paste -sd '|')
+        past=$(awk -F'\t' -v a="$(paste -sd ';' <<<"$aims")" -v s="$sums" '
+            BEGIN { n = split(a, line, ";"); for (i = 1; i <= n; i++) { split(line[i], f, " "); focus[f[1]] = f[2]; fuzz[f[1]] = f[3] }
+                n = split(s, line, "|"); for (i = 1; i <= n; i++) { split(line[i], f, " "); sum[f[1]] = f[2] " s;" f[3] " s" } }
             $6 != "" && $6 != "-" && ($1 in focus) {
-                n = split($6, part, ";"); out = ""
+                g = ($2 in sum) ? sum[$2] : $6; what = ($2 in sum) ? " packages" : ""
+                n = split(g, part, ";"); out = ""
                 for (i = 1; i <= 2 && i <= n; i++) if (match(part[i], /[0-9.]+ s/)) {
                     t = substr(part[i], RSTART, RLENGTH - 2) + 0; b = (i == 1) ? focus[$1] : fuzz[$1]
-                    if (b != "" && t > b + 0) out = out sprintf("%s%s %g s past %s", (out == "" ? "" : ", "), (i == 1) ? "focused" : "fuzzy", t, b)
+                    if (b != "" && t > b + 0) out = out sprintf("%s%s%s %g s past %s", (out == "" ? "" : ", "), (i == 1) ? "focused" : "fuzzy", what, t, b)
                 }
                 if (out != "") printf "%s%s (%s)", (k++ ? "; " : ""), $4, out }' <<<"$commits")
         echo "  Landings past the aims: ${past:-none}."

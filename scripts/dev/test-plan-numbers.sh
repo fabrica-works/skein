@@ -70,6 +70,17 @@ sed -i '/^aims:/d' "$dir/README.md"
 rm "$run/.pulse"
 expect "no aims, no line" "$(if [[ $(plan_numbers pulse) != *'past the aims'* ]]; then echo absent; fi)" absent
 mv "$dir/README.md.save" "$dir/README.md"
+# An aims line that names packages: their tests' times in the last land
+# gate's log, the focused suite within the aim the suite's time is past.
+cp "$run/logs/heavy.tsv" "$t/heavy.save"
+printf '    PASS [   0.400s] (1/3) alpha::t1 a\n    PASS [   0.500s] (2/3) alpha-core b\n    PASS [   9.000s] (3/3) other c\n  Summary [   9.900s] 3 tests run\n    PASS [  70.000s] alpha::t2 d\n' >"$run/logs/gate-2.log"
+printf '9\tgate\t2000-01-01T00:00:00Z\t1\t1\t0\t1.0\t/x\t%s\tcheck\tland alpha\n' "$run/logs/gate-2.log" >"$run/logs/heavy.tsv"
+sed -i.save 's/^aims: alpha .*/& alpha alpha-core/' "$dir/README.md"
+rm "$run/.pulse"
+expect "an aims line's packages are summed from the gate's log" "$(plan_numbers pulse)" \
+    "Landings past the aims: alpha-01.1 (fuzzy packages 70 s past 60);" "alpha-01.s1 (fuzzy packages 70 s past 60)."
+mv "$dir/README.md.save" "$dir/README.md"
+mv "$t/heavy.save" "$run/logs/heavy.tsv"
 
 # The metrics.
 metrics=$(plan_numbers metrics --out "$dir/metrics.tsv"; cat "$dir/metrics.tsv")

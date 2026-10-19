@@ -922,9 +922,9 @@ user only what they and the design leave open, and asks before writing.
   `main`, the aim covers the packages the plan's sessions change, named
   after its two times (`aims: temper 8 30 temper-service temper-forge`),
   and is measured as their tests' summed time, not as the suite's wall
-  time: the pulse's verdict compares the suite's, so the hourly check and
-  "Done when" sum the packages' times from the gate's log, which `heavy`
-  keeps (section 11). In temper's forge-setup run, the default suite's
+  time: the pulse, the hourly check and "Done when" sum the packages'
+  times from the gate's log, which `heavy` keeps (section 11), the pulse
+  from the repository's last land gate before each landing. In temper's forge-setup run, the default suite's
   aim missed by 2.06 s with another plan's 510 tests inside it;
 - **Done when:** observable conditions, each with the command that checks
   it. Each aim the README states (fewer lines, one engine, plainer words)
@@ -2913,7 +2913,8 @@ Since the last check:
 - **tests:** each suite's time from the `Gate-Result` trailers, against
   its budget and its aim, and each landing whose focused or fuzzy time is
   past the aim (in hearth's render run, ten were past 8 s before the
-  steer); the tests past four fifths of a ceiling, and the SLOW ones;
+  steer), the time of the packages an aims line names summed from the
+  gate's log (section 5.2); the tests past four fifths of a ceiling, and the SLOW ones;
   lines added in tests and in code, docs landings left out;
 - **code signals in the diff:** code files the diff touches, tests
   included, over the plan's size limit, documents and data judged by no
