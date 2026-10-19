@@ -9,6 +9,8 @@ use skein_oauth::SavedToken;
 #[derive(PartialEq, Eq, Hash)]
 #[expect(missing_debug_implementations, reason = "credential values must never occur in traces")]
 pub enum Request {
+    /// Refreshes this account at its lead even while nobody holds its grant.
+    Want { account: u32, wanted: bool },
     /// Removes this account after its sent exchange and durable keep settle.
     Remove { account: u32 },
     /// Starts this account's sign-in: Visit once, then `SignedIn`, Failed or Refused.
@@ -60,6 +62,8 @@ pub enum Event {
 /// The request a failure ends.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Ends {
+    /// A refresh while nobody holds the account's grant.
+    Refresh,
     /// The owner's admitted sign-in.
     SignIn,
     /// The owner's requested or held grant.
@@ -82,6 +86,8 @@ pub enum Failure {
 /// The request a refusal answers.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Asked {
+    /// The owner's wanted-account flag.
+    Want,
     /// The owner's account addition.
     Add,
     /// The owner's account removal.

@@ -4,6 +4,7 @@ use super::*;
 use crate::{FileLower, Place, Unloaded};
 use skein_io::{file, kernel};
 use skein_lib::Token;
+use skein_lib::stream::{Down, Up};
 
 pub(super) struct Owner {
     pub(super) component: Component,
@@ -402,7 +403,11 @@ fn a_record_without_an_issued_id_loads_unreadable() {
         let (mut owner, _) = issued_owner(Request::Grant { account: 0 }, issued_client_id);
         assert_eq!(
             failure_of(owner.above.pop()),
-            Some((0, Ends::Grant, Failure::Unloaded { at: Place::File, why: Unloaded::Unreadable })),
+            Some(Failed {
+                account: 0,
+                ends: Ends::Grant,
+                failure: Failure::Unloaded { at: Place::File, why: Unloaded::Unreadable }
+            }),
             "{name}"
         );
     }
@@ -416,4 +421,137 @@ fn a_sign_in_replaces_it_expecting_the_digest_it_loaded() {
 
 pub(super) fn private_keeper(directory: Box<[u8]>) -> Keeper {
     Keeper::Private { root: Token::new(99), directory, file: bytes::copy_of(b"record") }
+}
+
+const DRIVE_STEPS: u32 = 128; // One tiny HTTP exchange and its close transitions.
+const HTTP_SOCKET: Token = Token::new(98);
+const BODY: &[u8] = br#"{"access_token":"new","refresh_token":"next","expires_in":30}"#;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct RefreshOutcome {
+    pub(super) kept: bool,
+    pub(super) removed: u32,
+    pub(super) granted: bool,
+}
+
+impl Owner {
+    fn socket_up(&mut self, event: LowerEvent) {
+        self.component.up(&self.env, event, &mut self.above, &mut self.io, &mut self.files);
+    }
+
+    pub(super) fn sent(&mut self) -> Token {
+        let mut identity = None;
+        for _ in 0..DRIVE_STEPS {
+            self.fire();
+            while let Some(request) = self.io.pop() {
+                if let Lower::Connect { owner: token, .. } = request {
+                    identity = Some(token);
+                    self.socket_up(LowerEvent::Connecting { owner: token, socket: HTTP_SOCKET });
+                    self.socket_up(LowerEvent::Connected { owner: token });
+                } else if let Lower::Stream { down, .. } = request {
+                    let token = identity.expect("exchange owner");
+                    if let Down::Send(bytes) = down {
+                        if !bytes.is_empty() {
+                            return token;
+                        }
+                    } else if let Down::Demand { room, .. } = down
+                        && room != 0
+                    {
+                        self.socket_up(LowerEvent::Stream { owner: token, up: Up::Room });
+                    }
+                }
+            }
+        }
+        panic!("refresh sends its HTTP request")
+    }
+
+    fn finish_socket(&mut self, identity: Token, response: &mut &[u8]) {
+        while let Some(request) = self.io.pop() {
+            if let Lower::Close { .. } | Lower::Abort { .. } = request {
+                self.socket_up(LowerEvent::Closed { owner: identity });
+            } else if let Lower::Stream { down: Down::Demand { read, room }, .. } = request {
+                if room != 0 {
+                    self.socket_up(LowerEvent::Stream { owner: identity, up: Up::Room });
+                } else if !response.is_empty() {
+                    let cap = match read {
+                        skein_lib::stream::Read::Nothing => 0,
+                        skein_lib::stream::Read::Fill(max) | skein_lib::stream::Read::Arrived { max } => {
+                            usize::try_from(max).expect("u32 fits")
+                        }
+                        skein_lib::stream::Read::Line { max } => bytes::line_end(response)
+                            .unwrap_or(response.len())
+                            .saturating_add(1)
+                            .min(usize::try_from(max).expect("u32 fits")),
+                        skein_lib::stream::Read::Scan { until, max } => {
+                            let cap = usize::try_from(max).expect("u32 fits");
+                            match bytes::find(response, until.as_bytes()) {
+                                Some(at) => at.saturating_add(until.as_bytes().len()).min(cap),
+                                None => cap,
+                            }
+                        }
+                    }
+                    .min(response.len());
+                    if cap != 0 {
+                        let bytes = bytes::copy_of(response.get(..cap).expect("response piece"));
+                        *response = response.get(cap..).expect("remaining response");
+                        self.socket_up(LowerEvent::Stream { owner: identity, up: Up::Bytes(bytes) });
+                    }
+                }
+            }
+        }
+    }
+
+    fn finish_file(&mut self) -> bool {
+        if let Some(FileLower::Request { request, .. }) = self.files.pop() {
+            let token = owner_of(&request);
+            if let file::Request::Store { bytes, .. } = request {
+                self.terminal(file::Event::Stored { owner: token, digest: skein_io::digest::digest(&bytes) });
+                return true;
+            } else if let file::Request::Close { .. } = request {
+                self.terminal(file::Event::Closed { owner: token });
+            }
+        }
+        false
+    }
+
+    pub(super) fn finish_refresh(&mut self, identity: Token) -> RefreshOutcome {
+        const PREFIX: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: ";
+        const SUFFIX: &[u8] = b"\r\nConnection: close\r\n\r\n";
+        let length = skein_lib::Decimal::of(u64::try_from(BODY.len()).expect("body length fits"));
+        let mut response = skein_lib::Writer::new(
+            PREFIX
+                .len()
+                .saturating_add(length.as_bytes().len())
+                .saturating_add(SUFFIX.len())
+                .saturating_add(BODY.len()),
+        );
+        for part in [PREFIX, length.as_bytes(), SUFFIX, BODY] {
+            response.put(part).expect("response measured");
+        }
+        let response = response.finish();
+        let mut remaining = response.as_ref();
+        let mut outcome = RefreshOutcome { kept: false, removed: 0, granted: false };
+        for _ in 0..DRIVE_STEPS {
+            self.fire();
+            while let Some(event) = self.above.pop() {
+                if let Event::Keep { account, record } = event {
+                    outcome.kept = true;
+                    self.ask(Request::Kept { account, generation: record.generation, keeping: Keeping::Kept });
+                } else if let Event::Removed { .. } = event {
+                    outcome.removed = outcome.removed.saturating_add(1);
+                } else if let Event::Granted { .. } = event {
+                    outcome.granted = true;
+                }
+            }
+            self.finish_socket(identity, &mut remaining);
+            outcome.kept |= self.finish_file();
+            self.component.reclaim();
+            if outcome.removed != 0
+                || (remaining.is_empty() && !self.component.has_work() && self.io.is_empty() && self.files.is_empty())
+            {
+                return outcome;
+            }
+        }
+        panic!("refresh and its keep settle")
+    }
 }

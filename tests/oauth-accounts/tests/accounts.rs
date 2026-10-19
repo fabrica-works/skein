@@ -51,3 +51,22 @@ fn a_name_reused_after_removed_starts_from_its_keeper() {
     assert_eq!(facts, expected, "protocol");
     assert_eq!(accounts::facts(&outcome.procs), expected, "simulated");
 }
+
+fn wanted_in_both_worlds(story: Story, expected: &[Fact]) {
+    let (facts, _) = accounts::protocol(SEED, story);
+    let outcome = accounts::run(SEED, story, Memory::Checked);
+    assert_eq!((facts.as_slice(), accounts::facts(&outcome.procs)), (expected, expected), "{story:?}");
+}
+
+#[test]
+fn a_wanted_account_is_refreshed_with_no_grant_held() {
+    wanted_in_both_worlds(Story::Wanted, &[Fact::Keep(1), Fact::Closed]);
+}
+
+#[test]
+fn a_wanted_account_whose_refresh_fails_is_told_so() {
+    wanted_in_both_worlds(
+        Story::WantedFailure,
+        &[Fact::Failed(Ends::Refresh, Failure::Exchange(skein_oauth::Failure::Refused)), Fact::Closed],
+    );
+}

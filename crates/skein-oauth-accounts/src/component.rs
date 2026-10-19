@@ -97,7 +97,7 @@ pub enum Unusable {
 #[derive(Debug)]
 pub(crate) enum Name {
     Free,
-    Live { number: u32 },
+    Live { number: u32, wanted: bool },
     Removing { number: u32 },
 }
 
@@ -107,6 +107,7 @@ pub(crate) enum State {
         record: SavedToken,
         expiry: Time,
         lead: Time,
+        earliest: Option<Time>,
         announced: bool,
         held: bool,
         rejected: bool,
@@ -163,7 +164,7 @@ impl Component {
         for (index, account) in accounts.into_boxed().into_iter().enumerate() {
             let index = u32::try_from(index).expect("bounded accounts");
             let (source, state, store) = accounts::admit(index, account, limits)?;
-            *names.get_mut(index).expect("bounded name") = Name::Live { number: index };
+            *names.get_mut(index).expect("bounded name") = Name::Live { number: index, wanted: false };
             match states.push(state) {
                 Ok(()) => {}
                 Err(State::Empty | State::Record { .. } | State::Loaded { .. }) => unreachable!("validated accounts"),
@@ -223,6 +224,7 @@ impl Component {
             None => return,
         };
         match request {
+            Request::Want { account, wanted } => self.want(account, wanted, up),
             Request::Remove { account } => {
                 if !self.refused(account, Asked::Remove, up) {
                     self.remove(env, account, up, io);
@@ -241,6 +243,7 @@ impl Component {
             Request::HandIn { account, record } => self.hand_in(env, account, record, up),
             Request::Grant { account } => self.grant_request(env, account, up),
             Request::Rejected { account, generation } => {
+                let wanted = self.wanted(account);
                 let mut refresh = false;
                 let mut repeated = false;
                 match self.accounts.get_mut(account) {
@@ -250,7 +253,7 @@ impl Component {
                         repeated = *rejection == Some(generation);
                         *rejection = Some(generation);
                         *rejected = true;
-                        if *held {
+                        if *held || wanted {
                             match self.sources.get(account).expect("account source") {
                                 Source::HandedIn => {
                                     *held = false;
@@ -277,14 +280,12 @@ impl Component {
                     && self.bindings.get(account) == Some(&None)
                     && !self.exchanges.is_full()
                     && self.refreshable(account)
+                    && self.refresh_ready(account, env.now)
                 {
                     self.start_refresh(env, account, false);
                 }
             }
-            Request::Release { account } => match self.accounts.get_mut(account) {
-                Some(slot) => set_held(slot, false),
-                None => {}
-            },
+            Request::Release { account } => self.release(account),
             Request::Kept { account, generation, keeping } => match self.keepers.get(account) {
                 Some(Store::Owner) => self.kept(env, account, generation, keeping, up, io),
                 Some(Store::Private(_)) | None => {}
@@ -318,6 +319,7 @@ impl Component {
 
     fn grant_loaded(&mut self, env: &Env<Limits>, account: u32, up: &mut Queue<Event>) {
         let refreshable = self.refreshable(account);
+        let ready = self.refresh_ready(account, env.now);
         let slot = self.accounts.get_mut(account).expect("validated account");
         match slot {
             State::Record { held: true, .. } => {
@@ -360,6 +362,10 @@ impl Component {
                     },
                 };
                 if needs_refresh && refreshable && self.lifecycle == Lifecycle::Live {
+                    if !ready {
+                        self.grant_before_refresh(env, account, up);
+                        return;
+                    }
                     if self.exchanges.is_full() {
                         up.push(Event::Refused {
                             account: number(&self.names, account),
@@ -566,10 +572,20 @@ impl Component {
                 continue;
             }
             let source = self.sources.get(account).expect("account source");
+            let wanted = self.wanted(account);
             match self.accounts.get_mut(account).expect("account state") {
-                State::Record { record, expiry, lead, announced, held, rejected, attempted, due, .. } => {
+                State::Record { record, expiry, lead, earliest, announced, held, rejected, attempted, due, .. } => {
+                    if (*held || wanted) && !*attempted && env.now >= *lead {
+                        match source {
+                            Source::SignIn { .. } => {
+                                *attempted = record.refresh_token.is_none();
+                                *due = !*attempted;
+                            }
+                            Source::HandedIn => {}
+                        }
+                    }
                     if env.now >= *expiry {
-                        if *held && self.bindings.get(account) == Some(&None) {
+                        if *held && !*due && self.bindings.get(account) == Some(&None) {
                             *held = false;
                             failed(number(&self.names, account), Failure::Expired, up);
                             return;
@@ -587,15 +603,14 @@ impl Component {
                                     return;
                                 }
                             }
-                            Source::SignIn { .. } => {
-                                if *held && !*attempted && env.now >= *lead {
-                                    *attempted = record.refresh_token.is_none();
-                                    *due = !*attempted;
-                                }
-                            }
+                            Source::SignIn { .. } => {}
                         }
                     }
                     if *due
+                        && match earliest {
+                            Some(at) => env.now >= *at,
+                            None => true,
+                        }
                         && self.bindings.get(account) == Some(&None)
                         && !self.exchanges.is_full()
                         && record.refresh_token.is_some()
@@ -878,6 +893,9 @@ impl Component {
             if exchange.signing_in() {
                 up.push(Event::Failed { account: number(&self.names, account), ends: Ends::SignIn, failure });
             }
+            if !exchange.signing_in() && !exchange.pending_grant && !held(slot) {
+                up.push(Event::Failed { account: number(&self.names, account), ends: Ends::Refresh, failure });
+            }
             if exchange.pending_grant || (!exchange.signing_in() && held(slot)) {
                 set_held(slot, false);
                 failed(number(&self.names, account), failure, up);
@@ -1010,8 +1028,8 @@ impl Component {
         if self.lifecycle == Lifecycle::Live && !self.exchanges.is_full() {
             for state in &self.accounts {
                 match state {
-                    State::Record { due: true, .. } => return true,
-                    State::Empty | State::Loaded { .. } | State::Record { due: false, .. } => {}
+                    State::Record { due: true, earliest: None, .. } => return true,
+                    State::Empty | State::Loaded { .. } | State::Record { .. } => {}
                 }
             }
         }
@@ -1048,7 +1066,7 @@ impl Component {
                 continue;
             }
             let next = match self.accounts.get(account).expect("account state") {
-                State::Record { lead, expiry, held, announced, rejected, attempted, due, .. } => {
+                State::Record { lead, earliest, expiry, held, announced, rejected, attempted, due, record, .. } => {
                     match self.sources.get(account).expect("account source") {
                         Source::HandedIn => {
                             if !*announced && !*rejected {
@@ -1060,8 +1078,20 @@ impl Component {
                             }
                         }
                         Source::SignIn { .. } => {
-                            if *held {
-                                if !*attempted && !*due { Some(*lead) } else { Some(*expiry) }
+                            let interested = *held || self.wanted(account);
+                            if interested
+                                && record.refresh_token.is_some()
+                                && (!*attempted || *due)
+                                && !self.exchanges.is_full()
+                            {
+                                let refresh = match earliest {
+                                    Some(at) if *due => *at,
+                                    Some(at) => (*at).max(*lead),
+                                    None => *lead,
+                                };
+                                Some(if *held && !*announced { refresh.min(*expiry) } else { refresh })
+                            } else if *held && !*announced {
+                                Some(*expiry)
                             } else {
                                 None
                             }
@@ -1096,10 +1126,16 @@ fn recorded(record: SavedToken, env: &Env<Limits>, held: bool) -> State {
     let lead = env
         .now
         .saturating_add(Duration::from_nanos(remaining.as_nanos().saturating_sub(env.limits.refresh_lead.as_nanos())));
+    let mut earliest = None;
+    if let Some(at) = record.earliest_refresh_at {
+        earliest =
+            Some(env.now.saturating_add(Duration::from_nanos(at.as_nanos().saturating_sub(env.wall.as_nanos()))));
+    }
     State::Record {
         record,
         expiry,
         lead,
+        earliest,
         announced: false,
         held,
         rejected: false,

@@ -1,22 +1,20 @@
 //! Account admission and removal through owner entrances (oauth.md, section 6.3).
 
 use super::*;
-use private::{Owner, owner_of, private_keeper};
+use private::{Owner, private_keeper};
 use skein_io::{file, kernel};
-use skein_lib::Token;
-use skein_lib::stream::{Down, Up};
 
-type Setup = fn() -> Owner;
-type Failed = (u32, Ends, Failure);
-type Sent = (Option<Failed>, (bool, u32, bool));
+#[derive(Debug, PartialEq, Eq)]
+struct Sent {
+    failed: Option<Failed>,
+    finished: private::RefreshOutcome,
+}
 
 const ADDED: u32 = 7;
-const UNSENT_CASES: usize = 4; // Signing in, held, asked and due refresh (oauth.md, section 6.3).
-const KEEPERS: usize = 2; // Owner and private storage.
 const PATH_BOUND: usize = 4096; // Private paths must be shorter than io's bound.
+const NAME_BYTES: usize = 8; // oauth.md, 6.2: a tag and a u32, including wanted.
+const STATE_BYTES: usize = 208; // The 192-byte record state plus a 16-byte earliest Time.
 const ROOMY_ACCOUNTS: u32 = 3; // One configured account and two added places.
-const DRIVE_STEPS: u32 = 128; // One tiny HTTP exchange and its close transitions.
-const SOCKET: Token = Token::new(98);
 const ADDRESS: core::net::SocketAddr =
     core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::LOCALHOST), 31000);
 
@@ -43,10 +41,7 @@ fn owner(configuration: Account) -> Owner {
 fn an_added_name_is_refused_while_a_live_account_holds_it() {
     let (mut component, env) = roomy();
     let mut up = Queue::with_capacity(MAX_OUT_DOWN.above);
-    component.add(&env, 0, Account::HandedIn, &mut up);
-    assert_refused(up.pop(), 0, Asked::Add, Refusal::Taken);
     component.add(&env, ADDED, Account::HandedIn, &mut up);
-    assert!(up.pop().is_none(), "an admitted add answers nothing");
     component.add(&env, ADDED, Account::HandedIn, &mut up);
     assert_refused(up.pop(), ADDED, Asked::Add, Refusal::Taken);
 }
@@ -58,52 +53,65 @@ fn an_add_past_the_accounts_limit_is_refused_as_full() {
     for account in [ADDED, ADDED.saturating_add(1)] {
         component.add(&env, account, Account::HandedIn, &mut up);
     }
-    assert!(up.is_empty(), "the account bound admits both free places");
     component.add(&env, ADDED.saturating_add(2), Account::HandedIn, &mut up);
     assert_refused(up.pop(), ADDED.saturating_add(2), Asked::Add, Refusal::Full { bound: ROOMY_ACCOUNTS });
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Bad {
-    Plaintext,
-    Redirect,
-    Registration,
-    Record,
-    Path,
-}
-
-fn unusable(row: Bad) -> Account {
+fn bad_plaintext() -> Account {
     let mut configuration = refresh_account(ADDED, ADDRESS);
-    if let Account::SignIn { registration, endpoint, keeper } = &mut configuration {
-        match row {
-            Bad::Plaintext => endpoint.address = ([192, 0, 2, 1], 31000).into(),
-            Bad::Redirect => registration.redirect_uri = bytes::copy_of(b"https://example.com/callback"),
-            Bad::Registration => registration.client_id = bytes::copy_of(b""),
-            Bad::Record => {
-                let mut record = tests_record(0);
-                record.access_token = bytes::copy_of(b"");
-                *keeper = Keeper::Owner { kept: Some(record) };
-            }
-            Bad::Path => *keeper = private_keeper(bytes::zeroed(PATH_BOUND)),
-        }
+    if let Account::SignIn { endpoint, .. } = &mut configuration {
+        endpoint.address = ([192, 0, 2, 1], 31000).into();
+    }
+    configuration
+}
+fn bad_redirect() -> Account {
+    let mut configuration = refresh_account(ADDED, ADDRESS);
+    if let Account::SignIn { registration, .. } = &mut configuration {
+        registration.redirect_uri = bytes::copy_of(b"https://example.com/callback");
+    }
+    configuration
+}
+fn bad_registration() -> Account {
+    let mut configuration = refresh_account(ADDED, ADDRESS);
+    if let Account::SignIn { registration, .. } = &mut configuration {
+        registration.client_id = bytes::copy_of(b"");
+    }
+    configuration
+}
+fn bad_record() -> Account {
+    let mut configuration = refresh_account(ADDED, ADDRESS);
+    if let Account::SignIn { keeper, .. } = &mut configuration {
+        let mut record = tests_record(0);
+        record.access_token = bytes::copy_of(b"");
+        *keeper = Keeper::Owner { kept: Some(record) };
+    }
+    configuration
+}
+fn bad_path() -> Account {
+    let mut configuration = refresh_account(ADDED, ADDRESS);
+    if let Account::SignIn { keeper, .. } = &mut configuration {
+        *keeper = private_keeper(bytes::zeroed(PATH_BOUND));
     }
     configuration
 }
 
 #[test]
 fn an_added_configuration_new_refuses_is_refused_as_unusable() {
-    for (row, why) in [
-        (Bad::Plaintext, Unusable::Plaintext { account: ADDED }),
-        (Bad::Redirect, Unusable::Redirect { account: ADDED }),
-        (Bad::Registration, Unusable::Registration { account: ADDED, failure: skein_oauth::Failure::Limit }),
-        (Bad::Record, Unusable::Record { account: ADDED, why: skein_oauth::DecodeError::Malformed }),
-        (Bad::Path, Unusable::Path { account: ADDED }),
+    for (name, configuration, why) in [
+        ("plaintext", bad_plaintext(), Unusable::Plaintext { account: ADDED }),
+        ("redirect", bad_redirect(), Unusable::Redirect { account: ADDED }),
+        (
+            "registration",
+            bad_registration(),
+            Unusable::Registration { account: ADDED, failure: skein_oauth::Failure::Limit },
+        ),
+        ("record", bad_record(), Unusable::Record { account: ADDED, why: skein_oauth::DecodeError::Malformed }),
+        ("path", bad_path(), Unusable::Path { account: ADDED }),
     ] {
-        let configuration = unusable(row);
         let (mut component, env) = roomy();
         let mut up = Queue::with_capacity(MAX_OUT_DOWN.above);
         component.add(&env, ADDED, configuration, &mut up);
-        assert_eq!(refusal_of(up.pop()), Some((ADDED, Asked::Add, Refusal::Unusable(why))), "{row:?}");
+        assert_eq!(refusal_of(up.pop()), Some((ADDED, Asked::Add, Refusal::Unusable(why))), "{name}");
     }
 }
 
@@ -160,14 +168,29 @@ fn due_refresh() -> Owner {
 
 #[test]
 fn a_removal_cancels_the_unsent_work_of_its_account() {
-    let rows: [(&str, Setup, Failed); UNSENT_CASES] = [
-        ("sign in", waiting_sign_in, (0, Ends::SignIn, Failure::Exchange(skein_oauth::Failure::Cancelled))),
-        ("held grant", held_grant, (0, Ends::Grant, Failure::Exchange(skein_oauth::Failure::Cancelled))),
-        ("asked grant", asked_grant, (0, Ends::Grant, Failure::Exchange(skein_oauth::Failure::Cancelled))),
-        ("due refresh", due_refresh, (0, Ends::Grant, Failure::Exchange(skein_oauth::Failure::Cancelled))),
+    let rows = [
+        (
+            "sign in",
+            waiting_sign_in(),
+            Failed { account: 0, ends: Ends::SignIn, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) },
+        ),
+        (
+            "held grant",
+            held_grant(),
+            Failed { account: 0, ends: Ends::Grant, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) },
+        ),
+        (
+            "asked grant",
+            asked_grant(),
+            Failed { account: 0, ends: Ends::Grant, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) },
+        ),
+        (
+            "due refresh",
+            due_refresh(),
+            Failed { account: 0, ends: Ends::Grant, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) },
+        ),
     ];
-    for (name, setup, expected) in rows {
-        let mut owner = setup();
+    for (name, mut owner, expected) in rows {
         owner.ask(Request::Remove { account: 0 });
         owner.fire();
         assert_eq!(failure_of(owner.above.pop()), Some(expected), "{name}");
@@ -199,11 +222,20 @@ fn a_removed_name_is_free_for_add() {
     let mut owner = owner(Account::HandedIn);
     owner.ask(Request::Remove { account: 0 });
     owner.fire();
-    assert_event(owner.above.pop(), Event::Removed { account: 0 });
+    let removed = owner.above.pop();
     owner.component.add(&owner.env, 0, Account::HandedIn, &mut owner.above);
     owner.ask(Request::HandIn { account: 0, record: tests_record(0) });
     owner.ask(Request::Grant { account: 0 });
-    assert_granted(owner.above.pop(), 0, 30);
+    assert!(
+        removed == Some(Event::Removed { account: 0 })
+            && owner.above.pop()
+                == Some(Event::Granted {
+                    account: 0,
+                    token: tests_record(0).access_token,
+                    generation: 0,
+                    valid: Duration::from_secs(30)
+                })
+    );
 }
 
 #[test]
@@ -212,13 +244,20 @@ fn an_abort_settles_a_removal_before_closed() {
     owner.ask(Request::Remove { account: 0 });
     owner.ask(Request::Abort);
     owner.fire();
-    assert_event(
-        owner.above.pop(),
-        Event::Failed { account: 0, ends: Ends::Grant, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) },
-    );
+    let failed = failure_of(owner.above.pop());
     owner.fire();
-    assert_event(owner.above.pop(), Event::Removed { account: 0 });
-    assert_event(owner.above.pop(), Event::Closed);
+    let removed = owner.above.pop();
+    let closed = owner.above.pop();
+    assert!(
+        failed
+            == Some(Failed {
+                account: 0,
+                ends: Ends::Grant,
+                failure: Failure::Exchange(skein_oauth::Failure::Cancelled)
+            })
+            && removed == Some(Event::Removed { account: 0 })
+            && closed == Some(Event::Closed)
+    );
 }
 
 fn private_refresh() -> Owner {
@@ -235,124 +274,23 @@ fn private_refresh() -> Owner {
     });
     owner
 }
-fn socket_up(owner: &mut Owner, event: LowerEvent) {
-    owner.component.up(&owner.env, event, &mut owner.above, &mut owner.io, &mut owner.files);
-}
-fn sent(owner: &mut Owner) -> Token {
-    let mut identity = None;
-    for _ in 0..DRIVE_STEPS {
-        owner.fire();
-        while let Some(request) = owner.io.pop() {
-            if let Lower::Connect { owner: token, .. } = request {
-                identity = Some(token);
-                socket_up(owner, LowerEvent::Connecting { owner: token, socket: SOCKET });
-                socket_up(owner, LowerEvent::Connected { owner: token });
-            } else if let Lower::Stream { down, .. } = request {
-                let token = identity.expect("exchange owner");
-                if let Down::Send(bytes) = down {
-                    if !bytes.is_empty() {
-                        return token;
-                    }
-                } else if let Down::Demand { room, .. } = down
-                    && room != 0
-                {
-                    socket_up(owner, LowerEvent::Stream { owner: token, up: Up::Room });
-                }
-            }
-        }
-    }
-    panic!("refresh sends its HTTP request")
-}
-fn finish_sent(owner: &mut Owner, identity: Token) -> (bool, u32, bool) {
-    const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 61\r\nConnection: close\r\n\r\n{\"access_token\":\"new\",\"refresh_token\":\"next\",\"expires_in\":30}";
-    let mut response = RESPONSE;
-    let mut kept = false;
-    let mut removed: u32 = 0;
-    let mut granted = false;
-    for _ in 0..DRIVE_STEPS {
-        owner.fire();
-        while let Some(event) = owner.above.pop() {
-            if let Event::Keep { account, record } = event {
-                kept = true;
-                owner.ask(Request::Kept { account, generation: record.generation, keeping: Keeping::Kept });
-            } else if let Event::Removed { .. } = event {
-                removed = removed.saturating_add(1);
-            } else if let Event::Granted { .. } = event {
-                granted = true;
-            }
-        }
-        finish_socket(owner, identity, &mut response);
-        kept |= finish_file(owner);
-        if removed != 0 {
-            return (kept, removed, granted);
-        }
-    }
-    panic!("sent refresh and its keep settle before removed")
-}
 
 #[test]
 fn a_removal_lets_a_sent_refresh_and_its_keep_finish() {
-    let cancelled = Some((0, Ends::Grant, Failure::Exchange(skein_oauth::Failure::Cancelled)));
-    let rows: [(&str, Setup, Sent); KEEPERS] = [
-        ("owner", due_refresh, (cancelled, (true, 1, false))),
-        ("private", private_refresh, (cancelled, (true, 1, false))),
+    let cancelled =
+        Some(Failed { account: 0, ends: Ends::Grant, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) });
+    let finished = private::RefreshOutcome { kept: true, removed: 1, granted: false };
+    let rows = [
+        ("owner", due_refresh(), Sent { failed: cancelled, finished }),
+        ("private", private_refresh(), Sent { failed: cancelled, finished }),
     ];
-    for (name, setup, expected) in rows {
-        let mut owner = setup();
-        let identity = sent(&mut owner);
+    for (name, mut owner, expected) in rows {
+        let identity = owner.sent();
         owner.ask(Request::Remove { account: 0 });
         let failed = failure_of(owner.above.pop());
-        let finished = finish_sent(&mut owner, identity);
-        assert_eq!((failed, finished), expected, "{name}");
+        let finished = owner.finish_refresh(identity);
+        assert_eq!(Sent { failed, finished }, expected, "{name}");
     }
-}
-
-fn finish_socket(owner: &mut Owner, identity: Token, response: &mut &[u8]) {
-    while let Some(request) = owner.io.pop() {
-        if let Lower::Close { .. } | Lower::Abort { .. } = request {
-            socket_up(owner, LowerEvent::Closed { owner: identity });
-        } else if let Lower::Stream { down: Down::Demand { read, room }, .. } = request {
-            if room != 0 {
-                socket_up(owner, LowerEvent::Stream { owner: identity, up: Up::Room });
-            } else if !response.is_empty() {
-                let cap = match read {
-                    skein_lib::stream::Read::Nothing => 0,
-                    skein_lib::stream::Read::Fill(max) | skein_lib::stream::Read::Arrived { max } => {
-                        usize::try_from(max).expect("u32 fits")
-                    }
-                    skein_lib::stream::Read::Line { max } => bytes::line_end(response)
-                        .unwrap_or(response.len())
-                        .saturating_add(1)
-                        .min(usize::try_from(max).expect("u32 fits")),
-                    skein_lib::stream::Read::Scan { until, max } => {
-                        let cap = usize::try_from(max).expect("u32 fits");
-                        match bytes::find(response, until.as_bytes()) {
-                            Some(at) => at.saturating_add(until.as_bytes().len()).min(cap),
-                            None => cap,
-                        }
-                    }
-                }
-                .min(response.len());
-                if cap != 0 {
-                    let bytes = bytes::copy_of(response.get(..cap).expect("response piece"));
-                    *response = response.get(cap..).expect("remaining response");
-                    socket_up(owner, LowerEvent::Stream { owner: identity, up: Up::Bytes(bytes) });
-                }
-            }
-        }
-    }
-}
-fn finish_file(owner: &mut Owner) -> bool {
-    if let Some(FileLower::Request { request, .. }) = owner.files.pop() {
-        let token = owner_of(&request);
-        if let file::Request::Store { bytes, .. } = request {
-            owner.terminal(file::Event::Stored { owner: token, digest: skein_io::digest::digest(&bytes) });
-            return true;
-        } else if let file::Request::Close { .. } = request {
-            owner.terminal(file::Event::Closed { owner: token });
-        }
-    }
-    false
 }
 
 #[test]
@@ -387,4 +325,254 @@ fn removing_after_close_is_refused_as_closed() {
     drop(owner.above.pop());
     owner.ask(Request::Remove { account: ADDED });
     assert_refused(owner.above.pop(), ADDED, Asked::Remove, Refusal::Closed);
+}
+
+fn refresh_at(expiry: u64, earliest: Option<u64>) -> Account {
+    let mut configuration = refresh_account(0, ADDRESS);
+    if let Account::SignIn { keeper: Keeper::Owner { kept: Some(record) }, .. } = &mut configuration {
+        record.expires_at = Wall::from_nanos(Duration::from_secs(expiry).as_nanos());
+        record.earliest_refresh_at = None;
+        if let Some(at) = earliest {
+            record.earliest_refresh_at = Some(Wall::from_nanos(Duration::from_secs(at).as_nanos()));
+        }
+    }
+    configuration
+}
+fn at(owner: &mut Owner, seconds: u64) {
+    owner.env.now = Time::ZERO.saturating_add(Duration::from_secs(seconds));
+    owner.env.wall = Wall::from_nanos(Duration::from_secs(seconds).as_nanos());
+}
+fn wanted_owner() -> Owner {
+    let mut owner = owner(refresh_at(30, None));
+    owner.ask(Request::Want { account: 0, wanted: true });
+    owner
+}
+fn wanted_private() -> Owner {
+    let mut owner = Owner::new();
+    owner.ask(Request::Want { account: 0, wanted: true });
+    let load = owner.opened();
+    let mut record = tests_record(0);
+    record.refresh_token = Some(bytes::copy_of(b"refresh"));
+    owner.terminal(file::Event::Loaded {
+        owner: load,
+        bytes: skein_oauth::encode_record(&record, &owner.env.limits.client.document).expect("kept record"),
+    });
+    owner
+}
+
+#[test]
+fn a_wanted_account_is_refreshed_at_its_lead_with_no_grant() {
+    let mut owner = wanted_owner();
+    at(&mut owner, 20);
+    owner.fire();
+    owner.fire();
+    let connects = match owner.io.pop() {
+        Some(Lower::Connect { .. }) => true,
+        Some(_) | None => false,
+    };
+    assert!(connects);
+}
+
+#[test]
+fn a_wanted_refresh_keeps_its_record_and_lends_nothing() {
+    let expected = private::RefreshOutcome { kept: true, removed: 0, granted: false };
+    for (name, mut owner, expected) in [("owner", wanted_owner(), expected), ("private", wanted_private(), expected)] {
+        at(&mut owner, 20);
+        let identity = owner.sent();
+        assert_eq!(owner.finish_refresh(identity), expected, "{name}");
+    }
+}
+
+#[test]
+fn a_wanted_refresh_that_fails_says_failed_as_refresh() {
+    let mut owner = wanted_owner();
+    at(&mut owner, 20);
+    owner.fire();
+    component::refuse_refresh(&mut owner.component, &owner.env, &mut owner.above, &mut owner.io);
+    assert_eq!(
+        failure_of(owner.above.pop()),
+        Some(Failed { account: 0, ends: Ends::Refresh, failure: Failure::Exchange(skein_oauth::Failure::Refused) })
+    );
+}
+
+#[test]
+fn a_wanted_account_without_a_refreshable_record_is_left_alone() {
+    let mut empty = refresh_at(30, None);
+    if let Account::SignIn { keeper, .. } = &mut empty {
+        *keeper = Keeper::Owner { kept: None };
+    }
+    let mut handed = owner(Account::HandedIn);
+    handed.ask(Request::HandIn { account: 0, record: tests_record(0) });
+    for (name, mut owner) in [("no record", owner(empty)), ("handed in", handed)] {
+        owner.ask(Request::Want { account: 0, wanted: true });
+        at(&mut owner, 20);
+        owner.fire();
+        // A handed-in record still announces its ordinary Expiring event.
+        let refreshing = !owner.io.is_empty() || owner.component.has_work();
+        assert!(!refreshing, "{name}");
+    }
+}
+
+#[test]
+fn a_want_answers_only_when_refused() {
+    let mut closed = owner(Account::HandedIn);
+    closed.ask(Request::Close);
+    drop(closed.above.pop());
+    for (name, mut owner, account, expected) in [
+        ("live", owner(Account::HandedIn), 0, None),
+        ("free", owner(Account::HandedIn), ADDED, Some((ADDED, Asked::Want, Refusal::Account))),
+        ("closed", closed, 0, Some((0, Asked::Want, Refusal::Closed))),
+    ] {
+        owner.ask(Request::Want { account, wanted: true });
+        assert_eq!(refusal_of(owner.above.pop()), expected, "{name}");
+    }
+}
+
+struct RefreshInput {
+    name: &'static str,
+    owner: Owner,
+    request: Option<Request>,
+}
+fn earliest_inputs() -> [RefreshInput; 4] {
+    [
+        RefreshInput { name: "lead", owner: held_before_earliest(), request: None },
+        RefreshInput {
+            name: "grant",
+            owner: owner(refresh_at(30, Some(25))),
+            request: Some(Request::Grant { account: 0 }),
+        },
+        RefreshInput {
+            name: "rejection",
+            owner: held_before_earliest(),
+            request: Some(Request::Rejected { account: 0, generation: 0 }),
+        },
+        RefreshInput {
+            name: "want",
+            owner: owner(refresh_at(30, Some(25))),
+            request: Some(Request::Want { account: 0, wanted: true }),
+        },
+    ]
+}
+fn held_before_earliest() -> Owner {
+    let mut owner = owner(refresh_at(30, Some(25)));
+    owner.ask(Request::Grant { account: 0 });
+    drop(owner.above.pop());
+    owner
+}
+fn ask_at(owner: &mut Owner, request: Option<Request>, seconds: u64) {
+    at(owner, seconds);
+    if let Some(request) = request {
+        owner.ask(request);
+    }
+    owner.fire();
+}
+
+#[test]
+fn no_refresh_starts_before_the_earliest_refresh_time() {
+    for RefreshInput { name, mut owner, request } in earliest_inputs() {
+        ask_at(&mut owner, request, 24);
+        assert_eq!((owner.io.is_empty(), owner.component.has_work()), (true, false), "{name}");
+    }
+}
+
+#[test]
+fn a_refresh_starts_at_the_earliest_refresh_time() {
+    for RefreshInput { name, mut owner, request } in earliest_inputs() {
+        ask_at(&mut owner, request, 25);
+        // The account step admits the exchange; the following fire emits its Connect.
+        owner.fire();
+        let connects = match owner.io.pop() {
+            Some(Lower::Connect { .. }) => true,
+            Some(_) | None => false,
+        };
+        assert!(connects, "{name}");
+    }
+}
+
+#[test]
+fn a_grant_before_it_is_answered_with_the_held_token() {
+    let mut owner = owner(refresh_at(30, Some(25)));
+    at(&mut owner, 20);
+    owner.ask(Request::Grant { account: 0 });
+    assert_granted(owner.above.pop(), 0, 10);
+}
+
+#[test]
+fn an_expired_grant_waits_for_its_earliest_refresh() {
+    let mut owner = owner(refresh_at(5, Some(25)));
+    at(&mut owner, 10);
+    owner.ask(Request::Grant { account: 0 });
+    owner.fire();
+    assert!(owner.above.is_empty() && owner.io.is_empty());
+}
+
+#[test]
+fn a_cancelled_wanted_refresh_ends_as_refresh() {
+    let mut owner = wanted_owner();
+    at(&mut owner, 20);
+    owner.fire();
+    owner.ask(Request::Cancel { account: 0 });
+    assert_eq!(
+        failure_of(owner.above.pop()),
+        Some(Failed { account: 0, ends: Ends::Refresh, failure: Failure::Exchange(skein_oauth::Failure::Cancelled) })
+    );
+}
+
+#[test]
+fn an_account_no_longer_wanted_has_no_refresh_deadline() {
+    let mut owner = wanted_owner();
+    owner.ask(Request::Want { account: 0, wanted: false });
+    assert_eq!(owner.component.next_deadline(), None);
+}
+
+#[test]
+fn a_wanted_name_and_earliest_time_fit_the_account_table_bound() {
+    assert_eq!((size_of::<component::Name>(), size_of::<component::State>()), (NAME_BYTES, STATE_BYTES));
+}
+
+#[test]
+fn releasing_a_wanted_grant_keeps_its_rejection_waiting_at_the_earliest_time() {
+    let mut owner = owner(refresh_at(60, Some(25)));
+    owner.ask(Request::Want { account: 0, wanted: true });
+    owner.ask(Request::Grant { account: 0 });
+    drop(owner.above.pop());
+    owner.ask(Request::Rejected { account: 0, generation: 0 });
+    owner.ask(Request::Release { account: 0 });
+    assert_eq!(owner.component.next_deadline(), Some(Time::from_nanos(25_000_000_000)));
+}
+
+#[test]
+fn an_account_no_longer_wanted_drops_its_unsent_refresh_deadline() {
+    let mut owner = owner(refresh_at(30, Some(25)));
+    owner.ask(Request::Want { account: 0, wanted: true });
+    at(&mut owner, 20);
+    owner.fire();
+    owner.ask(Request::Want { account: 0, wanted: false });
+    at(&mut owner, 25);
+    owner.fire();
+    assert_eq!(owner.component.next_deadline(), None);
+}
+
+#[test]
+fn a_free_name_is_added_with_no_answer() {
+    let (mut component, env) = roomy();
+    let mut up = Queue::with_capacity(MAX_OUT_DOWN.above);
+    component.add(&env, ADDED, Account::HandedIn, &mut up);
+    assert!(up.is_empty());
+}
+#[test]
+fn an_add_at_the_accounts_limit_is_admitted() {
+    let (mut component, env) = roomy();
+    let mut up = Queue::with_capacity(MAX_OUT_DOWN.above);
+    for account in [ADDED, ADDED.saturating_add(1)] {
+        component.add(&env, account, Account::HandedIn, &mut up);
+    }
+    assert!(up.is_empty());
+}
+#[test]
+fn a_wanted_account_is_left_alone_before_its_lead() {
+    let mut owner = wanted_owner();
+    at(&mut owner, 19);
+    owner.fire();
+    assert!(owner.io.is_empty());
 }

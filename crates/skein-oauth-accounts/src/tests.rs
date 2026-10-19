@@ -656,9 +656,15 @@ fn refusal_of(event: Option<Event>) -> Option<(u32, Asked, Refusal)> {
         | None => None,
     }
 }
-fn failure_of(event: Option<Event>) -> Option<(u32, Ends, Failure)> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Failed {
+    account: u32,
+    ends: Ends,
+    failure: Failure,
+}
+fn failure_of(event: Option<Event>) -> Option<Failed> {
     match event {
-        Some(Event::Failed { account, ends, failure }) => Some((account, ends, failure)),
+        Some(Event::Failed { account, ends, failure }) => Some(Failed { account, ends, failure }),
         Some(
             Event::Visit { .. }
             | Event::SignedIn { .. }

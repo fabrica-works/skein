@@ -55,6 +55,62 @@ pub(super) fn admit(account: u32, configuration: Account, limits: &Limits) -> Re
 }
 
 impl Component {
+    pub(super) fn want(&mut self, account: u32, wanted: bool, up: &mut Queue<Event>) {
+        if !self.refused(account, Asked::Want, up) {
+            match self.names.get_mut(account).expect("live name") {
+                Name::Live { wanted: flag, .. } => *flag = wanted,
+                Name::Removing { .. } | Name::Free => unreachable!("live name"),
+            }
+            if !wanted {
+                match self.accounts.get_mut(account).expect("account state") {
+                    State::Record { held: false, due, .. } => *due = false,
+                    State::Record { .. } | State::Empty | State::Loaded { .. } => {}
+                }
+            }
+        }
+    }
+
+    pub(super) fn release(&mut self, account: u32) {
+        let wanted = self.wanted(account);
+        match self.accounts.get_mut(account).expect("account state") {
+            State::Record { held, due, .. } => {
+                *held = false;
+                if !wanted {
+                    *due = false;
+                }
+            }
+            State::Empty | State::Loaded { .. } => {}
+        }
+    }
+
+    pub(super) fn wanted(&self, account: u32) -> bool {
+        match self.names.get(account).expect("account name") {
+            Name::Live { wanted, .. } => *wanted,
+            Name::Removing { .. } | Name::Free => false,
+        }
+    }
+
+    pub(super) fn refresh_ready(&self, account: u32, now: skein_lib::Time) -> bool {
+        match self.accounts.get(account).expect("account state") {
+            State::Record { earliest: Some(at), .. } => now >= *at,
+            State::Empty | State::Loaded { .. } | State::Record { earliest: None, .. } => true,
+        }
+    }
+
+    pub(super) fn grant_before_refresh(&mut self, env: &Env<Limits>, account: u32, up: &mut Queue<Event>) {
+        let slot = self.accounts.get_mut(account).expect("account state");
+        match slot {
+            State::Record { expiry, rejected, .. } if env.now < *expiry && !*rejected => {
+                super::grant(slot, env.now, super::names::number(&self.names, account), up);
+            }
+            State::Record { held, due, .. } => {
+                *held = true;
+                *due = true;
+            }
+            State::Empty | State::Loaded { .. } => unreachable!("refreshable record"),
+        }
+    }
+
     /// Admits a named account, answering only a refusal with `MAX_OUT_DOWN.above` room.
     pub fn add(&mut self, env: &Env<Limits>, account: u32, configuration: Account, up: &mut Queue<Event>) {
         let why = if self.lifecycle != Lifecycle::Live {
@@ -89,7 +145,7 @@ impl Component {
                 return;
             }
         };
-        *self.names.get_mut(place).expect("bounded name") = Name::Live { number: account };
+        *self.names.get_mut(place).expect("bounded name") = Name::Live { number: account, wanted: false };
         if place == self.accounts.len() {
             match self.accounts.push(state) {
                 Ok(()) => {}
@@ -114,7 +170,9 @@ impl Component {
     pub(super) fn terminal_place(&self, number: u32) -> Option<u32> {
         for place in 0..self.names.len() {
             match self.names.get(place).expect("bounded name") {
-                Name::Live { number: held } | Name::Removing { number: held } if number == *held => return Some(place),
+                Name::Live { number: held, .. } | Name::Removing { number: held } if number == *held => {
+                    return Some(place);
+                }
                 Name::Live { .. } | Name::Removing { .. } | Name::Free => {}
             }
         }

@@ -18,6 +18,8 @@ pub enum Story {
     Refreshing,
     Keeping,
     Holding,
+    Wanted,
+    WantedFailure,
 }
 
 /// Content-free owner outcomes.
@@ -80,7 +82,12 @@ fn configuration(client: &world::Client) -> accounts::Account {
                 owner.record.clone()
             } else {
                 match owner.story {
-                    Story::Holding => Some(record(30)),
+                    Story::Holding | Story::Wanted => Some(record(30)),
+                    Story::WantedFailure => {
+                        let mut kept = record(30);
+                        kept.refresh_token = Some(bytes::copy_of(b"revoked"));
+                        Some(kept)
+                    }
                     Story::Refreshing | Story::Keeping => Some(record(5)),
                     Story::Idle | Story::Loading | Story::SigningIn => None,
                 }
@@ -111,6 +118,9 @@ pub(crate) fn start(client: &mut world::Client, env: &Env<accounts::Limits>) {
     );
     add(client, env);
     match client.accounts.as_ref().expect("story").story {
+        Story::Wanted | Story::WantedFailure => {
+            client.ask(env, accounts::Request::Want { account: ACCOUNT, wanted: true });
+        }
         Story::Idle => remove(client, env),
         Story::SigningIn => client.ask(env, accounts::Request::SignIn { account: ACCOUNT }),
         Story::Loading | Story::Refreshing | Story::Keeping | Story::Holding => {
@@ -144,6 +154,10 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
                 remove(client, env);
             }
             client.ask(env, accounts::Request::Kept { account, generation, keeping: accounts::Keeping::Kept });
+            if client.accounts.as_ref().expect("story").story == Story::Wanted {
+                client.ask(env, accounts::Request::Close);
+                client.closing = true;
+            }
         }
         accounts::Event::Granted { generation, .. } => {
             client.accounts.as_mut().expect("story").facts.push(Fact::Granted(generation));
@@ -151,6 +165,10 @@ pub(crate) fn observe(client: &mut world::Client, env: &Env<accounts::Limits>) {
         }
         accounts::Event::Failed { ends, failure, .. } => {
             client.accounts.as_mut().expect("story").facts.push(Fact::Failed(ends, failure));
+            if client.accounts.as_ref().expect("story").story == Story::WantedFailure {
+                client.ask(env, accounts::Request::Close);
+                client.closing = true;
+            }
         }
         accounts::Event::Removed { account } => {
             let owner = client.accounts.as_mut().expect("story");
