@@ -103,6 +103,31 @@ After the green light, the owner implements directly what is small.
 Otherwise it breaks the work into tasks, all upfront, as it goes, or
 both, and prepares the next tasks while implementers work.
 
+**The planner's rules hold for its tasks** (development.md, section 5),
+all but those about plan files, sessions and the coordinator:
+- 5.1, what is settled first: the scope, the APIs that may break and
+  their repair, credentials and live services, the proofs, the
+  interface sketches;
+- 5.3, the increments: small, each landed on its own and leaving `main`
+  coherent; dependencies named by capability; upstream first; open
+  behaviour stays open until the owner, as its designer, answers it; a
+  new world's cost; transitional code with an end; a bound over a sum
+  computed early; a suite every task adds to ends merged;
+- 5.5 and 5.6: each task proves itself at the highest layer within
+  reach, layers open as early as they can, and the tests keep their
+  shape and ceilings;
+- 5.7: repins.
+
+Above all, **the meeting point comes first** (5.3). Where two parts
+meet (a client and its server, a protocol's two ends, a domain and its
+store, a service and its host), one thin story runs them together, the
+real thing on both sides, as soon as the far side can answer, and each
+task grows it. Neither side runs ahead of the other. Where their
+vocabularies differ, the translation is exhaustive from the first
+types, so that drift is a build error the day it happens. A fake's
+scenarios also run against the real side. A parent whose sub-owners
+build the two sides orders their parts so that they meet early.
+
 ### 4.2 The implementer
 
 The owner picks the model and effort. The default is gpt-6.1-sol at
