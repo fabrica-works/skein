@@ -1,12 +1,14 @@
 //! Step tests of admission, request accounting, bounded answers and recovery.
 mod contracts;
+mod fixtures;
+use fixtures::{Harness, Sent, at, configured, listing_item, terminal};
 mod keep;
 mod locate;
 mod outbox;
-use crate::{Domain, Event, Fact, Limits, Priority, Request, calls, fire, resume, step, worst_case};
+use crate::{Domain, Event, Fact, Limits, Priority, Request, worst_case};
 use alloc::boxed::Box;
 use skein_forge::api::{self, Answer, Error, Op, Read, Repository, Write};
-use skein_lib::{Duration, Env, List, Queue, Time, Token, Wall};
+use skein_lib::{Duration, Time, Token};
 
 const LIMITS: Limits = Limits {
     pending: 8,
@@ -35,107 +37,6 @@ const LIMITS: Limits = Limits {
     facts: 32,
 };
 const REPO: Repository = Repository { forge: 2, repository: 5 };
-
-fn at(seconds: u64) -> Time {
-    Time::from_nanos(seconds.saturating_mul(1_000_000_000))
-}
-#[derive(Debug)]
-struct Sent {
-    call: Token,
-    op: Op,
-}
-#[derive(Debug)]
-struct Harness {
-    domain: Domain,
-    env: Env<Limits>,
-}
-impl Harness {
-    fn new(limits: Limits) -> Harness {
-        Harness { domain: Domain::new(&limits), env: Env { now: at(100), wall: Wall::EPOCH, limits } }
-    }
-    fn step(&mut self, event: Event) -> Box<[Request]> {
-        let mut out = Queue::with_capacity(crate::max_out(&self.env.limits));
-        step(&mut self.domain, &self.env, event, &mut out);
-        self.domain.reclaim();
-        let mut got = List::with_capacity(out.len());
-        for _ in 0..out.len() {
-            got.push(out.pop().expect("request exists")).expect("room");
-        }
-        got.into_boxed()
-    }
-    fn read(&mut self, owner: u64) {
-        assert!(
-            self.step(Event::Read { owner: Token::new(owner), repository: REPO, read: Read::Pull { number: owner } })
-                .is_empty()
-        );
-    }
-    fn queued(&mut self, owner: u64, priority: Priority) {
-        let op = if priority == Priority::Write {
-            Op::Write(Write::Close { number: owner })
-        } else {
-            Op::Read(Read::Pull { number: owner })
-        };
-        assert!(crate::bounds::op(&op, &self.env.limits));
-        calls::queue(&mut self.domain.calls, calls::Owner::Read(Token::new(owner)), REPO, op, priority);
-    }
-    fn send(&mut self) -> Option<Sent> {
-        let mut out = Queue::with_capacity(1);
-        resume(&mut self.domain, &self.env, &mut out);
-        match out.pop() {
-            Some(Request::Call { call, repository, op }) => {
-                assert_eq!(repository, REPO);
-                Some(Sent { call, op })
-            }
-            Some(
-                Request::Read { .. }
-                | Request::Progress { .. }
-                | Request::Save { .. }
-                | Request::Erase { .. }
-                | Request::Outcome { .. }
-                | Request::Kept { .. }
-                | Request::Changed { .. }
-                | Request::Drift { .. }
-                | Request::ReadAfreshDone
-                | Request::OutboxDone,
-            ) => {
-                panic!("read resume only sends a call")
-            }
-            None => None,
-        }
-    }
-    fn sent(&mut self) -> (Sent, Repository) {
-        let mut out = Queue::with_capacity(1);
-        resume(&mut self.domain, &self.env, &mut out);
-        let Some(Request::Call { call, repository, op }) = out.pop() else {
-            panic!("a locate sends its call");
-        };
-        (Sent { call, op }, repository)
-    }
-    fn one(&mut self) -> Sent {
-        self.send().expect("call ready")
-    }
-    fn answer(&mut self, sent: &Sent, cost: u32, result: Result<Answer, Error>) -> Box<[Request]> {
-        self.step(Event::Answered { call: sent.call, cost, result })
-    }
-    fn fire(&mut self) {
-        let mut out = Queue::with_capacity(1);
-        fire(&mut self.domain, &self.env, &mut out);
-        assert!(out.is_empty());
-    }
-    fn facts(&mut self) -> Box<[Fact]> {
-        let mut facts = List::with_capacity(self.env.limits.facts);
-        for _ in 0..self.env.limits.facts {
-            match self.domain.pop_fact() {
-                Some(fact) => facts.push(fact).expect("room"),
-                None => break,
-            }
-        }
-        facts.into_boxed()
-    }
-}
-fn terminal(requests: &[Request], owner: u64, error: Error) {
-    assert_eq!(requests, &[Request::Read { owner: Token::new(owner), result: Err(error) }]);
-}
 
 #[test]
 fn a_fresh_read_starts_immediately_without_global_lifetime_silence() {
@@ -317,19 +218,6 @@ fn arbitrary_item_since_tolerates_the_providers_coarse_inclusive_overlap() {
         h.answer(&sent, 1, Ok(answer.clone())).as_ref(),
         &[Request::Read { owner: Token::new(1), result: Ok(answer) }],
     );
-}
-fn listing_item(number: u64, updated: u64, kind: api::Kind) -> api::Summary {
-    api::Summary {
-        number,
-        kind,
-        state: api::State::Open,
-        author: 2,
-        key: None,
-        title: Box::new([]),
-        body: Box::new([]),
-        labels: Box::new([]),
-        updated: at(updated),
-    }
 }
 #[test]
 fn input_rows_are_checked_before_scanning_or_forwarding_them() {
@@ -599,17 +487,6 @@ fn an_answer_for_another_pull_cannot_satisfy_a_fresh_read() {
     assert_eq!(out.as_ref(), &[Request::Read { owner: Token::new(8), result: Err(Error::InvalidAnswer) }]);
 }
 
-fn configured(limits: &Limits) -> Domain {
-    Domain::configured(
-        limits,
-        0,
-        crate::Config {
-            namespace: Box::from(&b"kit"[..]),
-            writers: Box::new([crate::Writer { forge: REPO.forge, author: 1 }]),
-        },
-    )
-    .expect("valid root identity")
-}
 #[test]
 fn deployment_config_and_decoded_key_frames_are_checked() {
     let d = configured(&LIMITS);

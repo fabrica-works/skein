@@ -1,149 +1,9 @@
-use super::{LIMITS, REPO, Sent, at};
-use crate::{
-    Condition, Domain, Effect, Entry, Event, Limits, Made, Outcome, Recovery, RecoveryClock, Request, fire, max_out,
-    recovery, resume, step,
-};
+use super::fixtures::outbox::{Harness, comment, pull, recovered_review, recovering_review, summary};
+use super::{LIMITS, at};
+use crate::{Condition, Domain, Event, Made, Outcome, Recovery, RecoveryClock, fire, max_out, recovery};
 use alloc::boxed::Box;
 use skein_forge::api::{self, Answer, Error, Op, Read, Write};
-use skein_lib::{Duration, Env, List, Map, Queue, Wall};
-#[derive(Debug)]
-struct Harness {
-    domain: Domain,
-    env: Env<Limits>,
-    store: Map<u64, Entry>,
-    outcomes: List<(u64, Outcome)>,
-    calls: Queue<Sent>,
-    writes: u32,
-}
-impl Harness {
-    fn new() -> Harness {
-        let mut h = Harness {
-            domain: super::configured(&LIMITS),
-            env: Env {
-                now: at(100),
-                wall: Wall::from_nanos(at(100).as_nanos()),
-                limits: Limits { rate: 100, reserve: 0, ..LIMITS },
-            },
-            store: Map::with_capacity(LIMITS.entries),
-            outcomes: List::with_capacity(20),
-            calls: Queue::with_capacity(8),
-            writes: 0,
-        };
-        h.step(Event::Restored { clock: RecoveryClock::Monotonic });
-        h
-    }
-    fn step(&mut self, event: Event) {
-        let mut out = Queue::with_capacity(max_out(&self.env.limits));
-        step(&mut self.domain, &self.env, event, &mut out);
-        self.take(&mut out);
-        self.domain.reclaim();
-    }
-    fn take(&mut self, out: &mut Queue<Request>) {
-        for _ in 0..out.len() {
-            match out.pop().expect("output exists") {
-                Request::Progress { entry } => {
-                    self.store.insert(entry.number, entry).expect("store fits");
-                }
-                Request::Outcome { entry, task: _, outcome } => {
-                    match outcome {
-                        Outcome::Uncertain => {}
-                        Outcome::Made { .. }
-                        | Outcome::Failed(_)
-                        | Outcome::Raced { .. }
-                        | Outcome::Held
-                        | Outcome::Withdrawn => {
-                            self.store.remove(&entry).expect("top removes settled entry");
-                        }
-                    }
-                    self.outcomes.push((entry, outcome)).expect("outcome fits");
-                }
-                Request::Call { call, repository, op } => {
-                    assert_eq!(repository, REPO);
-                    match &op {
-                        Op::Write(write) => {
-                            let mut durable = false;
-                            for (_, entry) in &self.store {
-                                if entry.effect.write == *write {
-                                    let attempt = entry.attempt.expect("attempt durable before call starts");
-                                    assert_eq!(attempt.sent, self.env.now);
-                                    assert!(entry.start.is_some());
-                                    durable = true;
-                                }
-                            }
-                            assert!(durable, "a durable entry authorizes this exact write");
-                            self.writes = self.writes.saturating_add(1);
-                        }
-                        Op::Read(_) => {}
-                    }
-                    self.calls.push(Sent { call, op });
-                }
-                Request::Save { .. }
-                | Request::Erase { .. }
-                | Request::Kept { .. }
-                | Request::Changed { .. }
-                | Request::Drift { .. } => panic!("outbox tests keep no resources"),
-                Request::Read { .. } => panic!("outbox tests make no parent read requests"),
-                Request::ReadAfreshDone | Request::OutboxDone => {
-                    panic!("ordinary outbox test did not request restart phases")
-                }
-            }
-        }
-    }
-    fn send(&mut self) -> Option<Sent> {
-        let mut out = Queue::with_capacity(max_out(&self.env.limits));
-        resume(&mut self.domain, &self.env, &mut out);
-        self.take(&mut out);
-        self.domain.reclaim();
-        self.calls.pop()
-    }
-    fn one(&mut self) -> Sent {
-        self.send().expect("call ready")
-    }
-    fn answer(&mut self, sent: Sent, result: Result<Answer, Error>) {
-        self.step(Event::Answered { call: sent.call, cost: 1, result });
-    }
-    fn clock(&mut self) {
-        let sent = self.one();
-        assert_eq!(sent.op, Op::Read(Read::Items { since: at(u64::MAX), page: 1, kind: None }));
-        self.answer(sent, Ok(Answer::Items { items: Box::new([]), more: false, now: at(100) }));
-    }
-    fn make(&mut self, number: u64, write: Write, condition: Condition) {
-        let entry = Entry {
-            number,
-            task: 7,
-            repository: REPO,
-            effect: Effect { write, condition },
-            start: None,
-            attempt: None,
-            failures: 0,
-        };
-        self.store.insert(number, entry.clone()).expect("top store fits");
-        self.step(Event::Make { entry });
-    }
-    fn restart(&mut self, now: u64, wall: u64, clock: RecoveryClock) {
-        self.domain = super::configured(&self.env.limits);
-        self.env.now = at(now);
-        self.env.wall = Wall::from_nanos(at(wall).as_nanos());
-        let mut records = List::with_capacity(LIMITS.entries);
-        for (_, entry) in &self.store {
-            records.push(entry.clone()).expect("records fit");
-        }
-        self.step(Event::Restored { clock });
-        for entry in records.into_boxed() {
-            self.step(Event::Make { entry });
-        }
-    }
-    fn fire(&mut self, now: u64) {
-        self.env.now = at(now);
-        let mut out = Queue::with_capacity(max_out(&self.env.limits));
-        fire(&mut self.domain, &self.env, &mut out);
-        self.take(&mut out);
-        self.domain.reclaim();
-    }
-}
-fn comment() -> Write {
-    Write::Post { number: 9, key: Box::from(&b"deployment:task:milestone"[..]), body: Box::from(&b"done"[..]) }
-}
+use skein_lib::{Duration, Queue};
 #[test]
 fn recovery_classes_follow_forgejo_guarantees() {
     assert_eq!(recovery(&comment()), Recovery::Unrecoverable);
@@ -167,33 +27,6 @@ fn recovery_classes_follow_forgejo_guarantees() {
         Recovery::Unrecoverable,
     );
     assert_eq!(recovery(&Write::Close { number: 9 }), Recovery::Idempotent);
-}
-fn summary() -> api::Summary {
-    api::Summary {
-        number: 9,
-        kind: api::Kind::Issue,
-        state: api::State::Open,
-        author: 1,
-        key: None,
-        labels: Box::new([]),
-        title: Box::new([]),
-        body: Box::new([]),
-        updated: at(100),
-    }
-}
-fn pull(head: [u8; 32]) -> api::Pull {
-    api::Pull {
-        number: 9,
-        state: api::State::Open,
-        head: Box::from(&b"topic"[..]),
-        base: Box::from(&b"main"[..]),
-        commit: head,
-        base_commit: Some([2; 32]),
-        merged: None,
-        mergeable: true,
-        ci: api::Ci::Passed,
-        reviewers: Box::new([]),
-    }
 }
 #[test]
 fn start_and_attempt_are_durable_before_the_first_write() {
@@ -610,43 +443,6 @@ fn revised_or_unknown_comments_do_not_settle_an_uncertain_creation() {
             h.outcomes.as_slice(),
             &[(1, Outcome::Uncertain), (1, Outcome::Made { made: Made::Commented(43), found: true }),]
         );
-    }
-}
-fn recovering_review() -> Harness {
-    let mut h = Harness::new();
-    h.make(
-        1,
-        Write::Review {
-            number: 9,
-            key: Box::from(&b"review-key"[..]),
-            verdict: api::Verdict::Approve,
-            body: Box::from(&b"looks good"[..]),
-        },
-        Condition::Review { head: [1; 32] },
-    );
-    h.clock();
-    let check = h.one();
-    h.answer(check, Ok(Answer::Pull(pull([1; 32]))));
-    let write = h.one();
-    h.answer(write, Err(Error::Timeout));
-    // Restore the durable boundary a participating inbox captured before
-    // submission. The outbox-only harness does not keep a live resource.
-    h.store.get_mut(&1).expect("uncertain entry remains").start.as_mut().expect("durable start").review = 5;
-    h.restart(105, 105, RecoveryClock::Monotonic);
-    h
-}
-fn recovered_review(id: u64, provenance: api::Provenance, commit: [u8; 32]) -> api::Review {
-    api::Review {
-        provenance,
-        id,
-        revision: 1,
-        author: 1,
-        verdict: api::Verdict::Approve,
-        commit,
-        key: Some(Box::from(&b"review-key"[..])),
-        body: Box::new([]),
-        at: at(100),
-        official: true,
     }
 }
 #[test]

@@ -28,6 +28,7 @@ pub struct Domain {
     pub(crate) rng: Rng,
     pub(crate) outbox: outbox::Outbox,
     pub(crate) keep: keep::Keep,
+    identity_used: bool,
     facts: Queue<Fact>,
     lost: u64,
 }
@@ -51,6 +52,9 @@ impl Domain {
     /// Rebind the key namespace to the deployment ID loaded from the store,
     /// before restored entries or live resources are handed to the client.
     pub fn bind_deployment(&mut self, id: [u8; 16], limits: &Limits) -> bool {
+        if self.identity_used {
+            return false;
+        }
         let Some(config) = &mut self.config else {
             return false;
         };
@@ -70,6 +74,7 @@ impl Domain {
         let alarms = alarms.checked_add(2).expect("validated alarm capacity");
         Domain {
             config,
+            identity_used: false,
             calls: calls::Calls::new(l),
             alarms: Deadlines::with_capacity(alarms),
             rng: Rng::new(seed),
@@ -135,25 +140,37 @@ pub const fn max_out(l: &Limits) -> u32 {
 /// Decide one parent event and emit the records and effects of that decision.
 pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
     match event {
-        Event::Keep { owner, watches } => keep::replace(d, env, owner, watches, out),
-        Event::Hint { hint } => keep::hint(d, env, hint),
-        Event::Writer { resource, taken } => keep::writer(d, env, &resource, taken),
-        Event::Pushed { resource, commit } => keep::pushed(d, env, &resource, commit, out),
-        Event::Make { entry } => outbox::make(d, env, entry, false, out),
-        Event::Remake { entry } => outbox::make(d, env, entry, true, out),
+        Event::Keep { owner, watches } => {
+            d.identity_used = true;
+            keep::replace(d, env, owner, watches, out);
+        }
+        Event::Hint { hint } => keep::poll::hint(d, env, hint),
+        Event::Writer { resource, taken } => keep::poll::writer(d, env, &resource, taken),
+        Event::Pushed { resource, commit } => keep::poll::pushed(d, env, &resource, commit, out),
+        Event::Make { entry } => {
+            d.identity_used = true;
+            outbox::make(d, env, entry, false, out);
+        }
+        Event::Remake { entry } => {
+            d.identity_used = true;
+            outbox::make(d, env, entry, true, out);
+        }
         Event::Withdraw { entry } => outbox::withdraw(d, entry, out),
-        Event::Restore { record } => match record {
-            Stored::Live(record) => keep::restore_live(d, env, record),
-            Stored::Repository(record) => keep::restore_repository(d, env, record),
-        },
+        Event::Restore { record } => {
+            d.identity_used = true;
+            match record {
+                Stored::Live(record) => keep::restore::restore_live(d, env, record),
+                Stored::Repository(record) => keep::restore::restore_repository(d, env, record),
+            }
+        }
         Event::Restored { clock } => {
             outbox::restored(d, clock);
-            keep::restored(d);
+            keep::restore::restored(d);
         }
         Event::PauseOutbox => outbox::pause(d),
         Event::ReadAfresh => {
-            keep::start_fresh(d);
-            if keep::fresh_done(d) {
+            keep::restore::start_fresh(d);
+            if keep::restore::fresh_done(d) {
                 out.push(Request::ReadAfreshDone);
             }
         }
@@ -182,7 +199,7 @@ pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Req
         }
         Event::Answered { call, cost, result } => {
             calls::answered(d, env, call, cost, result, out);
-            if keep::fresh_done(d) {
+            if keep::restore::fresh_done(d) {
                 out.push(Request::ReadAfreshDone);
             }
             if outbox::settle_done(d) {
@@ -195,7 +212,7 @@ pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Req
 /// their original lifetime; unrelated reads have no startup delay.
 /// Send one eligible call after earlier progress has been committed.
 pub fn resume(d: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
-    if calls::background_owed(&d.calls, env) && keep::pump(d, env, out) {
+    if calls::background_owed(&d.calls, env) && keep::poll::pump(d, env, out) {
         calls::send(d, env, out);
         if outbox::settle_done(d) {
             out.push(Request::OutboxDone);
@@ -208,7 +225,7 @@ pub fn resume(d: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) {
         }
         return;
     }
-    if keep::pump(d, env, out) {
+    if keep::poll::pump(d, env, out) {
         calls::send(d, env, out);
         if outbox::settle_done(d) {
             out.push(Request::OutboxDone);
@@ -230,7 +247,7 @@ pub fn fire(d: &mut Domain, env: &Env<Limits>, _out: &mut Queue<Request>) {
         Alarm::Reset => calls::reset(d, env),
         Alarm::ReadRetry(id) => calls::retry(d, id),
         Alarm::Entry(number) => outbox::due(d, number),
-        Alarm::Resource(resource) => keep::due_resource(d, env, resource),
-        Alarm::Repository(repository) => keep::due_repository(d, repository),
+        Alarm::Resource(resource) => keep::poll::due_resource(d, env, resource),
+        Alarm::Repository(repository) => keep::poll::due_repository(d, repository),
     }
 }

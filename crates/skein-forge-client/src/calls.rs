@@ -289,6 +289,7 @@ pub(crate) fn answered(
                 Ok(answer)
             }
         }
+        Err(Error::Busy) => Err(Error::InvalidAnswer),
         Err(error) => Err(error),
     };
     if let Err(error) = result {
@@ -333,9 +334,9 @@ pub(crate) fn answered(
     d.calls.slab.retire(id);
     match owner {
         Owner::Read(owner) => out.push(Request::Read { owner, result }),
-        Owner::Entry(number) => crate::outbox::answered(d, env, number, result, out),
-        Owner::Resource(resource) => crate::keep::answered_resource(d, env, &resource, result, out),
-        Owner::Repository(repository) => crate::keep::answered_repository(d, env, repository, result, out),
+        Owner::Entry(number) => crate::outbox::answer::answered(d, env, number, result, out),
+        Owner::Resource(resource) => crate::keep::answer::answered_resource(d, env, &resource, result, out),
+        Owner::Repository(repository) => crate::keep::answer::answered_repository(d, env, repository, result, out),
     }
 }
 fn wait_read(d: &mut Domain, env: &Env<Limits>, id: Id<Call>) -> bool {
