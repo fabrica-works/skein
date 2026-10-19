@@ -1144,7 +1144,7 @@ pub struct Rlimit { pub resource: Resource, pub soft: u64, pub hard: u64 }
 - **Given descriptors.** Each names an io root, an open directory, and
   the descriptor number it has in the child; with the pipes, they are
   all the child inherits. A helper that works beneath a store the
-  service opened takes it so (hearth's store.md, 5.2).
+  service opened takes it so (hearth's domain/store.md, 5.2).
 - **Contained.** A contained child has a user namespace of its own,
   mapped as `users` and `groups` say, and with it mount, ipc and cgroup
   namespaces of its own; a pid namespace if `pid`; a network namespace

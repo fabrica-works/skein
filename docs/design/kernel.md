@@ -959,8 +959,8 @@ for its backend.
   which leaves it out; both destroyed, and `NotFound` after. The
   simulator has no btrfs: the minimal fake machine answers these records
   `NotSupported` (testing.md, 4), and a service's own fake machine that
-  models btrfs holds itself to these scenarios (hearth's, its testing.md,
-  3.3).
+  models btrfs holds itself to these scenarios (hearth's, its
+  domain/testing.md, 3.3).
 - **Processes,** with the fixture program of both backends (echo its
   input, exit with a status, never exit): pipes through chosen
   descriptors, an exit status kept, a `Wait` that waits while the child
