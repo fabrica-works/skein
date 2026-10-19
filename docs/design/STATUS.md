@@ -11,6 +11,7 @@ section 3.3).
 | temper's forge-kit | active on carbon-forge since 2026-10-19 | forge.md 2 to 9, 11; forge-connection.md 2 to 10; forge-client.md 2 to 10; forge-setup.md 2 to 4, 6 to 8; fake-forge.md 2 to 8: temper's forge crates, made neutral, moved here: `skein-forge` with the plans' own tests (skein 01, 10), the client (02), the component (03), reconcile (04), the fakes and the forge peer (05), the throwaway Forgejo and the conformance (06), and the worlds (07 to 09) | temper's `docs/development/plans/forge-kit/` |
 | temper's tools | active on debian-16gb-hel1-1 since 2026-10-19 | lib.md 12: keys given by the asker, `ask` and `restore` refusing as `Full` or `Held`, and the admission number they return, which `not_kept` names (skein 01) | temper's `docs/development/plans/tools/` |
 | smith's live-text | active on debian-8gb-hel1-1 since 2026-10-19 | fake-llm.md 2.2: a reply in pieces, its holds and their release by the domain's event and by the byte peer (skein 01) | smith's `docs/development/plans/live-text/` |
+| smith's accounts | ready | the first part of LLM accounts: the MIT licence; llm.md 1, 2.5, 2.6, 4 to 4.4, 4.7, 4.8, 5 and llm-connection.md 1, 3, 4, 4.2, 8: the public Responses route, Anthropic with a key, a credential's scheme or none, the failure classes and their report, limits per route (skein 01, 02); fake-llm.md 2.3, 3, 3.1, 5, 6, 7: scripted failures, several credentials, observations of route, scheme and index (skein 03, 04, 11); oauth.md 1 to 5: an issued client id, `nonce` and `resource`, the ID token checked, granted scopes, revocation, the record's version 3, the fake issuer's additions (skein 05 to 07, 11); oauth.md 6.1 to 6.8: the driver's accounts while running, signing out, the shared record under the owner's lock (skein 08 to 10) | smith's `docs/development/plans/accounts/` |
 | temper's client-api | done 2026-10-18 | ui-web.md 14.2: the harness opens the printed URL whole, serves other origins, awaits trouble (skein 01); ui-text.md 3 and 4: the application's lines setting and `Terminal::room`, its own lines' room kept (skein-01.s1); the line bytes setting, `Terminal::worst_case` and `Terminal::operations` (skein-01.s2); lib.md 12: a request not kept, retired by its key (skein-01.s3) | temper's `docs/development/plans/client-api/` |
 | temper's forge-setup | done 2026-10-18 | lib.md 6.2: SHA-256, `sha256::Hmac` and `sha256::equal`, with skein's three copies (io's digest, PKCE, the bundler) moved onto it (skein 01) | temper's `docs/development/plans/forge-setup/` |
 | hearth's render | done 2026-10-18 | json.md 3.6: positions on skein-json's tokens and errors (skein 02); lib.md 5.1, testing.md 5 and 8, simulator.md 7: state digests, lib's types' `Hash`, replay and the trace (skein 03); io.md 5 and simulator.md 3.3: `Rename` between two directories, `ListPage` (skein 04); kernel.md 6.1, io.md 5 and simulator.md 3.1: `Lock`, its conformance scenario, and the answer of a `Lock` or a page past its deadline (skein 04, 05) | hearth's `docs/development/plans/render/` |
@@ -48,10 +49,10 @@ section 3.3).
 | `codec.md` | partly | 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 12: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
-| `llm.md` | partly | 1, 2.5, 2.6, 4 to 4.4, 4.7, 4.8, 5: the public Responses route, Anthropic with a key, a credential's scheme, or none, the failure classes (exhausted with a reset only where given, refused, unsupported, a stream's failure with an unnamed code classed unavailable) and their report, limits per route: not planned: the first part of LLM accounts; 4.6, 4.7: the Codex route, and Anthropic's bearer route with its identity profile, withdrawn and removed once their last caller has moved: not planned; 6: Codex routing state, WebSocket: not planned |
-| `llm-connection.md` | partly | 1, 3, 4, 4.2, 8: a credential with its scheme handed with each call that has one, the provider's report on a failure, several accounts' credentials on one pool: not planned: the first part of LLM accounts; 9: names while running, proxies, HTTP/2, pool fairness: not planned |
-| `fake-llm.md` | partly | 2.2: a reply in pieces and a hold: smith's live-text; 2.2: the byte peer as a process of its own, refusing a script with a hold at its start: not planned (smith's live-text `later.md`); 2.3, 3, 3.1, 5, 6, 7: scripted failures, their resets and rows per route, several credentials each with its scheme, or none, the public route and the key, observations of the route, the scheme and the credential's index, the real loop's use with the fake issuer's tokens: not planned: the first part of LLM accounts; 7: providers' cache granularity: not planned |
-| `oauth.md` | partly | 1, 2, 2.1 to 2.3, 3, 4, 5: an issued client id, `nonce` and `resource`, the ID token checked, granted scopes, revocation, the added error names, the record's version 3, the fake issuer's additions: not planned: the first part of LLM accounts; 6.1 to 6.8: accounts added and removed while running, signing out, a wanted account refreshed with no grant, a shared record re-read under the owner's lock, a redirect port that varies: not planned: the first part of LLM accounts; 7: IPv6 loopback, device authorization, a credential helper: not planned |
+| `llm.md` | partly | 1, 2.5, 2.6, 4 to 4.4, 4.7, 4.8, 5: the public Responses route, Anthropic with a key, a credential's scheme, or none, the failure classes (exhausted with a reset only where given, refused, unsupported, a stream's failure with an unnamed code classed unavailable) and their report, limits per route: smith's accounts; 4.6, 4.7: the Codex route, and Anthropic's bearer route with its identity profile, withdrawn and removed once their last caller has moved: not planned; 6: Codex routing state, WebSocket: not planned |
+| `llm-connection.md` | partly | 1, 3, 4, 4.2, 8: a credential with its scheme handed with each call that has one, the provider's report on a failure, several accounts' credentials on one pool: smith's accounts; 9: names while running, proxies, HTTP/2, pool fairness: not planned |
+| `fake-llm.md` | partly | 2.2: a reply in pieces and a hold: smith's live-text; 2.2: the byte peer as a process of its own, refusing a script with a hold at its start: not planned (smith's live-text `later.md`); 2.3, 3, 3.1, 5, 6, 7: scripted failures, their resets and rows per route, several credentials each with its scheme, or none, the public route and the key, observations of the route, the scheme and the credential's index, the real loop's use with the fake issuer's tokens: smith's accounts; 7: providers' cache granularity: not planned |
+| `oauth.md` | partly | 1, 2, 2.1 to 2.3, 3, 4, 5: an issued client id, `nonce` and `resource`, the ID token checked, granted scopes, revocation, the added error names, the record's version 3, the fake issuer's additions: smith's accounts; 6.1 to 6.8: accounts added and removed while running, signing out, a wanted account refreshed with no grant, a shared record re-read under the owner's lock, a redirect port that varies: smith's accounts; 7: IPv6 loopback, device authorization, a credential helper: not planned |
 | `browser.md` | partly | 6, 7: a test answering a native dialog itself, and the kit's `browser.rs` split by concern (jig's skein-ui `later.md`); 11: open questions: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
 | `ui.md` | partly | 4.2, 18, 19: the vocabulary that waits (a combo box, a slider and a meter, a switch, media, a feed, a list box choosing several, a tree grid) and right-to-left text, each by the light path (4.3) when an application needs it; 3: the builder's assertion that a named button, tab or menu item holds no node: not planned (temper's client-api `later.md`); 19: a markup macro for the builder, a server keeping the previous bundle's digest directory; 16, 18: parts for a phone or a desktop: not planned (jig's skein-ui `later.md`) |
@@ -182,47 +183,14 @@ section 3.3).
   downstream repository's, is two plans, by layer, run after smith's
   live-text plan that builds `fake-llm.md`, section 2.2: the fakes'
   scripted failures and credentials (2.3, 3) stand beside its pieces and
-  holds. The first plan, its grants, takes every row here that names
-  it; the other, its sources, runs from the first's main and changes a
-  downstream repository only. The downstream repositories' parts
-  follow, as the second part.
-- **LLM accounts' calls** (`llm.md`, sections 1, 2.5, 2.6, 4 to 4.4,
-  4.7, 4.8 and 5): OpenAI's public Responses route, called with a key or
-  a plan's token; Anthropic with a key; a credential's scheme, or none;
-  the failure classes, exhausted with a reset only where the provider
-  gives one, refused and unsupported, a stream's failure with a code its
-  route does not name classed unavailable, and their report of the
-  code, the request id and the field; limits per route. The first part
-  of LLM accounts.
-- **LLM accounts' connections** (`llm-connection.md`, sections 1, 3, 4,
-  4.2 and 8): a credential with its scheme handed with each call that
-  has one, several accounts' credentials on one pool, and the report on
-  a failure. The first part of LLM accounts.
-- **LLM accounts' sign-in** (`oauth.md`, sections 1, 2, 2.1 to 2.3, 3, 4
-  and 5): a client id the issuer issues, `nonce` and `resource`, the ID token
-  checked against the issuer's keys, granted scopes, revocation, the added
-  error names and the record's version 3. The first part of LLM accounts.
-- **LLM accounts in the driver** (`oauth.md`, sections 6.1 to 6.8):
-  accounts added and removed while running, signing out, a wanted
-  account refreshed with no grant held, a shared record re-read under the
-  owner's lock, a redirect port that varies. The first part of LLM
-  accounts.
-- **LLM accounts' fakes** (`fake-llm.md`, sections 2.3, 3, 3.1, 5, 6
-  and 7; `oauth.md`, section 5): the fake LLM's scripted failures, with
-  their resets and rows per route, its several credentials each with its
-  scheme, or none, the public route and the key, and its observations of
-  the route, the scheme and the credential's index; the fake issuer's
-  registration, `nonce` and `resource`, signed ID tokens and published
-  keys, granted scopes, revocation and added error names; both as the
-  real loop runs them, the peer given the issuer's tokens at start. The
-  first part of LLM accounts.
+  holds. The first plan, its grants, smith's `accounts` (section 1),
+  takes every row here that names it; the other, its sources, runs from
+  the first's main and changes a downstream repository only. The
+  downstream repositories' parts follow, as the second part.
 - **The withdrawn LLM routes removed** (`llm.md`, sections 4.6 and 4.7):
   the Codex route, with the account id and its identity headers, and
   Anthropic's bearer route, with its beta and identity profile. Waits for
   their last caller to move to the public route and to a key.
-- **The MIT licence**: a `LICENSE` file at the root and `license = "MIT"`
-  in each manifest (the user's decision, with the LLM accounts design,
-  2026-10-19). The first part of LLM accounts.
 - **The echo's worlds made pure** (`examples.md`, sections 6 and 7): the
   referee reads the echo's address from `svc.listening()` rather than
   from its startup fact, and the echo has no domain worlds. Waits for a
