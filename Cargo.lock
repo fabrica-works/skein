@@ -635,12 +635,16 @@ name = "skein-fake-peers"
 version = "0.0.0"
 dependencies = [
  "rustls",
+ "skein-fake-forge-domain",
+ "skein-fake-forge-protocol",
  "skein-fake-llm-domain",
  "skein-fake-llm-protocol",
  "skein-fake-oauth",
+ "skein-forge",
  "skein-heap",
  "skein-http",
  "skein-io",
+ "skein-json",
  "skein-lib",
  "skein-llm",
  "skein-llm-world",

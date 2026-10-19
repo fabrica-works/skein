@@ -183,6 +183,10 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         )?
         .checked_add(u64::from(limits.documents.target_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.raw_bytes))?
+        // One sanitized HTTP call held until its owner drains the entrance.
+        .checked_add(u64::try_from(size_of::<Option<skein_http::server::Call>>()).ok()?)?
+        .checked_add(u64::from(limits.http.head))?
+        .checked_add(u64::from(limits.http.headers).checked_mul(u64::try_from(size_of::<skein_http::Header>()).ok()?)?)?
         .checked_add(skein_lib::Queue::<skein_http::server::Event>::worst_case(4)?)?
         .checked_add(skein_lib::Queue::<skein_http::server::Request>::worst_case(4)?)?
         .checked_add(skein_lib::Queue::<skein_json::tokenizer::Event>::worst_case(1)?)?

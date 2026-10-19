@@ -18,6 +18,7 @@ pub const MAX_DOWN: u32 = 18;
 enum State {
     New,
     Reading,
+    Receiving,
     Body,
     Waiting,
     Streaming,
@@ -49,6 +50,7 @@ pub struct Server {
     range: Result<Option<response::Range>, api::Error>,
     call: Option<Id<Call>>,
     followed: bool,
+    head: Option<http::Call>,
     reply: Option<Box<[u8]>>,
     offset: usize,
     send: u32,
@@ -82,10 +84,20 @@ impl Server {
             range: Ok(None),
             call: None,
             followed: false,
+            head: None,
             reply: None,
             offset: 0,
             send: limits.http.send,
         })
+    }
+    /// Takes the sanitized head captured at the last request entrance.
+    pub fn take_head(&mut self) -> Option<http::Call> {
+        self.head.take()
+    }
+    /// Whether no accepted request remains to be answered on this connection.
+    #[must_use]
+    pub fn is_settled(&self) -> bool {
+        self.state == State::Reading
     }
     #[must_use]
     pub fn has_work(&self) -> bool {
@@ -118,7 +130,12 @@ pub fn up(
 ) {
     match server.state {
         State::New | State::Closing | State::Closed => return,
-        State::Reading | State::Body | State::Waiting | State::Streaming => {}
+        State::Reading | State::Receiving | State::Body | State::Waiting | State::Streaming => {}
+    }
+    if server.state == State::Reading
+        && let Up::Bytes(_) = &event
+    {
+        server.state = State::Receiving;
     }
     http::up(
         &mut server.http,
@@ -378,6 +395,14 @@ fn http_event(
     }
 }
 fn entrance(server: &mut Server, service: &mut Service, env: &Env<Limits>, call: http::Call, above: &mut Queue<Event>) {
+    assert!(server.head.is_none(), "the owner drains each captured head before reuse");
+    let mut snapshot = call.clone();
+    for header in &mut snapshot.headers {
+        if header.is(b"authorization") {
+            header.value = Box::new([]);
+        }
+    }
+    server.head = Some(snapshot);
     let user = service.user(call.header(b"authorization"));
     service.tally.count(None, user);
     server.range = response::range(call.header(b"range"));

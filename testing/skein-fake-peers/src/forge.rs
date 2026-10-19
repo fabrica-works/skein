@@ -1,0 +1,392 @@
+//! A loopback Forgejo peer over one owner's shared forge (fake-forge.md, 5).
+use std::{cell::RefCell, net::SocketAddr, rc::Rc};
+
+use skein_fake_forge_domain::{self as domain, api};
+use skein_fake_forge_protocol as protocol;
+use skein_io::{self as io, kernel};
+use skein_lib::stream::{Down, Up};
+use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
+use skein_world::Host;
+
+use crate::face::{Face, LISTENER};
+use crate::transport::Wire;
+use crate::{Error, Limits, Transport};
+
+mod observe;
+mod shared;
+
+/// The owner's forge, borrowed by the peer and another fake for separate passes.
+#[derive(Debug)]
+pub struct Forge {
+    pub domain: domain::Domain,
+    pub config: domain::Config,
+    pub now: Time,
+    /// Replies not yet consumed by their owner, and hooks awaiting routing.
+    pub pending: Queue<domain::Request>,
+    pub hooks: Option<protocol::delivery::Endpoint>,
+    serial: u64,
+}
+
+/// Frozen outside records, retaining values rather than reply rights.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Observation {
+    Connection {
+        connection: Token,
+        open: bool,
+    },
+    /// Every case-insensitive Authorization field has an empty value.
+    Head {
+        connection: Token,
+        call: skein_http::server::Call,
+    },
+    Call {
+        connection: Option<Token>,
+        user: u64,
+        repository: Box<[u8]>,
+        op: api::Op,
+        result: Result<api::Answer, api::Error>,
+    },
+    Delivery {
+        post: Option<protocol::delivery::Post>,
+        outcome: Delivery,
+    },
+}
+
+/// One best-effort write terminal, independent of the recipient's verdict.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Delivery {
+    Written,
+    NoAddress,
+    NoRoom,
+    Refused,
+    Reset,
+}
+
+struct Connection {
+    owner: Token,
+    wire: Wire,
+    server: protocol::Server,
+    above: Queue<protocol::Event>,
+    below: Queue<Down>,
+    plain: Queue<Up>,
+    closing: bool,
+    head_seen: bool,
+}
+struct Call {
+    token: Token,
+    connection: Token,
+    user: u64,
+    repository: Box<[u8]>,
+    op: api::Op,
+}
+
+/// Hosted admission, HTTP routing and settlement over the owner's shared forge.
+pub struct Peer {
+    face: Face,
+    forge: Rc<RefCell<Forge>>,
+    service: protocol::Service,
+    protocol: protocol::Limits,
+    protocol_bound: u64,
+    connections: Vec<Connection>,
+    calls: Vec<Call>,
+    next: u64,
+    observations: Vec<Observation>,
+    observed_bytes: u64,
+    bound: u64,
+}
+
+impl Peer {
+    pub fn new(
+        address: SocketAddr,
+        limits: Limits,
+        mut config: protocol::Config,
+        protocol: protocol::Limits,
+        forge: Rc<RefCell<Forge>>,
+        seed: u64,
+    ) -> Result<Self, Error> {
+        config.hooks = None;
+        let bound = worst_case(&limits, &protocol, &config, &forge.borrow()).ok_or(Error::Limits)?;
+        let protocol_bound = protocol::worst_case(&protocol, &config).ok_or(Error::Limits)?;
+        let service = protocol::Service::new(config, &protocol, seed).map_err(|_| Error::Limits)?;
+        let call_capacity = call_capacity(&protocol, &forge.borrow()).ok_or(Error::Limits)?;
+        Ok(Self {
+            face: Face::new(address, limits)?,
+            forge,
+            service,
+            protocol,
+            protocol_bound,
+            connections: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
+            calls: Vec::with_capacity(usize::try_from(call_capacity).expect("u32 fits")),
+            next: 1,
+            observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
+            observed_bytes: 0,
+            bound,
+        })
+    }
+    #[must_use]
+    pub fn address(&self) -> Option<SocketAddr> {
+        self.face.address
+    }
+    #[must_use]
+    pub fn observations(&self) -> &[Observation] {
+        &self.observations
+    }
+    pub fn shutdown(&mut self) {
+        self.face.shutdown();
+    }
+
+    fn event(&mut self, event: io::Event, now: Time, wall: Wall) {
+        let env = Env { now, wall, limits: self.protocol };
+        match event {
+            io::Event::Listening { owner, listener, addr } => {
+                assert_eq!(owner, LISTENER);
+                self.face.listener = Some(listener);
+                self.face.address = Some(addr.socket().expect("loopback socket address"));
+            }
+            io::Event::Accepted { owner, socket, .. } => {
+                assert_eq!(owner, LISTENER);
+                if self.face.stopping
+                    || self.connections.len() == usize::try_from(self.face.limits.connections).expect("u32 fits")
+                {
+                    self.face.requests.push(io::Request::Reject { socket });
+                    return;
+                }
+                let owner = Token::new(self.next);
+                self.next =
+                    self.next.checked_add(1).filter(|next| *next < u64::MAX).expect("finite connection identities");
+                self.face.requests.push(io::Request::Bind { socket, owner });
+                let limits = self.face.limits;
+                let mut connection = Connection {
+                    owner,
+                    wire: Wire::new(socket, Transport::Plaintext, limits),
+                    server: protocol::Server::new(owner, &self.protocol).expect("validated limits"),
+                    above: Queue::with_capacity(limits.queue),
+                    below: Queue::with_capacity(limits.queue),
+                    plain: Queue::with_capacity(limits.queue),
+                    closing: false,
+                    head_seen: false,
+                };
+                protocol::start(
+                    &mut connection.server,
+                    &mut self.service,
+                    &env,
+                    &mut connection.above,
+                    &mut connection.below,
+                );
+                self.capture(&mut connection);
+                self.connections.push(connection);
+                self.observe(Observation::Connection { connection: owner, open: true }, 0);
+            }
+            io::Event::Stream { owner, up } => {
+                if let Some(connection) = self.connections.iter_mut().find(|connection| connection.owner == owner) {
+                    connection.wire.up(up, &mut connection.plain, &mut self.face.requests);
+                }
+            }
+            io::Event::Output { owner, up } => {
+                if let Some(connection) = self.connections.iter_mut().find(|connection| connection.owner == owner) {
+                    connection.wire.output(up, &mut connection.plain, &mut self.face.requests);
+                }
+            }
+            io::Event::Closed { owner } => {
+                if let Some(index) = self.connections.iter().position(|connection| connection.owner == owner) {
+                    let mut connection = self.connections.remove(index);
+                    protocol::closed(
+                        &mut connection.server,
+                        &mut self.service,
+                        &env,
+                        &mut connection.above,
+                        &mut connection.below,
+                    );
+                    self.capture(&mut connection);
+                    self.observe(Observation::Connection { connection: owner, open: false }, 0);
+                }
+            }
+            io::Event::Failed { owner, .. } => {
+                assert_ne!(owner, LISTENER, "the loopback listener binds");
+                if let Some(connection) = self.connections.iter_mut().find(|connection| connection.owner == owner) {
+                    connection.wire.close(&mut self.face.requests);
+                }
+            }
+            io::Event::Connecting { .. }
+            | io::Event::Connected { .. }
+            | io::Event::Spawned { .. }
+            | io::Event::Exited { .. }
+            | io::Event::Usage { .. }
+            | io::Event::Resized
+            | io::Event::Window { .. }
+            | io::Event::Shutdown { .. } => panic!("the forge listens and serves byte streams"),
+        }
+    }
+
+    fn progress(&mut self, now: Time, wall: Wall) {
+        let env = Env { now, wall, limits: self.protocol };
+        // Moving the Rc, rather than borrowing through self, keeps the one pass borrow explicit.
+        let shared = Rc::clone(&self.forge);
+        let mut forge = shared.borrow_mut();
+        forge.now = now;
+        let domain_env = Env { now, wall, limits: forge.config };
+        for index in 0..self.connections.len() {
+            if self.face.requests.room() < 32 {
+                break;
+            }
+            // Taking the connection makes head observation and call admission one owner pass.
+            let mut connection = self.connections.remove(index);
+            if connection.above.room() >= protocol::MAX_UP && connection.below.room() >= protocol::MAX_DOWN {
+                if let Some(up) = connection.plain.pop() {
+                    protocol::up(
+                        &mut connection.server,
+                        &mut self.service,
+                        &env,
+                        up,
+                        &mut connection.above,
+                        &mut connection.below,
+                    );
+                    self.capture(&mut connection);
+                } else if connection.server.has_work() {
+                    protocol::resume(
+                        &mut connection.server,
+                        &mut self.service,
+                        &env,
+                        &mut connection.above,
+                        &mut connection.below,
+                    );
+                    self.capture(&mut connection);
+                }
+            }
+            if forge.pending.room() >= domain::MAX_OUT
+                && let Some(event) = connection.above.pop()
+            {
+                match event {
+                    protocol::Event::Domain(event) => {
+                        let domain::Event::Call { reply_to, user, repository, op } = event;
+                        let token = reply_to.into_token();
+                        assert!(self.calls.len() < self.calls.capacity(), "admitted call snapshots fit");
+                        self.calls.push(Call {
+                            token,
+                            connection: connection.owner,
+                            user,
+                            repository: repository.clone(),
+                            op: op.clone(),
+                        });
+                        let Forge { domain, pending, .. } = &mut *forge;
+                        domain::step(
+                            domain,
+                            &domain_env,
+                            domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op },
+                            pending,
+                        );
+                    }
+                    protocol::Event::Close => connection.closing = true,
+                    protocol::Event::Closed => {}
+                }
+            }
+            if connection.plain.room() >= 3 {
+                if let Some(down) = connection.below.pop() {
+                    connection.wire.down(down, &mut connection.plain, &mut self.face.requests);
+                }
+                connection.wire.pump(&mut connection.plain, &mut self.face.requests);
+            }
+            // Admission ends first; an accepted request reaches its byte terminal before close.
+            let active = self.calls.iter().any(|call| call.connection == connection.owner);
+            if self.face.stopping
+                && connection.head_seen
+                && connection.server.is_settled()
+                && !active
+                && connection.above.is_empty()
+                && connection.below.is_empty()
+                && connection.plain.is_empty()
+                && !connection.server.has_work()
+            {
+                protocol::close(
+                    &mut connection.server,
+                    &mut self.service,
+                    &env,
+                    &mut connection.above,
+                    &mut connection.below,
+                );
+                self.capture(&mut connection);
+            }
+            if connection.closing && connection.below.is_empty() {
+                connection.wire.close(&mut self.face.requests);
+            }
+            self.connections.insert(index, connection);
+        }
+        if forge.pending.room() >= domain::MAX_OUT {
+            let Forge { domain, pending, .. } = &mut *forge;
+            domain::fire(domain, &domain_env, pending);
+        }
+        self.route(&mut forge, &env);
+        forge.domain.reclaim();
+        self.service.reclaim();
+    }
+}
+
+impl Host for Peer {
+    fn iterate(&mut self, now: Time, wall: Wall) {
+        let bound = shared::bound(&self.face.limits, &self.protocol, self.protocol_bound, &self.forge.borrow())
+            .expect("owner updates preserve usable bounds");
+        // An owner reducing a limit does not release already allocated capacities.
+        self.bound = self.bound.max(bound);
+        self.forge.borrow_mut().now = now;
+        self.face.up(now, wall);
+        for _ in 0..self.face.limits.queue {
+            if self.face.requests.room() < 32 {
+                break;
+            }
+            let Some(event) = self.face.events.pop() else { break };
+            self.event(event, now, wall);
+        }
+        self.face.close_listener();
+        self.progress(now, wall);
+        self.face.down(now, wall);
+    }
+    fn completions(&mut self) -> &mut Queue<kernel::Complete> {
+        &mut self.face.completions
+    }
+    fn submissions(&mut self) -> &mut Queue<kernel::Submit> {
+        &mut self.face.submissions
+    }
+    fn work_pending(&self, now: Time) -> bool {
+        self.face.work_pending()
+            || self.forge.borrow().domain.is_due(now)
+            || self.connections.iter().any(|connection| {
+                connection.server.has_work()
+                    || !connection.above.is_empty()
+                    || !connection.below.is_empty()
+                    || !connection.plain.is_empty()
+                    || connection.wire.work_pending()
+            })
+    }
+    fn next_deadline(&self) -> Option<Time> {
+        [self.face.io.next_deadline(), self.forge.borrow().domain.next_deadline()].into_iter().flatten().min()
+    }
+    fn next_policy_deadline(&self) -> Option<Time> {
+        self.forge.borrow().domain.next_deadline()
+    }
+    fn is_empty(&self) -> bool {
+        self.face.is_empty()
+            && self.connections.is_empty()
+            && self.calls.is_empty()
+            && self.forge.borrow().domain.calls() == 0
+    }
+    fn worst_case(&self) -> u64 {
+        self.bound
+    }
+    fn operations(&self) -> u32 {
+        io::operations(&self.face.limits.io).expect("validated io operations")
+    }
+}
+
+fn call_capacity(protocol: &protocol::Limits, forge: &Forge) -> Option<u32> {
+    protocol.calls.checked_add(forge.config.limits.calls)
+}
+/// Checked envelope for machines, pending payloads, connections, snapshots and frozen records.
+#[must_use]
+pub fn worst_case(
+    limits: &Limits,
+    protocol: &protocol::Limits,
+    config: &protocol::Config,
+    forge: &Forge,
+) -> Option<u64> {
+    shared::bound(limits, protocol, protocol::worst_case(protocol, config)?, forge)
+}

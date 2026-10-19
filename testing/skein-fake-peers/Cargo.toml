@@ -8,6 +8,8 @@ publish.workspace = true
 
 [dependencies]
 skein-lib.workspace = true
+skein-fake-forge-domain.workspace = true
+skein-fake-forge-protocol.workspace = true
 skein-io.workspace = true
 skein-world.workspace = true
 skein-llm.workspace = true
@@ -31,6 +33,8 @@ missing_errors_doc = "allow"
 single_match_else = "allow"
 
 [dev-dependencies]
+skein-forge.workspace = true
+skein-json.workspace = true
 skein-sim.workspace = true
 skein-llm-world = { path = "../../tests/llm" }
 skein-heap.workspace = true

@@ -81,6 +81,7 @@ pub struct Harness {
     pub demand: Option<(Read, u32)>,
     pub output: List<u8>,
     pub calls: u32,
+    pub captured_head: Option<skein_http::server::Call>,
     pub closed: bool,
     pub deliveries: List<crate::delivery::Post>,
 }
@@ -132,6 +133,7 @@ impl Harness {
             demand: None,
             output: List::with_capacity(65536),
             calls: 0,
+            captured_head: None,
             closed: false,
             deliveries: List::with_capacity(32),
         };
@@ -155,6 +157,7 @@ impl Harness {
             self.env.now = fake::time(&self.fake_env.limits, self.fake_env.now);
             self.env.wall = Wall::from_nanos(self.env.now.as_nanos());
             crate::resume(&mut self.server, &mut self.service, &self.env, &mut self.above, &mut self.below);
+            self.capture_head();
             while let Some(down) = self.below.pop() {
                 match down {
                     Down::Demand { read: Read::Nothing, room: 0 } => {
@@ -184,6 +187,7 @@ impl Harness {
                     crate::up(&mut self.server, &mut self.service, &self.env, up, &mut self.above, &mut self.below);
                 }
             }
+            self.capture_head();
             while let Some(event) = self.above.pop() {
                 match event {
                     Event::Domain(event) => {
@@ -213,6 +217,7 @@ impl Harness {
                     );
                 }
             }
+            self.capture_head();
             self.service.reclaim();
             self.domain.reclaim();
             if !self.server.has_work()
@@ -224,6 +229,14 @@ impl Harness {
                 break;
             }
         }
+    }
+    fn capture_head(&mut self) {
+        if let Some(head) = self.server.take_head() {
+            self.captured_head = Some(head);
+        }
+    }
+    pub fn take_head(&mut self) -> Option<skein_http::server::Call> {
+        self.captured_head.take()
     }
     pub fn service(&self) -> &Service {
         &self.service

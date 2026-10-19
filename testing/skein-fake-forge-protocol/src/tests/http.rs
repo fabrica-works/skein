@@ -341,3 +341,29 @@ fn a_steps_log_end_is_served_by_a_suffix_range() {
     assert!(bytes::find(&h.head(), b"content-range: bytes 78-87/88\r\n").is_some());
     assert_eq!(&*h.body(), b"k build 3\n");
 }
+
+#[test]
+fn unauthorized_heads_are_drained_and_counted_in_the_bound() {
+    // The fixture's original bound and the added snapshot for each of its four connections.
+    const CONNECTIONS: u64 = 4;
+    const BASE_BYTES: u64 = 4_645_153;
+    const HEAD_BYTES: u64 = 4_664;
+    let config = fixtures::config();
+    let mut limits = fixtures::limits();
+    assert_eq!(crate::worst_case(&limits, &config), Some(BASE_BYTES + CONNECTIONS * HEAD_BYTES));
+    assert_eq!(crate::worst_case(&limits, &config), Some(4_663_809));
+    limits.http.head += 1;
+    assert_eq!(crate::worst_case(&limits, &config), Some(4_663_949));
+    let mut h = Harness::new(config);
+    h.ask_as(b"GET", b"/api/v1/user", b"", b"wrong-token");
+    assert_eq!(h.status(), 401);
+    let call = h.take_head().expect("unauthorized entrance captured");
+    assert_eq!(&*call.target, b"/api/v1/user");
+    assert_eq!(call.header(b"authorization"), Some(b"".as_slice()));
+    assert_eq!(h.take_head(), None);
+    h.ask(b"GET", b"/api/v1/repos/org/repo/issues", b"");
+    assert_eq!(h.status(), 200);
+    let call = h.take_head().expect("next entrance captured");
+    assert_eq!(&*call.target, b"/api/v1/repos/org/repo/issues");
+    assert_eq!(call.header(b"authorization"), Some(b"".as_slice()));
+}

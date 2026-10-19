@@ -13,6 +13,7 @@
 #![forbid(unsafe_code)]
 
 mod face;
+pub mod forge;
 pub mod llm;
 pub mod oauth;
 mod transport;
