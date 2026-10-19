@@ -709,7 +709,12 @@ The component follows programming-model.md, 5.2.
 | exchanges | sign-ins, refreshes and sign-outs at once, across accounts |
 | listeners | loopback listeners at once |
 | refresh lead | how long before expiry a held or wanted grant is refreshed, and an access-only one announced |
-| lock wait | how long a write waits for the owner's `locked` before it fails as busy |
+| lock wait | how long a write waits for the owner's `locked` before it fails as busy: a `Duration` from the `lock` it emits |
+
+The owner gives these limits when it makes the component. The lock wait
+is a deadline on the injected monotonic clock (section 3), as each other
+deadline is, fired by the owner; once it passes, the write fails as busy,
+and a `locked` that comes later is answered by `unlock` at once (6.4).
 
 The client's own limits are section 5's. The worst case is each account's
 current and candidate records, a shared record's read under its lock beside
