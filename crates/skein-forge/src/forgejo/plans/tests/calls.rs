@@ -362,7 +362,7 @@ fn user_search_uses_id_and_one_result() {
 }
 #[test]
 fn page_size_is_passed_to_each_listing() {
-    for (size, limit) in [(PAGE_SIZE, b"2".as_slice()), (ROWS, b"8".as_slice()), (1, b"1".as_slice())] {
+    for (size, limit) in [(PAGE_SIZE, b"2".as_slice()), (ROWS, b"8".as_slice()), (ONE_ROW_PAGE, b"1".as_slice())] {
         for (read, before, target) in listings() {
             let mut run = Run::with(crate::forgejo::plans::plan::Bounds { page_size: size, ..BOUNDS }, Op::Read(read));
             run.begin();
@@ -401,9 +401,13 @@ fn listings() -> [Listing; 8] {
 const CLOSED_PULL: &[u8] = br#"{"number":1,"state":"closed","head":{"repo_id":1,"ref":"work","sha":"0100000000000000000000000000000000000000"},"base":{"repo_id":1,"ref":"main","sha":"0300000000000000000000000000000000000000"},"merged":false,"merge_commit_sha":null,"merge_base":"0300000000000000000000000000000000000000","mergeable":true,"requested_reviewers":[]}"#;
 #[test]
 fn remarks_are_sliced_without_wire_paging() {
-    for (size, expected, more) in
-        [(PAGE_SIZE, &REMARKS[..2], true), (ROWS, &REMARKS[..], false), (1, &REMARKS[..1], true)]
-    {
+    let page_rows = usize::try_from(PAGE_SIZE).expect("fixture page fits usize");
+    let one_row = usize::try_from(ONE_ROW_PAGE).expect("fixture page fits usize");
+    for (size, expected, more) in [
+        (PAGE_SIZE, &REMARKS[..page_rows], true),
+        (ROWS, &REMARKS[..], false),
+        (ONE_ROW_PAGE, &REMARKS[..one_row], true),
+    ] {
         let mut run = Run::with(
             crate::forgejo::plans::plan::Bounds { page_size: size, ..BOUNDS },
             Op::Read(Read::Remarks { number: 1, review: 7, page: 1 }),
@@ -414,6 +418,8 @@ fn remarks_are_sliced_without_wire_paging() {
         run.assert_sent(&["GET /api/v1/repos/fixture/specimen/pulls/1/reviews/7/comments"]);
     }
 }
+// A page one row below the protocol fixture exercises the smallest nonempty page.
+const ONE_ROW_PAGE: u32 = PAGE_SIZE.saturating_sub(1);
 // Three comments straddle a two-row page, with a one-row page as its lower bound.
 const REMARKS: [u64; 3] = [1, 2, 3];
 const REMARKS_JSON: &[u8] = br#"[{"id":1,"user":{"id":2,"login":"writer"},"path":"x","position":1,"body":"b"},{"id":2,"user":{"id":2,"login":"writer"},"path":"x","position":1,"body":"b"},{"id":3,"user":{"id":2,"login":"writer"},"path":"x","position":1,"body":"b"}]"#;
@@ -449,4 +455,127 @@ fn remarks(ids: &[u64]) -> Box<[api::Remark]> {
         rows.push(remark(*id)).unwrap();
     }
     rows.into_boxed()
+}
+
+mod write_cases;
+use crate::api::Write;
+use crate::forgejo::plans::{
+    Failure,
+    failure::{self, Asked, Classified, Drop},
+};
+use write_cases::{REVIEWERS, begun, create_issue, open_pull};
+
+#[test]
+fn write_calls_follow_canned_exchanges() {
+    for group in write_cases::cases() {
+        for case in group {
+            let mut run = Run::known(Op::Write(case.write));
+            for (id, login) in case.users {
+                run.tables().keep_user(REPO.forge, *id, Box::from(*login));
+            }
+            let mut step = run.begin();
+            for (status, body) in case.replies {
+                step = run.answer(*status, body);
+            }
+            assert_eq!(step, Step::Done(case.expected), "{}", case.name);
+            run.assert_sent(case.sends);
+            run.assert_bodies(case.bodies);
+        }
+    }
+}
+
+#[test]
+fn refusals_match_status_and_whole_message() {
+    for (asked, status, message, retry, error, drop) in write_cases::failures() {
+        let refusal = crate::forgejo::failure::refusal(status, message);
+        assert_eq!(
+            failure::classify(asked, status, refusal, retry),
+            Classified { error, drop },
+            "{asked:?} {status} {message:?} {retry:?}"
+        );
+    }
+    let mut run = begun(create_issue());
+    let retry = skein_lib::Duration::from_secs(5);
+    let step = run.answer_with(
+        429,
+        br#"{"message":"slow"}"#,
+        crate::forgejo::plans::Fields { retry_after: Some(retry), ..fixtures::fields() },
+    );
+    assert_eq!(step, Step::Done(Err(Error::RateLimited { after: retry })));
+}
+
+#[test]
+fn first_failure_ends_the_plan() {
+    for (factory, replies, sends) in first_failures() {
+        let mut run = factory(Op::Read(Read::Item { number: 1, after: 0 }));
+        run.begin();
+        for (status, body) in replies {
+            run.answer(*status, body);
+        }
+        assert_eq!(run.answer(500, br#"{"message":"failed"}"#), Step::Done(Err(Error::Timeout)));
+        run.assert_sent(sends);
+    }
+}
+
+#[test]
+fn unseen_write_is_unavailable() {
+    let mut run = begun(create_issue());
+    assert_eq!(run.fail(Failure::Unseen), Step::Done(Err(Error::Unavailable)));
+    run.assert_sent(&["POST /api/v1/repos/fixture/specimen/issues"]);
+}
+
+#[test]
+fn seen_write_is_timeout() {
+    let mut run = begun(create_issue());
+    assert_eq!(run.fail(Failure::Seen), Step::Done(Err(Error::Timeout)));
+    run.assert_sent(&["POST /api/v1/repos/fixture/specimen/issues"]);
+}
+
+#[test]
+fn open_pull_read_failure_is_unavailable() {
+    let failures: [fn(&mut Run) -> Step; 2] = [seen, malformed];
+    for (replies, sends) in write_cases::open_failures() {
+        for fail in failures {
+            let mut run = begun(open_pull());
+            for (status, body) in replies {
+                run.answer(*status, body);
+            }
+            assert_eq!(fail(&mut run), Step::Done(Err(Error::Unavailable)), "{replies:?}");
+            run.assert_sent(sends);
+        }
+    }
+}
+
+#[test]
+fn reviewers_are_added_before_removed() {
+    let mut run = Run::known(Op::Write(Write::SetReviewers { number: 1, reviewers: Box::from([7]) }));
+    run.tables().keep_user(REPO.forge, 7, Box::from(&b"seven"[..]));
+    run.begin();
+    run.answer(200, REVIEWERS);
+    run.answer(201, b"");
+    assert_eq!(run.answer(204, b""), Step::Done(Ok(Answer::Done)));
+    run.assert_sent(&[
+        "GET /api/v1/repos/fixture/specimen/pulls/1",
+        "POST /api/v1/repos/fixture/specimen/pulls/1/requested_reviewers",
+        "DELETE /api/v1/repos/fixture/specimen/pulls/1/requested_reviewers",
+    ]);
+    run.assert_bodies(&[None, Some(br#"{"reviewers":["seven"]}"#), Some(br#"{"reviewers":["eight"]}"#)]);
+}
+
+fn seen(run: &mut Run) -> Step {
+    run.fail(Failure::Seen)
+}
+fn malformed(run: &mut Run) -> Step {
+    run.answer(200, b"{")
+}
+type FirstFailure = (fn(Op) -> Run, &'static [(u16, &'static [u8])], &'static [&'static str]);
+fn first_failures() -> [FirstFailure; 2] {
+    [
+        (Run::known, &[], &["GET /api/v1/repos/fixture/specimen/issues/1"]),
+        (
+            Run::new,
+            &[(200, REPOSITORY)],
+            &["GET /api/v1/repositories/1", "GET /api/v1/repos/fixture/specimen/issues/1"],
+        ),
+    ]
 }

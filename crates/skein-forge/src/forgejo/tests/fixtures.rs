@@ -368,8 +368,13 @@ impl Run {
         };
         Some(self.record(step?))
     }
+    pub fn fail(&mut self, failure: crate::forgejo::plans::Failure) -> PlanStep {
+        self.hear(Heard::Failed(failure)).expect("failure ends the exchange")
+    }
     pub fn answer(&mut self, status: u16, bytes: &[u8]) -> PlanStep {
-        let fields = crate::forgejo::plans::Fields { date: Some(Wall::EPOCH), ..fields() };
+        self.answer_with(status, bytes, crate::forgejo::plans::Fields { date: Some(Wall::EPOCH), ..fields() })
+    }
+    pub fn answer_with(&mut self, status: u16, bytes: &[u8], fields: crate::forgejo::plans::Fields) -> PlanStep {
         if let Some(step) = self.hear(Heard::Head { status, fields }) {
             return step;
         }
@@ -424,6 +429,13 @@ impl Run {
         let (asked_method, target) = line.split_once(' ').expect("literal request line");
         assert_eq!(method, asked_method, "{line}");
         assert_eq!(encoded.target.as_ref(), target.as_bytes(), "{line}");
+    }
+    pub fn assert_bodies(&self, expected: &[Option<&[u8]>]) {
+        assert_eq!(usize::try_from(self.exchanges.len()).unwrap(), expected.len());
+        for (exchange, body) in self.exchanges.iter().zip(expected) {
+            let encoded = client::encode(&exchange.request, &self.limits).unwrap();
+            assert_eq!(encoded.body.as_deref(), *body, "{:?}", exchange.request);
+        }
     }
     pub fn assert_sent(&self, expected: &[&str]) {
         assert_eq!(usize::try_from(self.exchanges.len()).unwrap(), expected.len());
