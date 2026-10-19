@@ -1,6 +1,6 @@
 # Browser
 
-Implemented, 2026-10-06, revised 2026-10-15. The design of
+Implemented, 2026-10-06, revised 2026-10-19. The design of
 `skein-browser`: a testing kit that drives a real, headless Chromium from
 a service's loop, so that a service with a web can test it as a person
 uses it. It is a step machine over the child's pipes, speaking the
@@ -171,7 +171,8 @@ pub enum Request {                                       // from the test
     Type   { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Compose { page: Token, op: Token, node: Node, text: Box<[u8]> },  // an IME composition, left open
     Keys   { page: Token, op: Token, node: Node, text: Box<[u8]> },  // each character a key: a native date or time field
-    Key    { page: Token, op: Token, key: Key },         // Enter, Escape, Tab, Backspace, arrows
+    Key    { page: Token, op: Token, key: Key, shift: bool },  // Enter, Escape, Tab, Backspace, arrows
+    Address { page: Token, op: Token },                  // the current address, from the history
     Snapshot   { page: Token, op: Token },               // the accessibility tree, as text
     Screenshot { page: Token, op: Token },
     Close  { entity: Token },                            // a page, a person, or the browser
@@ -188,6 +189,7 @@ pub enum Event {                                         // to the test
     Refused { op: Token, why: Refusal },                 // Gone, Hidden, Covered, Disabled, Crashed
     Snapshot   { op: Token, text: Box<[u8]> },
     Screenshot { op: Token, png: Box<[u8]> },
+    Address { op: Token, url: Box<[u8]> },               // the history's current entry
     Trouble { page: Token, trouble: Trouble, text: Box<[u8]> },  // an exception, a console or log error, a crash, a dialog
     Closed  { owner: Token },                            // terminal
 }
@@ -224,10 +226,16 @@ pub enum Expect  { Present, Count(u32), Absent }
   reaches what has no accessible node of its own: a shape of an inline
   SVG, hidden from assistive technology, pressed through the named node
   that holds it.
+- **A key may be pressed with Shift held,** as a person makes a new line
+  with Shift+Enter in a text area, where Enter alone sends.
+- **The current address** is the page's history's current entry, as the
+  browser's address bar shows it, so that a test sees the address the
+  page's own code put there.
 - **Every operation has one terminal event:** `Found`, `Met`, `Missed`,
-  `Done`, `Refused`, `Snapshot` or `Screenshot`. Every person, page and
-  the browser itself ends with one `Closed`. `Warned` is not terminal: a
-  go reports it at most once, before its terminal (section 6).
+  `Done`, `Refused`, `Snapshot`, `Screenshot` or `Address`. Every
+  person, page and the browser itself ends with one `Closed`. `Warned` is
+  not terminal: a go reports it at most once, before its terminal
+  (section 6).
 
 ## 6. The operations
 
@@ -244,7 +252,8 @@ to the next command, never a closure waiting on a reply:
 | type | the node focused; the text inserted |
 | compose | the node focused; a composition set and left open, which a later `Type` commits |
 | keys | the node focused; for each character of the text, in order, its key down and up, the character its key and its text |
-| key | the key down and up, with the text it makes |
+| key | the key down and up, with the text it makes; with `shift`, Shift's modifier on both |
+| address | the page's navigation history (`Page.getNavigationHistory`); its current entry's URL, `Address` |
 | snapshot | the accessibility tree under the document, as indented lines of role, name, value and states, cut at `Limits::snapshot` |
 | screenshot | the viewport as PNG, under `Limits::screenshot` |
 

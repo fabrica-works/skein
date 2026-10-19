@@ -865,11 +865,18 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   - `Pending` while the kit answers.
 - **Its acts:** press; type, an input's whole value (the field cleared,
   then the words), a date's or a time's by the kit's keys (below);
-  Enter for a send; an option chosen with the kit's keys, as a keyboard
-  chooses one; `Go`, a navigation to the path the application's codec
-  prints for the address; a reload. A go and a reload accept the page's
-  closing warning, as a person who chose to go answers it (browser.md,
-  section 6).
+  Enter for a send; a key with Shift held, Shift+Enter a new line in a
+  text area that sends on Enter (section 7); an option chosen with the
+  kit's keys, as a keyboard chooses one; `Go`, a navigation to the path
+  the application's codec prints for the address; a reload. A go and a
+  reload accept the page's closing warning, as a person who chose to go
+  answers it (browser.md, section 6).
+- **It reads the current address,** the kit's `Address`, from the page's
+  navigation history (browser.md, section 6), as the address bar shows
+  it: what the application's codec printed, or what its page replaced,
+  such as a sign-in's secret taken from the address. A story reads it
+  once what the page shows says the page has put it there, never at a
+  fixed time.
 - **A date or a time is typed as a person types it,** into its native
   field's parts, since that field takes no inserted text (browser.md,
   section 6). The face knows the field by the role Chromium computes
