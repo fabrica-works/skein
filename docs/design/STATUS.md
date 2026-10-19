@@ -10,6 +10,7 @@ section 3.3).
 |---|---|---|---|
 | temper's forge-kit | active on carbon-forge since 2026-10-19 | forge.md 2 to 9, 11; forge-connection.md 2 to 10; forge-client.md 2 to 10; forge-setup.md 2 to 4, 6 to 8; fake-forge.md 2 to 8: temper's forge crates, made neutral, moved here: `skein-forge` with the plans' own tests (skein 01, 10), the client (02), the component (03), reconcile (04), the fakes and the forge peer (05), the throwaway Forgejo and the conformance (06), and the worlds (07 to 09) | temper's `docs/development/plans/forge-kit/` |
 | temper's tools | active on debian-16gb-hel1-1 since 2026-10-19 | lib.md 12: keys given by the asker, `ask` and `restore` refusing as `Full` or `Held`, and the admission number they return, which `not_kept` names (skein 01) | temper's `docs/development/plans/tools/` |
+| smith's live-text | ready | fake-llm.md 2.2: a reply in pieces, its holds and their release by the domain's event and by the byte peer (skein 01) | smith's `docs/development/plans/live-text/` |
 | temper's client-api | done 2026-10-18 | ui-web.md 14.2: the harness opens the printed URL whole, serves other origins, awaits trouble (skein 01); ui-text.md 3 and 4: the application's lines setting and `Terminal::room`, its own lines' room kept (skein-01.s1); the line bytes setting, `Terminal::worst_case` and `Terminal::operations` (skein-01.s2); lib.md 12: a request not kept, retired by its key (skein-01.s3) | temper's `docs/development/plans/client-api/` |
 | temper's forge-setup | done 2026-10-18 | lib.md 6.2: SHA-256, `sha256::Hmac` and `sha256::equal`, with skein's three copies (io's digest, PKCE, the bundler) moved onto it (skein 01) | temper's `docs/development/plans/forge-setup/` |
 | hearth's render | done 2026-10-18 | json.md 3.6: positions on skein-json's tokens and errors (skein 02); lib.md 5.1, testing.md 5 and 8, simulator.md 7: state digests, lib's types' `Hash`, replay and the trace (skein 03); io.md 5 and simulator.md 3.3: `Rename` between two directories, `ListPage` (skein 04); kernel.md 6.1, io.md 5 and simulator.md 3.1: `Lock`, its conformance scenario, and the answer of a `Lock` or a page past its deadline (skein 04, 05) | hearth's `docs/development/plans/render/` |
@@ -48,7 +49,7 @@ section 3.3).
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
 | `llm.md` | partly | 1, 2.5, 2.6, 4 to 4.4, 4.7, 4.8, 5: the public Responses route, Anthropic with a key, a credential's scheme, or none, the failure classes (exhausted with a reset only where given, refused, unsupported, a stream's failure with an unnamed code classed unavailable) and their report, limits per route: not planned: the first part of LLM accounts; 4.6, 4.7: the Codex route, and Anthropic's bearer route with its identity profile, withdrawn and removed once their last caller has moved: not planned; 6: Codex routing state, WebSocket: not planned |
 | `llm-connection.md` | partly | 1, 3, 4, 4.2, 8: a credential with its scheme handed with each call that has one, the provider's report on a failure, several accounts' credentials on one pool: not planned: the first part of LLM accounts; 9: names while running, proxies, HTTP/2, pool fairness: not planned |
-| `fake-llm.md` | partly | 2.2: a reply in pieces and a hold: designed, waits for a downstream repository's live-text plan; 2.3, 3, 3.1, 5, 6, 7: scripted failures, their resets and rows per route, several credentials each with its scheme, or none, the public route and the key, observations of the route, the scheme and the credential's index, the real loop's use with the fake issuer's tokens: not planned: the first part of LLM accounts; 7: providers' cache granularity: not planned |
+| `fake-llm.md` | partly | 2.2: a reply in pieces and a hold: smith's live-text; 2.2: the byte peer as a process of its own, refusing a script with a hold at its start: not planned (smith's live-text `later.md`); 2.3, 3, 3.1, 5, 6, 7: scripted failures, their resets and rows per route, several credentials each with its scheme, or none, the public route and the key, observations of the route, the scheme and the credential's index, the real loop's use with the fake issuer's tokens: not planned: the first part of LLM accounts; 7: providers' cache granularity: not planned |
 | `oauth.md` | partly | 1, 2, 2.1 to 2.3, 3, 4, 5: an issued client id, `nonce` and `resource`, the ID token checked, granted scopes, revocation, the added error names, the record's version 3, the fake issuer's additions: not planned: the first part of LLM accounts; 6.1 to 6.8: accounts added and removed while running, signing out, a wanted account refreshed with no grant, a shared record re-read under the owner's lock, a redirect port that varies: not planned: the first part of LLM accounts; 7: IPv6 loopback, device authorization, a credential helper: not planned |
 | `browser.md` | partly | 6, 7: a test answering a native dialog itself, and the kit's `browser.rs` split by concern (jig's skein-ui `later.md`); 11: open questions: not planned |
 | `fake-checkout.md` | yes | Nothing. A process face for real-loop worlds was proposed, not designed |
@@ -167,14 +168,17 @@ section 3.3).
   sketched in `kv-implementation.md`, sections 6 and 9, not scheduled.
   Payload logs wait for temper's transcripts; values on disk and a shared
   sync, for a dataset or a second store.
-- **The fake LLM's pieces and holds** (`fake-llm.md`, section 2.2): a
-  scripted reply sent in pieces, and a hold released by its owner.
-  Designed, and waits for the downstream repository's live-text plan,
-  which needs it to read a reply partway.
+- **The byte peer as a process of its own** (`fake-llm.md`, section
+  2.2): one that refuses a script with a hold at its start, since no
+  owner can release it. No such process exists: the worlds and the real
+  loop host `skein-fake-peers`' `llm::Peer` in their own process, and
+  release through it (smith's live-text plan, its `decisions.md`, design
+  question 2). Waits for such a process; the designer rewords 2.2 and 6
+  first.
 - **The fake LLM's cache granularity** (`fake-llm.md`, section 7): waits
   for a world that needs providers' minimum lengths and steps.
 - **The first part of LLM accounts**, the rows here that name it and a
-  downstream repository's, is two plans, by layer, run after the
+  downstream repository's, is two plans, by layer, run after smith's
   live-text plan that builds `fake-llm.md`, section 2.2: the fakes'
   scripted failures and credentials (2.3, 3) stand beside its pieces and
   holds. The first plan, its grants, takes every row here that names
