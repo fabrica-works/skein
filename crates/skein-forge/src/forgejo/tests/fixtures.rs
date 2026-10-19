@@ -218,3 +218,15 @@ pub fn debug(value: &impl core::fmt::Debug) -> Box<[u8]> {
     core::fmt::write(&mut text, format_args!("{value:?}")).unwrap();
     Box::from(&text.bytes[..text.len])
 }
+
+pub const REPO: crate::api::Repository = crate::api::Repository { forge: 1, repository: 1 };
+
+pub fn specimen() -> crate::forgejo::plans::tables::Repository {
+    crate::forgejo::plans::tables::Repository {
+        owner: Box::from(&b"fixture"[..]),
+        name: Box::from(&b"specimen"[..]),
+        object_format: crate::forgejo::id::ObjectFormat::Sha1,
+        merge_style: crate::forgejo::document::MergeStyle::Squash,
+        html_url: Box::from(&b"http://127.0.0.1:3000/fixture/specimen"[..]),
+    }
+}
