@@ -1,6 +1,6 @@
 # The browser parts
 
-Provisional, 2026-10-15, revised 2026-10-18. The design of
+Provisional, 2026-10-15, revised 2026-10-19. The design of
 `skein-ui-web`, skein's browser parts; of `skein-ui-bundle`, their
 bundler; of the face and the harness in `skein-fake-person-browser`;
 and of the UI example's browser tier. The tree the parts map is
@@ -934,7 +934,7 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   | Story | What it checks | What the application names |
   |---|---|---|
   | typing while a patch arrives | the field keeps its focus, its caret and its words | a field; a second person's script whose act patches the first person's page; what that patch shows there, which the page does not show before it; and what a page shows once it holds its server's state |
-  | back and forward | they move between pages, and an address opened directly shows its page | two addresses, and what each page shows |
+  | back and forward | they move between pages, and an address opened directly shows its page | two addresses, and what each page shows; and what a page shows once it holds its server's state, which the story awaits at its start before its first move, since an application may sign the person in on its first page |
   | a panic | the page reloads within the restart limit, and past it says the application failed | an address at which its module panics at start, as its test build allows; and its words for "the application failed" (5.1), which its page then shows |
   | a write refused | a write the small store refuses fails the step's exchanges, and none leaves | an address at which its small store is bounded below a step's write, as its test build allows; a script making that step there; what the step would have made, which no page then shows; and what a page shows once it holds its server's state |
 
