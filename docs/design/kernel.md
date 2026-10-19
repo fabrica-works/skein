@@ -24,6 +24,11 @@ of the contract exactly; this document is the design behind it.
 - **Files stay beneath a root.** A root is an open directory. Only `Open`
   takes a path, which the kernel resolves beneath its root; every other
   operation on a name acts on one entry of an open directory.
+- **A tree's metadata, and its filesystem.** Links, modes, owners and
+  extended attributes are read and written by name in an open directory,
+  never through a link (section 6.4); a filesystem's status, its sync and
+  btrfs's subvolumes take a descriptor, the subvolumes through a closed
+  list of btrfs's ioctls (section 6.5).
 
 ## 2. In skein
 
@@ -55,7 +60,8 @@ pub struct Complete { pub op: Token, pub kind: Op, pub result: Result<Done, Erro
 // one success shape per operation
 pub enum Done {
     Nothing, Count(u32), Fd(Fd), Accepted { fd: Fd, peer: Addr }, Bound(Addr),
-    Stat(Stat),                       // kind, size, mode, owner, links (6.1)
+    Stat(Stat),                       // kind, size, mode, owners, links, inode, times (6.1)
+    Subvolume(Subvolume), Filesystem(Filesystem),  // btrfs's, and a filesystem's status (6.5)
     Spawned { pidfd: Fd }, Exit(Exit), ServiceSignal(ServiceSignal),
     Usage(Usage), Window(Window),     // the process's own (6.3)
 }
@@ -76,13 +82,35 @@ pub enum Op {
     Read          { fd: Fd, buf: Box<[u8]>, at: u64 },
     Write         { fd: Fd, bytes: Box<[u8]>, from: u32, at: u64 },
     Append        { fd: Fd, bytes: Box<[u8]>, from: u32 },       // at the end (6.1)
+    Truncate      { fd: Fd, length: u64 },                       // ftruncate (6.1)
     Sync          { fd: Fd },
     Stat          { fd: Fd },
+    StatEntry     { dir: Fd, name: Box<[u8]> },                  // the entry itself, never a link's target
     Rename        { from_dir: Fd, from: Box<[u8]>, to_dir: Fd, to: Box<[u8]> },
     Remove        { dir: Fd, name: Box<[u8]>, directory: bool },
     MakeDirectory { dir: Fd, name: Box<[u8]>, mode: u32 },     // less the umask (io.md, 5.3)
     List          { fd: Fd, entries: Box<[Entry]>, names: Box<[u8]> },  // synchronous
     Lock          { fd: Fd },                                    // exclusive, without waiting; synchronous
+    // a tree's metadata, by name in an open directory (section 6.4)
+    ReadLink        { dir: Fd, name: Box<[u8]>, buf: Box<[u8]> },                          // synchronous
+    MakeLink        { dir: Fd, name: Box<[u8]>, target: Box<[u8]> },
+    HardLink        { from_dir: Fd, from: Box<[u8]>, to_dir: Fd, to: Box<[u8]> },
+    SetMode         { dir: Fd, name: Box<[u8]>, mode: u32 },                               // synchronous
+    SetOwner        { dir: Fd, name: Box<[u8]>, user: u32, group: u32 },                   // synchronous
+    ListAttributes  { dir: Fd, name: Box<[u8]>, names: Box<[u8]> },                        // synchronous
+    GetAttribute    { dir: Fd, name: Box<[u8]>, attribute: Box<[u8]>, value: Box<[u8]> },  // synchronous
+    SetAttribute    { dir: Fd, name: Box<[u8]>, attribute: Box<[u8]>, value: Box<[u8]> },  // synchronous
+    RemoveAttribute { dir: Fd, name: Box<[u8]>, attribute: Box<[u8]> },                    // synchronous
+    // the filesystem a descriptor lies on, and btrfs's subvolumes (section 6.5); all synchronous
+    FilesystemStatus  { fd: Fd },
+    SyncFilesystem    { fd: Fd },
+    SubvolumeCreate   { dir: Fd, name: Box<[u8]> },
+    Snapshot          { source: Fd, dir: Fd, name: Box<[u8]> },
+    SubvolumeDestroy  { dir: Fd, name: Box<[u8]> },
+    SubvolumeReadOnly { fd: Fd, read_only: bool },
+    SubvolumeInfo     { fd: Fd },
+    SubvolumeChildren { fd: Fd, from: u64, children: Box<[Child]> },
+    SubvolumePath     { fd: Fd, directory: u64, tree: u64, path: Box<[u8]> },
     // processes (section 6.2)
     Spawn     { spawn: Box<Spawn> },                         // synchronous
     Wait      { pidfd: Fd, reap: bool },
@@ -95,6 +123,25 @@ pub enum Op {
     Window     { fd: Fd },                                   // synchronous
     Cancel     { target: Token },
 }
+
+// what the records on files answer (6.1, 6.5)
+pub struct Stat {
+    pub kind: Kind, pub size: u64,
+    pub mode: u32,                   // 0o7777 at most; a Create's or a MakeDirectory's, 0o777
+    pub owner: u32, pub group: u32, pub links: u32,
+    pub inode: u64, pub device: Device, pub special: Device,   // special: what a device is
+    pub changed: FileTime, pub modified: FileTime,
+}
+pub enum Kind { File, Directory, Symlink, CharDevice, BlockDevice, Fifo, Socket, Other }
+pub struct Device   { pub major: u32, pub minor: u32 }
+pub struct FileTime { pub seconds: i64, pub nanos: u32 }
+pub struct Child    { pub tree: u64, pub directory: u64 }
+pub struct Subvolume {
+    pub tree: u64, pub uuid: [u8; 16], pub parent_uuid: Option<[u8; 16]>,
+    pub read_only: bool, pub generation: u64,
+}
+pub struct Filesystem { pub kind: FilesystemKind, pub size: u64, pub available: u64 }
+pub enum FilesystemKind { Btrfs, Other(u64) }   // Other: the kernel's magic number
 ```
 
 The completion hands back the operation it answers, buffers and all,
@@ -185,11 +232,20 @@ error means the operation did nothing usable: a failed `Socket` or
     it.
 - **Some operations are synchronous:** spawning, signalling, listing a
   directory, locking a file without waiting, reading the process's
-  resource usage and its terminal's size. None of these is a ring
+  resource usage and its terminal's size, reading a link, setting a mode
+  or an owner, the extended attributes, and every operation on the
+  filesystem (6.5). None of these is a ring
   operation at the kernel floor (shell.md), and some are not ring
   operations at all. The backend performs them when
   they are submitted and completes them at the next reap, in the same
   records, so io cannot tell the difference.
+- **A synchronous operation blocks the loop for its call,** which no
+  `Cancel` stops: microseconds on a local filesystem, without bound on
+  one that stalls. Some are long even on a healthy disk: btrfs's writing
+  ioctls commit a transaction, and `SyncFilesystem` lasts until the
+  filesystem's dirty data is written (6.5). A service that must not
+  stall makes them in a process of its own, and talks to it as to any
+  child.
 - **Timers are not operations.** The shell waits for completions with one
   timeout: the earliest deadline over every layer.
 
@@ -251,11 +307,13 @@ documentation, with each operation's errors; the decisions behind it:
   the directories above it and none on the entry, so it opens another
   user's `0o700` directory or `0o600` file that `Read` cannot (io.md,
   5.3). Only `Stat` and `Close` take it; any other operation on it is an
-  invalid record. Its `Stat` may answer `Symlink` and `Other`, which
-  otherwise only `List` shows. It does no I/O, so the ring keeps whatever
+  invalid record. Its `Stat` may answer a symbolic link or a special
+  file (a device, a FIFO, a socket), which otherwise only `List` and
+  `StatEntry` show. It does no I/O, so the ring keeps whatever
   it opened, without the `NotAFile` check, and leaves it as it is (a
   path-only descriptor takes no `fcntl` flags). The simulator holds the
   same permission rule: search on the parents, nothing on the entry.
+  `StatEntry` (below) states an entry with no open at all.
 - **Reads and writes are at an offset,** never at the descriptor's
   position, so concurrent ones need no order. Both may be short: a `Read`
   at the end of the file, and whenever the backend says (POSIX allows it;
@@ -276,10 +334,25 @@ documentation, with each operation's errors; the decisions behind it:
   time, so the pieces of one stream land in order. No `Open` makes such
   a descriptor yet: opening one beneath a root while the service runs
   comes when a user needs it.
-- **`Stat` answers five values:** the kind, the size, the permission
-  bits, the owner (its user ID) and the number of links, from one
-  `statx`. The checks of a private file need the last two: one link, and
-  the owner of the directory it lies in (io.md, 5.3).
+- **`Stat` and `StatEntry` answer what an entry is,** from one `statx`:
+  its kind; its size; its mode, the permission bits with setuid, setgid
+  and sticky (`0o7777` at most); its owner and its group (user and group
+  IDs); its number of links; its inode and the device it lies on; the
+  device it is, for a device (`special`); and when its metadata and its
+  content last changed (`changed`, `modified`), in seconds and
+  nanoseconds as the filesystem keeps them, before 1970 included. A value
+  its filesystem does not report is zero. `Stat` takes a descriptor.
+  `StatEntry` takes a name in an open directory, and states the entry
+  itself, never a link's target (`AT_SYMLINK_NOFOLLOW`), nor what an
+  automount point would mount (`AT_NO_AUTOMOUNT`): it needs search
+  permission on the directory and none on the entry. It is the ring's
+  `statx` on the directory and the name. The checks of a private file
+  need the owner and the links: one link, and the owner of the directory
+  it lies in (io.md, 5.3); a tree's walk needs the rest (6.4).
+- **A kind for each thing a name may be:** a file, a directory, a
+  symbolic link, a character or a block device, a FIFO, a socket. `Other`
+  is left for a `List` entry whose kind neither its directory nor a stat
+  of it told, because it went in between.
 - **`Rename` is the atomic step.** It replaces its target whole, so the
   idiom that replaces a file is: `Stat` the old file for its permission
   bits, `Create` a temporary in the same directory with them, `Write` it,
@@ -332,10 +405,10 @@ documentation, with each operation's errors; the decisions behind it:
   own result. Even on tmpfs a `Read` goes to the worker, and the ring's
   conformance run sees its `Cancel` stop it in some runs and come too late
   in others. The ring reads `ECANCELED` and `EINTR` as `Cancelled` on an
-  operation a `Cancel` was submitted for. A `Stat`, `Rename`, `Remove`,
-  `MakeDirectory`, `List` or `Lock` completes without one: a `Cancel` of
-  one is a broken invariant, until a filesystem that stalls them pulls
-  it.
+  operation a `Cancel` was submitted for. A `Stat`, `StatEntry`,
+  `Rename`, `Remove`, `MakeDirectory`, `List` or `Lock` completes without
+  one, as does every operation of sections 6.4 and 6.5: a `Cancel` of one
+  is a broken invariant, until a filesystem that stalls them pulls it.
 - **Only files and directories open.** A FIFO beneath a root opened to
   read opens at once, and its first `Read` then waits for a writer's
   bytes for good, which nothing above can stop. So every `Open` goes down
@@ -356,7 +429,9 @@ documentation, with each operation's errors; the decisions behind it:
   operation: `EXDEV` is `Escape` on an `Open` and `Other` on a `Rename`
   (two filesystems); `ENOENT` is `NotFound` on a file and `TooLate` on a
   cancel; `EEXIST` is `Exists` on a `Create` and `NotEmpty` on a `Rename`
-  over a directory.
+  over a directory; `EINVAL` is `NotALink` on a `ReadLink` and
+  `InvalidArgument` elsewhere; `ENOTTY` is `NotSupported` on a btrfs
+  record, off btrfs.
 - **Modes are backend defaults,** as socket options are, but for the one
   a `Create` asks for: a new file is `0o666` unless asked otherwise, and a
   new directory `0o777`, less the process's umask, and every descriptor
@@ -405,11 +480,159 @@ documentation, with each operation's errors; the decisions behind it:
   descriptor is a terminal (shell.md, 6.3); one that has since hung up
   fails with the kernel's error, as `Other`.
 
+### 6.4 A tree's metadata
+
+- **What a tree's walk and its making need,** for a store of trees
+  (hearth's): to read each entry without following it (`StatEntry`,
+  `ReadLink`, the attributes), and to make each entry as a tree records it
+  (`MakeDirectory`, `Create`, `MakeLink`, `HardLink`, `SetMode`,
+  `SetOwner`, `SetAttribute`, `Truncate`). Each takes a name in an open
+  directory, never a path, as `Rename` does (6.1), and acts on the entry
+  itself, never a link's target: a link is read, owned and given
+  attributes as a link. Setting an entry's times comes with its first
+  user, hearth's shift of a slot (its M3).
+- **`ReadLink`** reads a symbolic link's target, as bytes, into `buf`,
+  and answers its length: `readlinkat`, which has no ring operation.
+  `buf` holds at least 4,096 bytes, more than the longest target Linux
+  keeps, so a target is never cut; a shorter `buf` is an invalid record.
+  An entry that is not a link fails `NotALink`.
+- **`MakeLink`** makes a symbolic link at a name, to the target given:
+  the ring's `symlinkat`. The target is 1 to 4,095 bytes with no NUL,
+  else an invalid record. It is kept as given and never resolved, so it
+  may lead anywhere, out of the root included: what holds a root in is
+  `Open`, which follows no link out of it (`Escape`, 6.1). A name taken
+  fails `Exists`.
+- **`HardLink`** gives an existing entry a second name: the ring's
+  `linkat`, with no flags, so it links the entry itself, a symbolic link
+  included, never a link's target. Both names lie in open directories on
+  one filesystem (`Other(EXDEV)` otherwise). A name taken fails `Exists`;
+  an entry with as many links as its filesystem allows, `TooManyLinks`
+  (`EMLINK`); a directory, or a file the caller neither owns nor may read
+  and write (Linux's `protected_hardlinks`), `Permission`.
+- **`SetMode`** sets the mode, setuid, setgid and sticky included
+  (`0o7777` at most, else an invalid record): `fchmodat2` with
+  `AT_SYMLINK_NOFOLLOW`, which the kernel floor has. A symbolic link has
+  no mode of its own and fails `NotSupported`. The kernel drops setgid
+  from a file whose group the caller is not in, unless it may keep it
+  (`CAP_FSETID`); a caller that must know states the entry again.
+- **`SetOwner`** sets the user and the group: `fchownat` with
+  `AT_SYMLINK_NOFOLLOW`, a link's own for a link. The kernel then clears
+  setuid and setgid from a file that may run, and removes its capability
+  attribute (`security.capability`), so a caller that makes an entry
+  whole sets its owner first, then its mode, then its attributes. An ID
+  the caller's user namespace does not map fails `InvalidArgument`; an
+  owner the caller may not give, `Permission`.
+- **Extended attributes,** by name: `ListAttributes` packs the entry's
+  attribute names into `names`, each followed by a NUL, as the kernel
+  gives them, and answers their length; `GetAttribute` reads one into
+  `value` and answers its length; `SetAttribute` creates or replaces one;
+  `RemoveAttribute` removes one. An attribute's name is 1 to 255 bytes
+  with no NUL; `names` and `value` hold at least 65,536 bytes, Linux's
+  largest list and value, so neither is ever cut; a value to set holds at
+  most 65,536; each else an invalid record. An attribute the entry lacks
+  fails `NoAttribute` (`ENODATA`); one its filesystem does not keep,
+  `NotSupported`; one the caller may not touch, `Permission` (a `user.`
+  attribute on a link, a FIFO or a device; `security.capability` without
+  `CAP_SETFCAP`; a `trusted.` one without `CAP_SYS_ADMIN`). A list longer
+  than Linux hands back fails `Other(E2BIG)`.
+- **The attributes of the entry, never of a link's target.** At the
+  kernel floor no attribute call takes a directory and a name, and the
+  `l*xattr` calls take a path, which could leave the root. So the backend
+  opens the entry path-only, without following it (`O_PATH |
+  O_NOFOLLOW`, the name in the directory), calls `*xattr` on
+  `/proc/self/fd/<n>`, a magic link to the entry itself, a link
+  included, and closes it, all in the one synchronous call. This needs
+  procfs at `/proc`: the ring checks at its start that `/proc/self/fd`
+  names its own descriptors, and answers every attribute record
+  `NotSupported` when it does not. Once the kernel floor has
+  `getxattrat` and its siblings (Linux 6.13), the backend calls those,
+  and the records stay as they are.
+- **Truncating and making directories** are `Truncate` and
+  `MakeDirectory` (6.1), and a file is made with `Create`: they need no
+  record of their own.
+- **Durability.** A new link and a new name for a file (`MakeLink`,
+  `HardLink`) are entries of their directory: durable once it is synced,
+  as a `Create`'s name is. A mode, an owner and attributes are the
+  entry's: durable once its file or its filesystem is synced (`Sync`,
+  `SyncFilesystem`); a link's own, which cannot be opened to sync, only
+  with its filesystem.
+- **Errors** are named per operation, on the module's table (6.1): each
+  of these answers `NotFound` for an entry or a directory gone,
+  `Permission`, `ReadOnly` and `NoSpace` for those that write, and
+  `NameTooLong`, beside its own above.
+
+### 6.5 The filesystem: its status, its sync, btrfs's subvolumes
+
+- **`FilesystemStatus`** reads what the filesystem a descriptor lies on
+  is, and its space: `fstatfs`, answering `Filesystem { kind, size,
+  available }`. `kind` is `Btrfs`, or `Other` with the kernel's magic
+  number; `size` and `available` are bytes, the filesystem's and what a
+  user without privilege may still write (`f_bavail`).
+- **`SyncFilesystem`** makes everything written to the filesystem a
+  descriptor lies on durable: `syncfs`, answering `Nothing`. It is the
+  one sync of a tree of many entries, whose links and modes have no
+  descriptor to sync. A write the kernel failed to put on disk since the
+  descriptor was opened fails it, with the kernel's error, as `Other`.
+- **btrfs's subvolumes, through a closed list of its ioctls.** A store of
+  trees on btrfs makes each tree a subvolume, snapshots it, makes it
+  read-only, finds them all again at its start, and destroys them. Each
+  of these records is one btrfs ioctl, and no other ioctl is offered:
+  the record names what it does, and the backend holds the ioctl's
+  structure. A record names a subvolume by a descriptor of its root
+  directory (inode 256), one `Open` made with `Directory`; another
+  directory may fail `InvalidArgument`.
+  - `SubvolumeCreate` makes an empty subvolume at a name in an open
+    directory (`BTRFS_IOC_SUBVOL_CREATE`); it needs only write
+    permission there.
+  - `Snapshot` makes a writable snapshot of the subvolume `source`, at a
+    name in an open directory on the same filesystem
+    (`BTRFS_IOC_SNAP_CREATE_V2`); Linux allows it to the source's owner.
+  - `SubvolumeDestroy` destroys the subvolume at a name in an open
+    directory, whatever it holds (`BTRFS_IOC_SNAP_DESTROY_V2`). Without
+    privilege, the filesystem must be mounted `user_subvol_rm_allowed`,
+    and the caller may write the subvolume. One that holds another
+    subvolume fails `NotEmpty`.
+  - `SubvolumeReadOnly` makes the subvolume `fd` read-only, or writable
+    again (`BTRFS_IOC_SUBVOL_SETFLAGS`), for its owner.
+  - `SubvolumeInfo` reads the subvolume `fd` (`BTRFS_IOC_GET_SUBVOL_INFO`),
+    answering `Subvolume { tree, uuid, parent_uuid, read_only,
+    generation }`: its tree ID, its UUID, the UUID of the subvolume it is
+    a snapshot of (`None` for one that is not), whether it is read-only,
+    and the generation of its last change. Anyone may read it.
+  - `SubvolumeChildren` lists the subvolumes directly beneath the
+    subvolume `fd`, from tree ID `from` up
+    (`BTRFS_IOC_GET_SUBVOL_ROOTREF`): each child's tree ID and the inode
+    of the directory it lies in (`Child { tree, directory }`), into
+    `children`, which holds at least 255, Linux's page, else an invalid
+    record; it answers how many. A page shorter than 255 is the last;
+    after a full one, the caller asks again from the last tree ID plus
+    one, which may answer none. The kernel's `EOVERFLOW`, which it gives
+    when more children follow a full page, is that full page, not a
+    failure. Anyone may list.
+  - `SubvolumePath` says where a child lies
+    (`BTRFS_IOC_INO_LOOKUP_USER`): from the child's tree ID and its
+    directory's inode, as `SubvolumeChildren` gave them, it writes the
+    child's path beneath the subvolume `fd`, the directory's path and the
+    child's name joined by `/`, into `path`, of at least 4,096 bytes,
+    else an invalid record, and answers its length. It needs read and
+    search permission on each directory of the path (`Permission`).
+  - Off btrfs, each fails `NotSupported` (`ENOTTY`).
+- **The worst case.** The writing ones (create, snapshot, destroy,
+  read-only) commit a btrfs transaction, milliseconds on an idle
+  filesystem and seconds on a busy one; a destroy leaves the space to a
+  cleaner the kernel runs later. They and `SyncFilesystem` are the long
+  synchronous calls of section 6, which a service that must not stall
+  makes in a process of its own.
+- **Durability.** A subvolume made, snapshotted, made read-only or
+  destroyed is durable once its filesystem is synced; btrfs may make it
+  so sooner.
+
 ## 7. Broken invariants
 
 Some mistakes io never makes, so a backend may assume they never happen:
 
-- an invalid record (an empty receive buffer, a send with nothing left);
+- an invalid record (an empty receive buffer, a send with nothing left,
+  a name with a `/` in it, a buffer below its operation's least);
 - a token already in flight, or a cancel of a cancel;
 - an address of the wrong family;
 - more than one receive, send or accept in flight on a socket, or
@@ -420,9 +643,10 @@ Some mistakes io never makes, so a backend may assume they never happen:
 - an operation on files on a socket's descriptor, or one on sockets on a
   file's; a read on a descriptor not opened to read, a write on one not
   opened to create, a list on one opened to create;
-- a cancel of a stat, a rename, a removal, a new directory, a listing or
-  a lock;
-- a lock on a socket, a pipe or a path-only descriptor;
+- a cancel of a stat, a rename, a removal, a new directory, a listing, a
+  lock, or any operation of sections 6.4 and 6.5;
+- a lock, or an operation of sections 6.4 and 6.5, on a socket, a pipe
+  or a path-only descriptor;
 - a close with anything else in flight on its descriptor, an operation on
   files being on every descriptor it names;
 - an `Append` beside another in flight on its descriptor, or on one not
@@ -500,8 +724,8 @@ for its backend.
   and requires a pairing the simulator draws; the simulator's `hung`
   fault, a filesystem gone away, adds the `Read` that waits for good,
   which no scratch directory shows, and every pairing must appear over
-  the fuzzy seeds. `EMLINK` (`TooManyLinks` on a `Rename`
-  or a `MakeDirectory`) neither backend provokes. A `Rename` across
+  the fuzzy seeds. `EMLINK` (`TooManyLinks` on a `Rename`, a
+  `MakeDirectory` or a `HardLink`) neither backend provokes. A `Rename` across
   filesystems (`Other(EXDEV)`) is the ring's own test, between the
   temporary directory and `/dev/shm` where they are two mounts. Short
   reads and writes are an outcome the simulator draws and the ring never
@@ -514,6 +738,40 @@ for its backend.
   stops one or comes too late, as for a `Write`. The suite's tree gains a
   second name for a file (a hard link), so that `Stat` answers two links
   for it, one for the rest, and the owner every scenario's files have.
+- **A tree's metadata,** on both backends, in the scenario's own root,
+  whose tree gains FIFOs, modes with setuid, setgid and sticky, and
+  `user.` attributes: `StatEntry` of each kind it lays out, a link
+  stated as a link, its inode, device and links those `Stat` answers
+  through an open, its group the scenario's, and `changed` moving on
+  after a `SetMode`, never back; `ReadLink` of a link, whole, and
+  `NotALink` of a file; `MakeLink` to a target out of the root, which
+  `ReadLink` reads back as written and an `Open` through it refuses with
+  `Escape`; `HardLink` of a file and of a link, each counted in its
+  links, and `Exists`; `SetMode` with setuid, setgid and sticky, read
+  back, and `NotSupported` on a link; `SetOwner` to the scenario's own
+  user and group, the only ones a run without `CAP_CHOWN` may give, and
+  `Permission` for another's, checked only without it; a `user.`
+  attribute set, listed, read, replaced and removed, then `NoAttribute`;
+  a value of 65,536 bytes; `Permission` for a `user.` attribute on a
+  link. On the ring, the scratch directory's filesystem keeps `user.`
+  attributes (tmpfs and ext4 do); a scenario that finds it does not
+  fails, saying so.
+- **The filesystem,** on both backends: `FilesystemStatus` of the root
+  answers a kind, and an available space no larger than its size;
+  `SyncFilesystem` answers `Nothing`; and where the kind is not btrfs,
+  each subvolume record answers `NotSupported`.
+- **btrfs, on the ring alone,** in the directory `SKEIN_BTRFS_SCRATCH`
+  names, on a btrfs filesystem mounted `user_subvol_rm_allowed`, where
+  the run may write; without it, each such scenario is skipped by name,
+  saying so. A subvolume made, a file written in it, a snapshot of it
+  whose parent UUID is its UUID, made read-only (a write in it then fails
+  `ReadOnly`) and writable again; the scratch subvolume's children, both
+  among them, and each one's path; `from` past the first child's tree,
+  which leaves it out; both destroyed, and `NotFound` after. The
+  simulator has no btrfs: the minimal fake machine answers these records
+  `NotSupported` (testing.md, 4), and a service's own fake machine that
+  models btrfs holds itself to these scenarios (hearth's, its testing.md,
+  3.3).
 - **Processes,** with the fixture program of both backends (echo its
   input, exit with a status, never exit): pipes through chosen
   descriptors, an exit status kept, a `Wait` that waits while the child

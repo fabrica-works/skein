@@ -96,6 +96,13 @@ that a face translates to and from the simulator's. Its programs are
 built too, the fixture of the conformance suite's processes, and so is
 its crash model, which keeps what a crash keeps (simulator.md, 3.3). It
 keeps each file's lock with the handle that took it (simulator.md, 3.1).
+For a tree's metadata (kernel.md, 6.4) it keeps each entry's inode,
+group, mode up to `0o7777`, times and attributes, and hard links, and
+lays FIFOs; it has no devices, no sockets and no btrfs. It answers every
+subvolume call `NotSupported`, and its status a filesystem that is not
+btrfs, as Linux does off btrfs, so skein's btrfs scenarios run on the
+ring alone (kernel.md, 8). A service whose fake machine models btrfs,
+such as hearth's, holds that machine to those scenarios itself.
 
 A separate dependency-free kit, `skein-fake-checkout`, supplies generic
 byte-path files, scripted commands and local git mechanics for domain

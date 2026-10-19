@@ -570,6 +570,27 @@ pub enum Request {
     Remove { owner, root: Token, name, directory },
     // a lock
     Lock { owner, root: Token },                                                   // Locked, Busy
+    // a tree's metadata, by name in an open directory (kernel.md, 6.4)
+    StatEntry { owner, directory: Token, name },                                   // Stated
+    ReadLink { owner, directory: Token, name },                                    // LinkRead { target }
+    MakeLink { owner, directory: Token, name, target },                            // Linked
+    HardLink { owner, from: Token, from_name, to: Token, to_name },                // Linked
+    SetMode { owner, directory: Token, name, mode },                               // Changed
+    SetOwner { owner, directory: Token, name, user, group },                       // Changed
+    ListAttributes { owner, directory: Token, name },                              // AttributesListed { names }
+    GetAttribute { owner, directory: Token, name, attribute },                     // AttributeRead { value }
+    SetAttribute { owner, directory: Token, name, attribute, value },              // Changed
+    RemoveAttribute { owner, directory: Token, name, attribute },                  // Changed
+    // the filesystem, and btrfs's subvolumes (kernel.md, 6.5)
+    FilesystemStatus { owner, file: Token },                                       // FilesystemStated { filesystem }
+    SyncFilesystem { owner, file: Token },                                         // Synced
+    SubvolumeCreate { owner, directory: Token, name },                             // Made
+    Snapshot { owner, source: Token, directory: Token, name },                     // Made
+    SubvolumeDestroy { owner, directory: Token, name },                            // Removed
+    SubvolumeReadOnly { owner, subvolume: Token, read_only },                      // Changed
+    SubvolumeInfo { owner, subvolume: Token },                                     // SubvolumeStated { subvolume }
+    SubvolumeChildren { owner, subvolume: Token, from: u64 },                      // Children { children }
+    SubvolumePath { owner, subvolume: Token, directory: u64, tree: u64 },          // PathRead { path }
 }
 // each request ends in one event: its own, Failed { error } or Cancelled
 ```
@@ -646,6 +667,40 @@ pub enum Request {
   descriptor: until its `Close`, for a root `OpenDirectory` made, and
   until the process ends, for one the shell opened. There is no unlock.
   A spawned child never holds it.
+- **A tree's metadata** is read and written by name, in a directory the
+  owner holds open: a root, or one `OpenDirectory` made, named by its
+  token, as `ListPage` names one. Each request is one record (kernel.md,
+  6.4), so it acts on the entry itself, never a link's target, and io
+  opens nothing for it. `StatEntry` answers `Stated` with the entry's
+  whole stat; `ReadLink` answers the link's target; `ListAttributes`
+  answers each attribute's name, unpacked from the kernel's list;
+  `GetAttribute` answers one value. `MakeLink` and `HardLink` answer
+  `Linked`, and the requests that set a mode, an owner or an attribute,
+  or remove one, answer `Changed`. io checks each request's names, mode,
+  target, attribute name and value against the record's bounds, and
+  answers one outside them `InvalidArgument`, before any record. What
+  they write is durable as kernel.md, 6.4 says: a link's name once the
+  owner syncs its directory (`SyncDirectory`), the rest once it syncs the
+  entry's file or its filesystem (`SyncFilesystem`). A file is made with
+  `Create`, a directory with `MakeDirectory`, and cut with `Cut`.
+- **The filesystem** of an open file or directory: `FilesystemStatus`
+  answers its kind and its space, and `SyncFilesystem` makes everything
+  written to it durable, answering `Synced`. **btrfs's subvolumes**
+  (kernel.md, 6.5): `SubvolumeCreate` and `Snapshot` make one at a name
+  in an open directory (`Made`), and `SubvolumeDestroy` destroys one
+  (`Removed`); `SubvolumeReadOnly`, `SubvolumeInfo`, `SubvolumeChildren`
+  and `SubvolumePath` take a subvolume's root, held open as a directory.
+  `SubvolumeChildren` answers one page, at most 255 children, from tree
+  ID `from` up: a page shorter than 255 is the last, and after a full one
+  the owner asks again from the last tree ID plus one. Off btrfs each
+  fails `NotSupported`.
+- **These requests stall the loop.** Every one but `StatEntry`,
+  `MakeLink` and `HardLink` is synchronous (kernel.md, 6): it runs in the
+  loop, at submit, and nothing stops it. A request's deadline cannot cut
+  one short, and a stalled filesystem stalls the service. The writing
+  subvolume requests and `SyncFilesystem` are long even on a healthy
+  disk (kernel.md, 6.5). A service that must not stall makes them in a
+  process of its own.
 - **Removing** takes one name. `Remove` removes a file, or, with
   `directory`, an empty directory, never what lies inside one: a
   directory that is not empty fails with the kernel's error, as
@@ -683,7 +738,8 @@ pub enum Request {
     contract, so that an owner's scan can tell io's temporaries from its
     own names (5.2). A `Create` that finds the name taken
     (`Exists`) draws another.
-  - The old file's permission bits are kept. A target that does not
+  - The old file's permission bits are kept, never its setuid, setgid
+    or sticky bits, which `Stat` also answers. A target that does not
     exist, or cannot be opened to read, is made with `0o666` less the
     umask.
   - A symbolic link at the target is replaced by the file, not written
@@ -697,8 +753,9 @@ pub enum Request {
   request's own if the operation finished first. A store gives up only
   before its rename: once the new file is in place, it runs to the commit
   terminal described in section 5.2. An operation that completes without
-  a `Cancel` (kernel.md, 6.1: a `Stat`, `Rename`, `Remove`,
-  `MakeDirectory`, `List` or `Lock`) always finishes first, so a request
+  a `Cancel` (kernel.md, 6.1: a `Stat`, `StatEntry`, `Rename`, `Remove`,
+  `MakeDirectory`, `List` or `Lock`, and every operation of its sections
+  6.4 and 6.5) always finishes first, so a request
   whose answer it decides answers its own, whatever its deadline: a
   `Lock` past it still says `Locked` or `Busy`, and a `Rename` that
   landed says so. A request with more to do after it, such as a page of
@@ -707,7 +764,12 @@ pub enum Request {
 - **Memory:** `FileIo::worst_case` counts the open files' table, the
   driver's own buffers, and an admitted `Load`, `Scan` or `Store` at its
   bounds. The buffers an owner hands in, `WriteAt`'s bytes and paths,
-  are the owner's.
+  are the owner's. The records of a tree's metadata and of btrfs take
+  buffers at the kernel's largest (kernel.md, 6.4 and 6.5), which io
+  makes for the request in flight and hands up cut to their length, so
+  `worst_case` counts 65,536 bytes for an attribute's list or value and
+  4,096 for a link's target or a subvolume's path, the largest one
+  request holds.
 - **Beyond whole files:** a file appended to as a stream (5.1); the
   durable replace that services keep their records with (5.2); and
   private files, for secrets (5.3). A file read as a stream, by demand,
@@ -1029,6 +1091,14 @@ simulator's machine seam (testing.md, 4).
   still runs; a signal to a group after its leader exited, before its
   close. In the simulator, groups the minimal machine's programs make,
   and the same cases.
+- **A tree's metadata and its filesystem:** step tests of each request,
+  its bounds refused before any record, each record's errors, a deadline
+  that passes while a synchronous record runs (the request still answers
+  its own), and `SubvolumeChildren`'s pages; the records themselves are
+  the conformance suite's, btrfs's on the ring alone (kernel.md, 8). A
+  world over the simulator, on a fake machine that cuts a power loss,
+  shows a link's name kept only once its directory was synced, and a
+  mode, an owner and an attribute only once the filesystem was.
 - **Append streams:** io worlds over the simulator with sends within the
   room granted, short writes, a close that flushes, and the simulator's
   hung `Write`, met by the write deadline while open and by the close

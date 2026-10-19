@@ -116,6 +116,22 @@ processes and the simulator.
 - **`Stat`** answers the owner and the links the machine keeps for what is
   open: every file of the minimal machine has one owner, and a second
   name made in a scenario's tree gives a file two links (kernel.md, 6.1).
+  `Stat` and `StatEntry` answer the rest of what the machine keeps for an
+  entry: its group, its mode up to `0o7777`, its inode, its device, and
+  its two times, which move on with each change the machine makes, from
+  the world's clock, and never back.
+- **A tree's metadata, and the filesystem** (kernel.md, 6.4 and 6.5), go
+  to the machine as calls naming a directory's handle and a name: an
+  entry stated, a link read, a link or a second name made, a mode, an
+  owner or an attribute set, an attribute removed, an entry's attributes
+  listed or one read; and naming a handle alone: the filesystem's status,
+  its sync, and btrfs's subvolume calls. The machine answers as a
+  filesystem would, its refusals included (a link has no mode of its
+  own; a `user.` attribute goes on no link). A machine with no btrfs
+  answers every subvolume call `NotSupported`, as Linux does off btrfs,
+  and the minimal machine has none (testing.md, 4). The simulator checks
+  each call's bounds as the records' (kernel.md, 7), and needs no
+  `/proc`: the attributes are the machine's.
 - **The machine's shape is a step machine's:** its state, one call in, one
   answer out. It is ordinary Rust, a test's; a service's fake machine can
   be the same step machine its other tiers host.
@@ -166,7 +182,11 @@ would: to show that what a service keeps durably survives (io.md, 5.2).
   rename between two directories once the directory it lands in was
   synced, in one directory or the other until then (kernel.md, 6.1); a
   file's length cut (kernel.md, 6.1) only once the file was synced, the
-  old length kept until then. The choices are drawn from the seed.
+  old length kept until then; a new link or a second name, as a create's,
+  only once its directory was synced; a mode, an owner or an attribute
+  only once its file, or its filesystem, was synced; and everything
+  written to a filesystem, once it was synced whole (kernel.md, 6.4 and
+  6.5). The choices are drawn from the seed.
 - **After the cut** the world starts the process again over what the
   machine kept, with the roots it had, and the referee checks what it
   recovers: for a durable replace, the old content or the new, whole.
@@ -194,7 +214,11 @@ accept queues, descriptors, connect timeouts) and each fault's chance:
   files before the machine is asked; and a filesystem that hangs an
   `Open`, `Read`, `Write`, `Append` or `Sync` until a `Cancel` stops it,
   the machine never asked: an append stream's write deadline, and its
-  close deadline while it closes, meet it there (io.md, 5.1).
+  close deadline while it closes, meet it there (io.md, 5.1). The records
+  of a tree's metadata and of the filesystem meet the disk's faults as
+  the others do, those that read only its I/O error and the kernel out
+  of memory; none of them hangs, as none can be cancelled (kernel.md,
+  6.1).
 
 A calm configuration has no faults and roomy buffers; a chaotic one turns
 every fault on, often enough that a few hundred seeds meet each one, with
@@ -244,7 +268,11 @@ was metered as its own, which also finds a leak.
   exit; a zombie's usage joining its parent's children's only at the
   reap; two descriptors appending to one file, each piece whole at the
   end; a hung `Append` stopped by its `Cancel`; and a cut at each
-  operation of a durable replace, the file then old or new and whole.
+  operation of a durable replace, the file then old or new and whole. A
+  tree's metadata adds: each call through the seam and its answer's
+  checks, each fault of a disk, and a power loss after each of a link, a
+  second name, a mode, an owner and an attribute, kept only past its
+  sync.
 - **The conformance suite** (kernel.md, 8) is `testing/skein-conformance`,
   over a small backend interface the simulator implements in
   `tests/conformance/sim` and the ring in `tests/conformance/ring`. Where
