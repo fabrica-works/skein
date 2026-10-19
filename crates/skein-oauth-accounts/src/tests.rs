@@ -576,3 +576,63 @@ fn a_verifier_is_43_url_safe_characters() {
         assert!(byte.is_ascii_alphanumeric() || b"-_".contains(byte));
     }
 }
+
+fn issued_terms() -> skein_oauth::Terms {
+    skein_oauth::Terms {
+        parameters: Box::new([]),
+        openid: None,
+        issued_client_id: true,
+        varying_port: false,
+        resource: None,
+        required_scopes: None,
+        revocation_endpoint: None,
+        sign_in_again: Box::new([]),
+    }
+}
+
+#[test]
+fn a_name_no_live_account_holds_is_refused() {
+    const MISSING: u32 = 7;
+    let (mut component, env, mut above) = setup();
+    for (request, asked) in [
+        (Request::SignIn { account: MISSING }, Asked::SignIn),
+        (
+            Request::Redirected { account: MISSING, uri: bytes::copy_of(b"https://service.example/callback") },
+            Asked::Redirected,
+        ),
+        (Request::HandIn { account: MISSING, record: tests_record(0) }, Asked::HandIn),
+    ] {
+        component.down(
+            &env,
+            request,
+            &mut above,
+            &mut Queue::with_capacity(MAX_OUT_DOWN.io),
+            &mut Queue::with_capacity(MAX_OUT_DOWN.files),
+        );
+        assert_refused(above.pop(), MISSING, asked, Refusal::Account);
+    }
+}
+
+#[test]
+fn an_owner_record_without_an_issued_id_is_held_as_none() {
+    let mut profile = limits();
+    profile.client.document.issued_client_bytes = profile.client.document.client_bytes;
+    let mut account = refresh_account(0, ([127, 0, 0, 1], 31000).into());
+    match &mut account {
+        Account::SignIn { registration, .. } => registration.terms = Some(issued_terms()),
+        Account::HandedIn => unreachable!("refresh fixture"),
+    }
+    let mut configured = List::with_capacity(1);
+    assert!(configured.push(account).is_ok());
+    let mut component = Component::new(configured, &profile, crypto(1)).expect("issued registration");
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: profile };
+    let mut above = Queue::with_capacity(MAX_OUT_DOWN.above);
+    component.down(
+        &env,
+        Request::Grant { account: 0 },
+        &mut above,
+        &mut Queue::with_capacity(MAX_OUT_DOWN.io),
+        &mut Queue::with_capacity(MAX_OUT_DOWN.files),
+    );
+    assert_expired(above.pop());
+}

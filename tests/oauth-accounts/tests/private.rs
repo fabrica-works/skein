@@ -246,3 +246,15 @@ fn a_queued_descriptor_close_is_retained_after_its_deadline_and_cancel() {
     assert!(matches!(files.take_event(), Some(skein_io::file::Event::Closed { .. })));
     assert!(files.is_empty());
 }
+
+#[test]
+fn a_record_without_an_issued_id_ends_a_grant_unreadable() {
+    let mut outcome = private::run(101, Story::NoIssuedId);
+    assert_eq!(
+        private::facts(&outcome.procs),
+        &[Fact::Failed(Failure::Unloaded { at: Place::File, why: Unloaded::Unreadable }), Fact::Closed]
+    );
+    assert_eq!(outcome.machine.writes, 0);
+    assert_eq!(outcome.machine.renames, 0);
+    outcome.machine.finish();
+}

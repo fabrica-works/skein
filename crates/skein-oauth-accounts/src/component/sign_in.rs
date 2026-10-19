@@ -2,6 +2,7 @@
 //! (oauth.md, sections 6.3 and 6.5). Listener heads use the same decoder;
 //! the OAuth client owns state authentication and the exchange's deadline.
 
+use super::names::number;
 use super::{Component, State};
 use crate::accounts::{Source, copy_registration};
 use crate::exchange::{Exchange, Stage};
@@ -22,17 +23,21 @@ impl Component {
         let registration = match self.sources.get(account).expect("configured source") {
             Source::SignIn { registration, .. } => copy_registration(registration),
             Source::HandedIn => {
-                up.push(Event::Refused { account, asked: Asked::SignIn, why: Refusal::Source });
+                up.push(Event::Refused {
+                    account: number(&self.names, account),
+                    asked: Asked::SignIn,
+                    why: Refusal::Source,
+                });
                 return;
             }
         };
         if self.bindings.get(account) != Some(&None) {
-            up.push(Event::Refused { account, asked: Asked::SignIn, why: Refusal::Busy });
+            up.push(Event::Refused { account: number(&self.names, account), asked: Asked::SignIn, why: Refusal::Busy });
             return;
         }
         if self.exchanges.is_full() {
             up.push(Event::Refused {
-                account,
+                account: number(&self.names, account),
                 asked: Asked::SignIn,
                 why: Refusal::Full { bound: env.limits.exchanges },
             });
@@ -65,7 +70,7 @@ impl Component {
             }
             if listeners >= env.limits.listeners {
                 up.push(Event::Refused {
-                    account,
+                    account: number(&self.names, account),
                     asked: Asked::SignIn,
                     why: Refusal::Full { bound: env.limits.listeners },
                 });
@@ -133,7 +138,7 @@ impl Component {
                 nonce: None,
                 port: None,
                 registration,
-                key: account,
+                key: number(&self.names, account),
                 generation,
                 state,
                 verifier,
@@ -156,26 +161,42 @@ impl Component {
             return;
         }
         if account >= self.accounts.len() {
-            up.push(Event::Refused { account, asked: Asked::Redirected, why: Refusal::Account });
+            up.push(Event::Refused {
+                account: number(&self.names, account),
+                asked: Asked::Redirected,
+                why: Refusal::Account,
+            });
             return;
         }
         let registered = match self.sources.get(account).expect("configured source") {
             Source::SignIn { registration, .. } if registration.client_secret.is_some() => &registration.redirect_uri,
             Source::SignIn { .. } | Source::HandedIn => {
-                up.push(Event::Refused { account, asked: Asked::Redirected, why: Refusal::Source });
+                up.push(Event::Refused {
+                    account: number(&self.names, account),
+                    asked: Asked::Redirected,
+                    why: Refusal::Source,
+                });
                 return;
             }
         };
         let id = match self.bindings.get(account).expect("account binding") {
             Some(id) => *id,
             None => {
-                up.push(Event::Refused { account, asked: Asked::Redirected, why: Refusal::NotWaiting });
+                up.push(Event::Refused {
+                    account: number(&self.names, account),
+                    asked: Asked::Redirected,
+                    why: Refusal::NotWaiting,
+                });
                 return;
             }
         };
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         if !exchange.waiting() || exchange.visit.is_some() || !exchange.above.is_empty() {
-            up.push(Event::Refused { account, asked: Asked::Redirected, why: Refusal::NotWaiting });
+            up.push(Event::Refused {
+                account: number(&self.names, account),
+                asked: Asked::Redirected,
+                why: Refusal::NotWaiting,
+            });
             return;
         }
         match redirect::parse(uri, registered, &env.limits.client) {
@@ -183,7 +204,11 @@ impl Component {
                 exchange.received();
                 deliver(&mut exchange.client, &mut exchange.above, redirect, env.now);
             }
-            None => up.push(Event::Refused { account, asked: Asked::Redirected, why: Refusal::Redirect }),
+            None => up.push(Event::Refused {
+                account: number(&self.names, account),
+                asked: Asked::Redirected,
+                why: Refusal::Redirect,
+            }),
         }
     }
 }

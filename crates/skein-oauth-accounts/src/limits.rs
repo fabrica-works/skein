@@ -1,7 +1,7 @@
 //! Account storage, exchange and transport bounds (oauth.md, section 6.7).
 
 use crate::accounts::Source;
-use crate::component::State;
+use crate::component::{Name, State};
 use crate::exchange::{Exchange, ROUTES};
 use skein_lib::{Duration, Id, List, Queue, Slab};
 use skein_oauth::ClientLimits;
@@ -79,7 +79,8 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     };
     // Directory, filename and one outstanding request path, plus encoded load/store bytes.
     let private = 4095_u64.checked_mul(3)?.checked_add(record.checked_mul(2)?)?;
-    List::<State>::worst_case(limits.accounts)?
+    List::<Name>::worst_case(limits.accounts)?
+        .checked_add(List::<State>::worst_case(limits.accounts)?)?
         .checked_add(List::<Source>::worst_case(limits.accounts)?)?
         .checked_add(List::<crate::keeper::Store>::worst_case(limits.accounts)?)?
         .checked_add(u64::from(limits.accounts).checked_mul(private)?)?

@@ -14,6 +14,7 @@ fn seeded_private_file_failures_and_keeper_settlement_replay() {
         Story::AbortKeeping,
         Story::Missing,
         Story::Unreadable,
+        Story::NoIssuedId,
         Story::FileOwner,
         Story::FileMode,
         Story::FileLink,
@@ -28,9 +29,10 @@ fn seeded_private_file_failures_and_keeper_settlement_replay() {
         Story::CloseLoading,
         Story::AbortLoading,
     ];
+    let count = u64::try_from(stories.len()).expect("story count");
     for seed in 0..32 {
         let mut random = Rng::new(seed);
-        let story = stories[usize::try_from(random.below(20)).expect("story index")];
+        let story = stories[usize::try_from(random.below(count)).expect("story index")];
         let mut first = private::run(seed, story);
         let mut second = private::run(seed, story);
         assert_eq!(first.trace, second.trace);

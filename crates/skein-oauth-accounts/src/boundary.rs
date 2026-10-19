@@ -98,7 +98,7 @@ pub enum Refusal {
     Redirect,
     /// The owner has closed or aborted its component.
     Closed,
-    /// The index names no configured account.
+    /// The number names no live account.
     Account,
     /// The requested operation does not belong to this account's source.
     Source,
@@ -133,7 +133,7 @@ pub enum Place {
 /// Why loading left an account without a record (oauth.md, section 6.4).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Unloaded {
-    /// Loaded bytes are damaged or belong to another version; a sign-in may replace their digest.
+    /// Damaged bytes, another version, or no issuer-required client id; a sign-in may replace their digest.
     Unreadable,
     /// io refused unsafe metadata without reading; sign-in fails before Visit.
     Refused(skein_io::file::Unsafe),

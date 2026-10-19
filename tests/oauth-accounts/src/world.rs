@@ -227,6 +227,7 @@ impl Contracts {
 
 /// The service's owner adapter, running the same component at each tier.
 pub struct Client {
+    pub(crate) terms: Option<oauth::Terms>,
     io: io::Io,
     component: Option<accounts::Component>,
     limits: accounts::Limits,
@@ -260,6 +261,7 @@ impl Client {
     }
     pub(crate) fn with_limits(story: Story, transport: Transport, limits: &accounts::Limits, room: u32) -> Client {
         Client {
+            terms: None,
             io: io::Io::new(&limits.io),
             component: None,
             limits: *limits,
@@ -287,8 +289,9 @@ impl Client {
             started: Time::ZERO,
         }
     }
-    pub(crate) fn private(root: kernel::Fd, story: Story) -> Client {
+    pub(crate) fn private(root: kernel::Fd, story: Story, terms: Option<oauth::Terms>) -> Client {
         let mut client = Client::new(story, Transport::Plaintext);
+        client.terms = terms;
         client.file_driver = Some(skein_world::files::Driver::new(
             root,
             4,
@@ -299,7 +302,7 @@ impl Client {
         client
     }
     pub(crate) fn recovery(root: kernel::Fd) -> Client {
-        let mut client = Client::private(root, Story::NotKept);
+        let mut client = Client::private(root, Story::NotKept, None);
         client.limits.refresh_lead = Duration::ZERO;
         client
     }
@@ -340,7 +343,11 @@ impl Client {
                     accounts::Account::HandedIn
                 } else {
                     accounts::Account::SignIn {
-                        registration: registration(self.transport),
+                        registration: {
+                            let mut registration = registration(self.transport);
+                            registration.terms.clone_from(&self.terms);
+                            registration
+                        },
                         endpoint: accounts::Endpoint {
                             address: self.address.expect("referee supplied peer address"),
                             transport: match self.transport {

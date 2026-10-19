@@ -17,7 +17,9 @@ use crate::{Account, Asked, Ends, Event, Failure, Keeper, Keeping, Limits, Refus
 use skein_lib::{CryptoRng, Duration, Env, Id, List, Queue, Slab, Time};
 use skein_oauth::{self as oauth, SavedToken};
 
+mod names;
 mod private;
+use names::number;
 mod sign_in;
 #[cfg(test)]
 pub(crate) use sign_in::draw;
@@ -91,6 +93,12 @@ pub enum Unusable {
     Path { account: u32 },
 }
 
+#[derive(Debug)]
+pub(crate) enum Name {
+    Free,
+    Live { number: u32 },
+}
+
 pub(crate) enum State {
     Empty,
     Record {
@@ -123,6 +131,7 @@ enum Lifecycle {
 #[expect(missing_debug_implementations, reason = "credential values must never occur in traces")]
 pub struct Component {
     accounts: List<State>,
+    names: List<Name>,
     sources: List<Source>,
     bindings: List<Option<Id<Exchange>>>,
     exchanges: Slab<Exchange>,
@@ -140,6 +149,10 @@ impl Component {
         }
         if !crate::limits::usable(limits) || worst_case(limits).is_none() {
             return Err(Unusable::Limits);
+        }
+        let mut names = List::with_capacity(limits.accounts);
+        for _ in 0..limits.accounts {
+            names.push(Name::Free).expect("bounded names");
         }
         let mut states = List::with_capacity(limits.accounts);
         let mut sources = List::with_capacity(limits.accounts);
@@ -173,7 +186,11 @@ impl Component {
                                         Ok(encoded) => drop(encoded),
                                         Err(why) => return Err(Unusable::Record { account: index, why }),
                                     }
-                                    State::Loaded { record }
+                                    if names::missing_id(&registration, &record) {
+                                        State::Empty
+                                    } else {
+                                        State::Loaded { record }
+                                    }
                                 }
                                 None => State::Empty,
                             },
@@ -189,6 +206,7 @@ impl Component {
                     (Source::SignIn { registration, endpoint }, state, store)
                 }
             };
+            *names.get_mut(index).expect("bounded name") = Name::Live { number: index };
             match states.push(state) {
                 Ok(()) => {}
                 Err(State::Empty | State::Record { .. } | State::Loaded { .. }) => unreachable!("validated accounts"),
@@ -205,6 +223,7 @@ impl Component {
         }
         Ok(Component {
             accounts: states,
+            names,
             sources,
             bindings,
             exchanges: Slab::with_capacity(limits.exchanges),
@@ -242,6 +261,10 @@ impl Component {
         _files: &mut Queue<FileLower>,
     ) {
         self.initialize(env);
+        let request = match self.named(request, up) {
+            Some(request) => request,
+            None => return,
+        };
         match request {
             Request::SignIn { account } => self.sign_in(env, account, up, io),
             Request::Redirected { account, uri } => self.redirected(env, account, &uri, up),
@@ -269,12 +292,12 @@ impl Component {
                             match self.sources.get(account).expect("account source") {
                                 Source::HandedIn => {
                                     *held = false;
-                                    failed(account, Failure::Expired, up);
+                                    failed(number(&self.names, account), Failure::Expired, up);
                                 }
                                 Source::SignIn { .. } => {
                                     if repeated {
                                         *held = false;
-                                        failed(account, Failure::Expired, up);
+                                        failed(number(&self.names, account), Failure::Expired, up);
                                     } else {
                                         *due = true;
                                         refresh = true;
@@ -336,7 +359,11 @@ impl Component {
         let slot = self.accounts.get_mut(account).expect("validated account");
         match slot {
             State::Record { held: true, .. } => {
-                up.push(Event::Refused { account, asked: Asked::Grant, why: Refusal::Held });
+                up.push(Event::Refused {
+                    account: number(&self.names, account),
+                    asked: Asked::Grant,
+                    why: Refusal::Held,
+                });
                 return;
             }
             State::Empty | State::Record { held: false, .. } => {}
@@ -346,10 +373,14 @@ impl Component {
             Some(id) => {
                 let exchange = self.exchanges.get_mut(id).expect("bound exchange");
                 match exchange.stage {
-                    Stage::Finished => grant(slot, env.now, account, up),
+                    Stage::Finished => grant(slot, env.now, number(&self.names, account), up),
                     Stage::Loading | Stage::Running | Stage::Keeping { .. } => {
                         if exchange.pending_grant {
-                            up.push(Event::Refused { account, asked: Asked::Grant, why: Refusal::Held });
+                            up.push(Event::Refused {
+                                account: number(&self.names, account),
+                                asked: Asked::Grant,
+                                why: Refusal::Held,
+                            });
                             return;
                         }
                         set_held(slot, true);
@@ -369,7 +400,7 @@ impl Component {
                 if needs_refresh && refreshable && self.lifecycle == Lifecycle::Live {
                     if self.exchanges.is_full() {
                         up.push(Event::Refused {
-                            account,
+                            account: number(&self.names, account),
                             asked: Asked::Grant,
                             why: Refusal::Full { bound: env.limits.exchanges },
                         });
@@ -378,7 +409,7 @@ impl Component {
                         self.start_refresh(env, account, true);
                     }
                 } else {
-                    grant(slot, env.now, account, up);
+                    grant(slot, env.now, number(&self.names, account), up);
                 }
             }
         }
@@ -391,18 +422,30 @@ impl Component {
         match self.sources.get(account).expect("validated account") {
             Source::HandedIn => {}
             Source::SignIn { .. } => {
-                up.push(Event::Refused { account, asked: Asked::HandIn, why: Refusal::Source });
+                up.push(Event::Refused {
+                    account: number(&self.names, account),
+                    asked: Asked::HandIn,
+                    why: Refusal::Source,
+                });
                 return;
             }
         }
         if record.refresh_token.is_some() {
-            up.push(Event::Refused { account, asked: Asked::HandIn, why: Refusal::NotAccessOnly });
+            up.push(Event::Refused {
+                account: number(&self.names, account),
+                asked: Asked::HandIn,
+                why: Refusal::NotAccessOnly,
+            });
             return;
         }
         match oauth::encode_record(&record, &env.limits.client.document) {
             Ok(encoded) => drop(encoded),
             Err(why) => {
-                up.push(Event::Refused { account, asked: Asked::HandIn, why: Refusal::Record(why) });
+                up.push(Event::Refused {
+                    account: number(&self.names, account),
+                    asked: Asked::HandIn,
+                    why: Refusal::Record(why),
+                });
                 return;
             }
         }
@@ -419,7 +462,7 @@ impl Component {
         };
         *slot = recorded(record, env, held);
         if held {
-            grant(slot, env.now, account, up);
+            grant(slot, env.now, number(&self.names, account), up);
         }
     }
 
@@ -436,7 +479,7 @@ impl Component {
         };
         match why {
             Some(why) => {
-                up.push(Event::Refused { account, asked, why });
+                up.push(Event::Refused { account: number(&self.names, account), asked, why });
                 true
             }
             None => false,
@@ -560,7 +603,7 @@ impl Component {
                     if env.now >= *expiry {
                         if *held && self.bindings.get(account) == Some(&None) {
                             *held = false;
-                            failed(account, Failure::Expired, up);
+                            failed(number(&self.names, account), Failure::Expired, up);
                             return;
                         }
                         *announced = true;
@@ -569,7 +612,10 @@ impl Component {
                             Source::HandedIn => {
                                 if env.now >= *lead && !*announced && !*rejected {
                                     *announced = true;
-                                    up.push(Event::Expiring { account, generation: record.generation });
+                                    up.push(Event::Expiring {
+                                        account: number(&self.names, account),
+                                        generation: record.generation,
+                                    });
                                     return;
                                 }
                             }
@@ -618,7 +664,7 @@ impl Component {
             None => true,
         };
         if visit_ready && let Some(url) = exchange.visit.take() {
-            up.push(Event::Visit { account, url });
+            up.push(Event::Visit { account: number(&self.names, account), url });
             return;
         }
         if let Some(request) = exchange.above.pop() {
@@ -726,7 +772,7 @@ impl Component {
                 let kept = record.clone();
                 exchange.stage = Stage::Keeping { candidate: record };
                 match self.keepers.get_mut(account).expect("account keeper") {
-                    Store::Owner => up.push(Event::Keep { account, record: kept }),
+                    Store::Owner => up.push(Event::Keep { account: number(&self.names, account), record: kept }),
                     Store::Private(keeper) => {
                         keeper.next = Some(crate::keeper::Operation::Store { generation: kept.generation });
                         exchange.file_active = true;
@@ -736,7 +782,7 @@ impl Component {
             oauth::Request::Failed { failure } => self.fail_exchange(env, id, Failure::Exchange(failure), up, io),
             oauth::Request::Visit { url } => match &exchange.listener {
                 Some(listener) if !listener.ready() => exchange.visit = Some(url),
-                Some(_) | None => up.push(Event::Visit { account, url }),
+                Some(_) | None => up.push(Event::Visit { account: number(&self.names, account), url }),
             },
         }
     }
@@ -775,18 +821,22 @@ impl Component {
                         let generation = candidate.generation;
                         *slot = recorded(candidate, env, held);
                         if exchange.signing_in() {
-                            up.push(Event::SignedIn { account, generation });
+                            up.push(Event::SignedIn { account: number(&self.names, account), generation });
                         }
                         if held {
-                            grant(slot, env.now, account, up);
+                            grant(slot, env.now, number(&self.names, account), up);
                         }
                     }
                     Keeping::NotKept => {
                         if exchange.signing_in() {
-                            up.push(Event::Failed { account, ends: Ends::SignIn, failure: Failure::NotKept });
+                            up.push(Event::Failed {
+                                account: number(&self.names, account),
+                                ends: Ends::SignIn,
+                                failure: Failure::NotKept,
+                            });
                         }
                         if exchange.pending_grant {
-                            grant(slot, env.now, account, up);
+                            grant(slot, env.now, number(&self.names, account), up);
                         }
                     }
                 }
@@ -858,11 +908,11 @@ impl Component {
         };
         if unfinished {
             if exchange.signing_in() {
-                up.push(Event::Failed { account, ends: Ends::SignIn, failure });
+                up.push(Event::Failed { account: number(&self.names, account), ends: Ends::SignIn, failure });
             }
             if exchange.pending_grant || (!exchange.signing_in() && held(slot)) {
                 set_held(slot, false);
-                failed(account, failure, up);
+                failed(number(&self.names, account), failure, up);
             }
             if !exchange.signing_in() && failure == Failure::Exchange(oauth::Failure::Refused) {
                 *slot = State::Empty;
@@ -929,6 +979,7 @@ impl Component {
                 Store::Private(_) | Store::Owner => {}
             }
         }
+        self.names.clear();
         self.accounts.clear();
         self.sources.clear();
         self.keepers.clear();

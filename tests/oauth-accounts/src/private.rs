@@ -16,6 +16,8 @@ use std::net::Ipv4Addr;
 pub enum Story {
     /// The issuer refuses a revoked refresh and a person's replacement is loaded next.
     SignInAgain,
+    /// A version-two record has no client id required by the issuer.
+    NoIssuedId,
     /// Loads a kept valid record before answering Grant.
     Load,
     /// A failed read ends its waiting grant.
@@ -103,6 +105,12 @@ impl FileSystem {
         let encoded = oauth::encode_record(&record, &profile.client.document).expect("planted kept record");
         let mut items = vec![Item::directory(b"secret").mode(if story == Story::RootMode { 0o755 } else { 0o700 })];
         match story {
+            Story::NoIssuedId => {
+                let mut version_two = encoded.into_vec();
+                version_two[5] = 2; // oauth.md 1: version two, without the five optional presence bytes.
+                version_two.truncate(version_two.len() - 5);
+                items.push(Item::file(b"secret/record", &version_two).mode(0o600));
+            }
             Story::Missing => {}
             Story::TooLarge => items.push(Item::file(b"secret/record", &[b'x'; 2049]).mode(0o600)),
             Story::Unreadable | Story::Fixed => {
@@ -379,11 +387,22 @@ pub fn run(seed: u64, story: Story) -> skein_world::Outcome<Process, FileSystem>
     .with_machine(files);
     world.spawn(|| world::issuer(Transport::Plaintext, owner_story, (Ipv4Addr::LOCALHOST, 31000).into()));
     world.spawn_root(root, |fd| {
-        let mut client = Client::private(fd, owner_story);
+        let terms = (story == Story::NoIssuedId).then(|| oauth::Terms {
+            parameters: Box::new([]),
+            openid: None,
+            issued_client_id: true,
+            varying_port: false,
+            resource: None,
+            required_scopes: None,
+            revocation_endpoint: None,
+            sign_in_again: Box::new([]),
+        });
+        let mut client = Client::private(fd, owner_story, terms);
         client.stop_at_store = match story {
             Story::CloseKeeping => Some(false),
             Story::AbortKeeping => Some(true),
-            Story::SignInAgain
+            Story::NoIssuedId
+            | Story::SignInAgain
             | Story::Load
             | Story::LoadFailed
             | Story::LoadStalled
@@ -406,7 +425,8 @@ pub fn run(seed: u64, story: Story) -> skein_world::Outcome<Process, FileSystem>
         client.stop_at_load = match story {
             Story::CloseLoading => Some(false),
             Story::AbortLoading => Some(true),
-            Story::SignInAgain
+            Story::NoIssuedId
+            | Story::SignInAgain
             | Story::Load
             | Story::LoadFailed
             | Story::LoadStalled

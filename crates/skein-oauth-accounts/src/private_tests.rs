@@ -15,7 +15,11 @@ struct Owner {
 
 impl Owner {
     fn new() -> Owner {
-        let limits = limits();
+        Self::with_terms(None)
+    }
+    fn with_terms(terms: Option<skein_oauth::Terms>) -> Owner {
+        let mut limits = limits();
+        limits.client.document.issued_client_bytes = limits.client.document.client_bytes;
         let mut configured = List::with_capacity(1);
         match configured.push(Account::SignIn {
             registration: skein_oauth::Registration {
@@ -28,7 +32,7 @@ impl Owner {
                 wire: skein_oauth::WireFormat::Form,
                 pkce_for_confidential: false,
                 metadata_claim: None,
-                terms: None,
+                terms,
             },
             endpoint: Endpoint {
                 address: kernel::Addr::from(([127, 0, 0, 1], 31000)),
@@ -380,4 +384,36 @@ fn check_file(request: &file::Request, shape: u32) {
         | file::Request::ListPage { .. }
         | file::Request::List { .. } => panic!("one private open, load or close"),
     }
+}
+
+fn issued_owner(request: Request, issued_client_id: Option<Box<[u8]>>) -> (Owner, skein_io::digest::Digest) {
+    let mut owner = Owner::with_terms(Some(issued_terms()));
+    owner.ask(request);
+    let load = owner.opened();
+    let mut record = tests_record(0);
+    record.issued_client_id = issued_client_id;
+    let bytes =
+        skein_oauth::encode_record(&record, &owner.env.limits.client.document).expect("record without issued id");
+    let digest = skein_io::digest::digest(&bytes);
+    owner.terminal(file::Event::Loaded { owner: load, bytes });
+    (owner, digest)
+}
+
+#[test]
+fn a_record_without_an_issued_id_loads_unreadable() {
+    for (name, issued_client_id) in [("absent", None), ("empty", Some(Box::from([])))] {
+        let (mut owner, _) = issued_owner(Request::Grant { account: 0 }, issued_client_id);
+        let expected = Event::Failed {
+            account: 0,
+            ends: Ends::Grant,
+            failure: Failure::Unloaded { at: Place::File, why: Unloaded::Unreadable },
+        };
+        assert!(owner.above.pop() == Some(expected), "{name}: unreadable issued id");
+    }
+}
+
+#[test]
+fn a_sign_in_replaces_it_expecting_the_digest_it_loaded() {
+    let (owner, digest) = issued_owner(Request::SignIn { account: 0 }, None);
+    assert_eq!(owner.component.private_expected(0), file::Expect::Digest(digest));
 }
