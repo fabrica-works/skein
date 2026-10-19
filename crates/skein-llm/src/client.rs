@@ -118,7 +118,7 @@ pub fn request_head(endpoint: &Endpoint, credential: &CredentialLimits, limits: 
     // The native Messages grammar admits nonzero u32 max_tokens; Codex does
     // not send this route field (llm.md, sections 4.3 and 4.5).
     match endpoint.provider {
-        Provider::OpenAiCodex => {}
+        Provider::OpenAiCodex | Provider::OpenAi => {}
         Provider::Anthropic => {
             if limits.declared_output_tokens == 0 {
                 return Err(Error::limit(crate::Cap::Output, limits.declared_output_tokens));
@@ -132,7 +132,7 @@ pub fn request_head(endpoint: &Endpoint, credential: &CredentialLimits, limits: 
     let fields = provider_headers(endpoint, Scheme::Bearer, &[], Some(&maximum_affinity));
     let account_bytes = match endpoint.provider {
         Provider::OpenAiCodex => usize::try_from(credential.account_id).expect("u32 fits usize"),
-        Provider::Anthropic => 0,
+        Provider::Anthropic | Provider::OpenAi => 0,
     };
     let mut count =
         endpoint.headers.len().checked_add(5).ok_or(Error::limit(crate::Cap::ResponseFields, limits.http.headers))?;
@@ -318,6 +318,7 @@ pub fn measure(
 ) -> Result<Measured, Error> {
     check_preparation(limits)?;
     let body = match endpoint.provider {
+        Provider::OpenAi => return Err(Error::Unsupported),
         Provider::OpenAiCodex => translate::measure_request(prompt, &limits.native())?,
         Provider::Anthropic => anthropic::measure_request(prompt, limits.declared_output_tokens, &limits.native())?,
     };
@@ -372,6 +373,7 @@ impl Client {
         let provider = input.endpoint.provider;
         let affinity = input.prompt.affinity;
         let (headers, body) = match provider {
+            Provider::OpenAi => return Err(Error::Unsupported),
             Provider::OpenAiCodex => {
                 let length = translate::measure_request(&input.prompt, &limits.native())?;
                 let headers = headers(&input.endpoint, &input.credential, affinity, limits, length)?;
@@ -1401,8 +1403,8 @@ fn measure_headers(
                 return Err(Error::Invalid);
             }
         }
-        Provider::Anthropic if !credential.account_id.is_empty() => return Err(Error::Invalid),
-        Provider::Anthropic => {}
+        Provider::Anthropic | Provider::OpenAi if !credential.account_id.is_empty() => return Err(Error::Invalid),
+        Provider::Anthropic | Provider::OpenAi => {}
     }
     let rendered = match affinity {
         Some(affinity) => Some(crate::affinity::rendered(affinity)),
@@ -1570,6 +1572,7 @@ fn provider_headers<'a>(
     };
     match endpoint.provider {
         Provider::OpenAiCodex => [Some((b"chatgpt-account-id", account_id)), session, thread],
+        Provider::OpenAi => [None, None, None],
         Provider::Anthropic => [
             default_header(endpoint, b"anthropic-version", b"2023-06-01"),
             // The bearer route is withdrawn; the second part of LLM accounts removes it.

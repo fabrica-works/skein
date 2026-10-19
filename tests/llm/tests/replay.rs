@@ -91,3 +91,31 @@ fn output_ceiling_uses_shared_dialect_configuration() {
     assert_eq!(input.prompt.max_output_tokens, None);
     assert_eq!(input.prompt.output_ceiling(Provider::Anthropic, 0), Err(Error::Invalid));
 }
+
+#[test]
+fn each_route_replays_only_its_own_metadata() {
+    // llm.md 7: durable tags stay 1 and 2; the public route takes 3.
+    const TAG_OFFSET: usize = 2;
+    let bounds = limits().native().document();
+    for (provider, tag) in [(Provider::OpenAiCodex, 1), (Provider::Anthropic, 2), (Provider::OpenAi, 3)] {
+        let replay = Replay { provider, value: Json::from_bytes(b"{}", &bounds).unwrap() };
+        let encoded = replay.to_bytes(&bounds).unwrap();
+        assert_eq!(encoded.get(TAG_OFFSET), Some(&tag), "{provider:?}");
+        assert_eq!(Replay::from_bytes(&encoded, &bounds), Ok(replay), "{provider:?}");
+    }
+}
+
+#[test]
+fn a_replay_written_before_reads_the_same() {
+    let bounds = limits().native().document();
+    for (encoded, provider) in [
+        (b"\x00\x01\x01\x00\x00\x00\x02{}".as_slice(), Provider::OpenAiCodex),
+        (b"\x00\x01\x02\x00\x00\x00\x02{}".as_slice(), Provider::Anthropic),
+    ] {
+        assert_eq!(
+            Replay::from_bytes(encoded, &bounds),
+            Ok(Replay { provider, value: Json::from_bytes(b"{}", &bounds).unwrap() }),
+            "{provider:?}"
+        );
+    }
+}

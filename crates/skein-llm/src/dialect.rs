@@ -7,7 +7,7 @@ use skein_lib::{Queue, Wall};
 pub(crate) const MAX_OUT: u32 = 3;
 #[derive(Debug)]
 pub(crate) enum Decoder {
-    Codex(openai::StreamDecoder),
+    Responses(Provider, openai::StreamDecoder),
     Anthropic(anthropic::StreamDecoder),
 }
 #[derive(Debug)]
@@ -23,22 +23,24 @@ pub(crate) enum Output {
 impl Decoder {
     pub(crate) fn new(provider: Provider, limits: &openai::Limits, drop_reasoning: bool) -> Decoder {
         match provider {
-            Provider::OpenAiCodex => Decoder::Codex(openai::StreamDecoder::with_reasoning_drop(limits, drop_reasoning)),
+            Provider::OpenAiCodex | Provider::OpenAi => {
+                Decoder::Responses(provider, openai::StreamDecoder::with_reasoning_drop(limits, drop_reasoning))
+            }
             Provider::Anthropic => Decoder::Anthropic(anthropic::StreamDecoder::new(limits)),
         }
     }
     pub(crate) fn has_ready(&self) -> bool {
         match self {
-            Decoder::Codex(decoder) => decoder.has_ready(),
+            Decoder::Responses(_, decoder) => decoder.has_ready(),
             Decoder::Anthropic(decoder) => decoder.has_ready(),
         }
     }
     pub(crate) fn ready(&mut self, limits: &openai::Limits, out: &mut Queue<Output>) {
         match self {
-            Decoder::Codex(decoder) => {
+            Decoder::Responses(provider, decoder) => {
                 let mut raw = Queue::with_capacity(openai::MAX_OUT);
                 decoder.ready(&mut raw);
-                codex_outputs(&mut raw, limits, out);
+                codex_outputs(*provider, &mut raw, limits, out);
             }
             Decoder::Anthropic(decoder) => {
                 let mut raw = Queue::with_capacity(anthropic::MAX_OUT);
@@ -64,7 +66,7 @@ impl Decoder {
         let json = openai::Json::collected(document);
         let long = receive_long(&json, self, limits)?;
         match self {
-            Decoder::Codex(decoder) => {
+            Decoder::Responses(provider, decoder) => {
                 let event = openai::decode_event(&json, limits)?;
                 let mut raw = Queue::with_capacity(openai::MAX_OUT);
                 match event {
@@ -81,7 +83,7 @@ impl Decoder {
                     | openai::Event::Progress
                     | openai::Event::Unknown) => {
                         decoder.received(event, long, limits, wall, &mut raw);
-                        codex_outputs(&mut raw, limits, out);
+                        codex_outputs(*provider, &mut raw, limits, out);
                     }
                 }
             }
@@ -114,10 +116,10 @@ impl Decoder {
     }
     pub(crate) fn end(&mut self, limits: &openai::Limits, out: &mut Queue<Output>) {
         match self {
-            Decoder::Codex(decoder) => {
+            Decoder::Responses(provider, decoder) => {
                 let mut raw = Queue::with_capacity(openai::MAX_OUT);
                 decoder.end(&mut raw);
-                codex_outputs(&mut raw, limits, out);
+                codex_outputs(*provider, &mut raw, limits, out);
             }
             Decoder::Anthropic(decoder) => {
                 let mut raw = Queue::with_capacity(anthropic::MAX_OUT);
@@ -139,13 +141,18 @@ fn provider_error(
         detail: error.message,
     });
 }
-fn codex_outputs(raw: &mut Queue<openai::Output>, limits: &openai::Limits, out: &mut Queue<Output>) {
+fn codex_outputs(
+    provider: Provider,
+    raw: &mut Queue<openai::Output>,
+    limits: &openai::Limits,
+    out: &mut Queue<Output>,
+) {
     for _slot in 0..openai::MAX_OUT {
         let Some(event) = raw.pop() else {
             break;
         };
         let event = match event {
-            openai::Output::Part(part) => Output::Part(translate::part(part, limits)),
+            openai::Output::Part(part) => Output::Part(translate::part(provider, part, limits)),
             openai::Output::TextDelta { index, content_index, text } => {
                 Output::TextDelta { index, content_index, text }
             }
@@ -214,7 +221,7 @@ fn anthropic_part(part: anthropic::Part, limits: &openai::Limits) -> Result<Bloc
 /// The collector is built once for the call's configured dialect.
 pub(crate) fn event_filter(provider: Provider) -> collector::Filter {
     match provider {
-        Provider::OpenAiCodex => openai::filter::EVENT,
+        Provider::OpenAiCodex | Provider::OpenAi => openai::filter::EVENT,
         Provider::Anthropic => anthropic::filter::EVENT,
     }
 }
@@ -277,7 +284,7 @@ fn receive_long(
     }
     let kind = json::text_ref(kind)?;
     match decoder {
-        Decoder::Codex(_) => match kind {
+        Decoder::Responses(_, _) => match kind {
             b"response.function_call_arguments.delta" => {
                 let delta = json::value_at(root, json::required(root, b"delta")?)?;
                 length = openai::response::long_text(delta);

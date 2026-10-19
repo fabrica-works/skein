@@ -10,6 +10,8 @@ use skein_lib::{Duration, Token, bytes};
 /// A concrete wire dialect, independent of how the caller pays for access.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Provider {
+    /// `OpenAI`'s public Responses route, with either scheme as a bearer.
+    OpenAi,
     /// The withdrawn Codex Responses route; removed by the second part of LLM accounts.
     OpenAiCodex,
     /// Anthropic's Messages dialect, with a key or the withdrawn bearer route.
@@ -124,7 +126,7 @@ impl Prompt {
             return Err(Error::Invalid);
         }
         self.max_output_tokens = match provider {
-            Provider::OpenAiCodex => None,
+            Provider::OpenAiCodex | Provider::OpenAi => None,
             Provider::Anthropic => Some(ceiling),
         };
         Ok(())
@@ -319,6 +321,16 @@ pub struct Endpoint {
     pub headers: Box<[Header]>,
 }
 impl Endpoint {
+    /// `OpenAI` public Responses at `api.openai.com/v1/responses`.
+    #[must_use]
+    pub fn openai() -> Endpoint {
+        Endpoint {
+            provider: Provider::OpenAi,
+            authority: bytes::copy_of(b"api.openai.com"),
+            target: bytes::copy_of(b"/v1/responses"),
+            headers: Box::new([]),
+        }
+    }
     /// Anthropic Messages, authenticated with a key or a bearer.
     #[must_use]
     pub fn anthropic() -> Endpoint {

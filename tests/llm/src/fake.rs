@@ -398,7 +398,7 @@ impl Exchange {
         options: documents::Options,
     ) -> Self {
         let provider = match endpoint.provider {
-            Provider::OpenAiCodex => documents::Provider::OpenAi,
+            Provider::OpenAiCodex | Provider::OpenAi => documents::Provider::OpenAi,
             Provider::Anthropic => documents::Provider::Anthropic,
         };
         let peer_limits = limits(&bounds);
@@ -788,7 +788,7 @@ mod tests {
     fn delayed(provider: Provider) -> Exchange {
         let mut input = crate::call(19);
         match provider {
-            Provider::OpenAiCodex => {}
+            Provider::OpenAiCodex | Provider::OpenAi => {}
             Provider::Anthropic => {
                 input.endpoint = Endpoint::anthropic();
                 input.credential = Credential::anthropic(b"fake-token".as_slice().into());

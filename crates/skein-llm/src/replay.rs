@@ -48,6 +48,7 @@ impl Replay {
         out.put(&VERSION.to_be_bytes()).expect("measured replay header");
         let provider = match self.provider {
             Provider::OpenAiCodex => 1_u8,
+            Provider::OpenAi => 3_u8,
             Provider::Anthropic => 2_u8,
         };
         out.put(&[provider]).expect("measured provider tag");
@@ -70,6 +71,7 @@ impl Replay {
         }
         let provider = match input.u8() {
             Some(1) => Provider::OpenAiCodex,
+            Some(3) => Provider::OpenAi,
             Some(2) => Provider::Anthropic,
             Some(_) | None => return Err(Error::Unsupported),
         };

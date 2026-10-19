@@ -34,6 +34,7 @@ pub const TOKEN_BYTES: u32 = 8;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Limits {
     pub codex: client::Limits,
+    pub openai: client::Limits,
     pub anthropic: client::Limits,
 }
 
@@ -42,6 +43,7 @@ impl Limits {
     pub fn derive(declared: &Declared) -> Result<Limits, Violation> {
         Ok(Limits {
             codex: arithmetic::dialect(declared, &CODEX)?,
+            openai: arithmetic::dialect(declared, &OPENAI)?,
             anthropic: arithmetic::dialect(declared, &ANTHROPIC)?,
         })
     }
@@ -51,6 +53,7 @@ impl Limits {
     pub const fn dialect(&self, provider: Provider) -> client::Limits {
         match provider {
             Provider::OpenAiCodex => self.codex,
+            Provider::OpenAi => self.openai,
             Provider::Anthropic => self.anthropic,
         }
     }
@@ -145,3 +148,6 @@ const ANTHROPIC: arithmetic::Constants = arithmetic::Constants {
     // Preserve the merged nesting budget; the deepest archive reaches 7.
     depth: 32,
 };
+
+// The public route takes Responses decoder constants and the head floor (llm.md, 7).
+const OPENAI: arithmetic::Constants = arithmetic::Constants { response_fields: 128, ..CODEX };

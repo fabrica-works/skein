@@ -700,11 +700,11 @@ fn replay_text(replay: Option<&Replay>, name: &[u8]) -> Result<Option<Box<[u8]>>
     }
 }
 
-pub(crate) fn part(value: openai::Part, limits: &openai::Limits) -> Result<Block, Error> {
+pub(crate) fn part(provider: Provider, value: openai::Part, limits: &openai::Limits) -> Result<Block, Error> {
     match value {
         openai::Part::Dropped { bytes } => Ok(Block::Dropped { bytes }),
         openai::Part::Text { id, phase, text, refusal } => {
-            let replay = Some(replay(b"id", &id, b"phase", phase.as_deref(), limits)?);
+            let replay = Some(replay(provider, b"id", &id, b"phase", phase.as_deref(), limits)?);
             if refusal { Ok(Block::Refusal { text, replay }) } else { Ok(Block::Text { text, replay }) }
         }
         openai::Part::Opaque { bytes } => {
@@ -712,7 +712,7 @@ pub(crate) fn part(value: openai::Part, limits: &openai::Limits) -> Result<Block
                 Ok(value) => value,
                 Err(error) => return Err(decode(error)),
             };
-            Ok(Block::Reasoning { replay: Replay { provider: Provider::OpenAiCodex, value } })
+            Ok(Block::Reasoning { replay: Replay { provider, value } })
         }
         openai::Part::ToolCall { call_id, item_id, name, input, too_large, bytes, cut } => {
             if too_large {
@@ -721,12 +721,13 @@ pub(crate) fn part(value: openai::Part, limits: &openai::Limits) -> Result<Block
             if cut {
                 return Ok(Block::Cut { id: call_id, name, arguments: input });
             }
-            let replay = Some(replay(b"item_id", &item_id, b"", None, limits)?);
+            let replay = Some(replay(provider, b"item_id", &item_id, b"", None, limits)?);
             Ok(Block::ToolCall { id: call_id, name, arguments: input, replay })
         }
     }
 }
 fn replay(
+    provider: Provider,
     first: &[u8],
     value: &[u8],
     second: &[u8],
@@ -748,7 +749,7 @@ fn replay(
     let mut out = writer::Encoder::write(length, &bounded.writer_limits());
     write_replay(&mut out, first, value, second, optional);
     match openai::Json::from_bytes(&out.finish(), &bounded) {
-        Ok(value) => Ok(Replay { provider: Provider::OpenAiCodex, value }),
+        Ok(value) => Ok(Replay { provider, value }),
         Err(openai::DecodeError::TooLarge { which: crate::Cap::Retained, bound }) => {
             Err(Error::Limit { which: crate::Cap::Metadata, bound })
         }
@@ -987,6 +988,7 @@ mod tests {
     fn text_replays_message_identity_phase_and_refusal() {
         for refusal in [false, true] {
             let block = part(
+                Provider::OpenAiCodex,
                 openai::Part::Text {
                     id: bytes::copy_of(b"message"),
                     phase: Some(bytes::copy_of(b"commentary")),
@@ -1016,6 +1018,7 @@ mod tests {
     #[test]
     fn tool_replay_separates_call_and_item_identity() {
         let block = part(
+            Provider::OpenAiCodex,
             openai::Part::ToolCall {
                 call_id: bytes::copy_of(b"call"),
                 item_id: bytes::copy_of(b"item"),
@@ -1075,6 +1078,7 @@ mod tests {
     #[test]
     fn malformed_tool_arguments_are_preserved_received_and_replayed_as_text() {
         let block = part(
+            Provider::OpenAiCodex,
             openai::Part::ToolCall {
                 call_id: bytes::copy_of(b"call"),
                 item_id: bytes::copy_of(b"item"),
@@ -1098,7 +1102,8 @@ mod tests {
     #[test]
     fn reasoning_runs_replay_each_native_item_in_order() {
         let run = br#"[{"id":"r0","type":"reasoning","encrypted_content":"a","summary":[]},{"id":"r1","type":"reasoning","encrypted_content":"b","summary":[]},{"id":"r2","type":"reasoning","encrypted_content":"c","summary":[]}]"#;
-        let block = part(openai::Part::Opaque { bytes: bytes::copy_of(run) }, &LIMITS).expect("bounded run");
+        let block = part(Provider::OpenAiCodex, openai::Part::Opaque { bytes: bytes::copy_of(run) }, &LIMITS)
+            .expect("bounded run");
         let prompt = prompt(Role::Assistant, block);
         let native = request(&prompt, Provider::OpenAiCodex, &LIMITS).expect("native replay");
         let body = super::encode_request(&prompt, &LIMITS).expect("borrowed replay");
@@ -1111,7 +1116,8 @@ mod tests {
     #[test]
     fn a_reasoning_run_checks_each_items_reasoning_limit() {
         let run = br#"[{"id":"r0","type":"reasoning","encrypted_content":"a"},{"id":"r1","type":"reasoning","encrypted_content":"bc"}]"#;
-        let block = part(openai::Part::Opaque { bytes: bytes::copy_of(run) }, &LIMITS).expect("bounded run");
+        let block = part(Provider::OpenAiCodex, openai::Part::Opaque { bytes: bytes::copy_of(run) }, &LIMITS)
+            .expect("bounded run");
         assert_eq!(
             super::encode_request(&prompt(Role::Assistant, block), &openai::Limits { reasoning: 1, ..LIMITS }),
             Err(Error::Limit { which: crate::Cap::Reasoning, bound: 1 })
@@ -1120,7 +1126,8 @@ mod tests {
     #[test]
     fn encrypted_reasoning_is_exactly_replayed() {
         let value = br#"{"type":"reasoning","id":"r","encrypted_content":"opaque","summary":[]}"#;
-        let block = part(openai::Part::Opaque { bytes: bytes::copy_of(value) }, &LIMITS).expect("bounded reasoning");
+        let block = part(Provider::OpenAiCodex, openai::Part::Opaque { bytes: bytes::copy_of(value) }, &LIMITS)
+            .expect("bounded reasoning");
         let raw = request(&prompt(Role::Assistant, block), Provider::OpenAiCodex, &LIMITS).expect("reasoning replay");
         assert_eq!(
             raw.input.as_ref(),
@@ -1236,7 +1243,7 @@ mod tests {
                 bytes: 1,
                 cut,
             };
-            let block = part(native, &LIMITS).expect("refused call is a block");
+            let block = part(Provider::OpenAiCodex, native, &LIMITS).expect("refused call is a block");
             if cut {
                 assert_eq!(
                     block,
@@ -1269,7 +1276,7 @@ mod tests {
             cut: false,
         };
         assert_eq!(
-            part(native, &LIMITS),
+            part(Provider::OpenAiCodex, native, &LIMITS),
             Ok(Block::Oversize { id: bytes::copy_of(b"c"), name: bytes::copy_of(b"read"), bytes: 99 })
         );
     }
@@ -1286,6 +1293,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(actual, expected);
-        assert_eq!(part(openai::Part::Dropped { bytes: 99 }, &LIMITS), Ok(Block::Dropped { bytes: 99 }));
+        assert_eq!(
+            part(Provider::OpenAiCodex, openai::Part::Dropped { bytes: 99 }, &LIMITS),
+            Ok(Block::Dropped { bytes: 99 })
+        );
     }
 }

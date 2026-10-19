@@ -10,7 +10,7 @@ static HEAP: skein_heap::Counting = skein_heap::Counting;
 fn input(provider: skein_llm::Provider, owner: u64) -> skein_llm::Call {
     let mut input = call(owner);
     match provider {
-        skein_llm::Provider::OpenAiCodex => {}
+        skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi => {}
         skein_llm::Provider::Anthropic => {
             input.endpoint = skein_llm::Endpoint::anthropic();
             input.credential = skein_llm::Credential::anthropic(b"fake-token".as_slice().into());
@@ -98,7 +98,7 @@ fn check_feedback(provider: skein_llm::Provider, text: &[u8], error: bool) {
             assert_eq!(text, b"actual feedback");
             assert!(error, "native error flag reaches peer");
         }
-        skein_llm::Provider::OpenAiCodex => {
+        skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi => {
             assert_eq!(text, b"Error: actual feedback");
             assert!(!error, "Codex encodes error in exact text");
         }
@@ -926,7 +926,8 @@ fn absent_affinity_sends_none_and_anthropic_ignores_it_on_the_actual_wire() {
         assert_eq!(
             world.queries[0].caching,
             match provider {
-                skein_llm::Provider::OpenAiCodex => skein_fake_llm_domain::api::Caching::Unscoped,
+                skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi =>
+                    skein_fake_llm_domain::api::Caching::Unscoped,
                 skein_llm::Provider::Anthropic => skein_fake_llm_domain::api::Caching::Marks(Box::new([
                     skein_fake_llm_domain::api::Mark::System,
                     skein_fake_llm_domain::api::Mark::Part { message: 0, part: 0 }
@@ -977,7 +978,7 @@ fn peer_native_request(
             echo: skein_llm::openai::Echo::NONE,
             usage_fields: documents::UsageFields::ALL,
             provider: match dialect {
-                skein_llm::Provider::OpenAiCodex => documents::Provider::OpenAi,
+                skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi => documents::Provider::OpenAi,
                 skein_llm::Provider::Anthropic => documents::Provider::Anthropic,
             },
             path: input.endpoint.target,
@@ -1130,14 +1131,16 @@ fn growing_conversations_preserve_native_content_and_encode_twice_identically() 
             let body = wire.split_once("\r\n\r\n").unwrap().1.replace(marker, "");
             if let Some(previous) = previous_body {
                 let anchor = match dialect {
-                    skein_llm::Provider::OpenAiCodex => r#""input":["#,
+                    skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi => r#""input":["#,
                     skein_llm::Provider::Anthropic => r#""messages":["#,
                 };
                 let (prefix, history) = previous.split_once(anchor).unwrap();
                 let (next_prefix, next_history) = body.split_once(anchor).unwrap();
                 assert_eq!(prefix, next_prefix, "fixed instructions/tools/cache key");
                 let history = match dialect {
-                    skein_llm::Provider::OpenAiCodex => history.split_once(r#"],"prompt_cache_key":"#).unwrap().0,
+                    skein_llm::Provider::OpenAiCodex | skein_llm::Provider::OpenAi => {
+                        history.split_once(r#"],"prompt_cache_key":"#).unwrap().0
+                    }
                     skein_llm::Provider::Anthropic => history.strip_suffix("]}").unwrap(),
                 };
                 assert!(next_history.starts_with(history), "prior native history remains a literal prefix");

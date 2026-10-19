@@ -7,6 +7,7 @@ fn input(provider: Provider, scheme: Scheme) -> Call {
     let mut input = call(1);
     input.endpoint = match provider {
         Provider::OpenAiCodex => Endpoint::codex(),
+        Provider::OpenAi => Endpoint::openai(),
         Provider::Anthropic => Endpoint::anthropic(),
     };
     input.credential.scheme = scheme;
@@ -117,4 +118,9 @@ fn a_key_head_at_its_bound_is_admitted() {
         bounds.http.headers = fields;
         assert_eq!(rejection(input(Provider::Anthropic, Scheme::Key), &bounds), expected, "{head} {fields}");
     }
+}
+
+#[test]
+fn a_public_call_is_refused_as_unsupported() {
+    assert_eq!(rejection(input(Provider::OpenAi, Scheme::Bearer), &limits()), Some(Error::Unsupported));
 }

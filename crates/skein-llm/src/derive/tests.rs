@@ -169,11 +169,11 @@ fn owner_declared_counts_accept_the_boundary_and_refuse_one_more_by_name() {
         bounds.http.send = 256;
         bounds.sse.chunk = 256;
         let endpoint = match provider {
-            Provider::OpenAiCodex => crate::Endpoint::codex(),
+            Provider::OpenAiCodex | Provider::OpenAi => crate::Endpoint::codex(),
             Provider::Anthropic => crate::Endpoint::anthropic(),
         };
         let credential = match provider {
-            Provider::OpenAiCodex => crate::Credential {
+            Provider::OpenAiCodex | Provider::OpenAi => crate::Credential {
                 scheme: crate::Scheme::Bearer,
                 value: b"fake".as_slice().into(),
                 account_id: b"fake".as_slice().into(),
@@ -214,4 +214,13 @@ fn owner_declared_counts_accept_the_boundary_and_refuse_one_more_by_name() {
             Err(crate::Error::Limit { which: crate::Cap::HistoryItems, bound: 3 })
         );
     }
+}
+
+#[test]
+fn the_public_route_takes_the_head_floor() {
+    // llm.md 7: public response-head and error-body floors, without a capture.
+    const HEAD_BYTES: u32 = 16 * 1024;
+    const HEAD_FIELDS: u32 = 128;
+    let bounds = Limits::derive(&DECLARED).unwrap().dialect(Provider::OpenAi);
+    assert_eq!((bounds.http.head, bounds.http.headers, bounds.error_bytes), (HEAD_BYTES, HEAD_FIELDS, HEAD_BYTES));
 }

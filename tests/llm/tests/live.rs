@@ -54,7 +54,7 @@ fn live_limits() -> client::Limits {
 }
 fn input(provider: Provider, owner: u64) -> Call {
     let (endpoint, credential, model, instructions, effort, max_tokens) = match provider {
-        Provider::OpenAiCodex => {
+        Provider::OpenAiCodex | Provider::OpenAi => {
             let mut endpoint = Endpoint::codex();
             endpoint.headers = skein_llm::openai::identity::headers()
                 .into_vec()

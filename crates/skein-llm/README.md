@@ -1,8 +1,8 @@
 # skein-llm
 
 A provider-neutral LLM client following Skein's step model: no async, runtime,
-sockets or hidden retries. Its backends are ChatGPT's Codex subscription
-Responses route and Anthropic's OAuth Messages route. It composes
+sockets or hidden retries. Its routes are OpenAI's public Responses (`Endpoint::openai()`), ChatGPT's
+withdrawn Codex Responses, and Anthropic's Messages. It composes
 `skein-http` (HTTP/SSE) and `skein-json` over a caller-owned plaintext stream,
 normally supplied by TLS.
 

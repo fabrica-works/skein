@@ -7,9 +7,11 @@ use skein_llm_world::{TINY_DECL, World, call, limits_for};
 #[test]
 fn declared_quantities_price_the_retained_event_and_leave_transport_to_the_owner() {
     let derived = Limits::derive(&TINY_DECL).expect("declaration");
-    for (provider, head, fields, fixed_tokens, fixed_text, metadata) in
-        [(Provider::OpenAiCodex, 16384, 168, 30, 196, 86), (Provider::Anthropic, 16384, 128, 29, 202, 0)]
-    {
+    for (provider, head, fields, fixed_tokens, fixed_text, metadata) in [
+        (Provider::OpenAiCodex, 16384, 168, 30, 196, 86),
+        (Provider::Anthropic, 16384, 128, 29, 202, 0),
+        (Provider::OpenAi, 16384, 128, 30, 196, 86),
+    ] {
         let limits = derived.dialect(provider);
         assert_eq!(limits.http.head, head);
         assert_eq!(limits.http.headers, fields);
@@ -66,7 +68,7 @@ fn only_the_messages_endpoint_requires_a_nonzero_native_output_cap() {
 
 fn capture(provider: Provider, scenario: &str, file: &str) -> Vec<u8> {
     let dialect = match provider {
-        Provider::OpenAiCodex => "openai",
+        Provider::OpenAiCodex | Provider::OpenAi => "openai",
         Provider::Anthropic => "anthropic",
     };
     std::fs::read(
@@ -122,7 +124,7 @@ fn archived_heads_fit_with_headroom_and_complete_with_derived_limits() {
         let mut maximum = 0;
         let mut maximum_fields = 0;
         let scenarios: &[&str] = match provider {
-            Provider::OpenAiCodex => &["single-text", "tool-call", "tool-result-final"],
+            Provider::OpenAiCodex | Provider::OpenAi => &["single-text", "tool-call", "tool-result-final"],
             Provider::Anthropic => &["single-text", "tool-call", "parallel-tool-calls", "tool-result-final"],
         };
         for scenario in scenarios {

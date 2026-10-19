@@ -44,7 +44,7 @@ fn limits() -> Limits {
 fn run(dialect: Provider, seed: u64) -> (Vec<String>, (u32, u32)) {
     let mut call = skein_llm_world::call(7);
     match dialect {
-        Provider::OpenAiCodex => {}
+        Provider::OpenAiCodex | Provider::OpenAi => {}
         Provider::Anthropic => {
             call.endpoint = skein_llm::Endpoint::anthropic();
             call.credential = Credential::anthropic(b"fake-token".as_slice().into());
@@ -60,7 +60,7 @@ fn run(dialect: Provider, seed: u64) -> (Vec<String>, (u32, u32)) {
     };
     let peer_limits = skein_llm_world::fake::limits(&skein_llm_world::limits());
     let provider_kind = match dialect {
-        Provider::OpenAiCodex => documents::Provider::OpenAi,
+        Provider::OpenAiCodex | Provider::OpenAi => documents::Provider::OpenAi,
         Provider::Anthropic => documents::Provider::Anthropic,
     };
     let mut service = provider::Service::new(
