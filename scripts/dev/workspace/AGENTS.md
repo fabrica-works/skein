@@ -30,8 +30,9 @@ the tools find it by themselves.
 skein's `docs/foundation/programming-model.md` (how code is shaped) and
 `testing-strategy.md` (how it is tested) are the rules for every
 repository. Depart from them only with a reason, stated in the design or
-the commit. `notes.md` beside them holds their reasons and open
-questions.
+the commit. Read each one's section 1, "In one page", first, and a
+later section only when the work touches it. `notes.md` beside them
+holds their reasons and open questions.
 
 ## Building and landing
 

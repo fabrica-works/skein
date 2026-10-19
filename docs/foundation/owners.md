@@ -8,11 +8,14 @@ landed by then stay, and those not yet run may be carried out by an
 owner. If the experiment fails, this file goes and development.md
 stands.
 
-**What an owner reads:** its brief, this file, and three documents
-beside it: [programming-model.md](programming-model.md) and
+**What an owner reads:** its brief, this file, and section 1, "In one
+page", of [programming-model.md](programming-model.md) and
 [testing-strategy.md](testing-strategy.md), the rules for the code's
-shape and its tests, and [notes.md](notes.md), the reasons and open
-questions behind them. The repository's `AGENTS.md` loads on its own.
+shape and its tests. That page is enough to start. A later section is
+read when the work touches it (a new protocol, a world's checks, a
+memory bound), and [notes.md](notes.md), the reasons and open questions
+behind the rules, when a rule's reason matters. The repository's
+`AGENTS.md` loads on its own.
 The rest of this directory (development.md, implementer.md,
 supervisor.md) belongs to the runs started before 2026-10-19: an owner
 needs none of it.
@@ -177,7 +180,8 @@ An implementer other than Opus 5.5 at xhigh reads its task literally.
 Its task file is whole, and holds:
 - the goal, in two or three lines;
 - what to read first: the design's sections and the files, never a
-  whole design;
+  whole design, and of the rules, the sections the task touches beyond
+  their one-page summaries;
 - sketches of what matters: the public types and signatures with their
   names, what is internal and what crosses a boundary (a crate, a
   repository, the wire), and each test's sketch in the world the testing
@@ -242,8 +246,9 @@ it is happy with what the passes have done.
 
 - **The tester** is a session of the owner's choice of model and
   effort, with its notes beside the owner's, in `qa/`. It reads the
-  design only: the sections its part covers, the testing documents, and
-  the public surface of the world or harness it writes in. It never
+  design only: the sections its part covers, the testing documents (of
+  testing-strategy.md, its one page and the sections its world needs),
+  and the public surface of the world or harness it writes in. It never
   reads the code under test or its tests.
 - **The tester decides which tests to write,** not the owner: the owner
   names the part and the design, never the cases.
