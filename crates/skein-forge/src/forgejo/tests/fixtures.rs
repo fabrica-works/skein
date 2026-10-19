@@ -221,6 +221,28 @@ pub fn debug(value: &impl core::fmt::Debug) -> Box<[u8]> {
 
 pub const REPO: crate::api::Repository = crate::api::Repository { forge: 1, repository: 1 };
 
+pub const START_USER: u64 = 7;
+pub const TOKEN: &[u8] = b"secret";
+/// A canned server's positive page cap (forge.md, section 4.1).
+pub const PAGE_CAP: u32 = 50;
+
+pub fn credential() -> crate::credential::Credential {
+    crate::credential::Credential::Token(skein_lib::Secret::new(Box::from(TOKEN)))
+}
+
+pub fn api_settings(cap: u32) -> Document {
+    // Explicit paging uses max_response_items, not the default (forge.md, 5.1).
+    const DEFAULT_PAGING_NUM: u32 = 30;
+    Document::ApiSettings(crate::forgejo::document::ApiSettings {
+        max_response_items: cap,
+        default_paging_num: DEFAULT_PAGING_NUM,
+    })
+}
+
+pub fn fields() -> crate::forgejo::plans::Fields {
+    crate::forgejo::plans::Fields { date: None, retry_after: None, has_more: None, content_range: None, close: false }
+}
+
 pub fn specimen() -> crate::forgejo::plans::tables::Repository {
     crate::forgejo::plans::tables::Repository {
         owner: Box::from(&b"fixture"[..]),

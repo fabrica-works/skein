@@ -5,7 +5,9 @@
 extern crate alloc;
 
 pub mod api;
+pub mod credential;
 pub mod forgejo;
+pub mod host;
 pub mod locate;
 pub mod measure;
 

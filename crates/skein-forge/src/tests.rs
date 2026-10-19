@@ -292,3 +292,46 @@ fn measure_op_strings() {
         assert_eq!(crate::measure::op(&op), Some(expected), "{op:?}");
     }
 }
+
+use core::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+
+#[test]
+fn host_names_include_only_nondefault_ports_and_bracket_ipv6() {
+    type HostRow = (&'static str, SocketAddr, Option<&'static [u8]>, &'static [u8]);
+    let rows: [HostRow; 5] = [
+        ("plain default", SocketAddr::from((Ipv4Addr::LOCALHOST, 80)), None, b"127.0.0.1"),
+        ("plain custom", SocketAddr::from((Ipv4Addr::LOCALHOST, 3000)), None, b"127.0.0.1:3000"),
+        ("TLS default", SocketAddr::from((Ipv4Addr::LOCALHOST, 443)), Some(b"forge.example"), b"forge.example"),
+        ("TLS custom", SocketAddr::from((Ipv4Addr::LOCALHOST, 3000)), Some(b"forge.example"), b"forge.example:3000"),
+        ("IPv6", SocketAddr::from((Ipv6Addr::LOCALHOST, 80)), None, b"[0:0:0:0:0:0:0:1]"),
+    ];
+    for (name, address, server, expected) in rows {
+        assert_eq!(crate::host::host(address, server), Some(Box::from(expected)), "{name}");
+    }
+}
+
+#[test]
+fn host_uses_names_and_omits_both_default_ports() {
+    type HostRow = (core::net::IpAddr, Option<&'static [u8]>, &'static [u8]);
+    let rows: [HostRow; 4] = [
+        (Ipv4Addr::LOCALHOST.into(), Some(b"forge.example"), b"forge.example"),
+        (Ipv6Addr::LOCALHOST.into(), Some(b"forge.example"), b"forge.example"),
+        (Ipv4Addr::LOCALHOST.into(), None, b"127.0.0.1"),
+        (Ipv6Addr::LOCALHOST.into(), None, b"[0:0:0:0:0:0:0:1]"),
+    ];
+    for (ip, name, expected) in rows {
+        // Both transports use the same name argument, including TLS on 80
+        // and named plaintext on 443 (forge.md, section 5.1; decision 25).
+        for port in [80, 443] {
+            assert_eq!(
+                crate::host::host(SocketAddr::new(ip, port), name),
+                Some(Box::from(expected)),
+                "{ip}:{port} {name:?}"
+            );
+        }
+    }
+    assert_eq!(
+        crate::host::host(SocketAddr::from((Ipv6Addr::LOCALHOST, 3000)), None),
+        Some(Box::from(&b"[0:0:0:0:0:0:0:1]:3000"[..]))
+    );
+}
