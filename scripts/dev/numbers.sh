@@ -191,16 +191,18 @@ codex_tokens() {
 }
 
 # The waits of a rollout that ran out sooner than development.md section
-# 7.4's 300 s: a wait_agent, a wait or a command's yield that asked for
-# less, and ended with nothing to show.
+# 7.4's 300 s: a wait_agent, a wait or a command's poll that came back in
+# less with the command still running, whatever it asked for. Codex's
+# write_stdin returns at 31 s even when asked for 300 (temper's client-api).
 short_waits() {
-    jsonl '.payload
-        | if .type == "function_call" or .type == "custom_tool_call" then
-            ["call", .call_id, ([(.arguments // .input // "") | scan("(?:timeout_ms|yield_time_ms)\\D{0,3}(\\d+)")[0] | tonumber] | first // empty)]
+    jsonl '(.timestamp // "" | sub("\\.[0-9]+"; "") | try fromdate catch -1) as $at | .payload
+        | if .type == "function_call" or .type == "custom_tool_call" then ["call", .call_id, $at]
         elif .type == "function_call_output" or .type == "custom_tool_call_output" then
-            ["out", .call_id, (.output | tostring | test("Wait timed out|^Script running with cell ID"))]
+            ["out", .call_id, $at, (.output | if type == "array" then map(.text // "") | join("") else tostring end
+                | test("Wait timed out|^Script running with cell ID|,\"wall_time_seconds\":[0-9.e-]+,\"session_id\":"))]
         else empty end | @tsv' "$1" |
-        awk -F'\t' '$1 == "call" && $3 < 300000 { short[$2] = 1 } $1 == "out" && $3 == "true" && ($2 in short) { n++ } END { print n + 0 }'
+        awk -F'\t' '$1 == "call" { at[$2] = $3 }
+            $1 == "out" && $4 == "true" && ($2 in at) && at[$2] >= 0 && $3 >= 0 && $3 - at[$2] < 300 { n++ } END { print n + 0 }'
 }
 
 # A response has one request even when its usage record is written twice.

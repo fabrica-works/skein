@@ -319,10 +319,17 @@ base=$(date -u -d '-3 hours' +%s)
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":260000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":250000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
     printf '{"timestamp":"%s","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":700,"output_tokens":70},"last_token_usage":{"input_tokens":100000}}}}\n' "$(date -u -d "@$base" +%FT%TZ)"
-    for yield in 1000 300000; do
-        printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call","name":"wait","arguments":"{\\"cell_id\\":\\"5\\",\\"yield_time_ms\\":%d}","call_id":"y%d"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)" "$yield" "$yield"
-        printf '{"timestamp":"%s","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"y%d","output":"Script running with cell ID 5\\nWall time 1.0 seconds"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)" "$yield"
-    done
+    # Asked for 300 s and back at 31 with the cell still running: a short
+    # wait. Back at 300 s still running, or done in 5: none.
+    printf '{"timestamp":"%s","type":"response_item","payload":{"type":"function_call","name":"wait","arguments":"{\\"cell_id\\":\\"5\\",\\"yield_time_ms\\":300000}","call_id":"y1"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)"
+    printf '{"timestamp":"%s","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"y1","output":"Script running with cell ID 5\\nWall time 31.0 seconds"}}\n' "$(date -u -d "@$((base + 5431))" +%FT%TZ)"
+    stdin_poll() {
+        printf '{"timestamp":"%s","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","input":"text(await tools.write_stdin({session_id:7,chars:\\"\\",yield_time_ms:300000}));","call_id":"%s"}}\n' "$(date -u -d "@$((base + 5400))" +%FT%TZ)" "$1"
+        printf '{"timestamp":"%s","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"%s","output":[{"type":"input_text","text":"Script completed\\nWall time %s seconds\\nOutput:\\n"},{"type":"input_text","text":"{\\"chunk_id\\":\\"c\\",\\"wall_time_seconds\\":%s,%s,\\"output\\":\\"\\"}"}]}}\n' \
+            "$(date -u -d "@$((base + 5400 + $2))" +%FT%TZ)" "$1" "$2" "$2" "$3"
+    }
+    stdin_poll y2 300 '\"session_id\":7'
+    stdin_poll y3 5 '\"exit_code\":0'
 } >"$CODEX_HOME/sessions/2026/10/11/rollout-x-t-impl-1.jsonl"
 session=11111111-2222-3333-4444-555555555555
 mkdir -p "$CLAUDE_CONFIG_DIR/projects/p/$session/subagents"

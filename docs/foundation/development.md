@@ -2928,8 +2928,10 @@ Since the last check:
   run so far, and what Claude Code's tokens cost at list prices, by role
   and by kind, since the design;
 - **short waits:** the coordinator's and the sessions' waits so far that
-  ran out sooner than section 7.4's 300 s: a `wait_agent`, a `wait` or a
-  command's yield that asked for less;
+  came back sooner than section 7.4's 300 s with nothing ended: a
+  `wait_agent` that timed out, or a `wait`, a command's start or a poll
+  that found the command still running, timed by when it returned,
+  whatever it asked for (`write_stdin` returns at 31 s);
 - **pins:** how many commits each repository's pins are behind the
   upstream mains, as of the last fetch (`plan metrics` fetches; the pulse
   does not);

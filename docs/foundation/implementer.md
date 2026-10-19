@@ -252,8 +252,9 @@ it.
 - **Start each long command with that longest wait too** (`land`, a
   `heavy` command, a build or a test run outside it): `yield_time_ms:
   300000`, never a yield of one second, which comes back empty at once
-  and costs a request of its own. The pulse counts each wait that ran
-  out sooner (development.md, section 14.2). In client-composition, 108
+  and costs a request of its own. The pulse counts each wait that came
+  back sooner with the command still running, whatever it asked for
+  (development.md, section 14.2). In client-composition, 108
   launches with one-second yields were 10.2% of the implementers' input;
   in temper's forge-setup run, the threads that did not run `// @exec`
   waited in 32% to 57% of their requests.
