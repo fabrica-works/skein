@@ -487,9 +487,11 @@ drain** (8.5). The owner's domain owes:
   was lost is found after a restart and not made twice; listings keep up
   with another party's changes; deliveries arrive signed, late, out of
   order or never. Its invariants: each call is answered once, however
-  its streams are cut; the requests the fake served equal the costs the
-  answers reported, the starts' reads aside; no credential reaches a
-  record, a request line or a fact.
+  its streams are cut; the starts' reads aside, the costs the answers
+  reported equal the requests whose first byte the component wrote,
+  which the streams count apart from it (4.1), and the fake served
+  those but the ones whose stream was cut before their head was whole;
+  no credential reaches a record, a request line or a fact.
 - **The worst case,** against the counting allocator (skein-heap): every
   limit at its maximum, all `calls` outstanding, the tables full and
   every webhook connection holding a hint.
