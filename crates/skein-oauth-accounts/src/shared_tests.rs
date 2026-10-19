@@ -5,7 +5,9 @@ use private::Owner;
 const ACCOUNT: u32 = 0;
 const NEWER: u64 = 2;
 const READ_GENERATION: u64 = 8;
-const KEPT_GENERATION: u64 = 9;
+const KEPT_GENERATION: u64 = READ_GENERATION + 1;
+const REFRESHED_GENERATION: u64 = NEWER + 1;
+const FIRST_GENERATION: u64 = 1;
 const VALIDITY: u64 = 30;
 const SHORT_VALIDITY: u64 = 5;
 const ADDRESS: core::net::SocketAddr =
@@ -47,23 +49,27 @@ fn shared_record(generation: u64) -> SavedToken {
     record.refresh_token = Some(bytes::copy_of(b"refresh"));
     record
 }
-fn shared_component() -> Owner {
+fn shared_account(edit: fn(&mut Account)) -> Account {
     let mut account = refresh_account(ACCOUNT, ADDRESS);
     if let Account::SignIn { shared, .. } = &mut account {
         *shared = true;
     }
-    Owner::configured([account], &limits())
+    edit(&mut account);
+    account
+}
+fn shared_component() -> Owner {
+    Owner::configured([shared_account(|_| {})], &limits())
+}
+struct Row {
+    name: &'static str,
+    request: Request,
+    expected: Seen,
 }
 fn answer(owner: &mut Owner, record: SavedToken) {
     owner.ask(Request::Locked { account: ACCOUNT, answer: Locked::Held { record: Some(record) } });
 }
 #[test]
 fn each_write_of_a_shared_record_locks_first() {
-    struct Row {
-        name: &'static str,
-        request: Request,
-        expected: Seen,
-    }
     let rows = [
         Row { name: "refresh", request: Request::Grant { account: ACCOUNT }, expected: Seen::Lock },
         Row { name: "sign-out", request: Request::SignOut { account: ACCOUNT }, expected: Seen::Lock },
@@ -82,12 +88,12 @@ fn a_sign_ins_keep_locks_first() {
     assert!(owner.above.is_empty(), "no Keep before the owner lock");
 }
 fn signing_in() -> Owner {
-    let mut account = refresh_account(ACCOUNT, ADDRESS);
-    if let Account::SignIn { shared, registration, .. } = &mut account {
-        *shared = true;
-        registration.client_secret = Some(bytes::copy_of(b"fake secret"));
-        registration.redirect_uri = bytes::copy_of(b"https://service.example/callback");
-    }
+    let account = shared_account(|account| {
+        if let Account::SignIn { registration, .. } = account {
+            registration.client_secret = Some(bytes::copy_of(b"fake secret"));
+            registration.redirect_uri = bytes::copy_of(b"https://service.example/callback");
+        }
+    });
     let mut owner = Owner::configured([account], &limits());
     owner.redirected(b"");
     let identity = owner.sent();
@@ -96,20 +102,15 @@ fn signing_in() -> Owner {
     owner
 }
 fn lending() -> Owner {
-    let mut account = refresh_account(ACCOUNT, ADDRESS);
-    if let Account::SignIn { shared, keeper, .. } = &mut account {
-        *shared = true;
-        *keeper = Keeper::Owner { kept: Some(shared_record(NEWER)) };
-    }
+    let account = shared_account(|account| {
+        if let Account::SignIn { keeper, .. } = account {
+            *keeper = Keeper::Owner { kept: Some(shared_record(NEWER)) };
+        }
+    });
     Owner::configured([account], &limits())
 }
 #[test]
 fn only_writes_lock_a_shared_record() {
-    struct Row {
-        name: &'static str,
-        request: Request,
-        expected: Seen,
-    }
     let rows = [
         Row {
             name: "grant",
@@ -127,9 +128,7 @@ fn only_writes_lock_a_shared_record() {
 }
 #[test]
 fn a_newer_generation_of_the_same_subject_is_held_with_no_exchange() {
-    let mut owner = shared_component();
-    owner.ask(Request::Grant { account: ACCOUNT });
-    drop(owner.above.pop());
+    let mut owner = waiting_refresh();
     answer(&mut owner, shared_record(NEWER));
     assert_granted(owner.above.pop(), NEWER, VALIDITY);
     assert_event(owner.above.pop(), Event::Unlock { account: ACCOUNT });
@@ -137,16 +136,17 @@ fn a_newer_generation_of_the_same_subject_is_held_with_no_exchange() {
 }
 #[test]
 fn a_newer_generation_within_the_lead_is_refreshed_under_this_lock() {
-    let mut owner = shared_component();
-    owner.ask(Request::Grant { account: ACCOUNT });
-    drop(owner.above.pop());
+    let mut owner = waiting_refresh();
     let mut record = shared_record(NEWER);
     record.expires_at = Wall::from_nanos(Duration::from_secs(SHORT_VALIDITY).as_nanos());
     answer(&mut owner, record);
     assert!(owner.above.is_empty());
     let identity = owner.sent();
     let mut events = owner.finish_tokens(identity, private::BODY);
-    assert_eq!(seen(&mut events), Seen::Granted { generation: 3, valid: Duration::from_secs(VALIDITY) });
+    assert_eq!(
+        seen(&mut events),
+        Seen::Granted { generation: REFRESHED_GENERATION, valid: Duration::from_secs(VALIDITY) }
+    );
     assert_eq!(seen(&mut events), Seen::Unlock);
     assert!(events.is_empty());
 }
@@ -159,9 +159,7 @@ fn a_sign_in_keeps_above_the_generation_read() {
 }
 #[test]
 fn a_busy_lock_fails_the_write_as_busy_and_keeps_the_record() {
-    let mut owner = shared_component();
-    owner.ask(Request::Grant { account: ACCOUNT });
-    drop(owner.above.pop());
+    let mut owner = waiting_refresh();
     owner.ask(Request::Locked { account: ACCOUNT, answer: Locked::Busy });
     assert_event(owner.above.pop(), Event::Failed { account: ACCOUNT, ends: Ends::Grant, failure: Failure::Busy });
     assert!(owner.above.is_empty(), "a busy answer took no lock");
@@ -225,7 +223,7 @@ fn no_record_under_the_lock_ends_each_write() {
     let rows = [
         WriteRow { name: "refresh", owner: waiting_refresh(), expected: Seen::Failed(Failure::Expired) },
         WriteRow { name: "sign-out", owner: waiting_sign_out(), expected: Seen::SignedOut(false) },
-        WriteRow { name: "sign-in", owner: signing_in(), expected: Seen::Keep(1) },
+        WriteRow { name: "sign-in", owner: signing_in(), expected: Seen::Keep(FIRST_GENERATION) },
     ];
     for row in rows {
         lock_outcome(row, None);

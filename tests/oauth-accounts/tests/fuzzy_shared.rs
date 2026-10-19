@@ -2,6 +2,8 @@ use skein_lib::Rng;
 use skein_oauth_accounts_world::shared::{self, Story};
 use skein_world::Memory;
 
+const SEEDS: u64 = 64;
+
 #[test]
 fn seeded_lock_answers_settle_with_one_unlock_each_and_replay() {
     let stories = [
@@ -15,7 +17,7 @@ fn seeded_lock_answers_settle_with_one_unlock_each_and_replay() {
         Story::Aborted,
     ];
     let count = u64::try_from(stories.len()).expect("story count");
-    for seed in 0..64_u64 {
+    for seed in 0..SEEDS {
         let story = stories[usize::try_from(Rng::new(seed).below(count)).expect("story index")];
         let first = shared::run(seed, story, Memory::Unchecked);
         let second = shared::run(seed, story, Memory::Unchecked);
