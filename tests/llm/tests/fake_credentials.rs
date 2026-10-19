@@ -129,18 +129,12 @@ fn a_failing_line_naming_one_credential_lets_another_through() {
 
 #[test]
 fn a_call_with_no_credential_is_observed_as_the_scheme_none() {
-    for provider in [Provider::Anthropic, Provider::OpenAi] {
+    for (provider, code) in
+        [(Provider::Anthropic, b"authentication_error".as_slice()), (Provider::OpenAi, b"invalid_api_key".as_slice())]
+    {
         for (first, expected) in [
             (None, Terminal::Answer(ANSWER.to_vec())),
-            (
-                Some(credential(0)),
-                failed(
-                    Failure::Unauthorized,
-                    if provider == Provider::Anthropic { b"authentication_error" } else { b"invalid_api_key" },
-                    b"req_1",
-                    b"",
-                ),
-            ),
+            (Some(credential(0)), failed(Failure::Unauthorized, code, b"req_1", b"")),
         ] {
             let mut world = exchange(provider, None, first, vec![answered()]);
             world.start();
@@ -151,25 +145,30 @@ fn a_call_with_no_credential_is_observed_as_the_scheme_none() {
     }
 }
 
+struct UnknownRow {
+    provider: Provider,
+    sent: u32,
+    scheme: Scheme,
+    code: &'static [u8],
+}
+
+fn unknown_rows() -> [UnknownRow; 4] {
+    [
+        UnknownRow { provider: Provider::Anthropic, sent: 0, scheme: Scheme::Key, code: b"authentication_error" },
+        UnknownRow { provider: Provider::Anthropic, sent: 1, scheme: Scheme::Bearer, code: b"authentication_error" },
+        UnknownRow { provider: Provider::OpenAi, sent: 0, scheme: Scheme::Bearer, code: b"invalid_api_key" },
+        UnknownRow { provider: Provider::OpenAi, sent: 1, scheme: Scheme::Bearer, code: b"invalid_api_key" },
+    ]
+}
+
 #[test]
 fn a_credential_the_peer_does_not_hold_is_unauthorized() {
-    for provider in [Provider::Anthropic, Provider::OpenAi] {
-        for (sent, scheme) in [(0, Scheme::Key), (1, Scheme::Bearer)] {
-            let mut world = exchange(provider, Some(credential(sent)), Some(issued(0)), vec![answered()]);
-            world.start();
-            world.run();
-            let field_scheme = if provider == Provider::OpenAi { Scheme::Bearer } else { scheme };
-            assert_eq!(world.presented, [Presented { route: provider, scheme: Some(field_scheme), index: None }]);
-            assert_eq!(
-                terminal(&world),
-                failed(
-                    Failure::Unauthorized,
-                    if provider == Provider::Anthropic { b"authentication_error" } else { b"invalid_api_key" },
-                    b"req_1",
-                    b""
-                )
-            );
-        }
+    for UnknownRow { provider, sent, scheme, code } in unknown_rows() {
+        let mut world = exchange(provider, Some(credential(sent)), Some(issued(0)), vec![answered()]);
+        world.start();
+        world.run();
+        assert_eq!(world.presented, [Presented { route: provider, scheme: Some(scheme), index: None }]);
+        assert_eq!(terminal(&world), failed(Failure::Unauthorized, code, b"req_1", b""));
     }
 }
 
@@ -239,18 +238,15 @@ fn an_issuers_tokens_are_accepted_as_bearers_before_serving() {
 
 #[test]
 fn a_revoked_token_stays_accepted_until_a_line_names_it() {
-    for provider in [Provider::Anthropic, Provider::OpenAi] {
+    for (provider, code) in
+        [(Provider::Anthropic, b"authentication_error".as_slice()), (Provider::OpenAi, b"invalid_api_key".as_slice())]
+    {
         for (sent, lines, expected) in [
             (1, vec![answered()], Terminal::Answer(ANSWER.to_vec())),
             (
                 1,
                 vec![failing(api::Error::Unauthorized, &[1], b""), answered()],
-                failed(
-                    Failure::Unauthorized,
-                    if provider == Provider::Anthropic { b"authentication_error" } else { b"invalid_api_key" },
-                    b"script-request",
-                    b"",
-                ),
+                failed(Failure::Unauthorized, code, b"script-request", b""),
             ),
             (2, vec![failing(api::Error::Unauthorized, &[1], b""), answered()], Terminal::Answer(ANSWER.to_vec())),
         ] {
