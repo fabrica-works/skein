@@ -8,9 +8,7 @@ impl Plan {
         word: &[u8],
         tables: &mut Tables,
     ) -> Result<Option<Step>, api::Error> {
-        if let d::Document::Repository(repository) = &document {
-            self.check_repository(repository)?;
-        }
+        self.check_repository_document(&document)?;
         keep_document(&document, self.repository.forge, tables);
         match document {
             d::Document::Repository(repository) => self.repository_done(repository, bounds, tables),
@@ -105,6 +103,33 @@ impl Plan {
         }
         self.size = size;
         Ok(Some(Step::Done(Ok(answer))))
+    }
+    fn check_repository_document(&self, document: &d::Document) -> Result<(), api::Error> {
+        match document {
+            d::Document::Repository(repository) => self.check_repository(repository),
+            d::Document::Token(_)
+            | d::Document::User(_)
+            | d::Document::Org(_)
+            | d::Document::Hook(_)
+            | d::Document::Team(_)
+            | d::Document::ApiSettings(_)
+            | d::Document::Search { .. }
+            | d::Document::Listed { .. }
+            | d::Document::Issue(_)
+            | d::Document::Comment(_)
+            | d::Document::Pull(_)
+            | d::Document::Status(_)
+            | d::Document::Review(_)
+            | d::Document::CombinedStatus(_)
+            | d::Document::Branch(_)
+            | d::Document::Protection(_)
+            | d::Document::Permission(_)
+            | d::Document::Compare(_)
+            | d::Document::Runs { .. }
+            | d::Document::Job(_)
+            | d::Document::Run(_)
+            | d::Document::Error(_) => Ok(()),
+        }
     }
     fn check_repository(&self, repository: &d::Repository) -> Result<(), api::Error> {
         let Ok(id) = u32::try_from(repository.id) else {

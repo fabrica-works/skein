@@ -86,7 +86,7 @@ use crate::marker;
 use skein_lib::Duration;
 
 #[test]
-fn deliveries_map_subscribed_events_to_hints() {
+fn subscriptions_match_the_literal_contract() {
     assert_eq!(
         delivery::SUBSCRIBED,
         [
@@ -114,6 +114,10 @@ fn deliveries_map_subscribed_events_to_hints() {
             b"workflow_job_skipped",
         ]
     );
+}
+
+#[test]
+fn deliveries_map_subscribed_events_to_hints() {
     for (header, delivery, change, key) in deliveries() {
         assert_eq!(delivery::header(&delivery), header);
         assert_eq!(hint(REPO.forge, WORD, &delivery), Some(Hint { repository: REPO, change, key }), "{header:?}");
@@ -164,9 +168,15 @@ const MARKERS: [(&[u8], u32); 3] =
     [(ONE_WORD, ONE_MARKER_BYTES), (LONGEST_WORD, LONGEST_MARKER_BYTES), (WORD, KIT_MARKER_BYTES)];
 
 #[test]
+fn marker_words_at_both_bounds_are_valid() {
+    for word in [ONE_WORD, LONGEST_WORD, WORD] {
+        assert!(marker::valid_word(word));
+    }
+}
+
+#[test]
 fn markers_accept_words_at_both_bounds() {
     for (word, size) in MARKERS {
-        assert!(marker::valid_word(word));
         assert_eq!(marker::length(word, u32::try_from(OP_BYTES).unwrap()), Some(size));
         let encoded = marker::encode(word, &KEY, b"", size).expect("the exact marker fits");
         assert_eq!(encoded.len(), usize::try_from(size).unwrap());

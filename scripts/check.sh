@@ -12,6 +12,8 @@ rustc --edition=2024 -D warnings scripts/check-contracts.rs -o target/check-cont
 target/check-contracts
 # testing-strategy.md 10: A setup written once; The setup the assertion reads; Named fixtures and sizes.
 cargo run --locked --target-dir target/recovery-shape --manifest-path scripts/recovery-shape/Cargo.toml -- --controls crates/skein-forge-client/src/tests/recovery.rs crates/skein-forge-client/src/tests/fixtures/recovery.rs
+# testing-strategy.md 10: One behaviour per test, in the four sampled plan tests.
+cargo run --locked --target-dir target/recovery-shape --manifest-path scripts/recovery-shape/Cargo.toml -- --plan-shapes --controls crates/skein-forge/src/forgejo/plans/tests/edges.rs
 cargo clippy --workspace --all-targets -- -D warnings
 # The portable libraries and the browser-only halves on their shipping target.
 cargo check --target wasm32-unknown-unknown -p skein-lib -p skein-codec -p skein-http

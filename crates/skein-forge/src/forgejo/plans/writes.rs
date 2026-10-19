@@ -293,8 +293,30 @@ impl Plan {
         if !self.resolving {
             return Ok(());
         }
-        let d::Document::Repository(repository) = document else {
-            return Err(self.error(api::Error::Timeout));
+        let repository = match document {
+            d::Document::Repository(repository) => repository,
+            d::Document::Token(_)
+            | d::Document::User(_)
+            | d::Document::Org(_)
+            | d::Document::Hook(_)
+            | d::Document::Team(_)
+            | d::Document::ApiSettings(_)
+            | d::Document::Search { .. }
+            | d::Document::Listed { .. }
+            | d::Document::Issue(_)
+            | d::Document::Comment(_)
+            | d::Document::Pull(_)
+            | d::Document::Status(_)
+            | d::Document::Review(_)
+            | d::Document::CombinedStatus(_)
+            | d::Document::Branch(_)
+            | d::Document::Protection(_)
+            | d::Document::Permission(_)
+            | d::Document::Compare(_)
+            | d::Document::Runs { .. }
+            | d::Document::Job(_)
+            | d::Document::Run(_)
+            | d::Document::Error(_) => return Err(self.error(api::Error::Timeout)),
         };
         let Ok(id) = u32::try_from(repository.id) else {
             return Err(api::Error::TooLarge);

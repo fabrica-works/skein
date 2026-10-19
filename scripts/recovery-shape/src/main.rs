@@ -1,10 +1,12 @@
-//! Bounded AST checks for the forge client recovery tests and fixtures.
+//! Bounded AST checks for forge test contracts.
 #![expect(
     clippy::disallowed_types,
     clippy::disallowed_methods,
     clippy::disallowed_macros,
     reason = "this host-side AST checker uses standard collections and diagnostics; step-code bans do not apply"
 )]
+mod plan_shapes;
+
 use syn::{
     Expr, ItemFn,
     visit::{self, Visit},
@@ -157,18 +159,28 @@ fn controls() {
     assert!(check(r#"fn remake_releases_a_held_entry(){ let decoy=":: Remake"; assert!(bad); h.step(Event::Remake{entry:s}); }"#).contains(&"The setup the assertion reads"));
     println!("controls: 6 positive, 7 negative and 2 string decoys passed");
 }
-// Only the two bounded recovery files are passed by scripts/check.sh.
+// Only the bounded source files selected by scripts/check.sh are inspected.
 const SOURCE_LIMIT: usize = 256 * 1024; // each file remains below the plan's 800-line ceiling
 fn main() {
     let mut bad = false;
+    let mut plan_shapes_mode = false;
     for arg in std::env::args().skip(1) {
+        if arg == "--plan-shapes" {
+            plan_shapes_mode = true;
+            continue;
+        }
         if arg == "--controls" {
-            controls();
+            if plan_shapes_mode {
+                plan_shapes::controls();
+            } else {
+                controls();
+            }
             continue;
         }
         let source = std::fs::read_to_string(&arg).expect("source file");
-        assert!(source.len() <= SOURCE_LIMIT, "recovery source exceeds bounded input size");
-        for rule in check(&source) {
+        assert!(source.len() <= SOURCE_LIMIT, "source exceeds bounded input size");
+        let errors = if plan_shapes_mode { plan_shapes::check(&source) } else { check(&source) };
+        for rule in errors {
             eprintln!("{arg}: testing-strategy.md 10: {rule}");
             bad = true;
         }
