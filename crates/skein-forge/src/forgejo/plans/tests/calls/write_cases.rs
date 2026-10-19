@@ -8,8 +8,8 @@ const REVIEW: &[u8] = br#"{"id":7,"user":{"id":2,"login":"writer"},"state":"APPR
 const STATUS: &[u8] =
     br#"{"creator":{"id":2,"login":"writer"},"context":"ci","status":"success","description":"","target_url":"","updated_at":"1970-01-01T00:00:00Z"}"#;
 const MERGED: &[u8] = br#"{"number":1,"state":"closed","head":{"repo_id":1,"ref":"work","sha":"0100000000000000000000000000000000000000"},"base":{"repo_id":1,"ref":"main","sha":"0300000000000000000000000000000000000000"},"merged":true,"merge_commit_sha":"0100000000000000000000000000000000000000","mergeable":true,"requested_reviewers":[]}"#;
-pub(super) const REVIEWERS: &[u8] = br#"{"number":1,"state":"open","head":{"repo_id":1,"ref":"work","sha":"0100000000000000000000000000000000000000"},"base":{"repo_id":1,"ref":"main","sha":"0300000000000000000000000000000000000000"},"merged":false,"merge_commit_sha":null,"mergeable":true,"requested_reviewers":[{"id":8,"login":"eight"}]}"#;
-pub(super) fn open_pull() -> Write {
+pub(in super::super) const REVIEWERS: &[u8] = br#"{"number":1,"state":"open","head":{"repo_id":1,"ref":"work","sha":"0100000000000000000000000000000000000000"},"base":{"repo_id":1,"ref":"main","sha":"0300000000000000000000000000000000000000"},"merged":false,"merge_commit_sha":null,"mergeable":true,"requested_reviewers":[{"id":8,"login":"eight"}]}"#;
+pub(in super::super) fn open_pull() -> Write {
     Write::OpenPull {
         title: Box::from(&b"t"[..]),
         body: Box::from(&b"b"[..]),
@@ -17,15 +17,15 @@ pub(super) fn open_pull() -> Write {
         base: Box::from(&b"main"[..]),
     }
 }
-pub(super) fn create_issue() -> Write {
+pub(in super::super) fn create_issue() -> Write {
     Write::CreateIssue { key: Box::from(&b"k"[..]), title: Box::from(&b"t"[..]), body: Box::from(&b"b"[..]) }
 }
-pub(super) fn begun(write: Write) -> Run {
+pub(in super::super) fn begun(write: Write) -> Run {
     let mut run = Run::known(api::Op::Write(write));
     run.begin();
     run
 }
-pub(super) struct WriteCase {
+pub(in super::super) struct WriteCase {
     pub name: &'static str,
     pub write: Write,
     pub replies: &'static [(u16, &'static [u8])],
@@ -34,7 +34,7 @@ pub(super) struct WriteCase {
     pub users: &'static [(u64, &'static [u8])],
     pub bodies: &'static [Option<&'static [u8]>],
 }
-pub(super) fn cases() -> [[WriteCase; 5]; 3] {
+pub(in super::super) fn cases() -> [[WriteCase; 5]; 3] {
     [creating(), editing(), branches()]
 }
 fn creating() -> [WriteCase; 5] {
@@ -251,15 +251,15 @@ pub(super) fn failures() -> [FailureCase; 43] {
 const HEAD_REQUESTS: usize = 1;
 const BASE_REQUESTS: usize = 2;
 const COMPARE_REQUESTS: usize = 3;
-pub(super) const OPEN_SENDS: [&str; 4] = [
+pub(in super::super) const OPEN_SENDS: [&str; 4] = [
     "GET /api/v1/repos/fixture/specimen/branches/work",
     "GET /api/v1/repos/fixture/specimen/branches/main",
     "GET /api/v1/repos/fixture/specimen/compare/0300000000000000000000000000000000000000...0100000000000000000000000000000000000000?files=false&verification=false",
     "POST /api/v1/repos/fixture/specimen/pulls",
 ];
 
-pub(super) type OpenCase = (&'static [(u16, &'static [u8])], &'static [&'static str]);
-pub(super) fn open_failures() -> [OpenCase; 3] {
+pub(in super::super) type OpenCase = (&'static [(u16, &'static [u8])], &'static [&'static str]);
+pub(in super::super) fn open_failures() -> [OpenCase; 3] {
     [
         (&[], &OPEN_SENDS[..HEAD_REQUESTS]),
         (&[(200, BRANCH)], &OPEN_SENDS[..BASE_REQUESTS]),

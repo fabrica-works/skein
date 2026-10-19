@@ -34,17 +34,17 @@ fn pull() -> api::Pull {
         ci: api::Ci::None,
     }
 }
-struct ReadCase {
-    name: &'static str,
-    read: Read,
-    replies: &'static [(u16, &'static [u8])],
-    expected: Result<Answer, Error>,
+pub(super) struct ReadCase {
+    pub(super) name: &'static str,
+    pub(super) read: Read,
+    pub(super) replies: &'static [(u16, &'static [u8])],
+    pub(super) expected: Result<Answer, Error>,
     sends: &'static [&'static str],
     range: Option<Range>,
     kept: bool,
     login: Option<&'static [u8]>,
 }
-fn read_cases() -> [[ReadCase; 5]; 4] {
+pub(super) fn read_cases() -> [[ReadCase; 5]; 4] {
     [find_cases(), review_cases(), content_cases(), repository_cases()]
 }
 fn find_cases() -> [ReadCase; 5] {
@@ -457,7 +457,7 @@ fn remarks(ids: &[u64]) -> Box<[api::Remark]> {
     rows.into_boxed()
 }
 
-mod write_cases;
+pub(super) mod write_cases;
 use crate::api::Write;
 use crate::forgejo::plans::{
     Failure,
