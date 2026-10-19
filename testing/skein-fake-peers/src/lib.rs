@@ -10,6 +10,10 @@
 //! These testing step machines use ordinary Rust (programming-model.md,
 //! section 10.2). Plaintext replays; TLS uses the fixed Skein test chain and
 //! real rustls cryptography (testing-strategy.md, section 4.4).
+//! An application's real loop hosts the issuer on loopback in its process.
+//! Its script lists every token; give `oauth::Peer::granted()` to the LLM
+//! peer at start, before serving. The test follows each visit to the listener
+//! as the scripted browser does (oauth.md, section 6.8; fake-llm.md, section 6).
 #![forbid(unsafe_code)]
 
 mod face;

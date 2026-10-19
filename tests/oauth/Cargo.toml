@@ -18,6 +18,8 @@ skein-oauth.workspace = true
 skein-fake-oauth.workspace = true
 
 [dev-dependencies]
+skein-llm.workspace = true
+skein-llm-world = { path = "../llm" }
 skein-heap.workspace = true
 
 [lints.rust]

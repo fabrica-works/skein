@@ -9,29 +9,37 @@ use std::mem::size_of;
 use std::net::SocketAddr;
 
 use skein_fake_oauth as issuer;
-use skein_http::{Header, Method, server as http};
+use skein_http::{Header, server as http};
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Decimal, Duration, Env, List, Queue, Time, Token, Wall, bytes};
 use skein_oauth::HttpRequest;
 use skein_world::Host;
 
+mod route;
+
+use route::{Paths, Route, route};
+
 use crate::face::{self, Face, LISTENER};
 use crate::transport::{self, Wire};
 use crate::{Error, Limits, Transport};
 
-/// The issuer's outside records for a world's referee; secret bodies have no Debug.
+/// The issuer's outside records for a world's referee, without credential values.
 #[derive(PartialEq, Eq)]
 pub enum Observation {
     /// The server accepted this connection from a client or scripted browser.
     Accepted { connection: Token },
     /// The browser sent this authorization target to the registered endpoint.
     Authorize { connection: Token, target: Box<[u8]> },
-    /// The token endpoint received this complete POST body.
-    Post { connection: Token, body: Box<[u8]> },
-    /// The actual issuer approved sign-in and the server sent this Location.
-    Redirect { connection: Token, location: Box<[u8]> },
-    /// The real issuer emitted this token-endpoint terminal, even if disconnected.
+    /// The token endpoint received a complete POST.
+    Post { connection: Token },
+    /// The browser requested this issuer document target.
+    Document { connection: Token, target: Box<[u8]> },
+    /// The revocation endpoint received a complete POST.
+    Revoke { connection: Token },
+    /// The issuer approved sign-in and the server sent its redirect.
+    Redirect { connection: Token },
+    /// The issuer emitted a token or revocation terminal, even if disconnected.
     Answered { connection: Option<Token>, id: u64, status: u16 },
     /// io settled the connection's close.
     Closed { connection: Token },
@@ -52,7 +60,7 @@ struct Connection {
     plain: Queue<Up>,
     body: List<u8>,
     content_type: Option<&'static [u8]>,
-    token_post: bool,
+    post: Option<Route>,
     active: Option<u64>,
     response: Option<Response>,
     closing: bool,
@@ -66,9 +74,11 @@ pub struct Peer {
     issuer_limits: issuer::Limits,
     http_limits: http::Limits,
     authorization_url: Box<[u8]>,
-    authorization_path: Box<[u8]>,
     token_endpoint: Box<[u8]>,
-    token_path: Box<[u8]>,
+    paths: Paths,
+    revoke_endpoint: Option<Box<[u8]>>,
+    metadata_url: Option<Box<[u8]>>,
+    key_set_url: Option<Box<[u8]>>,
     outgoing: Queue<issuer::Request>,
     connections: Vec<Connection>,
     next: u64,
@@ -90,8 +100,22 @@ impl Peer {
     ) -> Result<Self, Error> {
         transport::validate(&limits, transport)?;
         let bound = worst_case(&limits, &issuer_limits, &http_limits, transport).ok_or(Error::Limits)?;
-        let authorization_path = path(&config.authorization_url, transport)?;
-        let token_path = path(&config.token_endpoint, transport)?;
+        let terms = config.terms.as_ref();
+        let openid = terms.and_then(|terms| terms.openid.as_ref());
+        let revoke_endpoint = terms.and_then(|terms| terms.revocation_endpoint.clone());
+        let metadata_url = openid.map(|openid| {
+            let mut url = openid.issuer.to_vec();
+            url.extend_from_slice(b"/.well-known/openid-configuration");
+            url.into_boxed_slice()
+        });
+        let key_set_url = openid.map(|openid| openid.key_set_url.clone());
+        let paths = Paths {
+            authorize: path(&config.authorization_url, transport)?,
+            token: path(&config.token_endpoint, transport)?,
+            revoke: revoke_endpoint.as_deref().map(|url| path(url, transport)).transpose()?,
+            metadata: metadata_url.as_deref().map(|url| path(url, transport)).transpose()?,
+            key_set: key_set_url.as_deref().map(|url| path(url, transport)).transpose()?,
+        };
         let authorization_url = config.authorization_url.clone();
         let token_endpoint = config.token_endpoint.clone();
         Ok(Self {
@@ -101,9 +125,11 @@ impl Peer {
             issuer_limits,
             http_limits,
             authorization_url,
-            authorization_path,
             token_endpoint,
-            token_path,
+            paths,
+            revoke_endpoint,
+            metadata_url,
+            key_set_url,
             outgoing: Queue::with_capacity(limits.queue),
             connections: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
             next: 1,
@@ -117,6 +143,12 @@ impl Peer {
     /// Adds one actual issuer response plan; its domain enforces count and byte limits.
     pub fn queue(&mut self, plan: issuer::Plan) -> Result<(), issuer::Error> {
         self.issuer.queue(plan)
+    }
+
+    /// The scripted access tokens, for the LLM peer's list at start.
+    #[must_use]
+    pub fn granted(&self) -> Box<[Box<[u8]>]> {
+        self.issuer.granted()
     }
 
     /// The actual listener address after io announces Listening.
@@ -189,7 +221,7 @@ impl Peer {
                     plain: Queue::with_capacity(limits.queue),
                     body: List::with_capacity(self.issuer_limits.request_bytes),
                     content_type: None,
-                    token_post: false,
+                    post: None,
                     active: None,
                     response: None,
                     closing: false,
@@ -237,7 +269,7 @@ impl Peer {
 
     fn http_event(&mut self, index: usize, event: http::Event, now: Time, wall: Wall) {
         match event {
-            http::Event::Call(call) => self.call(index, call, now),
+            http::Event::Call(call) => self.call(index, call, now, wall),
             http::Event::Body(Up::Bytes(bytes)) => {
                 let connection = &mut self.connections[index];
                 if bytes.len() > usize::try_from(connection.body.room()).expect("u32 fits") {
@@ -289,9 +321,10 @@ impl Peer {
         }
     }
 
-    fn call(&mut self, index: usize, call: http::Call, now: Time) {
-        let target_base = call.target.split(|byte| *byte == b'?').next().expect("target has a base");
-        if call.method == Method::Get && target_base == self.authorization_path.as_ref() {
+    fn call(&mut self, index: usize, call: http::Call, now: Time, wall: Wall) {
+        let route = route(&self.paths, call.method, &call.target);
+        if route == Route::Authorize {
+            let target_base = call.target.split(|byte| *byte == b'?').next().expect("target has a base");
             let owner = self.connections[index].owner;
             if self
                 .authorization_url
@@ -316,15 +349,16 @@ impl Peer {
                 self.respond(index, 400, Box::new([]), Box::new([]), Duration::ZERO);
                 return;
             }
-            let payload_bytes = u64::try_from(call.target.len()).expect("bounded target");
-            self.observe(Observation::Authorize { connection: owner, target: call.target }, payload_bytes);
+            let target = route::observed_target(&call.target);
+            let payload_bytes = u64::try_from(target.len()).expect("bounded target");
+            self.observe(Observation::Authorize { connection: owner, target }, payload_bytes);
             self.issuer.step(issuer::Event::Authorize { url: url.into_boxed_slice(), now }, &mut self.outgoing);
             self.deliver(Some(index));
-        } else if call.method == Method::Post && call.target == self.token_path {
+        } else if route == Route::Token || route == Route::Revoke {
             let connection = &mut self.connections[index];
             connection.body.clear();
             connection.content_type = None;
-            connection.token_post = true;
+            connection.post = Some(route);
             let mut count = 0;
             for header in &call.headers {
                 if header.is(b"content-type") {
@@ -343,6 +377,19 @@ impl Peer {
                 read: Read::Arrived { max: connection.body.room().max(1) },
                 room: 0,
             }));
+        } else if route == Route::Metadata || route == Route::KeySet {
+            let connection = &mut self.connections[index];
+            connection.post = Some(route);
+            let id = self.exchange;
+            self.exchange = self.exchange.checked_add(1).expect("finite world HTTP identities");
+            connection.active = Some(id);
+            let endpoint = if route == Route::Metadata { &self.metadata_url } else { &self.key_set_url };
+            let endpoint = endpoint.clone().expect("configured document route");
+            let owner = connection.owner;
+            let payload_bytes = u64::try_from(call.target.len()).expect("bounded target");
+            self.observe(Observation::Document { connection: owner, target: call.target }, payload_bytes);
+            self.issuer.step(issuer::Event::Get { id, endpoint, now, wall }, &mut self.outgoing);
+            self.deliver(Some(index));
         } else {
             self.respond(index, 404, Box::new([]), Box::new([]), Duration::ZERO);
         }
@@ -350,10 +397,7 @@ impl Peer {
 
     fn post(&mut self, index: usize, now: Time, wall: Wall) {
         let connection = &mut self.connections[index];
-        if !connection.token_post {
-            return;
-        }
-        connection.token_post = false;
+        let Some(route @ (Route::Token | Route::Revoke)) = connection.post else { return };
         let Some(content_type) = connection.content_type.take() else {
             self.respond(index, 400, Box::new([]), Box::new([]), Duration::ZERO);
             return;
@@ -364,15 +408,23 @@ impl Peer {
         let id = self.exchange;
         self.exchange = self.exchange.checked_add(1).expect("finite world HTTP identities");
         connection.active = Some(id);
-        let payload_bytes = u64::try_from(body.len()).expect("bounded request");
-        self.reserve_observation(payload_bytes);
-        self.observe(Observation::Post { connection: owner, body: body.clone() }, payload_bytes);
+        let endpoint = if route == Route::Revoke {
+            self.revoke_endpoint.clone().expect("configured revocation route")
+        } else {
+            self.token_endpoint.clone()
+        };
+        let observation = if route == Route::Revoke {
+            Observation::Revoke { connection: owner }
+        } else {
+            Observation::Post { connection: owner }
+        };
+        self.observe(observation, 0);
         self.issuer.step(
             issuer::Event::Post {
                 request: HttpRequest {
                     method: skein_oauth::Method::Post,
                     id,
-                    endpoint: self.token_endpoint.clone(),
+                    endpoint,
                     content_type,
                     body,
                     deadline: now.saturating_add(Duration::from_secs(60)),
@@ -392,12 +444,7 @@ impl Peer {
                     let index = origin.expect("authorization emits synchronously");
                     let location = redirect(&uri, &state, &code, client_id.as_deref(), self.http_limits.response)
                         .expect("configured redirect response cap");
-                    let payload_bytes = u64::try_from(location.len()).expect("bounded redirect");
-                    self.reserve_observation(payload_bytes);
-                    self.observe(
-                        Observation::Redirect { connection: self.connections[index].owner, location: location.clone() },
-                        payload_bytes,
-                    );
+                    self.observe(Observation::Redirect { connection: self.connections[index].owner }, 0);
                     self.respond(
                         index,
                         302,
@@ -408,14 +455,17 @@ impl Peer {
                 }
                 issuer::Request::Http(response) => {
                     let index = self.connections.iter().position(|connection| connection.active == Some(response.id));
-                    self.observe(
-                        Observation::Answered {
-                            connection: index.map(|index| self.connections[index].owner),
-                            id: response.id,
-                            status: response.status,
-                        },
-                        0,
-                    );
+                    let route = index.and_then(|index| self.connections[index].post.take());
+                    if route != Some(Route::Metadata) && route != Some(Route::KeySet) {
+                        self.observe(
+                            Observation::Answered {
+                                connection: index.map(|index| self.connections[index].owner),
+                                id: response.id,
+                                status: response.status,
+                            },
+                            0,
+                        );
+                    }
                     if let Some(index) = index {
                         self.respond(
                             index,
@@ -602,7 +652,8 @@ pub fn worst_case(limits: &Limits, issuer: &issuer::Limits, http: &http::Limits,
         .checked_add(issuer::worst_case(issuer)?)?
         .checked_add(connection.checked_mul(u64::from(limits.connections))?)?
         .checked_add(Queue::<issuer::Request>::worst_case(limits.queue)?)?
-        .checked_add(u64::from(issuer.uri_bytes).checked_mul(4)?)?
+        .checked_add(u64::from(issuer.uri_bytes).checked_mul(10)?)?
+        .checked_add(2_u64.checked_mul(u64::try_from(b"/.well-known/openid-configuration".len()).ok()?)?)?
         .checked_add(u64::from(limits.observations).checked_mul(u64::try_from(size_of::<Observation>()).ok()?)?)?
         .checked_add(u64::from(limits.observation_bytes))
 }

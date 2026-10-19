@@ -921,6 +921,8 @@ dependencies = [
  "skein-http",
  "skein-io",
  "skein-lib",
+ "skein-llm",
+ "skein-llm-world",
  "skein-oauth",
  "skein-sim",
  "skein-world",
