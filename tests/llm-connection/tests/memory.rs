@@ -56,7 +56,7 @@ fn full_pool_stays_within_its_checked_bound() {
             },
             llm: skein_llm::Endpoint::codex(),
             limits: skein_llm_world::limits(),
-            credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+            credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         })
         .expect("one endpoint");
     let first = skein_llm_world::call(7);
@@ -204,7 +204,7 @@ fn every_declared_waiting_start_fits_the_checked_bound() {
     let mut bounds = skein_llm_world::limits();
     bounds.http.request = skein_llm::client::request_head(
         &input.endpoint,
-        &skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+        &skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         &bounds,
     )
     .unwrap();
@@ -264,7 +264,7 @@ fn connection_bound_counts_socket_buffers_and_pool_without_the_owners_io() {
             },
             llm: skein_llm::Endpoint::codex(),
             limits: skein_llm_world::limits(),
-            credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+            credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         })
         .unwrap();
     let small_bound = skein_llm_connection::worst_case(&limits, &endpoints).unwrap();

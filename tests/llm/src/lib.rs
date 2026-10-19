@@ -42,7 +42,8 @@ pub fn call(owner: u64) -> Call {
         owner: Token::new(owner),
         endpoint,
         credential: Credential {
-            access_token: b"secret-test-token".to_vec().into(),
+            scheme: skein_llm::Scheme::Bearer,
+            value: b"secret-test-token".to_vec().into(),
             account_id: b"account-test".to_vec().into(),
         },
         prompt: Prompt {
@@ -309,3 +310,19 @@ impl World {
 
 /// Shared actual-client/byte-peer world; applications supply only schemas and scripts.
 pub mod fake;
+
+/// Names of request-head fields that contain the supplied fixture value.
+#[must_use]
+pub fn fields_holding(sent: &[u8], value: &[u8]) -> Vec<String> {
+    let end = sent.windows(4).position(|part| part == b"\r\n\r\n").unwrap_or(sent.len());
+    sent[..end]
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| {
+            let colon = line.iter().position(|byte| *byte == b':')?;
+            line[colon + 1..]
+                .windows(value.len())
+                .any(|part| part == value)
+                .then(|| String::from_utf8(line[..colon].to_vec()).expect("header field name is ASCII"))
+        })
+        .collect()
+}

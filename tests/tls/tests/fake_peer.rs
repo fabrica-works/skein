@@ -370,7 +370,8 @@ fn a_request_body_larger_than_one_tls_read_arrives_whole() {
                     usage_fields: documents::UsageFields::ALL,
                 },
                 skein_llm::Credential {
-                    access_token: b"token".as_slice().into(),
+                    scheme: skein_llm::Scheme::Bearer,
+                    value: b"token".as_slice().into(),
                     account_id: b"acc".as_slice().into(),
                 },
                 skein_llm_world::fake::limits(&skein_llm_world::limits()),

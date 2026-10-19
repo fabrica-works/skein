@@ -18,8 +18,8 @@ use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Decimal, Env, List, Queue, Token, Writer, bytes};
 
 use crate::{
-    Block, Call, Completion, Credential, Delta, Endpoint, Error, Failure, Prompt, Provider, anthropic, dialect, filter,
-    openai, translate,
+    Block, Call, Completion, Credential, Delta, Endpoint, Error, Failure, Prompt, Provider, Scheme, anthropic, dialect,
+    filter, openai, translate,
 };
 
 /// Startup bounds, unchanged for a client's lifetime and reuse.
@@ -88,17 +88,17 @@ impl Limits {
     }
 }
 
-/// The owner's byte bounds on bearer and account values at one endpoint.
+/// The owner's byte bounds on credential and account values at one endpoint.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct CredentialLimits {
-    pub access_token: u32,
+    pub value: u32,
     pub account_id: u32,
 }
 
 /// Check credential bytes before constructing the bounded request head.
 pub fn check_credential(credential: &Credential, limits: &CredentialLimits) -> Result<(), Error> {
-    if credential.access_token.len() > usize::try_from(limits.access_token).expect("u32 fits usize") {
-        return Err(Error::limit(crate::Cap::AccessToken, limits.access_token));
+    if credential.value.len() > usize::try_from(limits.value).expect("u32 fits usize") {
+        return Err(Error::limit(crate::Cap::Value, limits.value));
     }
     if credential.account_id.len() > usize::try_from(limits.account_id).expect("u32 fits usize") {
         return Err(Error::limit(crate::Cap::AccountId, limits.account_id));
@@ -125,11 +125,11 @@ pub fn request_head(endpoint: &Endpoint, credential: &CredentialLimits, limits: 
             }
         }
     }
-    if credential.access_token == 0 {
-        return Err(Error::Invalid);
+    if credential.value == 0 {
+        return Err(Error::limit(crate::Cap::Value, credential.value));
     }
     let maximum_affinity = [[b'0'; 36]; 2];
-    let fields = provider_headers(endpoint, &[], Some(&maximum_affinity));
+    let fields = provider_headers(endpoint, Scheme::Bearer, &[], Some(&maximum_affinity));
     let account_bytes = match endpoint.provider {
         Provider::OpenAiCodex => usize::try_from(credential.account_id).expect("u32 fits usize"),
         Provider::Anthropic => 0,
@@ -146,9 +146,10 @@ pub fn request_head(endpoint: &Endpoint, credential: &CredentialLimits, limits: 
     }
     let measured = head_length(
         endpoint,
-        usize::try_from(credential.access_token).expect("u32 fits usize"),
+        usize::try_from(credential.value).expect("u32 fits usize"),
         account_bytes,
         limits.request,
+        Scheme::Bearer,
         &fields,
     )?;
     match u32::try_from(measured) {
@@ -1386,8 +1387,8 @@ fn measure_headers(
     body_length: u32,
 ) -> Result<u32, Error> {
     if endpoint.authority.is_empty()
-        || credential.access_token.is_empty()
-        || !header_value(&credential.access_token)
+        || credential.value.is_empty()
+        || !header_value(&credential.value)
         || !header_value(&credential.account_id)
         || !valid_authority(&endpoint.authority)
         || endpoint.target.first() != Some(&b'/')
@@ -1395,17 +1396,27 @@ fn measure_headers(
         return Err(Error::Invalid);
     }
     match endpoint.provider {
-        Provider::OpenAiCodex if credential.account_id.is_empty() => return Err(Error::Invalid),
+        Provider::OpenAiCodex => {
+            if credential.account_id.is_empty() || credential.scheme == Scheme::Key {
+                return Err(Error::Invalid);
+            }
+        }
         Provider::Anthropic if !credential.account_id.is_empty() => return Err(Error::Invalid),
-        Provider::OpenAiCodex | Provider::Anthropic => {}
+        Provider::Anthropic => {}
     }
     let rendered = match affinity {
         Some(affinity) => Some(crate::affinity::rendered(affinity)),
         None => None,
     };
-    let fields = provider_headers(endpoint, &credential.account_id, rendered.as_ref());
-    let total =
-        head_length(endpoint, credential.access_token.len(), credential.account_id.len(), body_length, &fields)?;
+    let fields = provider_headers(endpoint, credential.scheme, &credential.account_id, rendered.as_ref());
+    let total = head_length(
+        endpoint,
+        credential.value.len(),
+        credential.account_id.len(),
+        body_length,
+        credential.scheme,
+        &fields,
+    )?;
     let mut fixed_count = 5_usize;
     for field in &fields {
         if field.is_some() {
@@ -1441,7 +1452,7 @@ fn headers(
         Some(affinity) => Some(crate::affinity::rendered(affinity)),
         None => None,
     };
-    let fields = provider_headers(endpoint, &credential.account_id, rendered.as_ref());
+    let fields = provider_headers(endpoint, credential.scheme, &credential.account_id, rendered.as_ref());
     let mut headers = List::with_capacity(limits.http.headers);
     for (name, value) in [
         (b"Host".as_slice(), endpoint.authority.as_ref()),
@@ -1458,17 +1469,21 @@ fn headers(
             .push(Header { name: bytes::copy_of(name), value: bytes::copy_of(value) })
             .expect("provider headers fit the checked cap");
     }
-    let len = credential
-        .access_token
-        .len()
-        .checked_add(7)
-        .ok_or(Error::limit(crate::Cap::RequestHead, limits.http.request))?;
-    let mut bearer = Writer::new(len);
-    bearer.put(b"Bearer ").expect("the bearer prefix was measured");
-    bearer.put(&credential.access_token).expect("the token was measured");
-    headers
-        .push(Header { name: bytes::copy_of(b"Authorization"), value: bearer.finish() })
-        .expect("six headers fit the checked cap");
+    let field = match credential.scheme {
+        Scheme::Key => Header { name: bytes::copy_of(b"x-api-key"), value: credential.value.clone() },
+        Scheme::Bearer => {
+            let len = credential
+                .value
+                .len()
+                .checked_add(7)
+                .ok_or(Error::limit(crate::Cap::RequestHead, limits.http.request))?;
+            let mut bearer = Writer::new(len);
+            bearer.put(b"Bearer ").expect("the bearer prefix was measured");
+            bearer.put(&credential.value).expect("the credential was measured");
+            Header { name: bytes::copy_of(b"Authorization"), value: bearer.finish() }
+        }
+    };
+    headers.push(field).expect("credential field fits the checked cap");
     for header in &endpoint.headers {
         headers.push(header.clone()).expect("extra headers fit the checked cap");
     }
@@ -1477,9 +1492,10 @@ fn headers(
 
 fn head_length(
     endpoint: &Endpoint,
-    token_bytes: usize,
+    value_bytes: usize,
     account_bytes: usize,
     body_length: u32,
+    scheme: Scheme,
     fields: &[Option<(&[u8], &[u8])>],
 ) -> Result<usize, Error> {
     if endpoint.authority.is_empty() || !valid_authority(&endpoint.authority) || endpoint.target.first() != Some(&b'/')
@@ -1492,7 +1508,7 @@ fn head_length(
         }
     }
     let mut total = endpoint.authority.len().checked_add(endpoint.target.len()).ok_or(Error::Invalid)?;
-    total = total.checked_add(token_bytes).ok_or(Error::Invalid)?;
+    total = total.checked_add(value_bytes).ok_or(Error::Invalid)?;
     total = total.checked_add(account_bytes).ok_or(Error::Invalid)?;
     for (index, header) in endpoint.headers.iter().enumerate() {
         if reserved(&header.name) || !header_name(&header.name) || !header_value(&header.value) {
@@ -1516,12 +1532,16 @@ fn head_length(
         b"Content-Type: application/json\r\n",
         b"Accept: text/event-stream\r\n",
         b"Accept-Encoding: identity\r\n",
-        b"Authorization: Bearer \r\n",
         b"Content-Length: \r\n",
         b"\r\n",
     ] {
         total = total.checked_add(fixed.len()).ok_or(Error::Invalid)?;
     }
+    let credential_field = match scheme {
+        Scheme::Bearer => b"Authorization: Bearer \r\n".as_slice(),
+        Scheme::Key => b"x-api-key: \r\n".as_slice(),
+    };
+    total = total.checked_add(credential_field.len()).ok_or(Error::Invalid)?;
     for (name, value) in fields.iter().flatten() {
         total = total.checked_add(name.len()).ok_or(Error::Invalid)?;
         // Codex account bytes were counted with the credential above.
@@ -1537,6 +1557,7 @@ fn head_length(
 
 fn provider_headers<'a>(
     endpoint: &Endpoint,
+    scheme: Scheme,
     account_id: &'a [u8],
     affinity: Option<&'a [[u8; 36]; 2]>,
 ) -> [Option<(&'static [u8], &'a [u8])>; 3] {
@@ -1551,7 +1572,11 @@ fn provider_headers<'a>(
         Provider::OpenAiCodex => [Some((b"chatgpt-account-id", account_id)), session, thread],
         Provider::Anthropic => [
             default_header(endpoint, b"anthropic-version", b"2023-06-01"),
-            default_header(endpoint, b"anthropic-beta", b"oauth-2025-04-20"),
+            // The bearer route is withdrawn; the second part of LLM accounts removes it.
+            match scheme {
+                Scheme::Bearer => default_header(endpoint, b"anthropic-beta", b"oauth-2025-04-20"),
+                Scheme::Key => None,
+            },
             None,
         ],
     }

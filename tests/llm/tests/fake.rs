@@ -111,7 +111,8 @@ fn prepared_client_is_adopted_and_drives_the_actual_scripted_peer() {
         let input = input(provider, 17);
         let endpoint = input.endpoint.clone();
         let credential = skein_llm::Credential {
-            access_token: input.credential.access_token.clone(),
+            scheme: skein_llm::Scheme::Bearer,
+            value: input.credential.value.clone(),
             account_id: input.credential.account_id.clone(),
         };
         let machine = client::Client::prepare(input, &limits()).expect("caller prepares its one Client");
@@ -836,7 +837,8 @@ fn explicit_call_reasoning_policy_overrides_the_default_without_changing_wire_by
         let input = input(provider, 71);
         let endpoint = input.endpoint.clone();
         let credential = skein_llm::Credential {
-            access_token: input.credential.access_token.clone(),
+            scheme: skein_llm::Scheme::Bearer,
+            value: input.credential.value.clone(),
             account_id: input.credential.account_id.clone(),
         };
         let machine =

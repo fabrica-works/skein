@@ -71,7 +71,7 @@ fn run(seed: u64) -> (Vec<String>, (u32, u32, bool)) {
             transport: skein_llm_connection::Transport::Plaintext,
             llm: call.endpoint,
             limits: skein_llm_world::limits(),
-            credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+            credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         })
         .expect("one endpoint");
     let mut component = Component::new(endpoints, &limits()).expect("valid component");
@@ -247,7 +247,7 @@ fn per_call_reasoning_policy(endpoint_default: bool) {
             transport: skein_llm_connection::Transport::Plaintext,
             llm: skein_llm::Endpoint::codex(),
             limits: client_limits,
-            credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+            credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         })
         .expect("one shared endpoint");
     let mut component = Component::new(endpoints, &limits()).expect("configured endpoint");

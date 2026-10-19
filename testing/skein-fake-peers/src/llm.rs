@@ -77,7 +77,7 @@ impl Peer {
     ) -> Result<Self, Error> {
         transport::validate(&limits, transport)?;
         let bound = worst_case(&limits, &protocol_limits, &domain_limits, transport).ok_or(Error::Limits)?;
-        if credential.access_token.len().checked_add(credential.account_id.len()).ok_or(Error::Limits)?
+        if credential.value.len().checked_add(credential.account_id.len()).ok_or(Error::Limits)?
             > usize::try_from(protocol_limits.http.head).expect("u32 fits")
         {
             return Err(Error::Limits);

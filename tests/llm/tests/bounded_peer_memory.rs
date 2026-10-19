@@ -91,7 +91,7 @@ fn input_bytes(input: &Call) -> u64 {
     assert!(input.prompt.tools.is_empty());
     assert!(input.prompt.reasoning_effort.is_none());
     let mut owned = endpoint_bytes(&input.endpoint)
-        + bytes(&input.credential.access_token)
+        + bytes(&input.credential.value)
         + bytes(&input.credential.account_id)
         + bytes(&input.prompt.model)
         + bytes(&input.prompt.instructions)

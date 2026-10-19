@@ -54,7 +54,7 @@ fn declared_quantities_price_the_retained_event_and_leave_transport_to_the_owner
 
 #[test]
 fn only_the_messages_endpoint_requires_a_nonzero_native_output_cap() {
-    let credential = client::CredentialLimits { access_token: 32, account_id: 32 };
+    let credential = client::CredentialLimits { value: 32, account_id: 32 };
     let declared = Declared { output: 0, tool_payload: 0, ..TINY_DECL };
     let derived = Limits::derive(&declared).expect("zero output can describe Codex");
     assert!(client::request_head(&Endpoint::codex(), &credential, &derived.codex).is_ok());

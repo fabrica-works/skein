@@ -54,7 +54,8 @@ fn run(dialect: Provider, seed: u64) -> (Vec<String>, (u32, u32)) {
     call.prompt.output_ceiling(dialect, 4096).expect("provider output ceiling");
     call.prompt.instructions = b"connection-world".as_slice().into();
     let peer_credential = Credential {
-        access_token: call.credential.access_token.clone(),
+        scheme: skein_llm::Scheme::Bearer,
+        value: call.credential.value.clone(),
         account_id: call.credential.account_id.clone(),
     };
     let peer_limits = skein_llm_world::fake::limits(&skein_llm_world::limits());
@@ -91,7 +92,7 @@ fn run(dialect: Provider, seed: u64) -> (Vec<String>, (u32, u32)) {
             transport: skein_llm_connection::Transport::Plaintext,
             llm: call.endpoint,
             limits: skein_llm_world::limits(),
-            credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+            credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         })
         .expect("one endpoint");
     let mut component = Component::new(endpoints, &limits()).expect("component");

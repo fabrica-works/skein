@@ -37,7 +37,7 @@ fn credentials_and_reserved_headers_cannot_cross_auth_modes() {
         assert_eq!(rejection(input, &limits()), Error::Invalid);
     }
     let mut input = anthropic_call();
-    input.credential.access_token = b"secret\r\nInjected: header".to_vec().into();
+    input.credential.value = b"secret\r\nInjected: header".to_vec().into();
     assert_eq!(rejection(input, &limits()), Error::Invalid);
     let mut input = call(1);
     input.prompt.max_output_tokens = Some(100);

@@ -7,12 +7,12 @@ use alloc::boxed::Box;
 use skein_http::Header;
 use skein_lib::{Duration, Token, bytes};
 
-/// A concrete wire dialect. More providers can be added without changing messages.
+/// A concrete wire dialect, independent of how the caller pays for access.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Provider {
-    /// OAuth subscription access through the `ChatGPT` Codex Responses route.
+    /// The withdrawn Codex Responses route; removed by the second part of LLM accounts.
     OpenAiCodex,
-    /// OAuth bearer access to Anthropic's Messages subscription dialect.
+    /// Anthropic's Messages dialect, with a key or the withdrawn bearer route.
     Anthropic,
 }
 /// The conversation participant; instructions live separately in [`Prompt`].
@@ -213,8 +213,8 @@ pub enum Cap {
     Answer,
     /// The configured bound on provider error body.
     ErrorBody,
-    /// The configured bound on access token.
-    AccessToken,
+    /// The configured bound on credential value.
+    Value,
     /// The configured bound on account identifier.
     AccountId,
 }
@@ -241,7 +241,7 @@ impl Cap {
             Cap::Output => b"declared output tokens",
             Cap::Answer => b"completion answer",
             Cap::ErrorBody => b"provider error body",
-            Cap::AccessToken => b"access token",
+            Cap::Value => b"credential value",
             Cap::AccountId => b"account identifier",
         }
     }
@@ -319,7 +319,7 @@ pub struct Endpoint {
     pub headers: Box<[Header]>,
 }
 impl Endpoint {
-    /// Anthropic Messages with subscription OAuth bearer authentication.
+    /// Anthropic Messages, authenticated with a key or a bearer.
     #[must_use]
     pub fn anthropic() -> Endpoint {
         Endpoint {
@@ -329,7 +329,7 @@ impl Endpoint {
             headers: Box::new([]),
         }
     }
-    /// The subscription Responses route. Caller headers identify the actual client.
+    /// The withdrawn Codex route; removed by the second part of LLM accounts.
     #[must_use]
     pub fn codex() -> Endpoint {
         Endpoint {
@@ -340,20 +340,44 @@ impl Endpoint {
         }
     }
 }
-/// Credentials are caller-owned OAuth material; no Debug implementation exposes them.
+/// The scheme a route uses to present a credential (llm.md, section 2.6).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Scheme {
+    /// A bearer token, sent in the authorization field.
+    Bearer,
+    /// A key, sent where the provider takes keys.
+    Key,
+}
+/// A caller-owned value and its scheme; no Debug implementation exposes it.
 #[expect(missing_debug_implementations, reason = "OAuth credential bytes must not enter debug traces")]
 pub struct Credential {
-    /// OAuth bearer access token; acquisition and renewal belong to the caller.
-    pub access_token: Box<[u8]>,
-    /// Codex account identifier sent in `chatgpt-account-id`. Must be empty
-    /// for Anthropic, which authenticates using only the bearer token.
+    /// The secret; acquisition and renewal belong to the caller.
+    pub value: Box<[u8]>,
+    /// How the route presents the value.
+    pub scheme: Scheme,
+    /// The withdrawn Codex account id; removed by the second part of LLM accounts.
     pub account_id: Box<[u8]>,
 }
 impl Credential {
-    /// Uses a caller-obtained Anthropic OAuth access token.
+    /// Uses a caller-obtained bearer token without an account id.
     #[must_use]
-    pub fn anthropic(access_token: Box<[u8]>) -> Credential {
-        Credential { access_token, account_id: Box::new([]) }
+    pub fn bearer(value: Box<[u8]>) -> Credential {
+        Credential { value, scheme: Scheme::Bearer, account_id: Box::new([]) }
+    }
+    /// Uses a caller-obtained key without an account id.
+    #[must_use]
+    pub fn key(value: Box<[u8]>) -> Credential {
+        Credential { value, scheme: Scheme::Key, account_id: Box::new([]) }
+    }
+    /// Uses the withdrawn Codex bearer; removed by the second part of LLM accounts.
+    #[must_use]
+    pub fn codex(value: Box<[u8]>, account_id: Box<[u8]>) -> Credential {
+        Credential { value, scheme: Scheme::Bearer, account_id }
+    }
+    /// Uses the withdrawn Anthropic bearer; removed by the second part of LLM accounts.
+    #[must_use]
+    pub fn anthropic(value: Box<[u8]>) -> Credential {
+        Self::bearer(value)
     }
 }
 /// One owner-correlated request. Admission consumes it whether accepted or rejected.

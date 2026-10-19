@@ -80,7 +80,7 @@ impl Client {
                 transport: skein_llm_connection::Transport::Plaintext,
                 llm: skein_llm::Endpoint::codex(),
                 limits: skein_llm_world::limits(),
-                credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+                credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
             })
             .expect("endpoint bound");
         let bound = skein_llm_connection::worst_case(&limits, &endpoints).expect("component bound");
@@ -121,7 +121,7 @@ impl Client {
                 },
                 llm: call.endpoint,
                 limits: skein_llm_world::limits(),
-                credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+                credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
             })
             .expect("one endpoint");
         let mut component = Component::new(endpoints, &self.limits).expect("configured component");

@@ -64,7 +64,8 @@ fn input(provider: Provider, owner: u64) -> Call {
             (
                 endpoint,
                 Credential {
-                    access_token: required("SKEIN_TEST_LIVE_OPENAI_ACCESS_TOKEN"),
+                    scheme: skein_llm::Scheme::Bearer,
+                    value: required("SKEIN_TEST_LIVE_OPENAI_ACCESS_TOKEN"),
                     account_id: required("SKEIN_TEST_LIVE_OPENAI_ACCOUNT_ID"),
                 },
                 setting("SKEIN_TEST_LIVE_OPENAI_MODEL").unwrap_or_else(|| "gpt-5.5".into()),
@@ -412,7 +413,7 @@ fn unauthorized(provider: Provider) {
         return;
     }
     let mut call = input(provider, 1);
-    call.credential.access_token = bytes("skein-live-intentionally-invalid-token");
+    call.credential.value = bytes("skein-live-intentionally-invalid-token");
     let mut connection = Connection::new(call);
     let events = connection.exchange();
     let failures: Vec<_> = events

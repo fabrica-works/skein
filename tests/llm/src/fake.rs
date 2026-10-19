@@ -98,7 +98,7 @@ pub fn extra_worst_case(
         .checked_add(wire)?
         .checked_add(traces)?
         .checked_add(bytes(&endpoint.target)?)?
-        .checked_add(bytes(&credential.access_token)?)?
+        .checked_add(bytes(&credential.value)?)?
         .checked_add(bytes(&credential.account_id)?)
 }
 
@@ -340,7 +340,8 @@ impl Exchange {
     ) -> Self {
         let endpoint = input.endpoint.clone();
         let credential = Credential {
-            access_token: input.credential.access_token.clone(),
+            scheme: skein_llm::Scheme::Bearer,
+            value: input.credential.value.clone(),
             account_id: input.credential.account_id.clone(),
         };
         let machine = client::Client::prepare(input, &bounds).expect("actual shared Client admission");
@@ -798,7 +799,8 @@ mod tests {
         input.prompt.instructions = b"clocked-script".as_slice().into();
         let endpoint = input.endpoint.clone();
         let credential = Credential {
-            access_token: input.credential.access_token.clone(),
+            scheme: skein_llm::Scheme::Bearer,
+            value: input.credential.value.clone(),
             account_id: input.credential.account_id.clone(),
         };
         let bounds = crate::limits();

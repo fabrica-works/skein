@@ -119,7 +119,7 @@ impl World {
                 },
                 llm: call.endpoint,
                 limits: skein_llm_world::limits(),
-                credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+                credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
             })
             .expect("one endpoint");
         let mut world = World {

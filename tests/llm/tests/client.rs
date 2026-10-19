@@ -275,7 +275,7 @@ fn hostile_request_is_refused_before_connection() {
     for field in 0..4 {
         let mut request = call(1);
         match field {
-            0 => request.credential.access_token = b"bad\r\ninjected".to_vec().into(),
+            0 => request.credential.value = b"bad\r\ninjected".to_vec().into(),
             1 => request.credential.account_id = Box::new([]),
             2 => request.endpoint.target = b"/bad target".to_vec().into(),
             3 => request.endpoint.authority = b"bad/name".to_vec().into(),
@@ -496,7 +496,7 @@ fn exact_request_head_cap_is_checked_before_transport_binding() {
     let measured = client::request_head(
         &input.endpoint,
         &client::CredentialLimits {
-            access_token: u32::try_from(input.credential.access_token.len()).unwrap(),
+            value: u32::try_from(input.credential.value.len()).unwrap(),
             account_id: u32::try_from(input.credential.account_id.len()).unwrap(),
         },
         &limits(),

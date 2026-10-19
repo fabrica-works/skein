@@ -47,7 +47,7 @@ fn measurement_and_preparation_make_the_same_entrance_refusals() {
             let mut bounds = limits();
             match case {
                 0 => input.prompt.model = Box::new([]),
-                1 => input.credential.access_token = b"bad\r\nvalue".as_slice().into(),
+                1 => input.credential.value = b"bad\r\nvalue".as_slice().into(),
                 2 => input.endpoint.target = b"bad target".as_slice().into(),
                 3 => bounds.request = 1,
                 4 => bounds.http.request = 1,

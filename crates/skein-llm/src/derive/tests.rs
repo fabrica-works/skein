@@ -173,9 +173,11 @@ fn owner_declared_counts_accept_the_boundary_and_refuse_one_more_by_name() {
             Provider::Anthropic => crate::Endpoint::anthropic(),
         };
         let credential = match provider {
-            Provider::OpenAiCodex => {
-                crate::Credential { access_token: b"fake".as_slice().into(), account_id: b"fake".as_slice().into() }
-            }
+            Provider::OpenAiCodex => crate::Credential {
+                scheme: crate::Scheme::Bearer,
+                value: b"fake".as_slice().into(),
+                account_id: b"fake".as_slice().into(),
+            },
             Provider::Anthropic => crate::Credential::anthropic(b"fake".as_slice().into()),
         };
         let schema = Json::from_bytes(b"{}", &DocumentLimits { bytes: 2, strings: 2, depth: 2, tokens: 2 }).unwrap();

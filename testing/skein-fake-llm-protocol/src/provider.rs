@@ -595,7 +595,7 @@ fn entrance(
     };
     let authorized = match token {
         Some(token) => {
-            token == credential.access_token.as_ref()
+            token == credential.value.as_ref()
                 && match service.config.provider {
                     documents::Provider::Anthropic => true,
                     documents::Provider::OpenAi => {

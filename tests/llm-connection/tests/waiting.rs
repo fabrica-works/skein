@@ -145,7 +145,7 @@ fn request_reservation() -> u64 {
     let input = memory_request(7);
     bounds.http.request = skein_llm::client::request_head(
         &input.endpoint,
-        &skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+        &skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         &bounds,
     )
     .expect("the world request fits its declared endpoint");

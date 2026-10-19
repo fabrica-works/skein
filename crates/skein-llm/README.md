@@ -58,7 +58,7 @@ that evidence; `Evidence::Response { status }` preserves the HTTP status
 on every failure after a response head, including non-JSON error bodies.
 
 For Anthropic, use `Endpoint::anthropic()` and
-`Credential::anthropic(access_token)`. Sign-in, refresh and secure token storage
+`Credential::anthropic(value)`. Sign-in, refresh and secure token storage
 remain with the caller. The default route is `api.anthropic.com/v1/messages`;
 requests send `Authorization: Bearer`, `anthropic-version: 2023-06-01` and
 `anthropic-beta: oauth-2025-04-20`. Version/beta headers can be overridden

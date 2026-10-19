@@ -18,7 +18,7 @@ fn close_and_abort_cross_racing_call_terminals_without_spin_or_repeated_events()
             let mut bounds = skein_llm_world::limits();
             bounds.http.request = skein_llm::client::request_head(
                 &input.endpoint,
-                &skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+                &skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
                 &bounds,
             )
             .unwrap();

@@ -45,7 +45,7 @@ pub(crate) fn endpoint() -> Endpoint {
         },
         llm: skein_llm::Endpoint::codex(),
         limits: client_limits(),
-        credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+        credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
     }
 }
 
@@ -66,7 +66,11 @@ pub(crate) fn prompt() -> Prompt {
 }
 
 pub(crate) fn credential() -> Credential {
-    Credential { access_token: bytes::copy_of(b"secret"), account_id: bytes::copy_of(b"account") }
+    Credential {
+        scheme: skein_llm::Scheme::Bearer,
+        value: bytes::copy_of(b"secret"),
+        account_id: bytes::copy_of(b"account"),
+    }
 }
 
 #[test]
@@ -334,7 +338,7 @@ fn plaintext_admission_checks_the_exact_loopback_ranges() {
                 transport: Transport::Plaintext,
                 llm: skein_llm::Endpoint::codex(),
                 limits: client_limits(),
-                credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+                credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
             })
             .expect("one endpoint");
         assert_eq!(
@@ -354,7 +358,7 @@ fn plaintext_connect_starts_http_and_never_arms_a_handshake_deadline() {
             transport: Transport::Plaintext,
             llm: skein_llm::Endpoint::codex(),
             limits: client_limits(),
-            credential: skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 },
+            credential: skein_llm::client::CredentialLimits { value: 2048, account_id: 128 },
         })
         .expect("one endpoint");
     let mut config = limits();
@@ -619,21 +623,21 @@ fn the_measured_head_accepts_a_credential_at_its_bound_and_refuses_one_byte_more
     let mut destination = endpoint();
     destination.llm.headers =
         Box::new([skein_http::Header { name: bytes::copy_of(b"x-owner"), value: bytes::copy_of(b"declared") }]);
-    destination.credential = skein_llm::client::CredentialLimits { access_token: 2048, account_id: 128 };
+    destination.credential = skein_llm::client::CredentialLimits { value: 2048, account_id: 128 };
     let mut endpoints = List::with_capacity(1);
     endpoints.push(destination).expect("endpoint");
     let component = Component::new(endpoints, &config).expect("measured endpoint");
     let mut at_bound = credential();
-    at_bound.access_token = Box::new([b'x'; 2048]);
+    at_bound.value = Box::new([b'x'; 2048]);
     at_bound.account_id = Box::new([b'y'; 128]);
     drop(
         component.admit(Token::new(7), 0, prompt(), at_bound).expect("the measured head holds the declared credential"),
     );
     let mut too_long = credential();
-    too_long.access_token = Box::new([b'x'; 2049]);
+    too_long.value = Box::new([b'x'; 2049]);
     assert_eq!(
         component.admit(Token::new(8), 0, prompt(), too_long).err(),
-        Some(Refusal::Client(skein_llm::Error::Limit { which: skein_llm::Cap::AccessToken, bound: 2048 }))
+        Some(Refusal::Client(skein_llm::Error::Limit { which: skein_llm::Cap::Value, bound: 2048 }))
     );
 }
 
@@ -812,4 +816,72 @@ fn a_whole_deadline_due_at_admission_fails_without_preparing_a_binding() {
         other => panic!("expected unsent whole timeout, got {other:?}"),
     }
     assert_eq!(component.reserved(), 0);
+}
+
+#[test]
+fn a_key_on_the_codex_route_is_refused_at_entrance() {
+    let config = limits();
+    let mut endpoints = List::with_capacity(config.endpoints);
+    endpoints.push(endpoint()).expect("one endpoint fits");
+    let mut component = Component::new(endpoints, &config).expect("valid endpoint");
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config };
+    let mut above = Queue::with_capacity(MAX_OUT.above);
+    let mut below = Queue::with_capacity(MAX_OUT.below);
+    let mut key = credential();
+    key.scheme = skein_llm::Scheme::Key;
+    component.down(
+        &env,
+        Request::Start {
+            drop_reasoning: false,
+            call: Token::new(7),
+            endpoint: 0,
+            prompt: prompt(),
+            credential: key,
+            deadlines: Deadlines::none(),
+        },
+        &mut above,
+        &mut below,
+    );
+    assert_eq!(above.len(), 1);
+    assert!(below.is_empty());
+    match above.pop() {
+        Some(Event::Refused { call, why }) => {
+            assert_eq!(call, Token::new(7));
+            assert_eq!(why, Refusal::Client(skein_llm::Error::Invalid));
+        }
+        event => panic!("expected refusal, got {event:?}"),
+    }
+}
+
+#[test]
+fn a_value_past_its_bound_is_refused_by_name() {
+    const VALUE_BYTES: usize = 2048; // endpoint()'s credential value bound.
+    let config = limits();
+    let mut endpoints = List::with_capacity(config.endpoints);
+    endpoints.push(endpoint()).expect("one endpoint fits");
+    let component = Component::new(endpoints, &config).expect("valid endpoint");
+    let mut value = credential();
+    value.value = Box::new([b'x'; VALUE_BYTES + 1]);
+    assert_eq!(
+        component.admit(Token::new(7), 0, prompt(), value).err(),
+        Some(Refusal::Client(skein_llm::Error::Limit { which: skein_llm::Cap::Value, bound: 2048 }))
+    );
+}
+
+#[test]
+fn either_scheme_at_its_bound_fits_the_measured_head() {
+    const VALUE_BYTES: usize = 2048; // endpoint()'s credential value bound.
+    let config = limits();
+    for scheme in [skein_llm::Scheme::Bearer, skein_llm::Scheme::Key] {
+        let mut destination = endpoint();
+        destination.llm = skein_llm::Endpoint::anthropic();
+        let mut endpoints = List::with_capacity(config.endpoints);
+        endpoints.push(destination).expect("one endpoint fits");
+        let component = Component::new(endpoints, &config).expect("measured endpoint");
+        let mut value = credential();
+        value.value = Box::new([b'x'; VALUE_BYTES]);
+        value.account_id = Box::new([]);
+        value.scheme = scheme;
+        assert_eq!(component.admit(Token::new(7), 0, prompt(), value).err(), None, "{scheme:?}");
+    }
 }
