@@ -11,6 +11,9 @@ use skein_oauth::{
     encode_error, encode_response,
 };
 
+mod key;
+mod openid;
+pub use openid::{Fault, OpenId};
 mod terms;
 pub use terms::{ISSUED, Terms};
 
@@ -82,6 +85,7 @@ pub struct Plan {
 pub enum Event {
     Authorize { url: Box<[u8]>, now: Time },
     Post { request: HttpRequest, now: Time, wall: Wall },
+    Get { id: u64, endpoint: Box<[u8]>, now: Time, wall: Wall },
     Tick { now: Time, wall: Wall },
     LoseResponse,
 }
@@ -104,7 +108,6 @@ struct Code {
     value: Box<[u8]>,
     challenge: Option<Box<[u8]>>,
     redirect_uri: Box<[u8]>,
-    #[expect(dead_code, reason = "the authorization nonce is retained for the ID token")]
     nonce: Option<Box<[u8]>>,
     used: bool,
     expires: Time,
@@ -244,6 +247,9 @@ impl Issuer {
         match event {
             Event::Authorize { url, now } => self.authorize(&url, now, out),
             Event::Post { request, now, wall } => self.post(request, now, wall, out),
+            Event::Get { id, endpoint, now, wall } => {
+                openid::get(&self.config, &self.limits, id, &endpoint, now, wall, out);
+            }
             Event::Tick { now, wall } => self.deliver(now, wall, out),
             Event::LoseResponse => self.pending = None,
         }
@@ -385,7 +391,11 @@ impl Issuer {
             return;
         };
         let (body, next_refresh) = match plan.body {
-            Body::Token(value) => {
+            Body::Token(mut value) => {
+                if self.add_id_token(&mut value, &fields, revocation, plan.status, wall).is_err() {
+                    out.push(Request::Refused);
+                    return;
+                }
                 let next =
                     if !revocation && (200..300).contains(&plan.status) { value.refresh_token.clone() } else { None };
                 let Ok(body) = encode_response(&value, &self.limits.document) else {
@@ -433,6 +443,40 @@ impl Issuer {
             revoke: revocation && (200..300).contains(&plan.status),
         });
         self.deliver(now, wall, out);
+    }
+
+    fn add_id_token(
+        &self,
+        value: &mut TokenResponse,
+        fields: &List<Field>,
+        revocation: bool,
+        status: u16,
+        wall: Wall,
+    ) -> Result<(), Error> {
+        if !revocation
+            && (200..300).contains(&status)
+            && value.id_token.is_none()
+            && field(fields, b"grant_type") == Some(b"authorization_code".as_slice())
+            && let Some(openid) = openid::configured(&self.config)
+        {
+            value.id_token = openid::token(
+                openid,
+                &self.limits,
+                field(fields, b"client_id").expect("accepted client"),
+                self.code_nonce(fields),
+                wall,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn code_nonce(&self, fields: &List<Field>) -> Option<&[u8]> {
+        for entry in self.codes.as_slice() {
+            if Some(entry.value.as_ref()) == field(fields, b"code") {
+                return entry.nonce.as_deref();
+            }
+        }
+        None
     }
 
     fn accepted(&mut self, fields: &List<Field>, revocation: bool, now: Time) -> bool {

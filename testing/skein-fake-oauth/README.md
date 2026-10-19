@@ -15,3 +15,9 @@ Optional terms issue client ids, retain each authorization’s loopback redirect
 observe added field names, and answer revocation from the same plan queue.
 `granted()` lists the queued successful access tokens for a world’s LLM peer.
 Revocation spends the refresh token when its successful answer is delivered.
+
+OpenID terms sign each successful authorization-code exchange's ID token with
+one public test RSA key. They publish metadata and a key set through `Get`,
+without consuming a response plan. A scripted ID token takes precedence.
+One fault changes a document, header or claim for the client's checks.
+Signing uses ring's RSA blinding; its RS256 bytes depend only on the claims.

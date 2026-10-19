@@ -18,12 +18,12 @@ pub fn wall(seconds: u64) -> Wall {
 #[must_use]
 pub fn documents() -> oauth::Limits {
     oauth::Limits {
-        document_bytes: 1024,
-        string_bytes: 256,
+        document_bytes: 4096,
+        string_bytes: 1024,
         token_bytes: 256,
         client_bytes: 64,
         detail_bytes: 64,
-        record_bytes: 4096,
+        record_bytes: 2048,
         depth: 8,
         tokens: 64,
         issued_client_bytes: 64,
@@ -196,6 +196,7 @@ pub fn issued(ids: &[&[u8]]) -> fake::Terms {
         omit_issued: false,
         revocation_endpoint: Some(boxed(b"https://issuer.example/revoke")),
         varying_port: false,
+        openid: None,
     }
 }
 #[must_use]

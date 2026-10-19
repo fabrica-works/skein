@@ -16,6 +16,8 @@ pub struct Terms {
     pub revocation_endpoint: Option<Box<[u8]>>,
     /// Accept different ports on the configured loopback address.
     pub varying_port: bool,
+    /// Optional signed ID tokens and issuer documents.
+    pub openid: Option<crate::OpenId>,
 }
 
 pub(super) fn valid(terms: Option<&Terms>, limits: &Limits) -> bool {
@@ -28,6 +30,9 @@ pub(super) fn valid(terms: Option<&Terms>, limits: &Limits) -> bool {
             return false;
         }
     }
+    if !crate::openid::valid(terms.openid.as_ref(), limits) {
+        return false;
+    }
     match &terms.revocation_endpoint {
         Some(url) => url.len() <= usize::try_from(limits.uri_bytes).expect("u32 fits"),
         None => true,
@@ -39,7 +44,8 @@ pub(super) fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::try_from(ISSUED).ok()?.checked_mul(
             u64::from(limits.document.string_bytes).checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?)?,
         )?)?
-        .checked_add(u64::from(limits.uri_bytes))
+        .checked_add(u64::from(limits.uri_bytes))?
+        .checked_add(crate::openid::worst_case(limits)?)
 }
 pub(super) fn latest(config: &Config, count: usize) -> &[u8] {
     let Some(terms) = &config.terms else { return &config.client_id };

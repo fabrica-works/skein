@@ -48,6 +48,7 @@ fn terms(ids: &[&[u8]]) -> Terms {
         omit_issued: false,
         revocation_endpoint: Some(bytes::copy_of(b"https://issuer.example/revoke")),
         varying_port: false,
+        openid: None,
     }
 }
 fn issuer(terms: Terms) -> Issuer {
@@ -138,7 +139,7 @@ fn a_later_request_without_the_latest_issued_id_is_refused() {
         let mut issuer = issuer(terms(&[b"client-1"])); drop(authorize(&mut issuer));
         let Some(Request::Http(answer)) = post(&mut issuer, endpoint, body) else { panic!("answer") };
         assert_eq!(answer.status, 400);
-        assert!(bytes::find(&answer.body, b"invalid_grant").is_some());
+        assert!(find(&answer.body, b"invalid_grant").is_some());
     }
 }
 #[test]
@@ -280,4 +281,245 @@ fn joined(parts: &[&[u8]]) -> Box<[u8]> {
         out.put(part).expect("measured");
     }
     out.finish()
+}
+
+use skein_lib::base64::{Alphabet, decode};
+use skein_lib::bytes::{find, find_from};
+use skein_tls::verify_rs256;
+
+fn openid_terms(fault: Option<Fault>) -> Terms {
+    let mut terms = terms(&[]);
+    terms.openid = Some(OpenId {
+        issuer: bytes::copy_of(b"https://issuer.example"),
+        key_set_url: bytes::copy_of(b"https://issuer.example/keys"),
+        subject: bytes::copy_of(b"subject"),
+        lifetime: Duration::from_secs(60),
+        header_kid: true,
+        fault,
+    });
+    terms
+}
+fn token_plan(scripted: Option<&[u8]>) -> Plan {
+    Plan {
+        status: 200,
+        body: Body::Token(TokenResponse {
+            access_token: bytes::copy_of(b"access"),
+            refresh_token: None,
+            expires_in: 60,
+            scope: None,
+            id_token: copy_optional(scripted),
+            earliest_refresh_at: None,
+        }),
+        delay: Duration::ZERO,
+        retry_after: Duration::ZERO,
+    }
+}
+fn exchange(issuer: &mut Issuer) -> Box<[u8]> {
+    let Some(Request::Redirect { code, .. }) =
+        authorization(issuer, b"http://127.0.0.1:1234/callback", b"&nonce=sign-in-nonce")
+    else {
+        panic!("redirect")
+    };
+    let body = joined(&[b"grant_type=authorization_code&client_id=client&client_secret=secret&redirect_uri=http://127.0.0.1:1234/callback&code=", &code]);
+    let Some(Request::Http(answer)) = step(
+        issuer,
+        Event::Post {
+            request: HttpRequest {
+                id: 1,
+                endpoint: bytes::copy_of(b"https://issuer.example/token"),
+                content_type: b"application/x-www-form-urlencoded",
+                body,
+                deadline: Time::ZERO,
+            },
+            now: Time::ZERO,
+            wall: Wall::from_nanos(100_000_000_000),
+        },
+    ) else {
+        panic!("token answer")
+    };
+    answer.body
+}
+fn id_token(issuer: &mut Issuer) -> Box<[u8]> {
+    issuer.queue(token_plan(None)).expect("plan");
+    member(&exchange(issuer), b"id_token", 0).expect("ID token")
+}
+fn member(body: &[u8], name: &[u8], occurrence: usize) -> Option<Box<[u8]>> {
+    let json = Json::from_bytes(body, &limits().document).expect("JSON fixture");
+    let mut found = 0_usize;
+    for pair in json.as_tokens().windows(2) {
+        if let Some(Token::Key(key)) = pair.first()
+            && key.as_ref() == name
+        {
+            if found == occurrence {
+                return match pair.get(1) {
+                    Some(Token::String(value) | Token::Number(value)) => Some(value.clone()),
+                    Some(
+                        Token::ObjectStart
+                        | Token::ObjectEnd
+                        | Token::ArrayStart
+                        | Token::ArrayEnd
+                        | Token::Key(_)
+                        | Token::True
+                        | Token::False
+                        | Token::Null,
+                    )
+                    | None => None,
+                };
+            }
+            found = found.checked_add(1).expect("fixture count");
+        }
+    }
+    None
+}
+fn segment(token: &[u8], part: usize) -> Box<[u8]> {
+    let first = find(token, b".").expect("header");
+    let second = find_from(token, b".", first.checked_add(1).expect("in range")).expect("payload");
+    let text = match part {
+        0 => token.get(..first).expect("header"),
+        1 => token.get(first.checked_add(1).expect("in range")..second).expect("payload"),
+        _ => token.get(second.checked_add(1).expect("in range")..).expect("signature"),
+    };
+    decode(Alphabet::Url, text, limits().document.id_token_bytes).expect("base64url")
+}
+fn get(issuer: &mut Issuer, endpoint: &[u8]) -> HttpResponse {
+    let Some(Request::Http(answer)) =
+        step(issuer, Event::Get { id: 7, endpoint: bytes::copy_of(endpoint), now: Time::ZERO, wall: Wall::EPOCH })
+    else {
+        panic!("GET answer")
+    };
+    answer
+}
+#[test]
+fn the_signature_verifies_against_the_published_key() {
+    let token = id_token(&mut issuer(openid_terms(None)));
+    let first = find(&token, b".").expect("a header");
+    let cut = find_from(&token, b".", first.checked_add(1).expect("in range")).expect("three parts");
+    let (input, dotted) = token.split_at_checked(cut).expect("in range");
+    let signature = decode(Alphabet::Url, dotted.strip_prefix(b".").expect("dot"), 1024).expect("signature");
+    let n = decode(Alphabet::Url, key::MODULUS.as_bytes(), 1024).expect("modulus");
+    let e = decode(Alphabet::Url, b"AQAB", 1024).expect("exponent");
+    assert!(verify_rs256(&n, &e, input, &signature));
+    assert!(!verify_rs256(&n, &e, b"other", &signature));
+}
+#[test]
+fn signing_the_same_claims_twice_gives_equal_bytes() {
+    let terms = openid_terms(None);
+    let openid = terms.openid.as_ref().expect("OpenID");
+    let first = openid::token(openid, &limits(), b"client", Some(b"sign-in-nonce"), Wall::EPOCH).expect("token");
+    let second = openid::token(openid, &limits(), b"client", Some(b"sign-in-nonce"), Wall::EPOCH).expect("token");
+    assert!(first == second);
+}
+#[test]
+fn the_id_token_names_each_claim() {
+    let token = id_token(&mut issuer(openid_terms(None)));
+    let claims = segment(&token, 1);
+    for (name, expected) in [
+        (b"iss".as_slice(), b"https://issuer.example".as_slice()),
+        (b"aud", b"client"),
+        (b"sub", b"subject"),
+        (b"exp", b"160"),
+    ] {
+        assert_eq!(member(&claims, name, 0).as_deref(), Some(expected));
+    }
+    assert!(member(&claims, b"nonce", 0).is_some());
+}
+#[derive(Clone, Copy)]
+enum Source {
+    Header,
+    Claims,
+    Metadata,
+    Keys,
+    Answer,
+}
+fn fault_document(fault: Fault, source: Source) -> Box<[u8]> {
+    let mut issuer = issuer(openid_terms(Some(fault)));
+    match source {
+        Source::Header => {
+            openid::header(openid::configured(&issuer.config).expect("OpenID"), &limits()).expect("header")
+        }
+        Source::Claims => openid::claims(
+            openid::configured(&issuer.config).expect("OpenID"),
+            &limits(),
+            b"client",
+            Some(b"sign-in-nonce"),
+            Wall::from_nanos(100_000_000_000),
+        )
+        .expect("claims"),
+        Source::Metadata => get(&mut issuer, b"https://issuer.example/.well-known/openid-configuration").body,
+        Source::Keys => get(&mut issuer, b"https://issuer.example/keys").body,
+        Source::Answer => {
+            issuer.queue(token_plan(None)).expect("plan");
+            exchange(&mut issuer)
+        }
+    }
+}
+type FaultRow<'a> = (Fault, Source, Option<&'a [u8]>, usize, Option<&'a [u8]>);
+#[test]
+fn each_fault_changes_its_document_or_claim() {
+    let rows: &[FaultRow<'_>] = &[
+        (Fault::UnknownKid, Source::Header, Some(b"kid"), 0, Some(b"unknown")),
+        (Fault::AnotherKey, Source::Keys, Some(b"n"), 0, Some(b"vpPDmF4kBBqSO-YVej0H6gZ7tUpVAo-h7OdVVem1crN-Gqjqn76PfCjcptgwGJcE6BHbT-Ul_Flx422gJND8PD1bN9IVXwH_OWTBMayIJ0VMZx6BC1rpMdKv2fZ2M5i7f8K2N1xMukrqbQDSBdvlAQRyS3P42bxYAr01JuAN-jGfkof3TM8ppVc02xktHteKgUWMGrt8rM1ZqeOG3d7CnjsYbM-6REOixJy2ZAj2ogBt5d1YQLuGEdzEUY-HkhJ_a5zYftIH73FjqdJhh8xoSsDNvfkvTD9FfsQ6o7UzpfzucQwuLDlmJvWIf69dAjqEEzQWKuXNw2XeIxrOzjg_tQ")),
+        (Fault::AlgNone, Source::Header, Some(b"alg"), 0, Some(b"none")),
+        (Fault::AlgHs256, Source::Header, Some(b"alg"), 0, Some(b"HS256")),
+        (Fault::TwoKeysNoKid, Source::Header, Some(b"kid"), 0, None),
+        (Fault::TwoKeysNoKid, Source::Keys, Some(b"kid"), 1, Some(b"second")),
+        (Fault::Issuer, Source::Claims, Some(b"iss"), 0, Some(b"https://other.example")),
+        (Fault::Audience, Source::Claims, Some(b"aud"), 0, Some(b"other-client")),
+        (Fault::Azp, Source::Claims, Some(b"azp"), 0, Some(b"other-client")),
+        (Fault::TwoAudiences, Source::Claims, Some(b"azp"), 0, Some(b"client")),
+        (Fault::Expired(Duration::from_secs(10)), Source::Claims, Some(b"exp"), 0, Some(b"90")),
+        (Fault::Nonce, Source::Claims, Some(b"nonce"), 0, Some(b"other-nonce")),
+        (Fault::NoSubject, Source::Claims, Some(b"sub"), 0, None),
+        (Fault::NoIdToken, Source::Answer, Some(b"id_token"), 0, None),
+        (Fault::LongModulus, Source::Keys, Some(b"n"), 0, Some(b"vpPDmF4kBBqSO-YVej0H6gZ7tUpVAo-h7OdVVem1crN-Gqjqn76PfCjcptgwGJcE6BHbT-Ul_Flx422gJND8PD1bN9IVXwH_OWTBMayIJ0VMZx6BC1rpMdKv2fZ2M5i7f8K2N1xMukrqbQDSBdvlAQRyS3P42bxYAr01JuAN-jGfkof3TM8ppVc02xktHteKgUWMGrt8rM1ZqeOG3d7CnjsYbM-6REOixJy2ZAj2ogBt5d1YQLuGEdzEUY-HkhJ_a5zYftIH73FjqdJhh8xoSsDNvfkvTD9FfsQ6o7UzpfzucQwuLDlmJvWIf69dAjqEEzQWKuXNw2XeIxrOzjg_t76Tw5heJAQakjvmFXo9B-oGe7VKVQKPoeznVVXptXKzfhqo6p--j3wo3KbYMBiXBOgR20_lJfxZceNtoCTQ_Dw9WzfSFV8B_zlkwTGsiCdFTGcegQta6THSr9n2djOYu3_CtjdcTLpK6m0A0gXb5QEEcktz-Nm8WAK9NSbgDfoxn5KH90zPKaVXNNsZLR7XioFFjBq7fKzNWanjht3ewp47GGzPukRDosSctmQI9qIAbeXdWEC7hhHcxFGPh5ISf2uc2H7SB-9xY6nSYYfMaErAzb35L0w_RX7EOqO1M6X87nEMLiw5Zib1iH-vXQI6hBM0FirlzcNl3iMazs44P7c")),
+        (Fault::UseEnc, Source::Keys, Some(b"use"), 0, Some(b"enc")),
+        (Fault::ExtraEcKey, Source::Keys, Some(b"kty"), 1, Some(b"EC")),
+        (Fault::UnreadableMetadata, Source::Metadata, None, 0, Some(b"not JSON")),
+        (Fault::UnreadableKeySet, Source::Keys, None, 0, Some(b"not JSON")),
+        (Fault::MetadataIssuer, Source::Metadata, Some(b"issuer"), 0, Some(b"https://other.example")),
+    ];
+    for &(fault, source, name, occurrence, expected) in rows {
+        let document = fault_document(fault, source);
+        let value = match name {
+            Some(name) => member(&document, name, occurrence),
+            None => Some(document),
+        };
+        assert_eq!(value.as_deref().cmp(&expected), core::cmp::Ordering::Equal, "{fault:?}");
+    }
+}
+#[test]
+fn the_documents_name_the_issuer_and_its_key() {
+    let mut issuer = issuer(openid_terms(None));
+    let metadata = get(&mut issuer, b"https://issuer.example/.well-known/openid-configuration").body;
+    for (name, expected) in [
+        (b"issuer".as_slice(), b"https://issuer.example".as_slice()),
+        (b"authorization_endpoint", b"https://issuer.example/authorize"),
+        (b"token_endpoint", b"https://issuer.example/token"),
+        (b"jwks_uri", b"https://issuer.example/keys"),
+    ] {
+        assert_eq!(member(&metadata, name, 0).as_deref(), Some(expected));
+    }
+    let keys = get(&mut issuer, b"https://issuer.example/keys").body;
+    for (name, expected) in [
+        (b"kty".as_slice(), b"RSA".as_slice()),
+        (b"kid", b"skein-test"),
+        (b"use", b"sig"),
+        (b"alg", b"RS256"),
+        (b"e", b"AQAB"),
+        (b"n", key::MODULUS.as_bytes()),
+    ] {
+        assert_eq!(member(&keys, name, 0).as_deref(), Some(expected));
+    }
+}
+#[test]
+fn a_get_for_another_endpoint_is_not_found() {
+    let mut issuer = issuer(openid_terms(None));
+    assert_eq!(get(&mut issuer, b"https://issuer.example/other").status, 404);
+}
+#[test]
+fn a_scripted_id_token_is_answered_unchanged() {
+    let mut issuer = issuer(openid_terms(None));
+    issuer.queue(token_plan(Some(b"scripted.id.token"))).expect("plan");
+    let body = exchange(&mut issuer);
+    assert!(member(&body, b"id_token", 0).as_deref() == Some(b"scripted.id.token"));
 }
