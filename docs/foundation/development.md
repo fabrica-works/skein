@@ -2328,8 +2328,8 @@ without `## `, separated by `; `.
     one, in the run's `kit/` (section 3.6), `question.md`, and the design
     sections and plan files it names, before going on with the answer.
   - **A fresh designer** starts instead, from a brief (`plan wake`'s
-    prompt: the role, `question.md`, and the earlier questions and answers
-    in `supervision.md`), when the last designer's session has been idle
+    prompt: the role, `question.md`, and the earlier answers that touch
+    it, in `decisions.md`'s design rulings), when the last designer's session has been idle
     for over an hour, longer than its cache lives, or when its last answer
     said it was confused: then the supervisor wakes it with
     `PLAN_DESIGNER_IDLE=0 plan wake designer …`. In jig-protocol, each

@@ -127,7 +127,7 @@ expect "wake resumes after compactions" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$p
 stale=44444444-5555-6666-7777-888888888888
 printf '{"type":"assistant","timestamp":"%s","message":{"id":"b1","usage":{"input_tokens":1,"output_tokens":1}}}\n' "$(date -u -d '-2 hours' +%FT%T.000Z)" >"$CLAUDE_CONFIG_DIR/projects/p/$stale.jsonl"
 printf 'designer\t%s\t%s\n' "$stale" "$stamp" >>"$run/claude.tsv"
-expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: idle 120 min: a fresh session" "designer: would start a fresh session: You are the designer" "as $run/kit/docs/foundation/development.md, sections 2.1"
+expect "wake fresh" "$(PATH=$t/stub:$PATH PLAN_DRY_RUN=1 "$plan" wake designer "question.md")" "designer: idle 120 min: a fresh session" "designer: would start a fresh session: You are the designer" "as $run/kit/docs/foundation/development.md, sections 2.1" "in the design rulings of $dir/decisions.md" "never log.md, supervision.md"
 # The supervisor hands over; the old session's watch then shows nothing.
 expect handover "$(PATH=$t/stub:$PATH CLAUDE_CODE_SESSION_ID=$session PLAN_DRY_RUN=1 "$plan" handover supervisor)" "supervisor: would start a fresh session: Take over" "supervises no more" "as $run/kit/docs/foundation/supervisor.md, section 1" "Read development.md and testing-strategy.md there too"
 expect "handover clears the events seen" "$(if [[ ! -s $run/.watch ]]; then echo empty; fi)" empty

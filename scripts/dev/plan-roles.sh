@@ -259,7 +259,7 @@ supervisor_handover_prompt() {
 designer_fresh_prompt() {
     local foundation text
     foundation=$(foundation_dir)
-    text="You are the designer of the run of $plan_dir, started fresh for one question, as $foundation/development.md, sections 2.1, 4.4, 4.5 and 10.4, say. The run's directory is $run. Read $run/question.md, the design sections and plan files it names, and the earlier questions and answers of this run that touch it (the \"Question and answer\" sections of $run/supervision.md); read no other file of the run."
+    text="You are the designer of the run of $plan_dir, started fresh for one question, as $foundation/development.md, sections 2.1, 4.4, 4.5 and 10.4, say. The run's directory is $run. Read $run/question.md, the design sections and plan files it names, and the earlier answers of this run that touch it, in the design rulings of $plan_dir/decisions.md; read no other file of the run, and never log.md, supervision.md, decisions.md or development.md whole."
     echo "${PLAN_DESIGNER_PROMPT:-$text}"
 }
 
