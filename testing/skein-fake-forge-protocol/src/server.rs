@@ -1,0 +1,605 @@
+//! One bounded HTTP connection over Forgejo documents and the fake's calls.
+use crate::{Error, Limits, Service, errors, response, routes, service::Call};
+use alloc::boxed::Box;
+use skein_fake_forge_domain::{self as domain, api};
+use skein_forge::forgejo::{
+    document,
+    failure::Refusal,
+    request::{self, Request},
+    server as documents,
+};
+use skein_http::{Header, Method, server as http};
+use skein_json::tokenizer::{self as json, Tokenizer};
+use skein_lib::stream::{Down, Read, Up};
+use skein_lib::{Env, Id, List, Queue, ReplyTo, Token, bytes};
+pub const MAX_UP: u32 = 3;
+pub const MAX_DOWN: u32 = 18;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum State {
+    New,
+    Reading,
+    Body,
+    Waiting,
+    Streaming,
+    Closing,
+    Closed,
+}
+#[derive(PartialEq, Eq, Debug)]
+pub enum Event {
+    Domain(domain::Event),
+    Close,
+    Closed,
+}
+#[expect(missing_debug_implementations, reason = "HTTP queues temporarily hold authorization headers")]
+pub struct Server {
+    owner: Token,
+    state: State,
+    http: http::Server,
+    events: Queue<http::Event>,
+    requests: Queue<http::Request>,
+    json: Tokenizer,
+    json_started: bool,
+    json_events: Queue<json::Event>,
+    json_down: Queue<Down>,
+    decoder: Option<documents::BodyDecoder>,
+    user: u64,
+    user_scope: bool,
+    request: Option<Request>,
+    select: response::Select,
+    range: Result<Option<response::Range>, api::Error>,
+    call: Option<Id<Call>>,
+    followed: bool,
+    reply: Option<Box<[u8]>>,
+    offset: usize,
+    send: u32,
+}
+impl Server {
+    pub fn new(owner: Token, limits: &Limits) -> Result<Self, Error> {
+        if http::worst_case(&limits.http).is_none()
+            || limits.calls == 0
+            || limits.connections == 0
+            || limits.raw_bytes == 0
+            || json::largest_demand(&limits.documents.json) > limits.http.read
+            || skein_forge::forgejo::limits::check(&limits.documents).is_err()
+        {
+            return Err(Error::Limits);
+        }
+        Ok(Self {
+            owner,
+            state: State::New,
+            http: http::Server::new(&limits.http),
+            events: Queue::with_capacity(4),
+            requests: Queue::with_capacity(4),
+            json: Tokenizer::new(&limits.documents.json),
+            json_started: false,
+            json_events: Queue::with_capacity(1),
+            json_down: Queue::with_capacity(1),
+            decoder: None,
+            user: 0,
+            user_scope: false,
+            request: None,
+            select: response::Select::Document,
+            range: Ok(None),
+            call: None,
+            followed: false,
+            reply: None,
+            offset: 0,
+            send: limits.http.send,
+        })
+    }
+    #[must_use]
+    pub fn has_work(&self) -> bool {
+        !self.events.is_empty()
+            || !self.requests.is_empty()
+            || !self.json_events.is_empty()
+            || !self.json_down.is_empty()
+    }
+}
+pub fn start(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if server.state != State::New {
+        return;
+    }
+    next(server, service, env, above, below);
+    resume(server, service, env, above, below);
+}
+pub fn up(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    event: Up,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    match server.state {
+        State::New | State::Closing | State::Closed => return,
+        State::Reading | State::Body | State::Waiting | State::Streaming => {}
+    }
+    http::up(
+        &mut server.http,
+        &Env { now: env.now, wall: env.wall, limits: env.limits.http },
+        event,
+        &mut server.events,
+        below,
+    );
+    resume(server, service, env, above, below);
+}
+pub fn down(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    reply: domain::Request,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    let (to, result) = match reply {
+        domain::Request::Reply { to, result } => (to, result),
+        domain::Request::Hook { .. } => return,
+    };
+    let id = Id::<Call>::from_token(to.into_token());
+    if server.state != State::Waiting || server.call != Some(id) {
+        return;
+    }
+    let Some(call) = service.calls.get(id) else {
+        return;
+    };
+    if !call.active || call.server != server.owner {
+        return;
+    }
+    let request = server.request.as_ref().expect("waiting request");
+    if !server.followed {
+        if service.rng.chance(service.config.faults.drop) {
+            close(server, service, env, above, below);
+            return;
+        }
+        if service.rng.chance(service.config.faults.server_error) {
+            retire(server, service);
+            fail(server, &env.limits, 500);
+            resume(server, service, env, above, below);
+            return;
+        }
+        if let Ok(answer) = &result {
+            match response::follow(request, answer) {
+                Ok(Some((read, select))) => {
+                    server.select = select;
+                    server.followed = true;
+                    above.push(Event::Domain(domain::Event::Call {
+                        reply_to: ReplyTo::new(id.token()),
+                        user: server.user,
+                        repository: routes::repository(&service.config, request).expect("call repository"),
+                        op: api::Op::Read(read),
+                    }));
+                    return;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    retire(server, service);
+                    error_reply(server, env, error);
+                    resume(server, service, env, above, below);
+                    return;
+                }
+            }
+        }
+    }
+    if result == Err(api::Error::Timeout) && service.rng.chance(500) {
+        close(server, service, env, above, below);
+        return;
+    }
+    let reply = match result {
+        Ok(answer) => response::answer(&service.config, &env.limits, request, &server.select, &answer),
+        Err(error) => Err(error),
+    };
+    retire(server, service);
+    match reply {
+        Ok(reply) => respond(server, reply),
+        Err(error) => error_reply(server, env, error),
+    }
+    resume(server, service, env, above, below);
+}
+pub fn resume(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    for _ in 0..8u32 {
+        if above.room() < 2 || below.room() < 2 {
+            break;
+        }
+        if let Some(event) = server.events.pop() {
+            http_event(server, service, env, event, above, below);
+        } else if let Some(event) = server.json_events.pop() {
+            let Some(decoder) = &mut server.decoder else {
+                continue;
+            };
+            match documents::body(decoder, &env.limits.documents, &event) {
+                documents::BodyStep::Demand(request) => json_down(server, env, request),
+                documents::BodyStep::Decoded(request) => {
+                    server.decoder = None;
+                    decoded(server, service, env, request, above);
+                }
+                documents::BodyStep::Malformed(_) => {
+                    server.decoder = None;
+                    json_down(server, env, json::Request::Close);
+                    server.json = Tokenizer::new(&env.limits.documents.json);
+                    server.json_started = false;
+                    server.requests.push(http::Request::Discard);
+                    fail(server, &env.limits, 422);
+                }
+            }
+        } else if let Some(down) = server.json_down.pop() {
+            http_down(server, env, http::Request::Body(down), below);
+        } else if let Some(request) = server.requests.pop() {
+            http_down(server, env, request, below);
+        } else {
+            break;
+        }
+    }
+}
+pub fn close(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if server.state == State::Closing || server.state == State::Closed {
+        return;
+    }
+    retire(server, service);
+    server.request = None;
+    server.reply = None;
+    server.decoder = None;
+    for _ in 0..server.events.capacity() {
+        drop(server.events.pop());
+    }
+    for _ in 0..server.requests.capacity() {
+        drop(server.requests.pop());
+    }
+    drop(server.json_events.pop());
+    drop(server.json_down.pop());
+    json_down(server, env, json::Request::Close);
+    drop(server.json_events.pop());
+    drop(server.json_down.pop());
+    http_down(server, env, http::Request::Close, below);
+    server.state = State::Closing;
+    above.push(Event::Close);
+}
+pub fn closed(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if server.state == State::Closed {
+        return;
+    }
+    if server.state != State::Closing {
+        close(server, service, env, above, below);
+    }
+    server.state = State::Closed;
+    above.push(Event::Closed);
+}
+fn retire(server: &mut Server, service: &mut Service) {
+    if let Some(id) = server.call.take() {
+        if let Some(call) = service.calls.get_mut(id) {
+            call.active = false;
+        }
+        service.calls.retire(id);
+    }
+}
+fn next(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if service.rng.chance(service.config.faults.reset) {
+        close(server, service, env, above, below);
+    } else {
+        server.state = State::Reading;
+        server.requests.push(http::Request::Next);
+    }
+}
+fn http_down(server: &mut Server, env: &Env<Limits>, request: http::Request, below: &mut Queue<Down>) {
+    http::down(
+        &mut server.http,
+        &Env { now: env.now, wall: env.wall, limits: env.limits.http },
+        request,
+        &mut server.events,
+        below,
+    );
+}
+fn json_down(server: &mut Server, env: &Env<Limits>, request: json::Request) {
+    json::down(
+        &mut server.json,
+        &Env { now: env.now, wall: env.wall, limits: env.limits.documents.json },
+        request,
+        &mut server.json_events,
+        &mut server.json_down,
+    );
+}
+fn http_event(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    event: http::Event,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    match event {
+        http::Event::Call(call) => entrance(server, service, env, call, above),
+        http::Event::Body(up) => {
+            if server.state == State::Body {
+                json::up(
+                    &mut server.json,
+                    &Env { now: env.now, wall: env.wall, limits: env.limits.documents.json },
+                    up,
+                    &mut server.json_events,
+                    &mut server.json_down,
+                );
+            }
+        }
+        http::Event::Reply(Up::Room) => {
+            let reply = server.reply.as_ref().expect("reply body");
+            let end =
+                server.offset.saturating_add(usize::try_from(env.limits.http.send).expect("u32 fits")).min(reply.len());
+            let chunk = bytes::copy_of(reply.get(server.offset..end).expect("reply slice"));
+            server.offset = end;
+            server.requests.push(http::Request::Reply(Down::Send(chunk)));
+            if end == reply.len() {
+                server.reply = None;
+                server.requests.push(http::Request::Reply(Down::Finish));
+            } else {
+                room(server, &env.limits);
+            }
+        }
+        http::Event::Reply(Up::Bytes(_) | Up::End | Up::Failed(_))
+        | http::Event::Refused(_)
+        | http::Event::Failed(_)
+        | http::Event::Ended => close(server, service, env, above, below),
+        http::Event::Done(reuse) => {
+            server.request = None;
+            server.select = response::Select::Document;
+            match reuse {
+                http::Reuse::Keep => next(server, service, env, above, below),
+                http::Reuse::Close => close(server, service, env, above, below),
+            }
+        }
+        http::Event::Closed => {}
+    }
+}
+fn entrance(server: &mut Server, service: &mut Service, env: &Env<Limits>, call: http::Call, above: &mut Queue<Event>) {
+    let user = service.user(call.header(b"authorization"));
+    service.tally.count(None, user);
+    server.range = response::range(call.header(b"range"));
+    let Some(user) = user else {
+        server.requests.push(http::Request::Discard);
+        fail(server, &env.limits, 401);
+        return;
+    };
+    server.user = user;
+    server.user_scope = service.reads_user(call.header(b"authorization"));
+    let method = match call.method {
+        Method::Get => request::Method::Get,
+        Method::Post => request::Method::Post,
+        Method::Put => request::Method::Put,
+        Method::Patch => request::Method::Patch,
+        Method::Delete => request::Method::Delete,
+        Method::Head | Method::Options => {
+            server.requests.push(http::Request::Discard);
+            fail(server, &env.limits, 405);
+            return;
+        }
+    };
+    match documents::route(method, &call.target, &env.limits.documents) {
+        Ok(documents::Route::Ready(request)) => {
+            server.requests.push(http::Request::Discard);
+            decoded(server, service, env, request, above);
+        }
+        Ok(documents::Route::Body(decoder)) => {
+            server.state = State::Body;
+            if server.json_started {
+                server.json.restart();
+            }
+            server.json_started = true;
+            let first = documents::body_first(&decoder);
+            server.decoder = Some(decoder);
+            json_down(server, env, first);
+        }
+        Err(error) => {
+            server.requests.push(http::Request::Discard);
+            fail(
+                server,
+                &env.limits,
+                match error {
+                    documents::Unrouted::NotFound => 404,
+                    documents::Unrouted::Method => 405,
+                    documents::Unrouted::Malformed => 422,
+                },
+            );
+        }
+    }
+}
+fn decoded(server: &mut Server, service: &mut Service, env: &Env<Limits>, request: Request, above: &mut Queue<Event>) {
+    let route = crate::route(&request);
+    service.tally.unrouted = service.tally.unrouted.saturating_sub(1);
+    let count = service.tally.routes.get(&route).copied().unwrap_or(0).saturating_add(1);
+    service.tally.routes.insert(route, count).expect("route capacity");
+    server.followed = false;
+    if let Request::Merge { style, .. } = &request
+        && *style != document::MergeStyle::Squash
+    {
+        respond(server, response::failure(&env.limits, errors::refusal(Refusal::MergeStyle)));
+        return;
+    }
+    if request == Request::User && !server.user_scope {
+        fail(server, &env.limits, 403);
+        return;
+    }
+    if let Some(reply) = service.setup.answer(&request, server.user, &service.config, &env.limits) {
+        respond(server, reply);
+        return;
+    }
+    if let Some(answer) = table(service, &request, server.user) {
+        match documents::encode(&answer, &env.limits.documents) {
+            Ok(body) => respond(server, response::Reply { status: 200, headers: Box::from([]), body }),
+            Err(_) => fail(server, &env.limits, 413),
+        }
+        return;
+    }
+    let op = routes::op(&service.config, &request);
+    let select = match server.range {
+        Ok(range) => response::select(&service.config, &request, range),
+        Err(error) => Err(error),
+    };
+    let repository = routes::repository(&service.config, &request);
+    server.request = Some(request);
+    match (op, select, repository) {
+        (Ok(op), Ok(select), Some(repository)) => {
+            let Ok(id) = service.calls.insert(Call { server: server.owner, active: true }) else {
+                fail(server, &env.limits, 503);
+                return;
+            };
+            server.call = Some(id);
+            server.select = select;
+            server.state = State::Waiting;
+            above.push(Event::Domain(domain::Event::Call {
+                reply_to: ReplyTo::new(id.token()),
+                user: server.user,
+                repository,
+                op,
+            }));
+        }
+        (Err(error), _, _) | (_, Err(error), _) => error_reply(server, env, error),
+        (Ok(_), Ok(_), None) => error_reply(server, env, api::Error::Missing(api::What::Repository)),
+    }
+}
+fn table(service: &Service, request: &Request, user: u64) -> Option<documents::Answer> {
+    match request {
+        Request::User => Some(documents::Answer::User(routes::user(&service.config, user))),
+        Request::ApiSettings => Some(documents::Answer::ApiSettings(document::ApiSettings {
+            max_response_items: service.config.max_response_items,
+            default_paging_num: service.config.default_paging_num,
+        })),
+        Request::UserSearch { uid, .. } => {
+            Some(documents::Answer::Search { ok: true, data: Box::new([routes::user(&service.config, *uid)]) })
+        }
+        Request::RepositoryById { .. }
+        | Request::Repository { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullFor { .. }
+        | Request::Pulls { .. }
+        | Request::CombinedStatus { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::Protection { .. }
+        | Request::Protections { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::Runs { .. }
+        | Request::Run { .. }
+        | Request::Job { .. }
+        | Request::Jobs { .. }
+        | Request::JobLog { .. }
+        | Request::CreateIssue { .. }
+        | Request::OpenPull { .. }
+        | Request::PostComment { .. }
+        | Request::PostReview { .. }
+        | Request::EditIssue { .. }
+        | Request::RequestReviewers { .. }
+        | Request::RemoveReviewers { .. }
+        | Request::Merge { .. }
+        | Request::Update { .. }
+        | Request::PostStatus { .. }
+        | Request::CreateBranch { .. }
+        | Request::Tokens { .. }
+        | Request::CreateToken { .. }
+        | Request::DeleteToken { .. }
+        | Request::UserOf { .. }
+        | Request::Org { .. }
+        | Request::CreateOrg { .. }
+        | Request::Teams { .. }
+        | Request::CreateTeam { .. }
+        | Request::EditTeam { .. }
+        | Request::TeamMembers { .. }
+        | Request::OrgHooks { .. }
+        | Request::CreateOrgHook { .. }
+        | Request::EditOrgHook { .. }
+        | Request::DeleteOrgHook { .. }
+        | Request::AddMember { .. }
+        | Request::CreateUser { .. }
+        | Request::DeleteBranch { .. } => None,
+    }
+}
+fn fail(server: &mut Server, limits: &Limits, status: u16) {
+    respond(server, response::failure(limits, errors::Failure { status, message: b"", retry_after: None }));
+}
+fn error_reply(server: &mut Server, env: &Env<Limits>, error: api::Error) {
+    let route = crate::route(server.request.as_ref().expect("decoded request"));
+    respond(server, response::failure(&env.limits, errors::answer(error, route, env.now)));
+}
+fn respond(server: &mut Server, reply: response::Reply) {
+    let mut headers =
+        List::with_capacity(u32::try_from(reply.headers.len()).expect("bounded headers").saturating_add(1));
+    for header in reply.headers {
+        headers.push(header).expect("response headers");
+    }
+    if !reply.body.is_empty() {
+        headers
+            .push(Header {
+                name: bytes::copy_of(b"content-type"),
+                value: bytes::copy_of(match server.select {
+                    response::Select::Raw(_) => b"text/plain",
+                    response::Select::Document
+                    | response::Select::Permission(_)
+                    | response::Select::Branch(_)
+                    | response::Select::Branches(_)
+                    | response::Select::Review(_)
+                    | response::Select::Status(_) => b"application/json",
+                }),
+            })
+            .expect("content type");
+    }
+    server.state = State::Streaming;
+    server.offset = 0;
+    let length = u64::try_from(reply.body.len()).expect("bounded body");
+    server.reply = if length == 0 { None } else { Some(reply.body) };
+    server.requests.push(http::Request::Respond(http::Response {
+        status: reply.status,
+        headers: headers.into_boxed(),
+        body: if reply.status == 204 { http::Body::None } else { http::Body::Length(length) },
+        close: false,
+    }));
+    if length == 0 && reply.status != 204 {
+        server.requests.push(http::Request::Reply(Down::Finish));
+    } else if length > 0 {
+        server.requests.push(http::Request::Reply(Down::Demand {
+            read: Read::Nothing,
+            room: u32::try_from(length).unwrap_or(u32::MAX).min(server.send),
+        }));
+    }
+}
+fn room(server: &mut Server, limits: &Limits) {
+    let remaining = server.reply.as_ref().expect("reply").len().saturating_sub(server.offset);
+    server.requests.push(http::Request::Reply(Down::Demand {
+        read: Read::Nothing,
+        room: u32::try_from(remaining).unwrap_or(u32::MAX).min(limits.http.send),
+    }));
+}

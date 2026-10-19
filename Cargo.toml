@@ -23,6 +23,7 @@ members = [
     "testing/skein-fake-oauth",
     "testing/skein-fake-checkout",
     "testing/skein-fake-forge-domain",
+    "testing/skein-fake-forge-protocol",
     "testing/skein-fake-llm-domain",
     "testing/skein-fake-llm-protocol",
     "testing/skein-fake-peers",
@@ -87,6 +88,7 @@ skein-llm-connection = { path = "crates/skein-llm-connection" }
 skein-oauth = { path = "crates/skein-oauth" }
 skein-oauth-accounts = { path = "crates/skein-oauth-accounts" }
 skein-fake-forge-domain = { path = "testing/skein-fake-forge-domain" }
+skein-fake-forge-protocol = { path = "testing/skein-fake-forge-protocol" }
 skein-fake-llm-domain = { path = "testing/skein-fake-llm-domain" }
 skein-fake-llm-protocol = { path = "testing/skein-fake-llm-protocol" }
 skein-fake-peers = { path = "testing/skein-fake-peers" }
