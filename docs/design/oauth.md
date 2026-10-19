@@ -640,8 +640,11 @@ rotated is never spent twice:
 - **Then `unlock`,** once the write is kept or has failed. Each `locked`
   is answered by exactly one `unlock`, whatever happens meanwhile: a
   cancel, a removal, a close or an abort. A `locked` that arrives for no
-  pending lock is answered by `unlock` at once. With io's `Lock`, the
-  owner releases it by closing the root it opened (io.md, 5).
+  pending lock is answered by `unlock` at once. `closed` ends this: the
+  component answers nothing after it, so a lock the owner takes and
+  answers `locked` after `closed` is the owner's to release, as it
+  releases any lock it holds when the component is gone. With io's
+  `Lock`, the owner releases it by closing the root it opened (io.md, 5).
 - **Only writes lock.** A grant, a load and lending never wait for the
   lock; a record another process wrote is heard at this account's next
   write.
@@ -693,10 +696,11 @@ The component follows programming-model.md, 5.2.
   cancelled, and every socket, the listeners' among them, is aborted at
   io. A rotated refresh token whose answer an abort cuts off may be lost,
   as after a crash (section 1). Every shared record's lock still held, or
-  answered `locked` later, is released with `unlock` before `closed`
-  (6.4). An abort after a close turns what still
-  closes into aborts, as a termination signal does for the process; a
-  close after an abort changes nothing.
+  answered `locked` before `closed`, is released with `unlock` before
+  `closed`; one answered after it is the owner's to release (6.4). An
+  abort after a close turns what still closes into aborts, as a
+  termination signal does for the process; a close after an abort
+  changes nothing.
 - **No keep time.** Each exchange opens its own connection and closes it
   when the exchange ends: exchanges are minutes apart, and a pool would
   only add a keep time to close.
@@ -714,7 +718,8 @@ The component follows programming-model.md, 5.2.
 The owner gives these limits when it makes the component. The lock wait
 is a deadline on the injected monotonic clock (section 3), as each other
 deadline is, fired by the owner; once it passes, the write fails as busy,
-and a `locked` that comes later is answered by `unlock` at once (6.4).
+and a `locked` that comes later is answered by `unlock` at once, until
+`closed`, after which it is the owner's to release (6.4).
 
 The client's own limits are section 5's. The worst case is each account's
 current and candidate records, a shared record's read under its lock beside
@@ -748,7 +753,9 @@ configuration, counted once.
   confirmed, unconfirmed and without revocation, for both keepers; a shared
   record under a scripted owner lock that is busy, slow, or answered after
   a cancel, a removal or an abort, finding a newer generation, no record,
-  or another subject; and exactly one `unlock` for each `locked`.
+  or another subject; exactly one `unlock` for each `locked` before
+  `closed`, and none after it, a `locked` answered past `closed` left to
+  the owner.
 - **Memory:** every limit at once, against the worst case.
 - **Transports:** the replaying tiers run plaintext issuers on loopback; TLS
   to an issuer runs in the real loop (tls.md).
