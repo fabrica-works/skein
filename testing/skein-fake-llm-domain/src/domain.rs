@@ -370,7 +370,10 @@ fn call(
                 place = position;
                 Ok(answer)
             }
-            Err(failure) if limits::fits(limits::failure(&failure), config.answer_bytes) => Err(failure),
+            Err((failure, position)) if limits::fits(limits::failure(&failure), config.answer_bytes) => {
+                place = position;
+                Err(failure)
+            }
             Ok(_) | Err(_) => Err(Error::ContextTooLong.into()),
         }
     } else {
@@ -393,14 +396,11 @@ fn call(
         answer.usage.cache_read = Some(read);
         answer.usage.cache_write = Some(written);
     }
-    let state = match result {
-        Ok(answer) => match place {
-            Some(place) => {
-                State::Streaming(pieces::Stream { reply_to, call: token, answer, place, next: 0, passed: false })
-            }
-            None => State::Thinking { reply_to, result: Ok(answer) },
-        },
-        Err(error) => State::Thinking { reply_to, result: Err(error) },
+    let state = match place {
+        Some(place) => {
+            State::Streaming(pieces::Stream { reply_to, call: token, result, place, next: 0, passed: false })
+        }
+        None => State::Thinking { reply_to, result },
     };
     let call = Call { state };
     let id = domain.calls.insert(call).expect("checked for room above");

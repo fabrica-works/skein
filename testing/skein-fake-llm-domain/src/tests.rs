@@ -96,7 +96,10 @@ impl Playback {
         Self::from_query(config, pieces, request())
     }
     fn from_query(config: Config, pieces: Box<[Piece]>, query: Query) -> Self {
-        let domain = Domain::scripted(&config, 1, Box::new([script(b"@main", Box::new([pieces_turn(pieces)]))]));
+        Self::from_turn(config, pieces_turn(pieces), query)
+    }
+    fn from_turn(config: Config, turn: Turn, query: Query) -> Self {
+        let domain = Domain::scripted(&config, 1, Box::new([script(b"@main", Box::new([turn]))]));
         let mut playback = Self {
             domain,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config },
@@ -254,4 +257,35 @@ fn a_failing_lines_bytes_count_against_the_script_cap() {
         );
         assert_eq!(got.err(), expected, "{cap}");
     }
+}
+
+#[test]
+fn a_failing_line_after_pieces_ends_the_walk_with_its_failure() {
+    let failure = crate::api::Failure {
+        error: crate::api::Error::Refused,
+        report: crate::api::Report::none(),
+        parts: Box::new([Part::Text { text: copy_of(b"before") }]),
+    };
+    let turn = Turn {
+        lines: Box::new([
+            Line::Pieces { pieces: Box::new([piece(b"be", None), piece(b"fore", Some(b"h"))]) },
+            Line::Fail { error: failure.error, report: failure.report.clone(), credentials: Box::new([]) },
+        ]),
+        finish: Finish::Stop,
+        tokens: 2,
+    };
+    let mut play = Playback::from_turn(STREAM_CONFIG, turn, request());
+    let first = match play.fire(1) {
+        Some(Request::Piece { text, .. }) => Some(text),
+        Some(Request::Reply { .. } | Request::Hold { .. }) | None => None,
+    };
+    assert_eq!(first.as_deref(), Some(b"be".as_slice()));
+    let held = match play.fire(2) {
+        Some(Request::Hold { call, .. }) => Some(call),
+        Some(Request::Piece { .. } | Request::Reply { .. }) | None => None,
+    };
+    assert_eq!(held, Some(CALL));
+    assert_eq!(play.fire(3), None);
+    play.release(b"h");
+    assert_eq!(play.fire(4), Some(Request::Reply { to: ReplyTo::new(CALL), result: Err(failure) }));
 }

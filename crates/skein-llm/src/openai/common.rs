@@ -298,6 +298,7 @@ fn responses_failure(kind: &[u8], rate: RateLimit, error: Option<&ProviderError>
             Failure::Exhausted { retry_after: error_reset(error, wall).or(rate.retry_after) }
         }
         b"insufficient_quota" => Failure::Exhausted { retry_after: None },
+        b"overloaded_error" => Failure::Overloaded,
         b"rate_limit_exceeded" => Failure::RateLimited { retry_after: rate.delay(error, wall) },
         b"subscription_sharing_user_not_eligible"
         | b"chatpass_v2_scope_not_authorized"

@@ -418,13 +418,28 @@ pub fn down(
                 response_error(server, service, env, api::Error::InvalidRequest.into());
             }
         }
-        Err(failure) => {
-            let error = failure.error;
-            if let State::Pieces { .. } = server.state {
-                server.pieces.fail(error);
-                next_event(server, service, env, above, below);
-            } else {
+        Err(mut failure) => {
+            if failure.parts.is_empty() && server.state == State::Waiting {
                 response_error(server, service, env, failure);
+            } else {
+                let parts = core::mem::replace(&mut failure.parts, Box::new([]));
+                let answer = api::Answer { parts, finish: api::Finish::Stop, usage: api::Usage::NONE };
+                if !answer_fits(&answer, &env.limits.documents) {
+                    close(server, service, env, above, below);
+                    return;
+                }
+                server.answer = Some(answer);
+                server.pieces.fail(failure);
+                if server.state == State::Waiting {
+                    server.state = match &server.answer.as_ref().expect("stored failed answer").parts.first() {
+                        Some(api::Part::Text { .. }) => State::Pieces { written: 0 },
+                        Some(api::Part::Opaque { .. } | api::Part::ToolCall { .. } | api::Part::ToolOutput { .. })
+                        | None => State::Streaming,
+                    };
+                    server.sequence = 0;
+                    pieces::head(server);
+                }
+                next_event(server, service, env, above, below);
             }
         }
     }
@@ -859,6 +874,17 @@ fn next_event(
     }
     if server.state != State::Streaming {
         return;
+    }
+    match pieces::terminal(server, env) {
+        Ok(Some(event)) => {
+            writer_down(server, env, sse::Request::Event(event));
+            return;
+        }
+        Ok(None) => {}
+        Err(documents::Error::Malformed | documents::Error::TooLarge) => {
+            close(server, service, env, above, below);
+            return;
+        }
     }
     let Some(answer) = &server.answer else {
         writer_down(server, env, sse::Request::Finish);

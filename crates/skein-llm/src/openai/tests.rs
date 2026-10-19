@@ -1639,3 +1639,16 @@ fn a_reset_comes_from_the_first_field_given() {
         assert_eq!(rate.reset(Some(&error), wall), expected, "{rate:?} {error:?}");
     }
 }
+
+#[test]
+fn a_failed_response_reads_back_as_written() {
+    let error = ProviderError {
+        param: owned(b"top_p"),
+        kind: owned(b"usage_limit_reached"),
+        message: owned(b"spent"),
+        resets_in_seconds: Some(2),
+        resets_at: None,
+    };
+    let encoded = crate::openai::encode_failed(&error, &LIMITS).expect("bounded failed response");
+    assert_eq!(decode_event(&value(&encoded), &LIMITS), Ok(Event::Failed { error }));
+}

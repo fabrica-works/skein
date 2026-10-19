@@ -23,14 +23,17 @@ fn setup(lines: Box<[Line]>, credential: Option<u32>) -> (Query, [Script; 1]) {
     (query, [script(b"@main", Box::new([turn]))])
 }
 fn reply(query: &Query, scripts: &[Script]) -> Result<(crate::api::Answer, Option<crate::pieces::Place>), Failure> {
-    respond(
+    match respond(
         &mut Rng::new(1),
         &mut 0,
         &CONFIG,
         scripts,
         &crate::api::Menu { arguments: Box::new([]), invalid: Box::new([]) },
         query,
-    )
+    ) {
+        Ok(answer) => Ok(answer),
+        Err((failure, _)) => Err(failure),
+    }
 }
 
 #[test]

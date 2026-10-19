@@ -35,6 +35,8 @@ use crate::api::{Answer, Error, Failure, Finish, Line, Message, Part, Query, Rol
 use crate::domain::Config;
 use crate::{limits, pieces};
 
+pub(crate) type Response = Result<(Answer, Option<pieces::Place>), (Failure, Option<pieces::Place>)>;
+
 pub(crate) fn respond(
     rng: &mut Rng,
     minted: &mut u64,
@@ -42,7 +44,7 @@ pub(crate) fn respond(
     scripts: &[Script],
     menu: &crate::api::Menu,
     query: &Query,
-) -> Result<(Answer, Option<pieces::Place>), Failure> {
+) -> Response {
     let roll = rng.below(1000);
     let failures = [
         (config.overloaded, Error::Overloaded),
@@ -55,11 +57,11 @@ pub(crate) fn respond(
     for (chance, error) in failures {
         below = below.saturating_add(u64::from(chance));
         if roll < below {
-            return Err(error.into());
+            return Err((error.into(), None));
         }
     }
     if !valid(&query.messages) || !valid_choice(query) {
-        return Err(Error::InvalidRequest.into());
+        return Err((Error::InvalidRequest.into(), None));
     }
     let roll = rng.below(1000);
     let refused = u64::from(config.refused);
@@ -77,9 +79,8 @@ pub(crate) fn respond(
         let turns = &scripts.get(script).expect("found among the scripts").turns;
         if let Some(turn) = turns.get(said(&query.messages)) {
             if !limits::fits(limits::scripted_answer(turn), config.answer_bytes) {
-                return Err(Error::ContextTooLong.into());
+                return Err((Error::ContextTooLong.into(), None));
             }
-            let answer = scripted(minted, query, turn)?;
             let place = match turn.lines.first() {
                 Some(Line::Pieces { .. }) if turn.tokens <= u64::from(query.max_tokens) => {
                     Some(pieces::Place { script, turn: said(&query.messages) })
@@ -93,7 +94,10 @@ pub(crate) fn respond(
                 )
                 | None => None,
             };
-            return Ok((answer, place));
+            return match scripted(minted, query, turn) {
+                Ok(answer) => Ok((answer, place)),
+                Err(failure) => Err((failure, place)),
+            };
         }
         return Ok((
             answer(query, Box::new([Part::Text { text: copy_of(b"done") }]), Finish::Stop, 1, cut_text()),
@@ -107,11 +111,15 @@ pub(crate) fn respond(
     {
         let count = u32::try_from(rng.between(1, config.calls_per_answer.max(1).into())).expect("drawn below a u32");
         if !limits::fits(limits::random_answer(query, menu, count), config.answer_bytes) {
-            return Err(Error::ContextTooLong.into());
+            return Err((Error::ContextTooLong.into(), None));
         }
         let mut calls = List::with_capacity(count);
         for _ in 0..count {
-            calls.push(call(rng, minted, config, menu, query, outside)?).expect("room for every call");
+            let part = match call(rng, minted, config, menu, query, outside) {
+                Ok(part) => part,
+                Err(error) => return Err((error.into(), None)),
+            };
+            calls.push(part).expect("room for every call");
         }
         // Cut short, the answer ends partway into its first call.
         let first = match calls.get(0) {
@@ -595,7 +603,7 @@ mod tests {
         let config = Config { rate_limited: 1000, retry_after: Duration::from_secs(2), ..CONFIG };
         let result =
             respond(&mut rng, &mut minted, &config, &[], &menu(), &query(Box::new([user(Box::new([text()]))])));
-        assert_eq!(result, Err(Error::RateLimited { retry_after: Duration::from_secs(2) }.into()));
+        assert_eq!(result, Err((Error::RateLimited { retry_after: Duration::from_secs(2) }.into(), None)));
         let cases = [
             (Config { unavailable: 1000, ..CONFIG }, Error::Unavailable),
             (Config { too_long: 1000, ..CONFIG }, Error::ContextTooLong),
@@ -603,12 +611,12 @@ mod tests {
         for (config, error) in cases {
             let result =
                 respond(&mut rng, &mut minted, &config, &[], &menu(), &query(Box::new([user(Box::new([text()]))])));
-            assert_eq!(result, Err(error.into()));
+            assert_eq!(result, Err((error.into(), None)));
         }
         let config = Config { unauthorized: 1000, ..CONFIG };
         let result =
             respond(&mut rng, &mut minted, &config, &[], &menu(), &query(Box::new([user(Box::new([text()]))])));
-        assert_eq!(result, Err(Error::Unauthorized.into()));
+        assert_eq!(result, Err((Error::Unauthorized.into(), None)));
     }
 
     #[test]

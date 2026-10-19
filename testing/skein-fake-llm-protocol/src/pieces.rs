@@ -15,7 +15,7 @@ pub(super) struct Stream {
     usage: api::Usage,
     opening: u32,
     busy: bool,
-    error: Option<api::Error>,
+    error: Option<api::Failure>,
 }
 
 impl Stream {
@@ -34,7 +34,7 @@ impl Stream {
         self.busy = false;
     }
 
-    pub(super) fn fail(&mut self, error: api::Error) {
+    pub(super) fn fail(&mut self, error: api::Failure) {
         self.error = Some(error);
     }
 
@@ -75,7 +75,13 @@ pub(super) fn head(server: &mut Server) {
         status: 200,
         headers: Box::new([
             Header { name: bytes::copy_of(b"content-type"), value: bytes::copy_of(b"text/event-stream") },
-            super::failure::request_header(server, &[]),
+            super::failure::request_header(
+                server,
+                match &server.pieces.error {
+                    Some(failure) => &failure.report.request,
+                    None => &[],
+                },
+            ),
         ]),
         body: http::Body::Chunked,
         close: false,
@@ -166,9 +172,6 @@ pub(super) fn next(
             }
             None => hold(provider),
         }
-    } else if let Some(error) = server.pieces.error.take() {
-        server.state = State::Streaming;
-        Some(failed(provider, error, &env.limits.documents)?)
     } else if let Some(answer) = &server.answer {
         let Some(api::Part::Text { text }) = answer.parts.first() else {
             return Err(documents::Error::Malformed);
@@ -240,36 +243,39 @@ fn hold(provider: documents::Provider) -> Option<Outgoing> {
     }
 }
 
-fn failed(
-    provider: documents::Provider,
-    error: api::Error,
-    limits: &documents::Limits,
-) -> Result<Outgoing, documents::Error> {
-    let kind = match error {
-        api::Error::Overloaded => b"overloaded_error".as_slice(),
-        api::Error::RateLimited { .. } | api::Error::Exhausted { .. } => b"rate_limit_error".as_slice(),
-        api::Error::Unavailable => b"server_error".as_slice(),
-        api::Error::ContextTooLong => b"context_length_exceeded".as_slice(),
-        api::Error::Unauthorized => b"authentication_error".as_slice(),
-        api::Error::Refused => b"permission_error".as_slice(),
-        api::Error::Unsupported | api::Error::InvalidRequest => b"invalid_request_error".as_slice(),
+pub(super) fn terminal(server: &mut Server, env: &Env<Limits>) -> Result<Option<Outgoing>, documents::Error> {
+    let Some(answer) = &server.answer else { return Ok(None) };
+    let per_part = match server.route {
+        skein_llm::Provider::Anthropic => 3_u32,
+        skein_llm::Provider::OpenAi | skein_llm::Provider::OpenAiCodex => 2,
     };
-    let error = openai::ProviderError {
-        param: Box::new([]),
-        kind: bytes::copy_of(kind),
-        message: bytes::copy_of(kind),
-        resets_in_seconds: None,
-        resets_at: None,
-    };
-    let (name, data) = match provider {
-        documents::Provider::Anthropic => {
-            (b"error".as_slice(), anthropic::encode_event(&anthropic::Event::Failed { error }, &limits.anthropic))
-        }
-        documents::Provider::OpenAi => {
-            (b"response.failed".as_slice(), openai::encode_event(&openai::Event::Failed { error }, &limits.openai))
+    let count = u32::try_from(answer.parts.len()).or(Err(documents::Error::TooLarge))?;
+    let terminal = count
+        .checked_mul(per_part)
+        .ok_or(documents::Error::TooLarge)?
+        .checked_add(1)
+        .ok_or(documents::Error::TooLarge)?;
+    if server.sequence < terminal {
+        return Ok(None);
+    }
+    let Some(failure) = server.pieces.error.take() else { return Ok(None) };
+    let error = super::failure::provider_error(server.route, &failure);
+    let (name, data) = match server.route {
+        skein_llm::Provider::Anthropic => (
+            b"error".as_slice(),
+            anthropic::encode_event(&anthropic::Event::Failed { error }, &env.limits.documents.anthropic),
+        ),
+        skein_llm::Provider::OpenAi | skein_llm::Provider::OpenAiCodex => {
+            (b"response.failed".as_slice(), openai::encode_failed(&error, &env.limits.documents.openai))
         }
     };
-    Ok(Outgoing { name: bytes::copy_of(name), data: data.or(Err(documents::Error::TooLarge))?, id: None, retry: None })
+    server.answer = None;
+    Ok(Some(Outgoing {
+        name: bytes::copy_of(name),
+        data: data.or(Err(documents::Error::TooLarge))?,
+        id: None,
+        retry: None,
+    }))
 }
 
 #[cfg(test)]

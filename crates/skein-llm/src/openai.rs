@@ -14,7 +14,7 @@ pub use json::Json;
 pub use request::{Input, Request, Role, Tool, decode_request, encode_request, measure_request};
 pub use response::{
     Echo, Event, Item, MAX_OUT, Output, Part, StreamDecoder, decode_error, decode_event, encode_completion,
-    encode_error, encode_event, encode_peer_event,
+    encode_error, encode_event, encode_failed, encode_peer_event,
 };
 
 #[cfg(test)]

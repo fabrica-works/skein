@@ -951,6 +951,30 @@ fn read_error(tokens: (&Document, json::Span), limits: &Limits) -> Result<Provid
 pub fn encode_error(error: &ProviderError, limits: &Limits) -> Result<Box<[u8]>, DecodeError> {
     encode_event(&Event::Failed { error: error.clone() }, limits)
 }
+/// Writes a failed Responses terminal, with its error under `response`.
+/// Contract: docs/design/fake-llm.md, section 2.3.
+pub fn encode_failed(error: &ProviderError, limits: &Limits) -> Result<Box<[u8]>, DecodeError> {
+    let bounded = limits.writer_limits();
+    let mut measure = Encoder::measure(&bounded);
+    write_failed(&mut measure, error);
+    let len = common::measured(measure, bounded, crate::Cap::Retained)?;
+    let mut write = Encoder::write(len, &bounded);
+    write_failed(&mut write, error);
+    Ok(write.finish())
+}
+
+fn write_failed(out: &mut Encoder, error: &ProviderError) {
+    out.object_start();
+    out.key(b"type");
+    out.string(b"response.failed");
+    out.key(b"response");
+    out.object_start();
+    out.key(b"error");
+    write_error(out, error);
+    out.object_end();
+    out.object_end();
+}
+
 /// Fake-server metadata selection, bounded by the configured event document.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Echo {

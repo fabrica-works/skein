@@ -1,7 +1,7 @@
 //! A call walks retained script pieces without copying their list.
 //!
 //! Contract: docs/design/fake-llm.md, sections 2.2 and 5.
-use crate::api::{Answer, Line, Piece, Script};
+use crate::api::{Answer, Failure, Line, Piece, Script, Usage};
 use crate::domain::{Request, State};
 use alloc::boxed::Box;
 use skein_lib::bytes::copy_of;
@@ -17,7 +17,7 @@ pub(crate) struct Place {
 pub(crate) struct Stream {
     pub reply_to: ReplyTo,
     pub call: Token,
-    pub answer: Answer,
+    pub result: Result<Answer, Failure>,
     pub place: Place,
     pub next: usize,
     pub passed: bool,
@@ -94,16 +94,20 @@ pub(crate) fn held_at(state: &State, scripts: &[Script], name: &[u8]) -> bool {
 pub(crate) fn fire(mut stream: Stream, scripts: &[Script], out: &mut Queue<Request>) -> State {
     let pieces = at(scripts, stream.place);
     let piece = pieces.get(stream.next).expect("next piece remains");
+    let usage = match &stream.result {
+        Ok(answer) => answer.usage,
+        Err(_) => Usage::NONE,
+    };
     if piece.hold.is_some() && !stream.passed {
-        out.push(Request::Hold { call: stream.call, usage: stream.answer.usage });
+        out.push(Request::Hold { call: stream.call, usage });
         return State::Held(stream);
     }
     stream.next = stream.next.checked_add(1).expect("bounded piece index");
     if stream.next == pieces.len() {
-        out.push(Request::Reply { to: stream.reply_to, result: Ok(stream.answer) });
+        out.push(Request::Reply { to: stream.reply_to, result: stream.result });
         return State::Closed;
     }
-    out.push(Request::Piece { call: stream.call, usage: stream.answer.usage, text: copy_of(&piece.text) });
+    out.push(Request::Piece { call: stream.call, usage, text: copy_of(&piece.text) });
     stream.passed = false;
     State::Streaming(stream)
 }

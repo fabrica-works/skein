@@ -254,3 +254,99 @@ fn a_seeded_failure_carries_its_classs_code() {
         assert_eq!(terminal(&world).1.code.as_ref(), b"overloaded_error", "{provider:?}");
     }
 }
+
+fn stream(world: &Exchange) -> Vec<Result<&[u8], Failure>> {
+    world
+        .seen
+        .iter()
+        .filter_map(|event| match event {
+            client::Event::Delta { delta: skein_llm::Delta::Text { text, .. }, .. } => Some(Ok(text.as_ref())),
+            client::Event::Failed { failure, .. } => Some(Err(*failure)),
+            client::Event::Delta { .. }
+            | client::Event::Block { .. }
+            | client::Event::Completed { .. }
+            | client::Event::Cancelled { .. }
+            | client::Event::Reusable
+            | client::Event::Close
+            | client::Event::Closed => None,
+        })
+        .collect()
+}
+
+fn after_text(error: api::Error) -> Box<[Line]> {
+    Box::new([
+        Line::Text { text: b"before".as_slice().into() },
+        Line::Fail {
+            error,
+            report: api::Report {
+                code: b"overloaded_error".as_slice().into(),
+                request: b"req_42".as_slice().into(),
+                field: b"top_p".as_slice().into(),
+            },
+            credentials: Box::new([0]),
+        },
+    ])
+}
+
+#[test]
+fn a_failure_after_text_ends_the_stream_as_its_route_fails() {
+    let rows: [(Provider, &[u8]); 2] = [(Provider::OpenAiCodex, b"top_p"), (Provider::Anthropic, b"")];
+    for (provider, field) in rows {
+        let mut world = exchange(provider, after_text(api::Error::Overloaded));
+        world.start();
+        world.run();
+        assert_eq!(
+            (stream(&world), terminal(&world)),
+            (
+                vec![Ok(b"before".as_slice()), Err(Failure::Overloaded)],
+                (
+                    Failure::Overloaded,
+                    Report {
+                        code: b"overloaded_error".as_slice().into(),
+                        request: b"req_42".as_slice().into(),
+                        field: field.into()
+                    },
+                    client::Evidence::Response { status: 200 }
+                ),
+            ),
+            "{provider:?}"
+        );
+    }
+}
+
+#[test]
+fn a_failure_after_a_hold_waits_for_its_release() {
+    let mut world = exchange(
+        Provider::OpenAiCodex,
+        Box::new([
+            Line::Pieces {
+                pieces: Box::new([
+                    api::Piece { text: b"be".as_slice().into(), hold: None },
+                    api::Piece { text: b"fore".as_slice().into(), hold: Some(b"h".as_slice().into()) },
+                ]),
+            },
+            Line::Fail { error: api::Error::Refused, report: api::Report::none(), credentials: Box::new([0]) },
+        ]),
+    );
+    world.start();
+    while world.tick(true) {}
+    assert_eq!(stream(&world), vec![Ok(b"be".as_slice())]);
+    world.release(b"h");
+    world.run();
+    assert_eq!(stream(&world), vec![Ok(b"be".as_slice()), Ok(b"fore".as_slice()), Err(Failure::Refused)]);
+}
+
+#[test]
+fn an_exhausted_reset_after_text_reaches_the_client_on_the_codex_route() {
+    let mut lines = after_text(api::Error::Exhausted { retry_after: Some(Duration::from_millis(1500)) });
+    let Line::Fail { report, .. } = &mut lines[1] else { panic!("fixture's failing line") };
+    report.code = Box::new([]);
+    let mut world = exchange(Provider::OpenAiCodex, lines);
+    world.start();
+    world.run();
+    assert_eq!(
+        stream(&world),
+        vec![Ok(b"before".as_slice()), Err(Failure::Exhausted { retry_after: Some(Duration::from_secs(2)) })]
+    );
+    assert!(!world.responses.windows(b"retry-after".len()).any(|bytes| bytes.eq_ignore_ascii_case(b"retry-after")));
+}
