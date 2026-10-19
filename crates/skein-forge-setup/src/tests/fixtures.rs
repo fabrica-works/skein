@@ -22,7 +22,7 @@ pub fn person(login: &[u8], full_name: &[u8]) -> skein_forge::forgejo::document:
     }
 }
 pub struct Run {
-    machine: crate::reconcile::Reconcile,
+    pub(super) machine: crate::reconcile::Reconcile,
     given: crate::given::Given,
 }
 impl Run {
@@ -297,4 +297,63 @@ pub fn named_failure(
 pub fn token_row(id: u64, name: &[u8]) -> skein_forge::forgejo::document::Row {
     use skein_forge::forgejo::document::{AccessToken, Row};
     Row::Token(AccessToken { id, name: name.into(), scopes: Box::new([]), last_eight: Box::new([]), value: None })
+}
+// The step requests 32 draw bytes; a short answer is one byte below it (4.3).
+pub const DRAW_BYTES: usize = 32;
+pub const SHORT_DRAW_BYTES: usize = DRAW_BYTES - 1;
+pub fn drawn() -> crate::reconcile::Event {
+    crate::reconcile::Event::Drawn(secret(&[0x0a; DRAW_BYTES]))
+}
+pub fn bot_lookup_run() -> Run {
+    let mut run = Run::managed();
+    to_bot(&mut run);
+    run
+}
+pub fn org_read() -> Run {
+    let mut run = Run::managed();
+    to_org(&mut run);
+    run
+}
+pub fn owned_org_read() -> Run {
+    let mut run = Run::owned();
+    to_org(&mut run);
+    run
+}
+pub fn teams_read() -> Run {
+    let mut run = org_read();
+    run.step(org_event());
+    run
+}
+pub fn members_read() -> Run {
+    let mut run = teams_read();
+    run.step(rows(Box::new([])));
+    run.step(team_event());
+    run
+}
+pub fn hook_listing_read() -> Run {
+    let mut run = hook_secret_read();
+    run.step(crate::reconcile::Event::Read(Some(secret(b"webhook-secret"))));
+    run
+}
+pub fn team_row(
+    id: u64,
+    name: &[u8],
+    permission: skein_forge::forgejo::document::Access,
+) -> skein_forge::forgejo::document::Row {
+    use skein_forge::forgejo::document::{Row, Team};
+    let mut spec = team_spec();
+    spec.name = name.into();
+    spec.permission = permission;
+    Row::Team(Team { id, spec })
+}
+pub fn hook_spec() -> skein_forge::forgejo::request::HookSpec {
+    skein_forge::forgejo::request::HookSpec {
+        url: b"http://127.0.0.1:9898/hooks/1".as_slice().into(),
+        secret: secret(b"webhook-secret"),
+        events: subscribed(),
+        active: true,
+    }
+}
+pub fn page(number: u32) -> skein_forge::forgejo::request::Page {
+    skein_forge::forgejo::request::Page { page: Some(number), limit: Some(PAGE_CAP) }
 }

@@ -1,5 +1,5 @@
 //! Listener hook convergence, retaining one lowest matching id
-//! (protocol/setup.md, section 5, step 6).
+//! (forge-setup.md, 4.3).
 use super::{
     Event, Need, Reconcile, Reply, Stage, State, Why,
     tokens::{reply, unexpected},
