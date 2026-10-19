@@ -62,6 +62,15 @@ pub fn call(owner: u64) -> Call {
     }
 }
 
+/// Public Responses call with the fixture bearer and no account id.
+#[must_use]
+pub fn public_call(owner: u64) -> Call {
+    let mut input = call(owner);
+    input.endpoint = Endpoint::openai();
+    input.credential.as_mut().expect("fixture credential").account_id = Box::new([]);
+    input
+}
+
 /// Anthropic Messages call with the fixture bearer and explicit output cap.
 #[must_use]
 pub fn anthropic_call(owner: u64) -> skein_llm::Call {

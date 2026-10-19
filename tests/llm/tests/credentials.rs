@@ -10,7 +10,7 @@ fn input(provider: Provider, scheme: Scheme) -> Call {
         Provider::Anthropic => Endpoint::anthropic(),
     };
     input.credential.as_mut().expect("fixture credential").scheme = scheme;
-    if provider == Provider::Anthropic {
+    if provider != Provider::OpenAiCodex {
         input.credential.as_mut().expect("fixture credential").account_id = Box::new([]);
     }
     input.prompt.affinity = None;
@@ -73,6 +73,7 @@ fn a_credential_its_route_refuses_is_invalid() {
         (Provider::OpenAiCodex, Some(Credential::key(call(1).credential.expect("fixture credential").value))),
         (Provider::OpenAiCodex, Some(Credential::bearer(call(1).credential.expect("fixture credential").value))),
         (Provider::Anthropic, call(1).credential),
+        (Provider::OpenAi, call(1).credential),
     ] {
         let mut input = input(provider, Scheme::Bearer);
         input.credential = credential;
@@ -81,8 +82,8 @@ fn a_credential_its_route_refuses_is_invalid() {
 }
 #[test]
 fn an_endpoint_header_naming_a_credential_field_is_refused() {
-    for provider in [Provider::OpenAiCodex, Provider::Anthropic] {
-        for name in [b"Authorization".as_slice(), b"x-api-key", b"chatgpt-account-id"] {
+    for provider in [Provider::OpenAiCodex, Provider::Anthropic, Provider::OpenAi] {
+        for name in [b"Authorization".as_slice(), b"x-api-key", b"chatgpt-account-id", b"session-id", b"thread-id"] {
             let mut input = input(provider, Scheme::Bearer);
             input.endpoint.headers = Box::new([header(name, b"override")]);
             assert_eq!(rejection(input, &limits()), Some(Error::Invalid), "{provider:?} {name:?}");
@@ -107,11 +108,6 @@ fn a_key_head_at_its_bound_is_admitted() {
         bounds.http.headers = fields;
         assert_eq!(rejection(input(Provider::Anthropic, Scheme::Key), &bounds), expected, "{head} {fields}");
     }
-}
-
-#[test]
-fn a_public_call_is_refused_as_unsupported() {
-    assert_eq!(rejection(input(Provider::OpenAi, Scheme::Bearer), &limits()), Some(Error::Unsupported));
 }
 
 #[test]

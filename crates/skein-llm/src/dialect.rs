@@ -70,6 +70,14 @@ impl Decoder {
         let long = receive_long(&json, self, limits)?;
         match self {
             Decoder::Responses(provider, decoder) => {
+                // llm.md 4.8: response.done terminates only the Codex route.
+                if *provider == Provider::OpenAi {
+                    let tokens = json.view();
+                    let kind = openai::json::value_at(tokens, openai::json::required(tokens, b"type")?)?;
+                    if openai::json::text_ref(kind)? == b"response.done" {
+                        return Err(openai::DecodeError::Malformed);
+                    }
+                }
                 let event = openai::decode_event(&json, limits)?;
                 let mut raw = Queue::with_capacity(openai::MAX_OUT);
                 match event {

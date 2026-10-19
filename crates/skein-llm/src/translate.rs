@@ -10,8 +10,8 @@ use skein_lib::{List, Writer, bytes};
 const TOOL_ERROR: &[u8] = b"Error: ";
 
 /// Measures the borrowed vocabulary without constructing a native request.
-pub(crate) fn measure_request(prompt: &Prompt, limits: &openai::Limits) -> Result<u32, Error> {
-    validate_codex(prompt, limits)?;
+pub(crate) fn measure_request(provider: Provider, prompt: &Prompt, limits: &openai::Limits) -> Result<u32, Error> {
+    validate_codex(provider, prompt, limits)?;
     let bounded = writer::Limits { depth: limits.depth, length: limits.request };
     let mut out = writer::Encoder::measure(&bounded);
     write_request(&mut out, prompt)?;
@@ -22,18 +22,18 @@ pub(crate) fn measure_request(prompt: &Prompt, limits: &openai::Limits) -> Resul
 }
 
 /// Writes directly into the reserved body; schemas, text and replay stay borrowed.
-pub(crate) fn encode_request(prompt: &Prompt, limits: &openai::Limits) -> Result<Box<[u8]>, Error> {
-    let length = measure_request(prompt, limits)?;
+pub(crate) fn encode_request(provider: Provider, prompt: &Prompt, limits: &openai::Limits) -> Result<Box<[u8]>, Error> {
+    let length = measure_request(provider, prompt, limits)?;
     let mut out = writer::Encoder::write(length, &writer::Limits { depth: limits.depth, length: limits.request });
     write_request(&mut out, prompt)?;
     Ok(out.finish())
 }
 
-fn validate_codex(prompt: &Prompt, limits: &openai::Limits) -> Result<(), Error> {
+fn validate_codex(provider: Provider, prompt: &Prompt, limits: &openai::Limits) -> Result<(), Error> {
     if prompt.max_output_tokens.is_some() {
         return Err(Error::Unsupported);
     }
-    validate(prompt, Provider::OpenAiCodex, limits)
+    validate(prompt, provider, limits)
 }
 
 fn write_request(out: &mut writer::Encoder, prompt: &Prompt) -> Result<(), Error> {
@@ -626,7 +626,7 @@ fn charge_replay_item(
     if openai::json::kind(view, 0) != Some(Kind::ObjectStart) {
         return Err(Error::Invalid);
     }
-    let known_reasoning = if cap == crate::Cap::Reasoning && provider == Provider::OpenAiCodex {
+    let known_reasoning = if cap == crate::Cap::Reasoning && provider != Provider::Anthropic {
         let kind = match openai::json::field(view, b"type") {
             Ok(kind) => kind,
             Err(error) => return Err(decode(error)),
@@ -843,7 +843,10 @@ mod tests {
     // shape exercises the borrowed encoder against its previous exact bytes.
     fn request(prompt: &Prompt, provider: Provider, limits: &openai::Limits) -> Result<openai::Request, Error> {
         let raw = super::request(prompt, provider, limits)?;
-        assert_eq!(super::encode_request(prompt, limits)?, openai::encode_request(&raw, limits).unwrap());
+        assert_eq!(
+            super::encode_request(Provider::OpenAiCodex, prompt, limits)?,
+            openai::encode_request(&raw, limits).unwrap()
+        );
         Ok(raw)
     }
     fn prompt(role: Role, block: Block) -> Prompt {
@@ -883,7 +886,7 @@ mod tests {
             }]);
             let old_codex = super::request(&input, Provider::OpenAiCodex, &LIMITS).unwrap();
             assert_eq!(
-                super::encode_request(&input, &LIMITS).unwrap(),
+                super::encode_request(Provider::OpenAiCodex, &input, &LIMITS).unwrap(),
                 openai::encode_request(&old_codex, &LIMITS).unwrap(),
                 "Codex seed {seed}: schemas are borrowed, arguments remain text"
             );
@@ -983,7 +986,7 @@ mod tests {
                 choice: native.choice,
                 max_output_tokens: None,
             };
-            assert_eq!(super::encode_request(&input, &LIMITS).unwrap(), expected, "{scenario}");
+            assert_eq!(super::encode_request(Provider::OpenAiCodex, &input, &LIMITS).unwrap(), expected, "{scenario}");
         }
     }
     #[test]
@@ -1108,7 +1111,7 @@ mod tests {
             .expect("bounded run");
         let prompt = prompt(Role::Assistant, block);
         let native = request(&prompt, Provider::OpenAiCodex, &LIMITS).expect("native replay");
-        let body = super::encode_request(&prompt, &LIMITS).expect("borrowed replay");
+        let body = super::encode_request(Provider::OpenAiCodex, &prompt, &LIMITS).expect("borrowed replay");
         let offset = bytes::find(&body, run).expect("ordered input");
         assert_eq!(body.get(offset..offset + run.len()), Some(run.as_slice()));
         let native_body = openai::encode_request(&native, &LIMITS).expect("native encoder");
@@ -1121,7 +1124,11 @@ mod tests {
         let block = part(Provider::OpenAiCodex, openai::Part::Opaque { bytes: bytes::copy_of(run) }, &LIMITS)
             .expect("bounded run");
         assert_eq!(
-            super::encode_request(&prompt(Role::Assistant, block), &openai::Limits { reasoning: 1, ..LIMITS }),
+            super::encode_request(
+                Provider::OpenAiCodex,
+                &prompt(Role::Assistant, block),
+                &openai::Limits { reasoning: 1, ..LIMITS }
+            ),
             Err(Error::Limit { which: crate::Cap::Reasoning, bound: 1 })
         );
     }

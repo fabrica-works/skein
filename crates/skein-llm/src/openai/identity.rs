@@ -7,7 +7,6 @@ pub const USER_AGENT: &[u8] = b"pi (linux; x86_64)";
 pub const BETA: &[u8] = b"responses=experimental";
 pub const ACCOUNT_HEADER: &[u8] = b"chatgpt-account-id";
 pub const SESSION_HEADER: &[u8] = b"session_id";
-pub const REQUEST_HEADER: &[u8] = b"x-request-id";
 pub const VERBOSITY: &[u8] = b"low";
 
 use alloc::boxed::Box;

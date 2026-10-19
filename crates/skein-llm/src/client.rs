@@ -323,8 +323,9 @@ pub fn measure(
 ) -> Result<Measured, Error> {
     check_preparation(limits)?;
     let body = match endpoint.provider {
-        Provider::OpenAi => return Err(Error::Unsupported),
-        Provider::OpenAiCodex => translate::measure_request(prompt, &limits.native())?,
+        Provider::OpenAiCodex | Provider::OpenAi => {
+            translate::measure_request(endpoint.provider, prompt, &limits.native())?
+        }
         Provider::Anthropic => anthropic::measure_request(prompt, limits.declared_output_tokens, &limits.native())?,
     };
     let head = measure_headers(endpoint, credential, prompt.affinity, limits, body)?;
@@ -378,11 +379,10 @@ impl Client {
         let provider = input.endpoint.provider;
         let affinity = input.prompt.affinity;
         let (headers, body) = match provider {
-            Provider::OpenAi => return Err(Error::Unsupported),
-            Provider::OpenAiCodex => {
-                let length = translate::measure_request(&input.prompt, &limits.native())?;
+            Provider::OpenAiCodex | Provider::OpenAi => {
+                let length = translate::measure_request(provider, &input.prompt, &limits.native())?;
                 let headers = headers(&input.endpoint, input.credential.as_ref(), affinity, limits, length)?;
-                let body = translate::encode_request(&input.prompt, &limits.native())?;
+                let body = translate::encode_request(provider, &input.prompt, &limits.native())?;
                 (headers, body)
             }
             Provider::Anthropic => {
@@ -868,10 +868,13 @@ fn response_head(
     }
 }
 
+const CODEX_REQUEST_HEADER: &[u8] = b"x-oai-request-id";
+const OPENAI_REQUEST_HEADER: &[u8] = b"x-request-id";
+
 fn request_id(provider: Provider, headers: &[Header]) -> Box<[u8]> {
     let name: &[u8] = match provider {
-        Provider::OpenAi => b"x-request-id",
-        Provider::OpenAiCodex => b"x-oai-request-id",
+        Provider::OpenAi => OPENAI_REQUEST_HEADER,
+        Provider::OpenAiCodex => CODEX_REQUEST_HEADER,
         Provider::Anthropic => b"request-id",
     };
     for header in headers {
@@ -1512,9 +1515,12 @@ fn headers(
             .expect("provider headers fit the checked cap");
     }
     if let Some(credential) = credential {
-        let field = match credential.scheme {
-            Scheme::Key => Header { name: bytes::copy_of(b"x-api-key"), value: credential.value.clone() },
-            Scheme::Bearer => {
+        let field = match (endpoint.provider, credential.scheme) {
+            (Provider::Anthropic, Scheme::Key) => {
+                Header { name: bytes::copy_of(b"x-api-key"), value: credential.value.clone() }
+            }
+            (Provider::OpenAiCodex | Provider::OpenAi, Scheme::Key)
+            | (Provider::OpenAiCodex | Provider::OpenAi | Provider::Anthropic, Scheme::Bearer) => {
                 let len = credential
                     .value
                     .len()
@@ -1581,10 +1587,13 @@ fn head_length(
     ] {
         total = total.checked_add(fixed.len()).ok_or(Error::Invalid)?;
     }
-    let credential_field = match scheme {
-        Some(Scheme::Bearer) => b"Authorization: Bearer \r\n".as_slice(),
-        Some(Scheme::Key) => b"x-api-key: \r\n".as_slice(),
-        None => b"".as_slice(),
+    let credential_field = match (endpoint.provider, scheme) {
+        (Provider::OpenAiCodex | Provider::OpenAi, Some(Scheme::Key))
+        | (Provider::OpenAiCodex | Provider::OpenAi | Provider::Anthropic, Some(Scheme::Bearer)) => {
+            b"Authorization: Bearer \r\n".as_slice()
+        }
+        (Provider::Anthropic, Some(Scheme::Key)) => b"x-api-key: \r\n".as_slice(),
+        (Provider::OpenAiCodex | Provider::OpenAi | Provider::Anthropic, None) => b"".as_slice(),
     };
     total = total.checked_add(credential_field.len()).ok_or(Error::Invalid)?;
     for (name, value) in fields.iter().flatten() {

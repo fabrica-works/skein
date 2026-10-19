@@ -1,7 +1,7 @@
 //! The durable opaque seam exercised independently of application domains.
 
 use skein_llm::{Block, Error, Json, Message, Provider, Replay, Role, client};
-use skein_llm_world::{call, limits};
+use skein_llm_world::{call, limits, public_call, rejection};
 
 #[test]
 fn replay_envelopes_keep_tag_fields_and_exact_bounds_before_negative_mutations() {
@@ -102,6 +102,14 @@ fn each_route_replays_only_its_own_metadata() {
         let encoded = replay.to_bytes(&bounds).unwrap();
         assert_eq!(encoded.get(TAG_OFFSET), Some(&tag), "{provider:?}");
         assert_eq!(Replay::from_bytes(&encoded, &bounds), Ok(replay), "{provider:?}");
+    }
+    for (mut input, provider) in [(call(1), Provider::OpenAi), (public_call(1), Provider::OpenAiCodex)] {
+        let replay = Replay { provider, value: Json::from_bytes(b"{}", &bounds).unwrap() };
+        input.prompt.messages = Box::new([Message {
+            role: Role::Assistant,
+            content: Box::new([Block::Text { text: b"prior".as_slice().into(), replay: Some(replay) }]),
+        }]);
+        assert_eq!(rejection(input, &limits()), Some(Error::Unsupported), "{provider:?}");
     }
 }
 
