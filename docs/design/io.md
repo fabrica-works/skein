@@ -1,6 +1,6 @@
 # io
 
-Provisional, 2026-10-03, revised 2026-10-18. The design of `skein-io`'s
+Provisional, 2026-10-03, revised 2026-10-19. The design of `skein-io`'s
 step layer: the lowest step layer of every service. It owns sockets,
 pipes, files and child processes, the operations in flight on them, and
 the receive and send queues, and it is the only layer that sees a
@@ -23,6 +23,10 @@ descriptor or a kernel error. Below it is the kernel boundary
 - **Paths stay beneath a root,** spawned children are pidfds from the
   start, each in a process group of its own, and termination signals
   arrive as events.
+- **Trees, in cgroups.** A child may start in a cgroup io made, as
+  another user, and contained: in namespaces of its own, seeing the file
+  system through a view the owner composes. A cgroup is stopped as a
+  whole, and proved empty by the kernel (6.2 to 6.4).
 - **Files are replaced whole, or appended to.** A record is replaced
   durably, privately when it is a secret (5.2, 5.3); a trace or a log is
   a write stream on a file opened to append, with a write deadline for a
@@ -55,6 +59,7 @@ pub enum Request {
     Spawn   { owner: Token, spawn: Spawn },
     Signal  { child: Token, signal: Signal, to: Target }, // the child, or its group (section 6)
     Usage   { owner: Token },                         // the process's resource usage (6.1)
+    Cgroup  { owner: Token, op: cgroup::Op },         // cgroups (6.2)
     // File { owner, root, op }; Window { owner, stream } (section 7)
     Close   { entity: Token },                        // graceful (section 3); one Closed follows
     Abort   { entity: Token },
@@ -70,6 +75,7 @@ pub enum Event {
     Spawned   { owner: Token, child: Token, pipes: Box<[Token]> },
     Exited    { owner: Token, exit: Exit },
     Usage     { owner: Token, usage: Measured },      // for a Usage: its one terminal
+    Cgroup    { owner: Token, event: cgroup::Event }, // 6.2
     Shutdown  { signal: ServiceSignal },              // section 7
     // File { owner, result }; Resized, Window { owner, size } (section 7)
     Failed     { owner: Token, error: Error },
@@ -977,13 +983,12 @@ private root or file owned by anyone else is refused, saying so.
   the pipes with it, so a command that timed out is answered within its
   deadline and io's close deadline, not when the last of its descendants
   chooses to exit.
-- **The group is an interim, before contained trees.** A descendant that
-  leaves the group (`setsid`, `setpgid`) escapes its signals and outlives
-  its child, and nothing bounds or counts what a group may use: a
-  descendant reparented away from the child is in no one's resource
-  usage (6.1). Contained trees (draft/process.md) replace it later: a
-  cgroup per tree, proved empty, with per-tree limits and accounting and
-  a view of the file system. They are not designed into io yet.
+- **A group is not a tree.** A descendant that leaves the group
+  (`setsid`, `setpgid`) escapes its signals and outlives its child, and
+  nothing bounds or counts what a group may use: a descendant reparented
+  away from the child is in no one's resource usage (6.1). A child
+  spawned into a cgroup of its own is a tree (6.3): stopped as a whole,
+  proved empty, bounded and counted.
 
 ### 6.1 Resource usage
 
@@ -1008,6 +1013,246 @@ for it.
 - **When to ask is the service's.** A service that writes a report at its
   end asks once its children have closed and before the stream it writes
   the report to closes (shell.md, 13).
+
+### 6.2 Cgroups
+
+A cgroup is an io entity, beside children: a directory of the kernel's
+cgroup v2 hierarchy, which holds processes, counts what they use and
+bounds it, and is stopped and proved empty as a whole. A service makes
+its cgroups beneath its own, and spawns children into them (6.3).
+
+```rust
+// skein-io's cgroups, the protocol side; in io's Request as
+// Cgroup { owner: Token, op: cgroup::Op }, answered by cgroup::Event
+pub enum Op {
+    Make    { parent: Token, name: Box<[u8]>, limits: Limits, delegate: Option<Owner> },
+    Enable  { cgroup: Token, controllers: Controllers }, // for its children
+    Enter   { cgroup: Token },                           // the service moves itself in
+    Counts  { cgroup: Token },
+    Signal  { cgroup: Token, signal: Signal },           // every process in it (6.4)
+    Kill    { cgroup: Token },                           // every process, at once (6.4)
+    Empty   { cgroup: Token },                           // answered once none is left (6.4)
+}
+pub struct Limits     { pub memory: Option<u64>, pub processes: Option<u32> }
+pub struct Owner      { pub user: u32, pub group: u32 }
+pub struct Controllers { pub cpu: bool, pub memory: bool, pub processes: bool }
+pub struct Counts {
+    pub user: Duration, pub system: Duration,         // CPU, of every process it held
+    pub peak: Option<u64>, pub oom_kills: Option<u64>, // with the memory controller
+}
+pub enum Event {
+    Made { owner: Token, cgroup: Token }, Entered { owner: Token },
+    Enabled { owner: Token }, Counts { owner: Token, counts: Counts },
+    Signalled { owner: Token }, Killed { owner: Token }, Empty { owner: Token },
+}
+// a refusal is io's Failed; a cgroup's close, its Closed
+```
+
+- **The service's own cgroup** is opened by the shell at startup
+  (shell.md, 6.4), and io adopts it as it adopts a root. io never kills
+  or removes an adopted cgroup: closing it closes its descriptors.
+- **`Make`** makes a cgroup by name beneath another io holds, and opens
+  it. It sets its limits (`memory.max`, `pids.max`), whose controllers
+  must be enabled in the parent, and always `memory.oom.group` where the
+  memory controller is: the kernel's out-of-memory kill then takes the
+  whole cgroup, not one process of it. With `delegate`, it gives the
+  cgroup to another user, as the kernel's delegation does: the directory
+  and the files the kernel names delegable (`cgroup.procs`,
+  `cgroup.subtree_control` and the rest) change owner, which needs
+  privilege, and its depth and number of descendants are bounded
+  (`Limits::cgroup_depth`, `Limits::cgroup_descendants`), so that what
+  the other user makes beneath it stays within what io removes.
+- **`Enable`** enables controllers for a cgroup's children. The kernel
+  refuses it while the cgroup itself holds a process, so a service enables
+  controllers on its own cgroup only after `Enter`ing one beneath it.
+  The usual start: make `self` beneath the service's cgroup, enter it,
+  enable the controllers, then make the trees' cgroups beside `self`.
+- **`Enter`** moves the service's own process into a cgroup. The kernel
+  allows it where the service may write both that cgroup's `cgroup.procs`
+  and their common ancestor's.
+- **`Counts`** reads the CPU time of every process the cgroup and those
+  beneath it held (`cpu.stat`), and, with the memory controller, the
+  peak of their memory together (`memory.peak`) and how many the kernel
+  killed for want of it (`memory.events`). Read once the cgroup is empty,
+  they are its final counts. A cgroup's processes are counted here, not
+  in the service's `Usage` (6.1), whatever reparents them.
+- **Closing a cgroup io made** kills what it holds, if anything, waits
+  until it is empty (6.4), removes the cgroups beneath it, deepest first,
+  then removes it. Its `Closed` comes after all of that, and is the proof
+  that the cgroup and everything in it are gone. A process the kernel
+  cannot kill (one in uninterruptible sleep on a filesystem that stalls)
+  holds the close open, and io waits with it (section 10). `Abort` of a
+  cgroup is its close.
+- **Bounds.** A cgroup takes one entity slot and holds two descriptors,
+  its directory and its `cgroup.events`, and the name it was made with.
+  The operations on it are synchronous but `Empty` (kernel.md, 6.6); one
+  `Empty` may be in flight on a cgroup, and a second is the layer above's
+  bug, asserted.
+
+### 6.3 Spawning a tree
+
+A *tree* is a child spawned into a cgroup of its own, and everything it
+starts. `Spawn` gains what trees need; a spawn that asks for none of it
+is a child as in section 6.
+
+```rust
+pub struct Spawn {
+    pub program: Box<[u8]>, pub args: Box<[Box<[u8]>]>, pub env: Box<[Box<[u8]>]>,
+    pub dir: Dir,                       // beneath an io root, or a path in the view
+    pub pipes: Box<[Pipe]>,
+    pub cgroup: Option<Token>,          // a cgroup io holds; the service's own if none
+    pub ids: Option<Ids>,               // the user and groups the command runs as
+    pub given: Box<[Given]>,            // io roots, at the child's descriptors
+    pub contain: Option<Box<Contain>>,  // namespaces, and a view of the file system
+}
+pub enum Dir    { Beneath { root: Token, path: Box<[u8]> }, InView(Box<[u8]>) }
+pub struct Ids  { pub user: u32, pub group: u32, pub groups: Box<[u32]> }
+pub struct Given { pub root: Token, pub at: u32 }
+pub struct Contain {
+    pub users: Box<[Map]>, pub groups: Box<[Map]>,  // the user namespace's maps
+    pub pid: bool,                                  // a pid namespace of its own
+    pub network: Network,
+    pub hostname: Option<Box<[u8]>>,                // a uts namespace with this name
+    pub view: Option<View>,
+    pub rlimits: Box<[Rlimit]>,                     // lowered, never raised
+}
+pub struct Map { pub inside: u32, pub outside: u32, pub count: u32 }
+pub enum Network { Loopback, Host }
+pub struct View {
+    pub base: Base,                     // the view's root
+    pub binds: Box<[Bind]>,             // io roots, where the tree sees them
+    pub read_only: Box<[Box<[u8]>]>,    // paths within writable binds
+    pub scratch: Box<[Scratch]>,        // empty, writable, in memory
+}
+pub enum Base    { Empty, Root { root: Token, path: Box<[u8]>, writable: bool } }
+pub struct Bind  { pub root: Token, pub path: Box<[u8]>, pub at: Box<[u8]>, pub writable: bool }
+pub struct Scratch { pub at: Box<[u8]>, pub size: u64 }
+pub struct Rlimit { pub resource: Resource, pub soft: u64, pub hard: u64 }
+```
+
+- **Into a cgroup.** A child spawned with `cgroup` is in it from its
+  first instruction (the kernel's `CLONE_INTO_CGROUP`), so nothing it
+  starts is ever outside it, a double fork included. One cgroup may hold
+  several children: smith's run, whose commands share a cgroup beneath
+  its host's, is one cgroup, or one with a cgroup per command beneath it
+  (section 10's trees in one process are this).
+- **As other ids.** `ids` runs the command as that user, with that group
+  and those supplementary groups, which replace the service's; an
+  activator running as root starts a service as its user so. Outside a
+  user namespace this needs privilege; inside one, `ids` are the
+  namespace's, root of the namespace if absent.
+- **Given descriptors.** Each names an io root, an open directory, and
+  the descriptor number it has in the child; with the pipes, they are
+  all the child inherits. A helper that works beneath a store the
+  service opened takes it so (hearth's store.md, 5.2).
+- **Contained.** A contained child has a user namespace of its own,
+  mapped as `users` and `groups` say, and with it mount, ipc and cgroup
+  namespaces of its own; a pid namespace if `pid`; a network namespace
+  with only loopback, up, unless `Host`; a uts namespace, with its
+  hostname, if one is given. It runs with `no_new_privs`, with
+  `rlimits` lowered, and without the service's supplementary groups.
+  - **The maps** may name the service's subordinate ids
+    (`/etc/subuid`, `/etc/subgid`), which `newuidmap` and `newgidmap`
+    map, and the service's own ids. The service's own ids need not be
+    mapped: unmapped, they are the overflow id inside, and the tree
+    reaches the service's files only as any other user would. A map that
+    names only the service's own group leaves the command the service's
+    supplementary groups, which the namespace cannot change then
+    (kernel.md, 6.6). A tree with a view must map the namespace's 0.
+  - **No fallback.** A machine without user namespaces, or without
+    `newuidmap` where the maps need it, fails a contained spawn at its
+    namespaces, and so does a service that runs with `no_new_privs`
+    where the maps need `newuidmap`, which the shell checks at startup
+    (shell.md, 6.4). A service whose own `/proc` or `/sys` has parts
+    mounted over, as a unit hardened by its supervisor may, fails a view
+    for its new ones: the kernel lets a user namespace mount them only
+    where the host's are whole. A service checks at startup, by spawning
+    a tree with a view, when it must not start without them.
+- **The view** is the file system a contained tree sees, composed in its
+  mount namespace before the command starts:
+  - **its root:** an empty one in memory (`Empty`), or a directory io
+    holds, writable or not, given as the io root and its path on the
+    host;
+  - **binds:** directories io holds, each where the tree sees it,
+    writable or not; within writable ones, `read_only` paths, such as a
+    repository's git directory; and `scratch`, writable directories in
+    memory, each bounded;
+  - **always:** a new `/proc`; `/sys`, new and read-only, or with `Host`
+    the host's, read-only; a minimal `/dev` (`null`, `zero`, `full`,
+    `random`, `urandom`, `tty`, its own `pts` and `ptmx`, `shm`, and the
+    `fd`, `stdin`, `stdout` and `stderr` links); a private `/tmp`.
+  - **Paths stay beneath the view.** Each place a mount goes is resolved
+    beneath the view's root, following no link; one missing is made only
+    where the root is writable or `Empty`. A bind is found by its path
+    on the host, as the service's own user, and checked to be the
+    directory io holds (its device and inode); what was checked is what
+    is mounted, so a path changed under it fails the view instead of
+    binding something else. Once composed, the root is read-only unless it was
+    given writable, and the command starts at `dir` in the view.
+- **Spawned, or failed.** io answers `Spawned` once the command is
+  executing, after the whole of the setup, or `Failed` naming the stage
+  that failed (`Spawn(Stage)`: the cgroup, the ids, the namespaces and
+  their maps, the view, or the command itself) and the kernel's error,
+  then `Closed` once the child is reaped. A helper killed during the
+  setup, by its owner's deadline or for want of memory in its cgroup,
+  reports nothing: io answers `Spawned`, and the child's exit then says
+  the signal.
+- **The child io holds** is the tree's first process. When the spawn
+  asks for ids or containment, it is a helper (kernel.md, 6.6) that
+  relays the command: what it is signalled it passes on, and it exits
+  as the command did, with its status, or by its signal. In a pid
+  namespace of its own, the command's end ends the tree: the kernel kills
+  what the command left in the namespace.
+- **Bounds.** A spawn's maps, binds, read-only paths, scratches, rlimits
+  and the bytes of their paths are bounded (`Limits::contain`), so that
+  the whole of it fits the helper's 64 KiB (kernel.md, 6.6); past them, the
+  spawn is refused at io's entrance. A given root takes no slot of its
+  own. The helper's memory is its own process's, outside the service's
+  worst case.
+
+### 6.4 Stopping a tree, and its end
+
+| Step | The request | What reaches the tree |
+|---|---|---|
+| polite | `Signal { child, Terminate, Child }` | the first process, which passes it to the command |
+| terminate | cgroup `Signal { cgroup, Terminate }` | every process in the cgroup and beneath it |
+| kill | cgroup `Kill` | every process in it and beneath it, at once (`cgroup.kill`) |
+
+- **Each step, and its deadline, is the owner's,** as everywhere in io
+  (programming-model.md, 4): a tree's owner signals politely, gives the
+  command its time, terminates, kills.
+- **Terminate is one pass,** over the processes the cgroup and those
+  beneath it list. Each is opened as a pidfd and checked to be in the
+  tree still before it is signalled, so a PID reused meanwhile is never
+  signalled. A process forked during the pass may be missed: kill is the
+  step that leaves none. The command may hear the signal twice, from the
+  pass and relayed by the first process.
+- **Empty** answers once the cgroup and those beneath it hold no live
+  process (`cgroup.events`, `populated 0`). A process that has exited
+  but is not reaped is not live, so a tree's first process, which io
+  keeps unreaped until its close, does not hold the tree open. io reads
+  the state, and while it is populated waits for the kernel's next
+  change and reads it again, so no end is missed. `Empty` may come
+  before the first process's exit is observed. A cgroup that is empty
+  is filled again only by a spawn into it, or by a process moved in.
+- **Escape.** A process leaves its cgroup only by moving itself, which
+  needs the right to write the `cgroup.procs` of where it goes and of the
+  common ancestor. A tree that runs as the service's own user, in no
+  user namespace, can move into the service's other cgroups on purpose.
+  A tree run as another user cannot, and nor can a contained one: it has
+  a cgroup namespace of its own, and the shell checks that cgroup2 is
+  mounted with `nsdelegate` (shell.md, 6.4), which forbids a move out of
+  it. A service that runs a command it does not trust contains it.
+- **Nesting.** A tree may make cgroups beneath its own where its ids may
+  write there: when the service runs it as its own user, or when the
+  cgroup was delegated to its user. Closing the cgroup removes them, and
+  stops what is in them.
+- **The end.** A tree has ended when its cgroup is empty: its pid
+  namespace, if it had one, has ended, and the mounts of its view are
+  gone with the last process that held them. Its owner then
+  closes the child (its exit observed, its pipes settled, reaped) and the
+  cgroup (removed), in either order, and hears each one's `Closed`. A
+  cgroup closed while it holds processes is killed first.
 
 ## 7. Signals to the service
 
@@ -1091,6 +1336,14 @@ simulator's machine seam (testing.md, 4).
   still runs; a signal to a group after its leader exited, before its
   close. In the simulator, groups the minimal machine's programs make,
   and the same cases.
+- **Cgroups and trees:** step tests of each cgroup request and its
+  refusals, of a close that kills, waits, and removes deepest first, and
+  of a contained spawn's every stage failed in turn. io worlds over the
+  simulator: trees whose first process exits before the rest, whose
+  processes ignore the polite signal or the termination, that fork
+  during a terminate, that escape their group but not their cgroup, and
+  whose end the kernel reports late. On the real kernel, the conformance
+  suite's (kernel.md, 8).
 - **A tree's metadata and its filesystem:** step tests of each request,
   its bounds refused before any record, each record's errors, a deadline
   that passes while a synchronous record runs (the request still answers
@@ -1147,7 +1400,13 @@ and section 3).
   from one that refused.
 - **Operations the kernel cannot interrupt.** A cancelled write on a
   filesystem in uninterruptible sleep keeps its stream settling, and its
-  process from ending (notes.md).
+  process from ending (notes.md). So does a cgroup whose process sleeps
+  so, which its close waits for (6.2).
+- **Filters on a contained tree's calls.** A contained tree has no
+  seccomp filter, and keeps the capabilities its ids have in its
+  namespace. Whether io offers a filter, when a service needs one.
+- **A terminal for a tree.** A contained tree's command has pipes, never
+  a terminal; whether a tree may be given one, when a service needs it.
 - **Faults between joined ends.** The simulator's faults never reach a
   joined pair (3.5), so an application's one-process worlds meet only
   what the owners at either end do. Whether io gives a world a way to

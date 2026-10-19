@@ -1,6 +1,6 @@
 # The simulator
 
-Provisional, 2026-10-03, revised 2026-10-18. The design of `skein-sim`:
+Provisional, 2026-10-03, revised 2026-10-19. The design of `skein-sim`:
 the simulated kernel that every world from io worlds up runs on
 (testing-strategy.md, 2). It is a backend of the kernel boundary
 (kernel.md), for every process of one world, with every choice drawn from
@@ -22,6 +22,10 @@ contract leaves one.
   completion goes into a trace, so a failing seed prints and replays.
 - **It checks its client.** It fails the world on every broken invariant
   of the kernel boundary, and asserts its own promises at every step.
+- **Cgroups follow the fork.** It keeps a cgroup hierarchy as the
+  kernel does, whose membership no process group escapes; a contained
+  spawn goes to the machine with what it asked for, and may fail at a
+  stage the world chooses (3.4).
 - **It is kept honest** by the conformance suite, which runs the same
   scenarios against it and against the ring on the real kernel.
 
@@ -193,6 +197,40 @@ would: to show that what a service keeps durably survives (io.md, 5.2).
 - **A cut at every operation.** A scenario cuts at each operation of a
   sequence in turn, over a few seeds each, so every point between two
   syncs is met.
+
+### 3.4 Cgroups and trees
+
+The simulator keeps a cgroup hierarchy as the kernel does, beneath the
+service's own cgroup, which the world gives it (shell.md, 6.4). It does
+not play the helper's namespaces or view: those are the program's
+environment, which the machine plays.
+
+- **A cgroup** is a node with its limits, its owner, its controllers,
+  its members and the cgroups beneath it. A cgroup a world makes twice,
+  removes while it holds a process or has one beneath, or enables
+  controllers on while it holds a process, fails as the kernel's does
+  (kernel.md, 6.6); so do a limit whose controller the parent has not
+  enabled, and a depth or a count past the bounds.
+- **Membership follows the fork,** whatever the group: a child spawned
+  into a cgroup is in it, and so is every process it starts, one that
+  left its group included, until `EnterCgroup` moves the service itself.
+  A program the machine runs cannot move itself out: a contained tree
+  cannot, and a test that needs one that does uses the ring.
+- **Populated** counts members that have not exited; a zombie does not
+  count. `CgroupChanged` completes at the next change after the last read
+  of the descriptor, or at once if one came between, and a world may
+  hold it for a latency drawn from the seed, never past the change after.
+- **Signal and kill.** `SignalCgroup` reaches each member at the time of
+  the signal; `KillCgroup` ends each, and any the machine starts after
+  it in the cgroup, until it is empty.
+- **Counts** are what the world sets for the cgroup, zero unless set, as
+  a process's usage is (3.2), with `oom_kill` set by the world.
+- **A spawn with ids or containment** goes to the machine as any spawn,
+  with the ids, the given descriptors and the containment named in the
+  call, so a fake machine can check what it was asked. A world may fail
+  it at a chosen stage, `Ids`, `Namespaces`, `View` or `Command`: the
+  spawn answers `Spawned` with a report, which then reads that stage and
+  an error the world chose, and the child exits with it.
 
 ## 4. Faults
 

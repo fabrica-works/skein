@@ -1,6 +1,6 @@
 # The kernel boundary
 
-Provisional, 2026-10-03, revised 2026-10-18. The design of the boundary
+Provisional, 2026-10-03, revised 2026-10-19. The design of the boundary
 below io: the records io submits to a backend, the completions the
 backend hands back, and what every backend promises. The records live in
 `skein-io`'s `kernel` module, whose module documentation states each rule
@@ -29,6 +29,11 @@ of the contract exactly; this document is the design behind it.
   never through a link (section 6.4); a filesystem's status, its sync and
   btrfs's subvolumes take a descriptor, the subvolumes through a closed
   list of btrfs's ioctls (section 6.5).
+- **Cgroups, and a helper for contained trees.** A cgroup is a directory
+  and its events file, made, stopped and proved empty through records
+  that name its descriptor; a spawn that asks for other ids or
+  containment starts the service's own executable as a helper, which
+  sets the tree up and reports how far it got (section 6.6).
 
 ## 2. In skein
 
@@ -62,7 +67,9 @@ pub enum Done {
     Nothing, Count(u32), Fd(Fd), Accepted { fd: Fd, peer: Addr }, Bound(Addr),
     Stat(Stat),                       // kind, size, mode, owners, links, inode, times (6.1)
     Subvolume(Subvolume), Filesystem(Filesystem),  // btrfs's, and a filesystem's status (6.5)
-    Spawned { pidfd: Fd }, Exit(Exit), ServiceSignal(ServiceSignal),
+    Spawned { pidfd: Fd, report: Option<Fd> },  // report: the helper's (6.6)
+    Exit(Exit), ServiceSignal(ServiceSignal),
+    Cgroup { dir: Fd, events: Fd }, Populated(bool), Counts(Counts),  // cgroups (6.6)
     Usage(Usage), Window(Window),     // the process's own (6.3)
 }
 
@@ -117,6 +124,16 @@ pub enum Op {
     Signal    { pidfd: Fd, signal: Signal, to: Target },     // synchronous
     PipeRead  { fd: Fd, buf: Box<[u8]> },
     PipeWrite { fd: Fd, bytes: Box<[u8]>, from: u32 },
+    // cgroups (section 6.6); all synchronous but CgroupChanged
+    MakeCgroup        { parent: Fd, name: Box<[u8]>, setup: CgroupSetup },  // limits, bounds, owner
+    EnableControllers { cgroup: Fd, controllers: Controllers },
+    EnterCgroup       { cgroup: Fd },                         // the process itself
+    CgroupCounts      { cgroup: Fd },
+    SignalCgroup      { cgroup: Fd, signal: Signal },         // each process, through a pidfd
+    KillCgroup        { cgroup: Fd },
+    Populated         { events: Fd },
+    CgroupChanged     { events: Fd },                         // the ring's poll
+    RemoveCgroup      { cgroup: Fd, name: Box<[u8]> },        // with those beneath, deepest first
     // the process's own (section 6.3)
     ReadSignal { fd: Fd },
     Usage,                                                   // synchronous
@@ -230,7 +247,8 @@ error means the operation did nothing usable: a failed `Socket` or
   - a descriptor is closed only by a close. Closing with unread data
     resets the peer; closing a listener resets the connections waiting on
     it.
-- **Some operations are synchronous:** spawning, signalling, listing a
+- **Some operations are synchronous:** spawning, signalling, every
+  operation on a cgroup but the wait for its change (6.6), listing a
   directory, locking a file without waiting, reading the process's
   resource usage and its terminal's size, reading a link, setting a mode
   or an owner, the extended attributes, and every operation on the
@@ -442,7 +460,10 @@ documentation, with each operation's errors; the decisions behind it:
 
 - **A child is a pidfd from its spawn,** and the leader of a process
   group of its own (io.md, 6). `Spawn` is synchronous: glibc's
-  `pidfd_spawn`, with the group set in its attributes.
+  `pidfd_spawn`, with the group set in its attributes, and the cgroup if
+  the spawn names one. `Spawn` carries io.md 6.3's fields, each io token
+  its descriptor; one that asks for ids or containment starts the helper
+  (6.6).
 - **`Wait` observes an exit, or reaps it.** Both are the ring's `waitid`
   on the pidfd. A `Wait` that does not reap (`WEXITED | WNOWAIT`)
   completes with the child's exit and leaves it a zombie, which keeps its
@@ -627,6 +648,170 @@ documentation, with each operation's errors; the decisions behind it:
   destroyed is durable once its filesystem is synced; btrfs may make it
   so sooner.
 
+### 6.6 Cgroups, and the helper
+
+- **A cgroup is two descriptors:** its directory, which a spawn into it
+  and every record name, and its `cgroup.events`, which `Populated` reads
+  and `CgroupChanged` polls. Each file a record touches is opened beneath
+  the directory by its fixed name. No record carries a path or a PID.
+- **`MakeCgroup`** makes the directory beneath its parent and opens both.
+  It writes the limits (`memory.max`, `pids.max`), `memory.oom.group`
+  where the memory controller is enabled, and `cgroup.max.depth` and
+  `cgroup.max.descendants`, which only the parent's owner may change, so
+  what is made beneath it stays within what `RemoveCgroup` walks. To
+  delegate, it changes the owner of the directory and of each file the
+  kernel lists in `/sys/kernel/cgroup/delegate`, which the backend reads
+  once. A make that fails after its directory was made removes it before
+  it answers: a failed make leaves nothing.
+- **`EnableControllers`** writes them, `+cpu`, `+memory`, `+pids`, to the
+  cgroup's `cgroup.subtree_control`; the kernel answers `Busy` while the
+  cgroup holds a process. **`EnterCgroup`** writes `0` to its
+  `cgroup.procs`, which moves the whole process, every thread.
+- **`CgroupCounts`** reads `cpu.stat`'s user and system time, and, where
+  the files are, `memory.peak` and `memory.events`'s `oom_kill`.
+- **`SignalCgroup`** reads the `cgroup.procs` of the cgroup and of each
+  cgroup beneath it. For each PID it opens a pidfd, then checks by the
+  process's `/proc/<pid>/cgroup`, compared a path segment at a time, that
+  it is in the tree, then signals it
+  through the pidfd. A process alive when the signal goes was the PID's
+  owner throughout the check, which its pidfd held; one gone meanwhile is
+  not signalled, and is no failure.
+- **`KillCgroup`** writes `1` to `cgroup.kill`: the kernel kills every
+  process in the cgroup and beneath it, those forked meanwhile included.
+- **`Populated` and `CgroupChanged`** read `cgroup.events`, each read
+  whole from its start (`pread` at 0), and poll it
+  for the kernel's next change: the ring's poll (`POLLPRI`) on the same
+  descriptor, the one cgroup record that is a ring operation, and the
+  one that may be cancelled. The kernel marks each read on the
+  descriptor, and the poll completes at once if the file changed since
+  the last, so a read, a poll, and a read again lose no change. A read
+  that does not start at 0 neither reads the state nor marks it read.
+  The kernel may delay a change's wake by some milliseconds, and wake
+  with no change: each wake reads again. An exited process not yet
+  reaped no longer counts: `populated` falls as a process exits, before
+  its parent hears of it, and a cgroup that holds only such processes
+  may be removed. `pids.current` counts them until they are reaped.
+- **`RemoveCgroup`** removes the cgroups beneath it, deepest first, then
+  removes it from its parent (`..` of its directory) by the name io keeps.
+  A cgroup that still holds a process answers `Busy`, and what was
+  removed stays removed.
+
+**The helper.** A `Spawn` that asks for ids or containment (io.md, 6.3)
+starts the helper as the child, and the helper starts the command. The
+helper is the service's own executable, `/proc/self/exe`, with a marker
+argument, which `main` hands first to `skein-contain`, a crate of the
+shell's (shell.md, 6.4): one file to ship, and no version between the
+service and its helper to skew. A spawn that asks for neither is
+`pidfd_spawn` alone, into its cgroup (`POSIX_SPAWN_SETCGROUP`) if it
+names one.
+
+- **Its descriptors.** The backend spawns the helper as any child, in
+  its group and its cgroup, the pipes and given roots at their numbers,
+  and two of its own above them, named in its arguments:
+  - **the spec,** a pipe the backend wrote the whole spawn into before
+    the spawn, at most 64 KiB, a pipe's capacity, so the write never
+    waits;
+  - **the report,** a pipe whose read end is `Done::Spawned`'s `report`.
+    It closes when the command executes (close-on-exec), and its end of
+    file tells io the command started. A process of the helper that fails
+    writes one record (its stage, the kernel's error) and exits. A spawn
+    the kernel refuses before the helper runs fails as any spawn does.
+
+**The setup, in order.** H is the child io holds; M maps; I is the pid
+namespace's first process; C is the command.
+
+1. **H** reads the spec whole, and blocks every signal it will relay, so
+   that one sent before it relays is queued, not lost. Asked for ids
+   alone, it sets the supplementary groups, then the group, then the
+   user (`setgroups`, `setresgid`, `setresuid`), and executes the
+   command at `dir`.
+2. Contained, **H forks M** first. M closes every descriptor it
+   inherited, sets `PR_SET_PDEATHSIG`, exits if its parent is no longer
+   H (whose PID it was given before the fork), and waits to be told.
+3. **H unshares,** in one call, a user namespace and the mount, ipc and
+   cgroup namespaces, with the pid, network and uts ones as asked: the
+   user namespace owns them all, H holds every capability in them, and
+   the cgroup namespace's root is the tree's cgroup, which H was spawned
+   into.
+4. **M writes H's maps,** from the service's namespaces, against H's
+   PID, which cannot be reused while H lives: itself, to `uid_map`,
+   `setgroups` and `gid_map`, where it may (one range of its own id, or
+   with `CAP_SETUID` and `CAP_SETGID`), and otherwise by running
+   `newuidmap`, then `newgidmap`, each a child it waits for, with H's PID
+   and the maps. Both check that the caller owns H, by the owner of
+   `/proc/<H>`, which a process freshly executed from a readable file
+   keeps. `newgidmap` denies `setgroups` in the namespace when the map is
+   one id, the caller's own primary group, which `/etc/subgid` does not
+   give it. M exits with what came of it, and H, which reaps it, fails at
+   `Namespaces` unless both maps were written. A setuid `newuidmap` gains
+   no privilege for a service that runs with `no_new_privs`: the shell
+   checks at startup (shell.md, 6.4).
+5. **H takes what the view is made of,** still the service's ids on the
+   host, so with its rights over each path: for the base and each bind,
+   it opens the host path in the new mount namespace (`openat2`,
+   `O_PATH`, `RESOLVE_NO_SYMLINKS`), checks its device and inode against
+   the io root's descriptor, and clones the mount there
+   (`open_tree`, `OPEN_TREE_CLONE`, `AT_RECURSIVE`). What was checked is
+   what is mounted; a path that is not the io root's directory fails the
+   view. Each host path is the one io was given for the root: one with a
+   link on the way fails.
+6. **H takes the namespace's root:** supplementary groups dropped where
+   `setgroups` is allowed, then `setresgid` and `setresuid` 0. Without a
+   pid namespace, H goes on as I does, from step 7, and executes the
+   command itself. With one, **H forks I**, then relays: it reads the
+   signals it blocked from a signalfd and passes each to I, waits for
+   I, and exits with the status I sent it over a pipe, or with I's own
+   if none came. A command that ended by a signal, H ends by the same:
+   its default action restored, unblocked, dumping off
+   (`PR_SET_DUMPABLE` 0). I sets `PR_SET_PDEATHSIG` (`SIGKILL`) and
+   then checks, by a pidfd of H opened before the fork, that H still
+   lives; I's ids never change, which would clear it.
+7. **I composes the view** (io.md, 6.3), if one is asked: every mount
+   private, recursively; the new root, an empty `tmpfs` or the base's
+   clone, attached on `/tmp` of the namespace's copy of the host's tree,
+   and made the working directory; `/proc`, new (`nosuid`, `nodev`,
+   `noexec`), mounted while the host's `/proc` is still in the
+   namespace, which the kernel requires of a user namespace's; each
+   bind's clone attached (`move_mount`) on its target, which is opened
+   beneath the new root following no link (`RESOLVE_IN_ROOT`,
+   `RESOLVE_NO_SYMLINKS`), made if missing where the root may be
+   written; read-only binds, and `read_only` paths bound on themselves,
+   made read-only recursively (`mount_setattr`, `MOUNT_ATTR_RDONLY`,
+   `AT_RECURSIVE`), which keeps each mount's other flags, the locked
+   ones among them; the scratches and `/tmp`, `tmpfs`; `/sys`, new
+   with a network namespace of its own, else the host's, read-only;
+   `/dev`, a `tmpfs` with the host's devices bound in, its own `devpts`
+   (`newinstance`, `ptmxmode=0666`, `mode=0620`, no `gid`) and links.
+   Then `pivot_root(".", ".")`, the old root detached, `/` the working
+   directory, and the root read-only, not recursively, unless given
+   writable.
+8. **I finishes:** the hostname; loopback up, in a network namespace of
+   its own; the rlimits, lowered. It **forks C**, relays to it as H does
+   to I, reaps whatever ends in the namespace, and once C has ended sends
+   H C's status and exits 0: the first process of a pid namespace cannot
+   end by a signal it raises on itself. Its end ends the pid namespace:
+   the kernel kills what is left in it.
+9. **C** sets the ids inside, its supplementary groups cleared, or set
+   to `ids.groups`, where `setgroups` is allowed; then `no_new_privs`;
+   its working directory; its signals' mask and handlers reset; every
+   descriptor closed but the pipes, the given roots and the report; and
+   executes the command.
+
+Each process closes what only its child needs once it has forked it, so
+that the report's end of file and the pipes' ends are the command's. A
+step that fails writes its stage and exits: `Ids` (1, 6, 9's ids),
+`Namespaces` (3, 4), `View` (5, 7), `Command` (9). io refuses, at its
+entrance, a view without a pid namespace of its own, for its `/proc`,
+and a view whose maps leave the namespace's 0 unmapped, which could
+create nothing in its `tmpfs`.
+
+The report's end of file with no record is also what a helper killed
+during its setup leaves, by a deadline or for want of memory: io then
+answers `Spawned`, and the child's exit is by that signal (io.md, 6.3).
+
+The command runs with the capabilities its ids have in the namespace,
+with no seccomp filter (io.md, 10), and with no terminal.
+
 ## 7. Broken invariants
 
 Some mistakes io never makes, so a backend may assume they never happen:
@@ -654,7 +839,11 @@ Some mistakes io never makes, so a backend may assume they never happen:
 - a `Wait` beside another on the same pidfd, or one that reaps before a
   `Wait` has reported the exit; any operation on a pidfd after its reap
   but its close;
-- a cancel of a spawn, a signal, a usage or a window.
+- a cancel of a spawn, a signal, a usage or a window, or of a cgroup
+  record but `CgroupChanged`;
+- a `CgroupChanged` beside another on the same descriptor; a given
+  descriptor or a pipe at a number another has, or at one the helper's
+  own would take; a view without a pid namespace.
 
 The simulator fails the world on each; the ring checks the first two at
 submit.
@@ -782,6 +971,34 @@ for its backend.
   reaped no child before: the children's part zero, still zero after the
   observing `Wait`, and with a peak above zero after the reap; and the
   process's own CPU and peak never falling between two reads.
+- **Cgroups,** on both backends, beneath a cgroup the run may write: on
+  the ring, the one `SKEIN_CGROUP_SCRATCH` names, or else a delegated
+  one above the run's own, found as the end-to-end kit finds it
+  (examples.md, 6); without one, each scenario is skipped by name, saying
+  so. A cgroup made, with limits, counted, removed; one made twice
+  (`Exists`); a limit without its controller; controllers refused while
+  the cgroup holds a process; the run's fixture spawned into one, with a
+  grandchild that leaves its group (`setsid`) and stays in the cgroup; a
+  terminate that reaches both; `Populated` true, `CgroupChanged` pending,
+  then a kill, after which it completes and `Populated` is false, with
+  the first child exited but unreaped; a removal refused while populated,
+  then deepest first once empty.
+- **Contained trees, on the ring alone,** where the run's user has
+  subordinate ids and `newuidmap`; else skipped by name, saying so. Ids
+  alone, read back by the fixture (run as root, or skipped). A tree in a
+  user namespace whose maps name subordinate ids only, whose own user
+  and group then read as the overflow ids, and one whose maps name the
+  run's own group, where `setgroups` is denied; each stage failed in turn
+  and reported as it; a view whose git directory is read-only inside a
+  writable bind, the write refused; a bind whose path was swapped for a
+  link, which fails the view; `/proc` showing the tree's processes alone;
+  loopback alone; the hostname; a double fork contained, and killed with
+  the cgroup; a polite signal relayed to the command, and the command's
+  exit status and its death by a signal, each relayed to the first
+  process, and a signal sent before the relay was ready still relayed;
+  a bind beneath a directory only the service's user may search; a
+  service run with `no_new_privs` refused the maps that need
+  `newuidmap`.
 
 ## 9. Open questions
 

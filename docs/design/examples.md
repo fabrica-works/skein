@@ -383,8 +383,8 @@ processes, each a host of an `iterate` (a service, or a fake client):
     processes at once, from `memory.peak`.
 
     This is the first use of the kernel's cgroup facilities that
-    contained trees build on (draft/process.md). It is written as a tree
-    in that draft's terms (spawned into a cgroup, empty, killed, counted)
+    contained trees build on (io.md, 6.2 to 6.4). It is written as a tree
+    in io's terms (spawned into a cgroup, empty, killed, counted)
     so that it can move into io whole. When io gains trees, the kit
     starts its binary as an io tree and drops its own cgroup code; the
     walk below stays only for machines with no delegated subtree.

@@ -1,6 +1,6 @@
 # Testing skein
 
-Provisional, 2026-10-03, revised 2026-10-18. How testing-strategy.md
+Provisional, 2026-10-03, revised 2026-10-19. How testing-strategy.md
 applies to skein itself: which tiers skein has, what they run, the
 example services and the minimal fake machine they need, where the tests
 live, what skein supplies for a service's own tiers, and where things
@@ -103,6 +103,15 @@ subvolume call `NotSupported`, and its status a filesystem that is not
 btrfs, as Linux does off btrfs, so skein's btrfs scenarios run on the
 ring alone (kernel.md, 8). A service whose fake machine models btrfs,
 such as hearth's, holds that machine to those scenarios itself.
+
+For trees (io.md, 6.2 to 6.4; simulator.md, 3.4) its programs add: one
+that starts a descendant which leaves its group (`setsid`) and outlives
+it; one that forks a child each time it is signalled; and, on the ring,
+one that writes what it finds of itself, its ids and groups, its
+hostname, its network's interfaces, the processes in its `/proc`, its
+`no_new_privs`, its rlimits, and whether chosen paths can be read and
+written, so that a conformance scenario checks a contained tree from
+inside it (kernel.md, 8).
 
 A separate dependency-free kit, `skein-fake-checkout`, supplies generic
 byte-path files, scripted commands and local git mechanics for domain

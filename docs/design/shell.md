@@ -1,6 +1,6 @@
 # The shell kit
 
-Provisional, 2026-10-03, revised 2026-10-18. The design of
+Provisional, 2026-10-03, revised 2026-10-19. The design of
 `skein-shell`: what a service's `main` runs its loop on. The kernel (the
 io_uring backend of the kernel boundary, kernel.md), the clock and the
 seed; the loop itself, over a service's `Host`, and how it ends; what
@@ -150,6 +150,9 @@ Before its loop, a service's `main`, with the kit:
 Startup is each service's `main`, step by step, with the kit's
 functions: the kit holds no startup function of its own.
 
+A service that starts trees also dispatches its helper before step 1,
+and opens its own cgroup before step 7 (6.4).
+
 What startup reads, its configuration, its secrets and certificates, it
 reads with the kit (6.1). Then `main` makes the service and calls `drive`
 (section 12).
@@ -295,6 +298,35 @@ the ring adapter's:
 
 A service without a terminal never asks for any of this, and a line
 pipe needs none of it.
+
+### 6.4 Trees at startup
+
+A service that starts trees (io.md, 6.2 to 6.4) does two more things
+at startup, with the kit:
+
+- **The helper, first of all.** The first line of `main` hands its
+  arguments to `skein-contain`'s dispatch, before it reads any
+  configuration. It returns at once unless the first argument is the
+  helper's marker. With the marker, the process is a helper the service
+  started (kernel.md, 6.6): it sets up the tree and executes the command,
+  or reports its stage and exits, and never returns into `main`. A
+  service that starts no tree may leave the line out: without it, a
+  helper it never starts is never dispatched.
+- **Its own cgroup,** opened before step 7: the `0::` line of
+  `/proc/self/cgroup`, beneath `/sys/fs/cgroup`, which must be a cgroup
+  v2 mount (`statfs`) mounted with `nsdelegate` (`/proc/self/mountinfo`),
+  so that a tree in a cgroup namespace cannot leave its cgroup (io.md,
+  6.4). Startup opens its directory and its `cgroup.events` through the
+  ring adapter, and io adopts the two as the service's own cgroup
+  (io.md, 6.2). A machine without either, or a process in a cgroup v1
+  hierarchy alone, refuses to start a service that asks for trees, saying
+  which it lacks. So does a service whose trees' maps need `newuidmap`
+  and that runs with `no_new_privs` (`PR_GET_NO_NEW_PRIVS`), as a unit
+  its supervisor hardens may: the helper could not gain `newuidmap`'s
+  privilege (kernel.md, 6.6).
+
+A service with neither reads none of this. Under the simulator, the
+world gives the service its own cgroup (simulator.md, 3.4).
 
 ## 7. The readiness backend (later)
 
