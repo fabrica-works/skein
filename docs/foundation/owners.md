@@ -18,23 +18,32 @@ the repository's own `AGENTS.md`.
   direction. It starts one owner per draft, gives the final call on what
   owners escalate, and asks the user only what it can't reasonably
   decide.
-- **An owner** (Claude Code, Opus 5.5 at xhigh) designs its draft, or
-  its part of one, and then implements it. A large scope is split into
-  parts, each given to a sub-owner, a session like itself (section 3).
+- **An owner** (Claude Code, Opus 5.5) designs its draft, or its part
+  of one, and then implements it. A large scope is split into parts,
+  each given to a sub-owner, a session like itself (section 3). Its
+  effort is its parent's choice (section 2).
 - **The flow:** design, report, a brief check by the parent, its green
   light, implementation, landings, a closing note.
-- **The bar** is testing-strategy.md and the project's testing documents
-  (temper's `docs/design/domain/testing.md`). Momentum and tokens count
-  more than upfront perfection: QA catches the rest, and what is wrong is
+- **The compass and the guardrails** are the intended design and
+  architecture, and the tests and QA. The bar for tests is
+  testing-strategy.md and the project's testing documents (temper's
+  `docs/design/domain/testing.md`). Momentum and tokens count more than
+  upfront perfection: QA catches the rest, and what is wrong is
   corrected as it shows.
 
 ## 2. The owner's session
 
 - **Started by its parent** in `~/src/rust` of the machine its work runs
   on, named `o/<name>`:
-  `claude --bg -n o/<name> --model claude-opus-5-5 --effort xhigh
+  `claude --bg -n o/<name> --model claude-opus-5-5 --effort <effort>
   --autocompact 150000 --dangerously-skip-permissions "Read <brief> and
   do what it says."`
+- **Its effort** is the parent's choice by the part's difficulty: xhigh,
+  high or medium. The parent may raise it after the first report, when
+  the output falls short.
+- **An advisor.** An owner below xhigh may start an advisor, a session
+  at xhigh under the same discipline (notes, compaction), and consult
+  it on what it judges delicate. Sparingly: tokens count.
 - **Its brief** names the input (draft sections, designs, a plan, a
   README to grow), its parent and how to reach it, its machine, its notes
   directory, and anything the parent knows that bears on it: other
@@ -118,10 +127,16 @@ Its task file is whole, and holds:
 
 ### 4.4 Landing
 
-The owner reads each diff against its task before it lands (a
-sub-agent's summary of a large one): the names, the boundaries, and the
-tests in the right world. Then it lands, or tells the implementer to,
-with `land` (development.md, section 9). It updates the repository's
+The owner checks each diff before it lands, lightly and cheaply, and
+not as a code review:
+- it keeps to the task's sketches: the names, the signatures, the
+  boundaries;
+- its tests ran and pass, and that proof is in the implementer's report;
+- its tests follow the testing documents and the stories and test
+  sketches the task gave, in the right world.
+
+A sub-agent may check a large one. Then the owner lands it, or tells
+the implementer to, with `land` (development.md, section 9). It updates the repository's
 `docs/design/STATUS.md` rows its work changes.
 
 ### 4.5 Sharing the machines
