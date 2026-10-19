@@ -410,13 +410,18 @@ join() {
 
 # Wakes a role's Claude Code session in the background with a message
 # (development.md, section 10.4). A session at work is never woken: a
-# second wake would fork a copy of it. A designer whose session has been
-# idle longer than its cache lives starts fresh from a brief; any other
-# session is resumed.
+# second wake would fork a copy of it. A designer never joined, or whose
+# session has been idle longer than its cache lives, starts fresh from a
+# brief; any other session is resumed.
 wake() {
     load
     local role=${1:?role} message=${2:?message} session at idle_for
     session=$(role_session "$role")
+    if [[ -z $session && $role == designer ]]; then
+        echo "designer: none joined: a fresh session"
+        claude_role designer "$(designer_fresh_prompt) Then: $message"
+        return
+    fi
     [[ -n $session ]] || die "no $role recorded in $run/claude.tsv (plan join $role)"
     if [[ $(session_state "$session") == busy ]]; then
         echo "$role: at work in session $session; not woken. Send it a message (SendMessage) naming the file to read." >&2

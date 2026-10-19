@@ -553,7 +553,7 @@ block of its own.
 | `plan attach ROLE` | opens a role's session in this terminal: `coordinator`, `supervisor`, `designer`, `retrospective` |
 | `plan resume [CAUSE]` | after a restart, a crash or a pause, starts again what is not running: pueued, Codex's daemon, the supervisor, the coordinator's turn; records its cause in log.md itself; a paused run first moves `kit/` to skein's `origin/main`, adds its Process line to `supervision.md` and resumes with that kit (section 7.6) |
 | `plan join ROLE` | records the Claude Code session it runs in as the run's ROLE, usually the designer |
-| `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief once its session has been idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
+| `plan wake ROLE MESSAGE` | wakes a Claude Code role in the background with MESSAGE: resumes its session, or starts a fresh designer from a brief when none joined or once its session has been idle `PLAN_DESIGNER_IDLE` (3,600 s); never wakes a session at work (section 10.4) |
 | `plan unblocked` | logs blocked.md and unblock.md whole, removes the answered block headings and deletes unblock.md (section 10.3) |
 | `plan steered` | logs and deletes steer.md (section 10.3) |
 | `plan handover REPOSITORY NN CONTEXT` | appends the session handover line to log.md (section 7.3) |
@@ -1640,7 +1640,8 @@ commits behind smith.
    supervisor can wake it (section 10.4), then ends its turn. It does not
    watch the run: no watch, loop or cron job. `plan wake` brings it back
    with each question, or starts a fresh designer from a brief (section
-   10.4). Watching costs its whole context at every wake (49M input tokens
+   10.4), as it does for a run no designer joined, so that no question
+   waits for one. Watching costs its whole context at every wake (49M input tokens
    in tls-cleanup, with no question asked); an observer, if the user wants
    one, is a fresh session with a small context.
 6. **The user looks in when they want:** `plan status` shows the steps and
@@ -2331,7 +2332,7 @@ without `## `, separated by `; `.
     sections and plan files it names, before going on with the answer.
   - **A fresh designer** starts instead, from a brief (`plan wake`'s
     prompt: the role, `question.md`, and the earlier answers that touch
-    it, in `decisions.md`'s design rulings), when the last designer's session has been idle
+    it, in `decisions.md`'s design rulings), when no designer joined the run, when the last designer's session has been idle
     for over an hour, longer than its cache lives, or when its last answer
     said it was confused: then the supervisor wakes it with
     `PLAN_DESIGNER_IDLE=0 plan wake designer …`. In jig-protocol, each

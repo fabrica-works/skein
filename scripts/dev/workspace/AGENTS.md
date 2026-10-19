@@ -101,7 +101,8 @@ trailer, so that the run's metrics count the planning.
    coordinator (a thread on Codex's daemon), and returns.
 3. If the plan may raise design questions, in the designer's Claude
    session: `plan join designer`, then let it end its turn; it does not
-   watch the run. The supervisor wakes it with each question.
+   watch the run. The supervisor wakes it with each question; with no
+   designer joined, the wake starts a fresh one.
 
 **While it runs:** `plan status`; `plan attach supervisor`, `plan attach
 coordinator`. After a restart of the machine: `plan resume`.
