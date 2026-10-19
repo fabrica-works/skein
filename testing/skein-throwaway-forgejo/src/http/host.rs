@@ -59,18 +59,15 @@ impl OneShot<'_> {
 impl Host for OneShot<'_> {
     fn iterate(&mut self, now: Time, wall: Wall) {
         let env = Env { now, wall, limits: limits() };
-        for _ in 0..64 {
-            if self.events.room() < 3 || self.submit.room() < 2 {
-                break;
-            }
+        // Deliver each io transition and its next HTTP demand before taking
+        // another completion: Failed drops unread intake (io.md, 3.3).
+        if self.events.room() >= 3 && self.submit.room() >= 2 {
             if self.io.is_ready() {
                 io::resume(&mut self.io, &env, &mut self.events, &mut self.submit);
             } else if let Some(complete) = self.complete.pop() {
                 io::up(&mut self.io, &env, complete, &mut self.events, &mut self.submit);
             } else if self.io.is_due(now) {
                 io::fire(&mut self.io, &env, &mut self.events, &mut self.submit);
-            } else {
-                break;
             }
         }
         while let Some(event) = self.events.pop() {
@@ -183,3 +180,6 @@ pub(crate) fn wait(duration: Duration) -> Result<(), Failure> {
     let clock = Clock::new();
     drive(OneShot::new(None, clock.now().now.saturating_add(duration)), &clock)
 }
+
+#[cfg(test)]
+mod tests;
