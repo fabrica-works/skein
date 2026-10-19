@@ -139,7 +139,7 @@ pub(crate) struct Web {
     pub(crate) failure: Option<oauth::Failure>,
     close_sent: bool,
     id: u64,
-    sent: bool,
+    pub(crate) sent: bool,
     abort: bool,
 }
 

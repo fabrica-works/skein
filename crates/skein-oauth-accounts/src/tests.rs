@@ -120,7 +120,7 @@ fn assert_expired(event: Option<Event>) {
     assert_event(event, Event::Failed { account: 0, ends: Ends::Grant, failure: Failure::Expired });
 }
 fn assert_refused(event: Option<Event>, account: u32, asked: Asked, why: Refusal) {
-    assert_event(event, Event::Refused { account, asked, why });
+    assert_eq!(refusal_of(event), Some((account, asked, why)));
 }
 
 #[test]
@@ -635,4 +635,40 @@ fn an_owner_record_without_an_issued_id_is_held_as_none() {
         &mut Queue::with_capacity(MAX_OUT_DOWN.files),
     );
     assert_expired(above.pop());
+}
+
+#[path = "accounts_tests.rs"]
+mod accounts;
+
+fn refusal_of(event: Option<Event>) -> Option<(u32, Asked, Refusal)> {
+    match event {
+        Some(Event::Refused { account, asked, why }) => Some((account, asked, why)),
+        Some(
+            Event::Visit { .. }
+            | Event::SignedIn { .. }
+            | Event::Granted { .. }
+            | Event::Expiring { .. }
+            | Event::Keep { .. }
+            | Event::Failed { .. }
+            | Event::Removed { .. }
+            | Event::Closed,
+        )
+        | None => None,
+    }
+}
+fn failure_of(event: Option<Event>) -> Option<(u32, Ends, Failure)> {
+    match event {
+        Some(Event::Failed { account, ends, failure }) => Some((account, ends, failure)),
+        Some(
+            Event::Visit { .. }
+            | Event::SignedIn { .. }
+            | Event::Granted { .. }
+            | Event::Expiring { .. }
+            | Event::Keep { .. }
+            | Event::Refused { .. }
+            | Event::Removed { .. }
+            | Event::Closed,
+        )
+        | None => None,
+    }
 }

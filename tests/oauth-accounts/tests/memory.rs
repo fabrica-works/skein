@@ -435,3 +435,12 @@ fn handed_in_record(account: u32) -> SavedToken {
         earliest_refresh_at: None,
     }
 }
+
+#[test]
+fn an_added_and_removed_place_fits_the_heap_bound() {
+    drop(skein_oauth_accounts_world::accounts::run(
+        131,
+        skein_oauth_accounts_world::accounts::Story::Keeping,
+        skein_world::Memory::Checked,
+    ));
+}

@@ -9,6 +9,7 @@ use skein_oauth::ClientLimits;
 /// The component's limits supplied by its owner before the loop.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Limits {
+    /// Configured and added accounts, including removals still settling.
     pub accounts: u32,
     /// Deadline stated on each private keeper request, including cleanup.
     pub file_stall: Duration,

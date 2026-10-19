@@ -7,3 +7,5 @@ pub mod sign_in;
 pub mod private;
 
 pub mod private_cuts;
+
+pub mod accounts;

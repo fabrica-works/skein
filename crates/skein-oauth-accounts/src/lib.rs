@@ -1,6 +1,6 @@
 //! The owner's OAuth accounts (oauth.md, sections 6.1–6.7).
 //! Keeps bounded records, held grants, issuer exchanges, redirect listeners and deadlines;
-//! names each configured account by its index. `down` accepts
+//! names configured accounts by index and `add` admits further owner numbers. `down` accepts
 //! owner requests and keeper terminals, `up` routes socket events, `filed` routes
 //! private file terminals, `fire` advances
 //! one child or deadline, and `next_deadline` lets the owner schedule it.

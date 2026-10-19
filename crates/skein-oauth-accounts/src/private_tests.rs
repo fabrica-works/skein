@@ -5,16 +5,16 @@ use crate::{FileLower, Place, Unloaded};
 use skein_io::{file, kernel};
 use skein_lib::Token;
 
-struct Owner {
-    component: Component,
-    env: Env<Limits>,
-    above: Queue<Event>,
-    io: Queue<Lower>,
-    files: Queue<FileLower>,
+pub(super) struct Owner {
+    pub(super) component: Component,
+    pub(super) env: Env<Limits>,
+    pub(super) above: Queue<Event>,
+    pub(super) io: Queue<Lower>,
+    pub(super) files: Queue<FileLower>,
 }
 
 impl Owner {
-    fn new() -> Owner {
+    pub(super) fn new() -> Owner {
         Self::with_terms(None)
     }
     fn with_terms(terms: Option<skein_oauth::Terms>) -> Owner {
@@ -38,11 +38,7 @@ impl Owner {
                 address: kernel::Addr::from(([127, 0, 0, 1], 31000)),
                 transport: Transport::Plaintext,
             },
-            keeper: Keeper::Private {
-                root: Token::new(99),
-                directory: bytes::copy_of(b"secret"),
-                file: bytes::copy_of(b"record"),
-            },
+            keeper: private_keeper(bytes::copy_of(b"secret")),
         }) {
             Ok(()) => {}
             Err(_) => unreachable!("account slot"),
@@ -55,10 +51,10 @@ impl Owner {
             files: Queue::with_capacity(32),
         }
     }
-    fn ask(&mut self, request: Request) {
+    pub(super) fn ask(&mut self, request: Request) {
         self.component.down(&self.env, request, &mut self.above, &mut self.io, &mut self.files);
     }
-    fn fire(&mut self) {
+    pub(super) fn fire(&mut self) {
         let before_above = self.above.len();
         let before_io = self.io.len();
         let before_files = self.files.len();
@@ -67,7 +63,7 @@ impl Owner {
         assert!(self.io.len().saturating_sub(before_io) <= MAX_OUT_FIRE.io);
         assert!(self.files.len().saturating_sub(before_files) <= MAX_OUT_FIRE.files);
     }
-    fn terminal(&mut self, event: file::Event) {
+    pub(super) fn terminal(&mut self, event: file::Event) {
         let before_above = self.above.len();
         let before_io = self.io.len();
         let before_files = self.files.len();
@@ -76,7 +72,7 @@ impl Owner {
         assert!(self.io.len().saturating_sub(before_io) <= MAX_OUT_FILED.io);
         assert!(self.files.len().saturating_sub(before_files) <= MAX_OUT_FILED.files);
     }
-    fn next(&mut self) -> file::Request {
+    pub(super) fn next(&mut self) -> file::Request {
         for _ in 0_u32..32 {
             match self.files.pop() {
                 Some(FileLower::Request { request, deadline }) => {
@@ -89,7 +85,7 @@ impl Owner {
         }
         panic!("one ready file request")
     }
-    fn opened(&mut self) -> Token {
+    pub(super) fn opened(&mut self) -> Token {
         let request = self.next();
         check_file(&request, 0);
         let owner = owner_of(&request);
@@ -100,7 +96,7 @@ impl Owner {
     }
 }
 
-fn owner_of(request: &file::Request) -> Token {
+pub(super) fn owner_of(request: &file::Request) -> Token {
     match request {
         file::Request::Lock { owner, .. }
         | file::Request::MakeDirectory { owner, .. }
@@ -334,7 +330,8 @@ fn assert_visit(event: Option<Event>) {
     match event {
         Some(Event::Visit { .. }) => {}
         Some(
-            Event::SignedIn { .. }
+            Event::Removed { .. }
+            | Event::SignedIn { .. }
             | Event::Granted { .. }
             | Event::Expiring { .. }
             | Event::Keep { .. }
@@ -403,12 +400,11 @@ fn issued_owner(request: Request, issued_client_id: Option<Box<[u8]>>) -> (Owner
 fn a_record_without_an_issued_id_loads_unreadable() {
     for (name, issued_client_id) in [("absent", None), ("empty", Some(Box::from([])))] {
         let (mut owner, _) = issued_owner(Request::Grant { account: 0 }, issued_client_id);
-        let expected = Event::Failed {
-            account: 0,
-            ends: Ends::Grant,
-            failure: Failure::Unloaded { at: Place::File, why: Unloaded::Unreadable },
-        };
-        assert!(owner.above.pop() == Some(expected), "{name}: unreadable issued id");
+        assert_eq!(
+            failure_of(owner.above.pop()),
+            Some((0, Ends::Grant, Failure::Unloaded { at: Place::File, why: Unloaded::Unreadable })),
+            "{name}"
+        );
     }
 }
 
@@ -416,4 +412,8 @@ fn a_record_without_an_issued_id_loads_unreadable() {
 fn a_sign_in_replaces_it_expecting_the_digest_it_loaded() {
     let (owner, digest) = issued_owner(Request::SignIn { account: 0 }, None);
     assert_eq!(owner.component.private_expected(0), file::Expect::Digest(digest));
+}
+
+pub(super) fn private_keeper(directory: Box<[u8]>) -> Keeper {
+    Keeper::Private { root: Token::new(99), directory, file: bytes::copy_of(b"record") }
 }

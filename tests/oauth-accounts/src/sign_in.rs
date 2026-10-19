@@ -327,7 +327,9 @@ impl Client {
                         driver.close_root(env.now);
                     }
                 }
-                accounts::Event::Refused { .. } | accounts::Event::Expiring { .. } => {
+                accounts::Event::Removed { .. }
+                | accounts::Event::Refused { .. }
+                | accounts::Event::Expiring { .. } => {
                     panic!("unexpected sign-in owner event")
                 }
             }

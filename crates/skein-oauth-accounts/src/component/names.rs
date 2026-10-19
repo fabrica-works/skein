@@ -10,7 +10,7 @@ impl Component {
         for place in 0..self.names.len() {
             match self.names.get(place).expect("bounded names") {
                 Name::Live { number } if *number == account => return Some(place),
-                Name::Live { .. } | Name::Free => {}
+                Name::Live { .. } | Name::Removing { .. } | Name::Free => {}
             }
         }
         None
@@ -18,6 +18,7 @@ impl Component {
 
     pub(super) fn named(&self, request: Request, up: &mut Queue<Event>) -> Option<Request> {
         Some(match request {
+            Request::Remove { account } => Request::Remove { account: self.lookup(account, Asked::Remove, up)? },
             Request::SignIn { account } => Request::SignIn { account: self.lookup(account, Asked::SignIn, up)? },
             Request::Redirected { account, uri } => {
                 Request::Redirected { account: self.lookup(account, Asked::Redirected, up)?, uri }
@@ -32,7 +33,7 @@ impl Component {
             }
             Request::Release { account } => Request::Release { account: self.place(account)? },
             Request::Kept { account, generation, keeping } => {
-                Request::Kept { account: self.place(account)?, generation, keeping }
+                Request::Kept { account: self.terminal_place(account)?, generation, keeping }
             }
             Request::Close => Request::Close,
             Request::Abort => Request::Abort,
@@ -56,7 +57,7 @@ impl Component {
 
 pub(super) fn number(names: &List<Name>, place: u32) -> u32 {
     match names.get(place).expect("account name") {
-        Name::Live { number } => *number,
+        Name::Live { number } | Name::Removing { number } => *number,
         Name::Free => unreachable!("free account emits nothing"),
     }
 }

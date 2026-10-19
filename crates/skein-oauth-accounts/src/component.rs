@@ -11,12 +11,13 @@
 
 use crate::accounts::{Source, copy_registration};
 use crate::exchange::{Exchange, Stage, Web};
-use crate::keeper::{Private, Store};
+use crate::keeper::Store;
 use crate::route::{self, Socket};
-use crate::{Account, Asked, Ends, Event, Failure, Keeper, Keeping, Limits, Refusal, Request, Transport, worst_case};
+use crate::{Account, Asked, Ends, Event, Failure, Keeping, Limits, Refusal, Request, worst_case};
 use skein_lib::{CryptoRng, Duration, Env, Id, List, Queue, Slab, Time};
 use skein_oauth::{self as oauth, SavedToken};
 
+mod accounts;
 mod names;
 mod private;
 use names::number;
@@ -97,6 +98,7 @@ pub enum Unusable {
 pub(crate) enum Name {
     Free,
     Live { number: u32 },
+    Removing { number: u32 },
 }
 
 pub(crate) enum State {
@@ -160,52 +162,7 @@ impl Component {
         let mut keepers = List::with_capacity(limits.accounts);
         for (index, account) in accounts.into_boxed().into_iter().enumerate() {
             let index = u32::try_from(index).expect("bounded accounts");
-            let (source, state, store) = match account {
-                Account::HandedIn => (Source::HandedIn, State::Empty, Store::Owner),
-                Account::SignIn { registration, endpoint, keeper } => {
-                    match endpoint.transport {
-                        Transport::Plaintext if !endpoint.address.ip().is_loopback() => {
-                            return Err(Unusable::Plaintext { account: index });
-                        }
-                        Transport::Plaintext | Transport::Tls { .. } => {}
-                    }
-                    if registration.client_secret.is_none()
-                        && oauth::redirect_address(&registration.redirect_uri).is_err()
-                    {
-                        return Err(Unusable::Redirect { account: index });
-                    }
-                    match oauth::validate_registration(&registration, &limits.client, true) {
-                        Ok(()) => {}
-                        Err(failure) => return Err(Unusable::Registration { account: index, failure }),
-                    }
-                    let (state, store) = match keeper {
-                        Keeper::Owner { kept } => (
-                            match kept {
-                                Some(record) => {
-                                    match oauth::encode_record(&record, &limits.client.document) {
-                                        Ok(encoded) => drop(encoded),
-                                        Err(why) => return Err(Unusable::Record { account: index, why }),
-                                    }
-                                    if names::missing_id(&registration, &record) {
-                                        State::Empty
-                                    } else {
-                                        State::Loaded { record }
-                                    }
-                                }
-                                None => State::Empty,
-                            },
-                            Store::Owner,
-                        ),
-                        Keeper::Private { root, directory, file } => {
-                            if directory.len() >= 4096 || file.len() >= 4096 {
-                                return Err(Unusable::Path { account: index });
-                            }
-                            (State::Empty, Store::Private(Private::new(root, directory, file)))
-                        }
-                    };
-                    (Source::SignIn { registration, endpoint }, state, store)
-                }
-            };
+            let (source, state, store) = accounts::admit(index, account, limits)?;
             *names.get_mut(index).expect("bounded name") = Name::Live { number: index };
             match states.push(state) {
                 Ok(()) => {}
@@ -266,6 +223,11 @@ impl Component {
             None => return,
         };
         match request {
+            Request::Remove { account } => {
+                if !self.refused(account, Asked::Remove, up) {
+                    self.remove(env, account, up, io);
+                }
+            }
             Request::SignIn { account } => self.sign_in(env, account, up, io),
             Request::Redirected { account, uri } => self.redirected(env, account, &uri, up),
             Request::Cancel { account } => match self.bindings.get(account) {
@@ -568,6 +530,9 @@ impl Component {
         files: &mut Queue<FileLower>,
     ) {
         self.initialize(env);
+        if self.removal_progress(env, up, io) {
+            return;
+        }
         for account in 0..self.bindings.len() {
             match *self.bindings.get(account).expect("account binding") {
                 Some(id) => {
@@ -597,6 +562,9 @@ impl Component {
             return;
         }
         for account in 0..self.accounts.len() {
+            if !self.live(account) {
+                continue;
+            }
             let source = self.sources.get(account).expect("account source");
             match self.accounts.get_mut(account).expect("account state") {
                 State::Record { record, expiry, lead, announced, held, rejected, attempted, due, .. } => {
@@ -717,7 +685,7 @@ impl Component {
                 } else {
                     web.progress(env, io);
                 }
-                if web.closed() && web.answer.is_none() {
+                if web.closed() && web.answer.is_none() && (!exchange.client.is_done() || exchange.above.is_empty()) {
                     exchange.web = None;
                 }
             }
@@ -953,7 +921,13 @@ impl Component {
     fn collect(&mut self, id: Id<Exchange>, up: &mut Queue<Event>) {
         let exchange = self.exchanges.get_mut(id).expect("bound exchange");
         match &exchange.web {
-            Some(web) if web.closed() && web.answer.is_none() => exchange.web = None,
+            Some(web)
+                if web.closed()
+                    && web.answer.is_none()
+                    && (!exchange.client.is_done() || exchange.above.is_empty()) =>
+            {
+                exchange.web = None;
+            }
             Some(_) | None => {}
         }
         if exchange.settled() {
@@ -967,6 +941,9 @@ impl Component {
         match self.lifecycle {
             Lifecycle::Live | Lifecycle::Closed => return,
             Lifecycle::Closing | Lifecycle::Aborting => {}
+        }
+        if self.removing() {
+            return;
         }
         for binding in &self.bindings {
             if binding.is_some() {
@@ -990,6 +967,9 @@ impl Component {
     /// Child work buffered for the owner to schedule before sleeping.
     #[must_use]
     pub fn has_work(&self) -> bool {
+        if self.removal_has_work() {
+            return true;
+        }
         for account in 0..self.keepers.len() {
             match self.keepers.get(account).expect("account keeper") {
                 Store::Private(keeper) => {
@@ -1064,7 +1044,7 @@ impl Component {
                 }
                 continue;
             }
-            if self.lifecycle != Lifecycle::Live {
+            if self.lifecycle != Lifecycle::Live || !self.live(account) {
                 continue;
             }
             let next = match self.accounts.get(account).expect("account state") {

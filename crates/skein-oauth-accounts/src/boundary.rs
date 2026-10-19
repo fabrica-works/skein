@@ -1,5 +1,6 @@
 //! The owner's lending boundary (oauth.md, sections 6.3 and 6.6).
 
+use crate::Unusable;
 use alloc::boxed::Box;
 use skein_lib::Duration;
 use skein_oauth::SavedToken;
@@ -8,6 +9,8 @@ use skein_oauth::SavedToken;
 #[derive(PartialEq, Eq, Hash)]
 #[expect(missing_debug_implementations, reason = "credential values must never occur in traces")]
 pub enum Request {
+    /// Removes this account after its sent exchange and durable keep settle.
+    Remove { account: u32 },
     /// Starts this account's sign-in: Visit once, then `SignedIn`, Failed or Refused.
     SignIn { account: u32 },
     /// The confidential owner's complete redirect URI; refusal leaves a sign-in waiting.
@@ -34,6 +37,8 @@ pub enum Request {
 #[derive(PartialEq, Eq, Hash)]
 #[expect(missing_debug_implementations, reason = "credential values must never occur in traces")]
 pub enum Event {
+    /// The account has settled and its number is free for another add.
+    Removed { account: u32 },
     /// The authorization URL for the owner to show, once per admitted sign-in.
     Visit { account: u32, url: Box<[u8]> },
     /// Ends `SignIn` once its record is durably kept, with a grant ready to ask for.
@@ -77,6 +82,10 @@ pub enum Failure {
 /// The request a refusal answers.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Asked {
+    /// The owner's account addition.
+    Add,
+    /// The owner's account removal.
+    Remove,
     /// The owner's sign-in request.
     SignIn,
     /// The confidential owner's redirect.
@@ -90,6 +99,10 @@ pub enum Asked {
 /// Why a request was refused before any work.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Refusal {
+    /// A live or removing account already holds this number.
+    Taken,
+    /// The added configuration cannot run.
+    Unusable(Unusable),
     /// This account already has its one exchange.
     Busy,
     /// No sign-in of the account waits for a redirect.
@@ -102,7 +115,7 @@ pub enum Refusal {
     Account,
     /// The requested operation does not belong to this account's source.
     Source,
-    /// The exchange or public listener bound admits no more work.
+    /// The account, exchange or public listener bound admits no more work.
     Full { bound: u32 },
     /// A handed-in record carries a refresh token its source alone may rotate.
     NotAccessOnly,

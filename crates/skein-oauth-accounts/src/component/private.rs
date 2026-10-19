@@ -52,6 +52,7 @@ impl Component {
         files: &mut Queue<FileLower>,
     ) -> bool {
         for account in 0..self.keepers.len() {
+            let removing = !self.live(account);
             let keeper = match self.keepers.get_mut(account).expect("account keeper") {
                 Store::Private(keeper) => keeper,
                 Store::Owner => continue,
@@ -63,7 +64,13 @@ impl Component {
             }
             match &mut keeper.pending {
                 Some(pending) => {
-                    if self.lifecycle == Lifecycle::Aborting && pending.operation != Operation::Close {
+                    if (self.lifecycle == Lifecycle::Aborting || removing)
+                        && pending.operation != Operation::Close
+                        && match pending.operation {
+                            Operation::Store { .. } => self.lifecycle == Lifecycle::Aborting,
+                            Operation::Open | Operation::Load | Operation::Close => true,
+                        }
+                    {
                         pending.cancel = true;
                     }
                     if pending.cancel && !pending.cancelled {
@@ -86,7 +93,7 @@ impl Component {
                 None => {}
             }
             let binding = *self.bindings.get(account).expect("account binding");
-            if self.lifecycle != Lifecycle::Live && binding.is_none() && !keeper.waiting_grant {
+            if (self.lifecycle != Lifecycle::Live || removing) && binding.is_none() && !keeper.waiting_grant {
                 keeper.next = match keeper.root {
                     Some(_) => Some(Operation::Close),
                     None => {

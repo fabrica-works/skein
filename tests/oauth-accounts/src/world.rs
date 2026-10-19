@@ -227,32 +227,33 @@ impl Contracts {
 
 /// The service's owner adapter, running the same component at each tier.
 pub struct Client {
+    pub(crate) accounts: Option<crate::accounts::Owner>,
     pub(crate) terms: Option<oauth::Terms>,
     io: io::Io,
-    component: Option<accounts::Component>,
-    limits: accounts::Limits,
+    pub(crate) component: Option<accounts::Component>,
+    pub(crate) limits: accounts::Limits,
     events: Queue<io::Event>,
-    requests: Queue<io::Request>,
+    pub(crate) requests: Queue<io::Request>,
     pub(crate) files: Queue<accounts::FileLower>,
     pub(crate) file_driver: Option<skein_world::files::Driver>,
     file_keep: Option<(skein_lib::Token, oauth::SavedToken)>,
     pub(crate) stop_at_store: Option<bool>,
     pub(crate) stop_at_load: Option<bool>,
     pub(crate) retry_load: Option<()>,
-    above: Queue<accounts::Event>,
+    pub(crate) above: Queue<accounts::Event>,
     completions: Queue<kernel::Complete>,
     submissions: Queue<kernel::Submit>,
     pub(crate) address: Option<SocketAddr>,
-    transport: Transport,
+    pub(crate) transport: Transport,
     story: Story,
     pub(crate) facts: Vec<Fact>,
     records: Vec<oauth::SavedToken>,
     contracts: Contracts,
-    closing: bool,
+    pub(crate) closing: bool,
     pub(crate) closed: bool,
     pub(crate) recovered: Option<u64>,
     rejected: bool,
-    started: Time,
+    pub(crate) started: Time,
 }
 
 impl Client {
@@ -261,6 +262,7 @@ impl Client {
     }
     pub(crate) fn with_limits(story: Story, transport: Transport, limits: &accounts::Limits, room: u32) -> Client {
         Client {
+            accounts: None,
             terms: None,
             io: io::Io::new(&limits.io),
             component: None,
@@ -313,6 +315,10 @@ impl Client {
         self.component.is_none()
     }
     pub(crate) fn start(&mut self, env: &Env<accounts::Limits>) {
+        if self.accounts.is_some() {
+            crate::accounts::start(self, env);
+            return;
+        }
         let mut configured = List::with_capacity(1);
         let seconds = if matches!(
             self.story,
@@ -413,7 +419,11 @@ impl Client {
             self.ask(env, accounts::Request::Close);
         }
     }
-    fn observe(&mut self, env: &Env<accounts::Limits>) {
+    pub(crate) fn observe(&mut self, env: &Env<accounts::Limits>) {
+        if self.accounts.is_some() {
+            crate::accounts::observe(self, env);
+            return;
+        }
         if let Some(event) = self.above.pop() {
             assert!(!self.closed, "Closed is once and last");
             match event {
@@ -492,7 +502,10 @@ impl Client {
                     );
                     self.ask(env, accounts::Request::HandIn { account, record });
                 }
-                accounts::Event::Refused { .. } | accounts::Event::Visit { .. } | accounts::Event::SignedIn { .. } => {
+                accounts::Event::Removed { .. }
+                | accounts::Event::Refused { .. }
+                | accounts::Event::Visit { .. }
+                | accounts::Event::SignedIn { .. } => {
                     panic!("positive story has no such event")
                 }
             }
@@ -505,6 +518,7 @@ impl Client {
         while let Some(lower) = self.files.pop() {
             match lower {
                 accounts::FileLower::Request { request, deadline } => {
+                    crate::accounts::before_file(self, env, &request);
                     if let io::file::Request::Store { owner, bytes, .. } = &request {
                         let record =
                             oauth::decode_record(bytes, &env.limits.client.document).expect("candidate record");
@@ -640,6 +654,7 @@ impl Host for Client {
                     self.ask(&env, accounts::Request::Abort);
                 }
             }
+            crate::accounts::before_socket(self, &env, &request);
             io::down(&mut self.io, &io_env, request, &mut self.submissions);
         }
         self.private_io(&env);
@@ -1000,16 +1015,19 @@ pub fn assert_replay(first: &Outcome<Process>, second: &Outcome<Process>) {
 /// Runs the same owner and independent issuer directly over shared seeded streams.
 /// Returns the content-free owner facts and stream trace for protocol replay.
 #[must_use]
-#[expect(
-    clippy::too_many_lines,
-    reason = "one protocol world loop exposes both stream boundaries and the independent issuer"
-)]
 pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
+    let (client, trace) = protocol_client(seed, Client::new(story, Transport::Plaintext));
+    (client.facts, trace)
+}
+
+#[expect(clippy::too_many_lines, reason = "one protocol loop exposes both stream boundaries and the issuer")]
+pub(crate) fn protocol_client(seed: u64, mut client: Client) -> (Client, Vec<String>) {
     use skein_http::server as http;
     use skein_lib::Token;
     use skein_lib::stream::{Down, Read, Up};
     use skein_world::stream::Wire;
 
+    let story = client.story;
     let profile = limits();
     let registration = registration(Transport::Plaintext);
     let mut issuer = fake::Issuer::new(
@@ -1056,7 +1074,6 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
     let mut issuer_out = Queue::with_capacity(ROOM);
     let mut client_wire = Wire::new(seed);
     let mut server_wire = Wire::new(seed.wrapping_add(1));
-    let mut client = Client::new(story, Transport::Plaintext);
     client.address = Some((Ipv4Addr::LOCALHOST, 31000).into());
     let mut now = Time::ZERO;
     client.start(&Env { now, wall: Wall::EPOCH, limits: profile });
@@ -1073,10 +1090,12 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             component.fire(&env, &mut client.above, &mut client.requests, &mut client.files);
         }
         client.observe(&env);
+        crate::accounts::protocol_files(&mut client, &env);
         if story == Story::Released && now >= Time::ZERO.saturating_add(Duration::from_secs(40)) {
             client.close(&env);
         }
         if let Some(request) = client.requests.pop() {
+            crate::accounts::before_socket(&mut client, &env, &request);
             if !client.closing
                 && ((matches!(request, io::Request::Connect { .. })
                     && matches!(story, Story::CloseConnecting | Story::Abort))
@@ -1108,6 +1127,16 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     );
                     server_requests.push(http::Request::Next);
                 }
+                io::Request::Listen { owner: identity, addr } => {
+                    assert!(owner.replace(identity).is_none(), "one listener");
+                    client.component.as_mut().expect("component").up(
+                        &env,
+                        io::Event::Listening { owner: identity, listener: Token::new(9), addr },
+                        &mut client.above,
+                        &mut client.requests,
+                        &mut client.files,
+                    );
+                }
                 io::Request::Stream { down, .. } => {
                     match &down {
                         Down::Send(bytes) => server_wire.write(bytes),
@@ -1126,8 +1155,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
                     );
                     server_requests.push(http::Request::Close);
                 }
-                other @ (io::Request::Listen { .. }
-                | io::Request::Bind { .. }
+                other @ (io::Request::Bind { .. }
                 | io::Request::Reject { .. }
                 | io::Request::Output { .. }
                 | io::Request::Spawn { .. }
@@ -1252,7 +1280,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         if client.closed && client.requests.is_empty() && client.above.is_empty() && (owner.is_none()) {
             assert!(issuer.posts() <= 1);
             client_wire.trace.extend(server_wire.trace);
-            return (client.facts, client_wire.trace);
+            return (client, client_wire.trace);
         }
         now = now.saturating_add(Duration::from_millis(1));
     }
