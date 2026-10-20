@@ -48,7 +48,11 @@ pub fn config() -> fake::Config {
             .expect("bounded fixture");
         let user = if id % 2 == 0 { 32 } else { PERSON };
         tokens
-            .push((Secret::new(vec![b'a' + u8::try_from(id).expect("bounded fixture"); 128].into_boxed_slice()), user))
+            .push((
+                Secret::new(vec![b'a' + u8::try_from(id).expect("bounded fixture"); 128].into_boxed_slice()),
+                user,
+                None,
+            ))
             .expect("bounded fixture");
     }
     for (login, id, organization) in
