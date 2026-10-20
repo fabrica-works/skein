@@ -1075,15 +1075,6 @@ fn a_busy_github_forge_names_the_plan_at_the_app() {
         );
     }
 }
-#[test]
-fn a_reconcile_on_a_github_forge_stops_unexpected_until_53_lands() {
-    let mut w = World::with(limits(), github_settings());
-    w.plan(1, Plan::Reconcile { forge: 4, adopted: Box::new([]) });
-    assert_eq!(w.up.pop(), Some(github_stop(1, b"reconcile", Why::Unexpected)));
-    assert_eq!(w.up.len(), 0);
-    assert_eq!(w.io.len(), 0);
-    assert_eq!(w.host.next_deadline(), None);
-}
 fn github_reachable(installation: Option<u64>) -> Plan {
     Plan::Reachable { forge: 4, installation, page: core::num::NonZeroU32::new(1).expect("first page") }
 }
@@ -1188,6 +1179,6 @@ fn a_github_forge_with_documents_that_cannot_hold_the_pin_is_unusable() {
     );
     // Scalar and body strings have independent bounds.
     l.depth = skein_forge::github::limits::DEPTH;
-    l.string_bytes = 1;
+    l.string_bytes = 27;
     Host::new(&l, github_settings(), crypto()).unwrap();
 }

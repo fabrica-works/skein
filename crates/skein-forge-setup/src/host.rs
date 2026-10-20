@@ -83,7 +83,7 @@ impl Host {
                         configured,
                         plan,
                         bounds(&env.limits, configured),
-                        env.now,
+                        env,
                         &mut self.crypto,
                         &mut self.states,
                         &mut self.plan_out,

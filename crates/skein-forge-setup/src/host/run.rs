@@ -12,6 +12,7 @@ use crate::{
         convert::{self, Convert},
         install::{self, Install},
         manifest::{self, Manifest},
+        reconcile as github_reconcile,
     },
     given::Given,
     item::{self, Bounds, Item},
@@ -21,12 +22,38 @@ use crate::{
 };
 use alloc::boxed::Box;
 use skein_forge::forgejo::request::Request;
-use skein_lib::{CryptoRng, Duration, Queue, Secret, Time, Token};
+use skein_lib::{CryptoRng, Duration, Env, Queue, Secret, Time, Token};
 /// The forge's settings given, with the plan's adopted repositories.
 pub(crate) fn given_for(forge: &Given, adopted: &[u64]) -> Given {
     let mut given = forge.clone();
     given.adopted = adopted.into();
     given
+}
+/// A Forgejo plan's machine; GitHub's plans are refused.
+fn forgejo_machine(forge: &Forge, given: &Given, plan: Plan, bounds: &Bounds) -> Result<Machine, Failure> {
+    Ok(match plan {
+        Plan::Manifest { .. } | Plan::Convert { .. } | Plan::Install { .. } | Plan::Accept { .. } => {
+            return Err(super::about(forge, &plan, Why::Unexpected));
+        }
+        Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
+            Reconcile::new(&given_for(given, &adopted)).expect("the owner checks a plan's adopted repositories"),
+        )),
+        Plan::Check { forge } => Machine::Check(Check::new(forge)),
+        Plan::TakeOver { admin_token, .. } => {
+            let taken = if item::token(admin_token.expose(), bounds.token_bytes).is_some() {
+                admin_token
+            } else {
+                Secret::new(Box::new([]))
+            };
+            Machine::TakeOver(TakeOver::new(given, taken).expect("host checks the given"))
+        }
+        Plan::Adopt { repository, .. } => Machine::Adopt(
+            Adopt::new(given, repository.get()).expect("host checks the given and the repository is nonzero"),
+        ),
+        Plan::Reachable { installation, page, .. } => Machine::Reachable(
+            Reachable::new(given, installation, page.get()).expect("host checks the given and the page is nonzero"),
+        ),
+    })
 }
 /// One machine per plan, sharing the host's need and connection loop.
 #[derive(Debug)]
@@ -36,6 +63,7 @@ pub(crate) enum Machine {
     Install(Install),
     Accept(Accept),
     Reconcile(Box<Reconcile>),
+    GitHubReconcile(Box<github_reconcile::Reconcile>),
     Check(Check),
     TakeOver(TakeOver),
     Adopt(Adopt),
@@ -49,6 +77,7 @@ impl Machine {
             Self::Install(machine) => install::step(machine, event, out),
             Self::Accept(machine) => accept::step(machine, event, out),
             Self::Reconcile(machine) => reconcile::step(machine, event, out),
+            Self::GitHubReconcile(machine) => github_reconcile::step(machine, event, out),
             Self::Check(machine) => check::step(machine, event, out),
             Self::TakeOver(machine) => take_over::step(machine, event, out),
             Self::Adopt(machine) => adopt::step(machine, event, out),
@@ -60,6 +89,7 @@ impl Machine {
         match self {
             Self::Reconcile(machine) => reconcile::halt(machine, why, out),
             Self::Convert(machine) => convert::halt(machine, why, out),
+            Self::GitHubReconcile(machine) => github_reconcile::halt(machine, why, out),
             Self::Manifest(_)
             | Self::Install(_)
             | Self::Accept(_)
@@ -133,39 +163,16 @@ impl Run {
         forge: &Forge,
         plan: Plan,
         bounds: Bounds,
-        now: Time,
+        env: &Env<super::Limits>,
         crypto: &mut CryptoRng,
         states: &mut States,
         out: &mut Queue<reconcile::Need>,
     ) -> Result<Self, Failure> {
+        let now = env.now;
         let writes = plan.writes();
         let mut issued_state = None;
         let machine = match &forge.kind {
-            Kind::Forgejo(given) => match plan {
-                Plan::Manifest { .. } | Plan::Convert { .. } | Plan::Install { .. } | Plan::Accept { .. } => {
-                    return Err(super::about(forge, &plan, Why::Unexpected));
-                }
-                Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
-                    Reconcile::new(&given_for(given, &adopted))
-                        .expect("the owner checks a plan's adopted repositories"),
-                )),
-                Plan::Check { forge } => Machine::Check(Check::new(forge)),
-                Plan::TakeOver { admin_token, .. } => {
-                    let taken = if item::token(admin_token.expose(), bounds.token_bytes).is_some() {
-                        admin_token
-                    } else {
-                        Secret::new(Box::new([]))
-                    };
-                    Machine::TakeOver(TakeOver::new(given, taken).expect("host checks the given"))
-                }
-                Plan::Adopt { repository, .. } => Machine::Adopt(
-                    Adopt::new(given, repository.get()).expect("host checks the given and the repository is nonzero"),
-                ),
-                Plan::Reachable { installation, page, .. } => Machine::Reachable(
-                    Reachable::new(given, installation, page.get())
-                        .expect("host checks the given and the page is nonzero"),
-                ),
-            },
+            Kind::Forgejo(given) => forgejo_machine(forge, given, plan, &bounds)?,
             Kind::GitHub(given) => match plan {
                 Plan::Manifest { ref target, .. } => {
                     let state = issue_state(given, Purpose::Convert, now, crypto, states, b"manifest")?;
@@ -211,7 +218,15 @@ impl Run {
                         Err(_) => return Err(super::about(forge, &plan, Why::Unexpected)),
                     }
                 }
-                Plan::Reconcile { .. } | Plan::Check { .. } | Plan::TakeOver { .. } | Plan::Adopt { .. } => {
+                Plan::Reconcile { ref adopted, .. } => {
+                    if !adopted.is_empty() {
+                        return Err(super::about(forge, &plan, Why::Unexpected));
+                    }
+                    Machine::GitHubReconcile(Box::new(
+                        github_reconcile::Reconcile::new(given, env.wall).expect("host checks the given"),
+                    ))
+                }
+                Plan::Check { .. } | Plan::TakeOver { .. } | Plan::Adopt { .. } => {
                     return Err(super::about(forge, &plan, Why::Unexpected));
                 }
             },

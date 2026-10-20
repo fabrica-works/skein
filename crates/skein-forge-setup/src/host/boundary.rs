@@ -10,51 +10,24 @@ use skein_lib::{Secret, Token};
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Plan {
     /// The browser page for creating a GitHub App (5.1).
-    Manifest {
-        forge: u16,
-        target: Target,
-    },
+    Manifest { forge: u16, target: Target },
     /// Converts a manifest callback, retaining its items before Done (5.2).
-    Convert {
-        forge: u16,
-        code: Secret,
-        state: Box<[u8]>,
-    },
+    Convert { forge: u16, code: Secret, state: Box<[u8]> },
     /// The App install link with an Accept-purpose state (5.4 and 5.7).
-    Install {
-        forge: u16,
-    },
+    Install { forge: u16 },
     /// Verifies and retains an installation admitted by its state (5.4 and 5.7).
-    Accept {
-        forge: u16,
-        installation: NonZeroU64,
-        state: Box<[u8]>,
-    },
-    Reconcile {
-        forge: u16,
-        adopted: Box<[u64]>,
-    },
+    Accept { forge: u16, installation: NonZeroU64, state: Box<[u8]> },
+    /// Reconcile either kind; GitHub requires an empty adopted set (5.6).
+    Reconcile { forge: u16, adopted: Box<[u64]> },
     /// A connected Forgejo's two tokens, checked (4.6).
-    Check {
-        forge: u16,
-    },
+    Check { forge: u16 },
     /// The handed admin token, held only until the run ends (4.7).
-    TakeOver {
-        forge: u16,
-        admin_token: Secret,
-    },
+    TakeOver { forge: u16, admin_token: Secret },
     /// The bot's access to the repository whose id the forge gave (4.5).
-    Adopt {
-        forge: u16,
-        repository: NonZeroU64,
-    },
+    Adopt { forge: u16, repository: NonZeroU64 },
     /// One picker page, from 1 (4.8). Forgejo takes no installation.
     /// Reads only: the host forwards no Write for it.
-    Reachable {
-        forge: u16,
-        installation: Option<u64>,
-        page: NonZeroU32,
-    },
+    Reachable { forge: u16, installation: Option<u64>, page: NonZeroU32 },
 }
 impl Plan {
     pub(super) fn forge(&self) -> u16 {

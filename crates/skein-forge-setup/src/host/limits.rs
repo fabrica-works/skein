@@ -22,11 +22,11 @@ pub struct Limits {
     pub depth: u32,
     /// The body stream's largest piece.
     pub chunk: u32,
-    /// The most bytes retained in a document's scalar string.
+    /// The most bytes retained in a document's scalar string; at least 27 for GitHub.
     pub string_bytes: u32,
     /// The most bytes retained in a document's body string.
     pub body_bytes: u32,
-    /// The most elements retained in a document's inner list.
+    /// The most elements retained in a document's inner list; at least 14 for GitHub.
     pub inner: u32,
     /// The longest encoded request target.
     pub target_bytes: u32,
@@ -93,6 +93,11 @@ pub enum Unusable {
     },
     Documents(docs::Problem),
     GitHubDocuments(dialect::limits::Problem),
+    /// The required inner count and scalar bytes for the wanted App metadata.
+    GitHubMetadata {
+        inner: u32,
+        string_bytes: u32,
+    },
     Stack {
         stacked: Stacked,
         demand: u32,
@@ -188,6 +193,7 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
                 if let Err(problem) = dialect::limits::check(&github(l)) {
                     return Err(Unusable::GitHubDocuments(problem));
                 }
+                app_metadata(l)?;
                 stack(Stacked::JsonOverHttp, tokenizer::largest_demand(&github(l).json), h.read)?;
                 (u64::from(l.token_bytes).max(u64::try_from(dialect::jwt::JWT_BYTES).expect("JWT bound fits")), 320)
             }
@@ -244,4 +250,22 @@ fn header_value(value: &[u8]) -> bool {
         }
     }
     true
+}
+
+// Metadata is retained in full by the dialect; the wanted access must fit
+// without truncating a subscription or a permission name (5.6, step 2).
+fn app_metadata(l: &Limits) -> Result<(), Unusable> {
+    let inner = u32::try_from(dialect::setup::PERMISSIONS.len().max(dialect::setup::EVENTS.len()))
+        .expect("wanted metadata count fits");
+    let mut string_bytes = 0;
+    for (name, _) in dialect::setup::PERMISSIONS {
+        string_bytes = string_bytes.max(u32::try_from(name.len()).expect("wanted name fits"));
+    }
+    for name in dialect::setup::EVENTS {
+        string_bytes = string_bytes.max(u32::try_from(name.len()).expect("wanted name fits"));
+    }
+    if l.inner < inner || l.string_bytes < string_bytes {
+        return Err(Unusable::GitHubMetadata { inner, string_bytes });
+    }
+    Ok(())
 }

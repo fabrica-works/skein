@@ -267,7 +267,7 @@ fn a_started_failed_convert_cannot_reuse_its_state() {
             forge,
             Plan::Convert { forge: CONVERT_FORGE, code: secret(CONVERT_CODE), state: state.clone() },
             super::bounds(&world.env.limits, forge),
-            Time::ZERO,
+            &world.env,
             &mut world.host.crypto,
             &mut world.host.states,
             &mut world.host.plan_out,
@@ -289,5 +289,158 @@ fn a_started_failed_convert_cannot_reuse_its_state() {
         world.convert(2, CONVERT_FORGE, &state);
         world.unknown(2);
         world.close();
+    }
+}
+
+const RECONCILE_RUN: Token = Token::new(1);
+const PICKER_RUN: Token = Token::new(2);
+const OTHER_WRITER: Token = Token::new(3);
+
+struct ReconcileHost {
+    host: Host,
+    env: Env<super::Limits>,
+    up: Queue<Event>,
+    io: Queue<skein_io::Request>,
+}
+impl ReconcileHost {
+    fn new() -> Self {
+        let limits = fixtures::limits();
+        let mut settings = fixtures::github_settings();
+        // Distinct deadlines prove the GitHub forge supplies its own times.
+        match &mut settings.forges.get_mut(1).expect("GitHub forge").kind {
+            Kind::GitHub(given) => given.limits.deadline = Duration::from_secs(7),
+            Kind::Forgejo(_) => panic!("GitHub fixture"),
+        }
+        Self {
+            host: Host::new(&limits, settings, fixtures::crypto()).expect("host"),
+            env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
+            up: Queue::with_capacity(MAX_OUT.above),
+            io: Queue::with_capacity(MAX_OUT.below),
+        }
+    }
+    fn down(&mut self, request: Request) {
+        assert!(self.up.room() >= MAX_OUT.above && self.io.room() >= MAX_OUT.below);
+        self.host.down(&self.env, request, &mut self.up, &mut self.io);
+        assert!(self.io.is_empty(), "paused owner reads send nothing");
+    }
+    fn reconcile(&mut self, run: Token, adopted: &[u64]) {
+        self.down(Request::Run { run, plan: Plan::Reconcile { forge: 4, adopted: adopted.into() } });
+    }
+    fn read(&mut self, run: Token, item: Item) {
+        assert_eq!(self.up.pop(), Some(Event::Need { run, need: super::Need::Read(item) }));
+        assert!(self.up.is_empty());
+    }
+    fn fire(&mut self, seconds: u64) {
+        self.env.now = Time::ZERO.saturating_add(Duration::from_secs(seconds));
+        assert!(self.up.room() >= MAX_OUT.above && self.io.room() >= MAX_OUT.below);
+        self.host.fire(&self.env, &mut self.up, &mut self.io);
+        assert!(self.io.is_empty());
+    }
+    fn close(&mut self) {
+        self.down(Request::Close);
+        assert_eq!(self.up.pop(), Some(Event::Closed));
+        assert!(self.up.is_empty());
+        assert_eq!(self.host.next_deadline(), None);
+    }
+}
+
+#[test]
+fn a_github_reconcile_asks_for_app_id_instead_of_stopping_unexpected() {
+    let mut world = ReconcileHost::new();
+    world.reconcile(RECONCILE_RUN, &[]);
+    world.read(RECONCILE_RUN, Item::AppId);
+    world.close();
+}
+
+#[test]
+fn a_github_reconcile_with_adopted_ids_sends_nothing() {
+    let mut world = ReconcileHost::new();
+    world.reconcile(RECONCILE_RUN, &[1]);
+    assert_eq!(
+        world.up.pop(),
+        Some(Event::Stop {
+            run: RECONCILE_RUN,
+            failure: Failure {
+                forge: 4,
+                step: Stage::App,
+                subject: b"reconcile".as_slice().into(),
+                why: Why::Unexpected
+            },
+        })
+    );
+    assert!(world.up.is_empty());
+    assert_eq!(world.host.next_deadline(), None);
+    world.close();
+}
+
+#[test]
+fn a_second_github_writer_is_busy_beside_a_running_picker() {
+    let mut world = ReconcileHost::new();
+    world.reconcile(RECONCILE_RUN, &[]);
+    world.read(RECONCILE_RUN, Item::AppId);
+    world.down(Request::Run {
+        run: PICKER_RUN,
+        plan: Plan::Reachable { forge: 4, installation: Some(2), page: core::num::NonZeroU32::new(1).expect("page") },
+    });
+    world.read(PICKER_RUN, Item::Accepted);
+    world.reconcile(OTHER_WRITER, &[]);
+    assert_eq!(
+        world.up.pop(),
+        Some(Event::Stop {
+            run: OTHER_WRITER,
+            failure: Failure { forge: 4, step: Stage::App, subject: b"reconcile".as_slice().into(), why: Why::Busy },
+        })
+    );
+    assert!(world.up.is_empty());
+    world.close();
+}
+
+#[test]
+fn a_github_reconcile_uses_its_forges_deadline_and_ends_once() {
+    let mut world = ReconcileHost::new();
+    world.reconcile(RECONCILE_RUN, &[]);
+    world.read(RECONCILE_RUN, Item::AppId);
+    assert_eq!(world.host.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(7))));
+    world.fire(6);
+    assert!(world.up.is_empty());
+    world.fire(7);
+    assert_eq!(
+        world.up.pop(),
+        Some(Event::Stop {
+            run: RECONCILE_RUN,
+            failure: Failure { forge: 4, step: Stage::App, subject: b"id".as_slice().into(), why: Why::Down },
+        })
+    );
+    assert!(world.up.is_empty());
+    assert_eq!(world.host.next_deadline(), None);
+    world.down(Request::Answer { run: RECONCILE_RUN, answer: Answer::Read(Some(secret(&19u64.to_le_bytes()))) });
+    assert!(world.up.is_empty());
+    world.fire(30);
+    assert!(world.up.is_empty());
+    world.close();
+}
+
+#[test]
+fn github_app_metadata_must_fit_in_the_hosts_documents() {
+    // Fourteen subscriptions; pull_request_review_comment is 27 bytes.
+    const INNER: u32 = 14;
+    const STRING: u32 = 27;
+    for (inner, string_bytes, expected) in [
+        (INNER, STRING, None),
+        (
+            INNER.checked_sub(1).expect("nonzero bound"),
+            STRING,
+            Some(super::Unusable::GitHubMetadata { inner: INNER, string_bytes: STRING }),
+        ),
+        (
+            INNER,
+            STRING.checked_sub(1).expect("nonzero bound"),
+            Some(super::Unusable::GitHubMetadata { inner: INNER, string_bytes: STRING }),
+        ),
+    ] {
+        let mut limits = fixtures::limits();
+        limits.inner = inner;
+        limits.string_bytes = string_bytes;
+        assert_eq!(Host::new(&limits, fixtures::github_settings(), fixtures::crypto()).err(), expected);
     }
 }

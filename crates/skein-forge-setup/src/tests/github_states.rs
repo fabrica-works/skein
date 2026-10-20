@@ -94,7 +94,7 @@ impl World {
             forge,
             manifest(FORGE),
             bounds(&self.env.limits, forge),
-            self.env.now,
+            &self.env,
             &mut self.host.crypto,
             &mut self.host.states,
             &mut self.host.plan_out,

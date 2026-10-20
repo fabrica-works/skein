@@ -12,6 +12,7 @@ mod github_install;
 mod github_installations;
 mod github_manifest;
 mod github_picker;
+mod github_reconcile;
 mod github_send;
 mod given;
 mod hooks;
