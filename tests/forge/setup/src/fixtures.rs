@@ -15,7 +15,7 @@ pub fn given(owned: bool) -> Given {
         admin_name: b"kit-admin".as_slice().into(),
         api_name: b"kit-api".as_slice().into(),
         git_name: b"kit-git".as_slice().into(),
-        orgs: Box::new([b"acme".as_slice().into(), b"work".as_slice().into()]),
+        orgs: if owned { Box::new([b"acme".as_slice().into(), b"work".as_slice().into()]) } else { Box::new([]) },
         org_owner: owned.then(|| b"ada".as_slice().into()),
         listener: None,
         word: b"kit".as_slice().into(),
@@ -35,7 +35,7 @@ pub fn config() -> Config {
         tokens: List::with_capacity(0),
         users: List::with_capacity(0),
         repositories: List::with_capacity(0),
-        // Three teams require a second page; all other fake limits are shipped.
+        // A third token requires a second page; all other fake limits are shipped.
         max_response_items: 2,
         default_paging_num: 30,
         faults: Faults { reset: 0, drop: 0, server_error: 0 },
@@ -55,27 +55,10 @@ pub fn bot_tokens(world: &mut crate::World) -> u64 {
     world.put(Item::GitToken, secret(GIT));
     id
 }
-#[must_use]
-pub fn team(name: &[u8]) -> skein_forge::forgejo::document::TeamSpec {
-    use skein_forge::forgejo::document::{Access, TeamSpec, Units};
-    TeamSpec {
-        name: name.into(),
-        permission: Access::Write,
-        includes_all_repositories: true,
-        units: Units { code: Access::Write, issues: Access::Write, pulls: Access::Write, actions: Access::Write },
-    }
-}
-#[must_use]
-pub fn listener() -> std::net::SocketAddr {
-    "127.0.0.1:9898".parse().expect("listener")
-}
-pub const URL: &[u8] = b"http://127.0.0.1:9898/hooks/1";
-pub const WEBHOOK: &[u8] = b"webhook-secret-present-before-reconcile";
 /// A settled forge for perturbing one behavior on its next run.
 #[must_use]
 pub fn converged(seed: u64) -> crate::World {
     let mut world = crate::World::owned(seed);
-    world.listening(listener());
     assert_eq!(world.reconcile(), crate::Ended::Done);
     world
 }
@@ -96,18 +79,6 @@ pub fn write_routes(world: &crate::World, since: usize) -> Vec<skein_fake_forge_
 #[must_use]
 pub fn file_writes(world: &crate::World) -> usize {
     world.trace().iter().filter(|line| line.starts_with("Write {")).count()
-}
-/// Namespaced differently from the listener, so reconcile must leave it alone.
-pub const OTHER_URL: &[u8] = b"http://elsewhere.invalid/hook";
-pub const OTHER_SECRET: &[u8] = b"somebody-elses-hook-secret";
-#[must_use]
-pub fn stale_team() -> skein_forge::forgejo::document::TeamSpec {
-    use skein_forge::forgejo::document::{Access, Units};
-    let mut spec = team(b"kit");
-    spec.permission = Access::Read;
-    spec.includes_all_repositories = false;
-    spec.units = Units { code: Access::Read, issues: Access::None, pulls: Access::None, actions: Access::None };
-    spec
 }
 pub fn assert_bot(world: &crate::World) {
     use skein_forge_setup::item::Item;
@@ -130,34 +101,15 @@ pub fn assert_bot(world: &crate::World) {
     );
 }
 pub fn assert_org(world: &crate::World, org: &[u8]) {
-    use skein_forge::forgejo::delivery::SUBSCRIBED;
-    use skein_forge_setup::item::Item;
     assert_eq!(world.store().organization(org).expect("org").owner.as_ref(), b"ada");
-    let team = world.store().team(org, b"kit").expect("team");
-    assert_eq!(team.spec, self::team(b"kit"));
-    assert_eq!(team.members.as_slice(), &[3]);
-    let hooks: Vec<_> = world.store().subscriptions(org).filter(|hook| hook.url.as_ref() == URL).collect();
-    assert_eq!(hooks.len(), 1);
-    assert_eq!(&hooks[0].secret, world.file(Item::WebhookSecret).expect("webhook file"));
-    assert_eq!(hooks[0].events.iter().map(AsRef::as_ref).collect::<Vec<&[u8]>>(), SUBSCRIBED);
-    assert!(hooks[0].active);
 }
-pub fn assert_other_hooks(world: &crate::World, expected: &[(Box<[u8]>, u64)]) {
-    for (org, id) in expected {
-        let hook = world.store().subscriptions(org).find(|hook| hook.id == *id).expect("other hook kept");
-        assert_eq!((hook.url.as_ref(), hook.secret.expose(), hook.active), (OTHER_URL, OTHER_SECRET, false));
-        assert!(hook.events.is_empty());
-    }
-}
-pub type OtherHooks = Vec<(Box<[u8]>, u64)>;
 /// Seed each part independently; stale credentials answer as another user or nobody.
 #[must_use]
-pub fn random(seed: u64) -> (crate::World, OtherHooks) {
+pub fn random(seed: u64) -> crate::World {
     use skein_forge_setup::item::Item;
     use skein_lib::Rng;
     let mut rng = Rng::new(seed);
     let mut world = crate::World::owned(seed);
-    world.listening(listener());
     let bot = (rng.next_u64() & 1 == 1).then(|| world.store_mut().account(b"kit", false, b"kit:bot"));
     for (file, name, scopes, value) in [
         (
@@ -173,14 +125,10 @@ pub fn random(seed: u64) -> (crate::World, OtherHooks) {
     if rng.next_u64() & 1 == 1 {
         world.put(Item::User, secret(&if rng.next_u64() & 1 == 1 { 3u64 } else { 1u64 }.to_le_bytes()));
     }
-    if rng.next_u64() & 1 == 1 {
-        world.put(Item::WebhookSecret, secret(WEBHOOK));
-    }
-    let mut other = Vec::new();
     for org in [b"acme".as_slice(), b"work"] {
-        seed_org(&mut world, &mut rng, bot, org, &mut other);
+        seed_org(&mut world, &mut rng, org);
     }
-    (world, other)
+    world
 }
 fn seed_token(
     world: &mut crate::World,
@@ -200,35 +148,9 @@ fn seed_token(
         world.put(file, secret(b"unknown-file-token"));
     }
 }
-fn seed_org(
-    world: &mut crate::World,
-    rng: &mut skein_lib::Rng,
-    bot: Option<u64>,
-    org: &[u8],
-    other: &mut Vec<(Box<[u8]>, u64)>,
-) {
-    if rng.next_u64() & 1 == 0 {
-        return;
-    }
-    world.store_mut().org(org, b"ada");
+fn seed_org(world: &mut crate::World, rng: &mut skein_lib::Rng, org: &[u8]) {
     if rng.next_u64() & 1 == 1 {
-        let spec = if rng.next_u64() & 1 == 1 { team(b"kit") } else { stale_team() };
-        let team = world.store_mut().add_team(org, spec);
-        if let Some(bot) = bot
-            && rng.next_u64() & 1 == 1
-        {
-            world.store_mut().member(team, bot);
-        }
-    }
-    if rng.next_u64() & 1 == 1 {
-        world.store_mut().hook(org, URL, secret(b"stale-hook-secret"));
-    }
-    if rng.next_u64() & 1 == 1 {
-        world.store_mut().hook(org, URL, secret(b"stale-second-hook"));
-    }
-    if rng.next_u64() & 1 == 1 {
-        let id = world.store_mut().hook(org, OTHER_URL, secret(OTHER_SECRET));
-        other.push((org.into(), id));
+        world.store_mut().org(org, b"ada");
     }
 }
 

@@ -12,7 +12,9 @@ pub struct Given {
     pub admin_name: Box<[u8]>,
     pub api_name: Box<[u8]>,
     pub git_name: Box<[u8]>,
+    /// The orgs to make when absent, in order; none when the forge is managed.
     pub orgs: Box<[Box<[u8]>]>,
+    /// Who owns the orgs made; set with `orgs`.
     pub org_owner: Option<Box<[u8]>>,
     pub listener: Option<SocketAddr>,
     pub word: Box<[u8]>,
@@ -66,8 +68,11 @@ pub fn check(given: &Given) -> Result<(), Refused> {
         return Err(Refused { place: Place::OrgOwner, other: None });
     }
     limits::check(&given.limits)?;
-    if given.orgs.is_empty() || given.orgs.len() > usize::try_from(given.limits.orgs).expect("u32 fits") {
+    if given.orgs.len() > usize::try_from(given.limits.orgs).expect("u32 fits") {
         return Err(Refused { place: Place::Orgs, other: None });
+    }
+    if !given.orgs.is_empty() && given.org_owner.is_none() {
+        return Err(Refused { place: Place::Orgs, other: Some(Place::OrgOwner) });
     }
     Ok(())
 }

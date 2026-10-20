@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use core::net::{Ipv4Addr, SocketAddr};
 use skein_lib::{Duration, bytes};
 pub const ADMIN: &[u8] = b"site-admin-token";
 pub fn secret(value: &[u8]) -> skein_lib::Secret {
@@ -93,55 +92,6 @@ impl Run {
     }
 }
 
-impl Run {
-    pub fn hook_listing() -> Self {
-        use crate::reconcile::{Event, Reply};
-        use skein_forge::forgejo::document::{ApiSettings, Document, Org, Row, Team};
-        let mut run = Self::managed();
-        run.given.listener = Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 9898)));
-        run.machine = crate::reconcile::Reconcile::new(&run.given).expect("fixture admitted");
-        run.bot_lookup();
-        run.step(Event::Reply(Reply::Document(Document::User(person(b"kit", b"kit:bot")))));
-        run.kept_tokens();
-        run.step(Event::Read(Some(secret(&42u64.to_le_bytes()))));
-        run.step(Event::Reply(Reply::Document(Document::ApiSettings(ApiSettings {
-            max_response_items: 2,
-            default_paging_num: 30,
-        }))));
-        run.step(Event::Reply(Reply::Document(Document::Org(Org { id: 1, name: b"acme".as_slice().into() }))));
-        run.step(Event::Reply(Reply::Rows(Box::new([]))));
-        run.step(Event::Reply(Reply::Document(Document::Team(Team { id: 1, spec: team_spec() }))));
-        run.step(Event::Reply(Reply::Rows(Box::new([Row::User(person(b"kit", b"kit:bot"))]))));
-        run.step(Event::Read(Some(secret(b"webhook-secret"))));
-        run
-    }
-}
-pub fn team_spec() -> skein_forge::forgejo::document::TeamSpec {
-    use skein_forge::forgejo::document::{Access, TeamSpec, Units};
-    TeamSpec {
-        name: b"kit".as_slice().into(),
-        permission: Access::Write,
-        includes_all_repositories: true,
-        units: Units { code: Access::Write, issues: Access::Write, pulls: Access::Write, actions: Access::Write },
-    }
-}
-pub fn hook_row(id: u64) -> skein_forge::forgejo::document::Row {
-    skein_forge::forgejo::document::Row::Hook(skein_forge::forgejo::document::Hook {
-        id,
-        url: b"http://127.0.0.1:9898/hooks/1".as_slice().into(),
-        events: Box::new([]),
-        active: false,
-    })
-}
-
-pub fn subscribed() -> Box<[Box<[u8]>]> {
-    let mut events = skein_lib::List::with_capacity(22);
-    for event in skein_forge::forgejo::delivery::SUBSCRIBED {
-        events.push(event.into()).expect("events");
-    }
-    events.into_boxed()
-}
-
 pub fn limits() -> crate::limits::Limits {
     crate::limits::Limits {
         orgs: PROFILE_ORGS,
@@ -158,7 +108,7 @@ pub fn given() -> crate::given::Given {
         admin_name: b"kit-admin".as_slice().into(),
         api_name: b"kit-api".as_slice().into(),
         git_name: b"kit-git".as_slice().into(),
-        orgs: Box::new([b"acme".as_slice().into()]),
+        orgs: Box::new([]),
         org_owner: None,
         listener: None,
         word: b"kit".as_slice().into(),
@@ -221,32 +171,9 @@ pub fn to_org(run: &mut Run) {
     keep_token(run);
     keep_token(run);
     run.step(Event::Read(Some(secret(&42u64.to_le_bytes()))));
-    run.step(settings_event(PAGE_CAP));
-}
-pub fn org_event() -> crate::reconcile::Event {
-    use skein_forge::forgejo::document::{Document, Org};
-    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::Org(Org {
-        id: 1,
-        name: b"acme".as_slice().into(),
-    })))
-}
-pub fn team_event() -> crate::reconcile::Event {
-    use skein_forge::forgejo::document::{Document, Team};
-    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::Team(Team { id: 7, spec: team_spec() })))
 }
 pub fn rows(rows: Box<[skein_forge::forgejo::document::Row]>) -> crate::reconcile::Event {
     crate::reconcile::Event::Reply(crate::reconcile::Reply::Rows(rows))
-}
-pub fn hook_secret_read() -> Run {
-    let mut given = given();
-    given.listener = Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 9898)));
-    let mut run = Run::with_given(given);
-    to_org(&mut run);
-    run.step(org_event());
-    run.step(rows(Box::new([])));
-    run.step(team_event());
-    run.step(rows(Box::new([skein_forge::forgejo::document::Row::User(person(b"kit", b"kit:bot"))])));
-    run
 }
 pub fn send(request: skein_forge::forgejo::request::Request) -> crate::reconcile::Need {
     crate::reconcile::Need::Send { request, token: secret(ADMIN) }
@@ -298,9 +225,8 @@ pub fn token_row(id: u64, name: &[u8]) -> skein_forge::forgejo::document::Row {
     use skein_forge::forgejo::document::{AccessToken, Row};
     Row::Token(AccessToken { id, name: name.into(), scopes: Box::new([]), last_eight: Box::new([]), value: None })
 }
-// The step requests 32 draw bytes; a short answer is one byte below it (4.3).
+// The bot step requests 32 draw bytes (4.3).
 pub const DRAW_BYTES: usize = 32;
-pub const SHORT_DRAW_BYTES: usize = DRAW_BYTES - 1;
 pub fn drawn() -> crate::reconcile::Event {
     crate::reconcile::Event::Drawn(secret(&[0x0a; DRAW_BYTES]))
 }
@@ -309,50 +235,10 @@ pub fn bot_lookup_run() -> Run {
     to_bot(&mut run);
     run
 }
-pub fn org_read() -> Run {
-    let mut run = Run::managed();
-    to_org(&mut run);
-    run
-}
 pub fn owned_org_read() -> Run {
     let mut run = Run::owned();
     to_org(&mut run);
     run
-}
-pub fn teams_read() -> Run {
-    let mut run = org_read();
-    run.step(org_event());
-    run
-}
-pub fn members_read() -> Run {
-    let mut run = teams_read();
-    run.step(rows(Box::new([])));
-    run.step(team_event());
-    run
-}
-pub fn hook_listing_read() -> Run {
-    let mut run = hook_secret_read();
-    run.step(crate::reconcile::Event::Read(Some(secret(b"webhook-secret"))));
-    run
-}
-pub fn team_row(
-    id: u64,
-    name: &[u8],
-    permission: skein_forge::forgejo::document::Access,
-) -> skein_forge::forgejo::document::Row {
-    use skein_forge::forgejo::document::{Row, Team};
-    let mut spec = team_spec();
-    spec.name = name.into();
-    spec.permission = permission;
-    Row::Team(Team { id, spec })
-}
-pub fn hook_spec() -> skein_forge::forgejo::request::HookSpec {
-    skein_forge::forgejo::request::HookSpec {
-        url: b"http://127.0.0.1:9898/hooks/1".as_slice().into(),
-        secret: secret(b"webhook-secret"),
-        events: subscribed(),
-        active: true,
-    }
 }
 pub fn page(number: u32) -> skein_forge::forgejo::request::Page {
     skein_forge::forgejo::request::Page { page: Some(number), limit: Some(PAGE_CAP) }

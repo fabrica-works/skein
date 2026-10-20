@@ -45,9 +45,6 @@ impl World {
             secrets: vec![fixtures::secret(fixtures::ADMIN)],
         }
     }
-    pub fn missing_org(&mut self, name: &[u8]) {
-        self.given.orgs = Box::new([name.into()]);
-    }
     pub fn listening(&mut self, address: SocketAddr) {
         self.given.listener = Some(address);
     }
@@ -101,9 +98,6 @@ impl World {
     }
     pub fn reconcile(&mut self) -> Ended {
         self.secrets.extend(self.service.setup().issued().iter().map(|token| token.secret.clone()));
-        for org in &self.given.orgs {
-            self.secrets.extend(self.service.setup().subscriptions(org).map(|hook| hook.secret.clone()));
-        }
         let mut machine = Reconcile::new(&self.given).expect("fixture admitted");
         let mut out = Queue::with_capacity(reconcile::MAX_OUT);
         let mut event = Event::Begin;
@@ -154,9 +148,6 @@ pub(crate) fn seeded(seed: u64, owned: bool) -> (Service, skein_fake_forge_proto
     service.setup_mut().token(admin, b"setup-admin", &[b"all"], fixtures::secret(fixtures::ADMIN));
     if owned {
         service.setup_mut().account(b"ada", true, b"Ada");
-    } else {
-        service.setup_mut().org(b"acme", b"kit-admin");
-        service.setup_mut().org(b"work", b"kit-admin");
     }
     (service, limits)
 }

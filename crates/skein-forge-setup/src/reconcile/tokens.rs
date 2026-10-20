@@ -39,9 +39,6 @@ impl Tokens {
             phase: Phase::Read,
         }
     }
-    pub fn cap(&self) -> Option<u32> {
-        self.cap
-    }
     pub fn name(&self) -> &[u8] {
         match self.item {
             Item::ApiToken => &self.api_name,

@@ -45,7 +45,7 @@ fn an_absent_bot_is_made_with_a_drawn_password_and_the_marker() {
     assert_eq!(run.step(user(fixtures::person(b"kit", b"kit:bot"))), Need::Read(Item::ApiToken));
     run.kept_tokens();
     assert_eq!(run.step(Event::Read(None)), Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) });
-    assert_eq!(run.step(Event::Written), Need::Send { request: Request::ApiSettings, token: secret(fixtures::ADMIN) });
+    assert_eq!(run.step(Event::Written), Need::Done);
 }
 #[test]
 fn a_bot_with_the_marker_is_kept_and_nothing_is_written() {
@@ -53,10 +53,7 @@ fn a_bot_with_the_marker_is_kept_and_nothing_is_written() {
     run.bot_lookup();
     assert_eq!(run.step(user(fixtures::person(b"kit", b"note kit:bot account"))), Need::Read(Item::ApiToken));
     run.kept_tokens();
-    assert_eq!(
-        run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))),
-        Need::Send { request: Request::ApiSettings, token: secret(fixtures::ADMIN) }
-    );
+    assert_eq!(run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))), Need::Done);
 }
 #[test]
 fn a_user_of_the_bots_login_without_the_marker_is_refused_naming_the_login() {
@@ -117,10 +114,7 @@ fn the_bots_id_is_written_as_eight_bytes_only_when_the_item_differs() {
             Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) },
             "{old:?}"
         );
-        assert_eq!(
-            run.step(Event::Written),
-            Need::Send { request: Request::ApiSettings, token: secret(fixtures::ADMIN) }
-        );
+        assert_eq!(run.step(Event::Written), fixtures::send(Request::Org { name: b"work".as_slice().into() }));
     }
 }
 #[test]
@@ -175,42 +169,6 @@ fn hook_urls_are_written_for_loopback_v4_and_v6() {
     }
 }
 #[test]
-fn a_lower_hook_met_later_deletes_the_higher_one_kept() {
-    use skein_forge::forgejo::request::{HookSpec, Page};
-    let mut run = Run::hook_listing();
-    assert_eq!(
-        run.step(Event::Reply(Reply::Rows(Box::new([fixtures::hook_row(7), fixtures::hook_row(3)])))),
-        Need::Send {
-            request: Request::DeleteOrgHook { org: b"acme".as_slice().into(), id: 7 },
-            token: secret(fixtures::ADMIN)
-        }
-    );
-    assert_eq!(
-        run.step(Event::Reply(Reply::Empty)),
-        Need::Send {
-            request: Request::OrgHooks { org: b"acme".as_slice().into(), page: Page { page: Some(1), limit: Some(2) } },
-            token: secret(fixtures::ADMIN)
-        }
-    );
-    assert_eq!(
-        run.step(Event::Reply(Reply::Rows(Box::new([fixtures::hook_row(3)])))),
-        Need::Send {
-            request: Request::EditOrgHook {
-                org: b"acme".as_slice().into(),
-                id: 3,
-                hook: HookSpec {
-                    url: b"http://127.0.0.1:9898/hooks/1".as_slice().into(),
-                    secret: secret(b"webhook-secret"),
-                    events: fixtures::subscribed(),
-                    active: true,
-                }
-            },
-            token: secret(fixtures::ADMIN)
-        }
-    );
-}
-
-#[test]
 fn a_marker_at_a_word_boundary_is_accepted() {
     for name in [b"kit:bot".as_slice(), b"(kit:bot)", b"note kit:bot", b"xkit:bot kit:bot", b"kit:botx kit:bot"] {
         let mut run = Run::managed();
@@ -262,11 +220,7 @@ fn an_empty_bot_id_is_absent() {
         run.step(Event::Read(Some(secret(b"")))),
         Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) }
     );
-}
-#[test]
-fn an_empty_hook_secret_is_absent() {
-    let mut run = fixtures::hook_secret_read();
-    assert_eq!(run.step(Event::Read(Some(secret(b"")))), Need::Draw(32));
+    assert_eq!(run.step(Event::Written), Need::Done);
 }
 fn remake_script(status: u16) {
     use skein_forge::forgejo::request::Page;

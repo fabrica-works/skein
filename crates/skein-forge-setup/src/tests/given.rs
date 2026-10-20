@@ -69,6 +69,7 @@ const LOGIN_MAX: usize = 40;
 const EMAIL_MAX: usize = 254;
 #[test]
 fn valid_given_values_are_accepted() {
+    accepted(&fixtures::given(), "empty orgs");
     let mut longest_email = [b'a'; EMAIL_MAX];
     longest_email[1] = b'@';
     for (word, login, email) in [
@@ -80,6 +81,8 @@ fn valid_given_values_are_accepted() {
         given.word = word.into();
         given.bot_login = login.into();
         given.bot_email = email.into();
+        given.orgs = Box::new([login.into()]);
+        given.org_owner = Some(b"ada".as_slice().into());
         accepted(&given, "grammar boundary");
     }
     for forge in [0, 65535] {
@@ -101,7 +104,10 @@ fn invalid(place: Place, value: &[u8]) -> Given {
         Place::Word => given.word = value.into(),
         Place::BotLogin => given.bot_login = value.into(),
         Place::BotEmail => given.bot_email = value.into(),
-        Place::Org(_) => given.orgs = Box::new([value.into()]),
+        Place::Org(_) => {
+            given.orgs = Box::new([value.into()]);
+            given.org_owner = Some(b"ada".as_slice().into());
+        }
         Place::OrgOwner => given.org_owner = Some(value.into()),
         Place::AdminName => given.admin_name = value.into(),
         Place::ApiName => given.api_name = value.into(),
@@ -145,16 +151,27 @@ fn org_count(count: u32) -> Given {
         names.push(b"acme".as_slice().into()).expect("fixture org count");
     }
     given.orgs = names.into_boxed();
+    given.org_owner = if count > 0 { Some(b"ada".as_slice().into()) } else { None };
     given
 }
-fn refused(given: &Given, place: Place) {
-    let expected = Refused { place, other: None };
+fn refused(given: &Given, place: Place, other: Option<Place>) {
+    let expected = Refused { place, other };
     assert_eq!(given::check(given), Err(expected), "{place:?}");
     assert_eq!(Reconcile::new(given).err(), Some(expected), "constructor {place:?}");
 }
 #[test]
-fn no_org_is_refused_before_the_machine_starts() {
-    refused(&org_count(0), Place::Orgs);
+fn no_org_is_admitted() {
+    accepted(&org_count(0), "no orgs and no owner");
+}
+#[test]
+fn orgs_without_an_owner_are_refused_naming_the_pair() {
+    let mut given = org_count(1);
+    given.org_owner = None;
+    refused(&given, Place::Orgs, Some(Place::OrgOwner));
+}
+#[test]
+fn orgs_with_an_owner_are_accepted() {
+    accepted(&org_count(1), "orgs and their owner");
 }
 #[test]
 fn an_org_count_at_the_bound_is_accepted() {
@@ -162,7 +179,7 @@ fn an_org_count_at_the_bound_is_accepted() {
 }
 #[test]
 fn an_org_count_past_the_bound_is_refused() {
-    refused(&org_count(fixtures::PROFILE_ORGS + 1), Place::Orgs);
+    refused(&org_count(fixtures::PROFILE_ORGS + 1), Place::Orgs, None);
 }
 #[test]
 fn a_zero_limit_names_its_place() {
@@ -186,6 +203,6 @@ fn a_zero_limit_names_its_place() {
             | Place::OrgOwner => unreachable!("limit rows"),
         }
         assert_eq!(limits::check(&given.limits), Err(Refused { place, other: None }), "{place:?}");
-        refused(&given, place);
+        refused(&given, place, None);
     }
 }

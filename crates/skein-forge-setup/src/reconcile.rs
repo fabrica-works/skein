@@ -7,7 +7,6 @@ use crate::{
     item::Item,
 };
 use alloc::boxed::Box;
-use core::net::SocketAddr;
 pub use hooks::hook_url;
 use skein_forge::forgejo::{
     document::{Document, Row},
@@ -54,14 +53,14 @@ pub struct Failure {
     pub subject: Box<[u8]>,
     pub why: Why,
 }
-/// Setup's six steps, with the bot's id included in Bot.
+/// Setup's steps: the bot's id is in Bot; Repository is a repository's access and hook (4.5).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Stage {
     Admin,
     Bot,
     Token,
     Org,
-    Hook,
+    Repository,
 }
 /// Why the forge could not be reconciled.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -71,7 +70,6 @@ pub enum Why {
     NotAdmin,
     BotIsAdmin,
     Unmarked,
-    OrgMissing,
     /// Another run of the forge is live, or the host's runs are full (6.3).
     Busy,
     Down,
@@ -89,7 +87,6 @@ enum State {
     Id(u64),
     Written,
     Orgs,
-    Hooks,
     Ended,
 }
 /// One forge's state; credentials remain beside the machine's requests.
@@ -106,11 +103,9 @@ pub struct Reconcile {
     state: State,
     tokens: Option<tokens::Tokens>,
     orgs: Option<orgs::Orgs>,
-    hooks: Option<hooks::Hooks>,
-    listener: Option<SocketAddr>,
 }
 impl Reconcile {
-    /// Starts one entry; hooks use the listener when their step is reached.
+    /// Starts one entry.
     pub fn new(given: &Given) -> Result<Self, Refused> {
         given::check(given)?;
         Ok(Self {
@@ -124,9 +119,7 @@ impl Reconcile {
             admin: None,
             state: State::Begin,
             tokens: None,
-            orgs: Some(orgs::Orgs::new(given)),
-            hooks: None,
-            listener: given.listener,
+            orgs: orgs::Orgs::new(given),
         })
     }
     fn send(&self, request: Request) -> Need {
@@ -137,7 +130,7 @@ impl Reconcile {
         self.admin = None;
         let subject = match stage {
             Stage::Admin => self.admin_name.clone(),
-            Stage::Bot | Stage::Token | Stage::Org | Stage::Hook => self.bot_login.clone(),
+            Stage::Bot | Stage::Token | Stage::Org | Stage::Repository => self.bot_login.clone(),
         };
         Need::Stop(Failure { forge: self.forge, step: stage, subject, why })
     }
@@ -212,7 +205,6 @@ impl Reconcile {
                 }
             },
             State::Orgs => orgs::advance(self, event),
-            State::Hooks => hooks::advance(self, event),
             State::Ended => unreachable!("terminal machine is not advanced"),
         }
     }
@@ -309,8 +301,7 @@ pub fn step(machine: &mut Reconcile, event: Event, out: &mut Queue<Need>) {
         | State::Tokens
         | State::Id(_)
         | State::Written
-        | State::Orgs
-        | State::Hooks => {
+        | State::Orgs => {
             let need = machine.advance(state, event);
             out.push(need);
         }
@@ -329,27 +320,19 @@ fn hex(value: &Secret) -> Secret {
 }
 impl Reconcile {
     fn start_orgs(&mut self) -> Need {
-        self.state = State::Orgs;
-        let cap = self.tokens.as_ref().expect("tokens checked").cap();
-        let orgs = self.orgs.as_mut().expect("org walk");
-        orgs.begin(cap);
-        let name = orgs.name().into();
-        if cap.is_some() { self.send(Request::Org { name }) } else { self.send(Request::ApiSettings) }
-    }
-    fn start_hooks(&mut self, names: Box<[Box<[u8]>]>, cap: u32) -> Need {
-        let url = match self.listener {
-            Some(address) => hook_url(address, self.forge),
-            None => None,
-        };
-        if let Some(url) = url {
-            self.hooks = Some(hooks::Hooks::new(names, cap, url));
-            self.state = State::Hooks;
-            Need::Read(Item::WebhookSecret)
-        } else {
-            self.admin = None;
-            self.state = State::Ended;
-            Need::Done
+        match self.orgs.as_ref() {
+            Some(orgs) => {
+                let name = orgs.name().into();
+                self.state = State::Orgs;
+                self.send(Request::Org { name })
+            }
+            None => self.finish(),
         }
+    }
+    fn finish(&mut self) -> Need {
+        self.admin = None;
+        self.state = State::Ended;
+        Need::Done
     }
     fn stop_named(&mut self, stage: Stage, name: &[u8], why: Why) -> Need {
         let Need::Stop(mut failure) = self.stop(stage, why) else { unreachable!("stop") };
@@ -397,7 +380,6 @@ pub(crate) fn halt(machine: &mut Reconcile, why: Why, out: &mut Queue<Need>) {
         | State::Id(_)
         | State::Written
         | State::Orgs
-        | State::Hooks
         | State::Ended => Event::Begin,
     };
     let mut needs = Queue::with_capacity(MAX_OUT);
