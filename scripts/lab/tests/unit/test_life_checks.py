@@ -154,6 +154,18 @@ class Life(unittest.TestCase):
         state, _ = event(state, 'exit', name='middle', result={'status': 0})
         self.assertTrue(state.data['processes']['middle']['exit']['stopped'])
 
+    def test_error_after_exit_resumes_tree_cleanup_when_pending_effects_are_lost(self):
+        state, _ = start()
+        state, _ = event(state, 'spawned', name='backend', group='processes')
+        state, pending = event(state, 'exit', name='backend', result={'status': 101})
+        self.assertIn(dict(op='reap_tree', name='backend'), pending)
+        # An effect failure replaces the pending requests with the error's requests.
+        state, effects = event(state, 'error', what='evidence', detail='write refused')
+        self.assertEqual(state.data['phase'], 'stop')
+        self.assertIn(dict(op='reap_tree', name='backend'), effects)
+        state, effects = event(state, 'tree_empty', name='backend')
+        self.assertEqual(effects[-1], dict(op='judge'))
+
     def test_stale_command_completion_cannot_advance_another_group(self):
         state, _ = seeded()
         state.data.update(phase='collect', current='same-name', index=0)

@@ -53,8 +53,9 @@ class Run:
     def ms(self):
         return (time.monotonic_ns() - self.origin) // 1_000_000
 
-    def timeline(self, event, **fields):
-        self.lab.append_line(self.base + '/events.jsonl', dict(format='lab-event/1', event=event, ms=self.ms(), **fields))
+    def timeline(self, event, *, ms=None, **fields):
+        self.lab.append_line(self.base + '/events.jsonl', dict(format='lab-event/1', event=event,
+                             ms=self.ms() if ms is None else ms, **fields))
 
     def feed(self, kind, **fields):
         event = dict(kind=kind, ms=self.ms(), **fields)

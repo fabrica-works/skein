@@ -107,6 +107,7 @@ def _stop(d, effects, ms):
         effects.append(dict(op='signal_first', name=name, signal='SIGTERM'))
     elif record.get('exit') is not None:
         d['deadline'] = None
+        effects.append(dict(op='reap_tree', name=name))
 
 
 def _cut(d, effects, ms):

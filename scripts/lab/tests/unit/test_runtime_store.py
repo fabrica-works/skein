@@ -11,6 +11,22 @@ from runner.records import Refused
 from .fixtures import D
 
 
+class Timeline(unittest.TestCase):
+    def test_exit_event_retains_observed_time_instead_of_resampling_it(self):
+        from types import SimpleNamespace
+        from runner.loop import Run
+        written = []
+        run = Run.__new__(Run)
+        run.base = 'run'
+        run.lab = SimpleNamespace(append_line=lambda path, value: written.append((path, value)))
+        run.ms = lambda: 99
+        run.timeline('exit', ms=17, name='server', status=101)
+        run.timeline('phase', phase='stop')
+        self.assertEqual(written[0], ('run/events.jsonl', dict(format='lab-event/1', event='exit',
+                                                            ms=17, name='server', status=101)))
+        self.assertEqual(written[1][1]['ms'], 99)
+
+
 def run_record(number, seed, outcome='pass', attempt=1):
     return dict(format='lab-run/1', run=f'20261020T123456000Z-{number:06x}', key=D, experiment='sample',
                 seed=seed, attempt=attempt, campaign=None, started='2026-10-20T12:34:56.000Z',

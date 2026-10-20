@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 from runner import canonical, evidence, store
-from runner.host import CapabilityError, manager, namespace_probe
+from runner.host import CapabilityError, await_removed, manager, namespace_probe
 
 PYTHON = os.path.realpath(sys.executable)
 PACKAGE = Path(__file__).resolve().parents[2]
@@ -59,10 +59,23 @@ class Runtime(unittest.TestCase):
             if process.poll() is None:
                 process.send_signal(signal.SIGTERM)
                 try:
-                    process.wait(timeout=COST['command_seconds'])
+                    process.wait(timeout=COST['stop_seconds'])
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+        # A timed-out outer CLI can leave its worker holding the writer lock.
+        # Only this test's private run markers identify units for cleanup.
+        for live in self.lab_root.glob('keys/native/*/runs/*/live.json'):
+            unit = canonical.loads(live.read_bytes())['unit']
+            self.assertEqual(unit, 'lab-' + live.parent.name + '.service')
+            try:
+                group = manager(self.systemctl, ['show', '--property=ControlGroup', '--value', unit], COST['stop_seconds'])
+                if group:
+                    manager(self.systemctl, ['kill', '--kill-whom=all', '--signal=SIGKILL', unit], COST['stop_seconds'])
+                    await_removed('/sys/fs/cgroup' + group, COST['stop_seconds'])
+            except CapabilityError as error:
+                if 'not loaded' not in str(error) and 'not found' not in str(error):
+                    raise
         for fd in self.canaries:
             try:
                 signal.pidfd_send_signal(fd, signal.SIGKILL)
@@ -127,6 +140,11 @@ class Runtime(unittest.TestCase):
         events = [canonical.loads(line + b'\n') for line in (run_dir / 'events.jsonl').read_bytes().splitlines()]
         containment = next(e for e in events if e['event'] == 'containment')
         self.assertFalse(Path(containment['cgroup']).exists(), containment)
+        for command in record['commands']:
+            if 'exit' in command:
+                observed = next(e for e in events if e['event'] == 'exit' and e['group'] == command['group']
+                                and e['name'] == command['name'])
+                self.assertEqual(observed['ms'], command['exit']['ms'])
         for proc in record['processes'].values():
             self.assertIsNotNone(proc['exit'])
             self.assertIsNotNone(proc['memory']['peak_bytes'])
