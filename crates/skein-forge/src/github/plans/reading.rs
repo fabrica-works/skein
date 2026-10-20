@@ -105,3 +105,28 @@ pub(super) fn status(value: document::Context) -> api::Status {
         job: None,
     }
 }
+
+/// GitHub submitted reviews are Original when their body was kept (forge-github.md, 6).
+pub(super) fn review(word: &[u8], value: document::Review) -> Result<Option<api::Review>, api::Error> {
+    let (Some(verdict), Some(at)) = (value.verdict, value.submitted) else {
+        return Ok(None);
+    };
+    let provenance = match &value.body {
+        Body::Kept(_) => api::Provenance::Original,
+        Body::Long(_) => api::Provenance::Unknown,
+    };
+    let revision = revision(&value.body, None)?;
+    let (key, body) = body(word, value.body);
+    Ok(Some(api::Review {
+        id: value.id,
+        author: value.author,
+        verdict,
+        commit: value.commit,
+        body,
+        key,
+        at: Time::from_nanos(at.as_nanos()),
+        official: value.official,
+        revision,
+        provenance,
+    }))
+}

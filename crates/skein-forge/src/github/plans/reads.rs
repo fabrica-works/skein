@@ -33,6 +33,7 @@ enum Read {
     Permission { user: u64 },
     Collaborators { page: u32 },
     Remarks { number: u64, review: u64, page: u32 },
+    Reviews { number: u64, page: u32 },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -73,6 +74,8 @@ pub struct Plan {
     login: Option<Box<[u8]>>,
     collaborators: List<api::Collaborator>,
     remarks: List<api::Remark>,
+    reviews: List<api::Review>,
+    last_review: u64,
 }
 impl Plan {
     #[must_use]
@@ -87,11 +90,11 @@ impl Plan {
             api::Read::Pull { number } => Read::Pull { number },
             api::Read::PullFor { head, base } => Read::PullFor { head, base },
             api::Read::Statuses { commit, page } => Read::Statuses { commit, page },
+            api::Read::Reviews { number, page } => Read::Reviews { number, page },
             api::Read::Remarks { number, review, page } => Read::Remarks { number, review, page },
             api::Read::Collaborators { page } => Read::Collaborators { page },
             api::Read::Permission { user } => Read::Permission { user },
-            api::Read::Reviews { .. }
-            | api::Read::PullFiles { .. }
+            api::Read::PullFiles { .. }
             | api::Read::Compare { .. }
             | api::Read::Checks { .. }
             | api::Read::Job { .. }
@@ -115,6 +118,8 @@ impl Plan {
             login: None,
             collaborators: List::with_capacity(0),
             remarks: List::with_capacity(0),
+            reviews: List::with_capacity(0),
+            last_review: 0,
         }
     }
     pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
@@ -137,6 +142,11 @@ impl Plan {
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
+            Read::Reviews { .. } => {
+                let capacity = size::capacity(bounds, crate::measure::REVIEW_BYTES)?;
+                self.limit = size::page_size(bounds, capacity)?;
+                self.reviews = List::with_capacity(capacity);
+            }
             Read::Remarks { .. } => {
                 let capacity = size::capacity(bounds, crate::measure::REMARK_BYTES)?;
                 self.limit = size::page_size(bounds, capacity)?;
@@ -177,6 +187,7 @@ impl Plan {
     fn initial(&mut self) -> Result<Step, api::Error> {
         match self.read {
             Read::Permission { .. } => return self.permission_initial(),
+            Read::Reviews { .. } => return self.reviews_initial(),
             Read::Remarks { .. } => return self.remarks_initial(),
             Read::Collaborators { .. } => return self.collaborators_initial(),
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => return self.pull_initial(),
@@ -210,6 +221,7 @@ impl Plan {
             | Read::Permission { .. }
             | Read::Collaborators { .. }
             | Read::Remarks { .. }
+            | Read::Reviews { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
@@ -271,6 +283,7 @@ impl Plan {
                         | Read::Permission { .. }
                         | Read::Collaborators { .. }
                         | Read::Remarks { .. }
+                        | Read::Reviews { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
@@ -345,6 +358,7 @@ impl Plan {
         tables: &mut Tables,
     ) -> Result<(), api::Error> {
         match self.read {
+            Read::Reviews { .. } => return self.review_row(row, bounds, word),
             Read::Remarks { .. } => return self.remark_row(row, bounds),
             Read::Collaborators { .. } => return self.collaborator_row(row, bounds, tables),
             Read::Items { .. } | Read::Item { .. } => return self.issue_row(row, bounds, word),
@@ -377,6 +391,7 @@ impl Plan {
             | document::Row::Pull(_)
             | document::Row::Context(_)
             | document::Row::Run(_)
+            | document::Row::Review(_)
             | document::Row::Remark(_)
             | document::Row::Collaborator(_)
             | document::Row::Reachable(_) => Err(api::Error::InvalidAnswer),

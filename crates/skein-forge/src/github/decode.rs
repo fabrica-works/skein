@@ -98,6 +98,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::PullsFor { .. } => Kind::PullRows,
         Request::CombinedStatus { .. } => Kind::CombinedStatus,
         Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::Reviews { .. } => Kind::ReviewRows,
         Request::ReviewComments { .. } => Kind::RemarkRows,
         Request::Collaborators { .. } => Kind::CollaboratorRows,
         Request::User { .. } => Kind::User,
@@ -109,7 +110,6 @@ pub fn kind(request: &Request) -> Option<Kind> {
         | Request::JobLog { .. }
         | Request::Uninstall { .. }
         // Reads whose documents are not decoded yet; each gains its kind with its decoder.
-        | Request::Reviews { .. }
         | Request::Job { .. }
         | Request::PullFiles { .. }
         | Request::Compare { .. }
@@ -197,7 +197,14 @@ impl Decoder {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
             }
-            Move::End(node @ (Node::RemarkRows | Node::Remark | Node::RemarkUser)) => {
+            Move::End(
+                node @ (Node::ReviewRows
+                | Node::Review
+                | Node::ReviewUser
+                | Node::RemarkRows
+                | Node::Remark
+                | Node::RemarkUser),
+            ) => {
                 if let Some(row) = self.reviews.end(node) {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
@@ -255,7 +262,8 @@ impl Decoder {
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
-                    Kind::RemarkRows
+                    Kind::ReviewRows
+                    | Kind::RemarkRows
                     | Kind::CollaboratorRows
                     | Kind::PullRows
                     | Kind::CheckRuns
@@ -276,7 +284,16 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
-            (node @ (Node::RemarkRows | Node::Remark | Node::RemarkUser), key, token) => {
+            (
+                node @ (Node::ReviewRows
+                | Node::Review
+                | Node::ReviewUser
+                | Node::RemarkRows
+                | Node::Remark
+                | Node::RemarkUser),
+                key,
+                token,
+            ) => {
                 return self.reviews.scalar(node, key, token);
             }
             (

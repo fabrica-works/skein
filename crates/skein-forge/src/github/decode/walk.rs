@@ -34,6 +34,9 @@ pub(super) enum Node {
     Permission,
     CollaboratorRows,
     RemarkRows,
+    ReviewRows,
+    Review,
+    ReviewUser,
     Remark,
     RemarkUser,
     Collaborator,
@@ -137,6 +140,19 @@ fn comment_fields() -> &'static [Field] {
 #[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::Review => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"user", Read::Container(Role::Document(Node::ReviewUser))),
+                    field(b"state", Read::Text),
+                    field(b"commit_id", Read::Text),
+                    optional(b"body", Read::LongBody),
+                    optional(b"submitted_at", Read::Text),
+                    field(b"author_association", Read::Text),
+                ]
+            }
+        }
         Node::Remark => {
             const {
                 &[
@@ -192,7 +208,7 @@ fn document_fields(node: Node) -> &'static [Field] {
         Node::RunsObject => const { &[field(b"check_runs", Read::Container(Role::Document(Node::Runs)))] },
         Node::RunItem => const { &[field(b"status", Read::Text), optional(b"conclusion", Read::Text)] },
         Node::Issue => issue_fields(),
-        Node::RemarkUser | Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => {
+        Node::ReviewUser | Node::RemarkUser | Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => {
             const { &[field(b"id", Read::Number)] }
         }
         Node::Label | Node::BranchName => const { &[field(b"name", Read::Text)] },
@@ -278,7 +294,8 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::RemarkRows
+        Node::ReviewRows
+        | Node::RemarkRows
         | Node::CollaboratorRows
         | Node::PullRows
         | Node::Reviewers
@@ -300,6 +317,7 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::ReviewRows => Some(Role::Document(Node::Review)),
         Node::RemarkRows => Some(Role::Document(Node::Remark)),
         Node::CollaboratorRows => Some(Role::Document(Node::Collaborator)),
         Node::PullRows => Some(Role::Document(Node::PullObject)),
@@ -342,6 +360,8 @@ fn element(role: Role) -> Option<Role> {
         | Node::Conversion
         | Node::User
         | Node::Permission
+        | Node::Review
+        | Node::ReviewUser
         | Node::Remark
         | Node::RemarkUser
         | Node::Collaborator
@@ -403,6 +423,7 @@ impl Walk {
             document::Kind::BotUser => Node::BotUser,
             document::Kind::User => Node::User,
             document::Kind::Permission => Node::Permission,
+            document::Kind::ReviewRows => Node::ReviewRows,
             document::Kind::RemarkRows => Node::RemarkRows,
             document::Kind::CollaboratorRows => Node::CollaboratorRows,
             document::Kind::Repository => Node::Repository,

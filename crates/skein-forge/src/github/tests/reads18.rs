@@ -419,3 +419,147 @@ fn github_remarks_bounds_and_failures() {
     call.begin().unwrap();
     assert_eq!(call.heard(Heard::Head { status: 404, head: Head::new() }), ended(Err(api::Error::Missing)));
 }
+
+fn review(id: u64) -> document::Review {
+    document::Review {
+        id,
+        author: USER,
+        verdict: Some(api::Verdict::Approve),
+        commit: crate::github::id::commit(fixtures::SHA).unwrap(),
+        body: crate::forgejo::document::Body::Kept(Box::from(*b"hello")),
+        submitted: Some(fixtures::wall()),
+        official: true,
+    }
+}
+fn reviews_read() -> api::Read {
+    api::Read::Reviews { number: 3, page: 2 }
+}
+fn review_answer(call: &mut Call) -> (Box<[api::Review]>, bool) {
+    let Ok(Some(Step::Done(Ok(api::Answer::Reviews { reviews, more })))) = call.done(Document::Rows) else {
+        panic!("Reviews answer");
+    };
+    (reviews, more)
+}
+#[test]
+fn github_reviews_verdicts_pending_and_official() {
+    golden(
+        &Request::Reviews { owner: owner(), name: name(), number: 3, page: 2, per_page: 4 },
+        b"/repos/acme/widgets/pulls/3/reviews?per_page=4&page=2",
+        Some(Kind::ReviewRows),
+        Accept::Json,
+    );
+    for (state, verdict) in [
+        (b"APPROVED".as_slice(), Some(api::Verdict::Approve)),
+        (b"CHANGES_REQUESTED", Some(api::Verdict::RequestChanges)),
+        (b"COMMENTED", Some(api::Verdict::Comment)),
+        (b"DISMISSED", Some(api::Verdict::Comment)),
+        (b"PENDING", None),
+    ] {
+        for (association, official) in [
+            (b"OWNER".as_slice(), true),
+            (b"MEMBER", true),
+            (b"COLLABORATOR", true),
+            (b"CONTRIBUTOR", false),
+            (b"future", false),
+        ] {
+            let mut wire = Writer::new(512);
+            wire.put(br#"[{"id":1,"user":{"id":9007199254740993},"state":""#).unwrap();
+            wire.put(state).unwrap();
+            wire.put(br#"","commit_id":"0123456789abcdef0123456789abcdef01234567","body":"hello","submitted_at":"2026-10-20T08:00:00Z","author_association":""#).unwrap();
+            wire.put(association).unwrap();
+            wire.put(b"\"}]").unwrap();
+            let row = document::Review { verdict, official, ..review(1) };
+            document(Kind::ReviewRows, &bytes(wire), Document::Rows, &[Row::Review(row)]);
+        }
+    }
+    let mut call = started(reviews_read(), bounds());
+    for row in [
+        review(1),
+        document::Review { verdict: None, ..review(2) },
+        document::Review { submitted: None, ..review(3) },
+        document::Review { verdict: Some(api::Verdict::RequestChanges), ..review(4) },
+    ] {
+        call.heard(Heard::Row(Row::Review(row))).unwrap();
+    }
+    let (rows, more) = review_answer(&mut call);
+    assert!(!more);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].id, 1);
+    assert_eq!(rows[1].id, 4);
+    assert_eq!(rows[1].verdict, api::Verdict::RequestChanges);
+    assert_eq!(rows[0].at.as_nanos(), fixtures::wall().as_nanos());
+}
+#[test]
+fn github_reviews_marker_revision_and_long_body() {
+    let marked = crate::marker::encode(WORD, b"key", b"hello", 128).unwrap();
+    let mut call = started(reviews_read(), bounds());
+    let rows = [
+        document::Review { body: crate::forgejo::document::Body::Kept(marked.clone()), ..review(1) },
+        document::Review { body: crate::forgejo::document::Body::Long(129), ..review(2) },
+    ];
+    for row in rows {
+        call.heard(Heard::Row(Row::Review(row))).unwrap();
+    }
+    let (rows, _) = review_answer(&mut call);
+    assert_eq!(rows[0].body, marked);
+    assert_eq!(rows[0].key, Some(Box::from(*b"key")));
+    assert_eq!(rows[0].provenance, api::Provenance::Original);
+    assert_eq!(rows[0].revision, u64::from_be_bytes(skein_lib::sha256::digest(&marked)[..8].try_into().unwrap()));
+    assert_eq!(rows[1].body.as_ref(), b"");
+    assert_eq!(rows[1].key, None);
+    assert_eq!(rows[1].provenance, api::Provenance::Unknown);
+    let mut fallback = Writer::new(16);
+    fallback.put(&129u64.to_be_bytes()).unwrap();
+    fallback.put(&0u64.to_be_bytes()).unwrap();
+    assert_eq!(
+        rows[1].revision,
+        u64::from_be_bytes(skein_lib::sha256::digest(&fallback.finish())[..8].try_into().unwrap())
+    );
+    for length in [128, 129] {
+        let row = document::Review {
+            body: crate::forgejo::document::Body::Kept(Box::from(&[b'x'; 129][..length])),
+            ..review(1)
+        };
+        let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+        server::reviews(core::slice::from_ref(&row), &mut out).unwrap();
+        let expected = if length == 128 {
+            row
+        } else {
+            document::Review { body: crate::forgejo::document::Body::Long(129), ..review(1) }
+        };
+        document(Kind::ReviewRows, &bytes(out), Document::Rows, &[Row::Review(expected)]);
+    }
+}
+#[test]
+fn github_reviews_page_bounds_and_failures() {
+    for more in [false, true] {
+        let mut call = Call::new(reviews_read(), Bounds { answer_bytes: 133, ..bounds() }, true);
+        call.begin().unwrap();
+        call.head(more);
+        call.heard(Heard::Row(Row::Review(review(1)))).unwrap();
+        assert_eq!(review_answer(&mut call).1, more);
+    }
+    let mut call = started(reviews_read(), Bounds { answer_bytes: 132, ..bounds() });
+    assert_eq!(call.heard(Heard::Row(Row::Review(review(1)))), ended(Err(api::Error::TooLarge)));
+    let mut call = started(reviews_read(), Bounds { page_size: 1, ..bounds() });
+    call.heard(Heard::Row(Row::Review(document::Review { verdict: None, ..review(1) }))).unwrap();
+    assert_eq!(call.heard(Heard::Row(Row::Review(review(2)))), ended(Err(api::Error::TooLarge)));
+    let mut call = started(reviews_read(), bounds());
+    call.heard(Heard::Row(Row::Review(review(2)))).unwrap();
+    assert_eq!(call.heard(Heard::Row(Row::Review(review(1)))), ended(Err(api::Error::InvalidAnswer)));
+    for field in [
+        b"\"state\":\"future\"".as_slice(),
+        b"\"state\":false",
+        b"\"state\":\"APPROVED\",\"state\":null",
+        b"\"commit_id\":\"A\"",
+    ] {
+        let mut wire = Writer::new(512);
+        wire.put(b"[{").unwrap();
+        wire.put(field).unwrap();
+        wire.put(b"}]").unwrap();
+        malformed(Kind::ReviewRows, &bytes(wire));
+    }
+    let mut call = Call::new(reviews_read(), bounds(), true);
+    call.begin().unwrap();
+    assert_eq!(call.heard(Heard::Head { status: 404, head: Head::new() }), ended(Err(api::Error::Missing)));
+}

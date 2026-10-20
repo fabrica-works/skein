@@ -38,6 +38,8 @@ pub enum Kind {
     CollaboratorRows,
     /// Streamed review comments.
     RemarkRows,
+    /// Streamed submitted and pending reviews.
+    ReviewRows,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -77,6 +79,7 @@ pub enum Row {
     Run(Run),
     Collaborator(Collaborator),
     Remark(Remark),
+    Review(Review),
 }
 /// GitHub's message and bounded error messages.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -262,4 +265,17 @@ pub struct Remark {
     pub path: Box<[u8]>,
     pub line: u32,
     pub body: crate::forgejo::document::Body,
+}
+
+/// A review before submission filtering and neutral provenance mapping.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Review {
+    pub id: u64,
+    pub author: u64,
+    /// None is a pending review.
+    pub verdict: Option<api::Verdict>,
+    pub commit: api::Commit,
+    pub body: crate::forgejo::document::Body,
+    pub submitted: Option<Wall>,
+    pub official: bool,
 }

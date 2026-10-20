@@ -402,4 +402,4 @@ mod people;
 pub use people::{collaborators, permission, user};
 
 mod reviews;
-pub use reviews::remarks;
+pub use reviews::{remarks, reviews};

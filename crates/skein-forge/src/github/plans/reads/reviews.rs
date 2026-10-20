@@ -73,3 +73,49 @@ impl Plan {
         self.terminal(api::Answer::Remarks { remarks, more }, bounds)
     }
 }
+
+impl Plan {
+    pub(super) fn reviews_initial(&mut self) -> Result<Step, api::Error> {
+        let Read::Reviews { number, page } = self.read else {
+            return Err(api::Error::InvalidAnswer);
+        };
+        let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
+        let request =
+            Request::Reviews { owner: row.owner.clone(), name: row.name.clone(), number, page, per_page: self.limit };
+        self.stage = Stage::Read;
+        Ok(self.send(request))
+    }
+    pub(super) fn review_row(&mut self, row: document::Row, bounds: Bounds, word: &[u8]) -> Result<(), api::Error> {
+        if self.stage != Stage::Read {
+            return Err(api::Error::InvalidAnswer);
+        }
+        let document::Row::Review(row) = row else {
+            return Err(api::Error::InvalidAnswer);
+        };
+        self.page_row(bounds)?;
+        let Some(review) = crate::github::plans::reading::review(word, row)? else {
+            return Ok(());
+        };
+        if review.id <= self.last_review {
+            return Err(api::Error::InvalidAnswer);
+        }
+        self.last_review = review.id;
+        let key = match &review.key {
+            Some(key) => key.as_ref(),
+            None => &[],
+        };
+        self.keep_bytes(128, &[key, &review.body], bounds)?;
+        match self.reviews.push(review) {
+            Ok(()) => Ok(()),
+            Err(_) => Err(api::Error::TooLarge),
+        }
+    }
+    pub(super) fn reviews_done(&mut self, bounds: Bounds) -> Result<Option<Step>, api::Error> {
+        if self.stage != Stage::Read {
+            return Err(api::Error::InvalidAnswer);
+        }
+        let more = self.listing_next()?;
+        let reviews = core::mem::replace(&mut self.reviews, List::with_capacity(0)).into_boxed();
+        self.terminal(api::Answer::Reviews { reviews, more }, bounds)
+    }
+}
