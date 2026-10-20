@@ -12,6 +12,7 @@ mod pulls;
 mod pulls_decode;
 mod rate_validator;
 mod reads;
+mod server_log;
 mod server_protection;
 use super::{
     credential,

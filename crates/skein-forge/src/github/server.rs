@@ -14,6 +14,8 @@ pub use queries::{Graphql, graphql_body};
 mod issues;
 pub use issues::{comments, issue, issues};
 mod delivery;
+mod log;
+pub use log::{deliveries, logged};
 mod protection;
 mod pulls;
 pub use protection::{classic_protection, rules, ruleset};
@@ -33,7 +35,16 @@ pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> 
     }
     let (path, query) = split(target, b'?');
     let query = Query::read(query)?;
-    let request = if let Some(request) = app::route(method, path, query.page(), query.size()) {
+    let request = if method == Method::Get && path == b"/app/hook/deliveries" {
+        let ask = match query.get(b"cursor") {
+            Some(text) => super::log::Ask::Next { cursor: super::log::Cursor::new(text)? },
+            None => super::log::Ask::First { validator: None },
+        };
+        Request::LogPage { ask, per_page: query.size()? }
+    } else if method == Method::Get && path.starts_with(b"/app/hook/deliveries/") {
+        // The listed event is decoder context, absent from this wire target.
+        Request::LogDelivery { id: unsigned(path.strip_prefix(b"/app/hook/deliveries/")?)?, event: Box::new([]) }
+    } else if let Some(request) = app::route(method, path, query.page(), query.size()) {
         request
     } else if let Some(request) = writes::route(method, path) {
         request

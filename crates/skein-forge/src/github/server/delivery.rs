@@ -61,7 +61,7 @@ fn item(json: &mut Encoder, key: &[u8], value: u64) {
     number(json, b"number", value);
     json.object_end();
 }
-fn write(value: &Delivery, limits: &Limits, json: &mut Encoder) -> Result<&'static [u8], writer::Refusal> {
+pub(super) fn write(value: &Delivery, limits: &Limits, json: &mut Encoder) -> Result<&'static [u8], writer::Refusal> {
     json.object_start();
     let event = match value {
         Delivery::Issue { repository: id, number: n, body: b } => {
