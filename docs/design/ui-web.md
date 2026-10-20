@@ -902,12 +902,41 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   error, as the test says, found by a prefix the test gives: an address,
   opened at its root, or a whole URL, opened as printed, each person
   after the first at a line no earlier person opened, since a printed
-  URL may be good once; runs each person's script through the face;
+  URL may be good once, or, when the test says so, holds the line back
+  from Chromium for a command's standard input (below), the person's
+  page then blank until a step opens a link; runs each person's script
+  through the face;
   fails a test on any trouble the kit reports that the story did not
   expect, a policy violation, an exception or a native dialog
   (browser.md, section 7); and writes the accessibility snapshot, a
   screenshot, and Chromium's and the binary's stderr's tails on a
   failure (browser.md, section 10).
+  **It hosts the peers a test lends it,** in the same loop, so that a
+  story reaches a fake service the test holds, such as skein's forge
+  peer (fake-forge.md, sections 5 and 10.5):
+  - a peer is any of skein's fake peers that listens:
+    `skein_fake_peers::Listening`, a `Host` (shell.md, section 12) with
+    the address it listens at and its `shutdown`, which the forge, OAuth
+    and LLM peers meet. The harness names no forge and no application;
+  - the test builds each peer over the state it keeps a handle to, the
+    forge's shared handle for the forge peer, and lends it to the run
+    under a name of its own;
+  - the harness opens its kernel with room for the peers' operations
+    beside its own, and drives each peer as a shell does: it reaps the
+    peer's completions, iterates it, and submits what it asks, each pass,
+    the peer's deadlines among the loop's. A token is the peer's own, as
+    in a world's real loop (testing-strategy.md, 2.9), and never meets
+    the harness's;
+  - nothing else starts until each peer listens. Then each `{name}` in
+    the server's arguments, in a command's (below) and in the origins'
+    pages is that peer's address, `ip:port`, as `{address}` is the
+    server's;
+  - a peer's failed assertion fails the test as the binary's trouble
+    does, naming the peer;
+  - at the run's end the harness shuts each peer down and drives it
+    until it holds nothing, within the run's time, and hands it back.
+    The test then reads the peer's observations, and the state behind
+    its handle, as a world's test reads them after its run.
   At a story's step it also:
   - presses a drawing's mark, which the person cannot: the kit's press
     at the mark's point on the drawing's figure (section 8; browser.md,
@@ -923,6 +952,39 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
   - **sends a request of its own** to the server, through skein's HTTP
     client, with the method, path, `Host`, headers and body the test
     gives, and awaits its status;
+  - **runs a command,** as a person types one into a terminal beside
+    the browser:
+    - the command is a child of the loop, as the server is, with the
+      program, arguments and environment the test gives, each
+      `{address}` the server's and each peer's `{name}` its address;
+    - its standard input is closed, or, when the test says so, is the
+      line the server printed and the test held back from Chromium
+      (below), then closed. So a command that signs a person in by the
+      server's link spends it, and the person's page never sees it;
+    - the harness keeps the command's output whole, within the run's
+      bounds, after it exits as while it runs. A command that prints a
+      link and exits before any page opens it is a command like
+      another;
+    - when the test gives a prefix, the step awaits, within its time,
+      the first line that starts with it on the output the test names,
+      whether the command runs on or has exited. It opens that line in
+      the person's page as a whole URL, as printed, and keeps it under
+      a name the test gives (below). A command that exits without the
+      line fails the step, naming it;
+    - a later step awaits the command's exit, with the code the test
+      gives, within its time, so that the story goes on while a command
+      that waits for the browser's return runs;
+    - each person runs one command at a time, and runs several in turn.
+      A command that has not exited when its story ends fails the test,
+      naming it, and the harness kills it. Its standard error's tail is
+      written on a failure, as the binary's is;
+  - **keeps a value for the test:** the value, or an attribute the test
+    names, of an element its target finds, a hidden one among them, as
+    it stands at the step, under a name the test gives. A target that
+    finds no element, or an element without that attribute, fails the
+    step. The run hands back what each person kept, by name, with each
+    link a command's step opened, so that the test reads a peer's state
+    by what the story saw;
   - **awaits trouble** with given words, which the person's pages then
     expect from the script's start, so that it fails no story;
   - **opens again the URL** the person's page first opened, so that a
