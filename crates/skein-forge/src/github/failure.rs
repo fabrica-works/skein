@@ -28,6 +28,8 @@ pub const NO_COMMITS: &[u8] = b"No commits between ";
 pub const PULL_EXISTS: &[u8] = b"A pull request already exists for ";
 /// Self approval, matched whole (approve-own-422).
 pub const OWN_REVIEW: &[u8] = b"Can not approve your own pull request";
+/// The same refusal as an errors[] string, matched whole (approve-own-422).
+pub const OWN_REVIEW_ERROR: &[u8] = b"Review Can not approve your own pull request";
 /// Existing reference, matched whole (refs-422-exists).
 pub const REF_EXISTS: &[u8] = b"Reference already exists";
 /// Absent reference, matched whole (refs-delete-missing-422).
@@ -166,8 +168,7 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
             Asked::CreateBranch if has(refusal, REF_EXISTS, Match::Whole) => return Verdict::BranchExists,
             Asked::DeleteBranch if has(refusal, REF_MISSING, Match::Whole) => api::Error::Missing,
             Asked::Review { .. }
-                if has(refusal, OWN_REVIEW, Match::Whole)
-                    || has(refusal, b"Review Can not approve your own pull request", Match::Whole) =>
+                if has(refusal, OWN_REVIEW, Match::Whole) || has(refusal, OWN_REVIEW_ERROR, Match::Whole) =>
             {
                 api::Error::Refused
             }

@@ -463,22 +463,50 @@ mod writes;
 
 mod pull_graphql;
 
+#[expect(clippy::disallowed_methods, reason = "JSON test fixtures format the shared ASCII refusal constant")]
+fn own_review_error_text() -> &'static str {
+    core::str::from_utf8(failure::OWN_REVIEW_ERROR).unwrap()
+}
+
 #[test]
 fn github_refusal_errors_accept_strings_objects_and_mixed_entries() {
+    let error = own_review_error_text();
     for entries in [
-        r#"["Review Can not approve your own pull request"]"#,
-        r#"[{"message":"Review Can not approve your own pull request"}]"#,
-        r#"["detail",{"message":"Review Can not approve your own pull request"}]"#,
+        alloc::fmt::format(format_args!(r#"["{error}"]"#)),
+        alloc::fmt::format(format_args!(r#"[{{"message":"{error}"}}]"#)),
+        alloc::fmt::format(format_args!(r#"["detail",{{"message":"{error}"}}]"#)),
     ] {
         let input = alloc::fmt::format(format_args!(r#"{{"message":"Unprocessable Entity","errors":{entries}}}"#));
         for chunk in [1, 7, 4096] {
             let (_, decoded) = decode(Kind::Error, input.as_bytes(), chunk, &limits());
             let Document::Error(refusal) = decoded.unwrap() else { panic!("refusal") };
-            assert_eq!(refusal.errors.last().unwrap().as_ref(), b"Review Can not approve your own pull request");
+            assert_eq!(refusal.errors.last().unwrap().as_ref(), failure::OWN_REVIEW_ERROR);
             assert_eq!(
                 failure::classify(Asked::Review { empty: true }, 422, &Head::new(), Some(&refusal)),
                 Verdict::Fail(api::Error::Refused, Drop::Nothing)
             );
         }
     }
+}
+
+#[test]
+fn github_refusal_strings_encoder_bounds_and_escapes() {
+    let error = own_review_error_text();
+    let golden = alloc::fmt::format(format_args!(r#"{{"message":"m\"\n","errors":["detail\\\t","{error}"]}}"#));
+    let errors = [b"detail\\\t".as_slice(), failure::OWN_REVIEW_ERROR];
+    let mut short = Writer::new(golden.len().checked_sub(1).unwrap());
+    assert_eq!(server::refusal_strings(b"m\"\n", &errors, &mut short), Err(skein_lib::Overflow));
+    assert_eq!(short.written(), 0);
+    let mut exact = Writer::new(golden.len());
+    server::refusal_strings(b"m\"\n", &errors, &mut exact).unwrap();
+    assert_answer(
+        exact,
+        Kind::Error,
+        golden.as_bytes(),
+        Document::Error(super::document::Refusal {
+            message: Box::from(b"m\"\n".as_slice()),
+            errors: Box::from(errors.map(Box::from)),
+        }),
+        &[],
+    );
 }

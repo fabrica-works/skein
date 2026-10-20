@@ -331,27 +331,44 @@ fn branches_json(names: &[&[u8]], json: &mut Encoder) {
 }
 /// Writes the whole refusal message and each errors[].message.
 pub fn refusal(message: &[u8], errors: &[&[u8]], out: &mut Writer) -> Result<(), Overflow> {
+    encode_refusal(message, errors, ErrorForm::Objects, out)
+}
+/// Writes the whole refusal message and each errors[] string.
+pub fn refusal_strings(message: &[u8], errors: &[&[u8]], out: &mut Writer) -> Result<(), Overflow> {
+    encode_refusal(message, errors, ErrorForm::Strings, out)
+}
+#[derive(Clone, Copy, Debug)]
+enum ErrorForm {
+    Objects,
+    Strings,
+}
+fn encode_refusal(message: &[u8], errors: &[&[u8]], form: ErrorForm, out: &mut Writer) -> Result<(), Overflow> {
     let limits = output_limits(out)?;
     let mut measure = Encoder::measure(&limits);
-    refusal_json(message, errors, &mut measure);
+    refusal_json(message, errors, form, &mut measure);
     let Ok(length) = measure.measured() else {
         return Err(Overflow);
     };
     let mut json = Encoder::write(length, &limits);
-    refusal_json(message, errors, &mut json);
+    refusal_json(message, errors, form, &mut json);
     out.put(&json.finish())
 }
-fn refusal_json(message: &[u8], errors: &[&[u8]], json: &mut Encoder) {
+fn refusal_json(message: &[u8], errors: &[&[u8]], form: ErrorForm, json: &mut Encoder) {
     json.object_start();
     json.key(b"message");
     json.string(message);
     json.key(b"errors");
     json.array_start();
     for error in errors {
-        json.object_start();
-        json.key(b"message");
-        json.string(error);
-        json.object_end();
+        match form {
+            ErrorForm::Objects => {
+                json.object_start();
+                json.key(b"message");
+                json.string(error);
+                json.object_end();
+            }
+            ErrorForm::Strings => json.string(error),
+        }
     }
     json.array_end();
     json.object_end();
