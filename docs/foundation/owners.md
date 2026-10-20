@@ -183,7 +183,9 @@ build the two sides orders their parts so that they meet early.
 ### 4.2 The implementer
 
 The implementer is Codex: gpt-6.1-sol at high, through `codex exec` in
-its own worktree, with `-o` naming the report the owner reads. So is
+its own worktree, with `-o` naming the report the owner reads by an
+absolute path (a relative one is taken from the shell's directory, not
+`-C`'s, and the report is lost). So is
 the owner's other work that needs no taste (section 1): an
 investigation, a profile, a survey, a review's fixes. An
 investigation's task names the question and what its report holds: the
@@ -209,7 +211,9 @@ Its task file is whole, and holds:
 - sketches of what matters: the public types and signatures with their
   names, what is internal and what crosses a boundary (a crate, a
   repository, the wire), and each test's sketch in the world the testing
-  documents name;
+  documents name. The owner checks them against `main` before the task
+  goes out: the names, files and behaviours they assume are there (a
+  Codex survey may check a large task's);
 - the files it may touch;
 - done when: the tests that pass, and the gate;
 - on a doubt: stop, write the question in the owner's `inbox/`, and
