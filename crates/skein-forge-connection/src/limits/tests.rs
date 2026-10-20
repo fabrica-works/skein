@@ -193,6 +193,73 @@ fn connect_checks_name_the_refused_value() {
         ),
     ] {
         let access = Access { credential, user, webhook_secret: secret };
-        assert_eq!(super::access(&fixtures::limits(), listener, &access), expected, "{label}");
+        assert_eq!(
+            super::access(&fixtures::limits(), crate::settings::Kind::Forgejo, listener, &access),
+            expected,
+            "{label}"
+        );
     }
+}
+
+#[test]
+fn a_github_app_access_is_accepted() {
+    let access = fixtures::app_access(skein_fake_forge_github::keys::KEYS.first().expect("test key"), 7, 9);
+    assert_eq!(super::access(&fixtures::limits(), crate::settings::Kind::GitHub, false, &access), Ok(()));
+}
+
+#[test]
+fn a_github_access_names_the_refused_value() {
+    use crate::{Access, Value, settings::Kind};
+    use skein_forge::credential::Credential;
+    use skein_lib::Secret;
+    let l = fixtures::limits();
+    let key = *skein_fake_forge_github::keys::KEYS.first().expect("test key");
+    let overlong =
+        fixtures::filled(usize::try_from(l.key_bytes).expect("key bound").checked_add(1).expect("one past"), 0);
+    let mut secret = fixtures::app_access(key, 7, 9);
+    secret.webhook_secret = Some(Secret::new(Box::from(fixtures::HOOK_SECRET)));
+    for (label, access, listener, expected) in [
+        ("key past bound", fixtures::app_access(&overlong, 7, 9), false, Value::Key),
+        ("key will not sign", fixtures::app_access(&[0; 64], 7, 9), false, Value::Key),
+        (
+            "token",
+            Access {
+                credential: Credential::Token(Secret::new(Box::from(fixtures::TOKEN))),
+                user: 9,
+                webhook_secret: None,
+            },
+            false,
+            Value::Credential,
+        ),
+        ("zero user", fixtures::app_access(key, 7, 0), false, Value::User),
+        ("secret with listener", secret, true, Value::Secret),
+        ("key before user", fixtures::app_access(&[0; 64], 7, 0), false, Value::Key),
+    ] {
+        assert_eq!(super::access(&l, Kind::GitHub, listener, &access), Err(expected), "{label}");
+    }
+}
+
+#[test]
+fn an_app_credential_on_a_forgejo_forge_is_the_other_dialects() {
+    for key in [*skein_fake_forge_github::keys::KEYS.first().expect("test key"), &[0; 64]] {
+        let access = fixtures::app_access(key, 7, 9);
+        assert_eq!(
+            super::access(&fixtures::limits(), crate::settings::Kind::Forgejo, false, &access),
+            Err(crate::Value::Credential)
+        );
+    }
+}
+
+#[test]
+fn a_forges_key_and_jwt_are_in_the_worst_case() {
+    let l = fixtures::limits();
+    let shared = fixtures::shared();
+    let forges = 2;
+    let larger = super::Limits { key_bytes: l.key_bytes.checked_add(100).expect("key bound"), ..l };
+    let before = super::worst_case(&l, &shared, forges, 0).expect("fixture bound");
+    let after = super::worst_case(&larger, &shared, forges, 0).expect("larger bound");
+    assert_eq!(
+        after.checked_sub(before).expect("larger footprint"),
+        u64::from(forges).checked_mul(100).expect("key growth")
+    );
 }

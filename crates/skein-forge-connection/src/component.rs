@@ -72,6 +72,11 @@ pub struct Component {
 impl Component {
     pub fn new(settings: Settings, limits: &Limits, shared: &Shared) -> Result<Self, Unusable> {
         limits::check(limits, shared, &settings)?;
+        for forge in &settings.forges {
+            if forge.kind == crate::settings::Kind::GitHub {
+                return Err(Unusable::GitHub { forge: forge.number });
+            }
+        }
         let mut starts = List::with_capacity(limits.forges);
         let mut start_tokens = List::with_capacity(limits.forges);
         let mut start_plans = List::with_capacity(limits.forges);
@@ -238,7 +243,7 @@ impl Component {
             return;
         };
         let forge = self.settings.forges.get_mut(at).expect("configured forge");
-        let mut checked = limits::access(&env.limits, self.settings.webhooks.is_some(), &access);
+        let mut checked = limits::access(&env.limits, forge.kind, self.settings.webhooks.is_some(), &access);
         if checked.is_ok()
             && let Some(held) = &forge.access
             && held.user != access.user

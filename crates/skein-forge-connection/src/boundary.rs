@@ -81,12 +81,14 @@ pub enum StartRead {
 /// The value of an access a connect's check refused (forge-connection.md, 3.5).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Value {
-    /// A credential of the other dialect's kind: an App's, on Forgejo.
+    /// A credential of the other dialect's kind: an App's on Forgejo, a token on GitHub.
     Credential,
     /// A token empty, past `token_bytes`, or with a byte a request head refuses.
     Token,
+    /// An App's key past `key_bytes`, or one that will not sign (a GitHub forge's, 5.2).
+    Key,
     /// A user of 0, or another than the access the forge holds.
     User,
-    /// A webhook secret with no listener, empty, or past `hook_secret_bytes`.
+    /// A webhook secret on a GitHub forge, with no listener, empty, or past `hook_secret_bytes`.
     Secret,
 }

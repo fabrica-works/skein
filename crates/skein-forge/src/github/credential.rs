@@ -6,7 +6,7 @@ use skein_lib::{Secret, Writer};
 pub fn authorization(credential: &Credential) -> Option<Secret> {
     let token = match credential {
         Credential::Token(token) => token,
-        // Credential::App gets its meaning in runtime 02.
+        // An App's calls carry its installation's token, minted by the connection (runtime 24).
         Credential::App { .. } => return None,
     };
     bearer(token)

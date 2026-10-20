@@ -9,6 +9,8 @@ pub struct Limits {
     pub forges: u32,
     /// The longest API token.
     pub token_bytes: u32,
+    /// The longest App key, PKCS#1 DER (forge-connection.md, 5.2).
+    pub key_bytes: u32,
     /// Forge connections in all: the client's `calls`.
     pub connections: u32,
     /// The largest response head read (HTTP's `head`).
@@ -33,6 +35,8 @@ pub struct Limits {
     pub repositories: u32,
     /// The users' table.
     pub users: u32,
+    /// The installations kept per GitHub forge (4.4).
+    pub installations: u32,
     /// A call's, at most the client's `lifetime`; also each start read's.
     pub deadline: Duration,
     /// How long an idle connection is kept, below the forge's keep-alive timeout.
@@ -40,6 +44,8 @@ pub struct Limits {
     /// A forge's start asked again after this, doubling to `start_backoff_max`.
     pub start_backoff: Duration,
     pub start_backoff_max: Duration,
+    /// An installation token is minted again this long before it expires (5.1).
+    pub renew_before: Duration,
     /// Webhook connections, head and body bytes, request deadline and secret bytes.
     pub hooks: u32,
     pub hook_head_bytes: u32,
@@ -131,6 +137,16 @@ pub enum Unusable {
     Credential { forge: u16 },
     /// An API token empty, past `token_bytes`, or containing unsafe header controls.
     Token { forge: u16 },
+    /// A forge's App key past `key_bytes`, or one that will not sign.
+    Key { forge: u16 },
+    /// `deadline` past 270 s with a GitHub forge: half a JWT's life (5.2).
+    AppDeadline { deadline: Duration },
+    /// `renew_before` below twice `deadline`, or past 30 minutes.
+    RenewBefore { renew_before: Duration, deadline: Duration },
+    /// `key_bytes` below `skein_tls::RS256_KEY_BYTES`.
+    KeyBytes { key_bytes: u32 },
+    /// A GitHub forge: its start is not built yet (task 24 removes this).
+    GitHub { forge: u16 },
     /// A user of 0.
     User { forge: u16 },
     /// Plaintext to an address not on loopback, or an in-process name.
@@ -141,17 +157,21 @@ pub enum Unusable {
 
 use crate::{
     Access, Value,
-    settings::{Settings, Transport},
+    settings::{Kind, Settings, Transport},
 };
 use alloc::boxed::Box;
 use core::mem::size_of;
 use skein_forge::api;
 use skein_json::{tokenizer, writer};
+const APP_DEADLINE: Duration = Duration::from_secs(270);
+const MAX_RENEW_BEFORE: Duration = Duration::from_secs(1800);
+
 /// Checks neighbours' agreements, stacked demands, then every configured forge.
 pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable> {
     for value in [
         l.forges,
         l.token_bytes,
+        l.key_bytes,
         l.connections,
         l.head_bytes,
         l.headers,
@@ -164,6 +184,7 @@ pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable
         l.target_bytes,
         l.repositories,
         l.users,
+        l.installations,
         l.hooks,
         l.hook_head_bytes,
         l.hook_body_bytes,
@@ -176,7 +197,7 @@ pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable
             return Err(Unusable::Zero);
         }
     }
-    for value in [l.deadline, l.idle, l.start_backoff, l.start_backoff_max, l.hook_deadline] {
+    for value in [l.deadline, l.idle, l.start_backoff, l.start_backoff_max, l.renew_before, l.hook_deadline] {
         if value.as_nanos() == 0 {
             return Err(Unusable::Zero);
         }
@@ -195,6 +216,7 @@ pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable
     if l.deadline > s.lifetime {
         return Err(Unusable::Deadline { deadline: l.deadline, lifetime: s.lifetime });
     }
+    check_github(l, settings)?;
     if !skein_forge::marker::valid_word(&settings.word) {
         return Err(Unusable::Word);
     }
@@ -242,6 +264,26 @@ pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable
         .ok_or(Unusable::Zero)?;
     Ok(())
 }
+fn check_github(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
+    let mut github = false;
+    for forge in &settings.forges {
+        if forge.kind == Kind::GitHub {
+            github = true;
+        }
+    }
+    if github {
+        if l.deadline > APP_DEADLINE {
+            return Err(Unusable::AppDeadline { deadline: l.deadline });
+        }
+        if l.renew_before < l.deadline.saturating_mul(2) || l.renew_before > MAX_RENEW_BEFORE {
+            return Err(Unusable::RenewBefore { renew_before: l.renew_before, deadline: l.deadline });
+        }
+        if usize::try_from(l.key_bytes).expect("u32 fits") < skein_tls::RS256_KEY_BYTES {
+            return Err(Unusable::KeyBytes { key_bytes: l.key_bytes });
+        }
+    }
+    Ok(())
+}
 fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable> {
     if settings.forges.len() > l.forges {
         return Err(Unusable::Forges { forges: l.forges });
@@ -253,10 +295,11 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
             }
         }
         if let Some(a) = &forge.access
-            && let Err(value) = access(l, settings.webhooks.is_some(), a)
+            && let Err(value) = access(l, forge.kind, settings.webhooks.is_some(), a)
         {
             return Err(match value {
                 Value::Credential => Unusable::Credential { forge: forge.number },
+                Value::Key => Unusable::Key { forge: forge.number },
                 Value::Token => Unusable::Token { forge: forge.number },
                 Value::User => Unusable::User { forge: forge.number },
                 Value::Secret => Unusable::Secret { forge: forge.number },
@@ -288,8 +331,13 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
                 u64::try_from(crate::settings::host(forge).ok_or(Unusable::Zero)?.len()).ok().ok_or(Unusable::Zero)?,
             )
             .ok_or(Unusable::Zero)?;
+        let credential = match forge.kind {
+            Kind::Forgejo => u64::from(l.token_bytes),
+            Kind::GitHub => u64::from(l.token_bytes)
+                .max(u64::try_from(skein_forge::github::jwt::JWT_BYTES).expect("JWT bound fits")),
+        };
         let head = head
-            .checked_add(u64::from(l.token_bytes))
+            .checked_add(credential)
             .ok_or(Unusable::Zero)?
             .checked_add(u64::try_from(settings.user_agent.len()).ok().ok_or(Unusable::Zero)?)
             .ok_or(Unusable::Zero)?
@@ -308,19 +356,33 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
     Ok(())
 }
 /// A connect's check of one access (forge-connection.md, 3.5), before any io.
-pub(crate) fn access(l: &Limits, listener: bool, access: &Access) -> Result<(), Value> {
-    let token = match &access.credential {
-        skein_forge::credential::Credential::Token(token) => token,
-        skein_forge::credential::Credential::App { .. } => return Err(Value::Credential),
-    };
-    if !header_value(token.expose()) || token.len() > usize::try_from(l.token_bytes).expect("u32 fits") {
-        return Err(Value::Token);
+pub(crate) fn access(l: &Limits, kind: Kind, listener: bool, access: &Access) -> Result<(), Value> {
+    use skein_forge::credential::Credential;
+    match (&access.credential, kind) {
+        (Credential::Token(token), Kind::Forgejo) => {
+            if !header_value(token.expose()) || token.len() > usize::try_from(l.token_bytes).expect("u32 fits") {
+                return Err(Value::Token);
+            }
+        }
+        (Credential::App { key, .. }, Kind::GitHub) => {
+            if key.len() > usize::try_from(l.key_bytes).expect("u32 fits")
+                || skein_tls::sign_rs256(key.expose(), b"skein").is_none()
+            {
+                return Err(Value::Key);
+            }
+        }
+        (Credential::Token(_), Kind::GitHub) | (Credential::App { .. }, Kind::Forgejo) => {
+            return Err(Value::Credential);
+        }
     }
     if access.user == 0 {
         return Err(Value::User);
     }
     if let Some(secret) = &access.webhook_secret
-        && (!listener || secret.is_empty() || secret.len() > usize::try_from(l.hook_secret_bytes).expect("u32 fits"))
+        && (kind == Kind::GitHub
+            || !listener
+            || secret.is_empty()
+            || secret.len() > usize::try_from(l.hook_secret_bytes).expect("u32 fits"))
     {
         return Err(Value::Secret);
     }
@@ -488,6 +550,8 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         List::<Forge>::worst_case(l.forges)?.checked_add(List::<Start>::worst_case(l.forges)?)?.checked_add(
             u64::from(forges).checked_mul(
                 u64::from(l.token_bytes)
+                    .checked_add(u64::from(l.key_bytes))?
+                    .checked_add(u64::try_from(skein_forge::github::jwt::JWT_BYTES).ok()?)?
                     .checked_add(u64::from(l.hook_secret_bytes))?
                     .checked_add(u64::from(l.tls.send.max(s.io.output)))?
                     .checked_add(skein_tls::client::worst_case(&l.tls)?)?,

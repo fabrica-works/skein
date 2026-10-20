@@ -24,6 +24,7 @@ pub fn limits() -> Limits {
     Limits {
         forges: 2,
         token_bytes: 64,
+        key_bytes: 1200,
         connections: 2,
         head_bytes: 4096,
         headers: 32,
@@ -36,10 +37,12 @@ pub fn limits() -> Limits {
         target_bytes: 1024,
         repositories: 2,
         users: 8,
+        installations: 3,
         deadline: Duration::from_secs(10),
         idle: Duration::from_secs(5),
         start_backoff: Duration::from_secs(1),
         start_backoff_max: Duration::from_secs(8),
+        renew_before: Duration::from_secs(60),
         hooks: 4,
         hook_head_bytes: 8192,
         hook_body_bytes: 1_048_576,
@@ -792,3 +795,19 @@ pub const EVICTION_CONNECTIONS: u32 = 1; // A single connection forces reassignm
 pub const EVICTION_CALLS: u32 = EVICTION_CONNECTIONS;
 pub const EVICTION_NO_CONNECTIONS: u32 = 0; // The evicted forge has no connection.
 pub const EVICTION_ANSWERS: u32 = 2; // Each of the two sequential requests answers once.
+
+pub fn app_access(key: &[u8], id: u64, user: u64) -> crate::Access {
+    crate::Access {
+        credential: skein_forge::credential::Credential::App { id, key: Secret::new(Box::from(key)) },
+        user,
+        webhook_secret: None,
+    }
+}
+
+pub fn github_settings() -> Settings {
+    let mut settings = settings();
+    let forge = settings.forges.get_mut(0).expect("forge");
+    forge.kind = Kind::GitHub;
+    forge.access = Some(app_access(skein_fake_forge_github::keys::KEYS.first().expect("test key"), 7, 9));
+    settings
+}

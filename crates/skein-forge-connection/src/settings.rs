@@ -49,6 +49,8 @@ pub struct Access {
 pub enum Kind {
     /// The pinned Forgejo's API under `/api/v1`.
     Forgejo,
+    /// GitHub's REST and GraphQL API, served as an App (forge-connection.md, 3.4).
+    GitHub,
 }
 
 /// A forge's connections.

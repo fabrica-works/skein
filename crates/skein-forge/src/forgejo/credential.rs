@@ -7,7 +7,7 @@ use skein_lib::{Secret, Writer};
 pub fn authorization(credential: &Credential) -> Option<Secret> {
     let token = match credential {
         Credential::Token(token) => token,
-        // Credential::App gets its meaning in runtime 02.
+        // A Forgejo forge never holds an App: the connection refuses it (runtime 20).
         Credential::App { .. } => return None,
     };
     let prefix = b"token ";

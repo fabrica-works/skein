@@ -5,7 +5,7 @@ mod hooks;
 mod reads;
 mod writes;
 use crate::{
-    StartRead, Stopped,
+    Component, StartRead, Stopped,
     start::{self, Start},
 };
 use alloc::boxed::Box;
@@ -298,7 +298,7 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
         crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes"),
     )
     .expect("fixture bound fits");
-    assert_eq!(bytes, 2_812_351, "complete owner-value fixture bound");
+    assert_eq!(bytes, 2_814_063, "complete owner-value fixture bound");
     let owner_bytes = u64::try_from(fixtures::WORD.len() + fixtures::USER_AGENT.len()).expect("fixture lengths");
     assert_eq!(crate::settings::owned_bytes(&fixtures::settings()), Some(owner_bytes));
     assert_eq!(limits::worst_case(&limits, &shared, 1, 0).expect("fixed bound") + owner_bytes, bytes);
@@ -574,6 +574,7 @@ fn numeric_boundaries() {
     for invalid in [
         Limits { forges: 0, ..l },
         Limits { token_bytes: 0, ..l },
+        Limits { key_bytes: 0, ..l },
         Limits { connections: 0, ..l },
         Limits { head_bytes: 0, ..l },
         Limits { headers: 0, ..l },
@@ -586,6 +587,7 @@ fn numeric_boundaries() {
         Limits { target_bytes: 0, ..l },
         Limits { repositories: 0, ..l },
         Limits { users: 0, ..l },
+        Limits { installations: 0, ..l },
         Limits { hooks: 0, ..l },
         Limits { hook_head_bytes: 0, ..l },
         Limits { hook_body_bytes: 0, ..l },
@@ -597,6 +599,7 @@ fn numeric_boundaries() {
         Limits { idle: Duration::ZERO, ..l },
         Limits { start_backoff: Duration::ZERO, ..l },
         Limits { start_backoff_max: Duration::ZERO, ..l },
+        Limits { renew_before: Duration::ZERO, ..l },
         Limits { hook_deadline: Duration::ZERO, ..l },
     ] {
         assert_eq!(
@@ -687,4 +690,116 @@ fn vocabulary_app_credential_is_unusable_in_settings() {
         limits::check(&fixtures::limits(), &fixtures::shared(), &settings),
         Err(Unusable::Credential { forge: fixtures::FORGE })
     );
+}
+
+#[test]
+fn github_limits_are_checked_only_with_a_github_forge() {
+    let l = Limits {
+        key_bytes: 1,
+        renew_before: Duration::from_secs(1),
+        deadline: Duration::from_secs(300),
+        ..fixtures::limits()
+    };
+    let shared = crate::Shared { lifetime: l.deadline, ..fixtures::shared() };
+    assert_eq!(limits::check(&l, &shared, &fixtures::settings()), Ok(()));
+    assert_eq!(
+        limits::check(&l, &shared, &fixtures::github_settings()),
+        Err(Unusable::AppDeadline { deadline: l.deadline })
+    );
+}
+
+#[test]
+fn a_github_forge_bounds_the_deadline_at_270_seconds() {
+    let l = Limits { deadline: Duration::from_secs(270), renew_before: Duration::from_secs(600), ..fixtures::limits() };
+    let past = l.deadline.saturating_add(Duration::from_nanos(1));
+    let shared = crate::Shared { lifetime: past, ..fixtures::shared() };
+    let settings = fixtures::github_settings();
+    assert_eq!(limits::check(&l, &shared, &settings), Ok(()));
+    assert_eq!(
+        limits::check(&Limits { deadline: past, ..l }, &shared, &settings),
+        Err(Unusable::AppDeadline { deadline: past })
+    );
+}
+
+#[test]
+fn renew_before_is_between_twice_the_deadline_and_half_an_hour() {
+    let l = fixtures::limits();
+    let least = l.deadline.saturating_mul(2);
+    let most = Duration::from_secs(1800);
+    let below = Duration::from_nanos(least.as_nanos().checked_sub(1).expect("one before"));
+    let above = most.saturating_add(Duration::from_nanos(1));
+    let settings = fixtures::github_settings();
+    for (renew_before, expected) in [
+        (least, Ok(())),
+        (most, Ok(())),
+        (below, Err(Unusable::RenewBefore { renew_before: below, deadline: l.deadline })),
+        (above, Err(Unusable::RenewBefore { renew_before: above, deadline: l.deadline })),
+    ] {
+        assert_eq!(limits::check(&Limits { renew_before, ..l }, &fixtures::shared(), &settings), expected);
+    }
+}
+
+#[test]
+fn key_bytes_below_the_signer_bound_is_refused() {
+    let l = fixtures::limits();
+    let settings = fixtures::github_settings();
+    for (key_bytes, expected) in [(1196, Ok(())), (1195, Err(Unusable::KeyBytes { key_bytes: 1195 }))] {
+        assert_eq!(limits::check(&Limits { key_bytes, ..l }, &fixtures::shared(), &settings), expected);
+    }
+}
+
+#[test]
+fn a_github_forge_reserves_the_jwt_in_the_request_head() {
+    let l = fixtures::limits();
+    let shared = fixtures::shared();
+    let mut settings = fixtures::github_settings();
+    let forge = settings.forges.get(0).expect("forge");
+    let request = limits::http(&l, false, &shared.io).request;
+    let host = crate::settings::host(forge).expect("host");
+    let agent_bytes = usize::try_from(request)
+        .expect("request fits")
+        .checked_sub(usize::try_from(l.target_bytes).expect("target fits"))
+        .expect("target room")
+        .checked_sub(host.len())
+        .expect("host room")
+        .checked_sub(skein_forge::github::jwt::JWT_BYTES)
+        .expect("JWT room")
+        .checked_sub(fixtures::HEAD_FRAMING)
+        .expect("framing room");
+    settings.user_agent = fixtures::filled(agent_bytes, b'a');
+    assert_eq!(limits::check(&l, &shared, &settings), Ok(()));
+    settings.user_agent = fixtures::filled(agent_bytes.checked_add(1).expect("one past"), b'a');
+    assert_eq!(limits::check(&l, &shared, &settings), Err(Unusable::Request { forge: fixtures::FORGE }));
+    let forge = settings.forges.get_mut(0).expect("forge");
+    forge.kind = crate::settings::Kind::Forgejo;
+    forge.access = fixtures::settings().forges.get_mut(0).expect("forge").access.take();
+    assert_eq!(limits::check(&l, &shared, &settings), Ok(()));
+}
+
+#[test]
+fn unusable_github_settings_name_the_forge() {
+    let mut secret = fixtures::github_settings().forges.get_mut(0).expect("forge").access.take().expect("access");
+    secret.webhook_secret = Some(Secret::new(Box::from(fixtures::HOOK_SECRET)));
+    for (label, access, expected) in [
+        (
+            "token",
+            fixtures::settings().forges.get_mut(0).expect("forge").access.take(),
+            Err(Unusable::Credential { forge: fixtures::FORGE }),
+        ),
+        ("bad key", Some(fixtures::app_access(&[0; 64], 7, 9)), Err(Unusable::Key { forge: fixtures::FORGE })),
+        ("secret", Some(secret), Err(Unusable::Secret { forge: fixtures::FORGE })),
+        ("no access", None, Ok(())),
+    ] {
+        let mut settings = fixtures::github_settings();
+        settings.forges.get_mut(0).expect("forge").access = access;
+        assert_eq!(limits::check(&fixtures::limits(), &fixtures::shared(), &settings), expected, "{label}");
+    }
+}
+
+#[test]
+fn the_component_refuses_a_github_forge_until_its_start_lands() {
+    let mut settings = fixtures::github_settings();
+    settings.forges.get_mut(0).expect("forge").number = fixtures::OTHER_FORGE;
+    let result = Component::new(settings, &fixtures::limits(), &fixtures::shared());
+    assert_eq!(result.expect_err("GitHub start is not built"), Unusable::GitHub { forge: fixtures::OTHER_FORGE });
 }

@@ -735,6 +735,7 @@ dependencies = [
 name = "skein-forge-connection"
 version = "0.0.0"
 dependencies = [
+ "skein-fake-forge-github",
  "skein-forge",
  "skein-http",
  "skein-io",
