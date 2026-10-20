@@ -85,6 +85,7 @@ pub struct Peer {
     exchange: u64,
     observations: Vec<Observation>,
     observed_bytes: u64,
+    recording: bool,
     bound: u64,
 }
 
@@ -136,6 +137,7 @@ impl Peer {
             exchange: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
             observed_bytes: 0,
+            recording: true,
             bound,
         })
     }
@@ -157,6 +159,21 @@ impl Peer {
         self.face.address
     }
 
+    /// Keeps no outside records. Call on a fresh peer before its first pass.
+    #[must_use]
+    pub fn without_records(mut self) -> Self {
+        let slots = u64::from(self.face.limits.observations)
+            .checked_mul(u64::try_from(core::mem::size_of::<Observation>()).expect("record size"))
+            .expect("validated record slots");
+        let records = slots.checked_add(u64::from(self.face.limits.observation_bytes)).expect("validated records");
+        self.bound = self.bound.checked_sub(records).expect("bound includes records");
+        self.face.limits.observations = 0;
+        self.face.limits.observation_bytes = 0;
+        self.observations = Vec::new();
+        self.observed_bytes = 0;
+        self.recording = false;
+        self
+    }
     /// Frozen outside records, retained under observation bounds supplied by the world.
     #[must_use]
     pub fn observations(&self) -> &[Observation] {
@@ -170,6 +187,9 @@ impl Peer {
     }
 
     fn observe(&mut self, record: Observation, payload_bytes: u64) {
+        if !self.recording {
+            return;
+        }
         self.reserve_observation(payload_bytes);
         self.observed_bytes = self.observed_bytes.checked_add(payload_bytes).expect("bounded observations");
         self.observations.push(record);
@@ -349,9 +369,11 @@ impl Peer {
                 self.respond(index, 400, Box::new([]), Box::new([]), Duration::ZERO);
                 return;
             }
-            let target = route::observed_target(&call.target);
-            let payload_bytes = u64::try_from(target.len()).expect("bounded target");
-            self.observe(Observation::Authorize { connection: owner, target }, payload_bytes);
+            if self.recording {
+                let target = route::observed_target(&call.target);
+                let payload_bytes = u64::try_from(target.len()).expect("bounded target");
+                self.observe(Observation::Authorize { connection: owner, target }, payload_bytes);
+            }
             self.issuer.step(issuer::Event::Authorize { url: url.into_boxed_slice(), now }, &mut self.outgoing);
             self.deliver(Some(index));
         } else if route == Route::Token || route == Route::Revoke {
@@ -386,8 +408,10 @@ impl Peer {
             let endpoint = if route == Route::Metadata { &self.metadata_url } else { &self.key_set_url };
             let endpoint = endpoint.clone().expect("configured document route");
             let owner = connection.owner;
-            let payload_bytes = u64::try_from(call.target.len()).expect("bounded target");
-            self.observe(Observation::Document { connection: owner, target: call.target }, payload_bytes);
+            if self.recording {
+                let payload_bytes = u64::try_from(call.target.len()).expect("bounded target");
+                self.observe(Observation::Document { connection: owner, target: call.target }, payload_bytes);
+            }
             self.issuer.step(issuer::Event::Get { id, endpoint, now, wall }, &mut self.outgoing);
             self.deliver(Some(index));
         } else {

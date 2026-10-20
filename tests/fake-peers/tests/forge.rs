@@ -1,5 +1,5 @@
 //! Shared forge names, loopback admission and real byte settlement on Sim.
-use skein_fake_peers::{Error, forge};
+use skein_fake_peers::{Error, Limits, forge};
 use skein_lib::Time;
 use skein_shell::Host;
 
@@ -7,7 +7,7 @@ use skein_shell::Host;
 mod fixtures;
 #[path = "forge/github.rs"]
 mod github;
-use fixtures::{ONE_REPLY, World};
+use fixtures::{ONE_REPLY, SEED, World, address, config, limits, protocol_limits, request};
 
 #[test]
 fn forge_peer_refuses_unusable_configuration_before_effects() {
@@ -177,4 +177,48 @@ fn a_seed_replays_names_replies_observations_and_deliveries() {
     assert_eq!(first.peer.observations(), second.peer.observations());
     assert_eq!(first.wire_posts(), second.wire_posts());
     assert_eq!(first.frozen_trace(), second.frozen_trace());
+}
+
+#[test]
+fn without_records_serves_past_a_zero_cap() {
+    for recording in [true, false] {
+        let mut world = World::new();
+        let mut peer = forge::Peer::new(
+            address(),
+            Limits { observations: 0, observation_bytes: 0, ..limits() },
+            config(),
+            protocol_limits(),
+            std::rc::Rc::clone(&world.forge),
+            SEED,
+        )
+        .unwrap();
+        if !recording {
+            peer = peer.without_records();
+        }
+        world.peer = peer;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let fd = world.connect();
+            world.send(fd, &request(b"/api/v1/repos/org/repo"));
+            let response = world.response(fd);
+            world.close(fd);
+            response
+        }));
+        if recording {
+            skein_fake_peers_tests::assert_panic(result, "frozen record count fits");
+        } else {
+            assert!(result.unwrap().starts_with(b"HTTP/1.1 200"));
+            assert!(world.peer.observations().is_empty());
+            world.settle();
+        }
+    }
+}
+
+#[test]
+fn without_records_omits_the_observation_bound() {
+    let mut world = World::new();
+    let before = world.peer.worst_case();
+    world.peer = world.peer.without_records();
+    skein_fake_peers_tests::assert_record_bound::<forge::Observation>(before, world.peer.worst_case(), limits().observations, limits().observation_bytes);
+    world.pass();
+    skein_fake_peers_tests::assert_record_bound::<forge::Observation>(before, world.peer.worst_case(), limits().observations, limits().observation_bytes);
 }

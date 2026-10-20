@@ -140,6 +140,9 @@ impl Peer {
         }
     }
     fn delivery_observation(&mut self, post: Option<Post>, outcome: Delivery) {
+        if !self.recording {
+            return;
+        }
         let bytes = post.as_ref().map_or(0, |post| {
             u64::try_from(post.head.len())
                 .expect("head size")

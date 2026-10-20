@@ -7,6 +7,9 @@ use std::mem::size_of_val;
 
 impl Peer {
     pub(super) fn observe(&mut self, record: Observation, bytes: u64) {
+        if !self.recording {
+            return;
+        }
         self.reserve(bytes);
         self.observed_bytes = self.observed_bytes.checked_add(bytes).expect("bounded frozen bytes");
         self.observations.push(record);
@@ -25,8 +28,10 @@ impl Peer {
     }
     pub(super) fn capture(&mut self, connection: &mut Connection) {
         if let Some(call) = connection.server.take_head() {
-            let bytes = sum(&[call.target.heap(), call.headers.heap()]).expect("bounded HTTP head");
-            self.observe(Observation::Head { connection: connection.owner, call }, bytes);
+            if self.recording {
+                let bytes = sum(&[call.target.heap(), call.headers.heap()]).expect("bounded HTTP head");
+                self.observe(Observation::Head { connection: connection.owner, call }, bytes);
+            }
             connection.head_seen = true;
         }
     }
@@ -64,18 +69,20 @@ impl Peer {
             }
             let call = self.calls.remove(index);
             let domain::Request::Reply { result, .. } = &reply else { unreachable!("reply snapshot") };
-            let bytes = sum(&[call.repository.heap(), call.op.heap(), result.heap()]).expect("bounded frozen call");
-            self.reserve(bytes);
-            self.observe(
-                Observation::Call {
-                    connection: target.map(|_| owner),
-                    user: call.user,
-                    repository: call.repository,
-                    op: call.op,
-                    result: result.clone(),
-                },
-                bytes,
-            );
+            if let Some((repository, op)) = call.snapshot {
+                let bytes = sum(&[repository.heap(), op.heap(), result.heap()]).expect("bounded frozen call");
+                self.reserve(bytes);
+                self.observe(
+                    Observation::Call {
+                        connection: target.map(|_| owner),
+                        user: call.user,
+                        repository,
+                        op,
+                        result: result.clone(),
+                    },
+                    bytes,
+                );
+            }
             // A retired HTTP call still consumes its snapshot; an unrelated reply stays above.
             let domain::Request::Reply { result, .. } = reply else { unreachable!("reply terminal") };
             let reply = domain::Request::Reply { to: ReplyTo::new(call.local), result };

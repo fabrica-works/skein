@@ -58,6 +58,17 @@ fn make_scripted(
     transport: Transport,
     scripts: Box<[api::Script]>,
 ) -> Result<llm::Peer, skein_fake_peers::Error> {
+    make_scripted_with_limits(endpoint, credential, address, transport, scripts, limits())
+}
+
+fn make_scripted_with_limits(
+    endpoint: Endpoint,
+    credential: Credential,
+    address: SocketAddr,
+    transport: Transport,
+    scripts: Box<[api::Script]>,
+    limits: Limits,
+) -> Result<llm::Peer, skein_fake_peers::Error> {
     let machine_limits = skein_llm_world::fake::config();
     let domain = domain::Domain::configured(
         &machine_limits,
@@ -69,7 +80,7 @@ fn make_scripted(
     llm::Peer::new(
         address,
         transport,
-        limits(),
+        limits,
         provider::Config {
             without_credential: false,
             usage_fields: skein_fake_llm_protocol::documents::UsageFields::ALL,
@@ -526,4 +537,40 @@ fn the_public_route_takes_its_scope_from_the_cache_key_alone() {
             .collect();
         assert_eq!(got, expected, "{:?} {extra}", endpoint.provider);
     }
+}
+
+#[test]
+fn without_records_serves_past_a_zero_cap() {
+    for recording in [true, false] {
+        let endpoint = Endpoint::openai();
+        let mut peer = make_scripted_with_limits(
+            endpoint.clone(),
+            key(),
+            (Ipv4Addr::LOCALHOST, 0).into(),
+            Transport::Plaintext,
+            Box::new([]),
+            Limits { observations: 0, observation_bytes: 0, ..limits() },
+        )
+        .unwrap();
+        if !recording {
+            peer = peer.without_records();
+        }
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            send_request(&mut peer, &endpoint, b"authorization: Bearer k0\r\n", &body(""))
+        }));
+        if recording {
+            support::assert_panic(result, "the world's referee observation count fits its configured cap");
+        } else {
+            assert!(result.unwrap().starts_with(b"HTTP/1.1 200"));
+            assert!(peer.observations().is_empty());
+        }
+    }
+}
+
+#[test]
+fn without_records_omits_the_observation_bound() {
+    let peer = make((Ipv4Addr::LOCALHOST, 0).into(), Transport::Plaintext).unwrap();
+    let before = peer.worst_case();
+    let peer = peer.without_records();
+    support::assert_record_bound::<llm::Observation>(before, peer.worst_case(), limits().observations, limits().observation_bytes);
 }

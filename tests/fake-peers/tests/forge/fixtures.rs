@@ -259,7 +259,7 @@ impl World {
             self.pass();
         }
     }
-    pub fn open(&mut self) -> Fd {
+    pub fn connect(&mut self) -> Fd {
         self.bind();
         let Done::Fd(fd) = support::call(&mut self.sim, self.client_pid, 1, Op::Socket { family: Family::Ipv4 }) else {
             panic!("socket descriptor");
@@ -273,6 +273,10 @@ impl World {
             ),
             Done::Nothing
         );
+        fd
+    }
+    pub fn open(&mut self) -> Fd {
+        let fd = self.connect();
         while !self
             .peer
             .observations()

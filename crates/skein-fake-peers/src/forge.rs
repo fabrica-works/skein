@@ -86,8 +86,7 @@ struct Call {
     local: Token,
     connection: Token,
     user: u64,
-    repository: Box<[u8]>,
-    op: api::Op,
+    snapshot: Option<(Box<[u8]>, api::Op)>,
 }
 
 /// Hosted admission, HTTP routing and settlement over the owner's shared forge.
@@ -106,6 +105,7 @@ pub struct Peer {
     next: u64,
     observations: Vec<Observation>,
     observed_bytes: u64,
+    recording: bool,
     bound: u64,
 }
 
@@ -178,8 +178,24 @@ impl Peer {
             next: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
             observed_bytes: 0,
+            recording: true,
             bound,
         })
+    }
+    /// Keeps no outside records. Call on a fresh peer before its first pass.
+    #[must_use]
+    pub fn without_records(mut self) -> Self {
+        let slots = u64::from(self.face.limits.observations)
+            .checked_mul(u64::try_from(core::mem::size_of::<Observation>()).expect("record size"))
+            .expect("validated record slots");
+        let records = slots.checked_add(u64::from(self.face.limits.observation_bytes)).expect("validated records");
+        self.bound = self.bound.checked_sub(records).expect("bound includes records");
+        self.face.limits.observations = 0;
+        self.face.limits.observation_bytes = 0;
+        self.observations = Vec::new();
+        self.observed_bytes = 0;
+        self.recording = false;
+        self
     }
     #[must_use]
     pub fn address(&self) -> Option<SocketAddr> {
@@ -314,7 +330,13 @@ impl Peer {
         let local = reply_to.into_token();
         let token = forge.next_reply();
         assert!(self.calls.len() < self.calls.capacity(), "admitted call snapshots fit");
-        self.calls.push(Call { token, local, connection, user, repository: repository.clone(), op: op.clone() });
+        self.calls.push(Call {
+            token,
+            local,
+            connection,
+            user,
+            snapshot: self.recording.then(|| (repository.clone(), op.clone())),
+        });
         let Forge { domain, pending, .. } = forge;
         domain::step(domain, env, domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op }, pending);
     }

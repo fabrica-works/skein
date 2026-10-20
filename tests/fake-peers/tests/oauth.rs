@@ -10,6 +10,10 @@ use std::net::{Ipv4Addr, SocketAddr};
 use skein_fake_peers_tests as support;
 
 fn make(transport: Transport, terms: Option<issuer::Terms>) -> oauth::Peer {
+    make_with_cap(transport, terms, 16)
+}
+
+fn make_with_cap(transport: Transport, terms: Option<issuer::Terms>, observations: u32) -> oauth::Peer {
     let scheme = if transport == Transport::Plaintext { "http" } else { "https" };
     let document = skein_oauth::Limits {
         document_bytes: 1024,
@@ -43,7 +47,7 @@ fn make(transport: Transport, terms: Option<issuer::Terms>) -> oauth::Peer {
         queue: 64,
         plaintext: 32_768,
         ciphertext: 32_768,
-        observations: 16,
+        observations,
         observation_bytes: 4096,
     };
     oauth::Peer::new(
@@ -368,4 +372,37 @@ fn no_observation_holds_a_token_or_an_id_token() {
     }
     assert!(targets.iter().any(|target| target.windows(b"id_token_hint".len()).any(|part| part == b"id_token_hint")));
     settle(&mut sim, pid, client, &mut peer);
+}
+
+#[test]
+fn without_records_serves_past_a_zero_cap() {
+    for recording in [true, false] {
+        let mut peer = make_with_cap(Transport::Plaintext, Some(terms()), 0);
+        if !recording {
+            peer = peer.without_records();
+        }
+        let mut sim = skein_sim::Sim::new(31, skein_sim::Config::calm());
+        let (pid, client) = (sim.spawn_process(), sim.spawn_process());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fetch(&mut sim, (pid, &mut peer), client, &request("GET", "/jwks", ""))
+        }));
+        if recording {
+            support::assert_panic(result, "world observation count cap");
+        } else {
+            assert!(result.unwrap().starts_with(b"HTTP/1.1 200"));
+            assert!(peer.observations().is_empty());
+            settle(&mut sim, pid, client, &mut peer);
+        }
+    }
+}
+
+#[test]
+fn without_records_omits_the_observation_bound() {
+    let peer = make(Transport::Plaintext, None);
+    let before = peer.worst_case();
+    let peer = peer.without_records();
+    assert_eq!(
+        before - peer.worst_case(),
+        16 * u64::try_from(std::mem::size_of::<oauth::Observation>()).unwrap() + 4096
+    );
 }

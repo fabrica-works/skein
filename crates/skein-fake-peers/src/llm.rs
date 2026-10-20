@@ -60,6 +60,7 @@ pub struct Peer {
     next: u64,
     observations: Vec<Observation>,
     observed_bytes: u64,
+    recording: bool,
     bound: u64,
     ignore_half_close: bool,
 }
@@ -101,6 +102,7 @@ impl Peer {
             next: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
             observed_bytes: 0,
+            recording: true,
             bound,
             ignore_half_close: false,
         })
@@ -139,6 +141,21 @@ impl Peer {
         self.face.address
     }
 
+    /// Keeps no outside records. Call on a fresh peer before its first pass.
+    #[must_use]
+    pub fn without_records(mut self) -> Self {
+        let slots = u64::from(self.face.limits.observations)
+            .checked_mul(u64::try_from(core::mem::size_of::<Observation>()).expect("record size"))
+            .expect("validated record slots");
+        let records = slots.checked_add(u64::from(self.face.limits.observation_bytes)).expect("validated records");
+        self.bound = self.bound.checked_sub(records).expect("bound includes records");
+        self.face.limits.observations = 0;
+        self.face.limits.observation_bytes = 0;
+        self.observations = Vec::new();
+        self.observed_bytes = 0;
+        self.recording = false;
+        self
+    }
     /// Frozen outside records retained under the world's observation caps.
     #[must_use]
     pub fn observations(&self) -> &[Observation] {
@@ -179,6 +196,9 @@ impl Peer {
     }
 
     fn observe(&mut self, observation: Observation, bytes: u64) {
+        if !self.recording {
+            return;
+        }
         self.reserve_observation(bytes);
         self.observed_bytes = self.observed_bytes.checked_add(bytes).expect("bounded observation bytes");
         self.observations.push(observation);
@@ -329,25 +349,29 @@ impl Peer {
                 match event {
                     provider::Event::Head { headers, presented } => {
                         let connection = connection.owner;
-                        let bytes = provider::head_bytes(&headers).expect("bounded actual head");
-                        self.reserve_observation(bytes);
-                        self.observe(Observation::Head { connection, headers }, bytes);
-                        self.observe(
-                            Observation::Credential {
-                                connection,
-                                route: presented.route,
-                                scheme: presented.scheme,
-                                index: presented.index,
-                            },
-                            0,
-                        );
+                        if self.recording {
+                            let bytes = provider::head_bytes(&headers).expect("bounded actual head");
+                            self.reserve_observation(bytes);
+                            self.observe(Observation::Head { connection, headers }, bytes);
+                            self.observe(
+                                Observation::Credential {
+                                    connection,
+                                    route: presented.route,
+                                    scheme: presented.scheme,
+                                    index: presented.index,
+                                },
+                                0,
+                            );
+                        }
                     }
                     provider::Event::Domain(domain::Event::Call { reply_to, call, query }) => {
                         let connection = connection.owner;
-                        let bytes = query_bytes(&query).expect("bounded decoded query");
-                        // Check before cloning any owned query bytes.
-                        self.reserve_observation(bytes);
-                        self.observe(Observation::Query { connection, query: query.clone() }, bytes);
+                        if self.recording {
+                            let bytes = query_bytes(&query).expect("bounded decoded query");
+                            // Check before cloning any owned query bytes.
+                            self.reserve_observation(bytes);
+                            self.observe(Observation::Query { connection, query: query.clone() }, bytes);
+                        }
                         domain::step(
                             &mut self.domain,
                             &domain_env,
