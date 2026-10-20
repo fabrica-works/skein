@@ -10,6 +10,7 @@ use skein_forge::github::{
 pub(crate) enum Route {
     App(App),
     Token(Token),
+    Conversion(skein_lib::Secret),
 }
 #[derive(Debug)]
 pub(crate) enum App {
@@ -37,6 +38,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
     }
     // REST keeps server::route's canonical targets, including explicit paging.
     Some(match server::route(method, target, limits)? {
+        Request::Conversion { code } => Route::Conversion(skein_lib::Secret::new(code)),
         Request::App => Route::App(App::Identity),
         Request::HookConfig => Route::App(App::Hook),
         Request::SetHook { .. } => Route::App(App::SetHook),
@@ -57,7 +59,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Reachable { .. }
         | Request::Branches { .. }
         | Request::Viewer
-        | Request::Conversion { .. }
         | Request::BotUser { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }

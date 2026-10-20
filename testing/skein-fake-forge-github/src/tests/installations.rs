@@ -49,6 +49,22 @@ fn github_fake_installations() {
 }
 
 #[test]
+fn github_fake_installations_set_reach() {
+    let mut rows = store(42);
+    let grant = Grant { installation: 1, scope: Scope::Full };
+    assert!(rows.set_reach(1, super::fixtures::listed(&[2, 4])), "replace within listed bound");
+    assert!(rows.reaches(&grant, 2), "new reach includes listed id");
+    assert!(!rows.reaches(&grant, 3), "new reach excludes unlisted id");
+    assert!(!rows.set_reach(1, super::fixtures::listed(&[2, 4, 6])), "over listed bound refused");
+    assert!(rows.reaches(&grant, 2), "refusal preserves reach");
+    assert!(!rows.set_reach(99, Reach::All), "absent id refused");
+    assert!(rows.set_reach(1, Reach::All), "replace by All");
+    assert!(rows.reaches(&grant, 3), "All reaches other repositories");
+    assert!(rows.set_reach(1, super::fixtures::listed(&[])), "empty listed reach admitted");
+    assert!(!rows.reaches(&grant, 2), "empty reach grants nothing");
+}
+
+#[test]
 fn github_fake_tokens() {
     let mut rows = store(42);
     let mut replay = store(42);

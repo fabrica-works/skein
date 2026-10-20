@@ -168,6 +168,32 @@ impl Installations {
         false
     }
 
+    /// Replaces a reach within the listed bound; false for an absent id or an oversized list.
+    /// Retains only the list's length, not its caller's spare capacity.
+    pub fn set_reach(&mut self, id: u64, reach: Reach) -> bool {
+        let reach = match reach {
+            Reach::All => Reach::All,
+            Reach::Listed(repositories) => {
+                if repositories.len() > self.listed {
+                    return false;
+                }
+                let mut kept = List::with_capacity(repositories.len());
+                for repository in &repositories {
+                    kept.push(*repository).expect("admitted repository count");
+                }
+                Reach::Listed(kept)
+            }
+        };
+        for index in 0..self.rows.len() {
+            let row = self.rows.get_mut(index).expect("stored row").as_mut().expect("packed installation");
+            if row.id == id {
+                row.reach = reach;
+                return true;
+            }
+        }
+        false
+    }
+
     #[must_use]
     pub fn get(&self, id: u64) -> Option<&Installation> {
         let mut found = None;

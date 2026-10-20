@@ -3,6 +3,8 @@ use crate::{
     answers::{self, Body, Page},
     app::{self, App},
     installations::{self, Grant, Installations, Kind, Mint, Scope},
+    manifest::Manifest,
+    pages::{self, Answer, Page as BrowserPage},
     reads, routes,
 };
 use alloc::boxed::Box;
@@ -26,8 +28,14 @@ pub struct Row {
     /// Whether the repository is private.
     pub private: bool,
 }
-/// The scenario's GitHub-only tables. Installations are populated through
-/// [`Service::installations_mut`], under their own bounds.
+/// A scenario account that can own or install the App.
+#[derive(Debug)]
+pub struct Account {
+    pub login: Box<[u8]>,
+    pub id: u64,
+    pub organization: bool,
+}
+/// The scenario's GitHub-only tables, including the signed-in browser account.
 #[derive(Debug)]
 pub struct Config {
     /// App identity and test signing key.
@@ -38,6 +46,10 @@ pub struct Config {
     pub hook: Box<[u8]>,
     /// Repository rows, in any order; ids and owner/name pairs must be unique.
     pub repositories: List<Row>,
+    /// Scenario accounts, unique by both login and id, bounded by `github.inner`.
+    pub accounts: List<Account>,
+    /// Login of the signed-in browser user, from accounts.
+    pub person: Box<[u8]>,
 }
 /// All retained tables and transient input/output are bounded here.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -46,6 +58,8 @@ pub struct Limits {
     pub github: github::limits::Limits,
     /// Installation, token and per-installation reach capacities.
     pub installations: installations::Limits,
+    /// Manifest records and the bytes admitted per manifest.
+    pub pages: pages::Limits,
     /// Effective page cap, from one through GitHub's `PAGE_CAP`.
     pub page: u32,
     /// Maximum request body, no larger than `github.body_bytes`.
@@ -79,7 +93,7 @@ impl core::fmt::Debug for Request<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Request")
             .field("method", &self.method)
-            .field("target", &self.target)
+            .field("target_bytes", &self.target.len())
             .field("authorized", &self.authorization.is_some())
             .field("version", &self.version)
             .field("agent", &self.agent)
@@ -125,7 +139,10 @@ pub struct Pending {
 pub struct Service {
     pub(crate) app: App,
     pub(crate) bot: u64,
-    hook: Box<[u8]>,
+    pub(crate) hook: Box<[u8]>,
+    pub(crate) accounts: List<Account>,
+    pub(crate) person: Box<[u8]>,
+    pub(crate) pages: pages::Store,
     pub(crate) repositories: Map<u32, Row>,
     pub(crate) installations: Installations,
     pub(crate) limits: Limits,
@@ -173,6 +190,26 @@ impl Service {
                 }
             }
         }
+        if config.accounts.len() > limits.github.inner || config.person.len() > string {
+            return Err(Problem::Config);
+        }
+        let mut person_found = false;
+        for (at, account) in config.accounts.iter().enumerate() {
+            if account.id == 0 || account.login.len() > string || !pages::unreserved(&account.login) {
+                return Err(Problem::Config);
+            }
+            if account.login == config.person {
+                person_found = true;
+            }
+            for prior in config.accounts.iter().take(at) {
+                if prior.id == account.id || prior.login == account.login {
+                    return Err(Problem::Config);
+                }
+            }
+        }
+        if !person_found {
+            return Err(Problem::Config);
+        }
         let mut repositories = Map::with_capacity(limits.github.inner);
         for row in config.repositories.into_boxed() {
             if repositories.insert(row.id, row).is_err() {
@@ -183,6 +220,9 @@ impl Service {
             app: config.app,
             bot: config.bot,
             hook: config.hook,
+            accounts: config.accounts,
+            person: config.person,
+            pages: pages::Store::new(limits.pages, seed),
             repositories,
             installations: Installations::new(&limits.installations, seed),
             limits: *limits,
@@ -198,6 +238,19 @@ impl Service {
         &self.installations
     }
 
+    /// Serves browser pages without API headers or a credential, and never calls the domain.
+    pub fn page(&mut self, page: &BrowserPage<'_>, now: Wall) -> Answer {
+        pages::serve(self, page, now)
+    }
+    /// The posted manifest stays readable after conversion until its record is reclaimed.
+    #[must_use]
+    pub fn manifest(&self, state: &[u8]) -> Option<&Manifest> {
+        match self.pages.states.get(state) {
+            Some(record) => Some(&record.manifest),
+            None => None,
+        }
+    }
+
     /// Checks User-Agent, version, route, credential, installation state/reach,
     /// then the body. Every refusal precedes a domain call.
     pub fn request(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
@@ -211,6 +264,12 @@ impl Service {
         let Some(route) = routes::decode(request.method, request.target, &limits.github) else {
             return Outcome::Reply(answers::missing(limits));
         };
+        match &route {
+            routes::Route::Conversion(code) => {
+                return Outcome::Reply(pages::convert(self, code.expose(), request.body, now));
+            }
+            routes::Route::App(_) | routes::Route::Token(_) => {}
+        }
         let bearer = match request.authorization {
             Some(header) => header.strip_prefix(b"Bearer "),
             None => None,
@@ -219,6 +278,7 @@ impl Service {
             return Outcome::Reply(answers::unauthorized(limits));
         };
         match route {
+            routes::Route::Conversion(_) => Outcome::Reply(answers::failed()),
             routes::Route::App(route) => {
                 if app::check(bearer, &self.app, now).is_err() {
                     return Outcome::Reply(answers::unauthorized(limits));
@@ -445,11 +505,19 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         || limits.page > limits.github.inner
         || limits.body == 0
         || limits.body > limits.github.body_bytes
+        || limits.pages.states == 0
+        || limits.pages.manifest_bytes == 0
         || limits.response < 128
     {
         return None;
     }
-    let mut bytes = Installations::worst_case(&limits.installations)?
+    let mut bytes = pages::worst_case(limits)?.checked_add(List::<Account>::worst_case(config.accounts.capacity())?)?;
+    for account in &config.accounts {
+        bytes = bytes.checked_add(u64::try_from(account.login.len()).ok()?)?;
+    }
+    bytes = bytes.checked_add(u64::try_from(config.person.len()).ok()?)?;
+    bytes = bytes
+        .checked_add(Installations::worst_case(&limits.installations)?)?
         .checked_add(Map::<u32, Row>::worst_case(limits.github.inner)?)?
         .checked_add(List::<Row>::worst_case(config.repositories.capacity())?)?;
     for row in &config.repositories {

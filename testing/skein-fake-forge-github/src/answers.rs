@@ -39,7 +39,7 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
 }
 // Writer is exact-sized. Pad the scratch writer, then retain only the encoded
 // prefix; both allocations are included in worst_case's response scratch.
-fn finish(mut out: Writer) -> Option<Box<[u8]>> {
+pub(crate) fn finish(mut out: Writer) -> Option<Box<[u8]>> {
     let length = out.written();
     let padding = [0; 128];
     for _chunk in 0..out.room().div_euclid(padding.len()) {

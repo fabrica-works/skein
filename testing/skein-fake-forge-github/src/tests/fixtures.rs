@@ -1,7 +1,7 @@
 use super::{app, wall};
 use crate::{
     installations::{self, Kind, Reach},
-    service::{self, Config, Limits, Outcome, Request, Response, Row, Service},
+    service::{self, Account, Config, Limits, Outcome, Request, Response, Row, Service},
 };
 use alloc::boxed::Box;
 use skein_fake_forge_domain::{self as fake, api as a};
@@ -41,7 +41,18 @@ pub fn config() -> Config {
             .push(Row { id, owner: boxed(b"acme"), owner_id: 22, organization, name: boxed(name), private })
             .expect("fixture rows");
     }
-    Config { app: app(), bot: BOT, hook: boxed(b"https://hook.test/start"), repositories }
+    let mut accounts = List::with_capacity(2);
+    for (login, id, organization) in [(b"acme".as_slice(), 22, true), (b"alice".as_slice(), 31, false)] {
+        accounts.push(Account { login: boxed(login), id, organization }).expect("fixture accounts");
+    }
+    Config {
+        app: app(),
+        bot: BOT,
+        hook: boxed(b"https://hook.test/start"),
+        repositories,
+        accounts,
+        person: boxed(b"alice"),
+    }
 }
 pub fn limits() -> Limits {
     Limits {
@@ -54,13 +65,17 @@ pub fn limits() -> Limits {
             target_bytes: 1024,
         },
         installations: installations::Limits { installations: 3, tokens: 4, listed: 2 },
+        pages: crate::pages::Limits { states: 3, manifest_bytes: 2048 },
         page: 2,
         body: 4096,
         response: 8192,
     }
 }
 pub fn authorization(key: &[u8], issued: u64, expires: u64) -> Secret {
-    let input = github::jwt::signing_input(7, wall(issued), wall(expires)).expect("fixture JWT window");
+    authorization_for(7, key, issued, expires)
+}
+pub fn authorization_for(id: u64, key: &[u8], issued: u64, expires: u64) -> Secret {
+    let input = github::jwt::signing_input(id, wall(issued), wall(expires)).expect("fixture JWT window");
     let signature = skein_tls::sign_rs256(key, &input).expect("test key signs");
     let token = github::jwt::token(&input, &signature).expect("fixture JWT");
     bearer(token.expose())
@@ -162,6 +177,9 @@ impl Harness {
                 self.service.finish(pending, result)
             }
         }
+    }
+    pub fn page(&mut self, method: Method, target: &[u8], body: &[u8]) -> crate::pages::Answer {
+        self.service.page(&crate::pages::Page { method, target, body }, self.now)
     }
     pub fn app(&mut self, method: Method, target: &[u8], body: &[u8]) -> Response {
         let jwt = self.jwt.clone();
@@ -267,6 +285,131 @@ pub fn refusal(h: &Harness, response: &Response, status: u16, message: &[u8]) {
     };
     assert_eq!(error.message.as_ref(), message);
 }
+pub const REDIRECT: &[u8] = b"https://setup.test/convert";
+pub const SETUP: &[u8] = b"https://setup.test/install";
+pub const NAME: &[u8] = b"Example App";
+pub const PERSONAL: &[u8] = b"/settings/apps/new?state=";
+pub const INSTALL: &[u8] = b"/apps/example-app/installations/new?state=";
+// One spare installation for alice; the dialect's full manifest has fourteen events.
+pub fn page_limits() -> Limits {
+    let mut limits = limits();
+    limits.installations.installations = 4;
+    limits.github.inner = u32::try_from(github::setup::EVENTS.len()).expect("fixture events");
+    limits
+}
+pub fn pages() -> Harness {
+    Harness::with(page_limits(), config())
+}
+pub fn parts(parts: &[&[u8]]) -> Box<[u8]> {
+    let mut length = 0_usize;
+    for part in parts {
+        length = length.checked_add(part.len()).expect("fixture length");
+    }
+    let mut out = skein_lib::Writer::new(length);
+    for part in parts {
+        out.put(part).expect("fixture parts");
+    }
+    out.finish()
+}
+pub fn manifest(name: &[u8], redirect: &[u8], setup: &[u8]) -> Box<[u8]> {
+    github::setup::manifest(
+        &github::setup::Values {
+            name,
+            url: b"https://setup.test/",
+            hook_url: b"https://hook.test/app",
+            redirect_url: redirect,
+            setup_url: setup,
+        },
+        &limits().github.writer,
+    )
+    .expect("fixture manifest")
+}
+pub fn form(manifest: &[u8]) -> Box<[u8]> {
+    let mut encoded =
+        List::with_capacity(u32::try_from(manifest.len().checked_mul(3).expect("fixture form")).expect("fixture form"));
+    for byte in manifest {
+        if byte.is_ascii_alphanumeric() || b"._~-".contains(byte) {
+            encoded.push(*byte).expect("fixture form");
+        } else if *byte == b' ' {
+            encoded.push(b'+').expect("fixture form");
+        } else {
+            encoded.push(b'%').expect("fixture form");
+            for nibble in [byte.wrapping_shr(4), byte & 15] {
+                encoded.push(*b"0123456789ABCDEF".get(usize::from(nibble)).expect("hex")).expect("fixture form");
+            }
+        }
+    }
+    parts(&[b"manifest=", &encoded.into_boxed()])
+}
+pub fn create(h: &mut Harness, state: &[u8], name: &[u8]) -> crate::pages::Answer {
+    h.page(Method::Post, &parts(&[PERSONAL, state]), &form(&manifest(name, REDIRECT, SETUP)))
+}
+pub fn link(answer: &crate::pages::Answer) -> Box<[u8]> {
+    let marker = b"href=\"";
+    let at = bytes::find(&answer.body, marker).expect("create href").checked_add(marker.len()).expect("href");
+    let tail = answer.body.get(at..).expect("href");
+    let end = bytes::find(tail, b"\"").expect("href end");
+    let encoded = tail.get(..end).expect("href end");
+    let mut out = List::with_capacity(u32::try_from(encoded.len()).expect("href bound"));
+    let mut at = 0_usize;
+    for _byte in 0..encoded.len() {
+        let Some(tail) = encoded.get(at..) else {
+            break;
+        };
+        if tail.is_empty() {
+            break;
+        }
+        let mut consumed = 1;
+        let mut byte = *tail.first().expect("href byte");
+        for (entity, value) in
+            [(b"&amp;".as_slice(), b'&'), (b"&lt;", b'<'), (b"&gt;", b'>'), (b"&quot;", b'"'), (b"&#39;", b'\'')]
+        {
+            if tail.starts_with(entity) {
+                consumed = entity.len();
+                byte = value;
+                break;
+            }
+        }
+        out.push(byte).expect("href fits");
+        at = at.checked_add(consumed).expect("href cursor");
+    }
+    out.into_boxed()
+}
+pub fn code(answer: &crate::pages::Answer) -> Secret {
+    let link = link(answer);
+    let at = bytes::find(&link, b"?code=").expect("conversion query").checked_add(6).expect("code start");
+    let code = link.get(at..at.checked_add(20).expect("code end")).expect("code width");
+    Secret::new(boxed(code))
+}
+pub fn conversion_target(code: &Secret) -> Box<[u8]> {
+    parts(&[b"/app-manifests/", code.expose(), b"/conversions"])
+}
+pub fn convert(h: &mut Harness, code: &Secret) -> Response {
+    h.ask(Method::Post, &conversion_target(code), None, b"")
+}
+pub fn conversion(h: &Harness, response: &Response) -> github::document::Conversion {
+    // The PEM is longer than the manifest's scalar bound; conversion readers admit it whole.
+    let mut limits = h.limits.github;
+    limits.string_bytes = limits.json.string;
+    let (_, Document::Conversion(row)) = decode_body(DocumentKind::Conversion, &response.body, &limits) else {
+        panic!("conversion document");
+    };
+    row
+}
+pub fn converted() -> Harness {
+    let mut h = pages();
+    let answer = create(&mut h, b"s1", NAME);
+    let response = convert(&mut h, &code(&answer));
+    assert_eq!(response.status, 201);
+    h.jwt = authorization_for(8, crate::keys::KEYS.first().expect("first key"), 1000, 1600);
+    h
+}
+pub fn page_refusal(h: &Harness, answer: crate::pages::Answer, status: u16, message: &[u8]) {
+    assert!(answer.location.is_none(), "refusals never redirect");
+    assert_eq!(answer.media, crate::pages::Media::None);
+    refusal(h, &Response { status: answer.status, body: answer.body, link: None }, status, message);
+}
+
 pub fn domain_config() -> fake::Config {
     fake::Config {
         limits: fake::Limits {
