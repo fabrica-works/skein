@@ -29,6 +29,7 @@ pub(crate) enum App {
 #[derive(Debug)]
 pub(crate) enum Token {
     Mutation(crate::mutations::Route),
+    CommentEdit(crate::comment_edit::Route),
     Reachable(u32),
     Identity,
     Revoke,
@@ -43,6 +44,9 @@ pub(crate) enum Token {
 pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<Route> {
     if target.len() > usize::try_from(limits.target_bytes).ok()? {
         return None;
+    }
+    if let Some(route) = crate::comment_edit::route(method, target) {
+        return Some(Route::Token(Token::CommentEdit(route)));
     }
     if let Some(route) = crate::mutations::route(method, target) {
         return Some(Route::Token(Token::Mutation(route)));

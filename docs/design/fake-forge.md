@@ -726,6 +726,13 @@ below are tracked in STATUS.md.
   server encoder's bypass field; only the id is recorded, other fields are
   inferred. Deletion's empty `204` is recorded. Installation tokens receive
   an inferred `403` "Resource not accessible by integration".
+- **Comment edits.** `PATCH /repos/<o>/<n>/issues/comments/<id>` takes
+  exactly `{"body": "..."}` and calls the domain's `EditComment` write.
+  Either a person or a full installation token may edit as the domain's
+  authorship and write permission allow; installation reach still applies.
+  It answers `200` with one comment from the server's comment encoder,
+  including its updated timestamp. Unknown or duplicate fields are `422`.
+  Both the request and answer shapes are inferred, unrecorded live.
 - **The browser's pages, as plain HTTP** (seams S4), at the `web`
   routes, which the same listener serves:
   - `POST /settings/apps/new?state=<s>`, and

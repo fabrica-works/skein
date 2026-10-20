@@ -219,6 +219,7 @@ pub struct Pending {
 #[derive(Debug)]
 pub(crate) enum PendingKind {
     Mutation(crate::mutations::Mutation),
+    CommentEdit(crate::comment_edit::Edit),
     Read(reads::Pending),
     Write(writes::Pending),
     Blob,
@@ -489,6 +490,7 @@ impl Service {
         };
         let limits = &self.limits;
         match route {
+            routes::Token::CommentEdit(route) => crate::comment_edit::call(self, route, access, request.body, reply_to),
             routes::Token::Mutation(route) => crate::mutations::call(self, route, access, request.body, reply_to),
             routes::Token::Reachable(page) => crate::auth::reachable(self, page, access, request),
             routes::Token::Identity => Outcome::Reply(match access {
@@ -562,6 +564,7 @@ impl Service {
     ) -> Outcome {
         let rate = pending.rate;
         let outcome = match pending.kind {
+            PendingKind::CommentEdit(pending) => crate::comment_edit::finish(self, pending, result, reply_to),
             PendingKind::Mutation(pending) => Outcome::Reply(crate::mutations::finish(self, pending, result, domain)),
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
