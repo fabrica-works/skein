@@ -56,19 +56,37 @@ impl Store {
             Err(Error::Limits) => full(limits),
         }
     }
+    fn collaborator_index(&self, repository: u32, login: &[u8]) -> Option<u32> {
+        for index in 0..self.collaborators.len() {
+            let row = self.collaborators.get(index).expect("bounded collaborator index");
+            if row.repository == repository && row.login.as_ref() == login {
+                return Some(index);
+            }
+        }
+        None
+    }
+    /// Removes a scenario collaborator grant without an HTTP exchange.
+    pub fn revoke_collaborator(&mut self, repository: u32, login: &[u8]) {
+        if let Some(index) = self.collaborator_index(repository, login) {
+            let last = self.collaborators.len().checked_sub(1).expect("found collaborator");
+            if index != last {
+                let row = core::mem::replace(
+                    self.collaborators.get_mut(last).expect("last collaborator"),
+                    Collaborator { repository: 0, login: Box::new([]), permission: Grant::Read },
+                );
+                *self.collaborators.get_mut(index).expect("found collaborator") = row;
+            }
+            self.collaborators.truncate(last);
+        }
+    }
     /// Sets or replaces a bounded scenario grant without an HTTP exchange.
     pub fn grant(&mut self, repository: u32, login: &[u8], permission: Grant) -> Result<(), Error> {
         if login.len() > self.string_bytes {
             return Err(Error::Limits);
         }
-        for index in 0..self.collaborators.len() {
-            if let Some(row) = self.collaborators.get_mut(index)
-                && row.repository == repository
-                && row.login.as_ref() == login
-            {
-                row.permission = permission;
-                return Ok(());
-            }
+        if let Some(index) = self.collaborator_index(repository, login) {
+            self.collaborators.get_mut(index).expect("found collaborator").permission = permission;
+            return Ok(());
         }
         if self.collaborators.room() == 0 {
             return Err(Error::Limits);

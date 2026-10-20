@@ -329,3 +329,50 @@ pub fn search(ok: bool, rows: Box<[skein_forge::forgejo::document::Row]>) -> cra
 pub fn reachable(page: u32) -> crate::reachable::Reachable {
     crate::reachable::Reachable::new(&given(), None, page).expect("fixture admitted")
 }
+
+pub fn repository(id: u64, owner: &[u8], name: &[u8]) -> crate::reconcile::Event {
+    use skein_forge::forgejo::{
+        document::{Document, MergeStyle, Repository},
+        id::ObjectFormat,
+    };
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::Repository(Repository {
+        id,
+        owner: user(8, owner, false),
+        name: name.into(),
+        object_format: ObjectFormat::Sha1,
+        default_branch: b"main".as_slice().into(),
+        default_merge_style: MergeStyle::Merge,
+        allow_merge_commits: true,
+        allow_squash_merge: true,
+        allow_rebase: true,
+        html_url: Box::new([]),
+    })))
+}
+pub fn permission(permission: skein_forge::forgejo::document::Permission) -> crate::reconcile::Event {
+    use skein_forge::forgejo::document::{CollaboratorPermission, Document};
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Document(Document::Permission(CollaboratorPermission {
+        permission,
+        user: user(42, b"kit", false),
+    })))
+}
+pub struct AdoptRun {
+    pub(super) machine: crate::adopt::Adopt,
+}
+pub fn adopt() -> AdoptRun {
+    AdoptRun { machine: crate::adopt::Adopt::new(&given(), 7).expect("fixture admitted") }
+}
+impl AdoptRun {
+    pub fn step(&mut self, event: crate::reconcile::Event) -> crate::reconcile::Need {
+        let mut out = skein_lib::Queue::with_capacity(crate::adopt::MAX_OUT);
+        crate::adopt::step(&mut self.machine, event, &mut out);
+        assert_eq!(out.len(), 1);
+        out.pop().expect("one need")
+    }
+}
+pub fn access_run(ids: &[u64]) -> Run {
+    let mut given = given();
+    given.adopted = ids.into();
+    let mut run = Run::with_given(given);
+    to_org(&mut run);
+    run
+}

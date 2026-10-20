@@ -93,8 +93,8 @@ fn bot_creation() -> Run {
     run.step(Event::Reply(Reply::Status(404)));
     run
 }
-// Every nonterminal outer state, and all token and org phases: 17 rows.
-const PHASE_COUNT: usize = 17;
+// Every nonterminal outer state, and all token and org phases: 20 rows.
+const PHASE_COUNT: usize = 20;
 fn phase_cases() -> [PhaseCase; PHASE_COUNT] {
     let mut begin = phase("begin", Run::managed(), Box::new([]), Stage::Admin, b"kit-admin");
     begin.wrong = Box::new(Event::Written);
@@ -138,6 +138,24 @@ fn phase_cases() -> [PhaseCase; PHASE_COUNT] {
         phase("token written", token_creation(), Box::new([fixtures::token_event()]), Stage::Token, b"kit-api"),
         phase("id read", fixtures::id_read(), Box::new([]), Stage::Bot, b"kit"),
         phase("id written", fixtures::id_read(), Box::new([Event::Read(None)]), Stage::Bot, b"kit"),
+        phase("repository", fixtures::access_run(&[9]), Box::new([]), Stage::Repository, b"9"),
+        phase(
+            "permission",
+            fixtures::access_run(&[9]),
+            Box::new([fixtures::repository(9, b"acme", b"specimen")]),
+            Stage::Repository,
+            b"acme/specimen",
+        ),
+        phase(
+            "collaborator",
+            fixtures::access_run(&[9]),
+            Box::new([
+                fixtures::repository(9, b"acme", b"specimen"),
+                fixtures::permission(skein_forge::forgejo::document::Permission::None),
+            ]),
+            Stage::Repository,
+            b"acme/specimen",
+        ),
         phase("org lookup", fixtures::owned_org_read(), Box::new([]), Stage::Org, b"work"),
         phase(
             "org create",

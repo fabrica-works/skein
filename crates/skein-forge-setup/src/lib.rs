@@ -2,6 +2,8 @@
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 extern crate alloc;
+mod access;
+pub mod adopt;
 pub mod check;
 pub mod github;
 pub mod given;

@@ -33,7 +33,7 @@ impl Orgs {
     fn next(&mut self, machine: &mut Reconcile) -> Need {
         self.at = self.at.checked_add(1).expect("bounded orgs");
         if self.at == self.names.len() {
-            machine.finish()
+            machine.start_access()
         } else {
             self.phase = Phase::Org;
             machine.send(Request::Org { name: self.name().into() })

@@ -2,6 +2,7 @@
 mod hooks;
 mod orgs;
 mod tokens;
+mod walk;
 use crate::{
     given::{self, Given, Refused},
     item::Item,
@@ -101,6 +102,7 @@ enum State {
     Id(u64),
     Written,
     Orgs,
+    Access,
     Ended,
 }
 /// One forge's state; credentials remain beside the machine's requests.
@@ -117,6 +119,7 @@ pub struct Reconcile {
     state: State,
     tokens: Option<tokens::Tokens>,
     orgs: Option<orgs::Orgs>,
+    access: Option<walk::Walk>,
 }
 impl Reconcile {
     /// Starts one entry.
@@ -134,6 +137,7 @@ impl Reconcile {
             state: State::Begin,
             tokens: None,
             orgs: orgs::Orgs::new(given),
+            access: walk::Walk::new(given),
         })
     }
     fn send(&self, request: Request) -> Need {
@@ -219,6 +223,7 @@ impl Reconcile {
                 }
             },
             State::Orgs => orgs::advance(self, event),
+            State::Access => walk::advance(self, event),
             State::Ended => unreachable!("terminal machine is not advanced"),
         }
     }
@@ -313,7 +318,8 @@ pub fn step(machine: &mut Reconcile, event: Event, out: &mut Queue<Need>) {
         | State::Tokens
         | State::Id(_)
         | State::Written
-        | State::Orgs => {
+        | State::Orgs
+        | State::Access => {
             let need = machine.advance(state, event);
             out.push(need);
         }
@@ -345,6 +351,16 @@ impl Reconcile {
                 let name = orgs.name().into();
                 self.state = State::Orgs;
                 self.send(Request::Org { name })
+            }
+            None => self.start_access(),
+        }
+    }
+    fn start_access(&mut self) -> Need {
+        match self.access.as_mut() {
+            Some(walk) => {
+                let request = walk.begin();
+                self.state = State::Access;
+                self.send(request)
             }
             None => self.finish(),
         }
@@ -400,6 +416,7 @@ pub(crate) fn halt(machine: &mut Reconcile, why: Why, out: &mut Queue<Need>) {
         | State::Id(_)
         | State::Written
         | State::Orgs
+        | State::Access
         | State::Ended => Event::Begin,
     };
     let mut needs = Queue::with_capacity(MAX_OUT);

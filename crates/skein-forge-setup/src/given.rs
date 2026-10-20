@@ -81,10 +81,15 @@ pub fn check(given: &Given) -> Result<(), Refused> {
     if !given.orgs.is_empty() && given.org_owner.is_none() {
         return Err(Refused { place: Place::Orgs, other: Some(Place::OrgOwner) });
     }
-    if given.adopted.len() > usize::try_from(given.limits.repositories).expect("u32 fits") {
+    check_adopted(&given.adopted, &given.limits)
+}
+/// Checks a plan's adopted repositories before the owner sends a `Reconcile`.
+/// The host asserts this check: a refused plan is the owner's bug (forge-setup.md, 6.3).
+pub fn check_adopted(adopted: &[u64], limits: &Limits) -> Result<(), Refused> {
+    if adopted.len() > usize::try_from(limits.repositories).expect("u32 fits") {
         return Err(Refused { place: Place::Repositories, other: None });
     }
-    for (at, id) in given.adopted.iter().enumerate() {
+    for (at, id) in adopted.iter().enumerate() {
         if *id == 0 {
             return Err(Refused {
                 place: Place::Repository(u32::try_from(at).expect("bounded repositories")),
@@ -92,9 +97,9 @@ pub fn check(given: &Given) -> Result<(), Refused> {
             });
         }
     }
-    let count = u32::try_from(given.adopted.len()).expect("bounded repositories");
+    let count = u32::try_from(adopted.len()).expect("bounded repositories");
     let mut ids = List::with_capacity(count);
-    for (at, id) in given.adopted.iter().enumerate() {
+    for (at, id) in adopted.iter().enumerate() {
         ids.push((*id, u32::try_from(at).expect("bounded repositories"))).expect("checked repository count");
     }
     let mut ids = ids.into_boxed();

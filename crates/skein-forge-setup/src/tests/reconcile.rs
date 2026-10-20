@@ -296,3 +296,68 @@ fn a_bot_of_id_zero_is_refused_as_unexpected() {
         Need::Stop(Failure { forge: 2, step: Stage::Bot, subject: b"kit".as_slice().into(), why: Why::Unexpected })
     );
 }
+
+#[test]
+fn each_adopted_repository_is_read_by_id_in_the_order_given() {
+    let mut given = fixtures::given();
+    given.adopted = Box::new([9, 4]);
+    let mut run = Run::with_given(given);
+    fixtures::to_bot(&mut run);
+    run.step(fixtures::bot_event());
+    run.kept_tokens();
+    assert_eq!(
+        run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))),
+        fixtures::send(Request::RepositoryById { id: 9 })
+    );
+    run.step(fixtures::repository(9, b"acme", b"specimen"));
+    assert_eq!(
+        run.step(fixtures::permission(skein_forge::forgejo::document::Permission::Owner)),
+        fixtures::send(Request::RepositoryById { id: 4 })
+    );
+    run.step(fixtures::repository(4, b"other", b"repo"));
+    assert_eq!(
+        run.step(fixtures::permission(skein_forge::forgejo::document::Permission::Write)),
+        Need::Done(fixtures::done())
+    );
+}
+#[test]
+fn a_repository_the_forge_no_longer_has_is_passed_over() {
+    let mut run = fixtures::access_run(&[9, 4]);
+    assert_eq!(run.step(Event::Reply(Reply::Status(404))), fixtures::send(Request::RepositoryById { id: 4 }));
+    assert_eq!(run.step(Event::Reply(Reply::Status(404))), Need::Done(fixtures::done()));
+}
+#[test]
+#[expect(
+    clippy::disallowed_macros,
+    reason = "the test inspects the stopped reconcile's Debug rendering for a dropped token"
+)]
+fn a_failure_in_a_repository_stops_the_run_naming_its_path() {
+    let mut run = fixtures::access_run(&[9]);
+    run.step(fixtures::repository(9, b"acme", b"specimen"));
+    run.step(fixtures::permission(skein_forge::forgejo::document::Permission::None));
+    assert_eq!(
+        run.step(Event::Reply(Reply::Status(403))),
+        fixtures::named_failure(Stage::Repository, b"acme/specimen", Why::Refused(403))
+    );
+    assert!(format!("{:?}", run.machine).contains("admin: None"));
+}
+#[test]
+fn the_orgs_are_made_before_the_first_repository_is_read() {
+    let mut given = fixtures::given();
+    given.orgs = Box::new([b"acme".as_slice().into()]);
+    given.org_owner = Some(b"ada".as_slice().into());
+    given.adopted = Box::new([9]);
+    let mut run = Run::with_given(given);
+    fixtures::to_org(&mut run);
+    assert_eq!(
+        run.step(Event::Reply(Reply::Status(404))),
+        fixtures::send(Request::CreateOrg { person: b"ada".as_slice().into(), name: b"acme".as_slice().into() })
+    );
+    assert_eq!(
+        run.step(Event::Reply(Reply::Document(Document::Org(skein_forge::forgejo::document::Org {
+            id: 8,
+            name: b"acme".as_slice().into()
+        })))),
+        fixtures::send(Request::RepositoryById { id: 9 })
+    );
+}

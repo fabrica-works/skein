@@ -116,7 +116,13 @@ pub fn random(seed: u64) -> crate::World {
     use skein_forge_setup::item::Item;
     use skein_lib::Rng;
     let mut rng = Rng::new(seed);
-    let mut world = crate::World::owned(seed);
+    let permissions = [rng.next_u64() % 5, rng.next_u64() % 5, rng.next_u64() % 5];
+    let paths = [
+        if permissions[0] == 4 { b"kit/one".as_slice() } else { b"alice/one" },
+        if permissions[1] == 4 { b"kit/two".as_slice() } else { b"alice/two" },
+        if permissions[2] == 4 { b"kit/three".as_slice() } else { b"alice/three" },
+    ];
+    let mut world = repositories(seed, true, &paths);
     let bot = (rng.next_u64() & 1 == 1).then(|| world.store_mut().account(b"kit", false, b"kit:bot"));
     for (file, name, scopes, value) in [
         (
@@ -135,6 +141,27 @@ pub fn random(seed: u64) -> crate::World {
     for org in [b"acme".as_slice(), b"work"] {
         seed_org(&mut world, &mut rng, org);
     }
+    let mut adopted = Vec::new();
+    for id in 1..=4 {
+        if rng.next_u64() & 1 == 1 {
+            adopted.push(id);
+        }
+        if let Some(permission) = permissions.get(usize::try_from(id - 1).expect("small id")) {
+            use skein_forge::forgejo::request::Grant;
+            match permission {
+                0 | 4 => (),
+                1 => world.store_mut().grant(u32::try_from(id).expect("small id"), b"kit", Grant::Read).expect("grant"),
+                2 => {
+                    world.store_mut().grant(u32::try_from(id).expect("small id"), b"kit", Grant::Write).expect("grant");
+                }
+                3 => {
+                    world.store_mut().grant(u32::try_from(id).expect("small id"), b"kit", Grant::Admin).expect("grant");
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+    world.adopted(&adopted);
     world
 }
 fn seed_token(
@@ -201,7 +228,7 @@ pub fn crypto() -> skein_lib::CryptoRng {
 /// A person's two tokens for a connected Forgejo, with no user kept yet.
 pub fn connected_tokens(world: &mut crate::World) -> u64 {
     use skein_forge_setup::item::Item;
-    let id = world.store_mut().account(b"temper", false, b"A person");
+    let id = world.store_mut().account(b"alice", false, b"A person");
     world.store_mut().token(id, b"connected-api", &[b"read:user", b"write:issue", b"write:repository"], secret(API));
     world.store_mut().token(id, b"connected-git", &[b"write:repository", b"read:user"], secret(GIT));
     world.put(Item::ApiToken, secret(API));
@@ -252,4 +279,22 @@ pub fn picker_owners(store: &mut skein_fake_forge_protocol::setup::Store) {
     for id in [2, 3, 6, 10] {
         store.private(id).expect("bounded privacy metadata");
     }
+}
+
+/// Repository identities are scenario configuration; grants live in the setup store.
+#[must_use]
+pub fn repositories(seed: u64, owned: bool, paths: &[&[u8]]) -> crate::World {
+    let mut config = config();
+    config.repositories = List::with_capacity(u32::try_from(paths.len()).expect("scenario count"));
+    for (index, path) in paths.iter().enumerate() {
+        config
+            .repositories
+            .push(skein_fake_forge_protocol::Repository {
+                id: u32::try_from(index + 1).expect("scenario id"),
+                full: (*path).into(),
+                protected: None,
+            })
+            .expect("scenario capacity");
+    }
+    crate::World::with_config(seed, owned, config)
 }

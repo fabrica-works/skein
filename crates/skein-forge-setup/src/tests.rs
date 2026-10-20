@@ -1,3 +1,4 @@
+mod adopt;
 mod check;
 mod fixtures;
 mod github_fixtures;

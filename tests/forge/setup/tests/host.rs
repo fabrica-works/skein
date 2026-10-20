@@ -24,6 +24,7 @@ fn the_host_reconciles_an_empty_forge_through_http() {
 }
 #[test]
 fn the_host_runs_a_plan_that_names_adopted_repositories() {
+    use skein_fake_forge_protocol::Route;
     let mut without = HostWorld::new(7, &[]);
     without.run(1);
     without.finish();
@@ -31,8 +32,12 @@ fn the_host_runs_a_plan_that_names_adopted_repositories() {
     world.run_adopted(1, &[1, 2]);
     world.finish();
     assert_eq!(world.heard(), &[Heard::Done { run: Token::new(1), at: Duration::ZERO }]);
-    assert_eq!(world.requests().total, without.requests().total);
-    assert!(world.requests().routes.iter().eq(without.requests().routes.iter()));
+    assert_eq!(world.requests().total, without.requests().total + 2);
+    assert_eq!(world.requests().routes.get(&Route::RepositoryById), Some(&2));
+    for (route, count) in &without.requests().routes {
+        assert_eq!(world.requests().routes.get(route), Some(count));
+    }
+    assert_eq!(world.requests().routes.len(), without.requests().routes.len() + 1);
     assert_eq!(world.requests().unrouted, 0);
 }
 #[test]

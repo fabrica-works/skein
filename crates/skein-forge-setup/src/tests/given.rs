@@ -285,3 +285,19 @@ fn the_count_is_checked_before_the_ids() {
     given.adopted[0] = 0;
     refused(&given, Place::Repositories, None);
 }
+
+#[test]
+fn the_owners_check_of_adopted_refuses_what_check_refuses() {
+    for (given, expected) in [
+        (adopted(&[7, 9, 7]), Refused { place: Place::Repository(2), other: Some(Place::Repository(0)) }),
+        (adopted(&[7, 9, 0]), Refused { place: Place::Repository(2), other: None }),
+        (adopted_count(fixtures::PROFILE_REPOSITORIES + 1), Refused { place: Place::Repositories, other: None }),
+    ] {
+        assert_eq!(given::check_adopted(&given.adopted, &given.limits), Err(expected));
+        assert_eq!(given::check(&given), Err(expected));
+    }
+}
+#[test]
+fn an_empty_adopted_passes_the_owners_check() {
+    assert_eq!(given::check_adopted(&[], &fixtures::limits()), Ok(()));
+}

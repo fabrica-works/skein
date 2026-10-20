@@ -694,7 +694,9 @@ end.
   5.9). A forge has at most one writing run at once and one
   `Reachable` beside it: another of
   either stops at once, `Busy`, and so does one past `runs`, which
-  counts both.
+  counts both. A `Reconcile`'s `adopted` is checked by the owner first, by
+  `given::check_adopted`: a plan that fails it is the owner's bug, which
+  the host asserts.
 - **It does the needs** of 4.2 but the items: a `Send` on a connection of
   its own to the forge, opened for it and closed after its answer,
   waiting for the forge as 4.4 says on its own deadlines; a `Draw` from
@@ -838,9 +840,12 @@ pin (forge.md, section 4.3), and named by the fact's name.
     `setup-token-of-an-existing-name-is-refused`,
     `setup-token-delete-answers-204-and-ends-the-token`;
   - the scopes: the token routes need `write:admin`; `GET /user` a user
-    scope; a git token `read:user`; an API token `write:issue`:
+    scope; the repository routes, 4.5's and the search, the repository
+    scope (4.3, step 1); a git token `read:user`; an API token
+    `write:issue`:
     `setup-admin-token-without-write-admin-is-refused-the-token-routes`,
     `setup-admin-token-without-a-user-scope-is-refused-user`,
+    `setup-admin-token-without-write-repository-is-refused-the-repository-routes`,
     `setup-a-git-token-of-write-repository-alone-is-refused-user`,
     `setup-a-git-token-of-write-repository-and-read-user-answers-user-as-the-bot`,
     `setup-api-token-without-write-issue-is-refused-an-issue-write`.

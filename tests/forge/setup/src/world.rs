@@ -27,19 +27,28 @@ pub struct World {
 impl World {
     #[must_use]
     pub fn managed(seed: u64) -> Self {
-        Self::new(seed, false, 2, false)
+        Self::new(seed, false)
     }
     #[must_use]
     pub fn owned(seed: u64) -> Self {
-        Self::new(seed, true, 2, false)
+        Self::new(seed, true)
     }
     /// A managed picker with ten repositories and the given page cap.
     #[must_use]
     pub fn managed_paged(seed: u64, cap: u32) -> Self {
-        Self::new(seed, false, cap, true)
+        let mut config = fixtures::config_with_cap(cap);
+        fixtures::picker_repositories(&mut config);
+        let mut world = Self::with_config(seed, false, config);
+        fixtures::picker_owners(world.store_mut());
+        world
     }
-    fn new(seed: u64, owned: bool, cap: u32, picker: bool) -> Self {
-        let (service, limits) = seeded_with_cap(seed, owned, cap, picker);
+    fn new(seed: u64, owned: bool) -> Self {
+        Self::with_config(seed, owned, fixtures::config())
+    }
+    /// A scenario whose repository identities are fixed before the fake starts.
+    #[must_use]
+    pub fn with_config(seed: u64, owned: bool, config: skein_fake_forge_protocol::Config) -> Self {
+        let (service, limits) = seeded_config(seed, owned, config);
         Self {
             given: fixtures::given(owned),
             service,
@@ -105,6 +114,25 @@ impl World {
             checked.push(secret);
         }
         true
+    }
+    #[must_use]
+    pub fn adopted_ids(&self) -> &[u64] {
+        &self.given.adopted
+    }
+    pub fn adopted(&mut self, ids: &[u64]) {
+        self.given.adopted = ids.into();
+    }
+    /// Switches the service using this forge, with its own token files.
+    pub fn service_word(&mut self, word: &[u8]) {
+        self.given.word = word.into();
+        self.given.bot_login = word.into();
+        self.given.api_name = [word, b"-api"].concat().into();
+        self.given.git_name = [word, b"-git"].concat().into();
+        self.files.retain(|(item, _)| *item == Item::AdminToken);
+    }
+    pub fn adopt(&mut self, repository: u64) -> Ended {
+        let mut machine = skein_forge_setup::adopt::Adopt::new(&self.given, repository).expect("fixture admitted");
+        self.drive(|event, out| skein_forge_setup::adopt::step(&mut machine, event, out))
     }
     pub fn reconcile(&mut self) -> Ended {
         let mut machine = Reconcile::new(&self.given).expect("fixture admitted");
@@ -177,22 +205,19 @@ impl World {
 }
 
 pub(crate) fn seeded(seed: u64, owned: bool) -> (Service, skein_fake_forge_protocol::Limits) {
-    seeded_with_cap(seed, owned, 2, false)
+    seeded_config(seed, owned, fixtures::config())
 }
-fn seeded_with_cap(seed: u64, owned: bool, cap: u32, picker: bool) -> (Service, skein_fake_forge_protocol::Limits) {
+fn seeded_config(
+    seed: u64,
+    owned: bool,
+    config: skein_fake_forge_protocol::Config,
+) -> (Service, skein_fake_forge_protocol::Limits) {
     let limits = skein_forge_machine_world::fixtures::fake_limits();
-    let mut config = fixtures::config_with_cap(cap);
-    if picker {
-        fixtures::picker_repositories(&mut config);
-    }
     let mut service = Service::new(config, &limits, seed).expect("world service");
     let admin = service.setup_mut().account(b"kit-admin", true, b"");
     service.setup_mut().token(admin, b"setup-admin", &[b"all"], fixtures::secret(fixtures::ADMIN));
     if owned {
         service.setup_mut().account(b"ada", true, b"Ada");
-    }
-    if picker {
-        fixtures::picker_owners(service.setup_mut());
     }
     (service, limits)
 }

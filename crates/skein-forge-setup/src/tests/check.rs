@@ -6,10 +6,10 @@ use crate::{
 use skein_forge::forgejo::request::Request;
 
 fn person() -> Event {
-    fixtures::user_event(fixtures::user(7, b"temper", false))
+    fixtures::user_event(fixtures::user(7, b"alice", false))
 }
 fn identity() -> Need {
-    Need::Done(Outcome::Identity { id: 7, login: b"temper".as_slice().into() })
+    Need::Done(Outcome::Identity { id: 7, login: b"alice".as_slice().into() })
 }
 fn failure(subject: &[u8], why: Why) -> Need {
     fixtures::named_failure(Stage::Token, subject, why)
@@ -98,7 +98,7 @@ fn an_api_token_of_a_site_admin_is_refused_bot_is_admin() {
 #[test]
 fn a_user_of_id_zero_is_unexpected() {
     assert_eq!(
-        at(API_USER).step(fixtures::user_event(fixtures::user(0, b"temper", false))),
+        at(API_USER).step(fixtures::user_event(fixtures::user(0, b"alice", false))),
         failure(b"api", Why::Unexpected)
     );
 }
