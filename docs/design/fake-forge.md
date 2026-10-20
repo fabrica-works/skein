@@ -234,10 +234,12 @@ peers host theirs. The real loop hosts the same one.
   observations. It records connections, request heads, calls with their
   terminals, and deliveries with their outcomes: two records for each
   connection (its opening and its close), two for each call (its head and
-  its terminal) and one for each delivery. Nothing drains them. So a
-  world's cap is the most its stories can record, derived from what bounds
-  them, such as their deadline and their clients' rates and lives, never a
-  count one run happened to record.
+  its terminal) and one for each delivery. Nothing drains them, and none
+  is dropped: a record past the world's caps fails the peer's assertion,
+  "frozen record count fits" or "frozen payload admitted before copying",
+  and with it the story. So a world's caps are a stated room for a whole
+  story, each named for what it holds, with its reason, and a story that
+  outgrows it fails by name rather than losing its history.
 - **Plaintext only.** Its `base` is `http://`; its face is the shared one
   with `Transport::Plaintext` and a `queue` of at least 64.
 - **It hosts the layer over a forge it is handed.** The owner builds the
