@@ -1,0 +1,10 @@
+HTTP/1.1 401 Unauthorized
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: application/json;charset=utf-8
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 458
+
+{"message":"token is malformed: token contains an invalid number of segments\naccess token does not exist [sha: 0000000000000000000000000000000000000004]\ntoken is malformed: token contains an invalid number of segments\ntask with token \"0000000000000000000000000000000000000004\": resource does not exist\nauthorized integration: parse JWT error: token is malformed: token contains an invalid number of segments","url":"http://127.0.0.1:3000/api/swagger"}

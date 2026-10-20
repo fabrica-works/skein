@@ -98,6 +98,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "forgejo-conformance"
+version = "0.0.0"
+dependencies = [
+ "skein-forge",
+ "skein-forge-client",
+ "skein-forge-connection",
+ "skein-io",
+ "skein-json",
+ "skein-lib",
+ "skein-shell",
+ "skein-throwaway-forgejo",
+ "skein-tls",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"

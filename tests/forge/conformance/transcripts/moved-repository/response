@@ -1,0 +1,12 @@
+HTTP/1.1 301 Moved Permanently
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: text/html; charset=utf-8
+Location: /api/v1/repos/fixture/renamed
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 64
+
+<a href="/api/v1/repos/fixture/renamed">Moved Permanently</a>.
+

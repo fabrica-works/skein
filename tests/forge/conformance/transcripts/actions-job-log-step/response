@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+Accept-Ranges: bytes
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: text/plain; charset=utf-8
+Last-Modified: Wed, 01 Jan 2020 00:00:00 GMT
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 120
+
+2026-10-20T03:21:38.8834819Z KIT_CONFORMANCE_FAILED_JOB
+2026-10-20T03:21:38.8840030Z ⚙️ [runner]: RUN exit status 1

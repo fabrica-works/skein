@@ -1,0 +1,6 @@
+GET /api/v1/repos/fixture/specimen/actions/jobs/2/logs?attempt=1&step=1 HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Range: bytes=-10
+Connection: close
+

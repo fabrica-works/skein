@@ -1,0 +1,8 @@
+POST /api/v1/repos/fixture/specimen/pulls/1/reviews HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 67
+Connection: close
+
+{"event":"COMMENT","body":"<!-- kit:key 01000005 -->\nreview text"}

@@ -1,0 +1,10 @@
+HTTP/1.1 200 OK
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: application/json;charset=utf-8
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 1056
+
+[{"id":18,"body":"remark text","user":{"id":1,"login":"fixture","login_name":"","source_id":0,"full_name":"","email":"fixture@example.invalid","avatar_url":"http://127.0.0.1:3000/avatars/a403c50e83dfc222f341e532d0f4a6e2","html_url":"http://127.0.0.1:3000/fixture","language":"","is_admin":false,"last_login":"0001-01-01T00:00:00Z","created":"2020-01-01T00:00:02+05:30","restricted":false,"active":false,"prohibit_login":false,"location":"","pronouns":"","website":"","description":"","visibility":"public","followers_count":0,"following_count":0,"starred_repos_count":0,"username":"fixture"},"resolver":null,"pull_request_review_id":5,"created_at":"2020-01-01T00:00:10+05:30","updated_at":"2020-01-01T00:00:10+05:30","path":"file-0.txt","commit_id":"0000000000000000000000000000000000000008","original_commit_id":"","diff_hunk":"@@ -0,0 +1 @@\n+file 0","position":1,"original_position":0,"extra_lines_count":0,"html_url":"http://127.0.0.1:3000/fixture/specimen/pulls/1#issuecomment-18","pull_request_url":"http://127.0.0.1:3000/fixture/specimen/pulls/1"}]

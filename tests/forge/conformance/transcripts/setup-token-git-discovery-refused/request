@@ -1,0 +1,5 @@
+GET /fixture/specimen.git/info/refs?service=git-receive-pack HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: Basic MASKED
+Connection: close
+

@@ -1,0 +1,8 @@
+POST /api/v1/repos/fixture/specimen/branches HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 88
+Connection: close
+
+{"new_branch_name":"recorded","old_ref_name":"0000000000000000000000000000000000000004"}

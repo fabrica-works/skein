@@ -1,0 +1,8 @@
+PATCH /api/v1/teams/4 HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 170
+Connection: close
+
+{"name":"writer","permission":"write","includes_all_repositories":false,"units_map":{"repo.code":"write","repo.issues":"write","repo.pulls":"read","repo.actions":"none"}}

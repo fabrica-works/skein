@@ -1,0 +1,8 @@
+POST /api/v1/admin/users/fixture/orgs HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 45
+Connection: close
+
+{"username":"probe-c","visibility":"private"}

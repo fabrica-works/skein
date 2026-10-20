@@ -1,0 +1,10 @@
+HTTP/1.1 409 Conflict
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: application/json;charset=utf-8
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 204
+
+{"message":"pull request already exists for these targets [id: 1, issue_id: 1, head_repo_id: 1, base_repo_id: 1, head_branch: feature/slash, base_branch: main]","url":"http://127.0.0.1:3000/api/swagger"}

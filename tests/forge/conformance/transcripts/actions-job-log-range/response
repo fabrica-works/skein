@@ -1,0 +1,13 @@
+HTTP/1.1 206 Partial Content
+Accept-Ranges: bytes
+Cache-Control: max-age=0, private, must-revalidate
+Content-Range: bytes 0-3/493
+Content-Type: text/plain; charset=utf-8
+Last-Modified: Wed, 01 Jan 2020 00:00:00 GMT
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 4
+
+2026

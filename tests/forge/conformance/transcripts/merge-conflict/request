@@ -1,0 +1,8 @@
+POST /api/v1/repos/fixture/specimen/pulls/2/merge HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 74
+Connection: close
+
+{"Do":"merge","head_commit_id":"000000000000000000000000000000000000000a"}

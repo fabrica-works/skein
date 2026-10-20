@@ -1,0 +1,17 @@
+HTTP/1.1 200 OK
+Access-Control-Expose-Headers: Link, X-Total-Count, X-Page, X-PerPage, X-PageCount, X-HasMore
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: application/json;charset=utf-8
+Link: <http://127.0.0.1:3000/api/v1/repos/fixture/specimen/pulls/1/files?limit=2&page=2>; rel="next",<http://127.0.0.1:3000/api/v1/repos/fixture/specimen/pulls/1/files?limit=2&page=2>; rel="last"
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Hasmore: true
+X-Page: 1
+X-Pagecount: 2
+X-Perpage: 2
+X-Total-Count: 3
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 894
+
+[{"filename":"file-0.txt","status":"added","additions":1,"deletions":0,"changes":1,"html_url":"http://127.0.0.1:3000/fixture/specimen/src/commit/0000000000000000000000000000000000000004/file-0.txt","contents_url":"http://127.0.0.1:3000/api/v1/repos/fixture/specimen/contents/file-0.txt?ref=0000000000000000000000000000000000000004","raw_url":"http://127.0.0.1:3000/fixture/specimen/raw/commit/0000000000000000000000000000000000000004/file-0.txt"},{"filename":"file-1.txt","status":"added","additions":1,"deletions":0,"changes":1,"html_url":"http://127.0.0.1:3000/fixture/specimen/src/commit/0000000000000000000000000000000000000004/file-1.txt","contents_url":"http://127.0.0.1:3000/api/v1/repos/fixture/specimen/contents/file-1.txt?ref=0000000000000000000000000000000000000004","raw_url":"http://127.0.0.1:3000/fixture/specimen/raw/commit/0000000000000000000000000000000000000004/file-1.txt"}]

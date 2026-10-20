@@ -1,0 +1,10 @@
+HTTP/1.1 201 Created
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: application/json;charset=utf-8
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 296
+
+{"id":6,"name":"ensemble","full_name":"","email":"","avatar_url":"http://127.0.0.1:3000/avatars/52406e4baf76901e487aadaec67e88ea","description":"","website":"","location":"","visibility":"private","repo_admin_change_team_access":false,"created":"2020-01-01T00:00:06+05:30","username":"ensemble"}

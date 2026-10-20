@@ -1,0 +1,5 @@
+GET /api/v1/repos/fixture/specimen/actions/runs?head_sha=0000000000000000000000000000000000000010&run_number=1&page=1&limit=1 HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Connection: close
+

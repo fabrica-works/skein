@@ -1,0 +1,8 @@
+POST /api/v1/repos/fixture/specimen/pulls HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 82
+Connection: close
+
+{"head":"writer-head","base":"landing","title":"writer pull","body":"writer text"}

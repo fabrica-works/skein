@@ -4,6 +4,7 @@
 resolver = "3"
 members = [
     "tests/forge/client",
+    "tests/forge/conformance",
     "crates/*",
     "examples/ui/view",
     "examples/ui/shell-web",

@@ -1,0 +1,8 @@
+POST /api/v1/repos/fixture/specimen/issues/3/comments HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 50
+Connection: close
+
+{"body":"<!-- kit:key 01000002 -->\ncomment text"}

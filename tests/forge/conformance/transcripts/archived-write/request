@@ -1,0 +1,8 @@
+POST /api/v1/repos/fixture/archived/issues HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 34
+Connection: close
+
+{"title":"archived","body":"text"}

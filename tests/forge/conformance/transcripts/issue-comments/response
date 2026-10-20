@@ -1,0 +1,12 @@
+HTTP/1.1 200 OK
+Access-Control-Expose-Headers: X-Total-Count
+Cache-Control: max-age=0, private, must-revalidate
+Content-Type: application/json;charset=utf-8
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Total-Count: 2
+Date: Wed, 01 Jan 2020 00:00:00 GMT
+Connection: close
+Content-Length: 1816
+
+[{"id":4,"html_url":"http://127.0.0.1:3000/fixture/specimen/issues/3#issuecomment-4","pull_request_url":"","issue_url":"http://127.0.0.1:3000/fixture/specimen/issues/3","user":{"id":2,"login":"writer","login_name":"","source_id":0,"full_name":"","email":"writer@noreply.localhost","avatar_url":"http://127.0.0.1:3000/avatars/4464b64d9cf6e0514f24871983aa0a7a","html_url":"http://127.0.0.1:3000/writer","language":"","is_admin":false,"last_login":"0001-01-01T00:00:00Z","created":"2020-01-01T00:00:01+05:30","restricted":false,"active":false,"prohibit_login":false,"location":"","pronouns":"","website":"","description":"","visibility":"public","followers_count":0,"following_count":0,"starred_repos_count":0,"username":"writer"},"original_author":"","original_author_id":0,"body":"\u003c!-- kit:key 01000002 --\u003e\ncomment text","assets":[],"created_at":"2020-01-01T00:00:05+05:30","updated_at":"2020-01-01T00:00:05+05:30"},{"id":5,"html_url":"http://127.0.0.1:3000/fixture/specimen/issues/3#issuecomment-5","pull_request_url":"","issue_url":"http://127.0.0.1:3000/fixture/specimen/issues/3","user":{"id":2,"login":"writer","login_name":"","source_id":0,"full_name":"","email":"writer@noreply.localhost","avatar_url":"http://127.0.0.1:3000/avatars/4464b64d9cf6e0514f24871983aa0a7a","html_url":"http://127.0.0.1:3000/writer","language":"","is_admin":false,"last_login":"0001-01-01T00:00:00Z","created":"2020-01-01T00:00:01+05:30","restricted":false,"active":false,"prohibit_login":false,"location":"","pronouns":"","website":"","description":"","visibility":"public","followers_count":0,"following_count":0,"starred_repos_count":0,"username":"writer"},"original_author":"","original_author_id":0,"body":"plain comment","assets":[],"created_at":"2020-01-01T00:00:05+05:30","updated_at":"2020-01-01T00:00:05+05:30"}]

@@ -1,0 +1,8 @@
+POST /api/v1/orgs/ensemble/hooks HTTP/1.1
+Host: 127.0.0.1:3000
+Authorization: token MASKED
+Content-Type: application/json
+Content-Length: 630
+Connection: close
+
+{"type":"forgejo","config":{"url":"http://127.0.0.1:3000/hooks/1","content_type":"json","secret":"0000000000000000000000000000000000000000000000000000000000000012"},"events":["issues","issue_assign","issue_label","issue_milestone","pull_request","pull_request_assign","pull_request_label","pull_request_milestone","pull_request_sync","pull_request_review_request","issue_comment","pull_request_comment","pull_request_review_approved","pull_request_review_rejected","pull_request_review_comment","push","create","delete","workflow_job_success","workflow_job_failure","workflow_job_cancelled","workflow_job_skipped"],"active":true}
