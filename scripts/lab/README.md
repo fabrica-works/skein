@@ -59,7 +59,8 @@ Driver inventory and boundary probes belong to the driver slice.
 A valid experiment is copied atomically to `store/experiments/D`; the key
 record is written once to `keys/NAME/D/key.json`. No run is created.
 
-Pure modules accept records and supplied facts. `store` and `cli` own effects.
+Pure modules accept records and supplied facts. `store`, `cli`, `host`,
+`transport` and `loop` own effects.
 Fixed vectors and the unit stories run from the repository root through:
 
 ```
@@ -68,8 +69,8 @@ heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/uni
 
 Unit tests start no child processes and use no clock or sleep. CLI stories
 call `main` with temporary inputs and explicit machine facts; native Git
-export and machine checks need native validation. Driver runs, findings, campaigns, recovery, pruning and process-tier hygiene
-wiring are later slices.
+export and machine checks need native validation. Driver runs, findings,
+campaigns, recovery and pruning are later slices.
 
 
 `run` and `judge` support **`driver: null` only**. A nonnull driver and a supplied
@@ -161,5 +162,5 @@ heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/pro
 Missing or denied systemd/bubblewrap capabilities produce an explicit
 process-tier skip/refusal. They prove nothing about native containment. Unit
 stories use supplied times without sleeping; the AST boundary includes `life`
-and `checks`. Native containment, execution times and process-lane integration
-must be verified by the owner on the native host.
+and `checks`. The unit tier runs in `scripts/check.sh`; the process tier runs
+before the exhaustive suite in `scripts/after-landing.sh`.

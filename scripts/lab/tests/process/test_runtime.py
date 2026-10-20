@@ -63,6 +63,9 @@ class Runtime(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
         # A timed-out outer CLI can leave its worker holding the writer lock.
         # Only this test's private run markers identify units for cleanup.
         for live in self.lab_root.glob('keys/native/*/runs/*/live.json'):
