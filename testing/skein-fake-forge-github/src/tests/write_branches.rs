@@ -2,7 +2,7 @@ use super::{fixtures as f, read_support as r, write_support as w};
 use skein_fake_forge_domain::api as a;
 use skein_forge::{
     api,
-    github::{document as d, failure, request::Request},
+    github::{document as d, request::Request},
 };
 
 #[test]
@@ -27,7 +27,7 @@ fn github_fake_branch_plans_create_read_and_delete() {
             commit: head,
         },
     );
-    f::refusal(&h, &response, 422, failure::REF_EXISTS);
+    f::refusal(&h, &response, 422, crate::texts::REF_EXISTS);
     assert_eq!(
         w::write(&mut h, &token, api::Write::DeleteBranch { branch: f::boxed(b"topic/example") }),
         Ok(api::Answer::Done)
@@ -49,7 +49,7 @@ fn github_fake_branch_plans_create_read_and_delete() {
             branch: f::boxed(b"topic/example"),
         },
     );
-    f::refusal(&h, &response, 422, failure::REF_MISSING);
+    f::refusal(&h, &response, 422, crate::texts::REF_MISSING);
 }
 #[test]
 fn github_fake_status_plan_reports_each_verdict_to_domain() {
@@ -111,7 +111,7 @@ fn github_fake_status_requires_the_apps_statuses_write_grant() {
                 check: api::Check::Passed,
             },
         );
-        f::refusal(&h, &response, 403, failure::INTEGRATION);
+        f::refusal(&h, &response, 403, crate::texts::INTEGRATION);
     }
 }
 #[test]

@@ -1,0 +1,49 @@
+//! The fake's copies of GitHub's refusal texts (forge-github.md, section 7).
+
+// user-on-installation-403.
+pub(crate) const INTEGRATION: &[u8] = b"Resource not accessible by integration";
+// merge-stale-409.
+pub(crate) const MERGE_STALE: &[u8] = b"Head branch was modified. Review and try the merge again.";
+// merge-after-move-405-not-mergeable; merge-closed-405-not-mergeable.
+pub(crate) const NOT_MERGEABLE: &[u8] = b"Pull Request is not mergeable";
+// ruleset-approval-405.
+pub(crate) const RULES: &[u8] = b"Repository rule violations found";
+// queue-direct-merge-405.
+pub(crate) const QUEUE: &[u8] = b"Changes must be made through the merge queue";
+// repository-allows-shown; from `Squash merges are not allowed on this repository.`
+// in github/tests/writes/merge.rs; the fake supplies the requested method.
+pub(crate) const MERGE_METHOD: &[u8] = b"merges are not allowed on this repository.";
+// enqueue-stale-unprocessable; github/tests/failures.rs's complete fixture.
+pub(crate) const ENQUEUE_STALE: &[u8] = b"enqueuePullRequest: expected head oid does not match the current head oid";
+// update-stale-422; GitHub writes U+2019.
+pub(crate) const UPDATE_STALE: &[u8] = "expected head sha didn’t match current head ref.".as_bytes();
+// update-conflict-422.
+pub(crate) const UPDATE_CONFLICT: &[u8] = b"merge conflict between base and head";
+// pulls-422-no-commits; from `No commits between main and feature` in
+// github/tests/failures.rs; the fake supplies the requested base and head.
+pub(crate) const NO_COMMITS: &[u8] = b"No commits between ";
+// pulls-422-exists; from `A pull request already exists for alice` in
+// github/tests/writes.rs; the fake supplies the requested head.
+pub(crate) const PULL_EXISTS: &[u8] = b"A pull request already exists for ";
+// approve-own-422.
+pub(crate) const OWN_REVIEW: &[u8] = b"Can not approve your own pull request";
+// refs-422-exists.
+pub(crate) const REF_EXISTS: &[u8] = b"Reference already exists";
+// refs-delete-missing-422.
+pub(crate) const REF_MISSING: &[u8] = b"Reference does not exist";
+
+// no unmet rule visible; unrecorded shape (fake-forge.md, 10.4).
+pub(crate) const RULES_FALLBACK: &[u8] = b"Repository rule violations found\n\n";
+
+// recorded; other counts inferred (owner's rule-texts.md, 2026-10-20).
+pub(crate) const APPROVAL_START: &[u8] = b"At least ";
+// recorded; other counts inferred (owner's rule-texts.md, 2026-10-20).
+pub(crate) const APPROVAL_END: &[u8] = b" approving review is required by reviewers with write access.";
+// recorded 2026-10-20 (owner's rule-texts.md).
+pub(crate) const CHECK_START: &[u8] = b"Required status check \"";
+// recorded 2026-10-20 (owner's rule-texts.md).
+pub(crate) const CHECK_EXPECTED: &[u8] = b"\" is expected.";
+// recorded 2026-10-20 (owner's rule-texts.md).
+pub(crate) const CHECK_PROGRESS: &[u8] = b"\" is in progress.";
+// recorded for Actions; inferred: commit status failure unrecorded (rule-texts.md).
+pub(crate) const CHECK_FAILING: &[u8] = b"\" is failing.";

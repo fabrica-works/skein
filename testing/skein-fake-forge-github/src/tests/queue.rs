@@ -1,6 +1,6 @@
 use super::{fixtures as f, read_support as r};
 use skein_fake_forge_domain::{self as fake, api as a};
-use skein_forge::github::{self, failure, plans::tables::Method, request::Request};
+use skein_forge::github::{self, plans::tables::Method, request::Request};
 use skein_lib::Secret;
 
 fn harness(queue: bool) -> f::Harness {
@@ -40,7 +40,7 @@ fn merge(number: u64, head: u64) -> Request {
 fn direct_merge_of_a_queue_branch_answers_the_two_rule_lines_without_merging() {
     let (mut h, number, head, token) = scenario(true);
     let response = ask(&mut h, &token, &merge(number, head));
-    let message = f::parts(&[failure::RULES, b"\n\n", failure::QUEUE, b"\n\n"]);
+    let message = f::parts(&[crate::texts::RULES, b"\n\n", crate::texts::QUEUE, b"\n\n"]);
     f::refusal(&h, &response, 405, &message);
     assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
     let a::Answer::Pull(pull) = h.domain.inspect(&h.env.limits, b"acme/widgets", &a::Read::Pull { number }).unwrap()
@@ -68,7 +68,7 @@ fn ordinary_base_merges_by_rest_beside_a_queue_base() {
         panic!("ordinary pull")
     };
     let response = ask(&mut h, &token, &merge(queued, head));
-    let message = f::parts(&[failure::RULES, b"\n\n", failure::QUEUE, b"\n\n"]);
+    let message = f::parts(&[crate::texts::RULES, b"\n\n", crate::texts::QUEUE, b"\n\n"]);
     f::refusal(&h, &response, 405, &message);
     let skein_forge::api::Answer::Merged(sha) =
         drive_merge(&mut h, &token, direct, head, Admission::Answer, DIRECT).unwrap()
@@ -88,7 +88,7 @@ fn ordinary_base_merges_by_rest_beside_a_queue_base() {
 fn stale_head_is_refused_before_a_queue_requirement() {
     let (mut h, number, head, token) = scenario(true);
     let response = ask(&mut h, &token, &merge(number, head.checked_sub(1).unwrap()));
-    f::refusal(&h, &response, 409, failure::MERGE_STALE);
+    f::refusal(&h, &response, 409, crate::texts::MERGE_STALE);
     assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
 }
 
@@ -98,7 +98,7 @@ fn queue_refusal_takes_precedence_over_approval_and_check_rules() {
     let (number, head) = r::pull(&mut h);
     let token = r::token(&mut h);
     let response = ask(&mut h, &token, &merge(number, head));
-    let message = f::parts(&[failure::RULES, b"\n\n", failure::QUEUE, b"\n\n"]);
+    let message = f::parts(&[crate::texts::RULES, b"\n\n", crate::texts::QUEUE, b"\n\n"]);
     f::refusal(&h, &response, 405, &message);
     assert_eq!(
         drive_merge(&mut h, &token, number, head, Admission::Answer, QUEUED),

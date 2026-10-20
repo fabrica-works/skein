@@ -2,10 +2,7 @@ use super::{fixtures as f, read_support as r, write_support as w};
 use skein_fake_forge_domain::{self as fake, api as a};
 use skein_forge::{
     api,
-    github::{
-        failure,
-        request::{Method, Request},
-    },
+    github::request::{Method, Request},
 };
 
 fn open() -> api::Write {
@@ -48,7 +45,8 @@ fn github_fake_open_pull_plan_creates_and_reads_back() {
         Some(token.expose()),
         br#"{"title":"feature","body":"body","head":"feature","base":"trunk"}"#,
     );
-    f::refusal(&h, &response, 422, b"A pull request already exists for feature");
+    let message = f::parts(&[crate::texts::PULL_EXISTS, b"feature"]);
+    f::refusal(&h, &response, 422, &message);
 }
 #[test]
 fn github_fake_empty_head_refuses_open_pull_without_creating() {
@@ -62,7 +60,8 @@ fn github_fake_empty_head_refuses_open_pull_without_creating() {
         Some(token.expose()),
         br#"{"title":"feature","body":"body","head":"feature","base":"trunk"}"#,
     );
-    f::refusal(&h, &response, 422, b"No commits between trunk and feature");
+    let message = f::parts(&[crate::texts::NO_COMMITS, b"trunk and feature"]);
+    f::refusal(&h, &response, 422, &message);
     assert_eq!(r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number: 1 }), Err(api::Error::Missing));
 }
 #[test]
@@ -101,7 +100,7 @@ fn github_fake_update_plan_merges_base_and_checks_expected_head() {
     let request =
         Request::Update { owner: f::boxed(b"acme"), name: f::boxed(b"widgets"), number, head: r::object(head) };
     let response = w::ask(&mut h, &token, &request);
-    f::refusal(&h, &response, 422, failure::UPDATE_STALE);
+    f::refusal(&h, &response, 422, crate::texts::UPDATE_STALE);
     let api::Answer::Pull(after) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
         panic!("stale update readback")
     };
@@ -197,7 +196,7 @@ fn github_fake_review_refuses_approving_own_pull() {
             body: f::boxed(b"approve"),
         },
     );
-    f::refusal(&h, &response, 422, failure::OWN_REVIEW);
+    f::refusal(&h, &response, 422, crate::texts::OWN_REVIEW);
 }
 #[test]
 fn github_fake_pull_writes_outside_installation_are_missing() {
@@ -267,7 +266,7 @@ fn github_fake_update_conflict_preserves_the_pull_head() {
         &token,
         &Request::Update { owner: f::boxed(b"acme"), name: f::boxed(b"widgets"), number, head: r::object(head) },
     );
-    f::refusal(&h, &response, 422, failure::UPDATE_CONFLICT);
+    f::refusal(&h, &response, 422, crate::texts::UPDATE_CONFLICT);
     let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
         panic!("conflicted pull")
     };

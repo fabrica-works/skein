@@ -224,7 +224,7 @@ fn github_fake_enqueue_distinguishes_stale_heads_and_unknown_nodes() {
     assert_eq!(response.status, 200);
     let (_, Document::Graphql(error)) = h.decode(Kind::Enqueue, &response) else { panic!("stale error") };
     assert_eq!(error.kind.as_ref(), b"UNPROCESSABLE");
-    assert!(error.message.ends_with(github::failure::ENQUEUE_STALE));
+    assert_eq!(error.message.as_ref(), crate::texts::ENQUEUE_STALE);
     for id in [b"unknown".as_slice(), b"PR_2_999", b"PR_999_1", b"PR_02_1", b"PR_6_1"] {
         let response = enqueue(&mut h, &token, id, head);
         assert_eq!(response.status, 200);

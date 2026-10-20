@@ -375,7 +375,7 @@ fn enqueue_finish(result: Result<Answer, Error>, limits: &Limits) -> Response {
         Err(Error::Stale) => {
             return answers::response(
                 200,
-                &Body::GraphqlRefusal(b"UNPROCESSABLE", skein_forge::github::failure::ENQUEUE_STALE),
+                &Body::GraphqlRefusal(b"UNPROCESSABLE", crate::texts::ENQUEUE_STALE),
                 limits,
             );
         }

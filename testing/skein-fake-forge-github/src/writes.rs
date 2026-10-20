@@ -4,6 +4,7 @@ use crate::{
     installations::Grant,
     reads,
     service::{Limits, Outcome, Response, Service},
+    texts,
 };
 use alloc::boxed::Box;
 use skein_fake_forge_domain::{
@@ -196,7 +197,7 @@ pub(crate) fn call(service: &Service, route: Route, grant: &Grant, body: &[u8], 
         return Outcome::Reply(answers::missing(&service.limits));
     }
     if grant.scope == crate::installations::Scope::Contents && !route.contents() {
-        return Outcome::Reply(answers::refusal(403, skein_forge::github::failure::INTEGRATION, &service.limits));
+        return Outcome::Reply(answers::refusal(403, texts::INTEGRATION, &service.limits));
     }
     if !service.body_fits(body) {
         return Outcome::Reply(answers::refusal(413, b"Payload Too Large", &service.limits));
@@ -250,7 +251,7 @@ fn operation(service: &Service, request: Request) -> Result<(Stage, Op), Respons
                 }
             }
             if !allowed {
-                return Err(answers::refusal(403, skein_forge::github::failure::INTEGRATION, &service.limits));
+                return Err(answers::refusal(403, texts::INTEGRATION, &service.limits));
             }
             let Some(commit) = reads::count(&commit) else {
                 return Err(answers::missing(&service.limits));
@@ -372,7 +373,7 @@ pub(crate) fn finish(
             };
             match created {
                 a::Created::Created => answers::response(201, &Body::Done, limits),
-                a::Created::Exists => answers::refusal(422, skein_forge::github::failure::REF_EXISTS, limits),
+                a::Created::Exists => answers::refusal(422, texts::REF_EXISTS, limits),
             }
         }
         Stage::DeleteBranch => {
@@ -392,7 +393,7 @@ pub(crate) fn finish(
                 return Outcome::Reply(answers::failed());
             };
             if item.author == service.bot && verdict != skein_forge::api::Verdict::Comment {
-                return Outcome::Reply(answers::refusal(422, skein_forge::github::failure::OWN_REVIEW, limits));
+                return Outcome::Reply(answers::refusal(422, texts::OWN_REVIEW, limits));
             }
             return dispatch(
                 service,
@@ -406,7 +407,7 @@ pub(crate) fn finish(
                 return Outcome::Reply(answers::failed());
             };
             if reads::commit(pull.commit) != head {
-                return Outcome::Reply(answers::refusal(422, skein_forge::github::failure::UPDATE_STALE, limits));
+                return Outcome::Reply(answers::refusal(422, texts::UPDATE_STALE, limits));
             }
             return dispatch(
                 service,
@@ -447,16 +448,15 @@ fn done(status: u16, answer: a::Answer, limits: &Limits) -> Response {
 }
 
 fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
-    use skein_forge::github::failure;
     match stage {
         Stage::Merge(_) => return answers::failed(),
         Stage::DeleteBranch if error == a::Error::Missing(a::What::Branch) => {
-            return answers::refusal(422, failure::REF_MISSING, limits);
+            return answers::refusal(422, texts::REF_MISSING, limits);
         }
         Stage::OpenPull { head, base } => {
             let text = match error {
                 a::Error::NothingToMerge => {
-                    let Some(prefix) = crate::service::joined(failure::NO_COMMITS, base) else {
+                    let Some(prefix) = crate::service::joined(texts::NO_COMMITS, base) else {
                         return answers::failed();
                     };
                     let Some(prefix) = crate::service::joined(&prefix, b" and ") else {
@@ -464,7 +464,7 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
                     };
                     crate::service::joined(&prefix, head)
                 }
-                a::Error::Exists => crate::service::joined(failure::PULL_EXISTS, head),
+                a::Error::Exists => crate::service::joined(texts::PULL_EXISTS, head),
                 a::Error::Unavailable
                 | a::Error::Timeout
                 | a::Error::RateLimited { .. }
@@ -487,7 +487,7 @@ fn refused(stage: &Stage, error: a::Error, limits: &Limits) -> Response {
             }
         }
         Stage::Updated if error == a::Error::Conflict => {
-            return answers::refusal(422, failure::UPDATE_CONFLICT, limits);
+            return answers::refusal(422, texts::UPDATE_CONFLICT, limits);
         }
         Stage::Branch
         | Stage::DeleteBranch

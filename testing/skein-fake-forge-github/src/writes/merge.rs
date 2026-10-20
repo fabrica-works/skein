@@ -4,27 +4,12 @@ use crate::{
     answers::{self, Body},
     reads,
     service::{Limits, Outcome, Response, Service},
+    texts,
 };
 use alloc::boxed::Box;
 use skein_fake_forge_domain::{self as fake, api as a};
-use skein_forge::{
-    api,
-    github::{failure, plans::tables::Method},
-};
+use skein_forge::{api, github::plans::tables::Method};
 use skein_lib::{Decimal, ReplyTo, Writer};
-
-// recorded; other counts inferred (owner's rule-texts.md, 2026-10-20).
-const APPROVAL_START: &[u8] = b"At least ";
-// recorded; other counts inferred (owner's rule-texts.md, 2026-10-20).
-const APPROVAL_END: &[u8] = b" approving review is required by reviewers with write access.";
-// recorded 2026-10-20 (owner's rule-texts.md).
-const CHECK_START: &[u8] = b"Required status check \"";
-// recorded 2026-10-20 (owner's rule-texts.md).
-const CHECK_EXPECTED: &[u8] = b"\" is expected.";
-// recorded 2026-10-20 (owner's rule-texts.md).
-const CHECK_PROGRESS: &[u8] = b"\" is in progress.";
-// recorded for Actions; inferred: commit status failure unrecorded (rule-texts.md).
-const CHECK_FAILING: &[u8] = b"\" is failing.";
 
 #[derive(Debug)]
 pub(super) enum Stage {
@@ -66,7 +51,7 @@ pub(super) fn finish(
                     Method::Squash => b"Squash ",
                     Method::Rebase => b"Rebase ",
                 };
-                let Some(message) = crate::service::joined(prefix, failure::MERGE_METHOD) else {
+                let Some(message) = crate::service::joined(prefix, texts::MERGE_METHOD) else {
                     return Outcome::Reply(answers::failed());
                 };
                 return Outcome::Reply(answers::refusal(405, &message, limits));
@@ -78,7 +63,7 @@ pub(super) fn finish(
                 return Outcome::Reply(answers::failed());
             };
             if reads::commit(pull.commit) != head {
-                return Outcome::Reply(answers::refusal(409, failure::MERGE_STALE, limits));
+                return Outcome::Reply(answers::refusal(409, texts::MERGE_STALE, limits));
             }
             if pull.queue_required {
                 return Outcome::Reply(queue(limits));
@@ -128,9 +113,9 @@ fn refused(service: &Service, repository: Box<[u8]>, stage: Stage, error: a::Err
         Stage::Merge { .. } | Stage::Settings { .. } | Stage::Head { .. } => {}
     }
     let response = match error {
-        a::Error::Stale => answers::refusal(409, failure::MERGE_STALE, limits),
+        a::Error::Stale => answers::refusal(409, texts::MERGE_STALE, limits),
         a::Error::Conflict | a::Error::Closed | a::Error::NothingToMerge => {
-            answers::refusal(405, failure::NOT_MERGEABLE, limits)
+            answers::refusal(405, texts::NOT_MERGEABLE, limits)
         }
         a::Error::Missing(_) | a::Error::Forbidden => answers::missing(limits),
         a::Error::Unavailable => answers::refusal(503, b"Server Error", limits),
@@ -178,26 +163,26 @@ fn check(pull: &a::Pull, context: &[u8]) -> Option<a::Check> {
     None
 }
 fn approval(out: &mut Writer, count: u32) -> Option<()> {
-    out.put(APPROVAL_START).ok()?;
+    out.put(texts::APPROVAL_START).ok()?;
     out.put(Decimal::of(u64::from(count)).as_bytes()).ok()?;
-    out.put(APPROVAL_END).ok()?;
+    out.put(texts::APPROVAL_END).ok()?;
     out.put(b"\n\n").ok()
 }
 fn context(out: &mut Writer, name: &[u8], state: Option<a::Check>) -> Option<()> {
     let suffix = match state {
-        None => CHECK_EXPECTED,
-        Some(a::Check::Pending) => CHECK_PROGRESS,
-        Some(a::Check::Failed) => CHECK_FAILING,
+        None => texts::CHECK_EXPECTED,
+        Some(a::Check::Pending) => texts::CHECK_PROGRESS,
+        Some(a::Check::Failed) => texts::CHECK_FAILING,
         Some(a::Check::Passed) => return Some(()),
     };
-    out.put(CHECK_START).ok()?;
+    out.put(texts::CHECK_START).ok()?;
     out.put(name).ok()?;
     out.put(suffix).ok()?;
     out.put(b"\n\n").ok()
 }
 fn message(protection: &a::Protection, pull: &a::Pull, author: u64, capacity: usize) -> Option<Box<[u8]>> {
     let mut out = Writer::new(capacity);
-    out.put(failure::RULES).ok()?;
+    out.put(texts::RULES).ok()?;
     out.put(b"\n\n").ok()?;
     let missing_approvals = approvals(pull, author, protection) < protection.approvals;
     if missing_approvals {
@@ -229,8 +214,7 @@ fn rules(protection: Option<&a::Protection>, pull: &a::Pull, author: u64, limits
     answers::response(405, &Body::Rules(&message), limits)
 }
 fn fallback(limits: &Limits) -> Response {
-    // no unmet rule visible; unrecorded shape.
-    answers::response(405, &Body::Rules(b"Repository rule violations found\n\n"), limits)
+    answers::response(405, &Body::Rules(texts::RULES_FALLBACK), limits)
 }
 
 fn queue(limits: &Limits) -> Response {
@@ -238,7 +222,7 @@ fn queue(limits: &Limits) -> Response {
         return answers::failed();
     };
     let mut out = Writer::new(capacity);
-    for line in [failure::RULES, failure::QUEUE] {
+    for line in [texts::RULES, texts::QUEUE] {
         if out.put(line).is_err() || out.put(b"\n\n").is_err() {
             return answers::failed();
         }

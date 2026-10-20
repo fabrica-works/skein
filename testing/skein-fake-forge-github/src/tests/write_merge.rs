@@ -2,7 +2,7 @@ use super::{fixtures as f, read_support as r, write_support as w};
 use skein_fake_forge_domain::{self as fake, api as a};
 use skein_forge::{
     api,
-    github::{failure, plans::tables::Method, request::Request},
+    github::{plans::tables::Method, request::Request},
 };
 
 fn settings(method: Method) -> a::Settings {
@@ -74,7 +74,7 @@ fn github_fake_merge_moved_head_is_409_and_plan_stale() {
     let token = r::token(&mut h);
     assert_eq!(w::write(&mut h, &token, write(number, head.checked_sub(1).unwrap())), Err(api::Error::Stale));
     let response = w::ask(&mut h, &token, &request(number, head.checked_sub(1).unwrap(), Method::Squash));
-    f::refusal(&h, &response, 409, failure::MERGE_STALE);
+    f::refusal(&h, &response, 409, crate::texts::MERGE_STALE);
     let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
         panic!("stale readback")
     };
@@ -98,7 +98,7 @@ fn github_fake_merge_conflict_is_405_and_preserves_head() {
     let token = r::token(&mut h);
     assert_eq!(w::write(&mut h, &token, write(number, head)), Err(api::Error::Conflict));
     let response = w::ask(&mut h, &token, &request(number, head, Method::Squash));
-    f::refusal(&h, &response, 405, failure::NOT_MERGEABLE);
+    f::refusal(&h, &response, 405, crate::texts::NOT_MERGEABLE);
     let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
         panic!("conflict readback")
     };
@@ -107,11 +107,9 @@ fn github_fake_merge_conflict_is_405_and_preserves_head() {
 }
 #[test]
 fn github_fake_merge_method_refusal_uses_the_requested_method() {
-    for (method, message) in [
-        (Method::Merge, b"Merge merges are not allowed on this repository.".as_slice()),
-        (Method::Squash, b"Squash merges are not allowed on this repository."),
-        (Method::Rebase, b"Rebase merges are not allowed on this repository."),
-    ] {
+    for (method, prefix) in
+        [(Method::Merge, b"Merge ".as_slice()), (Method::Squash, b"Squash "), (Method::Rebase, b"Rebase ")]
+    {
         let mut h = w::harness();
         fake::settings(&mut h.domain, b"acme/widgets", settings(method));
         let (number, head) = r::pull(&mut h);
@@ -119,7 +117,8 @@ fn github_fake_merge_method_refusal_uses_the_requested_method() {
         let disabled = a::Settings { default: f::boxed(b"trunk"), merge: false, squash: false, rebase: false };
         assert_eq!(w::write_with_settings(&mut h, &token, write(number, head), disabled), Err(api::Error::Refused));
         let response = w::ask(&mut h, &token, &request(number, head, method));
-        f::refusal(&h, &response, 405, message);
+        let message = f::parts(&[prefix, crate::texts::MERGE_METHOD]);
+        f::refusal(&h, &response, 405, &message);
     }
 }
 #[test]
@@ -131,10 +130,14 @@ fn github_fake_merge_approval_rule_has_recorded_shape_and_configured_count() {
         assert_eq!(w::write(&mut h, &token, write(number, head)), Err(api::Error::Protected));
         let response = w::ask(&mut h, &token, &request(number, head, Method::Squash));
         let digit = if count == 1 { b"1" } else { b"2" };
-        let prefix = crate::service::joined(b"Repository rule violations found\n\nAt least ", digit).unwrap();
-        let message =
-            crate::service::joined(&prefix, b" approving review is required by reviewers with write access.\n\n")
-                .unwrap();
+        let message = f::parts(&[
+            crate::texts::RULES,
+            b"\n\n",
+            crate::texts::APPROVAL_START,
+            digit,
+            crate::texts::APPROVAL_END,
+            b"\n\n",
+        ]);
         f::refusal(&h, &response, 405, &message);
         assert!(
             skein_lib::bytes::find(&response.body, b"https://docs.github.com/rest/pulls/pulls#merge-a-pull-request")
@@ -165,7 +168,23 @@ fn github_fake_merge_check_rules_name_each_unmet_context_and_state() {
     let token = r::token(&mut h);
     assert_eq!(w::write(&mut h, &token, write(number, head)), Err(api::Error::Protected));
     let response = w::ask(&mut h, &token, &request(number, head, Method::Squash));
-    f::refusal(&h, &response, 405, b"Repository rule violations found\n\nRequired status check \"missing\" is expected.\n\nRequired status check \"running\" is in progress.\n\nRequired status check \"failed\" is failing.\n\n");
+    let message = f::parts(&[
+        crate::texts::RULES,
+        b"\n\n",
+        crate::texts::CHECK_START,
+        b"missing",
+        crate::texts::CHECK_EXPECTED,
+        b"\n\n",
+        crate::texts::CHECK_START,
+        b"running",
+        crate::texts::CHECK_PROGRESS,
+        b"\n\n",
+        crate::texts::CHECK_START,
+        b"failed",
+        crate::texts::CHECK_FAILING,
+        b"\n\n",
+    ]);
+    f::refusal(&h, &response, 405, &message);
 }
 #[test]
 fn github_fake_merge_outside_installation_is_missing_before_domain_calls() {
