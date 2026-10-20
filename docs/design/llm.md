@@ -1,6 +1,6 @@
 # LLM calls
 
-Provisional, 2026-10-09, revised 2026-10-19. `skein-llm` is a reusable
+Provisional, 2026-10-09, revised 2026-10-20. `skein-llm` is a reusable
 composition of HTTP, SSE and a provider's JSON dialect. It depends on
 `skein-lib`, `skein-http` and `skein-json`, and knows nothing of a
 service's domain, sockets, credentials store or tools. This is a
@@ -308,6 +308,16 @@ pub struct Report {
   arrived, with this status. Every failure after it carries it, a
   non-JSON error body's included. The other evidence is unsent, or
   possibly sent.
+- **A cut exchange is `Unavailable`** (added 2026-10-20). The
+  connection closing or failing before the request went out, after it
+  and before a response, or within a response's head or body (http.md,
+  section 3.4: `Closed`, `Truncated`, `Stream`) is no answer of the
+  provider's: the call fails `Unavailable`, which an owner may retry,
+  with the evidence of how far it went. Its detail names the cut: closed
+  before the request was sent, closed before a response, closed within
+  the response, or failed below. A response that is not HTTP (its status
+  line, a header, its framing, a chunk or a trailer malformed, another
+  version, an upgrade) stays `Protocol`.
 - **`TimedOut { phase }`** names the deadline that passed
   (llm-connection.md, section 6). The client arms none: the owner aborts
   with it. Head and idle say the peer stalled; whole says the owner's own
@@ -790,6 +800,18 @@ bounds still hold.
   names, `MaxTokens` or `Refusal`. `response.failed`, or an `error` event,
   fails as its error's code says, as an HTTP error does; a stream that
   ends without one of them fails as `Protocol`.
+- **A compressed body** (added 2026-10-20). An endpoint may say that
+  it takes a request body in gzip (`Content-Encoding: gzip`, RFC 9110,
+  8.4.1). The client then measures and renders the body as before,
+  compresses it whole with skein-http's gzip encoder (http.md, section
+  3.1) and sends the compressed bytes with their length. Every bound
+  stays on the body as rendered; the compressed body is never larger
+  than its worst case, which the encoder states from the rendered length.
+  `Endpoint::codex()` compresses: its endpoint takes gzip and zstd, and a
+  request of a long conversation shrinks several times, and so does
+  its upload time on a slow uplink. `Endpoint::openai()` does not,
+  until a capture shows the public endpoint takes it. A local model's
+  server never does.
 - **The request id** is the head's `x-request-id`.
 - **Failures, by code before status.** The error's `code`, else its
   `type`, decides where the table names it. Otherwise the status does:

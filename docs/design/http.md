@@ -1,6 +1,6 @@
 # HTTP
 
-Provisional, 2026-10-04; revised 2026-10-18. The design of
+Provisional, 2026-10-04; revised 2026-10-20. The design of
 `skein-http`: the protocol machines for HTTP/1.1, client and server, and
 for server-sent events, reader and writer. They are step machines of a
 connection's stack (programming-model.md, 4): each depends on lib only,
@@ -188,6 +188,21 @@ pub struct Header { name: Box<[u8]>, value: Box<[u8]> }   // names compared with
   side above's next demand, as a read stated alone would hold a demand
   that the upload's room could not join. A withdrawal of the upload's
   demand is not supported: the side above closes the client instead.
+
+- **A gzip encoder** (added 2026-10-20) is beside the client, for a
+  caller whose server takes a compressed request body (RFC 9110, 8.4.1;
+  llm.md, section 4.8): a pure function of the whole body to its gzip
+  member (RFC 1952), DEFLATE inside (RFC 1951), and a worst case from
+  the body's length that its output never passes, so the caller sets
+  the room aside before it compresses. It is deterministic: one body,
+  one output. It keeps a bounded window and match search, chosen for
+  JSON that repeats itself, and it trades ratio for speed: compressing
+  a body must cost far less than sending the bytes it saves. The client
+  machine itself never compresses: the caller hands it the compressed
+  body, and puts `Content-Encoding: gzip` among its fields. Nothing in
+  skein's production code decodes gzip: the tests decode with a small
+  inflater of their own, and a golden output is checked once against
+  the system's `gzip`.
 
 ### 3.2 The response head
 
