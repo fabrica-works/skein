@@ -36,6 +36,8 @@ fn github_decode_kind_names_each_documented_answer() {
             },
             Kind::Id,
         ),
+        (Request::Reviewers { owner: owner(), name: name(), number: 9, add: true, logins: Box::from([]) }, Kind::Done),
+        (Request::Reviewers { owner: owner(), name: name(), number: 9, add: false, logins: Box::from([]) }, Kind::Done),
         (Request::Update { owner: owner(), name: name(), number: 9, head: commit }, Kind::Done),
         (Request::Viewer, Kind::Viewer),
         (Request::PullGraphql { owner: owner(), name: name(), number: 5 }, Kind::PullGraphql),

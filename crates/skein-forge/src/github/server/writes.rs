@@ -39,6 +39,7 @@ struct Value {
 #[derive(Debug)]
 struct Fields {
     values: List<Value>,
+    logins: Option<List<Box<[u8]>>>,
 }
 impl Fields {
     fn get(&self, key: &[u8]) -> Option<&[u8]> {
@@ -55,6 +56,8 @@ enum Want {
     Start,
     Key,
     Value(&'static [u8], u32),
+    ListStart,
+    ListItem,
     Unknown(u32),
     End,
     Done,
@@ -78,7 +81,10 @@ impl Parser {
             Want::Key => match event {
                 Event::Token(Token::ObjectEnd) => {
                     for field in specs {
-                        if field.required && self.fields.get(field.key).is_none() {
+                        if field.required
+                            && self.fields.get(field.key).is_none()
+                            && !(field.key == b"reviewers" && self.fields.logins.is_some())
+                        {
                             return None;
                         }
                     }
@@ -87,8 +93,14 @@ impl Parser {
                 Event::Token(Token::Key(key)) => {
                     for field in specs {
                         if field.key == key.as_ref() {
-                            if self.fields.get(field.key).is_some() {
+                            if self.fields.get(field.key).is_some()
+                                || (field.key == b"reviewers" && self.fields.logins.is_some())
+                            {
                                 return None;
+                            }
+                            if field.key == b"reviewers" {
+                                self.want = Want::ListStart;
+                                return Some(tokenizer::Request::Next);
                             }
                             let cap = if field.body { limits.body_bytes } else { limits.string_bytes };
                             self.want = Want::Value(field.key, cap);
@@ -140,6 +152,40 @@ impl Parser {
                 self.fields.values.push(Value { key, text }).ok()?;
                 self.want = Want::Key;
             }
+            Want::ListStart => {
+                if event != Event::Token(Token::ArrayStart) {
+                    return None;
+                }
+                self.fields.logins = Some(List::with_capacity(limits.inner));
+                self.want = Want::ListItem;
+                return Some(tokenizer::Request::Text(limits.string_bytes));
+            }
+            Want::ListItem => match event {
+                Event::Token(Token::ArrayEnd) => self.want = Want::Key,
+                Event::Token(Token::String(login)) => {
+                    if u64::try_from(login.len()).ok()? > u64::from(limits.string_bytes) {
+                        return None;
+                    }
+                    self.fields.logins.as_mut()?.push(login).ok()?;
+                    self.want = Want::ListItem;
+                    return Some(tokenizer::Request::Text(limits.string_bytes));
+                }
+                Event::Token(
+                    Token::ObjectStart
+                    | Token::ObjectEnd
+                    | Token::ArrayStart
+                    | Token::Key(_)
+                    | Token::Number(_)
+                    | Token::True
+                    | Token::False
+                    | Token::Null,
+                )
+                | Event::Long(_)
+                | Event::Skipped(_)
+                | Event::Done
+                | Event::Failed(_)
+                | Event::Closed => return None,
+            },
             Want::Unknown(depth) => {
                 let depth = match event {
                     Event::Token(Token::ObjectStart | Token::ArrayStart) => depth.checked_add(1)?,
@@ -177,8 +223,10 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
     }
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json };
     let mut tokenizer = tokenizer::Tokenizer::new(&limits.json);
-    let mut parser =
-        Parser { want: Want::Start, fields: Fields { values: List::with_capacity(u32::try_from(specs.len()).ok()?) } };
+    let mut parser = Parser {
+        want: Want::Start,
+        fields: Fields { values: List::with_capacity(u32::try_from(specs.len()).ok()?), logins: None },
+    };
     let mut above = Queue::with_capacity(1);
     let mut below = Queue::with_capacity(1);
     let mut intake =
@@ -211,6 +259,10 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Reviewers { owner, name, number, add, .. } => {
+            let fields = parse(body, &[Field { key: b"reviewers", body: false, required: true }], limits)?;
+            Some(Request::Reviewers { owner, name, number, add, logins: fields.logins?.into_boxed() })
+        }
         Request::Update { owner, name, number, .. } => {
             let fields = parse(body, &[Field { key: b"expected_head_sha", body: true, required: true }], limits)?;
             Some(Request::Update { owner, name, number, head: super::id::commit(fields.get(b"expected_head_sha")?)? })

@@ -68,6 +68,7 @@ pub enum Request {
     Edit { owner: Box<[u8]>, name: Box<[u8]>, number: u64, title: Option<Box<[u8]>>, body: Option<Box<[u8]>> },
     Status { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, context: Box<[u8]>, check: api::Check },
     CreateBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]>, commit: api::Commit },
+    Reviewers { owner: Box<[u8]>, name: Box<[u8]>, number: u64, add: bool, logins: Box<[Box<[u8]>]> },
     Update { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     Review { owner: Box<[u8]>, name: Box<[u8]>, number: u64, verdict: api::Verdict, body: Box<[u8]> },
     Post { owner: Box<[u8]>, name: Box<[u8]>, number: u64, body: Box<[u8]> },
@@ -149,6 +150,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Reviewers { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
@@ -279,6 +281,12 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.repo(owner, name)?;
             out.put(b"/statuses/");
             out.commit(commit)?;
+        }
+        Request::Reviewers { owner, name, number, .. } => {
+            out.repo(owner, name)?;
+            out.put(b"/pulls/");
+            out.number(*number);
+            out.put(b"/requested_reviewers");
         }
         Request::Update { owner, name, number, .. } => {
             out.repo(owner, name)?;
@@ -494,6 +502,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Reviewers { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
@@ -534,6 +543,7 @@ fn escape_digit(byte: u8) -> Option<u8> {
 
 fn selection(request: &Request) -> (Method, Auth) {
     match request {
+        Request::Reviewers { add, .. } => (if *add { Method::Post } else { Method::Delete }, Auth::Installation),
         Request::Update { .. } => (Method::Put, Auth::Installation),
         Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => (Method::Patch, Auth::Installation),
         Request::DeleteBranch { .. } => (Method::Delete, Auth::Installation),
@@ -582,7 +592,8 @@ fn selection(request: &Request) -> (Method, Auth) {
 }
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
-        Request::Update { .. }
+        Request::Reviewers { .. }
+        | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
@@ -651,6 +662,7 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
 fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Result<(), Refusal> {
     json.object_start();
     match request {
+        Request::Reviewers { logins, .. } => reviewers_json(logins, json),
         Request::Update { head, .. } => {
             json.key(b"expected_head_sha");
             json.string(&id::write_commit(head).ok_or(Refusal::Text)?);
@@ -851,6 +863,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Reviewers { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
@@ -875,6 +888,14 @@ fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
             bounded(name, limits.string_bytes)?;
             if *number == 0 || i32::try_from(*number).is_err() {
                 return Err(Refusal::Text);
+            }
+        }
+        Request::Reviewers { logins, .. } => {
+            if u64::try_from(logins.len()).ok().ok_or(Refusal::TooLong)? > u64::from(limits.inner) {
+                return Err(Refusal::TooLong);
+            }
+            for login in logins {
+                bounded(login, limits.string_bytes)?;
             }
         }
         Request::Review { body, .. } | Request::Post { body, .. } => bounded(body, limits.body_bytes)?,
@@ -945,4 +966,22 @@ fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
         | Request::User { .. } => {}
     }
     Ok(())
+}
+
+/// The shared reviewer array, measured before either mutation is sent.
+pub(crate) fn reviewers_json(logins: &[Box<[u8]>], json: &mut skein_json::writer::Encoder) {
+    json.key(b"reviewers");
+    json.array_start();
+    for login in logins {
+        json.string(login);
+    }
+    json.array_end();
+}
+pub(crate) fn reviewers_fit(logins: &[Box<[u8]>], bytes: u32) -> bool {
+    let limits = skein_json::writer::Limits { depth: super::limits::DEPTH, length: bytes };
+    let mut json = skein_json::writer::Encoder::measure(&limits);
+    json.object_start();
+    reviewers_json(logins, &mut json);
+    json.object_end();
+    json.measured().is_ok()
 }

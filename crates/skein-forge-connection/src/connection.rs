@@ -966,6 +966,7 @@ fn github_raw_request(request: &github::request::Request) -> bool {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Reviewers { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }

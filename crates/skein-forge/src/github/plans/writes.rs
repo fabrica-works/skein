@@ -15,11 +15,14 @@ use crate::{
 };
 use alloc::boxed::Box;
 
+mod reviewers;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Stage {
     New,
     Resolve,
     Pull,
+    ResolveUser,
     Mutate,
     Done,
 }
@@ -39,11 +42,21 @@ pub struct Plan {
     row: Option<Repository>,
     pending: Option<Exchange>,
     pinned: Option<api::Commit>,
+    reviewers: Option<Box<reviewers::Reviewers>>,
 }
 impl Plan {
     #[must_use]
     pub fn new(repository: api::Repository, write: api::Write) -> Self {
-        Self { repository, write, stage: Stage::New, response: Response::None, row: None, pending: None, pinned: None }
+        Self {
+            repository,
+            write,
+            stage: Stage::New,
+            response: Response::None,
+            row: None,
+            pending: None,
+            pinned: None,
+            reviewers: None,
+        }
     }
     pub fn begin(&mut self, bounds: Bounds, word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
         if self.stage != Stage::New {
@@ -60,11 +73,13 @@ impl Plan {
             | api::Write::CreateIssue { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
-            | api::Write::Update { .. } => {}
-            api::Write::SetReviewers { .. } | api::Write::Merge { .. } => {
+            | api::Write::Update { .. }
+            | api::Write::SetReviewers { .. } => {}
+            api::Write::Merge { .. } => {
                 return Err(api::Error::Refused);
             }
         }
+        self.reviewers_check(bounds)?;
         self.row = tables.repository(self.repository).cloned();
         if self.row.is_none() {
             self.stage = Stage::Resolve;
@@ -84,7 +99,7 @@ impl Plan {
     }
     fn initial(&mut self, bounds: Bounds, word: &[u8]) -> Result<Step, api::Error> {
         match self.write {
-            api::Write::Update { number } => {
+            api::Write::Update { number } | api::Write::SetReviewers { number, .. } => {
                 let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
                 let request = Request::Pull { owner: row.owner.clone(), name: row.name.clone(), number };
                 self.stage = Stage::Pull;
@@ -95,7 +110,6 @@ impl Plan {
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::Edit { .. }
-            | api::Write::SetReviewers { .. }
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
             | api::Write::Merge { .. }
@@ -145,7 +159,10 @@ impl Plan {
             api::Write::Reopen { number } => Request::Reopen { owner, name, number: *number },
             api::Write::Close { number } => Request::Close { owner, name, number: *number },
             api::Write::DeleteBranch { branch } => Request::DeleteBranch { owner, name, branch: branch.clone() },
-            api::Write::SetReviewers { .. } | api::Write::Merge { .. } => {
+            api::Write::SetReviewers { number, .. } => {
+                return self.reviewers_mutation(*number);
+            }
+            api::Write::Merge { .. } => {
                 return Err(api::Error::Refused);
             }
         };
@@ -169,6 +186,9 @@ impl Plan {
         }
     }
     fn status(&self) -> u16 {
+        if let Some(reviewers) = &self.reviewers {
+            return if reviewers.added || reviewers.add.is_empty() { 200 } else { 201 };
+        }
         match self.write {
             api::Write::Update { .. } => 202,
             api::Write::DeleteBranch { .. } => 204,
@@ -268,7 +288,9 @@ impl Plan {
                     Drop::Nothing => {}
                     Drop::Row => tables.drop_repository(self.repository),
                 }
-                Err(if self.stage != Stage::Mutate && error == api::Error::Timeout {
+                Err(if self.added() && (error == api::Error::Unavailable || matches_rate(error)) {
+                    api::Error::Timeout
+                } else if self.stage != Stage::Mutate && error == api::Error::Timeout {
                     api::Error::Unavailable
                 } else {
                     error
@@ -314,7 +336,13 @@ impl Plan {
                 }
                 Err(if self.stage == Stage::Mutate {
                     match failed {
-                        Failure::Unseen => api::Error::Unavailable,
+                        Failure::Unseen => {
+                            if self.added() {
+                                api::Error::Timeout
+                            } else {
+                                api::Error::Unavailable
+                            }
+                        }
                         Failure::Seen => api::Error::Timeout,
                     }
                 } else {
@@ -377,6 +405,10 @@ impl Plan {
             | api::Write::DeleteBranch { .. } => Err(self.invalid()),
         }
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "write completion exhaustively dispatches prerequisite and mutation documents"
+    )]
     fn done(
         &mut self,
         body: Body,
@@ -432,7 +464,16 @@ impl Plan {
                 return Ok(Some(self.initial(bounds, word)?));
             }
             Body::Document(Document::Pull(pull)) if self.stage == Stage::Pull => {
+                if self.reviewers_given().is_some() {
+                    return self.reviewers_pull(pull, bounds, tables);
+                }
                 return Ok(Some(self.update_pull(pull, bounds, word)?));
+            }
+            Body::Document(Document::User(user)) if self.stage == Stage::ResolveUser => {
+                return self.reviewers_user(user, bounds, tables);
+            }
+            Body::Document(Document::Done) if self.stage == Stage::Mutate && self.reviewers.is_some() => {
+                return self.reviewers_done(bounds);
             }
             Body::Document(Document::Id(id))
                 if self.stage == Stage::Mutate && self.result_kind() == Some(crate::github::document::Kind::Id) =>
@@ -497,4 +538,28 @@ fn marked(word: &[u8], key: &[u8], body: &[u8], bounds: Bounds) -> Result<Box<[u
         return Err(api::Error::Refused);
     }
     crate::marker::encode(word, key, body, bounds.body_bytes).ok_or(api::Error::TooLarge)
+}
+
+fn matches_rate(error: api::Error) -> bool {
+    match error {
+        api::Error::RateLimited { .. } => true,
+        api::Error::Unavailable
+        | api::Error::Timeout
+        | api::Error::Forbidden
+        | api::Error::Missing
+        | api::Error::MissingJob
+        | api::Error::TooLarge
+        | api::Error::Empty
+        | api::Error::Full
+        | api::Error::Exists
+        | api::Error::NothingToMerge
+        | api::Error::Closed
+        | api::Error::Stale
+        | api::Error::Conflict
+        | api::Error::Protected
+        | api::Error::Refused
+        | api::Error::InvalidAnswer
+        | api::Error::Busy
+        | api::Error::NotConnected => false,
+    }
 }
