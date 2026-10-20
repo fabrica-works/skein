@@ -53,7 +53,8 @@ impl Host {
         }
         let above = up.len();
         match request {
-            Request::Run { run, plan: Plan::Reconcile { forge, adopted } } => {
+            Request::Run { run, plan } => {
+                let forge = plan.forge();
                 assert!(!self.runs.contains_key(&run), "one live run per owner token");
                 let given = &configured(&self.settings, forge).given;
                 let mut busy = self.runs.len() == self.runs.capacity();
@@ -71,10 +72,22 @@ impl Host {
                         },
                     });
                 } else {
-                    let given = run::given_for(given, &adopted);
-                    let previous =
-                        self.runs.insert(run, Run::new(&given, env.now, &mut self.plan_out)).expect("admitted run");
-                    assert!(previous.is_none(), "fresh owner token");
+                    let mut live = Run::new(given, plan, env.limits.token_bytes, env.now, &mut self.plan_out);
+                    match live.pending.take() {
+                        Some(reconcile::Need::Stop(failure)) => up.push(Event::Stop { run, failure }),
+                        Some(reconcile::Need::Done(outcome)) => up.push(Event::Done { run, outcome }),
+                        pending @ (Some(
+                            reconcile::Need::Read(_)
+                            | reconcile::Need::Write { .. }
+                            | reconcile::Need::Send { .. }
+                            | reconcile::Need::Draw(_),
+                        )
+                        | None) => {
+                            live.pending = pending;
+                            let previous = self.runs.insert(run, live).expect("admitted run");
+                            assert!(previous.is_none(), "fresh owner token");
+                        }
+                    }
                 }
             }
             Request::Answer { run, answer } => {
@@ -267,8 +280,8 @@ impl Host {
                 reconcile::Need::Send { request, token } => {
                     run.send = Some(Send { request, token });
                 }
-                reconcile::Need::Done(_) => {
-                    up.push(Event::Done { run: token });
+                reconcile::Need::Done(outcome) => {
+                    up.push(Event::Done { run: token, outcome });
                     let _ended = self.runs.remove(&token);
                 }
                 reconcile::Need::Stop(failure) => {

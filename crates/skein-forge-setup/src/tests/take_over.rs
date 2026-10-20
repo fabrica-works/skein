@@ -152,27 +152,34 @@ fn a_refused_listing_or_delete_stops_at_the_token_step_naming_the_admin() {
     }
 }
 
-#[test]
-fn an_out_of_order_event_stops_each_take_over_phase() {
-    for (name, phase, wrong, stage) in [
+pub(super) fn phase_cases() -> [(&'static str, TakeOverRun, Event, Stage, &'static [u8]); 6] {
+    [
         ("begin", 0, Event::Written, Stage::Admin),
         ("checking", CHECKING, Event::Begin, Stage::Admin),
         ("written", WRITTEN, Event::Begin, Stage::Admin),
         ("settings", SETTINGS, Event::Begin, Stage::Token),
         ("listing", LISTING, Event::Begin, Stage::Token),
         ("deleting", DELETING, Event::Begin, Stage::Token),
-    ] {
-        assert_eq!(at(phase).step(wrong), failure(stage, Why::Unexpected), "{name}");
+    ]
+    .map(|(name, phase, wrong, stage)| (name, at(phase), wrong, stage, b"kit-admin".as_slice()))
+}
+#[test]
+fn an_out_of_order_event_stops_each_take_over_phase() {
+    for (name, mut run, wrong, stage, _) in phase_cases() {
+        assert_eq!(run.step(wrong), failure(stage, Why::Unexpected), "{name}");
     }
 }
 
-#[test]
-fn an_ended_take_over_ignores_every_event() {
+pub(super) fn terminal_runs() -> [TakeOverRun; 2] {
     let mut ended = at(LISTING);
     assert_eq!(ended.step(fixtures::rows(Box::new([]))), done());
     let mut stopped = TakeOverRun::with_token(b"");
     assert_eq!(stopped.step(Event::Begin), failure(Stage::Admin, Why::Missing));
-    for mut run in [ended, stopped] {
+    [ended, stopped]
+}
+#[test]
+fn an_ended_take_over_ignores_every_event() {
+    for mut run in terminal_runs() {
         for event in [Event::Begin, Event::Read(None), Event::Reply(Reply::Down), Event::Written, fixtures::drawn()] {
             let mut out = skein_lib::Queue::with_capacity(crate::take_over::MAX_OUT);
             crate::take_over::step(&mut run.machine, event, &mut out);

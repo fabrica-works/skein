@@ -113,26 +113,39 @@ fn a_reply_of_another_kind_is_unexpected_at_each_request() {
 fn a_repository_of_another_id_is_unexpected() {
     assert_eq!(request(1).step(fixtures::repository(8, b"acme", b"specimen")), failure(1, Why::Unexpected));
 }
-#[test]
-fn an_out_of_order_event_stops_each_adopt_phase() {
-    let mut begin = fixtures::adopt();
-    assert_eq!(begin.step(Event::Written), failure(0, Why::Unexpected));
+pub(super) fn phase_cases() -> [(&'static str, AdoptRun, Stage, &'static [u8]); 6] {
     let mut read = fixtures::adopt();
     read.step(Event::Begin);
-    assert_eq!(read.step(Event::Written), failure(0, Why::Unexpected));
+    [
+        ("begin", fixtures::adopt(), Stage::Admin, b"kit-admin".as_slice()),
+        ("admin read", read, Stage::Admin, b"kit-admin".as_slice()),
+        ("admin check", request(0), Stage::Admin, b"kit-admin".as_slice()),
+        ("repository", request(1), Stage::Repository, b"7".as_slice()),
+        ("permission", request(2), Stage::Repository, b"acme/specimen".as_slice()),
+        ("collaborator", request(3), Stage::Repository, b"acme/specimen".as_slice()),
+    ]
+}
+#[test]
+fn an_out_of_order_event_stops_each_adopt_phase() {
+    for (name, mut run, stage, subject) in phase_cases() {
+        assert_eq!(run.step(Event::Written), fixtures::named_failure(stage, subject, Why::Unexpected), "{name}");
+    }
     for phase in 0..4 {
-        for event in [Event::Begin, Event::Read(None), Event::Written, fixtures::drawn()] {
+        for event in [Event::Begin, Event::Read(None), fixtures::drawn()] {
             assert_eq!(request(phase).step(event), failure(phase, Why::Unexpected));
         }
     }
 }
-#[test]
-fn an_ended_adopt_ignores_every_event() {
+pub(super) fn terminal_runs() -> [AdoptRun; 2] {
     let mut done = request(2);
     done.step(fixtures::permission(Permission::Write));
     let mut stopped = request(3);
     stopped.step(Event::Reply(Reply::Down));
-    for mut run in [done, stopped] {
+    [done, stopped]
+}
+#[test]
+fn an_ended_adopt_ignores_every_event() {
+    for mut run in terminal_runs() {
         for event in [Event::Begin, Event::Read(None), Event::Reply(Reply::Down), Event::Written, fixtures::drawn()] {
             let mut out = skein_lib::Queue::with_capacity(crate::adopt::MAX_OUT);
             crate::adopt::step(&mut run.machine, event, &mut out);

@@ -216,3 +216,48 @@ fn a_halted_plan_stops_at_its_step_with_the_why_given() {
         assert!(out.is_empty());
     }
 }
+
+fn halted(mut machine: crate::host::run::Machine, stage: Stage, subject: &[u8], name: &str) {
+    let mut out = skein_lib::Queue::with_capacity(crate::reconcile::MAX_OUT);
+    machine.halt(Why::Down, &mut out);
+    assert_eq!(
+        out.pop(),
+        Some(Need::Stop(Failure { forge: 1, step: stage, subject: subject.into(), why: Why::Down })),
+        "{name}"
+    );
+    assert!(out.is_empty());
+    machine.halt(Why::Down, &mut out);
+    assert!(out.is_empty());
+}
+#[test]
+fn a_halted_check_stops_at_each_phase_with_the_why_given() {
+    for (name, run, _, stage, subject) in super::check::phase_cases().into_iter().skip(1) {
+        halted(crate::host::run::Machine::Check(run.machine), stage, subject, name);
+    }
+}
+#[test]
+fn a_halted_take_over_stops_at_each_phase_with_the_why_given() {
+    for (name, run, _, stage, subject) in super::take_over::phase_cases().into_iter().skip(1) {
+        halted(crate::host::run::Machine::TakeOver(run.machine), stage, subject, name);
+    }
+}
+#[test]
+fn a_halted_adopt_stops_at_each_phase_with_the_why_given() {
+    for (name, run, stage, subject) in super::adopt::phase_cases().into_iter().skip(1) {
+        halted(crate::host::run::Machine::Adopt(run.machine), stage, subject, name);
+    }
+}
+#[test]
+fn a_halt_of_an_ended_plan_pushes_nothing() {
+    use crate::host::run::Machine;
+    let machines = super::check::terminal_runs()
+        .map(|run| Machine::Check(run.machine))
+        .into_iter()
+        .chain(super::take_over::terminal_runs().map(|run| Machine::TakeOver(run.machine)))
+        .chain(super::adopt::terminal_runs().map(|run| Machine::Adopt(run.machine)));
+    for mut machine in machines {
+        let mut out = skein_lib::Queue::with_capacity(crate::reconcile::MAX_OUT);
+        machine.halt(Why::Down, &mut out);
+        assert!(out.is_empty());
+    }
+}

@@ -75,6 +75,9 @@ impl World {
     fn down(&mut self, request: Request) {
         self.host.down(&self.env, request, &mut self.up, &mut self.io);
     }
+    fn plan(&mut self, run: u64, plan: Plan) {
+        self.down(Request::Run { run: Token::new(run), plan });
+    }
     fn run(&mut self, run: u64, forge: u16) {
         self.down(Request::Run { run: Token::new(run), plan: Plan::Reconcile { forge, adopted: Box::new([]) } });
     }
@@ -373,4 +376,182 @@ fn deadlines_past_the_output_room_resume_at_now_until_every_run_stops() {
         assert_eq!(w.host.next_deadline(), if run <= 10 { Some(now) } else { None });
     }
     assert_eq!(w.io.len(), 0);
+}
+
+fn check() -> Plan {
+    Plan::Check { forge: 1 }
+}
+fn take_over(token: &[u8]) -> Plan {
+    Plan::TakeOver { forge: 1, admin_token: fixtures::secret(token) }
+}
+fn adopt() -> Plan {
+    Plan::Adopt { forge: 1, repository: core::num::NonZeroU64::new(7).unwrap() }
+}
+fn token_stop(why: Why) -> Event {
+    Event::Stop {
+        run: Token::new(1),
+        failure: Failure { forge: 1, step: Stage::Token, subject: b"api".as_slice().into(), why },
+    }
+}
+fn read(w: &mut World, item: Item) {
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(1), need: Need::Read(item) }));
+    assert!(w.up.is_empty());
+    assert!(w.io.is_empty());
+}
+#[test]
+fn a_check_run_asks_for_the_api_token_and_a_missing_one_stops_naming_api() {
+    let mut w = World::new();
+    w.plan(1, check());
+    read(&mut w, Item::ApiToken);
+    w.answer(1, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(token_stop(Why::Missing)));
+    w.plan(2, check());
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(2), need: Need::Read(Item::ApiToken) }));
+}
+#[test]
+fn a_check_run_waiting_on_the_owner_at_its_deadline_stops_down_naming_its_token() {
+    let mut w = World::new();
+    w.plan(1, check());
+    read(&mut w, Item::ApiToken);
+    assert_eq!(w.host.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(120))));
+    w.fire(120_000);
+    assert_eq!(w.up.pop(), Some(token_stop(Why::Down)));
+    assert_eq!(w.host.next_deadline(), None);
+}
+fn silent_deadline(w: &mut World, expected: Event) {
+    let owner = w.connect();
+    let socket = Token::new(100);
+    w.event(skein_io::Event::Connecting { owner, socket });
+    assert!(w.io.is_empty());
+    w.fire(120_000);
+    assert_eq!(w.up.pop(), Some(expected));
+    assert_eq!(w.io.pop(), Some(skein_io::Request::Abort { entity: socket }));
+    assert!(w.io.is_empty());
+    assert!(w.up.is_empty());
+    w.event(skein_io::Event::Closed { owner });
+    assert_eq!(w.host.next_deadline(), None);
+}
+#[test]
+fn a_check_whose_forge_never_answers_stops_down_naming_the_token_in_flight() {
+    let mut w = World::new();
+    w.plan(1, check());
+    read(&mut w, Item::ApiToken);
+    w.answer(1, Answer::Read(Some(fixtures::secret(b"api-token"))));
+    silent_deadline(&mut w, token_stop(Why::Down));
+}
+#[test]
+fn a_take_over_run_sends_the_handed_token_and_asks_the_owner_for_nothing() {
+    let mut w = World::new();
+    w.plan(1, take_over(&[b't'; 40]));
+    assert!(w.up.is_empty());
+    w.connect();
+}
+#[test]
+fn a_take_over_token_that_is_empty_or_breaks_its_item_stops_missing_at_once() {
+    for token in [b"".as_slice(), b"has a space", &[b't'; 65]] {
+        let mut w = World::new();
+        w.plan(1, take_over(token));
+        assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Missing)));
+        assert!(w.io.is_empty());
+        assert_eq!(w.host.next_deadline(), None);
+        w.fire(1000);
+        w.run(2, 1);
+        assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(2), need: Need::Read(Item::AdminToken) }));
+        assert_eq!(w.host.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(121))));
+    }
+}
+#[test]
+fn a_take_over_token_of_seven_bytes_connects() {
+    let mut w = World::new();
+    w.plan(1, take_over(b"1234567"));
+    assert!(w.up.is_empty());
+    w.connect();
+}
+#[test]
+fn a_take_over_run_whose_forge_never_answers_stops_down_at_its_step() {
+    let mut w = World::new();
+    w.plan(1, take_over(fixtures::TAKEN));
+    silent_deadline(&mut w, stop(1, 1, Why::Down));
+}
+#[test]
+#[expect(clippy::disallowed_macros, reason = "the redaction test inspects request and host Debug rendering")]
+fn no_taken_token_is_in_a_requests_or_a_hosts_debug() {
+    let mut w = World::new();
+    let request = Request::Run { run: Token::new(1), plan: take_over(fixtures::TAKEN) };
+    let rendered = format!("{request:?}");
+    w.down(request);
+    for debug in [rendered, format!("{:?}", w.host)] {
+        for fragment in [fixtures::TAKEN, fixtures::TAKEN_SUFFIX] {
+            for bytes in debug.as_bytes().windows(fragment.len()) {
+                assert_ne!(bytes, fragment);
+            }
+        }
+    }
+}
+#[test]
+fn an_adopt_run_asks_for_the_admin_token_and_a_missing_one_stops_naming_the_admin() {
+    let mut w = World::new();
+    w.plan(1, adopt());
+    read(&mut w, Item::AdminToken);
+    w.answer(1, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Missing)));
+    assert_eq!(w.host.next_deadline(), None);
+}
+#[test]
+fn an_adopt_run_waiting_on_the_owner_at_its_deadline_stops_down_at_its_step() {
+    let mut w = World::new();
+    w.plan(1, adopt());
+    read(&mut w, Item::AdminToken);
+    assert_eq!(w.host.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(120))));
+    w.fire(120_000);
+    assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Down)));
+}
+fn plans() -> [Plan; 4] {
+    [Plan::Reconcile { forge: 1, adopted: Box::new([]) }, check(), take_over(fixtures::TAKEN), adopt()]
+}
+#[test]
+fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
+    for first in plans() {
+        for second in plans() {
+            let mut w = World::new();
+            w.plan(1, first.clone());
+            let connection = match first {
+                Plan::Reconcile { .. } | Plan::Check { .. } | Plan::Adopt { .. } => {
+                    assert!(w.up.pop().is_some());
+                    None
+                }
+                Plan::TakeOver { .. } => Some(w.connect()),
+            };
+            w.plan(2, second);
+            assert_eq!(w.up.pop(), Some(stop(2, 1, Why::Busy)));
+            assert!(w.up.is_empty());
+            if let Some(owner) = connection {
+                use skein_lib::stream::{Down, Up};
+                let socket = Token::new(100);
+                w.event(skein_io::Event::Connecting { owner, socket });
+                w.event(skein_io::Event::Connected { owner });
+                let Some(skein_io::Request::Stream { down: Down::Demand { .. }, .. }) = w.io.pop() else {
+                    panic!("stream demand");
+                };
+                w.event(skein_io::Event::Stream { owner, up: Up::Room });
+                let Some(skein_io::Request::Stream { down: Down::Send(_), .. }) = w.io.pop() else {
+                    panic!("request head");
+                };
+                for line in [b"HTTP/1.1 401 Unauthorized\r\n".as_slice(), b"Content-Length: 0\r\n", b"\r\n"] {
+                    let Some(skein_io::Request::Stream { down: Down::Demand { .. }, .. }) = w.io.pop() else {
+                        panic!("stream demand");
+                    };
+                    w.event(skein_io::Event::Stream { owner, up: Up::Bytes(line.into()) });
+                }
+                assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Refused(401))));
+            } else {
+                w.answer(1, Answer::Read(None));
+                let expected = match first {
+                    Plan::Check { .. } => token_stop(Why::Missing),
+                    Plan::Reconcile { .. } | Plan::Adopt { .. } | Plan::TakeOver { .. } => stop(1, 1, Why::Missing),
+                };
+                assert_eq!(w.up.pop(), Some(expected));
+            }
+        }
+    }
 }

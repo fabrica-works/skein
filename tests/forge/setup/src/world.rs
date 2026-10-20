@@ -204,10 +204,7 @@ impl World {
     }
 }
 
-pub(crate) fn seeded(seed: u64, owned: bool) -> (Service, skein_fake_forge_protocol::Limits) {
-    seeded_config(seed, owned, fixtures::config())
-}
-fn seeded_config(
+pub(crate) fn seeded_config(
     seed: u64,
     owned: bool,
     config: skein_fake_forge_protocol::Config,

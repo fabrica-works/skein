@@ -1,10 +1,14 @@
 //! One bounded plan and its outstanding owner or forge need (6.3).
-use super::{Answer, Need};
+use super::{Answer, Need, Plan};
 use crate::{
+    adopt::{self, Adopt},
+    check::{self, Check},
     given::Given,
     item::{self, Item},
     reconcile::{self, Event, Reconcile, Reply, Why},
+    take_over::{self, TakeOver},
 };
+use alloc::boxed::Box;
 use skein_forge::forgejo::request::Request;
 use skein_lib::{Duration, Queue, Secret, Time, Token};
 /// The forge's settings given, with the plan's adopted repositories.
@@ -12,6 +16,49 @@ pub(crate) fn given_for(forge: &Given, adopted: &[u64]) -> Given {
     let mut given = forge.clone();
     given.adopted = adopted.into();
     given
+}
+/// One machine per plan, sharing the host's need and connection loop.
+#[derive(Debug)]
+pub(crate) enum Machine {
+    Reconcile(Box<Reconcile>),
+    Check(Check),
+    TakeOver(TakeOver),
+    Adopt(Adopt),
+}
+impl Machine {
+    pub(crate) fn step(&mut self, event: Event, out: &mut Queue<reconcile::Need>) {
+        match self {
+            Self::Reconcile(machine) => reconcile::step(machine, event, out),
+            Self::Check(machine) => check::step(machine, event, out),
+            Self::TakeOver(machine) => take_over::step(machine, event, out),
+            Self::Adopt(machine) => adopt::step(machine, event, out),
+        }
+    }
+    /// The host halts only machines that have received Begin.
+    pub(crate) fn halt(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
+        match self {
+            Self::Reconcile(machine) => reconcile::halt(machine, why, out),
+            Self::Check(_) | Self::TakeOver(_) | Self::Adopt(_) => self.halt_begun(why, out),
+        }
+    }
+    fn halt_begun(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
+        let mut stopped = Queue::with_capacity(1);
+        self.step(Event::Begin, &mut stopped);
+        match stopped.pop() {
+            Some(reconcile::Need::Stop(mut failure)) => {
+                failure.why = why;
+                out.push(reconcile::Need::Stop(failure));
+            }
+            Some(
+                reconcile::Need::Send { .. }
+                | reconcile::Need::Read(_)
+                | reconcile::Need::Write { .. }
+                | reconcile::Need::Draw(_)
+                | reconcile::Need::Done(_),
+            )
+            | None => (),
+        }
+    }
 }
 #[derive(Debug)]
 pub(super) enum Owner {
@@ -26,7 +73,7 @@ pub(super) struct Send {
 #[derive(Debug)]
 pub(super) struct Run {
     pub forge: u16,
-    pub machine: Reconcile,
+    pub machine: Machine,
     pub deadline: Time,
     pub pending: Option<reconcile::Need>,
     pub owner: Option<Owner>,
@@ -39,10 +86,27 @@ pub(super) struct Run {
     pub answered: bool,
 }
 impl Run {
-    pub fn new(given: &Given, now: Time, out: &mut Queue<reconcile::Need>) -> Self {
+    pub fn new(given: &Given, plan: Plan, token_bytes: u32, now: Time, out: &mut Queue<reconcile::Need>) -> Self {
+        let machine = match plan {
+            Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
+                Reconcile::new(&given_for(given, &adopted)).expect("the owner checks a plan's adopted repositories"),
+            )),
+            Plan::Check { forge } => Machine::Check(Check::new(forge)),
+            Plan::TakeOver { admin_token, .. } => {
+                let taken = if item::token(admin_token.expose(), token_bytes).is_some() {
+                    admin_token
+                } else {
+                    Secret::new(Box::new([]))
+                };
+                Machine::TakeOver(TakeOver::new(given, taken).expect("host checks the given"))
+            }
+            Plan::Adopt { repository, .. } => Machine::Adopt(
+                Adopt::new(given, repository.get()).expect("host checks the given and the repository is nonzero"),
+            ),
+        };
         let mut run = Self {
             forge: given.forge,
-            machine: Reconcile::new(given).expect("the owner checks a plan's adopted repositories"),
+            machine,
             deadline: now.saturating_add(given.limits.deadline),
             pending: None,
             owner: None,
@@ -58,11 +122,11 @@ impl Run {
         run
     }
     pub fn step(&mut self, event: Event, out: &mut Queue<reconcile::Need>) {
-        reconcile::step(&mut self.machine, event, out);
+        self.machine.step(event, out);
         self.pending = out.pop();
     }
     pub fn halt(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
-        reconcile::halt(&mut self.machine, why, out);
+        self.machine.halt(why, out);
         if let Some(need) = out.pop() {
             self.pending = Some(need);
         }

@@ -1,11 +1,11 @@
 //! The host over HTTP bytes, a fake Forgejo and io played by hand.
-use crate::{fixtures, world::seeded};
+use crate::{fixtures, world::seeded_config};
 use skein_fake_forge_protocol::{self as fake, Service};
 use skein_forge_machine_world::pipe::{Cut, Pipe};
 use skein_forge_setup::{
     host::{Answer, Event, Host, Limits, Need, Plan, Request},
     item::Item,
-    reconcile::Failure,
+    reconcile::{Failure, Outcome},
 };
 use skein_lib::{
     Duration, Env, Queue, Secret, Time, Token, Wall,
@@ -21,7 +21,7 @@ pub enum Connect {
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Heard {
-    Done { run: Token, at: Duration },
+    Done { run: Token, outcome: Outcome, at: Duration },
     Stop { run: Token, failure: Failure, at: Duration },
     Closed { at: Duration },
 }
@@ -48,12 +48,19 @@ pub struct HostWorld {
     connects: Vec<Duration>,
     aborts: u32,
     seed: u64,
+    needs: Vec<Need>,
+    pause_writes: bool,
+    pending_writes: Vec<(Token, Item, Secret)>,
 }
 impl HostWorld {
     #[must_use]
     pub fn new(seed: u64, script: &[Connect]) -> Self {
+        Self::with_config(seed, script, fixtures::config())
+    }
+    #[must_use]
+    pub fn with_config(seed: u64, script: &[Connect], config: fake::Config) -> Self {
         let limits = fixtures::host_limits();
-        let (service, fake_limits) = seeded(seed, false);
+        let (service, fake_limits) = seeded_config(seed, false, config);
         assert_eq!(skein_forge_setup::host::documents(&limits), fake_limits.documents);
         Self {
             host: Host::new(&limits, fixtures::host_settings(), fixtures::crypto()).expect("host fixtures"),
@@ -69,13 +76,47 @@ impl HostWorld {
             connects: Vec::new(),
             aborts: 0,
             seed,
+            needs: Vec::new(),
+            pause_writes: false,
+            pending_writes: Vec::new(),
         }
     }
     pub fn run(&mut self, run: u64) {
         self.run_adopted(run, &[]);
     }
     pub fn run_adopted(&mut self, run: u64, adopted: &[u64]) {
-        self.action(Request::Run { run: Token::new(run), plan: Plan::Reconcile { forge: 1, adopted: adopted.into() } });
+        self.run_plan(run, Plan::Reconcile { forge: 1, adopted: adopted.into() });
+    }
+    pub fn run_plan(&mut self, run: u64, plan: Plan) {
+        self.action(Request::Run { run: Token::new(run), plan });
+    }
+    #[must_use]
+    pub fn store(&self) -> &fake::setup::Store {
+        self.service.setup()
+    }
+    pub fn store_mut(&mut self) -> &mut fake::setup::Store {
+        self.service.setup_mut()
+    }
+    pub fn put(&mut self, item: Item, bytes: Secret) {
+        if let Some((_, value)) = self.files.iter_mut().find(|(key, _)| *key == item) {
+            *value = bytes;
+        } else {
+            self.files.push((item, bytes));
+        }
+    }
+    #[must_use]
+    pub fn needs(&self) -> &[Need] {
+        &self.needs
+    }
+    pub fn pause_writes(&mut self) {
+        self.pause_writes = true;
+    }
+    /// Keeps each item whole before answering Written, as the owner must.
+    pub fn write_pending(&mut self) {
+        for (run, item, bytes) in core::mem::take(&mut self.pending_writes) {
+            self.put(item, bytes);
+            self.action(Request::Answer { run, answer: Answer::Written });
+        }
     }
     #[must_use]
     pub fn requests(&self) -> &fake::Tally {
@@ -188,20 +229,21 @@ impl HostWorld {
             let at = self.env.now.saturating_since(Time::ZERO);
             match event {
                 Event::Need { run, need } => {
+                    self.needs.push(need.clone());
                     let answer = match need {
                         Need::Read(item) => Answer::Read(self.file(item).cloned()),
                         Need::Write { item, bytes } => {
-                            if let Some((_, value)) = self.files.iter_mut().find(|(key, _)| *key == item) {
-                                *value = bytes;
-                            } else {
-                                self.files.push((item, bytes));
+                            if self.pause_writes {
+                                self.pending_writes.push((run, item, bytes));
+                                continue;
                             }
+                            self.put(item, bytes);
                             Answer::Written
                         }
                     };
                     self.action(Request::Answer { run, answer });
                 }
-                Event::Done { run } => self.heard.push(Heard::Done { run, at }),
+                Event::Done { run, outcome } => self.heard.push(Heard::Done { run, outcome, at }),
                 Event::Stop { run, failure } => self.heard.push(Heard::Stop { run, failure, at }),
                 Event::Closed => self.heard.push(Heard::Closed { at }),
             }

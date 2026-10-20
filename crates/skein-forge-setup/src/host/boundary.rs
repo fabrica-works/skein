@@ -1,10 +1,41 @@
 //! The owner's plans, answers and retained items (forge-setup.md, 6.3).
-use crate::{item::Item, reconcile::Failure};
+use crate::{
+    item::Item,
+    reconcile::{Failure, Outcome},
+};
 use alloc::boxed::Box;
+use core::num::NonZeroU64;
 use skein_lib::{Secret, Token};
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Plan {
-    Reconcile { forge: u16, adopted: Box<[u64]> },
+    Reconcile {
+        forge: u16,
+        adopted: Box<[u64]>,
+    },
+    /// A connected Forgejo's two tokens, checked (4.6).
+    Check {
+        forge: u16,
+    },
+    /// The handed admin token, held only until the run ends (4.7).
+    TakeOver {
+        forge: u16,
+        admin_token: Secret,
+    },
+    /// The bot's access to the repository whose id the forge gave (4.5).
+    Adopt {
+        forge: u16,
+        repository: NonZeroU64,
+    },
+}
+impl Plan {
+    pub(super) fn forge(&self) -> u16 {
+        match self {
+            Self::Reconcile { forge, .. }
+            | Self::Check { forge }
+            | Self::TakeOver { forge, .. }
+            | Self::Adopt { forge, .. } => *forge,
+        }
+    }
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Request {
@@ -25,7 +56,7 @@ pub enum Need {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Event {
     Need { run: Token, need: Need },
-    Done { run: Token },
+    Done { run: Token, outcome: Outcome },
     Stop { run: Token, failure: Failure },
     Closed,
 }

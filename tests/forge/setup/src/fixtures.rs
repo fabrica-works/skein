@@ -55,11 +55,16 @@ pub fn secret(bytes: &[u8]) -> Secret {
 /// A bot with both valid token files; changing one file isolates its repair.
 pub fn bot_tokens(world: &mut crate::World) -> u64 {
     use skein_forge_setup::item::Item;
-    let id = world.store_mut().account(b"kit", false, b"kit:bot");
-    world.store_mut().token(id, b"kit-api", &[b"read:user", b"write:issue", b"write:repository"], secret(API));
-    world.store_mut().token(id, b"kit-git", &[b"write:repository", b"read:user"], secret(GIT));
+    let id = seed_bot_tokens(world.store_mut());
     world.put(Item::ApiToken, secret(API));
     world.put(Item::GitToken, secret(GIT));
+    id
+}
+/// Seeds the bot in either the plan world or the host's HTTP world.
+pub fn seed_bot_tokens(store: &mut skein_fake_forge_protocol::setup::Store) -> u64 {
+    let id = store.account(b"kit", false, b"kit:bot");
+    store.token(id, b"kit-api", &[b"read:user", b"write:issue", b"write:repository"], secret(API));
+    store.token(id, b"kit-git", &[b"write:repository", b"read:user"], secret(GIT));
     id
 }
 /// A settled forge for perturbing one behavior on its next run.
@@ -228,26 +233,39 @@ pub fn crypto() -> skein_lib::CryptoRng {
 /// A person's two tokens for a connected Forgejo, with no user kept yet.
 pub fn connected_tokens(world: &mut crate::World) -> u64 {
     use skein_forge_setup::item::Item;
-    let id = world.store_mut().account(b"alice", false, b"A person");
-    world.store_mut().token(id, b"connected-api", &[b"read:user", b"write:issue", b"write:repository"], secret(API));
-    world.store_mut().token(id, b"connected-git", &[b"write:repository", b"read:user"], secret(GIT));
+    let id = seed_connected_tokens(world.store_mut());
     world.put(Item::ApiToken, secret(API));
     world.put(Item::GitToken, secret(GIT));
     id
 }
 
+/// Seeds the person's tokens independently of the owner's item store.
+pub fn seed_connected_tokens(store: &mut skein_fake_forge_protocol::setup::Store) -> u64 {
+    let id = store.account(b"alice", false, b"A person");
+    store.token(id, b"connected-api", &[b"read:user", b"write:issue", b"write:repository"], secret(API));
+    store.token(id, b"connected-git", &[b"write:repository", b"read:user"], secret(GIT));
+    id
+}
+
 /// Five older admin tokens, including the default, precede the handover token.
 pub fn admin_handover(world: &mut crate::World) -> u64 {
-    let id = world.store().find(b"kit-admin").expect("admin fixture").id;
+    seed_admin_handover(world.store_mut(), 4)
+}
+/// The default admin token and the chosen older tokens precede the handed one.
+pub fn seed_admin_handover(store: &mut skein_fake_forge_protocol::setup::Store, older: usize) -> u64 {
+    let id = store.find(b"kit-admin").expect("admin fixture").id;
     for (name, value) in [
         (b"old-1".as_slice(), b"older-admin-token-1".as_slice()),
         (b"old-2", b"older-admin-token-2"),
         (b"old-3", b"older-admin-token-3"),
         (b"old-4", b"older-admin-token-4"),
-    ] {
-        world.store_mut().token(id, name, &[b"all"], secret(value));
+    ]
+    .into_iter()
+    .take(older)
+    {
+        store.token(id, name, &[b"all"], secret(value));
     }
-    world.store_mut().token(id, b"handover", &[b"all"], secret(TAKEN));
+    store.token(id, b"handover", &[b"all"], secret(TAKEN));
     id
 }
 
@@ -284,6 +302,11 @@ pub fn picker_owners(store: &mut skein_fake_forge_protocol::setup::Store) {
 /// Repository identities are scenario configuration; grants live in the setup store.
 #[must_use]
 pub fn repositories(seed: u64, owned: bool, paths: &[&[u8]]) -> crate::World {
+    crate::World::with_config(seed, owned, repository_config(paths))
+}
+/// Repository identities shared by the plan and HTTP host worlds.
+#[must_use]
+pub fn repository_config(paths: &[&[u8]]) -> Config {
     let mut config = config();
     config.repositories = List::with_capacity(u32::try_from(paths.len()).expect("scenario count"));
     for (index, path) in paths.iter().enumerate() {
@@ -296,5 +319,5 @@ pub fn repositories(seed: u64, owned: bool, paths: &[&[u8]]) -> crate::World {
             })
             .expect("scenario capacity");
     }
-    crate::World::with_config(seed, owned, config)
+    config
 }

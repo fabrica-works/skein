@@ -150,9 +150,8 @@ fn a_reply_that_is_not_a_user_is_unexpected() {
     }
 }
 
-#[test]
-fn an_out_of_order_event_stops_each_check_phase() {
-    for (name, phase, wrong, subject) in [
+pub(super) fn phase_cases() -> [(&'static str, CheckRun, Event, Stage, &'static [u8]); 7] {
+    [
         ("begin", 0, Event::Written, b"api".as_slice()),
         ("api read", API_READ, Event::Begin, b"api".as_slice()),
         ("api user", API_USER, Event::Begin, b"api".as_slice()),
@@ -160,18 +159,26 @@ fn an_out_of_order_event_stops_each_check_phase() {
         ("git user", GIT_USER, Event::Begin, b"git".as_slice()),
         ("user read", USER_READ, Event::Begin, b"api".as_slice()),
         ("user written", USER_WRITTEN, Event::Begin, b"api".as_slice()),
-    ] {
-        assert_eq!(at(phase).step(wrong), failure(subject, Why::Unexpected), "{name}");
+    ]
+    .map(|(name, phase, wrong, subject)| (name, at(phase), wrong, Stage::Token, subject))
+}
+#[test]
+fn an_out_of_order_event_stops_each_check_phase() {
+    for (name, mut run, wrong, _, subject) in phase_cases() {
+        assert_eq!(run.step(wrong), failure(subject, Why::Unexpected), "{name}");
     }
 }
 
-#[test]
-fn an_ended_check_ignores_every_event() {
+pub(super) fn terminal_runs() -> [CheckRun; 2] {
     let mut done = at(USER_READ);
     assert_eq!(done.step(Event::Read(Some(secret(&7u64.to_le_bytes())))), identity());
     let mut stop = at(API_READ);
     assert_eq!(stop.step(Event::Read(None)), failure(b"api", Why::Missing));
-    for mut run in [done, stop] {
+    [done, stop]
+}
+#[test]
+fn an_ended_check_ignores_every_event() {
+    for mut run in terminal_runs() {
         for event in [Event::Begin, Event::Read(None), Event::Reply(Reply::Down), Event::Written, fixtures::drawn()] {
             let mut out = skein_lib::Queue::with_capacity(crate::check::MAX_OUT);
             crate::check::step(&mut run.machine, event, &mut out);
