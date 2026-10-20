@@ -44,10 +44,8 @@ impl Peer {
                     (token, domain::Request::Reply { to: ReplyTo::new(token), result })
                 }
                 hook @ domain::Request::Hook { .. } => {
-                    // GitHub hook intake and push belong to the delivery layer;
-                    // leave these records to the shared forge's owner for now.
                     if self.service.is_github() {
-                        forge.pending.push(hook);
+                        self.github_hook(&hook, env.now, env.wall);
                     } else {
                         self.deliver(&hook);
                     }

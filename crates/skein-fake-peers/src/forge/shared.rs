@@ -55,6 +55,17 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
     {
         return None;
     }
+    if let protocol::Limits::Github(github) = protocol {
+        // Domain text may need six JSON bytes per input byte. Leave room
+        // for the delivery envelope before admitting any hook source.
+        let payload = domain.body_bytes.checked_mul(6)?.checked_add(1024)?;
+        let named = domain.name_bytes.checked_mul(12)?.checked_add(1024)?;
+        if github.deliveries.payload_bytes < payload.max(named)
+            || github.http.response < github.github.string_bytes.checked_mul(2)?.checked_add(512)?
+        {
+            return None;
+        }
+    }
     let domain_bound = domain::worst_case(domain)?;
     // The domain envelope contains its largest possible answer and hook payload.
     // Protocol ownership also bounds rejected call inputs, before domain validation.
@@ -80,7 +91,7 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
     face::worst_case(limits)?
         .checked_add(match protocol {
             protocol::Limits::Forgejo(protocol) => super::delivery::worst_case(limits, protocol, forge.hooks.as_ref())?,
-            protocol::Limits::Github(_) => 0,
+            protocol::Limits::Github(protocol) => super::github_delivery::worst_case(limits, protocol)?,
         })?
         .checked_add(layer_bound)?
         .checked_add(domain_bound)?

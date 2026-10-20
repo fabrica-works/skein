@@ -87,6 +87,11 @@ and renames. `Service::poll` releases them on the forge clock; hosts drain
 `next_post` for configured endpoints. Domain queue hooks retain their action
 and removal reason when created.
 
+`Peer::github` sends configured deliveries as bounded HTTP client exchanges,
+records the recipient's status and freezes each terminal in its observations.
+Unresolved, refused, timed out and reset endpoints leave status 502. Each
+outbound exchange has a thirty-second deadline and uses a numeric loopback address.
+
 `Config::rate_quota` and `rate_window` select token admission. Hosts complete
 `Outcome::Admit` against the domain's bounded windows and execute its domain
 continuations through `step_admitted`. Local token reads also pay once.

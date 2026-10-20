@@ -66,7 +66,8 @@ on one plaintext loopback origin. Both borrow an owner's
 Each domain call receives a shared reply identity, translated back to its
 connection's local identity at the terminal. Unrelated replies stay pending.
 The listening event supplies GitHub's pagination origin, including the bound
-port. GitHub hooks stay pending for their owner; its blob origin and delivery
-push are separate work (fake-forge.md, sections 5 and 10.5).
-
+port. GitHub consumes domain hooks into its signed log and optionally pushes
+them over bounded loopback HTTP exchanges, retaining the recipient's status.
 Token requests pay one shared-domain rate admission before their continuations.
+The second loopback listener serves signed job logs without token authentication,
+sharing the connection and io limits (fake-forge.md, sections 5 and 10.5).

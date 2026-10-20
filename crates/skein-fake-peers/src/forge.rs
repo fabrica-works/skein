@@ -16,6 +16,7 @@ use crate::{Error, Limits, Transport};
 const BLOB_LISTENER: Token = Token::new(u64::MAX - 1);
 
 mod delivery;
+mod github_delivery;
 mod layer;
 mod observe;
 mod shared;
@@ -102,6 +103,8 @@ pub struct Peer {
     calls: Vec<Call>,
     deliveries: Vec<delivery::Outbound>,
     endpoint: Option<bool>,
+    github_deliveries: Vec<github_delivery::Outbound>,
+    clock: (Time, Wall),
     next: u64,
     observations: Vec<Observation>,
     observed_bytes: u64,
@@ -163,6 +166,10 @@ impl Peer {
     ) -> Result<Self, Error> {
         let bound = shared::bound(&limits, &protocol, protocol_bound, &forge.borrow()).ok_or(Error::Limits)?;
         let call_capacity = call_capacity(&protocol, &forge.borrow(), limits.connections).ok_or(Error::Limits)?;
+        let (forgejo_capacity, github_capacity) = match protocol {
+            protocol::Limits::Forgejo(_) => (limits.connections, 0),
+            protocol::Limits::Github(_) => (0, limits.connections),
+        };
         Ok(Self {
             face: Face::new(address, limits)?,
             blob_listener: None,
@@ -173,8 +180,10 @@ impl Peer {
             protocol_bound,
             connections: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
             calls: Vec::with_capacity(usize::try_from(call_capacity).expect("u32 fits")),
-            deliveries: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
+            deliveries: Vec::with_capacity(usize::try_from(forgejo_capacity).expect("u32 fits")),
             endpoint: None,
+            github_deliveries: Vec::with_capacity(usize::try_from(github_capacity).expect("u32 fits")),
+            clock: (Time::ZERO, Wall::EPOCH),
             next: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
             observed_bytes: 0,
@@ -229,8 +238,21 @@ impl Peer {
         self.face.shutdown();
     }
 
+    fn github_deadline(&self) -> Option<Time> {
+        let visible = match &self.service {
+            protocol::Service::Github(service) => service.next_deadline().map(|wall| {
+                self.clock.0.saturating_add(skein_lib::Duration::from_nanos(
+                    wall.as_nanos().saturating_sub(self.clock.1.as_nanos()),
+                ))
+            }),
+            protocol::Service::Forgejo(_) => None,
+        };
+        self.github_deliveries.iter().filter_map(github_delivery::deadline).chain(visible).min()
+    }
+
     fn event(&mut self, event: io::Event, now: Time, wall: Wall) {
         let Some(event) = self.delivery_event(event) else { return };
+        let Some(event) = self.github_delivery_event(event, now, wall) else { return };
         let env = Env { now, wall, limits: self.protocol };
         match event {
             io::Event::Listening { owner, listener, addr } => {
@@ -302,20 +324,7 @@ impl Peer {
                     connection.wire.output(up, &mut connection.plain, &mut self.face.requests);
                 }
             }
-            io::Event::Closed { owner } => {
-                if let Some(index) = self.connections.iter().position(|connection| connection.owner == owner) {
-                    let mut connection = self.connections.remove(index);
-                    protocol::closed(
-                        &mut connection.server,
-                        &mut self.service,
-                        &env,
-                        &mut connection.above,
-                        &mut connection.below,
-                    );
-                    self.capture(&mut connection);
-                    self.observe(Observation::Connection { connection: owner, open: false }, 0);
-                }
-            }
+            io::Event::Closed { owner } => self.connection_closed(owner, &env),
             io::Event::Failed { owner, .. } => {
                 assert!(owner != LISTENER && owner != BLOB_LISTENER, "the loopback listeners bind");
                 if let Some(connection) = self.connections.iter_mut().find(|connection| connection.owner == owner) {
@@ -330,6 +339,21 @@ impl Peer {
             | io::Event::Resized
             | io::Event::Window { .. }
             | io::Event::Shutdown { .. } => panic!("the forge listens and serves byte streams"),
+        }
+    }
+
+    fn connection_closed(&mut self, owner: Token, env: &Env<protocol::Limits>) {
+        if let Some(index) = self.connections.iter().position(|connection| connection.owner == owner) {
+            let mut connection = self.connections.remove(index);
+            protocol::closed(
+                &mut connection.server,
+                &mut self.service,
+                env,
+                &mut connection.above,
+                &mut connection.below,
+            );
+            self.capture(&mut connection);
+            self.observe(Observation::Connection { connection: owner, open: false }, 0);
         }
     }
 
@@ -394,6 +418,8 @@ impl Peer {
         }
     }
     fn progress(&mut self, now: Time, wall: Wall) {
+        self.clock = (now, wall);
+        self.github_progress(now, wall);
         let env = Env { now, wall, limits: self.protocol };
         // Moving the Rc, rather than borrowing through self, keeps the one pass borrow explicit.
         let shared = Rc::clone(&self.forge);
@@ -475,6 +501,7 @@ impl Peer {
             domain::fire(domain, domain_env, pending);
         }
         self.route(forge, env);
+        self.github_progress(env.now, env.wall);
         forge.domain.reclaim();
         self.service.reclaim();
         if self.service.is_github() {
@@ -521,6 +548,7 @@ impl Host for Peer {
     fn work_pending(&self, now: Time) -> bool {
         self.face.work_pending()
             || (self.face.stopping && self.blob_listener.is_some())
+            || self.github_deliveries.iter().any(github_delivery::work)
             || self.forge.borrow().domain.is_due(now)
             || self.connections.iter().any(|connection| {
                 connection.server.has_work()
@@ -531,10 +559,13 @@ impl Host for Peer {
             })
     }
     fn next_deadline(&self) -> Option<Time> {
-        [self.face.io.next_deadline(), self.forge.borrow().domain.next_deadline()].into_iter().flatten().min()
+        [self.face.io.next_deadline(), self.forge.borrow().domain.next_deadline(), self.github_deadline()]
+            .into_iter()
+            .flatten()
+            .min()
     }
     fn next_policy_deadline(&self) -> Option<Time> {
-        self.forge.borrow().domain.next_deadline()
+        [self.forge.borrow().domain.next_deadline(), self.github_deadline()].into_iter().flatten().min()
     }
     fn is_empty(&self) -> bool {
         self.face.is_empty()
@@ -542,6 +573,7 @@ impl Host for Peer {
             && self.connections.is_empty()
             && self.calls.is_empty()
             && self.deliveries.is_empty()
+            && self.github_deliveries.is_empty()
             && self.forge.borrow().domain.calls() == 0
     }
     fn worst_case(&self) -> u64 {
