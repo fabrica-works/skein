@@ -51,6 +51,9 @@ impl Fake {
         };
         let config = Config {
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
+            blob: Box::from(b"http://logs.example.test".as_slice()),
+            third_origin: None,
+            blob_redirect: None,
             app: App {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),
@@ -95,6 +98,7 @@ impl Fake {
             page: 2,
             body: 4096,
             response: 8192,
+            blob_records: 16,
         };
         let mut service = Service::new(config, &limits, seed).expect("valid fixture config");
         let mut listed = List::with_capacity(2);
