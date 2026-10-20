@@ -1,24 +1,8 @@
+pub mod fixtures;
+use fixtures::issue;
 use skein_forge::api;
 use skein_forge_client::{Condition, Effect, Entry, Made, Outcome, Resource, Watch, What};
 use skein_forge_client_world::{REPO, Settings, World};
-fn issue(entry: u64) -> Entry {
-    Entry {
-        number: entry,
-        task: 7,
-        repository: REPO,
-        effect: Effect {
-            write: api::Write::CreateIssue {
-                key: Box::from(&b"\x01\x00\x03kitdeployment:goal"[..]),
-                title: Box::from(&b"goal"[..]),
-                body: Box::from(&b"plan"[..]),
-            },
-            condition: Condition::None,
-        },
-        start: None,
-        attempt: None,
-        failures: 0,
-    }
-}
 fn post(entry: u64, number: u64) -> Entry {
     Entry {
         number: entry,
@@ -75,82 +59,6 @@ fn creations_and_comments_survive_faults_late_landings_and_restart() {
         assert!(stats.creations > 0);
         assert_eq!(stats.calls, stats.terminals);
     }
-}
-
-#[test]
-fn an_uncertain_branch_is_found_without_retry_after_restart() {
-    let mut world = World::new(Settings::calm(41));
-    let head = world.branch(b"main").expect("fixture main branch");
-    world.land_writes_late(skein_lib::Duration::from_secs(5));
-    world.make(Entry {
-        number: 1,
-        task: 7,
-        repository: REPO,
-        effect: Effect {
-            write: api::Write::CreateBranch {
-                branch: Box::from(&b"kit/7"[..]),
-                commit: skein_forge_client_world::translate::commit(head),
-            },
-            condition: Condition::None,
-        },
-        start: None,
-        attempt: None,
-        failures: 0,
-    });
-    world.run_for(1);
-    let first = world.entry(1).expect("attempt retained").attempt.expect("write was sent");
-    assert_eq!(world.stats().writes, 1);
-    assert_eq!(world.branch(b"kit/7"), None);
-    world.calm();
-    world.restart();
-    world.run_for(8);
-    assert_eq!(world.entry(1).expect("deadline retained").attempt, Some(first));
-    assert_eq!(world.stats().writes, 1, "restart cannot renew the first deadline or send early");
-    world.run_for(5);
-    assert_eq!(world.stats().writes, 1, "a found branch is never sent again");
-    assert_eq!(world.branch(b"kit/7"), Some(head));
-    world.run_for(10);
-    assert_eq!(world.stats().late_landings, 1);
-    assert_eq!(world.branch(b"kit/7"), Some(head));
-    assert!(
-        world
-            .outcomes()
-            .iter()
-            .any(|(entry, outcome)| { *entry == 1 && matches!(outcome, Outcome::Made { made: Made::Branch(_), .. }) })
-    );
-    world.finish();
-}
-
-#[test]
-fn a_deleted_uncertain_branch_is_held_after_its_deadline() {
-    let mut world = World::new(Settings::calm(50));
-    let head = world.branch(b"main").expect("fixture main branch");
-    world.land_writes_late(skein_lib::Duration::from_secs(5));
-    world.make(Entry {
-        number: 1,
-        task: 7,
-        repository: REPO,
-        effect: Effect {
-            write: api::Write::CreateBranch {
-                branch: Box::from(&b"kit/7"[..]),
-                commit: skein_forge_client_world::translate::commit(head),
-            },
-            condition: Condition::None,
-        },
-        start: None,
-        attempt: None,
-        failures: 0,
-    });
-    world.run_for(1);
-    world.calm();
-    world.restart();
-    world.run_for(6);
-    assert_eq!(world.branch(b"kit/7"), Some(head));
-    world.outside_delete_branch(b"kit/7");
-    world.run_for(6);
-    assert_eq!(world.stats().writes, 1);
-    assert!(world.outcomes().contains(&(1, Outcome::Held)));
-    world.finish();
 }
 
 #[test]

@@ -5,6 +5,7 @@ use skein_forge_client::{
     self as client, Entry, Event, Key, Limits, Outcome, RecoveryClock, Request, Resource, Stored, Watch,
 };
 use skein_lib::{Duration, Env, List, Map, Queue, ReplyTo, Time, Token, Wall};
+mod recovery;
 pub const REPO: api::Repository = api::Repository { forge: 0, repository: 0 };
 pub const LIMITS: Limits = Limits {
     pending: 4,
@@ -87,6 +88,11 @@ pub struct World {
     pending: Map<Token, Pending>,
     durable: Map<Key, Stored>,
     entries: Map<u64, Entry>,
+    held: Map<u64, Entry>,
+    writers: List<Resource>,
+    read_afresh_done: u32,
+    outbox_done: u32,
+    outbox_paused: bool,
     planned: Map<u64, Entry>,
     readers: Map<Token, ()>,
     read_results: Map<Token, Result<api::Answer, api::Error>>,
@@ -141,6 +147,11 @@ impl World {
             pending: Map::with_capacity(16),
             durable: Map::with_capacity(16),
             entries: Map::with_capacity(limits.entries),
+            held: Map::with_capacity(limits.entries),
+            writers: List::with_capacity(limits.resources),
+            read_afresh_done: 0,
+            outbox_done: 0,
+            outbox_paused: false,
             planned: Map::with_capacity(64),
             readers: Map::with_capacity(16),
             read_results: Map::with_capacity(16),
@@ -214,33 +225,6 @@ impl World {
             REPO
         };
         self.event(Event::Read { owner: Token::new(number), repository, read });
-    }
-    pub fn restart(&mut self) {
-        // Volatile budget knowledge belongs to the old live generation.
-        // The independent forge keeps its window and can answer 429 again.
-        self.blocked = Time::ZERO;
-        self.generation = self.generation.checked_add(1).expect("world generation bound");
-        self.stats.restarts = self.stats.restarts.saturating_add(1);
-        self.client = configured(&self.env.limits, self.seed);
-        // Decision reads belong to the former process, and are reissued by
-        // the parent after cold recovery, rather than restored as effects.
-        self.readers = Map::with_capacity(16);
-        self.read_results = Map::with_capacity(16);
-        let mut records = List::with_capacity(self.durable.len());
-        for (_, record) in &self.durable {
-            records.push(record.clone()).expect("world store limit");
-        }
-        for record in records.into_boxed() {
-            self.event(Event::Restore { record });
-        }
-        self.event(Event::Restored { clock: RecoveryClock::Monotonic });
-        let mut entries = List::with_capacity(self.entries.len());
-        for (_, entry) in &self.entries {
-            entries.push(entry.clone()).expect("top outbox limit");
-        }
-        for entry in entries.into_boxed() {
-            self.event(Event::Make { entry });
-        }
     }
     pub fn calm(&mut self) {
         self.forge_env.limits = config(false);
@@ -349,6 +333,7 @@ impl World {
     }
     fn take_client(&mut self) {
         let mut released = List::with_capacity(self.client_out.len());
+        let mut settle = false;
         for _ in 0..self.client_out.len() {
             let request = self.client_out.pop().expect("output length measured");
             let text = format!("{request:?}");
@@ -373,12 +358,12 @@ impl World {
                 Request::Outcome { entry, outcome, .. } => {
                     match outcome {
                         Outcome::Uncertain => {}
-                        Outcome::Made { .. }
-                        | Outcome::Failed(_)
-                        | Outcome::Raced { .. }
-                        | Outcome::Held
-                        | Outcome::Withdrawn => {
+                        Outcome::Made { .. } | Outcome::Failed(_) | Outcome::Raced { .. } | Outcome::Withdrawn => {
                             self.entries.remove(&entry).expect("top settles stored entry");
+                        }
+                        Outcome::Held => {
+                            let saved = self.entries.remove(&entry).expect("top holds stored entry");
+                            assert!(self.held.insert(entry, saved).expect("held entry limit").is_none());
                         }
                     }
                     self.stats.outcomes = self.stats.outcomes.saturating_add(1);
@@ -399,7 +384,15 @@ impl World {
                         "one fresh result per owner"
                     );
                 }
-                Request::Drift { .. } | Request::ReadAfreshDone | Request::OutboxDone => {}
+                Request::ReadAfreshDone => {
+                    assert!(self.outbox_paused, "fresh completion belongs to a paused recovery");
+                    self.read_afresh_done = self.read_afresh_done.checked_add(1).expect("world recovery bound");
+                    settle = true;
+                }
+                Request::OutboxDone => {
+                    self.outbox_done = self.outbox_done.checked_add(1).expect("world recovery bound");
+                }
+                Request::Drift { .. } => {}
             }
         }
         // The entire decision is committed before any Call is released.
@@ -418,6 +411,10 @@ impl World {
                 | Request::OutboxDone => unreachable!("only calls withheld"),
             }
         }
+        if settle {
+            self.outbox_paused = false;
+            self.event(Event::SettleOutbox);
+        }
     }
     fn submit(&mut self, call: Token, repository: api::Repository, op: api::Op) {
         let name = if let api::Op::Read(api::Read::Locate { owner, name }) = &op {
@@ -430,6 +427,7 @@ impl World {
         assert!(self.env.now >= self.blocked, "no class submits during a rate reset");
         match &op {
             api::Op::Write(write) => {
+                assert!(!self.outbox_paused, "no write before recovery reads complete");
                 Referee::write(&self.planned, &self.entries, write);
                 self.stats.writes = self.stats.writes.saturating_add(1);
             }
