@@ -2,6 +2,7 @@ mod app;
 mod app_documents;
 mod delivery;
 mod items;
+mod kinds;
 mod pulls;
 mod pulls_decode;
 use super::{

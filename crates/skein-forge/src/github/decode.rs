@@ -2,6 +2,7 @@
 use super::{
     document::{self, Document, Kind, Row},
     limits::Limits,
+    request::Request,
 };
 pub use crate::forgejo::decode::Malformed;
 use alloc::boxed::Box;
@@ -63,6 +64,49 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         error: Box::from([]),
         terminal: false,
     }
+}
+/// The document a request's 2xx answer decodes as, or `None` when it is no
+/// document: a raw body, an empty answer, or a read whose decoder is not built.
+/// An answer at 300 or above decodes as `Kind::Error`, whatever the request.
+#[must_use]
+pub fn kind(request: &Request) -> Option<Kind> {
+    Some(match request {
+        Request::Installations { .. } => Kind::InstallationRows,
+        Request::Installation { .. } => Kind::Installation,
+        Request::Mint { .. } => Kind::Minted,
+        Request::Reachable { .. } => Kind::ReachableRows,
+        Request::Viewer => Kind::Viewer,
+        Request::App => Kind::App,
+        Request::HookConfig | Request::SetHook { .. } => Kind::HookConfig,
+        Request::Conversion { .. } => Kind::Conversion,
+        Request::BotUser { .. } => Kind::BotUser,
+        Request::Repository { .. } | Request::Locate { .. } => Kind::Repository,
+        Request::Issues { .. } => Kind::IssueRows,
+        Request::Issue { .. } => Kind::Issue,
+        Request::Comments { .. } => Kind::CommentRows,
+        Request::Pull { .. } => Kind::Pull,
+        Request::PullsFor { .. } => Kind::PullRows,
+        Request::CombinedStatus { .. } => Kind::CombinedStatus,
+        Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::Branch { .. } => Kind::Branch,
+        Request::Branches { .. } => Kind::BranchRows,
+        // Raw bodies, and an uninstall's empty answer.
+        Request::Raw { .. }
+        | Request::JobLog { .. }
+        | Request::Uninstall { .. }
+        // Reads whose documents are not decoded yet; each gains its kind with its decoder.
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::Job { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. } => return None,
+    })
 }
 impl Decoder {
     /// Consumes one tokenizer event and returns the next demand and progress.
