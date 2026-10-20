@@ -6,6 +6,8 @@ use alloc::boxed::Box;
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Exchange {
     pub request: request::Request,
+    /// Raw retention to apply while reading through the exchange body.
+    pub retention: Option<Retention>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Step {
@@ -15,7 +17,7 @@ pub enum Step {
 impl Step {
     #[must_use]
     pub fn send(request: request::Request) -> Self {
-        Self::Send(Exchange { request })
+        Self::Send(Exchange { request, retention: None })
     }
 }
 
@@ -74,4 +76,13 @@ impl Plan {
             Self::Refused => {}
         }
     }
+}
+
+/// Raw bodies are read through within the component's input bound.
+/// Head and tail retain at most the cap; Whole reports overflow through `Body::Raw.more`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Retention {
+    Head { bytes: u32 },
+    Tail { bytes: u32 },
+    Whole { bytes: u32 },
 }

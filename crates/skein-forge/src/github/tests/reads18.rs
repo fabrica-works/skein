@@ -563,3 +563,93 @@ fn github_reviews_page_bounds_and_failures() {
     call.begin().unwrap();
     assert_eq!(call.heard(Heard::Head { status: 404, head: Head::new() }), ended(Err(api::Error::Missing)));
 }
+
+fn file_read(max_bytes: u32) -> api::Read {
+    api::Read::File { head: review(1).commit, path: Box::from(*b"dir/x y"), max_bytes }
+}
+fn raw_body(call: &mut Call, bytes: &[u8], more: bool) -> Result<Option<Step>, api::Error> {
+    call.heard(Heard::Done(Body::Raw { bytes: Box::from(bytes), more }))
+}
+fn raw_request() -> Request {
+    Request::Raw { owner: owner(), name: name(), path: Box::from(*b"dir/x y"), commit: review(1).commit }
+}
+#[test]
+fn github_file_raw_target_and_prefix() {
+    golden(
+        &raw_request(),
+        b"/repos/acme/widgets/contents/dir/x%20y?ref=0123456789abcdef0123456789abcdef01234567",
+        None,
+        Accept::Raw,
+    );
+    let mut call = Call::new(file_read(3), bounds(), true);
+    assert_eq!(
+        call.begin(),
+        Ok(Step::Send(crate::github::plans::plan::Exchange {
+            request: raw_request(),
+            retention: Some(crate::github::plans::plan::Retention::Head { bytes: 3 })
+        }))
+    );
+    call.head(false);
+    assert_eq!(
+        raw_body(&mut call, b"abc", true),
+        ended(Ok(api::Answer::File {
+            head: review(1).commit,
+            path: Box::from(*b"dir/x y"),
+            bytes: Box::from(*b"abc"),
+            truncated: true
+        }))
+    );
+}
+#[test]
+fn github_file_directory_and_missing() {
+    let mut call = Call::new(file_read(3), bounds(), true);
+    call.begin().unwrap();
+    let mut head = Head::new();
+    head.json = true;
+    assert_eq!(call.heard(Heard::Head { status: 200, head }), ended(Err(api::Error::Missing)));
+    for status in [404, 410] {
+        let mut call = Call::new(file_read(3), bounds(), true);
+        call.begin().unwrap();
+        assert_eq!(call.heard(Heard::Head { status, head: Head::new() }), ended(Err(api::Error::Missing)));
+    }
+    let mut call = started(file_read(3), bounds());
+    assert_eq!(call.done(Document::Rows), ended(Err(api::Error::InvalidAnswer)));
+    let mut call = started(file_read(3), bounds());
+    assert_eq!(call.heard(Heard::Failed(Failure::Seen)), ended(Err(api::Error::Timeout)));
+}
+#[test]
+fn github_file_exact_limit_and_truncated() {
+    for (room, max_bytes, kept, more) in [
+        (10, 8, b"abc".as_slice(), true),
+        (10, 3, b"abc", false),
+        (7, 3, b"", true),
+        (7, 0, b"", false),
+        (8, 1, b"a", false),
+    ] {
+        let mut call = Call::new(file_read(max_bytes), Bounds { answer_bytes: room, ..bounds() }, true);
+        let cap = max_bytes.min(room - 7);
+        assert_eq!(
+            call.begin(),
+            Ok(Step::Send(crate::github::plans::plan::Exchange {
+                request: raw_request(),
+                retention: Some(crate::github::plans::plan::Retention::Head { bytes: cap })
+            }))
+        );
+        call.head(false);
+        assert_eq!(
+            raw_body(&mut call, kept, more),
+            ended(Ok(api::Answer::File {
+                head: review(1).commit,
+                path: Box::from(*b"dir/x y"),
+                bytes: Box::from(kept),
+                truncated: more
+            }))
+        );
+    }
+    assert_eq!(
+        Call::new(file_read(3), Bounds { answer_bytes: 6, ..bounds() }, true).begin(),
+        Err(api::Error::TooLarge)
+    );
+    let mut call = started(file_read(3), bounds());
+    assert_eq!(raw_body(&mut call, b"abcd", false), ended(Err(api::Error::TooLarge)));
+}

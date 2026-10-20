@@ -31,6 +31,7 @@ impl Plan {
                     | Read::Collaborators { .. }
                     | Read::Remarks { .. }
                     | Read::Reviews { .. }
+                    | Read::File { .. }
                     | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
@@ -50,6 +51,7 @@ impl Plan {
                 | Read::Branch { .. }
                 | Read::Branches
                 | Read::Permission { .. }
+                | Read::File { .. }
                 | Read::Refused => self.branches_done(bounds),
             },
             document::Document::Error(_)
@@ -94,6 +96,7 @@ impl Plan {
             | Read::Collaborators { .. }
             | Read::Remarks { .. }
             | Read::Reviews { .. }
+            | Read::File { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
@@ -109,6 +112,7 @@ impl Plan {
             | Read::Collaborators { .. }
             | Read::Remarks { .. }
             | Read::Reviews { .. }
+            | Read::File { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }

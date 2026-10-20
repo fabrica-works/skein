@@ -12,6 +12,7 @@ use alloc::boxed::Box;
 use skein_lib::List;
 
 mod done;
+mod files;
 mod issues;
 mod people;
 mod pulls;
@@ -34,6 +35,7 @@ enum Read {
     Collaborators { page: u32 },
     Remarks { number: u64, review: u64, page: u32 },
     Reviews { number: u64, page: u32 },
+    File { head: api::Commit, path: Box<[u8]>, max_bytes: u32 },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -47,6 +49,7 @@ enum Stage {
     Runs,
     ResolveUser,
     Permission,
+    Raw,
     Done,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -76,6 +79,7 @@ pub struct Plan {
     remarks: List<api::Remark>,
     reviews: List<api::Review>,
     last_review: u64,
+    raw_cap: u32,
 }
 impl Plan {
     #[must_use]
@@ -90,6 +94,7 @@ impl Plan {
             api::Read::Pull { number } => Read::Pull { number },
             api::Read::PullFor { head, base } => Read::PullFor { head, base },
             api::Read::Statuses { commit, page } => Read::Statuses { commit, page },
+            api::Read::File { head, path, max_bytes } => Read::File { head, path, max_bytes },
             api::Read::Reviews { number, page } => Read::Reviews { number, page },
             api::Read::Remarks { number, review, page } => Read::Remarks { number, review, page },
             api::Read::Collaborators { page } => Read::Collaborators { page },
@@ -98,7 +103,6 @@ impl Plan {
             | api::Read::Compare { .. }
             | api::Read::Checks { .. }
             | api::Read::Job { .. }
-            | api::Read::File { .. }
             | api::Read::Protection { .. } => Read::Refused,
         };
         Self {
@@ -120,6 +124,7 @@ impl Plan {
             remarks: List::with_capacity(0),
             reviews: List::with_capacity(0),
             last_review: 0,
+            raw_cap: 0,
         }
     }
     pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
@@ -142,6 +147,11 @@ impl Plan {
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
+            Read::File { path, max_bytes, .. } => {
+                let path = u32::try_from(path.len()).ok().ok_or(api::Error::TooLarge)?;
+                let room = bounds.answer_bytes.checked_sub(path).ok_or(api::Error::TooLarge)?;
+                self.raw_cap = room.min(*max_bytes);
+            }
             Read::Reviews { .. } => {
                 let capacity = size::capacity(bounds, crate::measure::REVIEW_BYTES)?;
                 self.limit = size::page_size(bounds, capacity)?;
@@ -187,6 +197,7 @@ impl Plan {
     fn initial(&mut self) -> Result<Step, api::Error> {
         match self.read {
             Read::Permission { .. } => return self.permission_initial(),
+            Read::File { .. } => return self.file_initial(),
             Read::Reviews { .. } => return self.reviews_initial(),
             Read::Remarks { .. } => return self.remarks_initial(),
             Read::Collaborators { .. } => return self.collaborators_initial(),
@@ -222,6 +233,7 @@ impl Plan {
             | Read::Collaborators { .. }
             | Read::Remarks { .. }
             | Read::Reviews { .. }
+            | Read::File { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
@@ -266,6 +278,9 @@ impl Plan {
         match heard {
             Heard::Head { status, head } => {
                 if status == 200 {
+                    if self.stage == Stage::Raw && head.json {
+                        return Err(api::Error::Missing);
+                    }
                     match self.read {
                         Read::Items { .. } if self.stage == Stage::Read => {
                             let date = head.date.ok_or(api::Error::InvalidAnswer)?;
@@ -284,6 +299,7 @@ impl Plan {
                         | Read::Collaborators { .. }
                         | Read::Remarks { .. }
                         | Read::Reviews { .. }
+                        | Read::File { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
@@ -341,7 +357,8 @@ impl Plan {
                 match body {
                     Body::Document(document) => self.done(document, bounds, word, tables),
                     Body::Malformed(malformed) => Err(failure::malformed(malformed)),
-                    Body::Empty | Body::Raw { .. } => Err(api::Error::InvalidAnswer),
+                    Body::Raw { bytes, more } => self.raw_done(bytes, more, bounds),
+                    Body::Empty => Err(api::Error::InvalidAnswer),
                 }
             }
             Heard::Failed(failed) => match &self.response {
@@ -368,6 +385,7 @@ impl Plan {
             | Read::Branch { .. }
             | Read::Branches
             | Read::Permission { .. }
+            | Read::File { .. }
             | Read::Refused => {}
         }
         if self.stage != Stage::Read || self.read != Read::Branches {

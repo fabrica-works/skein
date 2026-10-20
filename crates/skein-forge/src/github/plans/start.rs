@@ -34,7 +34,7 @@ pub enum Step<T> {
 impl<T> Step<T> {
     #[must_use]
     pub fn send(request: request::Request) -> Self {
-        Self::Send(plan::Exchange { request })
+        Self::Send(plan::Exchange { request, retention: None })
     }
     fn terminal(state: &mut State, answer: Result<T, api::Error>) -> Self {
         state.stage = Stage::Done;
