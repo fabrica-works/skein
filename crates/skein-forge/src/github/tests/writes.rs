@@ -870,26 +870,93 @@ fn github_review_self_approval_and_bounds() {
         assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(api::Error::Timeout)));
     }
 }
+fn review_page(body: &[u8], chunk: u32, page: u32, more: bool, word: &[u8]) -> Box<[api::Review]> {
+    let mut tables = cached_tables();
+    let mut proof = Plan::new(KEY, api::Op::Read(api::Read::Reviews { number: NUMBER, page }));
+    let target =
+        alloc::fmt::format(format_args!("/repos/acme/widgets/pulls/9007199254740993/reviews?per_page=4&page={page}"));
+    let Step::Send(exchange) = proof.begin(bounds(), word, &mut tables).unwrap() else { panic!("reviews") };
+    golden(&exchange.request, Method::Get, target.as_bytes(), None, Some(Kind::ReviewRows));
+    let mut response = Head::new();
+    response.next = more;
+    assert_eq!(proof.heard(Heard::Head { status: 200, head: response }, bounds(), word, &mut tables), Ok(None));
+    let (rows, document) = decode(Kind::ReviewRows, body, chunk, &limits());
+    for row in &rows {
+        assert_eq!(proof.heard(Heard::Row(row.clone()), bounds(), word, &mut tables), Ok(None));
+    }
+    let Some(Step::Done(Ok(api::Answer::Reviews { reviews, more: observed }))) =
+        proof.heard(Heard::Done(Body::Document(document.unwrap())), bounds(), word, &mut tables).unwrap()
+    else {
+        panic!("reviews answer")
+    };
+    assert_eq!(observed, more);
+    reviews
+}
+fn review_json(author: u64, state: &str, submitted: &str, body: &str) -> Box<[u8]> {
+    alloc::fmt::format(format_args!(
+        r#"[{{"id":9007199254740993,"user":{{"id":{author}}},"state":"{state}","commit_id":"0123456789abcdef0123456789abcdef01234567","submitted_at":{submitted},"author_association":"MEMBER","body":"{body}","unknown":{{"nested":[true]}}}}]"#
+    )).into_bytes().into_boxed_slice()
+}
+fn reviews_prove(rows: &[api::Review]) -> bool {
+    for review in rows {
+        if review.key.as_deref() == Some([0, 255].as_slice())
+            && review.author == NUMBER
+            && review.provenance == api::Provenance::Original
+        {
+            return true;
+        }
+    }
+    false
+}
 #[test]
 fn github_review_original_key_find() {
-    let mut tables = cached_tables();
-    let mut write = write_plan(review(api::Verdict::Comment, b"text"));
-    let Request::Review { body, .. } = begin(&mut write, &mut tables) else { panic!("review") };
-    assert_eq!(crate::marker::decode(WORD, &body).as_deref(), Some([0, 255].as_slice()));
-    assert_eq!(crate::marker::decode(b"alice", &body), None);
-    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), ended(Err(api::Error::Timeout)));
-    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), Err(api::Error::InvalidAnswer));
-    // Task 18 supplies Reviews decoding and Original provenance for the separate proof read.
-    let request = Request::Reviews {
-        owner: Box::from(*b"acme"),
-        name: Box::from(*b"widgets"),
-        number: NUMBER,
-        page: 1,
-        per_page: 4,
-    };
-    golden(&request, Method::Get, b"/repos/acme/widgets/pulls/9007199254740993/reviews?per_page=4&page=1", None, None);
-    let mut proof = Plan::new(KEY, api::Op::Read(api::Read::Reviews { number: NUMBER, page: 1 }));
-    assert_eq!(proof.begin(bounds(), WORD, &mut tables), Err(api::Error::Refused));
+    let marked = r"<!-- example-app:key 00ff -->\ntext";
+    let long = alloc::fmt::format(format_args!("{marked}{}", "x".repeat(129)));
+    let submitted = r#""2026-10-20T08:00:00Z""#;
+    for lost in [false, true] {
+        let mut tables = cached_tables();
+        let mut write = write_plan(review(api::Verdict::Comment, b"text"));
+        begin(&mut write, &mut tables);
+        if lost {
+            assert_eq!(
+                write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables),
+                ended(Err(api::Error::Timeout))
+            );
+        } else {
+            head(&mut write, 200, &mut tables);
+            assert_eq!(
+                finish(&mut write, Body::Document(Document::Id(NUMBER)), &mut tables),
+                ended(Ok(api::Answer::Reviewed(NUMBER)))
+            );
+        }
+        assert_eq!(finish(&mut write, Body::Empty, &mut tables), Err(api::Error::InvalidAnswer));
+        for chunk in [1, 7] {
+            let first = review_page(&review_json(1, "COMMENTED", submitted, marked), chunk, 1, true, WORD);
+            assert!(!reviews_prove(&first));
+            for (author, state, at, body, word, found) in [
+                (NUMBER, "COMMENTED", submitted, marked, WORD, true),
+                (1, "COMMENTED", submitted, marked, WORD, false),
+                (NUMBER, "COMMENTED", submitted, r"<!-- example-app:key 00fe -->\ntext", WORD, false),
+                (NUMBER, "COMMENTED", submitted, marked, b"alice".as_slice(), false),
+                (NUMBER, "COMMENTED", submitted, long.as_str(), WORD, false),
+                (NUMBER, "PENDING", submitted, marked, WORD, false),
+                (NUMBER, "COMMENTED", "null", marked, WORD, false),
+            ] {
+                let rows = review_page(&review_json(author, state, at, body), chunk, 2, false, word);
+                assert_eq!(reviews_prove(&rows), found);
+                if found {
+                    let row = rows.first().unwrap();
+                    assert_eq!(row.id, NUMBER);
+                    assert_eq!(row.commit, commit());
+                    assert_eq!(row.body.as_ref(), b"<!-- example-app:key 00ff -->\ntext");
+                    assert_eq!(row.provenance, api::Provenance::Original);
+                }
+                if body == long {
+                    assert_eq!(rows.first().unwrap().provenance, api::Provenance::Unknown);
+                }
+            }
+        }
+    }
 }
 
 const UPDATE_PULL: &[u8] = br#"{"number":9007199254740993,"state":"open","merged":false,"merge_commit_sha":null,"mergeable":true,"head":{"ref":"alice/x","sha":"0123456789abcdef0123456789abcdef01234567"},"base":{"ref":"main","sha":"abcdef0123456789abcdef0123456789abcdef01"},"requested_reviewers":[{"id":9007199254740993}],"unknown":{"nested":[true]}}"#;
@@ -1016,51 +1083,121 @@ fn github_update_422_and_first_failure() {
         }
     }
 }
+fn fresh_update_pull(tables: &mut Tables, current: api::Commit, chunk: u32) -> api::Pull {
+    let mut proof = Plan::new(KEY, api::Op::Read(api::Read::Pull { number: NUMBER }));
+    assert_eq!(
+        begin(&mut proof, tables),
+        Request::Pull { owner: Box::from(*b"acme"), name: Box::from(*b"widgets"), number: NUMBER }
+    );
+    head(&mut proof, 200, tables);
+    let mut fresh = update_pull();
+    fresh.head_commit = current;
+    let mut wire = skein_lib::Writer::new(4096);
+    crate::github::server::pull(&fresh, &mut wire).unwrap();
+    let (_, document) = decode(Kind::Pull, &super::fixtures::bytes(wire), chunk, &limits());
+    let Some(Step::Send(exchange)) = finish(&mut proof, Body::Document(document.unwrap()), tables).unwrap() else {
+        panic!("combined")
+    };
+    let Request::CombinedStatus { commit: observed, .. } = exchange.request else { panic!("combined request") };
+    assert_eq!(observed, current);
+    head(&mut proof, 200, tables);
+    let (_, document) =
+        decode(Kind::CombinedStatus, br#"{"state":"pending","total_count":0,"statuses":[]}"#, chunk, &limits());
+    let Some(Step::Send(exchange)) = finish(&mut proof, Body::Document(document.unwrap()), tables).unwrap() else {
+        panic!("runs")
+    };
+    let Request::CheckRuns { commit: observed, .. } = exchange.request else { panic!("runs request") };
+    assert_eq!(observed, current);
+    head(&mut proof, 200, tables);
+    let (_, document) = decode(Kind::CheckRuns, br#"{"check_runs":[]}"#, chunk, &limits());
+    let Some(Step::Done(Ok(api::Answer::Pull(pull)))) =
+        finish(&mut proof, Body::Document(document.unwrap()), tables).unwrap()
+    else {
+        panic!("pull")
+    };
+    assert_eq!(pull.commit, current);
+    pull
+}
+fn update_contains(tables: &mut Tables, current: api::Commit, behind: u64, chunk: u32) -> bool {
+    let before = update_pull().base_commit;
+    let mut compare = Plan::new(KEY, api::Op::Read(api::Read::Compare { before, after: current }));
+    golden(
+        &begin(&mut compare, tables),
+        Method::Get,
+        if current == commit() {
+            b"/repos/acme/widgets/compare/abcdef0123456789abcdef0123456789abcdef01...0123456789abcdef0123456789abcdef01234567?per_page=4"
+        } else {
+            b"/repos/acme/widgets/compare/abcdef0123456789abcdef0123456789abcdef01...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?per_page=4"
+        },
+        None,
+        Some(Kind::Compare),
+    );
+    head(&mut compare, 200, tables);
+    let sha = if current == commit() {
+        "0123456789abcdef0123456789abcdef01234567"
+    } else {
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    };
+    let json = alloc::fmt::format(format_args!(
+        r#"{{"total_commits":1,"behind_by":{behind},"commits":[{{"sha":"{sha}"}}],"files":[{{"filename":"dir/file"}}]}}"#
+    ));
+    let (rows, document) = decode(Kind::Compare, json.as_bytes(), chunk, &limits());
+    for row in &rows {
+        assert_eq!(compare.heard(Heard::Row(row.clone()), bounds(), WORD, tables), Ok(None));
+    }
+    let mut next = finish(&mut compare, Body::Document(document.unwrap()), tables).unwrap();
+    for (commit, bytes) in [(before, b"base".as_slice()), (current, b"updated".as_slice())] {
+        let Some(Step::Send(exchange)) = next else { panic!("raw side") };
+        assert_eq!(
+            exchange.request,
+            Request::Raw {
+                owner: Box::from(*b"acme"),
+                name: Box::from(*b"widgets"),
+                path: Box::from(*b"dir/file"),
+                commit
+            }
+        );
+        let Some(crate::github::plans::plan::Retention::Whole { .. }) = exchange.retention else {
+            panic!("whole file retention")
+        };
+        head(&mut compare, 200, tables);
+        next = finish(&mut compare, Body::Raw { bytes: Box::from(bytes), more: false }, tables).unwrap();
+    }
+    let Some(Step::Done(Ok(api::Answer::Compare { before: observed, after, contains_before, files, commits }))) = next
+    else {
+        panic!("comparison")
+    };
+    assert_eq!((observed, after), (before, current));
+    assert_eq!(commits.as_ref(), &[current]);
+    let file = files.first().unwrap();
+    assert_eq!(file.before.as_deref(), Some(b"base".as_slice()));
+    assert_eq!(file.after.as_deref(), Some(b"updated".as_slice()));
+    contains_before
+}
 #[test]
 fn github_update_202_and_proof() {
+    let moved = crate::github::id::commit(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
     for lost in [false, true] {
-        let mut tables = cached_tables();
-        let (mut plan, _) = start_update(&mut tables);
-        if lost {
-            assert_eq!(
-                plan.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables),
-                ended(Err(api::Error::Timeout))
-            );
-        } else {
-            head(&mut plan, 202, &mut tables);
-            assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+        for chunk in [1, 7] {
+            for (current, behind, found) in [(commit(), 1, false), (moved, 1, false), (moved, 0, true)] {
+                let mut tables = cached_tables();
+                let (mut plan, _) = start_update(&mut tables);
+                if lost {
+                    assert_eq!(
+                        plan.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables),
+                        ended(Err(api::Error::Timeout))
+                    );
+                } else {
+                    head(&mut plan, 202, &mut tables);
+                    assert_eq!(
+                        finish(&mut plan, Body::Document(Document::Done), &mut tables),
+                        ended(Ok(api::Answer::Done))
+                    );
+                }
+                assert_eq!(finish(&mut plan, Body::Empty, &mut tables), Err(api::Error::InvalidAnswer));
+                let pull = fresh_update_pull(&mut tables, current, chunk);
+                assert_eq!(update_contains(&mut tables, pull.commit, behind, chunk), found);
+            }
         }
-        assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), Err(api::Error::InvalidAnswer));
-        let mut proof = Plan::new(KEY, api::Op::Read(api::Read::Pull { number: NUMBER }));
-        assert_eq!(
-            begin(&mut proof, &mut tables),
-            Request::Pull { owner: Box::from(*b"acme"), name: Box::from(*b"widgets"), number: NUMBER }
-        );
-        head(&mut proof, 200, &mut tables);
-        let Some(Step::Send(_)) =
-            finish(&mut proof, Body::Document(Document::Pull(update_pull())), &mut tables).unwrap()
-        else {
-            panic!("combined")
-        };
-        head(&mut proof, 200, &mut tables);
-        let Some(Step::Send(_)) = finish(
-            &mut proof,
-            Body::Document(Document::Combined(document::Combined { check: api::Check::Passed, total: 0 })),
-            &mut tables,
-        )
-        .unwrap() else {
-            panic!("runs")
-        };
-        head(&mut proof, 200, &mut tables);
-        let Some(Step::Done(Ok(api::Answer::Pull(pull)))) =
-            finish(&mut proof, Body::Document(Document::Rows), &mut tables).unwrap()
-        else {
-            panic!("pull")
-        };
-        assert_eq!(pull.commit, commit());
-        // Compare's read dependency supplies contains_before for the client's proof.
-        let before = crate::github::id::commit(super::fixtures::OTHER_SHA).unwrap();
-        let mut compare = Plan::new(KEY, api::Op::Read(api::Read::Compare { before, after: pull.commit }));
-        assert_eq!(compare.begin(bounds(), WORD, &mut tables), Err(api::Error::Refused));
     }
 }
