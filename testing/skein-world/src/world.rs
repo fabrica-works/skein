@@ -515,8 +515,11 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
                         .pending_startup
                         .remove(&(pid, complete.op))
                         .expect("a hosted launch prepared its startup descriptors");
-                    let appends =
-                        roots.appends.into_iter().map(|(name, handle)| (name, self.sim.append(child, handle))).collect();
+                    let appends = roots
+                        .appends
+                        .into_iter()
+                        .map(|(name, handle)| (name, self.sim.append(child, handle)))
+                        .collect();
                     let roots =
                         roots.roots.into_iter().map(|(name, handle)| (name, self.sim.root(child, handle))).collect();
                     let inherited = Inherited { pipes, roots, appends, signal: self.sim.open_signal_source(child) };
