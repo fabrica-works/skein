@@ -6,6 +6,7 @@ members = [
     "tests/forge/client",
     "tests/forge/setup",
     "tests/forge/machine",
+    "tests/forge/protocol",
     "tests/forge/conformance",
     "crates/*",
     "examples/ui/view",
