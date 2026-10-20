@@ -45,6 +45,7 @@ impl Minting {
                 | document::Document::HookConfig(_)
                 | document::Document::Conversion(_)
                 | document::Document::User(_)
+                | document::Document::Compare(_)
                 | document::Document::Permission(_)
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)

@@ -33,6 +33,10 @@ fn github_decode_kind_names_each_documented_answer() {
             Kind::RemarkRows,
         ),
         (Request::Reviews { owner: owner(), name: name(), number: 9, page: 1, per_page: 100 }, Kind::ReviewRows),
+        (
+            Request::Compare { owner: owner(), name: name(), before: commit, after: [8; 32], per_page: 100 },
+            Kind::Compare,
+        ),
         (Request::User { id: 6 }, Kind::User),
         (Request::Permission { owner: owner(), name: name(), login: Box::from(*b"alice") }, Kind::Permission),
         (Request::Repository { id: 5 }, Kind::Repository),
@@ -76,11 +80,9 @@ fn github_decode_kind_is_none_for_raw_and_empty_answers() {
 
 #[test]
 fn github_decode_kind_is_none_for_reads_not_yet_decoded() {
-    let commit = [7; 32];
     for request in [
         Request::Job { owner: owner(), name: name(), id: 11 },
         Request::PullFiles { owner: owner(), name: name(), number: 9, page: 1, per_page: 100 },
-        Request::Compare { owner: owner(), name: name(), before: commit, after: [8; 32], per_page: 100 },
         Request::RulesForBranch { owner: owner(), name: name(), branch: Box::from(*b"main"), page: 1 },
         Request::Ruleset { owner: owner(), name: name(), id: 4 },
         Request::ClassicProtection { owner: owner(), name: name(), branch: Box::from(*b"main") },

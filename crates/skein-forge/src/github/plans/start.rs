@@ -172,6 +172,7 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
             | Document::HookConfig(_)
             | Document::Conversion(_)
             | Document::User(_)
+            | Document::Compare(_)
             | Document::Permission(_)
             | Document::BotUser(_)
             | Document::Repository(_)
@@ -196,7 +197,9 @@ fn keep_installation(
 ) -> Result<(), api::Error> {
     let row = match row {
         Row::Installation(row) => row,
-        Row::Review(_)
+        Row::Commit(_)
+        | Row::File(_)
+        | Row::Review(_)
         | Row::Remark(_)
         | Row::Collaborator(_)
         | Row::Reachable(_)

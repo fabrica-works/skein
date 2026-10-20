@@ -40,6 +40,8 @@ pub enum Kind {
     RemarkRows,
     /// Streamed submitted and pending reviews.
     ReviewRows,
+    /// A comparison envelope with streamed commits and filenames.
+    Compare,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -80,6 +82,8 @@ pub enum Row {
     Collaborator(Collaborator),
     Remark(Remark),
     Review(Review),
+    Commit(api::Commit),
+    File(File),
 }
 /// GitHub's message and bounded error messages.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -100,6 +104,7 @@ pub enum Document {
     BotUser(u64),
     User(User),
     Permission(api::Permission),
+    Compare(Compare),
     Repository(Repository),
     Branch(Branch),
     Issue(Issue),
@@ -278,4 +283,17 @@ pub struct Review {
     pub body: crate::forgejo::document::Body,
     pub submitted: Option<Wall>,
     pub official: bool,
+}
+
+/// Comparison completeness and ancestry; merge base is shared with `PullFiles`.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Compare {
+    pub total_commits: u64,
+    pub behind_by: u64,
+    pub merge_base: Option<api::Commit>,
+}
+/// A filename awaiting its raw sides.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct File {
+    pub path: Box<[u8]>,
 }

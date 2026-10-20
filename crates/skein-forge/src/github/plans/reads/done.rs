@@ -32,9 +32,11 @@ impl Plan {
                     | Read::Remarks { .. }
                     | Read::Reviews { .. }
                     | Read::File { .. }
+                    | Read::Compare { .. }
                     | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
+            document::Document::Compare(comparison) => self.compare_done(comparison, bounds),
             document::Document::User(user) => self.user_done(user, tables),
             document::Document::Permission(value) => self.permission_done(value, bounds),
             document::Document::Pull(pull) => self.pull_done(pull, bounds),
@@ -52,6 +54,7 @@ impl Plan {
                 | Read::Branches
                 | Read::Permission { .. }
                 | Read::File { .. }
+                | Read::Compare { .. }
                 | Read::Refused => self.branches_done(bounds),
             },
             document::Document::Error(_)
@@ -97,6 +100,7 @@ impl Plan {
             | Read::Remarks { .. }
             | Read::Reviews { .. }
             | Read::File { .. }
+            | Read::Compare { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
@@ -113,6 +117,7 @@ impl Plan {
             | Read::Remarks { .. }
             | Read::Reviews { .. }
             | Read::File { .. }
+            | Read::Compare { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }

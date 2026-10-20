@@ -35,6 +35,12 @@ pub(super) enum Node {
     CollaboratorRows,
     RemarkRows,
     ReviewRows,
+    Compare,
+    CompareCommits,
+    CompareCommit,
+    CompareFiles,
+    CompareFile,
+    MergeBase,
     Review,
     ReviewUser,
     Remark,
@@ -140,6 +146,18 @@ fn comment_fields() -> &'static [Field] {
 #[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::Compare => {
+            const {
+                &[
+                    field(b"total_commits", Read::Number),
+                    field(b"behind_by", Read::Number),
+                    field(b"commits", Read::Container(Role::Document(Node::CompareCommits))),
+                    field(b"files", Read::Container(Role::Document(Node::CompareFiles))),
+                    optional(b"merge_base_commit", Read::Container(Role::Document(Node::MergeBase))),
+                ]
+            }
+        }
+        Node::CompareFile => const { &[field(b"filename", Read::Text)] },
         Node::Review => {
             const {
                 &[
@@ -284,7 +302,7 @@ fn document_fields(node: Node) -> &'static [Field] {
         Node::Branch => {
             const { &[field(b"name", Read::Text), field(b"commit", Read::Container(Role::Document(Node::Commit)))] }
         }
-        Node::Commit => const { &[field(b"sha", Read::Text)] },
+        Node::CompareCommit | Node::MergeBase | Node::Commit => const { &[field(b"sha", Read::Text)] },
         Node::Error => {
             const {
                 &[
@@ -294,7 +312,9 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::ReviewRows
+        Node::CompareCommits
+        | Node::CompareFiles
+        | Node::ReviewRows
         | Node::RemarkRows
         | Node::CollaboratorRows
         | Node::PullRows
@@ -317,6 +337,8 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::CompareCommits => Some(Role::Document(Node::CompareCommit)),
+        Node::CompareFiles => Some(Role::Document(Node::CompareFile)),
         Node::ReviewRows => Some(Role::Document(Node::Review)),
         Node::RemarkRows => Some(Role::Document(Node::Remark)),
         Node::CollaboratorRows => Some(Role::Document(Node::Collaborator)),
@@ -360,6 +382,10 @@ fn element(role: Role) -> Option<Role> {
         | Node::Conversion
         | Node::User
         | Node::Permission
+        | Node::Compare
+        | Node::CompareCommit
+        | Node::CompareFile
+        | Node::MergeBase
         | Node::Review
         | Node::ReviewUser
         | Node::Remark
@@ -423,6 +449,7 @@ impl Walk {
             document::Kind::BotUser => Node::BotUser,
             document::Kind::User => Node::User,
             document::Kind::Permission => Node::Permission,
+            document::Kind::Compare => Node::Compare,
             document::Kind::ReviewRows => Node::ReviewRows,
             document::Kind::RemarkRows => Node::RemarkRows,
             document::Kind::CollaboratorRows => Node::CollaboratorRows,

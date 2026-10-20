@@ -336,6 +336,7 @@ fn github_app_secrets_hidden() {
             | Document::App(_)
             | Document::HookConfig(_)
             | Document::User(_)
+            | Document::Compare(_)
             | Document::Permission(_)
             | Document::BotUser(_)
             | Document::Repository(_)
@@ -455,6 +456,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
         Document::HookConfig(row) => server::hook(row, out),
         Document::Conversion(row) => server::conversion(row, out),
         Document::User(row) => server::user(row, out),
+        Document::Compare(_) => panic!("App fixture"),
         Document::Permission(value) => server::permission(*value, out),
         Document::BotUser(id) => server::bot_user(*id, out),
         Document::Rows => {
@@ -469,6 +471,8 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                     | Row::Run(_)
                     | Row::Issue(_)
                     | Row::Comment(_)
+                    | Row::Commit(_)
+                    | Row::File(_)
                     | Row::Review(_)
                     | Row::Remark(_)
                     | Row::Collaborator(_)

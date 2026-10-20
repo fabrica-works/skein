@@ -53,6 +53,7 @@ impl Plan {
             | Read::Remarks { .. }
             | Read::Reviews { .. }
             | Read::File { .. }
+            | Read::Compare { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }
@@ -138,10 +139,13 @@ impl Plan {
                 | Read::Remarks { .. }
                 | Read::Reviews { .. }
                 | Read::File { .. }
+                | Read::Compare { .. }
                 | Read::Refused,
                 document::Row::Issue(_)
                 | document::Row::Comment(_)
                 | document::Row::Installation(_)
+                | document::Row::Commit(_)
+                | document::Row::File(_)
                 | document::Row::Review(_)
                 | document::Row::Remark(_)
                 | document::Row::Collaborator(_)
@@ -176,6 +180,7 @@ impl Plan {
             | Read::Remarks { .. }
             | Read::Reviews { .. }
             | Read::File { .. }
+            | Read::Compare { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         if issue.number != number {
@@ -207,6 +212,7 @@ impl Plan {
             | Read::Remarks { .. }
             | Read::Reviews { .. }
             | Read::File { .. }
+            | Read::Compare { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(Some(self.send(Request::Comments {
@@ -252,6 +258,7 @@ impl Plan {
             | Read::Remarks { .. }
             | Read::Reviews { .. }
             | Read::File { .. }
+            | Read::Compare { .. }
             | Read::Refused => Err(api::Error::InvalidAnswer),
         }
     }

@@ -46,7 +46,9 @@ impl Reachable {
             Some(Event::Row(row)) => {
                 let row = match row {
                     document::Row::Reachable(row) => row,
-                    document::Row::Review(_)
+                    document::Row::Commit(_)
+                    | document::Row::File(_)
+                    | document::Row::Review(_)
                     | document::Row::Remark(_)
                     | document::Row::Collaborator(_)
                     | document::Row::Installation(_)
@@ -79,6 +81,7 @@ impl Reachable {
                 | document::Document::HookConfig(_)
                 | document::Document::Conversion(_)
                 | document::Document::User(_)
+                | document::Document::Compare(_)
                 | document::Document::Permission(_)
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)

@@ -85,6 +85,12 @@ impl State {
             | Node::Conversion
             | Node::BotUser => {}
             Node::User
+            | Node::Compare
+            | Node::CompareCommits
+            | Node::CompareCommit
+            | Node::CompareFiles
+            | Node::CompareFile
+            | Node::MergeBase
             | Node::ReviewRows
             | Node::Review
             | Node::ReviewUser
@@ -145,6 +151,7 @@ impl State {
             Kind::Conversion => Document::Conversion(self.conversion.clone()),
             Kind::BotUser => Document::BotUser(self.bot),
             Kind::User
+            | Kind::Compare
             | Kind::ReviewRows
             | Kind::RemarkRows
             | Kind::CollaboratorRows
@@ -232,6 +239,12 @@ impl State {
                 | Node::Conversion
                 | Node::BotUser
                 | Node::User
+                | Node::Compare
+                | Node::CompareCommits
+                | Node::CompareCommit
+                | Node::CompareFiles
+                | Node::CompareFile
+                | Node::MergeBase
                 | Node::ReviewRows
                 | Node::Review
                 | Node::ReviewUser

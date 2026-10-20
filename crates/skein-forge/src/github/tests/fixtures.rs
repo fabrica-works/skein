@@ -66,7 +66,7 @@ pub fn decode(kind: Kind, body: &[u8], chunk: u32, limits: &Limits) -> (List<Row
     let mut intake =
         Intake::with_capacity(u32::try_from(body.len()).unwrap().max(tokenizer::largest_demand(&limits.json)));
     intake.append(body).unwrap();
-    let mut rows = List::with_capacity(16);
+    let mut rows = List::with_capacity(limits.inner.saturating_mul(2).max(16));
     tokenizer::down(&mut tokenizer, &env, tokenizer::Request::Next, &mut above, &mut below);
     for _ in 0..body.len().saturating_mul(8).saturating_add(64) {
         if let Some(event) = above.pop() {

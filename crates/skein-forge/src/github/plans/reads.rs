@@ -36,6 +36,7 @@ enum Read {
     Remarks { number: u64, review: u64, page: u32 },
     Reviews { number: u64, page: u32 },
     File { head: api::Commit, path: Box<[u8]>, max_bytes: u32 },
+    Compare { before: api::Commit, after: api::Commit },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -50,6 +51,9 @@ enum Stage {
     ResolveUser,
     Permission,
     Raw,
+    Compare,
+    Before,
+    After,
     Done,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -80,6 +84,7 @@ pub struct Plan {
     reviews: List<api::Review>,
     last_review: u64,
     raw_cap: u32,
+    files: files::State,
 }
 impl Plan {
     #[must_use]
@@ -94,13 +99,13 @@ impl Plan {
             api::Read::Pull { number } => Read::Pull { number },
             api::Read::PullFor { head, base } => Read::PullFor { head, base },
             api::Read::Statuses { commit, page } => Read::Statuses { commit, page },
+            api::Read::Compare { before, after } => Read::Compare { before, after },
             api::Read::File { head, path, max_bytes } => Read::File { head, path, max_bytes },
             api::Read::Reviews { number, page } => Read::Reviews { number, page },
             api::Read::Remarks { number, review, page } => Read::Remarks { number, review, page },
             api::Read::Collaborators { page } => Read::Collaborators { page },
             api::Read::Permission { user } => Read::Permission { user },
             api::Read::PullFiles { .. }
-            | api::Read::Compare { .. }
             | api::Read::Checks { .. }
             | api::Read::Job { .. }
             | api::Read::Protection { .. } => Read::Refused,
@@ -125,6 +130,7 @@ impl Plan {
             reviews: List::with_capacity(0),
             last_review: 0,
             raw_cap: 0,
+            files: files::State::new(),
         }
     }
     pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
@@ -147,6 +153,7 @@ impl Plan {
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
+            Read::Compare { .. } => self.files_admission(bounds)?,
             Read::File { path, max_bytes, .. } => {
                 let path = u32::try_from(path.len()).ok().ok_or(api::Error::TooLarge)?;
                 let room = bounds.answer_bytes.checked_sub(path).ok_or(api::Error::TooLarge)?;
@@ -197,6 +204,7 @@ impl Plan {
     fn initial(&mut self) -> Result<Step, api::Error> {
         match self.read {
             Read::Permission { .. } => return self.permission_initial(),
+            Read::Compare { .. } => return self.compare_initial(),
             Read::File { .. } => return self.file_initial(),
             Read::Reviews { .. } => return self.reviews_initial(),
             Read::Remarks { .. } => return self.remarks_initial(),
@@ -234,6 +242,7 @@ impl Plan {
             | Read::Remarks { .. }
             | Read::Reviews { .. }
             | Read::File { .. }
+            | Read::Compare { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
@@ -278,8 +287,13 @@ impl Plan {
         match heard {
             Heard::Head { status, head } => {
                 if status == 200 {
-                    if self.stage == Stage::Raw && head.json {
-                        return Err(api::Error::Missing);
+                    if head.json {
+                        if self.stage == Stage::Raw {
+                            return Err(api::Error::Missing);
+                        }
+                        if self.stage == Stage::Before || self.stage == Stage::After {
+                            return Err(api::Error::InvalidAnswer);
+                        }
                     }
                     match self.read {
                         Read::Items { .. } if self.stage == Stage::Read => {
@@ -300,10 +314,14 @@ impl Plan {
                         | Read::Remarks { .. }
                         | Read::Reviews { .. }
                         | Read::File { .. }
+                        | Read::Compare { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
                     return Ok(None);
+                }
+                if status == 404 && (self.stage == Stage::Before || self.stage == Stage::After) {
+                    return self.side_done(None, bounds);
                 }
                 // Both limit statuses wait for Done so secondary-limit text can be
                 // classified. If transport fails meanwhile, the heard status wins.
@@ -342,6 +360,7 @@ impl Plan {
                                 | document::Document::HookConfig(_)
                                 | document::Document::Conversion(_)
                                 | document::Document::User(_)
+                                | document::Document::Compare(_)
                                 | document::Document::Permission(_)
                                 | document::Document::BotUser(_),
                             )
@@ -375,6 +394,7 @@ impl Plan {
         tables: &mut Tables,
     ) -> Result<(), api::Error> {
         match self.read {
+            Read::Compare { .. } => return self.file_row(row, bounds),
             Read::Reviews { .. } => return self.review_row(row, bounds, word),
             Read::Remarks { .. } => return self.remark_row(row, bounds),
             Read::Collaborators { .. } => return self.collaborator_row(row, bounds, tables),
@@ -409,6 +429,8 @@ impl Plan {
             | document::Row::Pull(_)
             | document::Row::Context(_)
             | document::Row::Run(_)
+            | document::Row::Commit(_)
+            | document::Row::File(_)
             | document::Row::Review(_)
             | document::Row::Remark(_)
             | document::Row::Collaborator(_)

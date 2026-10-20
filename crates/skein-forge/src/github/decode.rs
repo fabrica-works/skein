@@ -10,6 +10,7 @@ use skein_json::{Token, tokenizer};
 use skein_lib::List;
 mod app;
 pub(crate) mod delivery;
+mod files;
 mod issues;
 mod people;
 mod pulls;
@@ -36,6 +37,7 @@ pub struct Decoder {
     permission: crate::api::Permission,
     collaborator: document::Collaborator,
     reviews: reviews::State,
+    files: files::State,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -56,6 +58,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         permission: crate::api::Permission::None,
         collaborator: people::collaborator(),
         reviews: reviews::State::new(),
+        files: files::State::new(limits.inner),
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -98,6 +101,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::PullsFor { .. } => Kind::PullRows,
         Request::CombinedStatus { .. } => Kind::CombinedStatus,
         Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::Compare { .. } => Kind::Compare,
         Request::Reviews { .. } => Kind::ReviewRows,
         Request::ReviewComments { .. } => Kind::RemarkRows,
         Request::Collaborators { .. } => Kind::CollaboratorRows,
@@ -112,7 +116,6 @@ pub fn kind(request: &Request) -> Option<Kind> {
         // Reads whose documents are not decoded yet; each gains its kind with its decoder.
         | Request::Job { .. }
         | Request::PullFiles { .. }
-        | Request::Compare { .. }
         | Request::RulesForBranch { .. }
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }
@@ -213,6 +216,18 @@ impl Decoder {
                 self.issues.long(node, length);
                 self.reviews.long(node, length);
             }
+            Move::End(
+                node @ (Node::Compare
+                | Node::CompareCommits
+                | Node::CompareCommit
+                | Node::CompareFiles
+                | Node::CompareFile
+                | Node::MergeBase),
+            ) => {
+                if let Some(row) = self.files.end(node)? {
+                    return Ok((tokenizer::Request::Next, Step::Row(row)));
+                }
+            }
             Move::End(Node::Collaborator) => {
                 let row = core::mem::replace(&mut self.collaborator, people::collaborator());
                 return Ok((tokenizer::Request::Next, Step::Row(Row::Collaborator(row))));
@@ -256,6 +271,7 @@ impl Decoder {
                     | Kind::HookConfig
                     | Kind::Conversion
                     | Kind::BotUser => self.app.document()?,
+                    Kind::Compare => Document::Compare(self.files.document()),
                     Kind::User => Document::User(self.user.clone()),
                     Kind::Permission => Document::Permission(self.permission),
                     Kind::Pull => Document::Pull(self.pulls.pull()),
@@ -284,6 +300,16 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (
+                node @ (Node::Compare
+                | Node::CompareCommits
+                | Node::CompareCommit
+                | Node::CompareFiles
+                | Node::CompareFile
+                | Node::MergeBase),
+                key,
+                token,
+            ) => return self.files.scalar(node, key, token),
             (
                 node @ (Node::ReviewRows
                 | Node::Review

@@ -403,3 +403,6 @@ pub use people::{collaborators, permission, user};
 
 mod reviews;
 pub use reviews::{remarks, reviews};
+
+mod files;
+pub use files::compare;
