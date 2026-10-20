@@ -9,15 +9,15 @@ The dialect is forge.md's; the parts under test are the kit's others.
 
 ## 1. In one page
 
-- **The domain** (`testing/skein-fake-forge-domain`, on skein-lib alone) is
+- **The domain** (`crates/skein-fake-forge-domain`, on skein-lib alone) is
   a step crate with a vocabulary of its own. It is Forgejo-shaped, and no
   better (section 2).
 - **Its git** lives in the same store, so a branch pushed is the head the API
   reads. It is reached through a typed transport, never over HTTP (section 3).
-- **The protocol layer** (`testing/skein-fake-forge-protocol`) serves
+- **The protocol layer** (`crates/skein-fake-forge-protocol`) serves
   Forgejo's API over the domain on skein's HTTP server, with its quirks, the
   setup's routes, signed deliveries and byte faults (section 4).
-- **The forge peer** (in `testing/skein-fake-peers`, beside the LLM and OAuth
+- **The forge peer** (in `crates/skein-fake-peers`, beside the LLM and OAuth
   peers) hosts the protocol layer on loopback, in plaintext, over a forge its
   owner hands it and may share with another fake in the process (section 5).
 - **The throwaway Forgejo** (`testing/skein-throwaway-forgejo`) runs the
@@ -250,6 +250,23 @@ peers host theirs. The real loop hosts the same one.
   and with it the story. So a world's caps are a stated room for a whole
   story, each named for what it holds, with its reason, and a story that
   outgrows it fails by name rather than losing its history.
+- **A peer that serves a person keeps no records.** An application that
+  runs the fake as a product, such as a demo's forge (temper's
+  `protocol/setup.md`, 7.2), lives longer than any story's caps.
+  `without_records()`, called on a fresh peer before its first pass,
+  makes it keep none: `observations()` stays empty, `worst_case` leaves
+  the observations out, and the assertion never runs. A cap of zero
+  still means a story that records nothing, and fails at its first
+  record. The LLM and OAuth peers have the same mode (fake-llm.md,
+  section 3).
+- **The owner may seed the setup's accounts.** `setup_mut()` lends the
+  protocol layer's setup store (section 4), as `Service::setup_mut`
+  does, so that an owner makes, before the peer serves, the site
+  administrator and its token that an application's setup takes over as
+  an owned forge's (temper's `protocol/setup.md`, 6.5). A setup
+  account's number is the user number its tokens act as in the domain,
+  so an owner that seeds both keeps the scenario's `users` apart from
+  them.
 - **Plaintext only.** Its `base` is `http://`; its face is the shared one
   with `Transport::Plaintext` and a `queue` of at least 64.
 - **It hosts the layer over a forge it is handed.** The owner builds the
@@ -396,6 +413,13 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
 - **The GitHub layer's speculative merges.** A queue's group is built
   from the entry ahead, one at a time (10.2); github.com batches groups.
   Default: one at a time, until a story needs batches.
+- **Setup grants and the domain.** A collaborator grant made through the
+  setup routes is kept in the setup store and never reaches the domain's
+  permissions, so the bot that adoption grants write to still cannot
+  write through the domain's routes. An application's demo needs only
+  reads so far (temper's `protocol/setup.md`, 7.2). Default: the fake
+  stays as it is until a story writes as a granted account; that story
+  makes a setup grant reach the domain.
 - **Deliveries** go to the configured endpoint, not to the organization hook
   that reconcile makes. Whether they follow that hook is open. Default: they
   do not, so a world that wants the hook's route configures its endpoint.

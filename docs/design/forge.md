@@ -104,11 +104,11 @@ skein-forge-connection          the component: calls, connections, each forge's 
 skein-forge-setup               the access and each forge's plan: Forgejo's reconcile machine;
 │                                 GitHub's manifest flow
 ├── skein-lib, skein-io, skein-http, skein-json, skein-forge
-testing/skein-fake-forge-domain    the fake forge's domain
-testing/skein-fake-forge-protocol  Forgejo's API over it on skein's HTTP server; the setup's routes;
+crates/skein-fake-forge-domain     the fake forge's domain
+crates/skein-fake-forge-protocol   Forgejo's API over it on skein's HTTP server; the setup's routes;
                                      signed deliveries; the tally of requests served
 testing/skein-fake-forge-github    GitHub's API over it, at its pin (fake-forge.md, section 10)
-testing/skein-fake-peers           hosts the forge peer, beside the LLM and OAuth peers
+crates/skein-fake-peers            hosts the forge peer, beside the LLM and OAuth peers
 testing/skein-throwaway-forgejo    a real Forgejo and its runner, at the pin, for the conformance
 tests/forge/machine, protocol,     the kit's worlds, one crate each (section 11)
   client, setup

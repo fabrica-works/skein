@@ -162,6 +162,38 @@ answer ownership is checked before effects or payload copies.
   route's code for its class and the peer's own request id, and names no
   field.
 
+### 2.4 Which script answers
+
+- **A script is chosen by a cue,** bytes it looks for in the query. A
+  script's cue is held in the system text: the script whose cue starts
+  earliest there answers, and of two at one position the first listed.
+  Its turns count the query's assistant messages; past its last turn it
+  answers "done". With no script cued, the domain answers at random:
+  tool calls from the menu, or "done".
+- **A request may cue one too** (first-run, temper's `draft/first-run.md`,
+  3.5). `Scripts { cued, asked, otherwise }` holds the scripts cued by
+  the system text, as above; those cued by the request, `asked`; and the
+  turns that answer when neither cues one, `otherwise`. An asked cue is
+  looked for in the text of the last user message that holds text, the
+  person's latest request, and the earliest there wins, then the first
+  listed. Its turns count the assistant messages after that message, so
+  each new request starts its script again; `otherwise` counts the same
+  way. Past their last turn, both answer "done".
+- **In that order:** a system cue, then a request's, then `otherwise`
+  when it holds a turn, then the random answer, each after the seeded
+  chances (section 2.3). A world that gives neither `asked` nor
+  `otherwise` is answered as before.
+- **`Domain::played(&Config, seed, Scripts, Menu)`** checks and consumes
+  them as `configured` does its scripts, all under one `script_bytes`,
+  and `configured` is `played` with the other two empty. Their turns
+  are checked as a cued script's are (section 2.3), and a hold in one
+  is placed and released as in a cued script (section 2.2): its
+  `Place`'s script counts the cued scripts, then the asked ones, then
+  `otherwise` as the last.
+- **Who uses it:** an application's demo model, whose scripts its
+  document gives (temper's `protocol/setup.md`, 8.3), and a world that
+  answers a person's words rather than a charter's.
+
 ## 3. Byte peer
 
 `Service` owns bounded routing across connections; `Server` owns one HTTP
@@ -218,7 +250,9 @@ terminal; old connection routing may no longer deliver it.
 loopback, in plaintext, or in TLS with skein's test certificates, so that
 a simulated world and the real loop host it as they host a service
 (testing-strategy.md, 4 and 4.1). The fake issuer runs the same way
-(oauth.md, 5).
+(oauth.md, 5). An application that serves it to a person, as a demo's
+model, makes it keep no records (`without_records()`, fake-forge.md,
+section 5).
 
 ### 3.1 Request heads, affinity and echoes
 
