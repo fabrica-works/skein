@@ -294,12 +294,14 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 fn the_worst_case_counts_answers_and_refuses_overflow() {
     // Complete fixture heap (forge-connection.md, 7.5), including both dialects.
     // Three connection and four webhook decoders each include 568 bytes of
-    // people/review/file/run/job builders (352 + 216); two own-plan slots each
-    // include 16 bytes of exchange retention/comparison fields. Rows/documents fit the routing
-    // maxima and decoder payload envelopes (forge.md, 3.7 and 5.3;
-    // forge-github.md, 6). Installation staging, page buffers and handoff
-    // overlap add 39_432 bytes to the heap.
-    const FIXTURE_HEAP: u64 = 3_635_998;
+    // people/review/file/run/job builders (352 + 216) and an 8-byte numeric
+    // write result (1712 bytes per GitHub decoder). The write result adds
+    // 7 * 8 = 56 bytes. Two own-plan slots each include 16 bytes of exchange
+    // retention/comparison fields. Rows/documents fit the routing maxima and
+    // decoder payload envelopes (forge.md, 3.7 and 5.3; forge-github.md, 6).
+    // Installation staging, page buffers and handoff overlap add 39_432 bytes
+    // to the heap.
+    const FIXTURE_HEAP: u64 = 3_636_054;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(
