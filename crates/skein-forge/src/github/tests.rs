@@ -1,4 +1,5 @@
 mod app;
+mod app_documents;
 use super::{
     credential,
     decode::Malformed,

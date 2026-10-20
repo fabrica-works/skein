@@ -1,4 +1,4 @@
-//! GitHub's read requests and their exact targets (forge-github.md, section 4.1).
+//! GitHub's requests and their exact targets (forge-github.md, section 4.1).
 use super::{id, limits::Limits};
 use crate::api;
 use alloc::boxed::Box;
@@ -25,9 +25,20 @@ pub enum Accept {
     Json,
     Raw,
 }
-/// One read at GitHub's pin, with repository path bytes from its row.
+/// One request at GitHub's pin, with repository path bytes from its row.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Request {
+    Installations { page: u32 },
+    Installation { id: u64 },
+    Mint { installation: u64, scope: Scope },
+    Reachable { page: u32 },
+    Viewer,
+    App,
+    HookConfig,
+    SetHook { url: Box<[u8]> },
+    Uninstall { id: u64 },
+    Conversion { code: Box<[u8]> },
+    BotUser { slug: Box<[u8]> },
     Repository { id: u64 },
     Locate { owner: Box<[u8]>, name: Box<[u8]> },
     Issues { owner: Box<[u8]>, name: Box<[u8]>, since: Wall, page: u32, per_page: u32 },
@@ -53,6 +64,12 @@ pub enum Request {
     Permission { owner: Box<[u8]>, name: Box<[u8]>, login: Box<[u8]> },
     User { id: u64 },
 }
+/// The permissions requested from an installation's mint.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Scope {
+    Full,
+    Contents,
+}
 /// A request ready for the component's HTTP head.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Encoded {
@@ -62,13 +79,13 @@ pub struct Encoded {
     pub accept: Accept,
     pub auth: Auth,
 }
-/// An input that cannot be encoded within the target's bound.
+/// An input that cannot be encoded within the target or body's bound.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Refusal {
     Text,
     TooLong,
 }
-/// Measures, checks and writes a read's target.
+/// Measures, checks and writes a request's target and body.
 pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
     let mut out = Target { length: 0, writer: None };
     target(request, &mut out)?;
@@ -79,7 +96,18 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
     target(request, &mut out)?;
     let accept = match request {
         Request::Raw { .. } => Accept::Raw,
-        Request::Repository { .. }
+        Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Mint { .. }
+        | Request::Reachable { .. }
+        | Request::Viewer
+        | Request::App
+        | Request::HookConfig
+        | Request::SetHook { .. }
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. }
+        | Request::Repository { .. }
         | Request::Locate { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -103,12 +131,13 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Permission { .. }
         | Request::User { .. } => Accept::Json,
     };
+    let (method, auth) = selection(request);
     Ok(Encoded {
-        method: Method::Get,
+        method,
         target: out.writer.expect("writing pass").finish(),
-        body: None,
+        body: body(request, limits)?,
         accept,
-        auth: Auth::Installation,
+        auth,
     })
 }
 /// Accept and the API pin, beside the component's Host, User-Agent and Authorization.
@@ -168,6 +197,13 @@ impl Target {
         self.put(b"/");
         self.segment(name)
     }
+    fn job(&mut self, owner: &[u8], name: &[u8], id: u64, suffix: &[u8]) -> Result<(), Refusal> {
+        self.repo(owner, name)?;
+        self.put(b"/actions/jobs/");
+        self.number(id);
+        self.put(suffix);
+        Ok(())
+    }
     fn commit(&mut self, commit: &api::Commit) -> Result<(), Refusal> {
         self.put(&id::write_commit(commit).ok_or(Refusal::Text)?);
         Ok(())
@@ -185,6 +221,17 @@ pub(crate) fn valid_text(text: &[u8]) -> bool {
 }
 fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
     match request {
+        Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Mint { .. }
+        | Request::Reachable { .. }
+        | Request::Viewer
+        | Request::App
+        | Request::HookConfig
+        | Request::SetHook { .. }
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. } => return app_target(request, out),
         Request::Issues { .. }
         | Request::Issue { .. }
         | Request::Comments { .. }
@@ -215,17 +262,8 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.put(b"/check-runs?filter=latest");
             out.page(*page, *per_page, true);
         }
-        Request::Job { owner, name, id } => {
-            out.repo(owner, name)?;
-            out.put(b"/actions/jobs/");
-            out.number(*id);
-        }
-        Request::JobLog { owner, name, id } => {
-            out.repo(owner, name)?;
-            out.put(b"/actions/jobs/");
-            out.number(*id);
-            out.put(b"/logs");
-        }
+        Request::Job { owner, name, id } => out.job(owner, name, *id, b"")?,
+        Request::JobLog { owner, name, id } => out.job(owner, name, *id, b"/logs")?,
         Request::Branch { owner, name, branch } => {
             out.repo(owner, name)?;
             out.put(b"/branches/");
@@ -349,7 +387,18 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.put(b"/branches");
             out.page(*page, *per_page, false);
         }
-        Request::Repository { .. }
+        Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Mint { .. }
+        | Request::Reachable { .. }
+        | Request::Viewer
+        | Request::App
+        | Request::HookConfig
+        | Request::SetHook { .. }
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. }
+        | Request::Repository { .. }
         | Request::Locate { .. }
         | Request::CombinedStatus { .. }
         | Request::CheckRuns { .. }
@@ -394,4 +443,209 @@ fn escape_digit(byte: u8) -> Option<u8> {
         b'A'..=b'F' => byte.checked_sub(b'A')?.checked_add(10),
         _ => None,
     }
+}
+
+fn selection(request: &Request) -> (Method, Auth) {
+    match request {
+        Request::Installations { .. } | Request::Installation { .. } | Request::App | Request::HookConfig => {
+            (Method::Get, Auth::App)
+        }
+        Request::Mint { .. } => (Method::Post, Auth::App),
+        Request::SetHook { .. } => (Method::Patch, Auth::App),
+        Request::Uninstall { .. } => (Method::Delete, Auth::App),
+        Request::Conversion { .. } => (Method::Post, Auth::None),
+        Request::BotUser { .. } => (Method::Get, Auth::None),
+        Request::Viewer => (Method::Post, Auth::Installation),
+        Request::Reachable { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. } => (Method::Get, Auth::Installation),
+    }
+}
+fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
+    match request {
+        Request::Mint { scope: Scope::Contents, .. } | Request::Viewer | Request::SetHook { .. } => {}
+        Request::Mint { scope: Scope::Full, .. }
+        | Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Reachable { .. }
+        | Request::App
+        | Request::HookConfig
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. } => return Ok(None),
+    }
+    let bounds = skein_json::writer::Limits { depth: super::limits::DEPTH, length: limits.body_bytes };
+    let mut measure = skein_json::writer::Encoder::measure(&bounds);
+    body_json(request, &mut measure);
+    let length = match measure.measured() {
+        Ok(length) => length,
+        Err(skein_json::writer::Refusal::Text) => return Err(Refusal::Text),
+        Err(
+            skein_json::writer::Refusal::TooLong
+            | skein_json::writer::Refusal::TooDeep
+            | skein_json::writer::Refusal::Number,
+        ) => return Err(Refusal::TooLong),
+    };
+    let mut out = skein_json::writer::Encoder::write(length, &bounds);
+    body_json(request, &mut out);
+    Ok(Some(out.finish()))
+}
+fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) {
+    json.object_start();
+    match request {
+        Request::Mint { .. } => {
+            json.key(b"permissions");
+            json.object_start();
+            json.key(b"contents");
+            json.string(b"write");
+            json.object_end();
+        }
+        Request::Viewer => {
+            json.key(b"query");
+            json.string(super::document::VIEWER);
+        }
+        Request::SetHook { url } => {
+            json.key(b"url");
+            json.string(url);
+        }
+        Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Reachable { .. }
+        | Request::App
+        | Request::HookConfig
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. } => unreachable!("request has a body"),
+    }
+    json.object_end();
+}
+
+fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
+    match request {
+        Request::Installations { page } => {
+            out.put(b"/app/installations");
+            out.page(*page, super::pin::PAGE_CAP, false);
+        }
+        Request::Installation { id } | Request::Uninstall { id } => {
+            out.put(b"/app/installations/");
+            out.number(*id);
+        }
+        Request::Mint { installation, .. } => {
+            out.put(b"/app/installations/");
+            out.number(*installation);
+            out.put(b"/access_tokens");
+        }
+        Request::Reachable { page } => {
+            out.put(b"/installation/repositories");
+            out.page(*page, super::pin::PAGE_CAP, false);
+        }
+        Request::Viewer => out.put(b"/graphql"),
+        Request::App => out.put(b"/app"),
+        Request::HookConfig | Request::SetHook { .. } => out.put(b"/app/hook/config"),
+        Request::Conversion { code } => {
+            out.put(b"/app-manifests/");
+            out.segment(code)?;
+            out.put(b"/conversions");
+        }
+        Request::BotUser { slug } => {
+            out.put(b"/users/");
+            out.segment(slug)?;
+            out.put(b"%5Bbot%5D");
+        }
+        Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. } => unreachable!("App target dispatch"),
+    }
+    Ok(())
 }

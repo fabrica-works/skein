@@ -2,6 +2,7 @@
 pub mod credential;
 pub mod decode;
 pub mod document;
+pub use document::Reachable;
 pub mod failure;
 pub mod guid;
 pub mod header;

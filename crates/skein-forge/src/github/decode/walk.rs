@@ -12,6 +12,23 @@ use skein_lib::Stack;
 /// Container roles in the first GitHub documents.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Node {
+    Installation,
+    InstallationAccount,
+    InstallationRows,
+    Minted,
+    ReachableEnvelope,
+    ReachableRows,
+    Reachable,
+    AppOwner,
+    ViewerEnvelope,
+    ViewerData,
+    Viewer,
+    GraphqlErrors,
+    GraphqlError,
+    App,
+    Hook,
+    Conversion,
+    BotUser,
     Repository,
     Owner,
     Branch,
@@ -26,6 +43,8 @@ pub(super) enum Node {
 enum Read {
     Text,
     Body,
+    Secret,
+    Presence,
     Number,
     Boolean,
     Container(Node),
@@ -39,8 +58,62 @@ struct Field {
 const fn field(key: &'static [u8], read: Read) -> Field {
     Field { key, read, required: true }
 }
+const fn optional(key: &'static [u8], read: Read) -> Field {
+    Field { key, read, required: false }
+}
 fn fields(node: Node) -> &'static [Field] {
     match node {
+        Node::Installation => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"account", Read::Container(Node::InstallationAccount)),
+                    field(b"created_at", Read::Text),
+                    optional(b"suspended_at", Read::Presence),
+                ]
+            }
+        }
+        Node::InstallationAccount => {
+            const { &[field(b"login", Read::Text), field(b"id", Read::Number), field(b"type", Read::Text)] }
+        }
+        Node::Minted => const { &[field(b"token", Read::Secret), field(b"expires_at", Read::Text)] },
+        Node::ReachableEnvelope => const { &[field(b"repositories", Read::Container(Node::ReachableRows))] },
+        Node::Reachable => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"owner", Read::Container(Node::AppOwner)),
+                    field(b"name", Read::Text),
+                    field(b"private", Read::Boolean),
+                ]
+            }
+        }
+        Node::AppOwner => const { &[field(b"login", Read::Text), field(b"id", Read::Number)] },
+        Node::ViewerEnvelope => {
+            const {
+                &[
+                    optional(b"data", Read::Container(Node::ViewerData)),
+                    optional(b"errors", Read::Container(Node::GraphqlErrors)),
+                ]
+            }
+        }
+        Node::ViewerData => const { &[optional(b"viewer", Read::Container(Node::Viewer))] },
+        Node::Viewer => const { &[field(b"databaseId", Read::Number), field(b"login", Read::Text)] },
+        Node::GraphqlError => const { &[field(b"type", Read::Text), field(b"message", Read::Text)] },
+        Node::App => const { &[field(b"id", Read::Number), field(b"slug", Read::Text)] },
+        Node::Hook => const { &[field(b"url", Read::Text)] },
+        Node::Conversion => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"slug", Read::Text),
+                    field(b"owner", Read::Container(Node::AppOwner)),
+                    field(b"pem", Read::Secret),
+                    field(b"webhook_secret", Read::Secret),
+                ]
+            }
+        }
+        Node::BotUser => const { &[field(b"id", Read::Number)] },
         Node::Repository => {
             const {
                 &[
@@ -68,14 +141,31 @@ fn fields(node: Node) -> &'static [Field] {
             }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::BranchRows | Node::Errors => &[],
+        Node::InstallationRows | Node::ReachableRows | Node::GraphqlErrors | Node::BranchRows | Node::Errors => &[],
     }
 }
 fn element(node: Node) -> Option<Node> {
     match node {
+        Node::InstallationRows => Some(Node::Installation),
+        Node::ReachableRows => Some(Node::Reachable),
+        Node::GraphqlErrors => Some(Node::GraphqlError),
         Node::BranchRows => Some(Node::BranchName),
         Node::Errors => Some(Node::ErrorEntry),
-        Node::Repository
+        Node::Installation
+        | Node::InstallationAccount
+        | Node::Minted
+        | Node::ReachableEnvelope
+        | Node::Reachable
+        | Node::AppOwner
+        | Node::ViewerEnvelope
+        | Node::ViewerData
+        | Node::Viewer
+        | Node::GraphqlError
+        | Node::App
+        | Node::Hook
+        | Node::Conversion
+        | Node::BotUser
+        | Node::Repository
         | Node::Owner
         | Node::Branch
         | Node::Commit
@@ -118,6 +208,15 @@ pub(super) struct Walk {
 impl Walk {
     pub(super) fn new(kind: document::Kind, limits: &Limits) -> Self {
         let node = match kind {
+            document::Kind::Installation => Node::Installation,
+            document::Kind::InstallationRows => Node::InstallationRows,
+            document::Kind::Minted => Node::Minted,
+            document::Kind::ReachableRows => Node::ReachableEnvelope,
+            document::Kind::Viewer => Node::ViewerEnvelope,
+            document::Kind::App => Node::App,
+            document::Kind::HookConfig => Node::Hook,
+            document::Kind::Conversion => Node::Conversion,
+            document::Kind::BotUser => Node::BotUser,
             document::Kind::Repository => Node::Repository,
             document::Kind::Branch => Node::Branch,
             document::Kind::BranchRows => Node::BranchRows,
@@ -138,7 +237,13 @@ impl Walk {
                 if event == Event::Token(Token::ArrayEnd) {
                     self.end()
                 } else {
-                    self.start(element(self.open.top().expect("array").node).expect("array role"), &event)
+                    let frame = self.open.top_mut().expect("array");
+                    if frame.node == Node::GraphqlErrors && frame.seen != 0 {
+                        return self.unknown(&event, 0);
+                    }
+                    frame.seen = 1;
+                    let node = element(frame.node).expect("array role");
+                    self.start(node, &event)
                 }
             }
             Want::Unknown(depth) => self.unknown(&event, depth),
@@ -177,8 +282,9 @@ impl Walk {
                         frame.touched |= bit;
                         self.want = Want::Value(*field, bit);
                         return Ok(Move::Demand(match field.read {
-                            Read::Text => Request::Text(self.limits.string_bytes),
+                            Read::Text | Read::Secret => Request::Text(self.limits.string_bytes),
                             Read::Body => Request::Text(self.limits.body_bytes.min(self.limits.string_bytes)),
+                            Read::Presence => Request::Text(0),
                             Read::Number | Read::Boolean | Read::Container(_) => Request::Next,
                         }));
                     }
@@ -213,18 +319,32 @@ impl Walk {
         let node = frame.node;
         match field.read {
             Read::Container(child) => return self.start(child, &event),
-            Read::Text | Read::Body | Read::Number | Read::Boolean => {}
+            Read::Presence => {
+                self.unknown(&event, 0)?;
+                return Ok(Move::Scalar(node, field.key, Token::True));
+            }
+            Read::Text | Read::Secret | Read::Body | Read::Number | Read::Boolean => {}
         }
         let wrong = Malformed::Shape { field: field.key };
         let token = match event {
             Event::Token(token) => token,
-            Event::Long(_) => return Err(Malformed::TooLong { field: field.key }),
+            Event::Long(_) => {
+                return Err(if field.read == Read::Secret {
+                    Malformed::Bound { field: field.key }
+                } else {
+                    Malformed::TooLong { field: field.key }
+                });
+            }
             Event::Skipped(_) | Event::Done | Event::Failed(_) | Event::Closed => return Err(wrong),
         };
         let valid = match (&field.read, &token) {
-            (Read::Text | Read::Body, Token::String(text)) => {
+            (Read::Text | Read::Secret | Read::Body, Token::String(text)) => {
                 if text.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize") {
-                    return Err(Malformed::TooLong { field: field.key });
+                    return Err(if field.read == Read::Secret {
+                        Malformed::Bound { field: field.key }
+                    } else {
+                        Malformed::TooLong { field: field.key }
+                    });
                 }
                 true
             }
@@ -236,7 +356,13 @@ impl Walk {
             }
             (Read::Boolean, Token::True | Token::False) => true,
             (
-                Read::Text | Read::Body | Read::Number | Read::Boolean | Read::Container(_),
+                Read::Text
+                | Read::Secret
+                | Read::Presence
+                | Read::Body
+                | Read::Number
+                | Read::Boolean
+                | Read::Container(_),
                 Token::ObjectStart
                 | Token::ObjectEnd
                 | Token::ArrayStart
@@ -277,7 +403,11 @@ impl Walk {
             return Err(Malformed::Json(tokenizer::Error::TooDeep));
         }
         if depth == 0 {
-            self.want = Want::Key;
+            self.want = if element(self.open.top().expect("unknown parent").node).is_some() {
+                Want::Element
+            } else {
+                Want::Key
+            };
             Ok(Move::Demand(Request::Next))
         } else {
             self.want = Want::Unknown(depth);

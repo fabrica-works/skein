@@ -1,9 +1,21 @@
 //! Fields kept from GitHub's first documents (forge-github.md, section 6).
 use crate::api;
 use alloc::boxed::Box;
+use skein_lib::{Secret, Wall};
+/// The identity document sent on an installation token (forge-github.md, 4.3).
+pub const VIEWER: &[u8] = b"query { viewer { login databaseId } }";
 /// The document a decoder expects.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
+    Installation,
+    InstallationRows,
+    Minted,
+    ReachableRows,
+    Viewer,
+    App,
+    HookConfig,
+    Conversion,
+    BotUser,
     Repository,
     Branch,
     BranchRows,
@@ -33,6 +45,8 @@ pub struct Branch {
 /// A streamed listing row.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Row {
+    Installation(Installation),
+    Reachable(Reachable),
     Branch(Box<[u8]>),
 }
 /// GitHub's message and bounded error messages.
@@ -44,8 +58,89 @@ pub struct Refusal {
 /// A whole document, or the end of a streamed listing.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Document {
+    Installation(Installation),
+    Minted(Minted),
+    Viewer(Viewer),
+    Graphql(GraphqlRefusal),
+    App(App),
+    HookConfig(Hook),
+    Conversion(Conversion),
+    BotUser(u64),
     Repository(Repository),
     Branch(Branch),
     Rows,
     Error(Refusal),
+}
+
+/// An installation's account kind.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Account {
+    User,
+    Organization,
+}
+
+/// An installation's account, creation and suspension.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Installation {
+    pub id: u64,
+    pub login: Box<[u8]>,
+    pub account: u64,
+    pub kind: Account,
+    pub created: Wall,
+    pub suspended: bool,
+}
+
+/// An installation token and its expiry.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Minted {
+    pub token: Secret,
+    pub expires: Wall,
+}
+
+/// A repository selectable through an installation.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Reachable {
+    pub id: u64,
+    pub owner: u64,
+    pub login: Box<[u8]>,
+    pub name: Box<[u8]>,
+    pub private: bool,
+}
+
+/// The installation token's bot identity.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Viewer {
+    pub id: u64,
+    pub login: Box<[u8]>,
+}
+
+/// The first GraphQL error's type and message.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct GraphqlRefusal {
+    pub kind: Box<[u8]>,
+    pub message: Box<[u8]>,
+}
+
+/// The App's identity.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct App {
+    pub id: u64,
+    pub slug: Box<[u8]>,
+}
+
+/// The App's webhook address.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Hook {
+    pub url: Box<[u8]>,
+}
+
+/// The identity and secrets returned by a manifest conversion.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Conversion {
+    pub id: u64,
+    pub slug: Box<[u8]>,
+    pub owner: Box<[u8]>,
+    pub owner_id: u64,
+    pub pem: Secret,
+    pub webhook_secret: Secret,
 }

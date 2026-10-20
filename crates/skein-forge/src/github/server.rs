@@ -8,18 +8,24 @@ use crate::forgejo::{id::unsigned, time};
 use alloc::boxed::Box;
 use skein_json::writer::{self, Encoder};
 use skein_lib::{Decimal, List, Overflow, Writer};
-/// Reads a GET target into the request whose canonical spelling it carries.
+mod app;
+pub use app::{
+    app, bot_user, conversion, graphql, graphql_refusal, hook, hook_url, installation, installations, mint_scope,
+    minted, reachable, viewer,
+};
+/// Reads a request target into the request whose canonical spelling it carries.
 #[must_use]
 pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> {
-    if method != Method::Get
-        || target.len() > usize::try_from(limits.target_bytes).expect("u32 fits usize")
-        || target.contains(&b'#')
-    {
+    if target.len() > usize::try_from(limits.target_bytes).expect("u32 fits usize") || target.contains(&b'#') {
         return None;
     }
     let (path, query) = split(target, b'?');
     let query = Query::read(query)?;
-    let request = if let Some(number) = path.strip_prefix(b"/repositories/") {
+    let request = if let Some(request) = app::route(method, path, query.page()) {
+        request
+    } else if method != Method::Get {
+        return None;
+    } else if let Some(number) = path.strip_prefix(b"/repositories/") {
         Request::Repository { id: unsigned(number)? }
     } else if let Some(number) = path.strip_prefix(b"/user/") {
         Request::User { id: unsigned(number)? }
@@ -33,7 +39,7 @@ pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> 
     };
     // The fake accepts the dialect's exact query vocabulary, including fixed parameters.
     let encoded = request::encode(&request, limits).ok()?;
-    if encoded.target.as_ref() != target {
+    if encoded.target.as_ref() != target || encoded.method != method {
         return None;
     }
     Some(request)

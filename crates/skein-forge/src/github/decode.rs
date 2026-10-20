@@ -7,6 +7,7 @@ pub use crate::forgejo::decode::Malformed;
 use alloc::boxed::Box;
 use skein_json::{Token, tokenizer};
 use skein_lib::List;
+mod app;
 mod walk;
 use walk::{Move, Node, Walk};
 /// The result of one event, with its next demand returned beside it.
@@ -22,6 +23,7 @@ pub enum Step {
 pub struct Decoder {
     walk: Walk,
     kind: Kind,
+    app: app::State,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -35,6 +37,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
     Decoder {
         walk: Walk::new(kind, limits),
         kind,
+        app: app::State::new(kind),
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -76,6 +79,29 @@ impl Decoder {
         match movement {
             Move::Demand(demand) => return Ok((demand, Step::Demand)),
             Move::Scalar(node, key, token) => self.scalar(node, key, token)?,
+            Move::End(
+                node @ (Node::Installation
+                | Node::InstallationAccount
+                | Node::InstallationRows
+                | Node::Minted
+                | Node::ReachableEnvelope
+                | Node::ReachableRows
+                | Node::Reachable
+                | Node::AppOwner
+                | Node::ViewerEnvelope
+                | Node::ViewerData
+                | Node::Viewer
+                | Node::GraphqlErrors
+                | Node::GraphqlError
+                | Node::App
+                | Node::Hook
+                | Node::Conversion
+                | Node::BotUser),
+            ) => {
+                if let Some(row) = self.app.end(node)? {
+                    return Ok((tokenizer::Request::Next, Step::Row(row)));
+                }
+            }
             Move::End(Node::BranchName) => {
                 return Ok((
                     tokenizer::Request::Next,
@@ -100,6 +126,15 @@ impl Decoder {
             Move::Done => {
                 self.terminal = true;
                 let document = match self.kind {
+                    Kind::Installation
+                    | Kind::InstallationRows
+                    | Kind::Minted
+                    | Kind::ReachableRows
+                    | Kind::Viewer
+                    | Kind::App
+                    | Kind::HookConfig
+                    | Kind::Conversion
+                    | Kind::BotUser => self.app.document()?,
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
                     Kind::BranchRows => Document::Rows,
@@ -115,6 +150,27 @@ impl Decoder {
     }
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (
+                node @ (Node::Installation
+                | Node::InstallationAccount
+                | Node::InstallationRows
+                | Node::Minted
+                | Node::ReachableEnvelope
+                | Node::ReachableRows
+                | Node::Reachable
+                | Node::AppOwner
+                | Node::ViewerEnvelope
+                | Node::ViewerData
+                | Node::Viewer
+                | Node::GraphqlErrors
+                | Node::GraphqlError
+                | Node::App
+                | Node::Hook
+                | Node::Conversion
+                | Node::BotUser),
+                key,
+                token,
+            ) => return self.app.scalar(node, key, token),
             (Node::Repository, b"id", Token::Number(text)) => {
                 self.repository.id = crate::forgejo::id::unsigned(&text).expect("walker checked integer");
             }
