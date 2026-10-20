@@ -227,7 +227,7 @@ impl Connection {
             },
             http::Event::Done(_) => {
                 let reply = match self.document.take() {
-                    Some(Document::Listed { skipped: 0 }) => {
+                    Some(Document::Listed { skipped: 0 } | Document::RepoSearch { ok: true }) => {
                         let rows = core::mem::replace(&mut self.rows, List::with_capacity(0));
                         Reply::Rows(rows.into_boxed())
                     }

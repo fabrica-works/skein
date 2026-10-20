@@ -670,7 +670,9 @@ end.
   draws. The settings name each forge, its number, kind, API address and
   transport as forge-connection.md's do, and its given values: Forgejo's
   of 4.1 but the repositories, and GitHub's of 5.1 but the state; and
-  the owner's user agent.
+  the owner's user agent. Each forge's `reachable` is at most the host's
+  `inner`, the most elements a listing keeps, or the host is unusable: a
+  picker page must fit its decoder.
 - **Entry points:** `down` takes one request of the owner, `up` one of
   io's events, `fire` one expired deadline, and `next_deadline` says the
   earliest; each emits at most 4 events up and 4 requests to io. The

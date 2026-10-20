@@ -12,7 +12,7 @@ use run::{Run, Send};
 pub use settings::{Forge, Kind, Settings, Transport};
 use skein_lib::{CryptoRng, Env, List, Map, Queue, Secret, Time, Token, bytes};
 
-/// A service's setup plans, with one run per forge and bounded connections.
+/// A service's setup plans: one writing run and one Reachable per forge (6.3).
 pub struct Host {
     settings: Settings,
     crypto: CryptoRng,
@@ -59,7 +59,7 @@ impl Host {
                 let given = &configured(&self.settings, forge).given;
                 let mut busy = self.runs.len() == self.runs.capacity();
                 for (_, live) in &self.runs {
-                    busy |= live.forge == forge;
+                    busy |= live.forge == forge && live.writes == plan.writes();
                 }
                 if busy {
                     up.push(Event::Stop {

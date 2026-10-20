@@ -2,7 +2,7 @@ use super::fixtures;
 use crate::{
     host::{Answer, Event, Forge, Host, Kind, Limits, Need, Plan, Request, Settings, Stacked, Transport, Unusable},
     item::Item,
-    reconcile::{Failure, Stage, Why},
+    reconcile::{Failure, Outcome, Stage, Why},
 };
 use skein_lib::{CryptoRng, Duration, Env, List, Queue, Time, Token, Wall};
 fn limits() -> Limits {
@@ -521,6 +521,7 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                     None
                 }
                 Plan::TakeOver { .. } => Some(w.connect()),
+                Plan::Reachable { .. } => unreachable!("writing plan table"),
             };
             w.plan(2, second);
             assert_eq!(w.up.pop(), Some(stop(2, 1, Why::Busy)));
@@ -549,9 +550,325 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                 let expected = match first {
                     Plan::Check { .. } => token_stop(Why::Missing),
                     Plan::Reconcile { .. } | Plan::Adopt { .. } | Plan::TakeOver { .. } => stop(1, 1, Why::Missing),
+                    Plan::Reachable { .. } => unreachable!("writing plan table"),
                 };
                 assert_eq!(w.up.pop(), Some(expected));
             }
         }
     }
+}
+
+fn reachable(forge: u16) -> Plan {
+    Plan::Reachable { forge, installation: None, page: core::num::NonZeroU32::new(1).unwrap() }
+}
+fn owner_read(run: u64) -> Event {
+    Event::Need { run: Token::new(run), need: Need::Read(Item::AdminToken) }
+}
+fn reachable_stop(run: u64, why: Why) -> Event {
+    Event::Stop {
+        run: Token::new(run),
+        failure: Failure { forge: 1, step: Stage::Token, subject: b"api".as_slice().into(), why },
+    }
+}
+fn paired() -> World {
+    let mut w = World::new();
+    w.run(1, 1);
+    w.plan(2, reachable(1));
+    while w.up.pop().is_some() {}
+    w
+}
+#[test]
+fn a_forge_whose_page_could_pass_the_listing_bound_is_unusable() {
+    let l = limits();
+    let mut s = settings(&[1]);
+    s.forges.get_mut(0).unwrap().given.limits.reachable = l.inner + 1;
+    assert_eq!(Host::new(&l, s, crypto()).err(), Some(Unusable::Reachable { forge: 1, reachable: 33, inner: 32 }));
+}
+#[test]
+fn a_page_bound_equal_to_the_listing_bound_is_usable() {
+    let l = limits();
+    let mut s = settings(&[1]);
+    s.forges.get_mut(0).unwrap().given.limits.reachable = l.inner;
+    Host::new(&l, s, crypto()).expect("a picker page at the listing bound is usable");
+}
+#[test]
+fn a_zero_page_bound_is_refused_by_the_given_first() {
+    use crate::given::{Place, Refused};
+    let mut s = settings(&[1]);
+    s.forges.get_mut(0).unwrap().given.limits.reachable = 0;
+    assert_eq!(
+        Host::new(&limits(), s, crypto()).err(),
+        Some(Unusable::Given { forge: 1, refused: Refused { place: Place::ReachableLimit, other: None } })
+    );
+}
+#[test]
+fn a_reachable_run_beside_a_writing_run_of_its_forge_is_live_with_it() {
+    let mut w = World::new();
+    w.read_admin();
+    w.plan(2, reachable(1));
+    assert_eq!(w.up.pop(), Some(owner_read(2)));
+    w.answer(2, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(reachable_stop(2, Why::Missing)));
+    w.answer(1, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Missing)));
+    assert!(w.up.is_empty());
+    assert_eq!(w.host.next_deadline(), None);
+}
+#[test]
+fn a_second_reachable_run_for_a_forge_stops_busy_naming_the_admin() {
+    let mut w = World::new();
+    w.plan(2, reachable(1));
+    w.up.pop();
+    w.plan(3, reachable(1));
+    assert_eq!(w.up.pop(), Some(stop(3, 1, Why::Busy)));
+    w.answer(2, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(reachable_stop(2, Why::Missing)));
+    w.answer(3, Answer::Read(None));
+    assert!(w.up.is_empty());
+}
+#[test]
+fn a_second_writing_run_beside_a_reachable_and_a_writing_one_stops_busy() {
+    for plan in plans() {
+        let mut w = paired();
+        w.plan(3, plan);
+        assert_eq!(w.up.pop(), Some(stop(3, 1, Why::Busy)));
+    }
+}
+#[test]
+fn a_reachable_run_for_another_forge_is_live_beside_a_reachable_run() {
+    let mut w = World::with(limits(), settings(&[1, 2]));
+    for (run, forge) in [(1, 1), (2, 2)] {
+        w.plan(run, reachable(forge));
+        assert_eq!(w.up.pop(), Some(owner_read(run)));
+    }
+    for run in [2, 1] {
+        w.answer(run, Answer::Read(Some(fixtures::secret(fixtures::ADMIN))));
+        w.connect();
+    }
+    assert!(w.up.is_empty());
+}
+#[test]
+fn runs_counts_reachable_and_writing_runs_together() {
+    let mut l = limits();
+    l.forges = 3;
+    let mut w = World::with(l, settings(&[1, 2, 3]));
+    w.read_admin();
+    w.plan(2, reachable(2));
+    w.up.pop();
+    for plan in [reachable(3), Plan::Reconcile { forge: 3, adopted: Box::new([]) }] {
+        w.plan(3, plan);
+        assert_eq!(w.up.pop(), Some(stop(3, 3, Why::Busy)));
+    }
+    for (first, second) in [
+        (Plan::Reconcile { forge: 1, adopted: Box::new([]) }, reachable(1)),
+        (reachable(1), Plan::Reconcile { forge: 1, adopted: Box::new([]) }),
+    ] {
+        let mut l = limits();
+        l.runs = 1;
+        let mut w = World::with(l, settings(&[1]));
+        w.plan(1, first);
+        w.up.pop();
+        w.plan(2, second);
+        assert_eq!(w.up.pop(), Some(stop(2, 1, Why::Busy)));
+    }
+}
+#[test]
+fn a_reachable_run_asks_the_owner_for_the_admin_token_and_nothing_else() {
+    let mut w = World::new();
+    w.plan(1, reachable(1));
+    read(&mut w, Item::AdminToken);
+    w.answer(1, Answer::Read(Some(fixtures::secret(fixtures::ADMIN))));
+    w.connect();
+    assert!(w.up.is_empty());
+}
+#[test]
+fn a_reachable_run_without_an_admin_token_stops_naming_the_token() {
+    let mut w = World::new();
+    w.plan(2, reachable(1));
+    w.up.pop();
+    w.answer(2, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(reachable_stop(2, Why::Missing)));
+    assert!(w.io.is_empty());
+}
+#[test]
+fn a_reachable_plan_for_an_installation_on_forgejo_stops_at_once_and_is_never_live() {
+    let mut w = World::new();
+    w.read_admin();
+    let deadline = w.host.next_deadline();
+    w.fire(50_000);
+    w.plan(2, Plan::Reachable { forge: 1, installation: Some(7), page: core::num::NonZeroU32::new(1).unwrap() });
+    assert_eq!(
+        w.up.pop(),
+        Some(Event::Stop {
+            run: Token::new(2),
+            failure: Failure {
+                forge: 1,
+                step: Stage::Installation,
+                subject: b"7".as_slice().into(),
+                why: Why::Unexpected
+            },
+        })
+    );
+    assert_eq!(w.host.next_deadline(), deadline);
+    assert!(w.io.is_empty());
+    w.plan(3, reachable(1));
+    assert_eq!(w.up.pop(), Some(owner_read(3)));
+}
+#[test]
+fn a_reachable_run_at_its_deadline_stops_down_at_its_step() {
+    let mut w = World::new();
+    w.plan(1, reachable(1));
+    read(&mut w, Item::AdminToken);
+    w.fire(120_000);
+    assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Down)));
+    assert_eq!(w.host.next_deadline(), None);
+    let mut w = World::new();
+    w.plan(1, reachable(1));
+    read(&mut w, Item::AdminToken);
+    w.answer(1, Answer::Read(Some(fixtures::secret(fixtures::ADMIN))));
+    silent_deadline(&mut w, stop(1, 1, Why::Down));
+}
+#[test]
+fn each_run_keeps_its_own_deadline_when_two_are_live() {
+    let mut w = World::new();
+    w.read_admin();
+    w.fire(50_000);
+    w.plan(2, reachable(1));
+    assert_eq!(w.up.pop(), Some(owner_read(2)));
+    assert_eq!(w.host.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(120))));
+    w.fire(120_000);
+    assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Down)));
+    assert!(w.up.is_empty());
+    assert_eq!(w.host.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(170))));
+    w.fire(170_000);
+    assert_eq!(w.up.pop(), Some(stop(2, 1, Why::Down)));
+    assert_eq!(w.host.next_deadline(), None);
+}
+#[test]
+fn close_ends_both_runs_unheard_and_says_closed_once_io_has_closed_both_connections() {
+    let mut w = paired();
+    let mut connections = List::with_capacity(2);
+    for run in [1, 2] {
+        w.answer(run, Answer::Read(Some(fixtures::secret(fixtures::ADMIN))));
+        let owner = w.connect();
+        connections.push(owner).unwrap();
+    }
+    w.down(Request::Close);
+    assert!(w.up.is_empty());
+    assert!(w.io.is_empty());
+    for owner in &connections {
+        w.event(skein_io::Event::Connecting { owner: *owner, socket: *owner });
+        assert_eq!(w.io.pop(), Some(skein_io::Request::Abort { entity: *owner }));
+    }
+    w.event(skein_io::Event::Closed { owner: connections.as_slice()[0] });
+    assert!(w.up.is_empty());
+    w.event(skein_io::Event::Closed { owner: connections.as_slice()[1] });
+    assert_eq!(w.up.pop(), Some(Event::Closed));
+    w.fire(120_000);
+    w.event(skein_io::Event::Closed { owner: connections.as_slice()[0] });
+    assert!(w.up.is_empty());
+    assert!(w.io.is_empty());
+    assert_eq!(w.host.next_deadline(), None);
+}
+#[test]
+fn a_halted_reachable_stops_at_each_phase_with_the_why_given() {
+    use crate::host::run::Machine;
+    for (machine, stage, subject) in super::reachable::phase_cases().into_iter().skip(1) {
+        let mut machine = Machine::Reachable(machine);
+        let mut out = Queue::with_capacity(1);
+        machine.halt(Why::Down, &mut out);
+        assert_eq!(out.pop(), Some(fixtures::named_failure(stage, subject, Why::Down)));
+        assert!(out.is_empty());
+    }
+}
+#[test]
+fn a_halt_of_an_ended_reachable_pushes_nothing() {
+    use crate::{host::run::Machine, reconcile};
+    for event in [reconcile::Event::Reply(reconcile::Reply::Rows(Box::new([]))), reconcile::Event::Written] {
+        let (machine, _, _) = super::reachable::phase_cases().into_iter().last().unwrap();
+        let mut machine = Machine::Reachable(machine);
+        let mut out = Queue::with_capacity(1);
+        machine.step(event, &mut out);
+        out.pop();
+        machine.halt(Why::Down, &mut out);
+        assert!(out.is_empty());
+    }
+}
+
+const ADMIN_BODY: &[u8] = br#"{"id":1,"login":"kit-admin","is_admin":true,"full_name":""}"#;
+const BOT_BODY: &[u8] = br#"{"id":42,"login":"kit","is_admin":false,"full_name":"kit:bot"}"#;
+const SETTINGS_BODY: &[u8] = br#"{"max_response_items":4,"default_paging_num":30}"#;
+impl World {
+    #[expect(clippy::disallowed_macros, reason = "the HTTP fixture frames its body's length")]
+    fn reply(&mut self, body: &[u8]) {
+        use skein_lib::{
+            Intake,
+            stream::{Down, Up},
+        };
+        let owner = self.connect();
+        self.event(skein_io::Event::Connecting { owner, socket: owner });
+        self.event(skein_io::Event::Connected { owner });
+        let mut intake = Intake::with_capacity(limits().body_bytes_in);
+        let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+        intake.append(head.as_bytes()).unwrap();
+        intake.append(body).unwrap();
+        for _ in 0_u32..4096 {
+            match self.io.pop() {
+                Some(skein_io::Request::Stream { down: Down::Demand { read, room }, .. }) => {
+                    if room > 0 {
+                        self.event(skein_io::Event::Stream { owner, up: Up::Room });
+                    } else if let Some(bytes) = intake.meet(read) {
+                        self.event(skein_io::Event::Stream { owner, up: Up::Bytes(bytes) });
+                    }
+                }
+                Some(skein_io::Request::Stream { down: Down::Send(_) | Down::Finish, .. }) => (),
+                Some(skein_io::Request::Close { entity }) => {
+                    assert_eq!(entity, owner);
+                    self.event(skein_io::Event::Closed { owner });
+                    return;
+                }
+                Some(other) => panic!("unexpected io: {other:?}"),
+                None => self.host.fire(&self.env, &mut self.up, &mut self.io),
+            }
+        }
+        panic!("HTTP reply did not settle");
+    }
+    fn finish_reachable(&mut self) {
+        self.answer(2, Answer::Read(Some(fixtures::secret(fixtures::ADMIN))));
+        self.reply(ADMIN_BODY);
+        self.reply(SETTINGS_BODY);
+        self.reply(br#"{"ok":true,"data":[]}"#);
+    }
+    fn finish_reconcile(&mut self) {
+        self.answer(1, Answer::Read(Some(fixtures::secret(fixtures::ADMIN))));
+        self.reply(ADMIN_BODY);
+        self.reply(BOT_BODY);
+        self.up.pop();
+        for _ in [Item::ApiToken, Item::GitToken] {
+            self.answer(1, Answer::Read(Some(fixtures::secret(b"bot-token"))));
+            self.reply(BOT_BODY);
+            self.up.pop();
+        }
+        self.answer(1, Answer::Read(Some(fixtures::secret(&42_u64.to_le_bytes()))));
+    }
+}
+#[test]
+fn a_finished_run_frees_its_own_kind_only() {
+    let mut w = paired();
+    w.finish_reachable();
+    assert_eq!(
+        w.up.pop(),
+        Some(Event::Done { run: Token::new(2), outcome: Outcome::Reachable { rows: Box::new([]), more: false } })
+    );
+    w.plan(3, reachable(1));
+    assert_eq!(w.up.pop(), Some(owner_read(3)));
+    w.run(4, 1);
+    assert_eq!(w.up.pop(), Some(stop(4, 1, Why::Busy)));
+    let mut w = paired();
+    w.finish_reconcile();
+    assert_eq!(w.up.pop(), Some(Event::Done { run: Token::new(1), outcome: Outcome::Nothing }));
+    w.run(3, 1);
+    assert_eq!(w.up.pop(), Some(owner_read(3)));
+    w.plan(4, reachable(1));
+    assert_eq!(w.up.pop(), Some(stop(4, 1, Why::Busy)));
 }

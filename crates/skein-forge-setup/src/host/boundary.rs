@@ -4,7 +4,7 @@ use crate::{
     reconcile::{Failure, Outcome},
 };
 use alloc::boxed::Box;
-use core::num::NonZeroU64;
+use core::num::{NonZeroU32, NonZeroU64};
 use skein_lib::{Secret, Token};
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Plan {
@@ -26,6 +26,13 @@ pub enum Plan {
         forge: u16,
         repository: NonZeroU64,
     },
+    /// One picker page, from 1 (4.8). Forgejo takes no installation.
+    /// Reads only: the host forwards no Write for it.
+    Reachable {
+        forge: u16,
+        installation: Option<u64>,
+        page: NonZeroU32,
+    },
 }
 impl Plan {
     pub(super) fn forge(&self) -> u16 {
@@ -33,7 +40,15 @@ impl Plan {
             Self::Reconcile { forge, .. }
             | Self::Check { forge }
             | Self::TakeOver { forge, .. }
-            | Self::Adopt { forge, .. } => *forge,
+            | Self::Adopt { forge, .. }
+            | Self::Reachable { forge, .. } => *forge,
+        }
+    }
+    /// Whether the plan may change the forge or the owner's items.
+    pub(super) fn writes(&self) -> bool {
+        match self {
+            Self::Reconcile { .. } | Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } => true,
+            Self::Reachable { .. } => false,
         }
     }
 }

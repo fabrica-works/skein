@@ -224,3 +224,137 @@ fn an_adopt_of_a_repository_the_forge_lacks_stops_missing_naming_its_id() {
         }]
     );
 }
+
+// forge-setup.md, 4.8: the fixture's picker page holds four repositories.
+const PICKER_PAGE: u32 = 4;
+const ADMIN_READ: Need = Need::Read(Item::AdminToken);
+fn reachable(page: u32) -> Plan {
+    Plan::Reachable {
+        forge: 1,
+        installation: None,
+        page: core::num::NonZeroU32::new(page).expect("picker pages start at one"),
+    }
+}
+fn picker_world(script: &[Connect]) -> HostWorld {
+    let mut config = fixtures::config_with_cap(PICKER_PAGE);
+    fixtures::picker_repositories(&mut config);
+    let mut world = HostWorld::with_config(7, script, config);
+    fixtures::picker_owners(world.store_mut());
+    world
+}
+fn picker_page(heard: &Heard, run: u64, ids: &[u64], more: bool) {
+    let Heard::Done { run: token, outcome: Outcome::Reachable { rows, more: found_more }, at } = heard else {
+        panic!("picker Done: {heard:?}");
+    };
+    assert_eq!(*token, Token::new(run));
+    assert_eq!(*at, Duration::ZERO);
+    assert_eq!(*found_more, more);
+    assert_eq!(rows.iter().map(|row| row.id).collect::<Vec<_>>(), ids);
+}
+fn busy(run: u64) -> Heard {
+    Heard::Stop {
+        run: Token::new(run),
+        failure: Failure { forge: 1, step: Stage::Admin, subject: b"kit-admin".as_slice().into(), why: Why::Busy },
+        at: Duration::ZERO,
+    }
+}
+#[test]
+fn the_host_pages_through_the_repositories_with_the_admins_token() {
+    let mut world = picker_world(&[]);
+    for page in [1, 2, 3] {
+        world.run_plan(u64::from(page), reachable(page));
+        world.finish();
+    }
+    assert_eq!(world.heard().len(), 3);
+    for (heard, (run, ids, more)) in world.heard().iter().zip([
+        (1, [1, 2, 3, 4].as_slice(), true),
+        (2, [5, 6, 7, 8].as_slice(), true),
+        (3, [9, 10].as_slice(), false),
+    ]) {
+        picker_page(heard, run, ids, more);
+    }
+    assert_eq!(world.needs(), &[ADMIN_READ; 3]);
+    assert_eq!(world.requests().routes.get(&skein_fake_forge_protocol::Route::RepoSearch), Some(&3));
+}
+#[test]
+fn a_repository_search_that_answered_ok_reaches_the_plan_as_its_rows() {
+    let mut world = picker_world(&[]);
+    world.run_plan(1, reachable(1));
+    world.finish();
+    assert_eq!(world.heard().len(), 1);
+    picker_page(&world.heard()[0], 1, &[1, 2, 3, 4], true);
+    assert_eq!(world.needs(), &[Need::Read(Item::AdminToken)]);
+}
+#[test]
+fn a_repository_search_that_answered_not_ok_reaches_the_plan_as_a_document() {
+    use skein_fake_forge_protocol::Route;
+    let mut world = picker_world(&[Connect::Made, Connect::Made, Connect::Answers(200, br#"{"ok":false,"data":[]}"#)]);
+    world.run_plan(1, reachable(1));
+    world.finish();
+    assert_eq!(
+        world.heard(),
+        &[Heard::Stop {
+            run: Token::new(1),
+            failure: Failure {
+                forge: 1,
+                step: Stage::Token,
+                subject: b"kit-admin".as_slice().into(),
+                why: Why::Unexpected
+            },
+            at: Duration::ZERO,
+        }]
+    );
+    assert_eq!(world.connects(), &[Duration::ZERO; 3]);
+    assert_eq!(world.requests().routes.get(&Route::User), Some(&1));
+    assert_eq!(world.requests().routes.get(&Route::ApiSettings), Some(&1));
+    assert_eq!(world.needs(), &[Need::Read(Item::AdminToken)]);
+}
+#[test]
+fn a_reachable_run_is_served_beside_a_held_reconcile() {
+    let mut world = picker_world(&[Connect::Silent]);
+    world.run(1);
+    world.settle();
+    world.run_plan(2, reachable(1));
+    world.settle();
+    assert_eq!(world.heard().len(), 1);
+    picker_page(&world.heard()[0], 2, &[1, 2, 3, 4], true);
+    world.finish();
+    assert_eq!(world.heard().get(1), Some(&stopped(Stage::Admin, b"kit-admin", Duration::from_secs(120))));
+    assert_eq!(world.heard().len(), 2);
+    assert_eq!(world.aborts(), 1);
+}
+#[test]
+fn a_second_reachable_for_the_forge_stops_busy_while_the_first_is_held() {
+    let mut world = picker_world(&[Connect::Silent]);
+    world.run_plan(1, reachable(1));
+    world.settle();
+    world.run_plan(2, reachable(1));
+    world.settle();
+    assert_eq!(world.heard(), &[busy(2)]);
+    world.finish();
+    assert_eq!(world.heard(), &[busy(2), stopped(Stage::Admin, b"kit-admin", Duration::from_secs(120))]);
+    assert_eq!(world.aborts(), 1);
+    assert_eq!(world.connects(), &[Duration::ZERO]);
+}
+#[test]
+fn the_host_admits_a_reachable_beside_a_writing_run_refuses_a_second_and_ends_both() {
+    let mut world = picker_world(&[]);
+    world.pause_reads();
+    world.run(1);
+    world.run_plan(2, reachable(1));
+    world.run_plan(3, reachable(1));
+    world.settle();
+    assert_eq!(world.pending_reads(), &[(Token::new(1), Item::AdminToken), (Token::new(2), Item::AdminToken)]);
+    assert_eq!(world.needs(), &[ADMIN_READ; 2]);
+    assert_eq!(world.heard(), &[busy(3)]);
+    assert!(world.connects().is_empty());
+    world.read_pending(2);
+    world.settle();
+    assert_eq!(world.heard().len(), 2);
+    picker_page(&world.heard()[1], 2, &[1, 2, 3, 4], true);
+    world.resume_reads();
+    world.finish();
+    assert_eq!(world.heard().len(), 3);
+    assert_eq!(world.heard()[0], busy(3));
+    assert_eq!(world.heard()[2], done(1));
+}

@@ -18,6 +18,7 @@ pub enum Connect {
     Refused,
     Silent,
     Unavailable,
+    Answers(u16, &'static [u8]),
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Heard {
@@ -30,7 +31,7 @@ struct Peer {
     server: Option<fake::Server>,
     above: Queue<fake::Event>,
     below: Queue<Down>,
-    unavailable: bool,
+    answer: Option<(u16, &'static [u8])>,
     head: Vec<u8>,
     responded: bool,
 }
@@ -51,6 +52,8 @@ pub struct HostWorld {
     needs: Vec<Need>,
     pause_writes: bool,
     pending_writes: Vec<(Token, Item, Secret)>,
+    pause_reads: bool,
+    pending_reads: Vec<(Token, Item)>,
 }
 impl HostWorld {
     #[must_use]
@@ -79,6 +82,8 @@ impl HostWorld {
             needs: Vec::new(),
             pause_writes: false,
             pending_writes: Vec::new(),
+            pause_reads: false,
+            pending_reads: Vec::new(),
         }
     }
     pub fn run(&mut self, run: u64) {
@@ -107,6 +112,26 @@ impl HostWorld {
     #[must_use]
     pub fn needs(&self) -> &[Need] {
         &self.needs
+    }
+    pub fn pause_reads(&mut self) {
+        self.pause_reads = true;
+    }
+    #[must_use]
+    pub fn pending_reads(&self) -> &[(Token, Item)] {
+        &self.pending_reads
+    }
+    /// Answers the chosen run's held read from the owner's current items.
+    pub fn read_pending(&mut self, run: u64) {
+        let run = Token::new(run);
+        let at = self.pending_reads.iter().position(|(token, _)| *token == run).expect("held read");
+        let (_, item) = self.pending_reads.remove(at);
+        self.action(Request::Answer { run, answer: Answer::Read(self.file(item).cloned()) });
+    }
+    pub fn resume_reads(&mut self) {
+        self.pause_reads = false;
+        for (run, item) in core::mem::take(&mut self.pending_reads) {
+            self.action(Request::Answer { run, answer: Answer::Read(self.file(item).cloned()) });
+        }
     }
     pub fn pause_writes(&mut self) {
         self.pause_writes = true;
@@ -195,8 +220,8 @@ impl HostWorld {
             if let Some(event) = peer.pipe.server_up() {
                 if let Some(server) = &mut peer.server {
                     fake::up(server, &mut self.service, &self.fake_env, event, &mut peer.above, &mut peer.below);
-                } else if peer.unavailable {
-                    unavailable(peer, event);
+                } else if peer.answer.is_some() {
+                    answer(peer, event);
                 }
             }
             if let Some(up) = peer.pipe.client_up() {
@@ -231,7 +256,13 @@ impl HostWorld {
                 Event::Need { run, need } => {
                     self.needs.push(need.clone());
                     let answer = match need {
-                        Need::Read(item) => Answer::Read(self.file(item).cloned()),
+                        Need::Read(item) => {
+                            if self.pause_reads {
+                                self.pending_reads.push((run, item));
+                                continue;
+                            }
+                            Answer::Read(self.file(item).cloned())
+                        }
                         Need::Write { item, bytes } => {
                             if self.pause_writes {
                                 self.pending_writes.push((run, item, bytes));
@@ -265,7 +296,11 @@ impl HostWorld {
                     server: None,
                     above: Queue::with_capacity(16),
                     below: Queue::with_capacity(16),
-                    unavailable: matches!(connect, Connect::Unavailable),
+                    answer: match connect {
+                        Connect::Unavailable => Some((503, b"")),
+                        Connect::Answers(status, body) => Some((status, body)),
+                        Connect::Made | Connect::Refused | Connect::Silent => None,
+                    },
                     head: Vec::new(),
                     responded: false,
                 };
@@ -273,7 +308,7 @@ impl HostWorld {
                     let mut server = fake::Server::new(owner, &self.fake_env.limits).expect("server");
                     fake::start(&mut server, &mut self.service, &self.fake_env, &mut peer.above, &mut peer.below);
                     peer.server = Some(server);
-                } else if peer.unavailable {
+                } else if peer.answer.is_some() {
                     peer.below.push(Down::Demand { read: Read::Arrived { max: 4096 }, room: 0 });
                 }
                 assert!(self.peers.insert(owner, peer).is_none());
@@ -310,7 +345,7 @@ impl HostWorld {
         self.up(skein_io::Event::Closed { owner });
     }
 }
-fn unavailable(peer: &mut Peer, event: Up) {
+fn answer(peer: &mut Peer, event: Up) {
     match event {
         Up::Bytes(bytes) => {
             peer.head.extend_from_slice(&bytes);
@@ -323,10 +358,11 @@ fn unavailable(peer: &mut Peer, event: Up) {
         Up::Room => {
             assert!(!peer.responded);
             peer.responded = true;
-            peer.below.push(Down::Send(skein_forge_machine_world::fixtures::response(503, b"").into_boxed_slice()));
+            let (status, body) = peer.answer.expect("scripted answer");
+            peer.below.push(Down::Send(skein_forge_machine_world::fixtures::response(status, body).into_boxed_slice()));
             peer.below.push(Down::Finish);
         }
         Up::End => (),
-        Up::Failed(_) => panic!("uncut unavailable stream"),
+        Up::Failed(_) => panic!("uncut scripted stream"),
     }
 }

@@ -222,10 +222,19 @@ fn a_reply_of_another_kind_is_unexpected_at_each_request() {
         assert_eq!(step(&mut at(phase), event), failure(stage, Why::Unexpected));
     }
 }
+/// Begin, the owner read, and the three requests, in transition order.
+pub(super) fn phase_cases() -> [(Reachable, Stage, &'static [u8]); 5] {
+    [
+        (at(0), Stage::Admin, b"kit-admin"),
+        (at(READING), Stage::Admin, b"kit-admin"),
+        (at(ADMIN_CHECK), Stage::Admin, b"kit-admin"),
+        (at(SETTINGS), Stage::Token, b"kit-admin"),
+        (at(SEARCH), Stage::Token, b"kit-admin"),
+    ]
+}
 #[test]
 fn an_out_of_order_event_stops_each_phase() {
-    for phase in 0..=SEARCH {
-        let stage = if phase < SETTINGS { Stage::Admin } else { Stage::Token };
+    for (phase, (_, stage, subject)) in phase_cases().into_iter().enumerate() {
         for event in [Event::Begin, Event::Read(None), Event::Written, fixtures::drawn(), Event::Reply(Reply::Empty)] {
             if (phase == 0 && event == Event::Begin)
                 || (phase == READING && event == Event::Read(None))
@@ -233,7 +242,11 @@ fn an_out_of_order_event_stops_each_phase() {
             {
                 continue;
             }
-            assert_eq!(step(&mut at(phase), event), failure(stage, Why::Unexpected), "phase {phase}");
+            assert_eq!(
+                step(&mut at(phase), event),
+                fixtures::named_failure(stage, subject, Why::Unexpected),
+                "phase {phase}"
+            );
         }
     }
 }

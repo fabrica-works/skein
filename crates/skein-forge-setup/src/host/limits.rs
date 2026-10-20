@@ -68,15 +68,40 @@ pub enum Stacked {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Unusable {
     Zero,
-    TokenBytes { token_bytes: u32 },
+    TokenBytes {
+        token_bytes: u32,
+    },
     Documents(docs::Problem),
-    Stack { stacked: Stacked, demand: u32, cap: u32 },
-    Forges { forges: u32 },
-    Duplicate { forge: u16 },
-    Address { forge: u16 },
-    PlaintextName { forge: u16 },
-    Request { forge: u16 },
-    Given { forge: u16, refused: crate::given::Refused },
+    Stack {
+        stacked: Stacked,
+        demand: u32,
+        cap: u32,
+    },
+    Forges {
+        forges: u32,
+    },
+    Duplicate {
+        forge: u16,
+    },
+    Address {
+        forge: u16,
+    },
+    PlaintextName {
+        forge: u16,
+    },
+    Request {
+        forge: u16,
+    },
+    Given {
+        forge: u16,
+        refused: crate::given::Refused,
+    },
+    /// A forge's picker page could hold more rows than a listing keeps.
+    Reachable {
+        forge: u16,
+        reachable: u32,
+        inner: u32,
+    },
 }
 pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
     for value in [
@@ -141,6 +166,10 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
         }
         if let Err(refused) = crate::given::check(&forge.given) {
             return Err(Unusable::Given { forge: number, refused });
+        }
+        let reachable = forge.given.limits.reachable;
+        if reachable > l.inner {
+            return Err(Unusable::Reachable { forge: number, reachable, inner: l.inner });
         }
     }
     Ok(())

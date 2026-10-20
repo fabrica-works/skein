@@ -5,6 +5,7 @@ use crate::{
     check::{self, Check},
     given::Given,
     item::{self, Item},
+    reachable::{self, Reachable},
     reconcile::{self, Event, Reconcile, Reply, Why},
     take_over::{self, TakeOver},
 };
@@ -24,6 +25,7 @@ pub(crate) enum Machine {
     Check(Check),
     TakeOver(TakeOver),
     Adopt(Adopt),
+    Reachable(Reachable),
 }
 impl Machine {
     pub(crate) fn step(&mut self, event: Event, out: &mut Queue<reconcile::Need>) {
@@ -32,13 +34,14 @@ impl Machine {
             Self::Check(machine) => check::step(machine, event, out),
             Self::TakeOver(machine) => take_over::step(machine, event, out),
             Self::Adopt(machine) => adopt::step(machine, event, out),
+            Self::Reachable(machine) => reachable::step(machine, event, out),
         }
     }
     /// The host halts only machines that have received Begin.
     pub(crate) fn halt(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
         match self {
             Self::Reconcile(machine) => reconcile::halt(machine, why, out),
-            Self::Check(_) | Self::TakeOver(_) | Self::Adopt(_) => self.halt_begun(why, out),
+            Self::Check(_) | Self::TakeOver(_) | Self::Adopt(_) | Self::Reachable(_) => self.halt_begun(why, out),
         }
     }
     fn halt_begun(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
@@ -73,6 +76,7 @@ pub(super) struct Send {
 #[derive(Debug)]
 pub(super) struct Run {
     pub forge: u16,
+    pub writes: bool,
     pub machine: Machine,
     pub deadline: Time,
     pub pending: Option<reconcile::Need>,
@@ -87,6 +91,7 @@ pub(super) struct Run {
 }
 impl Run {
     pub fn new(given: &Given, plan: Plan, token_bytes: u32, now: Time, out: &mut Queue<reconcile::Need>) -> Self {
+        let writes = plan.writes();
         let machine = match plan {
             Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
                 Reconcile::new(&given_for(given, &adopted)).expect("the owner checks a plan's adopted repositories"),
@@ -103,9 +108,13 @@ impl Run {
             Plan::Adopt { repository, .. } => Machine::Adopt(
                 Adopt::new(given, repository.get()).expect("host checks the given and the repository is nonzero"),
             ),
+            Plan::Reachable { installation, page, .. } => Machine::Reachable(
+                Reachable::new(given, installation, page.get()).expect("host checks the given and the page is nonzero"),
+            ),
         };
         let mut run = Self {
             forge: given.forge,
+            writes,
             machine,
             deadline: now.saturating_add(given.limits.deadline),
             pending: None,
