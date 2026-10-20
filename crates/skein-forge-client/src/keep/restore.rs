@@ -1,5 +1,16 @@
 use super::{Domain, Env, Fact, Fresh, Limits, LiveRecord, Priority, Progress, RepositoryRecord, Scan, State, What};
 
+pub(crate) fn restore_writer(d: &mut Domain, env: &Env<Limits>, writer: crate::Writer) {
+    assert!(!d.keep.ready, "restore before restored");
+    match crate::identity::give(d, &env.limits, writer) {
+        crate::identity::Given::New | crate::identity::Given::Held => {}
+        crate::identity::Given::Refused => {
+            d.keep.failed = true;
+            d.fact(Fact::Refused);
+        }
+    }
+}
+
 pub(crate) fn restore_live(d: &mut Domain, env: &Env<Limits>, record: LiveRecord) {
     assert!(!d.keep.ready, "restore before restored");
     if !super::valid_participation(&record.watch)

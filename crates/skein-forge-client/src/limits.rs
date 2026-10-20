@@ -81,7 +81,9 @@ pub fn worst_case(l: &Limits) -> Option<u64> {
         )?)?
         .checked_add(crate::outbox::worst_case(l)?)?
         .checked_add(crate::keep::worst_case(l)?)?
-        // Deployment namespace and authenticated writer table share one cap.
+        .checked_add(Map::<u16, u64>::worst_case(l.repositories)?)?
+        // The configured namespace and writers share one cap;
+        // the writer table holds at most one per repository.
         .checked_add(u64::from(l.op_bytes))?
         // Owner names and in-flight operation copies are
         // independently owned; bound them even at simultaneous saturation.

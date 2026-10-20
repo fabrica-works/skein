@@ -5,11 +5,11 @@
 //! `step` changes state from a parent event; `fire` expires one deadline;
 //! `resume` sends one eligible call. The parent commits emitted progress
 //! before releasing any call from that decision.
-use crate::{Event, Fact, Limits, Priority, Request, Resource, Stored, outbox};
+use crate::{Event, Fact, Limits, Priority, Request, Resource, Stored, Writer, outbox};
 use crate::{bounds, calls, keep};
 use alloc::boxed::Box;
 use skein_forge::api;
-use skein_lib::{Deadlines, Env, Id, Queue, Rng, Time};
+use skein_lib::{Deadlines, Env, Id, Map, Queue, Rng, Time};
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub(crate) enum Alarm {
     Window,
@@ -23,6 +23,7 @@ pub(crate) enum Alarm {
 #[derive(Debug)]
 pub struct Domain {
     pub(crate) config: Option<crate::Config>,
+    pub(crate) writers: Map<u16, u64>,
     pub(crate) calls: calls::Calls,
     pub(crate) alarms: Deadlines<Alarm>,
     pub(crate) rng: Rng,
@@ -72,8 +73,15 @@ impl Domain {
         let alarms = alarms.checked_add(l.resources).expect("validated alarm capacity");
         let alarms = alarms.checked_add(l.repositories).expect("validated alarm capacity");
         let alarms = alarms.checked_add(2).expect("validated alarm capacity");
+        let mut writers = Map::with_capacity(l.repositories);
+        if let Some(config) = &config {
+            for writer in &config.writers {
+                writers.insert(writer.forge, writer.author).expect("configured writers fit");
+            }
+        }
         Domain {
             config,
+            writers,
             identity_used: false,
             calls: calls::Calls::new(l),
             alarms: Deadlines::with_capacity(alarms),
@@ -137,6 +145,20 @@ pub const fn max_out(l: &Limits) -> u32 {
     let batch = l.resources.saturating_mul(2).saturating_add(l.repositories.saturating_mul(2)).saturating_add(3);
     if batch > 4 { batch } else { 4 }
 }
+/// Give a forge's writer once its access is known (forge-client.md, 7.1).
+/// It saves a new writer as a `Writer` row and returns true. The same
+/// author again changes nothing and returns true. A writer `give` refuses
+/// returns false and changes nothing.
+pub fn writer(d: &mut Domain, env: &Env<Limits>, writer: Writer, out: &mut Queue<Request>) -> bool {
+    match crate::identity::give(d, &env.limits, writer) {
+        crate::identity::Given::New => {
+            out.push(Request::Save { record: Stored::Writer(writer) });
+            true
+        }
+        crate::identity::Given::Held => true,
+        crate::identity::Given::Refused => false,
+    }
+}
 /// Decide one parent event and emit the records and effects of that decision.
 pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Request>) {
     match event {
@@ -161,6 +183,7 @@ pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Req
             match record {
                 Stored::Live(record) => keep::restore::restore_live(d, env, record),
                 Stored::Repository(record) => keep::restore::restore_repository(d, env, record),
+                Stored::Writer(writer) => keep::restore::restore_writer(d, env, writer),
             }
         }
         Event::Restored { clock } => {

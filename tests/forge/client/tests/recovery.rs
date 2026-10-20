@@ -90,3 +90,29 @@ fn a_held_branch_is_written_again_only_after_remake() {
     );
     world.finish();
 }
+
+#[test]
+fn a_writer_given_at_runtime_is_kept_across_restart() {
+    let mut world = World::new(Settings { writer: false, ..Settings::calm(41) });
+    world.make(fixtures::issue(1));
+    assert!(world.outcomes().contains(&(1, Outcome::Failed(skein_forge::api::Error::Forbidden))));
+    assert!(world.give_writer(1));
+    let mut entry = fixtures::issue(2);
+    let skein_forge::api::Write::CreateIssue { key, .. } = &mut entry.effect.write else {
+        panic!("issue fixture creates an issue");
+    };
+    *key = Box::from(&b"\x01\x00\x03kitdeployment:gate"[..]);
+    world.make(entry);
+    assert!(world.entry(2).expect("entry committed before restart").attempt.is_none());
+    world.restart();
+    world.run_for(30);
+    assert!(
+        world
+            .outcomes()
+            .iter()
+            .any(|(entry, outcome)| { *entry == 2 && matches!(outcome, Outcome::Made { made: Made::Created(_), .. }) })
+    );
+    assert_eq!(world.stats().writes, 1);
+    assert_eq!(world.stats().creations, 1);
+    world.finish();
+}

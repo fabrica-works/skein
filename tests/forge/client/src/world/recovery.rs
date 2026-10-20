@@ -7,7 +7,7 @@ impl World {
         self.blocked = Time::ZERO;
         self.generation = self.generation.checked_add(1).expect("world generation bound");
         self.stats.restarts = self.stats.restarts.saturating_add(1);
-        self.client = configured(&self.env.limits, self.seed);
+        self.client = configured(&self.env.limits, self.seed, self.writer);
         // Decision reads belong to the former process, and are reissued by
         // the parent after cold recovery, rather than restored as effects.
         self.readers = Map::with_capacity(16);

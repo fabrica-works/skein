@@ -467,6 +467,7 @@ impl World {
                     let key = match record {
                         Stored::Live(record) => Key::Live(record.watch.resource.clone()),
                         Stored::Repository(record) => Key::Repository(record.repository),
+                        Stored::Writer(writer) => Key::Writer(writer.forge),
                     };
                     self.durable.insert(key, record.clone()).expect("owner store capacity");
                 }

@@ -21,7 +21,7 @@ const _: () = {
 #[must_use]
 pub fn stored(row: &Stored) -> Option<u64> {
     match row {
-        Stored::Repository(_) => Some(0),
+        Stored::Repository(_) | Stored::Writer(_) => Some(0),
         Stored::Live(row) => {
             let mut held = match &row.watch.resource.what {
                 What::Branch(branch) => u64::try_from(branch.len()).ok()?,

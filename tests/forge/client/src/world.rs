@@ -37,17 +37,19 @@ pub const LIMITS: Limits = Limits {
 pub struct Settings {
     pub seed: u64,
     pub faults: bool,
+    /// Whether the client starts with its forge's writer (forge-client.md, 7.1).
+    pub writer: bool,
     pub facts: u32,
     pub history: u32,
 }
 impl Settings {
     #[must_use]
     pub const fn calm(seed: u64) -> Settings {
-        Settings { seed, faults: false, facts: 8, history: 0 }
+        Settings { seed, faults: false, writer: true, facts: 8, history: 0 }
     }
     #[must_use]
     pub const fn random(seed: u64) -> Settings {
-        Settings { seed, faults: true, facts: 8, history: 20 }
+        Settings { seed, faults: true, writer: true, facts: 8, history: 20 }
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -102,6 +104,7 @@ pub struct World {
     sequence: u64,
     generation: u64,
     seed: u64,
+    writer: bool,
     blocked: Time,
     stats: Stats,
 }
@@ -136,7 +139,7 @@ impl World {
         forge::grant(&mut neighbour, b"org/repo", 1, raw::Permission::Admin);
         forge::grant(&mut neighbour, b"org/repo", 2, raw::Permission::Write);
         let mut world = World {
-            client: configured(&limits, settings.seed),
+            client: configured(&limits, settings.seed, settings.writer),
             env: Env { now: Time::from_nanos(100_000_000_000), wall: Wall::from_nanos(100_000_000_000), limits },
             forge: neighbour,
             forge_env: Env { now: Time::from_nanos(100_000_000_000), wall: Wall::EPOCH, limits: config },
@@ -161,6 +164,7 @@ impl World {
             sequence: 0,
             generation: 1,
             seed: settings.seed,
+            writer: settings.writer,
             blocked: Time::ZERO,
             stats: Stats {
                 digest: 0,
@@ -205,6 +209,18 @@ impl World {
         client::step(&mut self.client, &self.env, event, &mut self.client_out);
         self.take_client();
         self.client.reclaim();
+    }
+    /// Give the forge's authenticated writer and commit its row (forge-client.md, 7.1).
+    pub fn give_writer(&mut self, author: u64) -> bool {
+        let given = client::writer(
+            &mut self.client,
+            &self.env,
+            client::Writer { forge: REPO.forge, author },
+            &mut self.client_out,
+        );
+        self.take_client();
+        self.client.reclaim();
+        given
     }
     pub fn keep(&mut self, watches: Box<[Watch]>) {
         self.event(Event::Keep { owner: Token::new(1), watches });
@@ -284,7 +300,10 @@ impl World {
         assert!(
             self.pending.is_empty() && self.to_forge.is_empty() && self.to_client.is_empty() && self.readers.is_empty()
         );
-        assert!(self.durable.is_empty() && self.entries.is_empty(), "outbox and working set settled");
+        assert!(self.entries.is_empty(), "outbox settled");
+        for (_, record) in &self.durable {
+            assert!(matches!(record, Stored::Writer(_)), "working set settled; writer rows remain");
+        }
         assert!(!self.client.is_ready());
         assert_eq!(self.forge.observations_lost(), 0);
     }
@@ -343,6 +362,7 @@ impl World {
                     let key = match &record {
                         Stored::Live(record) => Key::Live(record.watch.resource.clone()),
                         Stored::Repository(record) => Key::Repository(record.repository),
+                        Stored::Writer(writer) => Key::Writer(writer.forge),
                     };
                     self.durable.insert(key, record).expect("world durable limit");
                 }
@@ -703,13 +723,13 @@ fn config(faults: bool) -> Config {
     }
 }
 
-fn configured(limits: &client::Limits, seed: u64) -> client::Domain {
+fn configured(limits: &client::Limits, seed: u64, writer: bool) -> client::Domain {
     client::Domain::configured(
         limits,
         seed,
         client::Config {
             namespace: Box::from(&b"kit"[..]),
-            writers: Box::new([client::Writer { forge: REPO.forge, author: 1 }]),
+            writers: if writer { Box::new([client::Writer { forge: REPO.forge, author: 1 }]) } else { Box::new([]) },
         },
     )
     .expect("world authenticated writer")

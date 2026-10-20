@@ -62,6 +62,7 @@ impl Harness {
                     let key = match &record {
                         Stored::Live(record) => Key::Live(record.watch.resource.clone()),
                         Stored::Repository(record) => Key::Repository(record.repository),
+                        Stored::Writer(writer) => Key::Writer(writer.forge),
                     };
                     self.records.insert(key, record).expect("store fits");
                 }
@@ -143,7 +144,7 @@ impl Harness {
     pub(in crate::tests) fn record(&self, resource: &Resource) -> &LiveRecord {
         match self.records.get(&Key::Live(resource.clone())).expect("saved live row") {
             Stored::Live(row) => row,
-            Stored::Repository(_) => panic!("live row shape"),
+            Stored::Repository(_) | Stored::Writer(_) => panic!("live row shape"),
         }
     }
 }

@@ -1,8 +1,9 @@
 //! Deployment keys and authenticated forge writers (forge-client.md, section 6).
 //!
-//! The client's configuration names writers and key framing. This module
-//! keeps no runtime state and never decides a task's authority. Validation
-//! rejects unbounded or ambiguous keys before the client accepts it.
+//! The client's configuration names the key framing and the writers known
+//! at start; the owner gives others at runtime, and the domain's table holds
+//! both. This module decides which writer may join that table, and never
+//! decides a task's authority.
 use crate::{Domain, Limits};
 use alloc::boxed::Box;
 use skein_forge::api;
@@ -52,7 +53,6 @@ pub struct Config {
 pub(crate) fn valid(config: &Config, l: &Limits) -> bool {
     if config.namespace.is_empty()
         || config.namespace.len() > usize::from(u16::MAX)
-        || config.writers.is_empty()
         || config.writers.len() > usize::try_from(l.repositories).expect("u32 fits usize")
     {
         return false;
@@ -80,17 +80,34 @@ pub(crate) fn valid(config: &Config, l: &Limits) -> bool {
 }
 
 pub(crate) fn writer(d: &Domain, repo: api::Repository, author: u64) -> bool {
-    match &d.config {
-        Some(config) => {
-            for writer in &config.writers {
-                if writer.forge == repo.forge && writer.author == author {
-                    return true;
-                }
-            }
-            false
-        }
-        None => false,
+    d.writers.get(&repo.forge) == Some(&author)
+}
+
+/// How a writer given or restored stands against its forge's (7.1).
+pub(crate) enum Given {
+    New,
+    Held,
+    Refused,
+}
+
+/// `Held` when the forge already has this author, configured, given or
+/// restored. `Refused` with no configuration, for author 0, for another
+/// author of the forge, or for a new forge when the table holds
+/// `repositories` writers. `New` otherwise, inserted into the table.
+pub(crate) fn give(d: &mut Domain, l: &Limits, writer: Writer) -> Given {
+    if d.config.is_none() || writer.author == 0 {
+        return Given::Refused;
     }
+    match d.writers.get(&writer.forge) {
+        Some(author) if *author == writer.author => return Given::Held,
+        Some(_) => return Given::Refused,
+        None => {}
+    }
+    if d.writers.len() >= l.repositories {
+        return Given::Refused;
+    }
+    d.writers.insert(writer.forge, writer.author).expect("writer admission checked");
+    Given::New
 }
 
 pub(crate) fn historical(d: &Domain, key: &[u8]) -> bool {
@@ -116,15 +133,5 @@ pub(crate) fn historical(d: &Domain, key: &[u8]) -> bool {
 }
 
 pub(crate) fn connected(d: &Domain, repo: api::Repository) -> bool {
-    match &d.config {
-        Some(config) => {
-            for writer in &config.writers {
-                if writer.forge == repo.forge {
-                    return true;
-                }
-            }
-            false
-        }
-        None => false,
-    }
+    d.writers.contains_key(&repo.forge)
 }

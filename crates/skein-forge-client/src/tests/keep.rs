@@ -149,7 +149,7 @@ fn time_paging_keeps_the_tie_replay_point_when_an_item_moves_during_the_pass() {
             assert_eq!(record.mark, Some(at(100)));
             assert_eq!(record.clock, at(107));
         }
-        Stored::Live(_) => panic!("repository row"),
+        Stored::Live(_) | Stored::Writer(_) => panic!("repository row"),
     }
 }
 #[test]

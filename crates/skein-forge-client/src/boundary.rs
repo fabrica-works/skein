@@ -4,6 +4,7 @@
 //! the top keeps durable outbox entries. It never knows tasks beyond numbers.
 //! `Event::Make` starts or recovers an entry after its commit; `Progress`
 //! updates the top's copy before a write call; `Outcome` settles it.
+use crate::Writer;
 use alloc::boxed::Box;
 use skein_forge::api::{Answer, Error, Op, Read, Repository};
 use skein_forge::api::{Commit, Write};
@@ -190,6 +191,8 @@ pub enum Stored {
     Live(LiveRecord),
     /// A repository scan row.
     Repository(RepositoryRecord),
+    /// A forge's writer, given at runtime (forge-client.md, 7.1).
+    Writer(Writer),
 }
 /// The key under which a client working-set record is saved.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -198,6 +201,8 @@ pub enum Key {
     Live(Resource),
     /// The key for a repository scan row.
     Repository(Repository),
+    /// The key for a writer row: its forge.
+    Writer(u16),
 }
 /// What a settled write made at the forge.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

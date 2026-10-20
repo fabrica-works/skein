@@ -6,6 +6,7 @@ mod keep;
 mod locate;
 mod outbox;
 mod recovery;
+mod writer;
 use crate::{Domain, Event, Fact, Limits, Priority, Request, worst_case};
 use alloc::boxed::Box;
 use skein_forge::api::{self, Answer, Error, Op, Read, Repository, Write};
@@ -503,7 +504,6 @@ fn deployment_config_and_decoded_key_frames_are_checked() {
     }
     let configs = [
         crate::Config { namespace: Box::new([]), writers: Box::new([crate::Writer { forge: REPO.forge, author: 1 }]) },
-        crate::Config { namespace: Box::from(&b"kit"[..]), writers: Box::new([]) },
         crate::Config {
             namespace: Box::from(&b"kit"[..]),
             writers: Box::new([crate::Writer { forge: REPO.forge, author: 0 }]),
