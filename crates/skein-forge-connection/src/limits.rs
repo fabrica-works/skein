@@ -439,6 +439,18 @@ pub fn documents(l: &Limits) -> documents::Limits {
         target_bytes: l.target_bytes,
     }
 }
+/// GitHub documents use the same component bounds in their dialect's vocabulary.
+pub(crate) fn github_documents(l: &Limits) -> skein_forge::github::limits::Limits {
+    let docs = documents(l);
+    skein_forge::github::limits::Limits {
+        json: docs.json,
+        writer: docs.writer,
+        string_bytes: docs.string_bytes,
+        body_bytes: docs.body_bytes,
+        inner: docs.inner,
+        target_bytes: docs.target_bytes,
+    }
+}
 /// The body stream's demands are chunked; heads use the stream's complete send cap.
 #[must_use]
 pub fn http(l: &Limits, tls: bool, io: &skein_io::Limits) -> skein_http::client::Limits {
@@ -482,10 +494,13 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
     use skein_forge::forgejo::plans::tables::{RepositoryEntry, UserEntry};
     use skein_lib::{Id, Intake, List, Map, Queue, Slab, Token};
     let docs = documents(l);
+    let fixed_decoder =
+        size_of::<skein_forge::github::decode::Decoder>().max(size_of::<skein_forge::forgejo::client::Decoder>());
     let raw = u64::from(s.answer_bytes).checked_mul(2)?;
     // Conservatively covers the boxed decoder state and both builder/delivered
     // rows: 32 scalar strings, two bodies, three lists of texts/users, and the
-    // walker's depth stack. These envelopes exceed every 06.x decoder's fields.
+    // walker's depth stack. Both dialects fit these payload envelopes;
+    // each boxed decoder also holds its fixed builder state.
     let inner = u64::from(l.string_bytes)
         .checked_mul(3)?
         .checked_add(u64::try_from(size_of::<skein_forge::forgejo::document::User>()).ok()?.checked_mul(2)?)?
@@ -495,7 +510,8 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(u64::from(l.inner).checked_mul(inner)?)?
         .checked_add(u64::from(l.body_bytes).checked_mul(2)?)?
         .checked_add(u64::from(l.depth).checked_mul(128)?)?
-        .checked_add(4096)?;
+        .checked_add(4096)?
+        .checked_add(u64::try_from(fixed_decoder).ok()?)?;
     let socket = Intake::worst_case(s.io.intake)?
         .checked_add(u64::from(s.io.receive))?
         .checked_add(u64::from(s.io.output))?
@@ -562,7 +578,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(Map::<Token, Id<crate::connection::Connection>>::worst_case(l.connections)?)?
         .checked_add(Slab::<crate::connection::Connection>::worst_case(l.connections)?)?
         .checked_add(List::<Option<Token>>::worst_case(l.forges)?)?
-        .checked_add(List::<Option<skein_forge::forgejo::plans::start::Plan>>::worst_case(l.forges)?)?
+        .checked_add(List::<Option<crate::component::OwnPlan>>::worst_case(l.forges)?)?
         .checked_add(hooks)?
         .checked_add(calls)?
         .checked_add(held)?

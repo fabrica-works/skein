@@ -1,7 +1,7 @@
 //! Waiting calls and returned answers (forge-connection.md, sections 2 and 8).
 use crate::{
     boundary::{Answered, Event, Request},
-    connection::{Connection, Phase},
+    connection::{self, Connection, Exchange, Phase},
     limits::{self, Limits, Shared, Unusable},
     settings::Settings,
     start,
@@ -11,7 +11,7 @@ use skein_lib::{Env, Id, List, Map, Queue, Slab, Time, Token};
 mod calls;
 use skein_forge::api;
 use skein_forge::forgejo::plans::{
-    Body, Failure, Heard,
+    Body, Heard,
     plan::{Plan, Step},
     start::Read,
     tables::Tables,
@@ -31,10 +31,18 @@ pub struct Diagnostics {
     pub malformed: u64,
 }
 #[derive(Debug)]
+pub(crate) enum CallPlan {
+    Forgejo(Plan),
+}
+#[derive(Debug)]
+pub(crate) enum OwnPlan {
+    Forgejo(skein_forge::forgejo::plans::start::Plan),
+}
+#[derive(Debug)]
 pub(crate) struct Waiting {
     pub repository: api::Repository,
     pub op: Option<api::Op>,
-    pub plan: Option<Plan>,
+    pub plan: Option<CallPlan>,
     pub page_size: u32,
     pub connection: Option<Token>,
     pub cost: u32,
@@ -64,7 +72,7 @@ pub struct Component {
     connections: Map<Token, Id<Connection>>,
     connection_slab: Slab<Connection>,
     start_tokens: List<Option<Token>>,
-    start_plans: List<Option<skein_forge::forgejo::plans::start::Plan>>,
+    start_plans: List<Option<OwnPlan>>,
     next_token: u64,
     wake: Option<Time>,
     ended: bool,
@@ -343,7 +351,7 @@ impl Component {
                 if let Some(id) = self.connections.get(&owner)
                     && let Some(c) = self.connection_slab.get_mut(*id)
                 {
-                    c.failed(Failure::Unseen);
+                    c.failed(connection::Failure::Unseen);
                 }
             }
             skein_io::Event::Closed { owner } => {
@@ -536,21 +544,21 @@ impl Component {
                 {
                     let holder = self.start_plans.get_mut(at).expect("configured forge");
                     if holder.is_none() {
-                        *holder = Some(skein_forge::forgejo::plans::start::Plan::new(read));
+                        *holder = Some(OwnPlan::Forgejo(skein_forge::forgejo::plans::start::Plan::new(read)));
                     }
                     let plan = holder.as_mut().expect("active start read");
-                    let skein_forge::forgejo::plans::start::Step::Send(exchange) = plan.begin() else {
-                        unreachable!("a new start plan sends its read");
-                    };
                     let forge = self.settings.forges.get(at).expect("configured forge");
-                    c.start(env, forge, &self.settings.user_agent, exchange.request, exchange.range)
-                        .expect("checked start request");
+                    send_start(c, env, forge, &self.settings.user_agent, plan);
                 }
                 c.pump(env, io, below_room.saturating_sub(io.len().saturating_sub(below)).saturating_sub(1));
                 if let Some(heard) = c.heard() {
+                    let heard = match heard {
+                        connection::Heard::Forgejo(heard) => heard,
+                        connection::Heard::GitHub(_) => unreachable!("Forgejo start has a Forgejo connection"),
+                    };
                     let plan = self.start_plans.get_mut(at).expect("configured forge");
                     let step = match plan {
-                        Some(plan) => plan.heard(heard),
+                        Some(OwnPlan::Forgejo(plan)) => plan.heard(heard),
                         None => None,
                     };
                     if let Some(skein_forge::forgejo::plans::start::Step::Done(heard)) = step {
@@ -634,7 +642,7 @@ impl Component {
         let plan = self.start_plans.get_mut(at).expect("configured forge");
         *plan = None;
         if let Some(read) = start_read(*self.starts.get(at).expect("configured start")) {
-            *plan = Some(skein_forge::forgejo::plans::start::Plan::new(read));
+            *plan = Some(OwnPlan::Forgejo(skein_forge::forgejo::plans::start::Plan::new(read)));
         }
         owner
     }
@@ -660,6 +668,32 @@ impl Component {
         }
         None
     }
+}
+
+fn send_start(
+    connection: &mut Connection,
+    env: &Env<Limits>,
+    forge: &crate::settings::Forge,
+    user_agent: &[u8],
+    plan: &mut OwnPlan,
+) {
+    let step = match plan {
+        OwnPlan::Forgejo(plan) => plan.begin(),
+    };
+    let skein_forge::forgejo::plans::start::Step::Send(exchange) = step else {
+        unreachable!("a new start plan sends its read");
+    };
+    let authorization =
+        skein_forge::forgejo::credential::authorization(&forge.access.as_ref().expect("held access").credential)
+            .expect("checked credential length");
+    connection
+        .start(
+            env,
+            forge,
+            user_agent,
+            Exchange::Forgejo { request: exchange.request, range: exchange.range, authorization },
+        )
+        .expect("checked start request");
 }
 
 fn start_read(state: Start) -> Option<Read> {

@@ -1,7 +1,8 @@
 //! Forge connection (forge-connection.md, sections 3 and 8).
 use alloc::boxed::Box;
-use skein_forge::forgejo::plans::{Body, Failure, Fields, Heard, plan::Range};
+use skein_forge::forgejo::plans::{self, Fields, plan::Range};
 use skein_forge::forgejo::{decode, header};
+use skein_forge::github;
 
 /// A forge connection's state; the component arms its deadline.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -23,26 +24,102 @@ pub enum Phase {
 use crate::{
     grow::{Grow, Tail},
     limits::{self, Limits, Shared},
-    settings::{Forge, Transport},
+    settings::{Forge, Kind, Transport},
 };
 use skein_forge::forgejo::{client as documents, request};
 use skein_http::client as http;
 use skein_json::tokenizer;
 use skein_lib::{
-    Env, List, Queue, Time, Token, Writer, bytes,
+    Env, List, Queue, Secret, Time, Token, Writer, bytes,
     stream::{Down, Read, Up},
 };
+/// A component-selected request and its complete Authorization value.
+#[derive(Debug)]
+pub(crate) enum Exchange {
+    Forgejo {
+        request: request::Request,
+        range: Option<Range>,
+        authorization: Secret,
+    },
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the component starts GitHub exchanges in task 24; connection tests exercise them")
+    )]
+    GitHub {
+        request: github::request::Request,
+        authorization: Option<Secret>,
+    },
+}
+/// Exchange events belong to the connection's dialect.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub(crate) enum Heard {
+    Forgejo(plans::Heard),
+    GitHub(github::plans::Heard),
+}
+/// The selected encoder's refusal.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) enum Refusal {
+    Forgejo(documents::Refusal),
+    GitHub(github::request::Refusal),
+}
+/// Whether any request byte may have reached the peer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Failure {
+    Unseen,
+    Seen,
+}
+#[derive(Debug)]
+enum Request {
+    Forgejo(request::Request),
+    GitHub(github::request::Request),
+}
+#[derive(Debug)]
+enum Decoder {
+    Forgejo(Box<documents::Decoder>),
+    GitHub(Box<github::decode::Decoder>),
+}
+#[derive(Debug)]
+enum Body {
+    Forgejo(plans::Body),
+    GitHub(github::plans::Body),
+}
+impl Body {
+    fn closes(&self) -> bool {
+        match self {
+            Self::Forgejo(body) => match body {
+                plans::Body::Malformed(_) | plans::Body::Raw { more: true, .. } => true,
+                plans::Body::Document(_) | plans::Body::Raw { more: false, .. } | plans::Body::Empty => false,
+            },
+            Self::GitHub(body) => match body {
+                github::plans::Body::Malformed(_) | github::plans::Body::Raw { more: true, .. } => true,
+                github::plans::Body::Document(_)
+                | github::plans::Body::Raw { more: false, .. }
+                | github::plans::Body::Empty => false,
+            },
+        }
+    }
+}
+enum JsonStep {
+    Demand(tokenizer::Request),
+    Row(Heard, tokenizer::Request),
+    Done(Body),
+    Malformed(decode::Malformed),
+}
 /// One exchange's response body state.
 #[derive(Debug)]
 enum Receiving {
-    Json(documents::Decoder),
+    Json(Decoder),
     Raw { grow: Grow, max: u32, remaining: Option<u64> },
     Tail { tail: Tail, read: u64, remaining: Option<u64> },
     Empty,
 }
+// Host, User-Agent, Accept, pin, Authorization and Content-Type;
+// HTTP adds Content-Length outside this list.
+const GITHUB_HEADERS: u32 = 6;
 /// One connection's machines, socket identity, request and pending output.
 pub(crate) struct Connection {
     pub(crate) forge: u16,
+    kind: Kind,
     pub(crate) phase: Phase,
     pub(crate) deadline: Option<Time>,
     pub(crate) socket: Option<Token>,
@@ -60,7 +137,7 @@ pub(crate) struct Connection {
     json_down: Queue<Down>,
     json_next: Option<tokenizer::Request>,
     heard: Queue<Heard>,
-    request: Option<request::Request>,
+    request: Option<Request>,
     receive: Receiving,
     done: Option<Body>,
     after: u64,
@@ -79,6 +156,7 @@ impl Connection {
         };
         Self {
             forge: forge.number,
+            kind: forge.kind,
             phase: Phase::Connecting,
             deadline: Some(deadline),
             socket: None,
@@ -111,22 +189,70 @@ impl Connection {
         env: &Env<Limits>,
         forge: &Forge,
         user_agent: &[u8],
-        request: request::Request,
-        range: Option<Range>,
-    ) -> Result<(), documents::Refusal> {
-        let encoded = documents::encode(&request, &limits::documents(&env.limits))?;
-        let mut headers = List::with_capacity(5);
-        headers
-            .push(field(b"Host", &crate::settings::host(forge).expect("checked forge host")))
-            .expect("five header fields");
-        let auth =
-            skein_forge::forgejo::credential::authorization(&forge.access.as_ref().expect("held access").credential)
-                .expect("checked credential length");
-        headers.push(field(b"Authorization", auth.expose())).expect("five header fields");
-        headers.push(field(b"User-Agent", user_agent)).expect("five header fields");
-        let body = match &encoded.body {
+        exchange: Exchange,
+    ) -> Result<(), Refusal> {
+        assert_eq!(self.kind, forge.kind, "connection belongs to its forge dialect");
+        let (request, method, target, upload, mut headers, range) = match exchange {
+            Exchange::Forgejo { request, range, authorization } => {
+                assert_eq!(self.kind, Kind::Forgejo, "exchange belongs to its connection dialect");
+                let encoded = match documents::encode(&request, &limits::documents(&env.limits)) {
+                    Ok(encoded) => encoded,
+                    Err(error) => return Err(Refusal::Forgejo(error)),
+                };
+                // Host, Authorization, User-Agent, Content-Type and Range; HTTP adds Content-Length.
+                let mut headers = List::with_capacity(5);
+                headers
+                    .push(field(b"Host", &crate::settings::host(forge).expect("checked forge host")))
+                    .expect("five Forgejo header fields");
+                headers.push(field(b"Authorization", authorization.expose())).expect("five Forgejo header fields");
+                headers.push(field(b"User-Agent", user_agent)).expect("five Forgejo header fields");
+                let method = match encoded.method {
+                    request::Method::Get => skein_http::Method::Get,
+                    request::Method::Post => skein_http::Method::Post,
+                    request::Method::Put => skein_http::Method::Put,
+                    request::Method::Patch => skein_http::Method::Patch,
+                    request::Method::Delete => skein_http::Method::Delete,
+                };
+                (Request::Forgejo(request), method, encoded.target, encoded.body, headers, range)
+            }
+            Exchange::GitHub { request, authorization } => {
+                assert_eq!(self.kind, Kind::GitHub, "exchange belongs to its connection dialect");
+                let encoded = match github::request::encode(&request, &limits::github_documents(&env.limits)) {
+                    Ok(encoded) => encoded,
+                    Err(error) => return Err(Refusal::GitHub(error)),
+                };
+                match (encoded.auth, &authorization) {
+                    (github::request::Auth::None, None)
+                    | (github::request::Auth::App | github::request::Auth::Installation, Some(_)) => {}
+                    (github::request::Auth::None, Some(_))
+                    | (github::request::Auth::App | github::request::Auth::Installation, None) => {
+                        unreachable!("component selects Authorization according to Encoded.auth");
+                    }
+                }
+                let mut headers = List::with_capacity(GITHUB_HEADERS);
+                headers
+                    .push(field(b"Host", &crate::settings::host(forge).expect("checked forge host")))
+                    .expect("six GitHub header fields");
+                headers.push(field(b"User-Agent", user_agent)).expect("six GitHub header fields");
+                for (name, value) in github::request::fields(&encoded) {
+                    headers.push(field(name, value)).expect("six GitHub header fields");
+                }
+                if let Some(authorization) = authorization {
+                    headers.push(field(b"Authorization", authorization.expose())).expect("six GitHub header fields");
+                }
+                let method = match encoded.method {
+                    github::request::Method::Get => skein_http::Method::Get,
+                    github::request::Method::Post => skein_http::Method::Post,
+                    github::request::Method::Put => skein_http::Method::Put,
+                    github::request::Method::Patch => skein_http::Method::Patch,
+                    github::request::Method::Delete => skein_http::Method::Delete,
+                };
+                (Request::GitHub(request), method, encoded.target, encoded.body, headers, None)
+            }
+        };
+        let body = match &upload {
             Some(body) => {
-                headers.push(field(b"Content-Type", b"application/json")).expect("five header fields");
+                headers.push(field(b"Content-Type", b"application/json")).expect("dialect's header capacity");
                 http::Body::Length(u64::try_from(body.len()).expect("bounded body"))
             }
             None => http::Body::None,
@@ -142,32 +268,19 @@ impl Connection {
             value.put(decimal.as_bytes()).expect("range measured");
             headers
                 .push(skein_http::Header { name: Box::from(&b"Range"[..]), value: value.finish() })
-                .expect("five header fields");
+                .expect("five Forgejo header fields");
         }
         self.request = Some(request);
-        self.upload = encoded.body;
+        self.upload = upload;
         self.uploaded = 0;
         self.raw_range = range.unwrap_or(Range::Head(self.raw_cap));
         self.done = None;
         self.written = false;
         self.after = 0;
         self.phase = Phase::Sending { written: false };
-        let method = match encoded.method {
-            request::Method::Get => skein_http::Method::Get,
-            request::Method::Post => skein_http::Method::Post,
-            request::Method::Put => skein_http::Method::Put,
-            request::Method::Patch => skein_http::Method::Patch,
-            request::Method::Delete => skein_http::Method::Delete,
-        };
         self.http_down(
             env,
-            http::Request::Call(http::Call {
-                method,
-                target: encoded.target,
-                headers: headers.into_boxed(),
-                body,
-                close: false,
-            }),
+            http::Request::Call(http::Call { method, target, headers: headers.into_boxed(), body, close: false }),
         );
         if self.upload.is_some() {
             self.http_down(
@@ -319,7 +432,7 @@ impl Connection {
                         }
                         if *read > u64::from(env.limits.body_bytes_in) {
                             self.receive = Receiving::Empty;
-                            self.heard.push(Heard::Done(Body::Malformed(decode::Malformed::Bound { field: b"log" })));
+                            self.malformed(decode::Malformed::Bound { field: b"log" });
                             self.phase = Phase::Closed;
                             self.deadline = None;
                         } else {
@@ -344,7 +457,8 @@ impl Connection {
                                     unreachable!("raw body")
                                 }
                             };
-                            self.heard.push(Heard::Done(Body::Raw { more: true, bytes: grow.finish() }));
+                            let done = self.raw(grow.finish(), true);
+                            self.finished(done);
                             self.phase = Phase::Closed;
                             self.deadline = None;
                         } else {
@@ -360,18 +474,20 @@ impl Connection {
             http::Event::Done(reuse) => {
                 let done = match core::mem::replace(&mut self.receive, Receiving::Empty) {
                     Receiving::Json(_) => {
-                        self.done.take().unwrap_or(Body::Malformed(decode::Malformed::Missing { field: b"" }))
+                        self.done.take().unwrap_or(self.malformed_body(decode::Malformed::Missing { field: b"" }))
                     }
-                    Receiving::Empty => self.done.take().unwrap_or(Body::Empty),
-                    Receiving::Raw { grow, max, .. } => Body::Raw { more: grow.len() > max, bytes: grow.finish() },
-                    Receiving::Tail { tail, .. } => Body::Raw { more: tail.dropped(), bytes: tail.finish() },
+                    Receiving::Empty => self.done.take().unwrap_or(self.empty()),
+                    Receiving::Raw { grow, max, .. } => {
+                        let more = grow.len() > max;
+                        self.raw(grow.finish(), more)
+                    }
+                    Receiving::Tail { tail, .. } => {
+                        let more = tail.dropped();
+                        self.raw(tail.finish(), more)
+                    }
                 };
-                let close = reuse == http::Reuse::Close
-                    || match &done {
-                        Body::Malformed(_) | Body::Raw { more: true, .. } => true,
-                        Body::Document(_) | Body::Raw { more: false, .. } | Body::Empty => false,
-                    };
-                self.heard.push(Heard::Done(done));
+                let close = reuse == http::Reuse::Close || done.closes();
+                self.finished(done);
                 self.request = None;
                 self.upload = None;
                 self.phase = if close { Phase::Closed } else { Phase::Idle };
@@ -396,6 +512,41 @@ impl Connection {
         }
     }
     fn response(&mut self, env: &Env<Limits>, response: http::Response) {
+        match self.request.as_ref().expect("head belongs to a request") {
+            Request::Forgejo(_) => self.forgejo_response(env, response),
+            Request::GitHub(request) => {
+                let l = limits::github_documents(&env.limits);
+                let mut head = github::header::Head::new();
+                for field in &response.headers {
+                    github::header::field(&mut head, &field.name, &field.value, &l);
+                }
+                self.heard.push(Heard::GitHub(github::plans::Heard::Head { status: response.status, head }));
+                let kind = if response.status >= 300 {
+                    Some(github::document::Kind::Error)
+                } else {
+                    github::decode::kind(request)
+                };
+                match kind {
+                    Some(kind) => {
+                        self.receive = Receiving::Json(Decoder::GitHub(Box::new(github::decode::decoder(kind, &l))));
+                        self.json = tokenizer::Tokenizer::new(&l.json);
+                        self.json_down(env, tokenizer::Request::Next);
+                    }
+                    None => {
+                        if github_raw_request(request) {
+                            self.raw_range = Range::Head(self.shared.answer_bytes);
+                            self.raw_cap = self.shared.answer_bytes;
+                            self.begin_raw(env, response.framing);
+                        } else {
+                            self.receive = Receiving::Empty;
+                            self.http_down(env, http::Request::Discard);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fn forgejo_response(&mut self, env: &Env<Limits>, response: http::Response) {
         let date = match response.header(b"Date") {
             Some(date) => skein_forge::forgejo::time::http_date(date),
             None => None,
@@ -416,12 +567,15 @@ impl Connection {
             Some(value) => value.eq_ignore_ascii_case(b"close"),
             None => false,
         };
-        self.heard.push(Heard::Head {
+        self.heard.push(Heard::Forgejo(plans::Heard::Head {
             status: response.status,
             fields: Fields { date, retry_after, has_more, content_range, close },
-        });
+        }));
         let l = limits::documents(&env.limits);
-        let request = self.request.as_ref().expect("head belongs to a request");
+        let request = match self.request.as_ref().expect("head belongs to a request") {
+            Request::Forgejo(request) => request,
+            Request::GitHub(_) => unreachable!("Forgejo response belongs to a Forgejo request"),
+        };
         if response.status == 401 || response.status == 403 || response.status == 404 {
             self.receive = Receiving::Empty;
             self.http_down(env, http::Request::Discard);
@@ -432,36 +586,37 @@ impl Connection {
         match decoder {
             Some(mut decoder) => {
                 documents::keep_after(&mut decoder, self.after);
-                self.receive = Receiving::Json(decoder);
+                self.receive = Receiving::Json(Decoder::Forgejo(Box::new(decoder)));
                 self.json = tokenizer::Tokenizer::new(&l.json);
                 self.json_down(env, tokenizer::Request::Next);
             }
             None => {
                 if raw_request(request) {
-                    let remaining = match response.framing {
-                        http::Framing::Length(length) => Some(length),
-                        http::Framing::Empty => Some(0),
-                        http::Framing::Chunked | http::Framing::UntilEnd => None,
-                    };
-                    self.receive = match self.raw_range {
-                        Range::Head(max) => Receiving::Raw {
-                            grow: Grow::new(env.limits.chunk, max.saturating_add(1).min(self.raw_cap)),
-                            max,
-                            remaining,
-                        },
-                        Range::Tail(max) => Receiving::Tail {
-                            tail: Tail::new(env.limits.chunk, max.min(self.raw_cap)),
-                            read: 0,
-                            remaining,
-                        },
-                    };
-                    self.raw_demand(env);
+                    self.begin_raw(env, response.framing);
                 } else {
                     self.receive = Receiving::Empty;
                     self.http_down(env, http::Request::Discard);
                 }
             }
         }
+    }
+    fn begin_raw(&mut self, env: &Env<Limits>, framing: http::Framing) {
+        let remaining = match framing {
+            http::Framing::Length(length) => Some(length),
+            http::Framing::Empty => Some(0),
+            http::Framing::Chunked | http::Framing::UntilEnd => None,
+        };
+        self.receive = match self.raw_range {
+            Range::Head(max) => Receiving::Raw {
+                grow: Grow::new(env.limits.chunk, max.saturating_add(1).min(self.raw_cap)),
+                max,
+                remaining,
+            },
+            Range::Tail(max) => {
+                Receiving::Tail { tail: Tail::new(env.limits.chunk, max.min(self.raw_cap)), read: 0, remaining }
+            }
+        };
+        self.raw_demand(env);
     }
     fn raw_demand(&mut self, env: &Env<Limits>) {
         let count = match &self.receive {
@@ -515,24 +670,71 @@ impl Connection {
         let Some(decoder) = self.decoder() else {
             return;
         };
-        let step = documents::step(decoder, &limits::documents(&env.limits), &event);
+        let step = match decoder {
+            Decoder::Forgejo(decoder) => match documents::step(decoder, &limits::documents(&env.limits), &event) {
+                decode::Step::Demand(request) => JsonStep::Demand(request),
+                decode::Step::Row(row, request) => JsonStep::Row(Heard::Forgejo(plans::Heard::Row(row)), request),
+                decode::Step::Done(document) => JsonStep::Done(Body::Forgejo(plans::Body::Document(document))),
+                decode::Step::Malformed(error) => JsonStep::Malformed(error),
+            },
+            Decoder::GitHub(decoder) => {
+                let (request, step) = decoder.step(event);
+                match step {
+                    github::decode::Step::Demand => JsonStep::Demand(request),
+                    github::decode::Step::Row(row) => {
+                        JsonStep::Row(Heard::GitHub(github::plans::Heard::Row(row)), request)
+                    }
+                    github::decode::Step::Done(document) => {
+                        JsonStep::Done(Body::GitHub(github::plans::Body::Document(document)))
+                    }
+                    github::decode::Step::Malformed(error) => JsonStep::Malformed(error),
+                }
+            }
+        };
         match step {
-            decode::Step::Demand(request) => self.json_down(env, request),
-            decode::Step::Row(row, request) => {
-                self.heard.push(Heard::Row(row));
+            JsonStep::Demand(request) => self.json_down(env, request),
+            JsonStep::Row(heard, request) => {
+                self.heard.push(heard);
                 self.json_next = Some(request);
             }
-            decode::Step::Done(document) => {
-                self.done = Some(Body::Document(document));
-            }
-            decode::Step::Malformed(decode::Malformed::Json(tokenizer::Error::Stream(_))) => self.failed(Failure::Seen),
-            decode::Step::Malformed(error) => {
+            JsonStep::Done(body) => self.done = Some(body),
+            JsonStep::Malformed(decode::Malformed::Json(tokenizer::Error::Stream(_))) => self.failed(Failure::Seen),
+            JsonStep::Malformed(error) => {
                 self.receive = Receiving::Empty;
                 self.phase = Phase::Closed;
                 self.deadline = None;
-                self.heard.push(Heard::Done(Body::Malformed(error)));
+                self.malformed(error);
             }
         }
+    }
+    fn raw(&self, bytes: Box<[u8]>, more: bool) -> Body {
+        match self.kind {
+            Kind::Forgejo => Body::Forgejo(plans::Body::Raw { bytes, more }),
+            Kind::GitHub => Body::GitHub(github::plans::Body::Raw { bytes, more }),
+        }
+    }
+    fn empty(&self) -> Body {
+        match self.kind {
+            Kind::Forgejo => Body::Forgejo(plans::Body::Empty),
+            Kind::GitHub => Body::GitHub(github::plans::Body::Empty),
+        }
+    }
+    fn malformed_body(&self, error: decode::Malformed) -> Body {
+        match self.kind {
+            Kind::Forgejo => Body::Forgejo(plans::Body::Malformed(error)),
+            Kind::GitHub => Body::GitHub(github::plans::Body::Malformed(error)),
+        }
+    }
+    fn malformed(&mut self, error: decode::Malformed) {
+        let done = self.malformed_body(error);
+        self.finished(done);
+    }
+    fn finished(&mut self, done: Body) {
+        let heard = match done {
+            Body::Forgejo(body) => Heard::Forgejo(plans::Heard::Done(body)),
+            Body::GitHub(body) => Heard::GitHub(github::plans::Heard::Done(body)),
+        };
+        self.heard.push(heard);
     }
     pub fn failed(&mut self, failure: Failure) {
         if self.phase == Phase::Closed {
@@ -540,7 +742,17 @@ impl Connection {
         }
         self.phase = Phase::Closed;
         self.deadline = None;
-        self.heard.push(Heard::Failed(failure));
+        let heard = match self.kind {
+            Kind::Forgejo => Heard::Forgejo(plans::Heard::Failed(match failure {
+                Failure::Unseen => plans::Failure::Unseen,
+                Failure::Seen => plans::Failure::Seen,
+            })),
+            Kind::GitHub => Heard::GitHub(github::plans::Heard::Failed(match failure {
+                Failure::Unseen => github::plans::Failure::Unseen,
+                Failure::Seen => github::plans::Failure::Seen,
+            })),
+        };
+        self.heard.push(heard);
     }
     pub fn timeout(&mut self) {
         self.failed(if self.written { Failure::Seen } else { Failure::Unseen });
@@ -586,7 +798,10 @@ impl Connection {
     pub fn keep_after(&mut self, after: u64) {
         self.after = after;
         if let Some(decoder) = self.decoder() {
-            documents::keep_after(decoder, after);
+            match decoder {
+                Decoder::Forgejo(decoder) => documents::keep_after(decoder, after),
+                Decoder::GitHub(_) => unreachable!("keep_after belongs to Forgejo plans"),
+            }
         }
     }
     /// The answer's remaining payload room, set by the holding plan before its raw read.
@@ -595,7 +810,10 @@ impl Connection {
     }
     pub fn cut(&mut self, _env: &Env<Limits>) {
         if let Some(decoder) = self.decoder() {
-            let request = documents::cut(decoder);
+            let request = match decoder {
+                Decoder::Forgejo(decoder) => documents::cut(decoder),
+                Decoder::GitHub(_) => unreachable!("cut belongs to Forgejo plans"),
+            };
             self.json_next = Some(request);
         }
     }
@@ -623,7 +841,7 @@ pub(crate) fn routing_bytes() -> Option<u64> {
         .checked_add(Queue::<Heard>::worst_case(16)?)
 }
 impl Connection {
-    fn decoder(&mut self) -> Option<&mut documents::Decoder> {
+    fn decoder(&mut self) -> Option<&mut Decoder> {
         match &mut self.receive {
             Receiving::Json(decoder) => Some(decoder),
             Receiving::Raw { .. } | Receiving::Tail { .. } | Receiving::Empty => None,
@@ -701,5 +919,45 @@ fn raw_request(request: &request::Request) -> bool {
         | request::Request::DeleteRepoHook { .. }
         | request::Request::CreateUser { .. }
         | request::Request::DeleteBranch { .. } => false,
+    }
+}
+
+fn github_raw_request(request: &github::request::Request) -> bool {
+    use github::request::Request;
+    match request {
+        Request::Raw { .. } | Request::JobLog { .. } => true,
+        Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Mint { .. }
+        | Request::Reachable { .. }
+        | Request::Viewer
+        | Request::App
+        | Request::HookConfig
+        | Request::SetHook { .. }
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. } => false,
     }
 }

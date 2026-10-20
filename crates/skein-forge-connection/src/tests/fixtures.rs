@@ -442,10 +442,22 @@ pub struct ConnectionHarness {
 }
 impl ConnectionHarness {
     pub fn new() -> Self {
-        let limits = limits();
         let forge = settings().forges.into_boxed().into_iter().next().expect("one forge");
+        Self::with_forge(forge, shared())
+    }
+    pub fn github() -> Self {
+        Self::github_with(shared())
+    }
+    pub fn github_with(shared: Shared) -> Self {
+        let mut forge = settings().forges.into_boxed().into_iter().next().expect("one forge");
+        forge.kind = Kind::GitHub;
+        forge.access = None;
+        Self::with_forge(forge, shared)
+    }
+    fn with_forge(forge: Forge, shared: Shared) -> Self {
+        let limits = limits();
         let mut connection =
-            crate::connection::Connection::new(&forge, &limits, shared(), Time::from_nanos(10_000_000_000));
+            crate::connection::Connection::new(&forge, &limits, shared, Time::from_nanos(10_000_000_000));
         connection.socket = Some(skein_lib::Token::new(100));
         let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits };
         connection.connect(&env);
@@ -455,6 +467,26 @@ impl ConnectionHarness {
         self.connection.pump(&self.env, &mut self.io, 16);
     }
     pub fn answer(&mut self, response: &[u8]) -> List<skein_forge::forgejo::plans::Heard> {
+        let mut heard = List::with_capacity(16);
+        for event in self.answer_dialect(response).into_boxed() {
+            match event {
+                crate::connection::Heard::Forgejo(event) => heard.push(event).expect("fixture events fit"),
+                crate::connection::Heard::GitHub(_) => unreachable!("Forgejo harness answer"),
+            }
+        }
+        heard
+    }
+    pub fn github_answer(&mut self, response: &[u8]) -> List<skein_forge::github::plans::Heard> {
+        let mut heard = List::with_capacity(16);
+        for event in self.answer_dialect(response).into_boxed() {
+            match event {
+                crate::connection::Heard::GitHub(event) => heard.push(event).expect("fixture events fit"),
+                crate::connection::Heard::Forgejo(_) => unreachable!("GitHub harness answer"),
+            }
+        }
+        heard
+    }
+    fn answer_dialect(&mut self, response: &[u8]) -> List<crate::connection::Heard> {
         let mut wire = skein_world::stream::Wire::new(1);
         let mut written = false;
         let mut heard = List::with_capacity(16);
@@ -491,6 +523,15 @@ impl ConnectionHarness {
         self.sent = Box::from(wire.received.as_slice());
         heard
     }
+}
+/// Forgejo tests supply the component's complete token header.
+pub fn forgejo_exchange(
+    request: skein_forge::forgejo::request::Request,
+    range: Option<skein_forge::forgejo::plans::plan::Range>,
+) -> crate::connection::Exchange {
+    let credential = skein_forge::credential::Credential::Token(Secret::new(Box::from(TOKEN)));
+    let authorization = skein_forge::forgejo::credential::authorization(&credential).expect("fixture token");
+    crate::connection::Exchange::Forgejo { request, range, authorization }
 }
 pub fn known() -> Harness {
     let mut h = Harness::ready();
@@ -537,7 +578,12 @@ pub fn request_bytes(settings: Settings) -> Box<[u8]> {
     let mut h = ConnectionHarness::new();
     h.forge = settings.forges.into_boxed().into_iter().next().expect("one configured forge");
     h.connection
-        .start(&h.env, &h.forge, &settings.user_agent, skein_forge::forgejo::request::Request::User, None)
+        .start(
+            &h.env,
+            &h.forge,
+            &settings.user_agent,
+            forgejo_exchange(skein_forge::forgejo::request::Request::User, None),
+        )
         .expect("valid request");
     h.answer(&user_ok());
     h.sent

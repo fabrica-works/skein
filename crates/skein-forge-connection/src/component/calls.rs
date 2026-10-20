@@ -1,5 +1,6 @@
 //! Calls share the component's connections and entry-point output reservations.
-use super::{Body, Component, Heard, Phase, Plan, Start, Step, Waiting, api};
+use super::{Body, CallPlan, Component, Heard, Phase, Plan, Start, Step, Waiting, api};
+use crate::connection::{self, Exchange};
 use crate::{
     boundary::{Answered, Event},
     limits::{self, Limits, Listing, Shared},
@@ -17,7 +18,7 @@ impl Component {
         let waiting = self.waiting.get(id).expect("indexed call");
         let error = if waiting.cost == 0 { api::Error::Unavailable } else { api::Error::Timeout };
         let error = match &waiting.plan {
-            Some(plan) => plan.error(error),
+            Some(CallPlan::Forgejo(plan)) => plan.error(error),
             None => error,
         };
         if let Some(token) = waiting.connection {
@@ -87,7 +88,9 @@ impl Component {
             };
             if waiting.connection.is_none() {
                 if waiting.revoked {
-                    let error = waiting.plan.as_ref().expect("begun call").error(api::Error::Forbidden);
+                    let error = match waiting.plan.as_ref().expect("begun call") {
+                        CallPlan::Forgejo(plan) => plan.error(api::Error::Forbidden),
+                    };
                     self.finish(call, id, Err(error), up);
                     continue;
                 }
@@ -192,9 +195,12 @@ impl Component {
         }
         let op = waiting.op.take().expect("waiting operation");
         waiting.page_size = page_size(&op, cap, &env.limits, &self.shared);
-        let mut plan = Plan::new(waiting.repository, op);
-        let step =
-            plan.begin(bounds(waiting.page_size, &env.limits, &self.shared), &self.settings.word, &mut self.tables);
+        let mut plan = CallPlan::Forgejo(Plan::new(waiting.repository, op));
+        let step = match &mut plan {
+            CallPlan::Forgejo(plan) => {
+                plan.begin(bounds(waiting.page_size, &env.limits, &self.shared), &self.settings.word, &mut self.tables)
+            }
+        };
         waiting.plan = Some(plan);
         match step {
             Ok(step) => {
@@ -235,27 +241,36 @@ impl Component {
                 let waiting = self.waiting.get_mut(id).expect("indexed call");
                 if waiting.revoked {
                     c.deadline = Some(env.now.saturating_add(env.limits.idle));
-                    let error = waiting.plan.as_ref().expect("call plan").error(api::Error::Forbidden);
+                    let error = match waiting.plan.as_ref().expect("call plan") {
+                        CallPlan::Forgejo(plan) => plan.error(api::Error::Forbidden),
+                    };
                     self.finish(call, id, Err(error), up);
                     break;
                 }
-                let plan = waiting.plan.as_mut().expect("call plan");
+                let CallPlan::Forgejo(plan) = waiting.plan.as_mut().expect("call plan");
                 if let Some(request) = plan.pending() {
                     c.deadline = Some(waiting.deadline);
                     c.raw_room(plan.raw_room(self.shared.answer_bytes));
+                    let forge = self.settings.forges.get(at).expect("forge");
+                    let authorization = skein_forge::forgejo::credential::authorization(
+                        &forge.access.as_ref().expect("held access").credential,
+                    )
+                    .expect("checked credential length");
                     match c.start(
                         env,
-                        self.settings.forges.get(at).expect("forge"),
+                        forge,
                         &self.settings.user_agent,
-                        request.request,
-                        request.range,
+                        Exchange::Forgejo { request: request.request, range: request.range, authorization },
                     ) {
                         Ok(()) => {
                             c.keep_after(plan.after());
                         }
-                        Err(_) => {
+                        Err(connection::Refusal::Forgejo(_)) => {
                             self.finish(call, id, Err(api::Error::Refused), up);
                             break;
+                        }
+                        Err(connection::Refusal::GitHub(_)) => {
+                            unreachable!("Forgejo call has a Forgejo encoder");
                         }
                     }
                     self.waiting.get_mut(id).expect("call").charged = false;
@@ -268,26 +283,19 @@ impl Component {
                 waiting.charged = true;
             }
             if let Some(heard) = c.heard() {
-                if skein_forge::forgejo::plans::reads::keep::long(&heard) {
-                    self.diagnostics.long_bodies = self.diagnostics.long_bodies.saturating_add(1);
-                }
-                let malformed = match &heard {
-                    Heard::Done(Body::Malformed(_)) => true,
-                    Heard::Done(Body::Document(_) | Body::Raw { .. } | Body::Empty)
-                    | Heard::Head { .. }
-                    | Heard::Row(_)
-                    | Heard::Failed(_) => false,
+                let heard = call_heard(heard, &mut self.diagnostics);
+                let (step, cut) = match waiting.plan.as_mut().expect("call plan") {
+                    CallPlan::Forgejo(plan) => {
+                        let step = plan.heard(
+                            heard,
+                            bounds(waiting.page_size, &env.limits, &self.shared),
+                            &self.settings.word,
+                            &mut self.tables,
+                        );
+                        (step, plan.take_cut())
+                    }
                 };
-                if malformed {
-                    self.diagnostics.malformed = self.diagnostics.malformed.saturating_add(1);
-                }
-                let step = waiting.plan.as_mut().expect("call plan").heard(
-                    heard,
-                    bounds(waiting.page_size, &env.limits, &self.shared),
-                    &self.settings.word,
-                    &mut self.tables,
-                );
-                if waiting.plan.as_mut().expect("plan").take_cut() {
+                if cut {
                     c.cut(env);
                 }
                 match step {
@@ -325,7 +333,9 @@ impl Component {
     ) -> bool {
         match step {
             Step::Send(exchange) => {
-                self.waiting.get_mut(id).expect("indexed call").plan.as_mut().expect("call plan").set_pending(exchange);
+                match self.waiting.get_mut(id).expect("indexed call").plan.as_mut().expect("call plan") {
+                    CallPlan::Forgejo(plan) => plan.set_pending(exchange),
+                }
                 let token = self.waiting.get(id).expect("call").connection.expect("holder");
                 let c = self
                     .connection_slab
@@ -356,6 +366,27 @@ impl Component {
             }
         }
     }
+}
+
+fn call_heard(heard: connection::Heard, diagnostics: &mut super::Diagnostics) -> Heard {
+    let heard = match heard {
+        connection::Heard::Forgejo(heard) => heard,
+        connection::Heard::GitHub(_) => unreachable!("Forgejo call has a Forgejo connection"),
+    };
+    if skein_forge::forgejo::plans::reads::keep::long(&heard) {
+        diagnostics.long_bodies = diagnostics.long_bodies.saturating_add(1);
+    }
+    let malformed = match &heard {
+        Heard::Done(Body::Malformed(_)) => true,
+        Heard::Done(Body::Document(_) | Body::Raw { .. } | Body::Empty)
+        | Heard::Head { .. }
+        | Heard::Row(_)
+        | Heard::Failed(_) => false,
+    };
+    if malformed {
+        diagnostics.malformed = diagnostics.malformed.saturating_add(1);
+    }
+    heard
 }
 
 fn bounds(page_size: u32, l: &Limits, s: &Shared) -> Bounds {

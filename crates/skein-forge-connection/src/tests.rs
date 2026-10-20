@@ -1,5 +1,6 @@
 mod connection;
 mod contents;
+mod dialects;
 pub(crate) mod fixtures;
 mod hooks;
 mod reads;
@@ -289,6 +290,8 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 
 #[test]
 fn the_worst_case_counts_answers_and_refuses_overflow() {
+    // Complete fixture heap (7.5), including both dialects' routing and decoder state.
+    const FIXTURE_HEAP: u64 = 2_820_543;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(
@@ -298,7 +301,7 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
         crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes"),
     )
     .expect("fixture bound fits");
-    assert_eq!(bytes, 2_814_063, "complete owner-value fixture bound");
+    assert_eq!(bytes, FIXTURE_HEAP, "complete owner-value fixture bound");
     let owner_bytes = u64::try_from(fixtures::WORD.len() + fixtures::USER_AGENT.len()).expect("fixture lengths");
     assert_eq!(crate::settings::owned_bytes(&fixtures::settings()), Some(owner_bytes));
     assert_eq!(limits::worst_case(&limits, &shared, 1, 0).expect("fixed bound") + owner_bytes, bytes);

@@ -29,7 +29,7 @@ fn a_reset_before_the_first_byte_is_unseen_and_after_it_seen() {
     for (name, send, expected) in [("before room", false, Failure::Unseen), ("after send", true, Failure::Seen)] {
         let mut h = fixtures::ConnectionHarness::new();
         h.connection
-            .start(&h.env, &h.forge, fixtures::USER_AGENT, request::Request::User, None)
+            .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(request::Request::User, None))
             .expect("valid request");
         h.pump();
         if send {
@@ -38,7 +38,7 @@ fn a_reset_before_the_first_byte_is_unseen_and_after_it_seen() {
         }
         h.connection.stream(&h.env, Up::Failed(Fault::Reset));
         h.pump();
-        assert_eq!(h.connection.heard(), Some(Heard::Failed(expected)), "{name}");
+        assert_eq!(h.connection.heard(), Some(crate::connection::Heard::Forgejo(Heard::Failed(expected))), "{name}");
         assert_eq!(h.connection.heard(), None, "{name}: one failure");
     }
 }
@@ -46,7 +46,9 @@ fn a_reset_before_the_first_byte_is_unseen_and_after_it_seen() {
 #[test]
 fn a_json_response_is_decoded_through_its_body_end() {
     let mut h = fixtures::ConnectionHarness::new();
-    h.connection.start(&h.env, &h.forge, fixtures::USER_AGENT, request::Request::User, None).expect("valid request");
+    h.connection
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(request::Request::User, None))
+        .expect("valid request");
     let heard = h.answer(b"HTTP/1.1 200 OK\r\nContent-Length: 25\r\nDate: Wed, 01 Jan 2020 00:00:00 GMT\r\n\r\n{\"id\":2,\"login\":\"writer\"}");
     assert_eq!(heard.len(), 2, "head then document");
     assert_eq!(
@@ -81,7 +83,9 @@ fn a_json_response_is_decoded_through_its_body_end() {
 #[test]
 fn a_malformed_document_closes_without_reading_more() {
     let mut h = fixtures::ConnectionHarness::new();
-    h.connection.start(&h.env, &h.forge, fixtures::USER_AGENT, request::Request::User, None).expect("valid request");
+    h.connection
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(request::Request::User, None))
+        .expect("valid request");
     let heard = h.answer(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}");
     let Some(Heard::Done(skein_forge::forgejo::plans::Body::Malformed(_))) = heard.last() else {
         unreachable!("malformed terminal");
@@ -185,7 +189,9 @@ fn a_start_read_unanswered_at_its_deadline_waits_and_asks_again() {
 #[test]
 fn a_connection_close_answer_ends_its_connection_after_it() {
     let mut h = fixtures::ConnectionHarness::new();
-    h.connection.start(&h.env, &h.forge, fixtures::USER_AGENT, request::Request::User, None).expect("valid request");
+    h.connection
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(request::Request::User, None))
+        .expect("valid request");
     let heard =
         h.answer(b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 25\r\n\r\n{\"id\":2,\"login\":\"writer\"}");
     let Some(Heard::Done(skein_forge::forgejo::plans::Body::Document(_))) = heard.last() else {
@@ -223,7 +229,12 @@ fn raw_reads_keep_the_range_and_refuse_bytes_past_remaining_answer_room() {
         let mut h = fixtures::ConnectionHarness::new();
         h.connection.raw_room(room);
         h.connection
-            .start(&h.env, &h.forge, fixtures::USER_AGENT, raw_request(), Some(Range::Head(max)))
+            .start(
+                &h.env,
+                &h.forge,
+                fixtures::USER_AGENT,
+                fixtures::forgejo_exchange(raw_request(), Some(Range::Head(max))),
+            )
             .expect("valid raw request");
         let heard = h.answer(&fixtures::ok(response));
         assert_eq!(
@@ -264,12 +275,14 @@ fn a_json_upload_sends_its_body_and_content_headers() {
             &h.env,
             &h.forge,
             fixtures::USER_AGENT,
-            request::Request::RemoveReviewers {
-                at: request::Repo { owner: Box::from(&b"fixture"[..]), name: Box::from(&b"specimen"[..]) },
-                number: 7,
-                reviewers: Box::from([Box::from(&b"alice"[..])]),
-            },
-            None,
+            fixtures::forgejo_exchange(
+                request::Request::RemoveReviewers {
+                    at: request::Repo { owner: Box::from(&b"fixture"[..]), name: Box::from(&b"specimen"[..]) },
+                    number: 7,
+                    reviewers: Box::from([Box::from(&b"alice"[..])]),
+                },
+                None,
+            ),
         )
         .expect("valid upload");
     let heard = h.answer(b"HTTP/1.1 204 No Content\r\n\r\n");
@@ -295,7 +308,7 @@ fn a_reset_while_the_start_reads_waits_before_a_new_connection() {
 fn a_chunked_raw_read_keeps_the_last_short_piece() {
     let mut h = fixtures::ConnectionHarness::new();
     h.connection
-        .start(&h.env, &h.forge, fixtures::USER_AGENT, raw_request(), Some(Range::Head(3)))
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(raw_request(), Some(Range::Head(3))))
         .expect("valid raw request");
     let heard = h.answer(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nab\r\n0\r\n\r\n");
     assert_eq!(
@@ -331,7 +344,12 @@ fn a_tail_read_keeps_a_200s_last_bytes_and_closes_when_some_were_dropped() {
     for (name, response, expected, more, phase) in rows {
         let mut h = fixtures::ConnectionHarness::new();
         h.connection
-            .start(&h.env, &h.forge, fixtures::USER_AGENT, raw_request(), Some(Range::Tail(3)))
+            .start(
+                &h.env,
+                &h.forge,
+                fixtures::USER_AGENT,
+                fixtures::forgejo_exchange(raw_request(), Some(Range::Tail(3))),
+            )
             .expect("Valid raw request");
         let heard = h.answer(&fixtures::ok(response));
         let kept = Heard::Done(skein_forge::forgejo::plans::Body::Raw { bytes: Box::from(expected), more });
@@ -345,7 +363,7 @@ fn a_tail_read_keeps_at_most_the_raw_room() {
     let mut h = fixtures::ConnectionHarness::new();
     h.connection.raw_room(8);
     h.connection
-        .start(&h.env, &h.forge, fixtures::USER_AGENT, raw_request(), Some(Range::Tail(16)))
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(raw_request(), Some(Range::Tail(16))))
         .expect("Valid raw request");
     let heard = h.answer(&fixtures::ok(b"abcdefghijklmnopqrst"));
     assert_eq!(
@@ -358,7 +376,7 @@ fn a_tail_read_keeps_at_most_the_raw_room() {
 fn a_chunked_tail_read_keeps_the_last_bytes_across_pieces() {
     let mut h = fixtures::ConnectionHarness::new();
     h.connection
-        .start(&h.env, &h.forge, fixtures::USER_AGENT, raw_request(), Some(Range::Tail(3)))
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(raw_request(), Some(Range::Tail(3))))
         .expect("Valid raw request");
     let heard = h.answer(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nab\r\n3\r\ncde\r\n0\r\n\r\n");
     assert_eq!(
@@ -372,7 +390,7 @@ fn a_tail_read_past_body_bytes_in_is_malformed_and_closes() {
     let mut h = fixtures::ConnectionHarness::new();
     h.env.limits.body_bytes_in = 8;
     h.connection
-        .start(&h.env, &h.forge, fixtures::USER_AGENT, raw_request(), Some(Range::Tail(3)))
+        .start(&h.env, &h.forge, fixtures::USER_AGENT, fixtures::forgejo_exchange(raw_request(), Some(Range::Tail(3))))
         .expect("Valid raw request");
     let heard = h.answer(&fixtures::ok(b"abcdefghi"));
     assert_eq!(
