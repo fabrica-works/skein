@@ -550,8 +550,11 @@ accepted set; then:
 
 The setup host's rows-only replies make an empty page the installation
 listing's terminal marker; even a short nonempty page is followed.
-`pages` counts that terminal response. Discovery completes before the
-accepted set is pruned or any stray is uninstalled.
+`pages` counts that terminal response. The accepted set is pruned only
+after a complete listing; the strays seen are uninstalled either way.
+A listing past `pages` ends `Crowded` at `Installation`, naming
+`installations`, once its strays are gone, leaving the accepted set
+unpruned.
 
 A second run with nothing changed writes nothing.
 

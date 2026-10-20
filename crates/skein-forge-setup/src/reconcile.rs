@@ -112,6 +112,9 @@ pub enum Why {
     Unknown,
     /// Another run of the forge is live, or the host's runs are full (6.3).
     Busy,
+    /// The installation listing exceeds `pages`; the strays seen were
+    /// uninstalled and the accepted set was left unpruned.
+    Crowded,
     Down,
     Unexpected,
 }

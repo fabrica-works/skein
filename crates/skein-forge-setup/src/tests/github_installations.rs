@@ -201,12 +201,22 @@ fn a_sweep_deletes_strays_in_id_order_and_accepts_404() {
 }
 
 #[test]
-fn an_incomplete_listing_neither_prunes_nor_uninstalls() {
+fn a_failed_listing_at_the_bound_neither_prunes_nor_uninstalls() {
     let mut given = given();
     given.limits.pages = 2;
     for (reply, expected) in [
-        (Reply::GithubRows(Box::from([row(7, NOW, false)])), listing_failure(Why::Unexpected)),
+        (
+            Reply::GithubRows(Box::from([row(7, Wall::EPOCH, false), row(0, NOW, false)])),
+            listing_failure(Why::Unexpected),
+        ),
+        (Reply::GithubRows(Box::from([row(3, Wall::EPOCH, false)])), listing_failure(Why::Unexpected)),
+        (
+            Reply::GithubRows(full_page(PAGE_CAP.checked_add(1).expect("one past cap"))),
+            listing_failure(Why::Unexpected),
+        ),
+        (Reply::Status(403), listing_failure(Why::Refused(403))),
         (Reply::Down, listing_failure(Why::Down)),
+        (Reply::Unsigned, failure(Stage::App, b"key", Why::KeyForm)),
     ] {
         let mut machine = new(&given, &[1, 9]);
         assert_eq!(go(&mut machine, Event::Begin), page(1));
@@ -232,16 +242,71 @@ fn an_empty_terminal_page_holds_at_the_page_bound() {
 }
 
 #[test]
-fn a_nonempty_page_at_the_page_bound_is_incomplete() {
+fn a_nonempty_page_at_the_page_bound_is_crowded() {
     for pages in [1, PAGES] {
         let mut given = given();
         given.limits.pages = pages;
         let mut machine = new(&given, &[9]);
         go(&mut machine, Event::Begin);
-        for page in 1..pages {
-            go(&mut machine, rows(&[row(u64::from(page), Wall::EPOCH, false)]));
+        for number in 1..pages {
+            assert_eq!(
+                go(&mut machine, rows(&[row(u64::from(number), NOW, false)])),
+                page(number.checked_add(1).expect("small page"))
+            );
         }
-        assert_eq!(go(&mut machine, rows(&[row(7, NOW, false)])), listing_failure(Why::Unexpected));
+        assert_eq!(go(&mut machine, rows(&[row(7, NOW, false)])), listing_failure(Why::Crowded));
+        silent(&mut machine);
+    }
+}
+
+#[test]
+fn a_page_at_the_bound_uninstalls_strays_then_ends_crowded() {
+    let mut machine = begun(&[1, 9]);
+    assert_eq!(go(&mut machine, rows(&[row(8, Wall::EPOCH, false), row(1, Wall::EPOCH, true)])), page(2));
+    assert_eq!(go(&mut machine, rows(&[row(3, PAST_BOUND, true)])), page(3));
+    assert_eq!(
+        go(&mut machine, rows(&[row(2, Wall::EPOCH, false), row(7, FUTURE, false)])),
+        send(Request::Uninstall { id: 2 })
+    );
+    assert_eq!(go(&mut machine, Event::Reply(Reply::Status(404))), send(Request::Uninstall { id: 3 }));
+    assert_eq!(go(&mut machine, Event::Reply(Reply::Empty)), send(Request::Uninstall { id: 8 }));
+    assert_eq!(go(&mut machine, Event::Reply(Reply::Status(404))), listing_failure(Why::Crowded));
+    silent(&mut machine);
+}
+
+#[test]
+fn a_crowded_sweep_with_no_stray_ends_crowded_at_once() {
+    let mut given = given();
+    given.limits.pages = 1;
+    for accepted in [&[][..], &[1, 9][..]] {
+        let mut machine = new(&given, accepted);
+        assert_eq!(go(&mut machine, Event::Begin), page(1));
+        assert_eq!(go(&mut machine, rows(&[row(1, NOW, false), row(7, FUTURE, false)])), listing_failure(Why::Crowded));
+        silent(&mut machine);
+    }
+}
+
+#[test]
+fn a_failed_delete_at_the_bound_names_its_installation() {
+    for (reply, expected) in [
+        (Reply::Status(403), failure(Stage::Installation, b"12345", Why::Refused(403))),
+        (Reply::Down, failure(Stage::Installation, b"12345", Why::Down)),
+        (Reply::GithubRows(Box::new([])), failure(Stage::Installation, b"12345", Why::Unexpected)),
+        (Reply::Unsigned, failure(Stage::App, b"key", Why::KeyForm)),
+    ] {
+        let mut given = given();
+        given.limits.pages = 1;
+        let mut machine = new(&given, &[1, 9]);
+        assert_eq!(go(&mut machine, Event::Begin), page(1));
+        assert_eq!(
+            go(
+                &mut machine,
+                rows(&[row(12346, Wall::EPOCH, false), row(3, Wall::EPOCH, false), row(12345, Wall::EPOCH, false)])
+            ),
+            send(Request::Uninstall { id: 3 })
+        );
+        assert_eq!(go(&mut machine, Event::Reply(Reply::Empty)), send(Request::Uninstall { id: 12345 }));
+        assert_eq!(go(&mut machine, Event::Reply(reply)), expected);
         silent(&mut machine);
     }
 }

@@ -1,4 +1,4 @@
-//! Discover every installation before pruning or uninstalling (forge-setup.md, 5.6, step 4).
+//! Prune complete listings and uninstall the strays seen (forge-setup.md, 5.6, step 4).
 use super::{
     app::{self, Kept},
     given::Given,
@@ -25,6 +25,7 @@ struct Reading {
 struct Deleting {
     kept: Kept,
     strays: Set<u64>,
+    crowded: bool,
 }
 #[derive(Debug)]
 enum State {
@@ -117,9 +118,9 @@ impl Sweep {
                 }
             }
         }
-        // A nonempty response at the bound is incomplete, even if short.
+        // A nonempty response at the bound permits deletes, but no prune.
         if read.page >= self.pages {
-            return self.stop(b"installations", Why::Unexpected);
+            return self.delete_next(Deleting { kept: read.kept, strays: read.strays, crowded: true });
         }
         let Some(page) = read.page.checked_add(1) else {
             return self.stop(b"installations", Why::Unexpected);
@@ -131,7 +132,7 @@ impl Sweep {
     }
     fn discovered(&mut self, read: Reading) -> Progress {
         let Reading { kept, accepted, live, strays, seen: _, page: _ } = read;
-        let work = Deleting { kept, strays };
+        let work = Deleting { kept, strays, crowded: false };
         if live.iter().eq(accepted.iter()) {
             return self.delete_next(work);
         }
@@ -150,7 +151,13 @@ impl Sweep {
                 self.state = State::Delete { work, id };
                 Progress::Pending(Need::Send { request: Request::Uninstall { id }.into(), auth })
             }
-            None => Progress::Complete,
+            None => {
+                if work.crowded {
+                    self.stop(b"installations", Why::Crowded)
+                } else {
+                    Progress::Complete
+                }
+            }
         }
     }
 }
@@ -181,7 +188,8 @@ fn deleted(event: Event) -> Result<(), Why> {
 
 /// Consumes one event in `reconcile::MAX_OUT` room, emitting at most one need
 /// or internal completion. Every end drops the key and scratch; later events
-/// are silent. Discovery failure cannot prune or delete (5.6, step 4).
+/// are silent. Invalid or failed listing replies cannot prune or delete (5.6,
+/// step 4).
 pub(crate) fn step(machine: &mut Sweep, event: Event, out: &mut Queue<Progress>) {
     let state = core::mem::replace(&mut machine.state, State::Ended);
     let progress = match state {
