@@ -47,7 +47,9 @@ fn a_github_forge_connects_through_listing_minting_and_identity() {
             assert!(!token.is_empty());
             assert_eq!(expires.as_secs(), skein_forge_machine_world::github::WALL_BASE.as_secs() + HOUR);
         }
-        Event::Answered(_)
+        Event::Installation { .. }
+        | Event::Fact { .. }
+        | Event::Answered(_)
         | Event::Hint(_)
         | Event::Connected { .. }
         | Event::Stopped { .. }

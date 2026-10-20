@@ -89,7 +89,10 @@ diagnostic for the owner's log; and **closed**, the last event (8.5).
 | | `Event::GitToken { forge, installation, account, token, expires }` |
 | | `Event::Fact { forge, fact }` |
 
-An `account` is its id and login. `change` is `Created`, `Deleted`,
+An installation event's `account` is `Some` with its current id and
+login, or its last known value on `Deleted`. `None` occurs only on
+`Deleted` of an id never seen; a missing accepted id keeps its known
+account across later reads. `change` is `Created`, `Deleted`,
 `Repositories`, `Suspended`, `Unsuspended` or `Renamed`, and `expires` is
 the token's expiry in wall seconds, as the forge said it. A `fact` is
 `Origin { origin }`, a job log's origin not configured (4.5);
@@ -349,17 +352,44 @@ it changes.
   fails `Missing`. Rows come from the calls' own reads and the
   deliveries (4.2), so this path runs only for an id first named after
   a start, or one whose row the table dropped.
-- **Changes go up** as `installation` events, each found by comparing
+- **The first successful whole read** compares with the owner's accepted
+  set: an accepted id absent is `Deleted`; an accepted suspended row is
+  `Suspended`; an unaccepted retained row is `Created`; an accepted
+  unsuspended row is silent. Failure preserves this baseline, consumed
+  once per construction; reconnects compare tables.
+- **Missing accepted ids** in a changed set share one whole reread; a
+  read already running for that set suffices. On success each id still
+  missing is `Deleted` once, deduplicated against the baseline and the
+  old table's deletion. Failure retries with backoff without marking
+  absence checked. Equal sets, even reordered, and later timer fires
+  cause no reread or repeated deletion; a changed set rearms the rule.
+  A set whose ids all have rows needs no read. A changed accepted set
+  invalidates an in-flight read's staging; its written exchange finishes
+  before page 1 is read for the latest set.
+- **Changes go up** as `installation` events, later reads comparing
   the table read with the one it replaces: `Created` for a new id,
   `Deleted` for one gone, `Suspended` and `Unsuspended`, and `Renamed`
-  for an account whose login changed. A rename leaves calls by
+  for an account whose login changed. New and deleted rows report only
+  membership; a suspension change precedes a rename on the same row.
+  Acceptance alone emits no installation change. A rename leaves calls by
   repository untouched, since they choose by account id. A log row that
   says an installation's repositories changed sends `Repositories` up
   for that installation, without names: the owner lists them afresh
   with its setup host's `Reachable` (forge-setup.md, 4.8 and 5.9),
-  which the component takes no part in. A row the table has no room for
-  is said once, as `Fact::Unkept { installation }`, and goes no
-  further.
+  which the component takes no part in.
+- **Retention is bounded across pages.** Accepted rows win, displacing
+  strays when needed; among strays the earliest encountered stay. A row
+  seen at the forge but lost to local capacity is not `Deleted`.
+  `Fact::Unkept { installation }` is emitted at most once per whole
+  page-1-through-end read attempt, its id naming the first discarded or
+  displaced row. Further overflow in that attempt emits no fact. A
+  failed attempt ends it, and its retry may emit one again; a fact
+  already emitted remains a capacity diagnostic if a later page fails.
+  An unretained row emits no `Created` and goes no further. A pending
+  fact holds the next page until output room is available. Only whole
+  successful reads commit; a bounded cursor resumes their changes
+  within each entry point's remaining reservation, before startup's
+  mints and `connected`.
 
 ### 4.5 A job log's redirect
 
@@ -700,7 +730,10 @@ It is the sum of:
 - each GitHub forge's own connection, priced in addition to `connections`;
 - for each GitHub forge: its key at `key_bytes` and its JWT at
   `JWT_BYTES`; its installations' table full, each row's login at
-  `name_bytes`, its API token at `token_bytes` and two expiries; its log
+  `name_bytes`, its API token at `token_bytes` and two expiries; both
+  bounded metadata tables, old-row seen flags and accepted/missing-id
+  bookkeeping with known accounts; a 100-row page and its handoff
+  overlap, one overflow fact and the diff cursor's held account; its log
   origins, each a host of 253 bytes and an address; and its puller, its
   validator, a guid, the delivery's decoder and the hint it holds.
 

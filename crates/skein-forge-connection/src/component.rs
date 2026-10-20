@@ -39,7 +39,7 @@ pub(crate) enum CallPlan {
 #[derive(Debug)]
 pub(crate) enum OwnPlan {
     Forgejo(skein_forge::forgejo::plans::start::Plan),
-    GitHubListing(skein_forge::github::plans::start::Listing),
+    GitHubInstallations(skein_forge::github::plans::start::Installations),
     GitHubMinting(skein_forge::github::plans::start::Minting),
     GitHubIdentity(skein_forge::github::plans::start::Identity),
 }
@@ -246,6 +246,7 @@ impl Component {
                     if let Some(github) = self.github.get_mut(at).expect("forge slot") {
                         github.forget();
                     }
+                    *self.own_plans.get_mut(at).expect("forge plan") = None;
                 }
                 self.closed = true;
                 self.hooks.close();
@@ -470,6 +471,14 @@ impl Component {
         {
             earliest = Some(time);
         }
+        for slot in &self.github {
+            if let Some(gh) = slot
+                && let Some(time) = gh.deadline()
+                && (earliest.is_none() || Some(time) < earliest)
+            {
+                earliest = Some(time);
+            }
+        }
         for (_, id) in &self.connections {
             let c = self.connection_slab.get(*id).expect("indexed connection");
             if let Some(time) = c.deadline
@@ -535,7 +544,7 @@ impl Component {
         let above = up.len();
         self.wake = None;
         for at in 0..self.starts.len() {
-            if io.len().saturating_sub(below) >= below_room || up.len().saturating_sub(above) >= above_room {
+            if up.len().saturating_sub(above) >= above_room {
                 self.wake = Some(env.now);
                 break;
             }
@@ -551,6 +560,10 @@ impl Component {
                     ),
                 );
                 continue;
+            }
+            if io.len().saturating_sub(below) >= below_room {
+                self.wake = Some(env.now);
+                break;
             }
             self.drive_forgejo(at, env, up, io, (above, below), (above_room, below_room));
         }
@@ -627,7 +640,7 @@ impl Component {
                 let plan = self.own_plans.get_mut(at).expect("configured forge");
                 let step = match plan {
                     Some(OwnPlan::Forgejo(plan)) => plan.heard(heard),
-                    Some(OwnPlan::GitHubListing(_) | OwnPlan::GitHubMinting(_) | OwnPlan::GitHubIdentity(_)) => {
+                    Some(OwnPlan::GitHubInstallations(_) | OwnPlan::GitHubMinting(_) | OwnPlan::GitHubIdentity(_)) => {
                         unreachable!("Forgejo own plan")
                     }
                     None => None,
@@ -772,7 +785,7 @@ fn send_start(
 ) {
     let step = match plan {
         OwnPlan::Forgejo(plan) => plan.begin(),
-        OwnPlan::GitHubListing(_) | OwnPlan::GitHubMinting(_) | OwnPlan::GitHubIdentity(_) => {
+        OwnPlan::GitHubInstallations(_) | OwnPlan::GitHubMinting(_) | OwnPlan::GitHubIdentity(_) => {
             unreachable!("Forgejo sender")
         }
     };

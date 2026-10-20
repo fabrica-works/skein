@@ -288,7 +288,7 @@ impl Joint {
                 }
                 Event::Stopped { forge, why } => panic!("forge {forge} stopped: {why:?}"),
                 Event::Hint(hint) => self.hints.push(hint),
-                Event::GitToken { .. } => panic!("Forgejo fixture"),
+                Event::Installation { .. } | Event::Fact { .. } | Event::GitToken { .. } => panic!("Forgejo fixture"),
                 Event::ListenerLost => panic!("hook listener lost"),
                 Event::Connected { .. } => self.connected += 1,
                 Event::Closed => self.closed = true,

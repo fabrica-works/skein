@@ -216,7 +216,7 @@ pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable
     if l.deadline > s.lifetime {
         return Err(Unusable::Deadline { deadline: l.deadline, lifetime: s.lifetime });
     }
-    check_github(l, settings)?;
+    check_github(l, s, settings)?;
     if !skein_forge::marker::valid_word(&settings.word) {
         return Err(Unusable::Word);
     }
@@ -264,7 +264,7 @@ pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable
         .ok_or(Unusable::Zero)?;
     Ok(())
 }
-fn check_github(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
+fn check_github(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable> {
     let mut github = false;
     for forge in &settings.forges {
         if forge.kind == Kind::GitHub {
@@ -278,15 +278,7 @@ fn check_github(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
         if let Err(problem) = skein_forge::github::limits::check(&github_mint_documents(l)) {
             return Err(Unusable::GitHubDocuments(problem));
         }
-        l.installations
-            .checked_mul(
-                u32::try_from(size_of::<skein_forge::github::document::Installation>())
-                    .ok()
-                    .ok_or(Unusable::Zero)?
-                    .checked_add(l.string_bytes)
-                    .ok_or(Unusable::Zero)?,
-            )
-            .ok_or(Unusable::Zero)?;
+        installation_bounds(l, s).ok_or(Unusable::Zero)?;
         if l.deadline > APP_DEADLINE {
             return Err(Unusable::AppDeadline { deadline: l.deadline });
         }
@@ -524,20 +516,38 @@ fn decoder_heap(l: &Limits) -> Option<u64> {
         .checked_add(u64::try_from(fixed_decoder).ok()?)?;
     Some(bytes)
 }
-// The retained table, its replacement listing, and the event handoff overlap.
+/// A complete page is independent of both the retained table and ordinary calls.
+pub(crate) fn installation_bounds(l: &Limits, s: &Shared) -> Option<skein_forge::github::plans::plan::Bounds> {
+    let cap = skein_forge::github::pin::PAGE_CAP;
+    Some(skein_forge::github::plans::plan::Bounds {
+        page_size: cap,
+        rows: cap,
+        answer_bytes: cap
+            .checked_mul(s.name_bytes.checked_add(u32::try_from(skein_forge::measure::STRING_BYTES).ok()?)?)?,
+        body_bytes: l.body_bytes,
+    })
+}
+// Both metadata tables, live credentials, accepted bookkeeping and page/event handoffs.
 fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
-    use skein_lib::{List, Map};
-    Map::<u64, crate::installations::Row>::worst_case(l.installations)?
-        .checked_add(skein_lib::Set::<u64>::worst_case(l.installations)?.checked_mul(2)?)?
-        .checked_add(List::<u64>::worst_case(l.installations)?)?
-        .checked_add(List::<skein_forge::github::document::Installation>::worst_case(l.installations)?)?
+    use crate::installations::{Accepted, Metadata, Row};
+    use skein_lib::{List, Map, Set};
+    let cap = l.installations;
+    let page = skein_forge::github::pin::PAGE_CAP;
+    Map::<u64, Row>::worst_case(cap)?
+        .checked_add(Map::<u64, Metadata>::worst_case(cap)?.checked_mul(2)?)?
+        .checked_add(Map::<u64, Accepted>::worst_case(cap)?.checked_mul(2)?)?
+        .checked_add(Map::<u64, Option<crate::Account>>::worst_case(cap)?)?
+        .checked_add(Set::<u64>::worst_case(cap)?.checked_mul(3)?)?
+        .checked_add(List::<u64>::worst_case(cap)?.checked_mul(2)?)?
+        .checked_add(List::<skein_forge::github::document::Installation>::worst_case(page)?.checked_mul(2)?)?
+        .checked_add(u64::from(page).checked_mul(u64::from(s.name_bytes))?.checked_mul(2)?)?
         .checked_add(
-            u64::from(l.installations)
-                .checked_mul(u64::from(s.name_bytes).checked_mul(3)?.checked_add(u64::from(l.token_bytes))?)?,
+            u64::from(cap)
+                .checked_mul(u64::from(s.name_bytes).checked_mul(6)?.checked_add(u64::from(l.token_bytes))?)?,
         )?
         .checked_add(u64::from(l.token_bytes).checked_mul(4)?)?
         .checked_add(u64::try_from(size_of::<crate::Event>()).ok()?)?
-        .checked_add(u64::from(s.name_bytes))
+        .checked_add(u64::from(s.name_bytes).checked_mul(2)?)
 }
 /// Conservative complete heap, pricing TLS on every connection because this interface
 /// knows the forge count, not their transports. Raw growth includes its doubling overlap.

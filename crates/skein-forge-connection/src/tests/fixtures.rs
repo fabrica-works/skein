@@ -117,6 +117,8 @@ pub struct Harness {
     pub opened: u32,
     pub stopped: Option<(u16, crate::Stopped)>,
     pub git_tokens: Option<List<Event>>,
+    pub installation_events: Option<List<Event>>,
+    pub facts: Option<List<Event>>,
     pub connected_count: u32,
     pub closed: bool,
 }
@@ -154,6 +156,8 @@ impl Harness {
             opened: 0,
             stopped: None,
             git_tokens: if github { Some(List::with_capacity(32)) } else { None },
+            installation_events: if github { Some(List::with_capacity(256)) } else { None },
+            facts: if github { Some(List::with_capacity(32)) } else { None },
             connected_count: 0,
             closed: false,
         };
@@ -187,6 +191,16 @@ impl Harness {
                 Event::Stopped { forge, why } => {
                     assert!(self.stopped.is_none(), "start stopped once");
                     self.stopped = Some((forge, why));
+                }
+                event @ Event::Installation { .. } => {
+                    self.installation_events
+                        .as_mut()
+                        .expect("GitHub fixture")
+                        .push(event)
+                        .expect("fixture changes fit");
+                }
+                event @ Event::Fact { .. } => {
+                    self.facts.as_mut().expect("GitHub fixture").push(event).expect("fixture facts fit");
                 }
                 event @ Event::GitToken { .. } => {
                     self.git_tokens.as_mut().expect("GitHub fixture").push(event).expect("fixture tokens fit");
@@ -758,7 +772,9 @@ impl HookHarness {
             for _ in 0..up.len() {
                 match up.pop().expect("queued event") {
                     Event::Hint(_) => self.hints = self.hints.saturating_add(1),
-                    Event::GitToken { .. }
+                    Event::Installation { .. }
+                    | Event::Fact { .. }
+                    | Event::GitToken { .. }
                     | Event::Connected { .. }
                     | Event::Answered(_)
                     | Event::Stopped { .. }

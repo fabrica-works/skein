@@ -118,13 +118,16 @@ fn request_content_length(head: &[u8]) -> usize {
 fn github_starts_list_mint_both_scopes_then_check_identity() {
     let mut h = harness();
     accepted(&mut h, &[1, 3]);
+    h.answer(FORGE, &fixtures::ok(b"[]")); // Finish the prior generation's written page.
     h.answer(FORGE, &fixtures::response_with_fields(200, PAGE_ONE, NEXT_PAGE));
     h.answer(FORGE, &fixtures::ok(PAGE_TWO));
     full(&mut h);
     contents(&mut h);
     h.answer(FORGE, &fixtures::ok(VIEWER));
     let wire = h.request_bytes(FORGE);
-    let mut rest = wire.as_ref();
+    let head_end =
+        skein_lib::bytes::find(&wire, b"\r\n\r\n").expect("discarded read head").checked_add(4).expect("head framing");
+    let mut rest = wire.get(head_end..).expect("new generation's requests");
     let mut requests = skein_lib::List::with_capacity(START_REQUESTS);
     let mut lines = skein_lib::List::with_capacity(START_REQUESTS);
     for _ in 0..START_REQUESTS {
@@ -174,7 +177,9 @@ fn github_starts_list_mint_both_scopes_then_check_identity() {
             );
             assert!(token.expose() == CONTENTS, "only Contents goes up");
         }
-        Event::Answered(_)
+        Event::Installation { .. }
+        | Event::Fact { .. }
+        | Event::Answered(_)
         | Event::Hint(_)
         | Event::ListenerLost
         | Event::Connected { .. }
@@ -187,6 +192,7 @@ fn github_starts_list_mint_both_scopes_then_check_identity() {
 fn github_with_no_accepted_installation_is_ready_without_identity() {
     let mut h = harness();
     accepted(&mut h, &[]);
+    h.answer(FORGE, &fixtures::ok(b"[]")); // The changed set discards the written page.
     listed(&mut h);
     h.run(Duration::ZERO);
     assert_eq!(h.start(FORGE), Start::Ready { cap: 100 });
@@ -515,6 +521,7 @@ fn github_accepted_set_changes_during_listing_select_the_new_set() {
     h.answer(FORGE, &fixtures::response_with_fields(200, LIVE, NEXT_PAGE));
     accepted(&mut h, &[2]);
     h.answer(FORGE, &fixtures::ok(PAGE_TWO));
+    h.answer(FORGE, &fixtures::ok(PAGE_TWO));
     assert!(contains(&h.request_bytes(FORGE), b"POST /app/installations/2/access_tokens"));
     assert!(!contains(&h.request_bytes(FORGE), b"POST /app/installations/1/access_tokens"));
 }
@@ -568,6 +575,7 @@ fn github_own_connection_is_reserved_while_forgejo_calls_run() {
 fn github_ready_calls_are_unavailable_without_cost() {
     let mut h = harness();
     accepted(&mut h, &[]);
+    h.answer(FORGE, &fixtures::ok(b"[]")); // The changed set discards the written page.
     listed(&mut h);
     h.call(1, fixtures::REPO, skein_forge::api::Op::Read(skein_forge::api::Read::Settings));
     h.run(Duration::ZERO);
@@ -608,6 +616,7 @@ fn replacement(stage: Stage) {
     h.run(Duration::ZERO);
     h.connected(FORGE);
     accepted(&mut h, &[]);
+    h.answer(FORGE, &fixtures::ok(b"[]")); // The changed set discards the written page.
     listed(&mut h);
     h.run(Duration::ZERO);
     assert_eq!(h.connected_count, 1, "{stage:?}");

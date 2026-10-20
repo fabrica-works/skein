@@ -274,3 +274,62 @@ fn github_document_depth_needs_ten_only_for_github() {
         assert_eq!(check(&limits, &fixtures::shared(), &fixtures::settings()), Ok(()));
     }
 }
+
+#[test]
+fn installation_pages_use_their_own_full_page_budget() {
+    let l = super::Limits { installations: 1, ..fixtures::limits() };
+    let s = Shared { rows: 1, answer_bytes: fixtures::MAX_ROW, name_bytes: 4, ..fixtures::shared() };
+    assert_eq!(
+        super::installation_bounds(&l, &s),
+        Some(skein_forge::github::plans::plan::Bounds {
+            page_size: 100,
+            rows: 100,
+            answer_bytes: 2000,
+            body_bytes: fixtures::BODY_ROOM,
+        })
+    );
+    assert_eq!(check(&l, &s, &fixtures::github_settings()), Ok(()));
+}
+#[test]
+fn installation_page_budget_refuses_checked_overflow() {
+    const CAP: u32 = skein_forge::github::pin::PAGE_CAP;
+    const OVERHEAD: u32 = 16; // measure::STRING_BYTES, the dialect's per-login overhead.
+    const NAME_BOUND: u32 = u32::MAX / CAP - OVERHEAD;
+    let l = fixtures::limits();
+    let at = Shared { name_bytes: NAME_BOUND, ..fixtures::shared() };
+    let past = Shared { name_bytes: NAME_BOUND + 1, ..at };
+    assert_eq!(super::installation_bounds(&l, &at).expect("at derived bound").answer_bytes, 4_294_967_200);
+    assert_eq!(super::installation_bounds(&l, &past), None);
+    assert_eq!(super::installation_bounds(&l, &Shared { name_bytes: u32::MAX, ..at }), None);
+    assert_eq!(check(&l, &past, &fixtures::github_settings()), Err(Unusable::Zero));
+    assert_eq!(
+        check(&l, &past, &fixtures::settings()),
+        Err(Unusable::StringBytes { string_bytes: l.string_bytes, name_bytes: past.name_bytes })
+    );
+}
+#[test]
+fn installation_heap_covers_simultaneous_tables_and_page_payloads() {
+    const ROWS: u32 = 3;
+    const NAME: u32 = 128;
+    const TOKEN: u32 = 64;
+    const PEAK_PAYLOADS: u64 = 3 * (6 * 128 + 64) + 2 * 100 * 128 + 2 * 128 + 4 * 64;
+    let l = super::Limits { installations: ROWS, token_bytes: TOKEN, ..fixtures::limits() };
+    let s = Shared { name_bytes: NAME, ..fixtures::shared() };
+    let empty = super::installation_heap(&super::Limits { token_bytes: 0, ..l }, &Shared { name_bytes: 0, ..s })
+        .expect("scalar storage");
+    let peak = super::installation_heap(&l, &s).expect("payload storage");
+    // Old and staged metadata plus the live row, accepted/missing accounts,
+    // a full page and its handoff, cursor/event accounts and mint handoffs coexist.
+    assert_eq!(peak - empty, PEAK_PAYLOADS);
+    assert!(
+        peak >= PEAK_PAYLOADS
+            + List::<skein_forge::github::document::Installation>::worst_case(100).expect("page storage") * 2
+    );
+}
+#[test]
+fn installation_staging_and_page_accounting_refuse_overflow() {
+    let l = super::Limits { installations: u32::MAX, token_bytes: u32::MAX, ..fixtures::limits() };
+    let s = Shared { name_bytes: u32::MAX, ..fixtures::shared() };
+    assert_eq!(super::installation_heap(&l, &s), None);
+    assert_eq!(super::worst_case(&l, &s, 1, 0), None);
+}

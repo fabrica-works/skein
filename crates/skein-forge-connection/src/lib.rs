@@ -12,7 +12,7 @@ mod installations;
 pub mod limits;
 pub mod settings;
 pub mod start;
-pub use boundary::{Account, Answered, Event, Request, StartRead, Stopped, Value};
+pub use boundary::{Account, Answered, Change, Event, Fact, Request, StartRead, Stopped, Value};
 pub use component::{Component, Diagnostics, MAX_OUT};
 pub use limits::{Limits, Shared, Unusable};
 pub use settings::{Access, Settings};

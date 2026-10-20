@@ -306,7 +306,12 @@ impl Listener {
                         self.closed_events += 1;
                         self.event_order.push("closed");
                     }
-                    Event::GitToken { .. } | Event::Connected { .. } | Event::Answered(_) | Event::Stopped { .. } => {
+                    Event::Installation { .. }
+                    | Event::Fact { .. }
+                    | Event::GitToken { .. }
+                    | Event::Connected { .. }
+                    | Event::Answered(_)
+                    | Event::Stopped { .. } => {
                         panic!("no outbound replies")
                     }
                 }

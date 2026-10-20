@@ -84,6 +84,8 @@ pub struct Machine {
     stopped: Vec<(u16, Stopped)>,
     connected_forges: Vec<u16>,
     git_tokens: Vec<Event>,
+    installation_events: Vec<Event>,
+    facts: Vec<Event>,
     access_answers: usize,
     opened: u32,
     aborts: u32,
@@ -175,6 +177,8 @@ impl Machine {
             stopped: Vec::new(),
             connected_forges: Vec::new(),
             git_tokens: Vec::new(),
+            installation_events: Vec::new(),
+            facts: Vec::new(),
             access_answers,
             opened: 0,
             aborts: 0,
@@ -200,6 +204,20 @@ impl Machine {
         };
         world.component.begin(&world.env, &mut world.above, &mut world.below);
         world
+    }
+    /// Installation lifecycle events, independently of token deliveries.
+    #[must_use]
+    pub fn installation_events(&self) -> &[Event] {
+        &self.installation_events
+    }
+    /// Capacity diagnostics from the component.
+    #[must_use]
+    pub fn facts(&self) -> &[Event] {
+        &self.facts
+    }
+    /// Scenario access to the fake's installation store.
+    pub fn github_installations_mut(&mut self) -> &mut skein_fake_forge_github::installations::Installations {
+        self.fake.as_mut().expect("GitHub fixture").installations_mut()
     }
     /// Overrides the next connect outcomes; later ones are made.
     pub fn connects(&mut self, connects: &[Connect]) {
@@ -427,6 +445,8 @@ impl Machine {
                 continue;
             }
             let name = match &event {
+                Event::Installation { .. } => "installation",
+                Event::Fact { .. } => "fact",
                 Event::GitToken { .. } => "git-token",
                 Event::Answered(_) => "answered",
                 Event::Stopped { .. } => "stopped",
@@ -437,6 +457,14 @@ impl Machine {
             };
             self.event_order.push(name);
             match event {
+                event @ Event::Installation { .. } => {
+                    assert!(self.fake.is_some(), "GitHub fixture");
+                    self.installation_events.push(event);
+                }
+                event @ Event::Fact { .. } => {
+                    assert!(self.fake.is_some(), "GitHub fixture");
+                    self.facts.push(event);
+                }
                 event @ Event::GitToken { .. } => {
                     assert!(self.fake.is_some(), "GitHub fixture");
                     self.git_tokens.push(event);

@@ -2,6 +2,7 @@ mod connection;
 mod contents;
 mod dialects;
 pub(crate) mod fixtures;
+mod github_installations;
 mod github_start;
 mod hooks;
 mod reads;
@@ -296,8 +297,9 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
     // people/review/file builders; two own-plan slots each include 16 bytes
     // of exchange retention/comparison fields. Rows/documents fit the routing
     // maxima and decoder payload envelopes (forge.md, 3.7 and 5.3;
-    // forge-github.md, 6).
-    const FIXTURE_HEAP: u64 = 3_595_054;
+    // forge-github.md, 6). Installation staging, page buffers and handoff
+    // overlap add 39_432 bytes to the heap.
+    const FIXTURE_HEAP: u64 = 3_634_486;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(

@@ -11,6 +11,21 @@ pub struct Account {
     pub login: Box<[u8]>,
 }
 
+/// An installation lifecycle change (forge-connection.md, 4.4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Change {
+    Created,
+    Deleted,
+    Suspended,
+    Unsuspended,
+    Renamed,
+}
+/// A diagnostic for the owner's log (forge-connection.md, 4.4).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Fact {
+    Unkept { installation: u64 },
+}
+
 /// One call's terminal, the forge client's `Event::Answered` field for field. The
 /// component makes it; the routing hands it to the root as `Event::Forge`, and hands
 /// back one the root did not take (`Request::Refused`, `Request::Returned`).
@@ -54,6 +69,10 @@ pub enum Request {
 pub enum Event {
     /// A call's one terminal.
     Answered(Answered),
+    /// A retained installation's lifecycle, with its current or last known account.
+    Installation { forge: u16, installation: u64, account: Option<Account>, change: Change },
+    /// A bounded diagnostic for the owner's log.
+    Fact { forge: u16, fact: Fact },
     /// Git's Contents token, handed to the owner once (forge-connection.md, 5.3).
     GitToken { forge: u16, installation: u64, account: Account, token: Secret, expires: Wall },
     /// A verified delivery, after its response is queued.
