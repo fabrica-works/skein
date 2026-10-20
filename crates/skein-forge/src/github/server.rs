@@ -14,7 +14,9 @@ pub use queries::{Graphql, graphql_body};
 mod issues;
 pub use issues::{comments, issue, issues};
 mod delivery;
+mod protection;
 mod pulls;
+pub use protection::{classic_protection, rules, ruleset};
 mod writes;
 pub use app::{
     app, app_identity, bot_user, conversion, graphql, graphql_refusal, hook, hook_url, installation, installations,
