@@ -11,6 +11,8 @@ use skein_shell::Host;
 
 #[path = "llm/request.rs"]
 mod request;
+#[path = "llm/tls.rs"]
+mod tls;
 use skein_fake_peers_tests as support;
 
 fn limits() -> Limits {

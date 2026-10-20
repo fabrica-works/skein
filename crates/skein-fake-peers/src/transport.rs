@@ -14,6 +14,10 @@ use crate::{Error, Limits};
 
 const RECORD: u32 = 18_432;
 
+/// The DER root signing the peers' fixed chain for `skein.test` and `127.0.0.1`.
+/// Trust it only in tests: its key is in the tree.
+pub const ROOT: &[u8] = include_bytes!("../../../tests/tls/fixtures/root.der");
+
 /// Transport selected by a world; TLS presents Skein's fixed test certificates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {

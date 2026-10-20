@@ -697,6 +697,7 @@ dependencies = [
 name = "skein-fake-peers-tests"
 version = "0.0.0"
 dependencies = [
+ "rustls",
  "skein-fake-forge-domain",
  "skein-fake-forge-github",
  "skein-fake-forge-protocol",
