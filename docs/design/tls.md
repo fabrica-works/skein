@@ -1,6 +1,6 @@
 # TLS
 
-Provisional, 2026-10-04, revised 2026-10-18. The design of
+Provisional, 2026-10-04, revised 2026-10-20. The design of
 `skein-tls`: a TLS stream machine over rustls, ciphertext below and
 plaintext above. It is the one exception of programming-model.md,
 section 3: the only step code that depends on a crate from outside skein
@@ -369,7 +369,7 @@ independence.
   0.17.14).
 - **Not deterministic:** ring draws its randoms and keys from the kernel,
   through `getrandom`: the only kernel calls step code makes, when the
-  handshake starts and as it runs. That is the documented exception;
+  handshake starts and as it runs, and when it signs (below). That is the documented exception;
   nothing else impure comes in.
 - **`getrandom` on Linux** makes the getrandom(2) system call. Where it
   cannot, a kernel older than 3.17 (below the shell's floor, shell.md, 4)
@@ -389,6 +389,17 @@ independence.
   skein-tls; it draws no randomness and reads no clock. The fake issuer's
   signing draws ring's blinding randomness, and its signatures do not
   depend on it.
+- **An App's signature:** `sign_rs256(key, message) -> Option<[u8;
+  256]>` signs a GitHub App's JSON Web Token (forge-connection.md,
+  section 5.2; forge-github.md, section 8.1) with ring's RSA PKCS#1 v1.5
+  over SHA-256, inside skein-tls, so ring stays behind one crate. The
+  key is PKCS#1 `RSAPrivateKey` DER of 2048 bits alone, at most
+  `RS256_KEY_BYTES`, the largest such key's DER; another, or one ring
+  refuses, is none. It reads no clock: the caller gives the message,
+  times and all. It draws ring's blinding randomness from the kernel, as
+  a handshake does, and the signature does not depend on it, so a fake
+  forge checks it with `verify_rs256`. A key is parsed at each signing,
+  never kept by skein-tls.
 - **What rustls's API makes the crate use:** an `Arc` of the shared
   configuration, a trait object for the time, a hand-written `Debug`
   for its connection, `Vec`s in the configuration, and arms for the

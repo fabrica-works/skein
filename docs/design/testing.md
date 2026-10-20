@@ -259,10 +259,10 @@ tests/protocol                  the protocol worlds: an LLM client's stack again
 tests/llm                       skein-llm's subscription protocol worlds, fragmentation and fault sweeps, and bounds against the counting allocator, skein-llm-world
 tests/llm-connection            the LLM connection component's worlds, skein-llm-connection-world
 tests/oauth                     the OAuth client against the independent issuer, skein-oauth-world
-tests/forge/machine             the forge component's machine world and the listener's, against a scripted HTTP peer, and their worst case against the counting allocator (forge-connection.md, 10)
-tests/forge/protocol            the protocol world: the client and the component against the fake forge's protocol layer and domain (forge-connection.md, 10)
+tests/forge/machine             the forge component's machine world and the listener's, against a scripted HTTP peer and the fake's GitHub layer on its clock, and their worst case against the counting allocator, every holder filled (forge-connection.md, 10)
+tests/forge/protocol            the protocol world: the client and the component against the fake forge's protocol layer and domain, joined by streams cut at random, under a scripted durable owner that restarts; its fuzzy runs take seeds (forge-connection.md, 10)
 tests/forge/client              the client world: the client alone under a scripted parent, over the fake forge's domain (forge-client.md, 10)
-tests/forge/setup               reconcile's world: the host played over a store of items and the fake forge's setup routes (forge-setup.md, 7)
+tests/forge/setup               the setup world: the host component over a store of items and the fake forge's setup routes and GitHub layer, through HTTP bytes, and its worst case against the counting allocator (forge-setup.md, 7)
 tests/forge/conformance         the conformance tool, outside the suites: a throwaway Forgejo driven, each fact the dialect relies on recorded (fake-forge.md, 7)
 tests/channel                   the framed channel's machine and protocol worlds, skein-channel-world
 tests/codec                     a generated sample codec and its worlds, skein-codec-tests
@@ -361,6 +361,11 @@ table's nodes, while a world arms a few timers. So a focused test drives
 the echo to its limits (every connection's intake, receive and output
 full at once) and holds it to at least half its worst case, so that it
 keeps reaching them.
+
+The forge's worlds (section 6) keep within a budget of their own: a step
+test under 20 ms, a focused world test under half a second, and a fuzzy
+run within 5 seconds, its seeds included, so that `tests/forge` stays
+within half of each suite's.
 
 ## 8. Not built yet
 

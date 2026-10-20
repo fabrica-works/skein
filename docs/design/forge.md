@@ -456,7 +456,8 @@ pin (4.3), holds:
   decoder and encoder, the table to hints and the listener's path for a
   forge (section 7).
 - **The setup's documents:** the admin's reads, the bot, its tokens,
-  orgs, teams and hooks (forge-setup.md, section 4).
+  orgs, and a repository's read by id, collaborator and hooks
+  (forge-setup.md, section 4).
 - **Names, times and ids:** percent-encoding of a path's segments, RFC
   3339 times in both directions, and object ids in 40 or 64 hexadecimal
   digits.
@@ -561,7 +562,7 @@ How the Forgejo dialect uses the API, at its pin. The owner's values
 are the word, the user agent, the credential and the limits (section
 2.2). The operations are the calls of 3.2 and the start's reads (4.1);
 the setup's requests are the dialect's too, and forge-setup.md,
-section 4.3, lists them.
+sections 4.3 and 4.5, list them.
 
 ### 5.1 Conventions
 
@@ -1084,7 +1085,7 @@ forge-connection.md, section 6. This section is what the dialect holds.
   what it told of.
 - **Hooks are set up by reconcile, or by the person,** at the listener's
   URL for the forge, with the forge's secret, the events above, JSON and
-  active (forge-setup.md, section 4). A repository with no hook polls.
+  active (forge-setup.md, section 4.5). A repository with no hook polls.
 
 ## 8. Credentials
 
@@ -1275,11 +1276,11 @@ on. What no run records yet has its own bullet, near the end.
   - that a job no runner took has no steps, and that its log, and a log
     Forgejo no longer keeps, answer `404` (5.2, "A failed job's log").
 - **The setup's, and the owner's git.** What reconcile relies on
-  (Forgejo's command line, its admin routes, orgs, teams and org hooks,
-  the runner) is forge-setup.md, section 8's. What an owner's git relies
-  on of Forgejo (a renamed repository's redirect, a protected branch's
-  refusal of a push) is the owner's own, recorded in its own
-  transcripts.
+  (Forgejo's command line, its admin routes, orgs, repositories'
+  collaborators and hooks, the runner) is forge-setup.md, section 8's.
+  What an owner's git relies on of Forgejo (a renamed repository's
+  redirect, a protected branch's refusal of a push) is the owner's own,
+  recorded in its own transcripts.
 
 ## 10. GitHub
 

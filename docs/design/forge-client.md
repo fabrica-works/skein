@@ -1,6 +1,6 @@
 # The forge client
 
-Provisional, 2026-10-18.
+Provisional, 2026-10-20.
 
 `skein-forge-client` keeps a bounded view of a forge for the domain that
 owns it, and makes each write the owner commits at most once. It is
@@ -20,10 +20,13 @@ rest.
   **kept up by listing,** sooner on a hint, which is a reason to read and
   never a fact (section 4). **Fresh reads go first** (section 5).
 - **One request budget** (section 6): four classes share `rate` requests
-  per `window`. A rate refusal holds them all until its reset.
+  per `window`, never more than the forge says it has left, and a `304`
+  costs nothing. A rate refusal holds them all until its reset.
 - **Each effect is made at most once** (section 7). Its key, lane and
   recovery class decide how a lost answer is found. The attempt is saved
   before the write starts, so the search survives a restart (section 8).
+- **One writer per forge,** configured or given at runtime once, and
+  kept as a row; another author is refused (section 7.1).
 - **Everything is bounded:** `worst_case` (section 2.2).
 
 ## 2. Its owner, and how it is driven
@@ -41,7 +44,8 @@ vocabularies with total functions and routes the client's output.
   diagnostics, which decide nothing.
 - **Construction:** `Domain::new(limits)`, `seeded(limits, seed)` and
   `configured(limits, seed, config)` with the owner's namespace and
-  writers (section 7.1). **The namespace is given before any restored
+  writers (section 7.1). A forge's writer may come later, at runtime, by
+  `writer` (7.1). **The namespace is given before any restored
   entry or live resource is handed over** (section 8). An owner that
   learns it after construction sets it with `bind_deployment(id, limits)`,
   a 16-byte id, before that restore. It returns false, changing nothing,
@@ -49,10 +53,11 @@ vocabularies with total functions and routes the client's output.
   with no configuration, or when the result breaks section 7.1.
 - **Calls are the owner's to run.** `Request::Call` carries a token, a
   repository and an `Op` (forge.md, section 3); the owner returns exactly
-  one `Event::Answered { call, cost, result }` per token, a cost of 0
-  included.
-- **The client keeps no store.** It emits `Save` of a `Stored` row (`Live`
-  or `Repository`) and `Erase` of its `Key`. The owner commits an outbox
+  one `Event::Answered { call, cost, free, rate, result }` per token, a
+  cost of 0 included, with the component's `free` and `rate`
+  (forge-connection.md, section 4.1).
+- **The client keeps no store.** It emits `Save` of a `Stored` row (`Live`,
+  `Repository` or `Writer`) and `Erase` of its `Key`. The owner commits an outbox
   `Entry` and hands it over with `Make`; the client returns `Progress`
   and, when the entry settles, an `Outcome`.
 - **Preconditions,** asserted and never answered, since breaking one is
@@ -87,7 +92,8 @@ least `poll`), `hinted`, `slow` and `settle`; `entries`,
 `answer_bytes`, `reserve`, `backoff_max`, `poll_max` and `facts`, or a
 pair above is out of order. Else it sums every table and queue at its
 limit: operations at `op_bytes`, held and again in flight, the entries,
-the working set at saturation, the deadlines and the diagnostics.
+the writers, the working set at saturation, the deadlines and the
+diagnostics.
 
 ### 2.3 Admission and answer checks
 
@@ -211,7 +217,10 @@ Before a decision depends on a fact, the owner asks for it afresh with
 - **Retries.** `Unavailable` and `Timeout` are tried again, `read_attempts`
   tries in all, after `backoff` doubling to `backoff_max` plus a draw
   below that delay, capped at `backoff_max`. A rate refusal queues the
-  read again and spends no try.
+  read again and spends no try. `NotConnected` and `NotInstalled` reached
+  no forge (forge-connection.md, section 3.5) and are final, as any other
+  error is: the owner learns that the forge has no access, or that the
+  repository's account has no installation accepted.
 - **Settling** (section 4) is the owner's: it rereads a pull request not
   yet mergeable, or a commit status, with fresh reads within `settle`.
   The client keeps no window and treats each read as any other.
@@ -225,8 +234,16 @@ live resources) and `Slow` (the periodic backstop).
 
 - **Charging.** A window starts with its first call and lasts `window`;
   at `rate` spent, nothing is sent until it ends. A call is charged 1 when
-  sent and settled by the cost its answer reports: 0 refunds the 1 (in the
-  same window), `n` above 1 debits `n - 1` more.
+  sent and settled by the cost its answer reports less its `free`, the
+  requests the forge answered `304`, which its rate does not count: 0
+  refunds the 1 (in the same window), `n` above 1 debits `n - 1` more.
+- **The forge's window.** An answer's `rate` says what the forge has
+  left. When its `remaining` is below what the window has left, the
+  window keeps that instead; at 0, all four classes are held until its
+  `reset_at`, turned into the client's own time once, at the answer:
+  `env.now` plus `reset_at` less `env.wall`, at most `window` on
+  (programming-model.md, section 9). On GitHub each installation reports
+  its own window, and the budget takes the least (section 11).
 - **The reserve.** While a `Keep` or `Slow` call waits, `Fresh` and
   `Write` take at most `rate - reserve` of a window; with none waiting,
   all of it. Once that share is spent and a keeping read is due, a new
@@ -259,16 +276,28 @@ a marker (forge.md, section 6).
   version 1, the configured namespace and, as author, a configured writer
   of that forge. A party copying its bytes gains no standing.
 - **`Config { namespace, writers }`** holds `Writer { forge, author }`
-  entries: one to `repositories` of them, at most one per forge, no
+  entries: none to `repositories` of them, at most one per forge, no
   author 0, the namespace of 1 to 65535 bytes, and both within
-  `op_bytes`. `configured` refuses an invalid one (`TooLarge`). With none,
-  the client refuses every effect `Forbidden` and believes no key.
+  `op_bytes`. `configured` refuses an invalid one (`TooLarge`). Until a
+  forge has a writer, the client refuses its effects `Forbidden` and
+  believes no key of it.
+- **A writer at runtime.** `writer(d, env, Writer { forge, author },
+  out)` gives a forge's writer once its access is known
+  (forge-connection.md, section 3.5). It emits `Save` of a `Writer` row,
+  which a restart restores (section 8), and returns true. The same
+  author again changes nothing and returns true. Another author for that
+  forge, author 0, or a forge past `repositories` writers returns false
+  and changes nothing: an identity that changed is setup's to resolve,
+  never the client's (forge-setup.md, section 3). A restored `Writer` row
+  sets its forge's writer as if given; one that disagrees with the
+  configured or an earlier one makes `restoration_failed()` true.
 
 ### 7.2 Entries and lanes
 
 - **Admission.** `Make { entry }` is refused with `Outcome::Failed`, by
   the first of these that applies: `Busy` before restore ends;
-  `Forbidden` where the forge has no configured writer; `TooLarge` over
+  `Forbidden` where the forge has no writer yet, configured, given or
+  restored; `TooLarge` over
   `op_bytes`, with an attempt but no start, an empty key, or a condition
   its write does not take (a merge takes a base, an update a head and a
   base, a review a head, the rest none); `Busy` with `entries` held. A
@@ -343,6 +372,10 @@ it by its key, believed, alone.
    and the like) is final, never retried blind. `Unavailable` did not
    reach the forge: it is tried again after `backoff` doubling to
    `backoff_max` plus jitter, up to `write_attempts` failures.
+   `NotConnected` and `NotInstalled` reached no forge either, and fail
+   the entry at once, as a typed refusal does: the forge's access, or
+   the account's installation, is the owner's to restore before it
+   commits the write again. A find that meets them fails as 7.5 says.
 7. **Missing.** Deleting a branch already gone is made (`Set`). A find
    that meets `Missing` is a find not found; a set that meets it fails.
 
@@ -385,7 +418,8 @@ After a restart the owner gives the client its rows, then has it read
 before it writes.
 
 1. **Restore.** The namespace is given first (section 2).
-   `Restore { record }` for each stored row, then `Restored { clock }`.
+   `Restore { record }` for each stored row, its writers' among them,
+   then `Restored { clock }`.
    A row that breaks a limit or is inconsistent (a bad page or stamps, a
    cache or echoes over bounds, a live row without its repository's, or
    the reverse) makes `restoration_failed()` true, for good: `Keep` is
@@ -421,7 +455,10 @@ before it writes.
   before the first write; original deadlines across a restart and a
   changed clock; copied, revised and unknown rows never settling; golden
   bytes for keys; the refusals' order, a pair each for `Keep`, `Make`
-  and `Read`; a write rate-refused, then sent under a new attempt.
+  and `Read`; a write rate-refused, then sent under a new attempt; a
+  `304` charged nothing; a forge's window below the budget's, and its
+  reset holding every class; a writer given at runtime, given again,
+  given as another author, and restored; a write meeting `NotConnected`.
 - **The client world** (testing-strategy.md, section 2.2) runs the client
   alone under a durable scripted parent that commits a decision whole
   before it releases any call, over skein's fake forge domain
@@ -430,7 +467,9 @@ before it writes.
   resets. Its stories: creations survive faults, late landings and
   restart; an uncertain write is found without a second; a created
   branch deleted before its find is held after its deadline; a
-  conditional merge lands once; a late set reaches its final state; a
+  conditional merge lands once; a late set reaches its final state; an
+  effect committed before its forge's writer is given, refused, and one
+  restored after the writer was kept, made; a
   branch name taken by another writer is reported, not overwritten;
   every fresh read finishes once; no comment or review is delivered
   twice; every table full at once, within `worst_case`.
@@ -445,6 +484,12 @@ before it writes.
 
 ## 11. Open questions
 
+- **A window per installation.** GitHub reports each installation's
+  rate apart (forge-connection.md, section 4.4), and the budget is one:
+  it takes the least `remaining` any answer reports, so one spent
+  installation slows the calls of the others. Default: the least, since
+  one owner seldom spends one installation's 5000 an hour; a budget per
+  account would take the repository's account in each call.
 - **A keyed class in use.** No Forgejo write is `Keyed`. A dialect with a
   deduplicating key would move a creation there; GitHub's design decides
   (forge.md, section 10). Default: every Forgejo write keeps the class

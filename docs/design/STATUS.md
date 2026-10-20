@@ -49,7 +49,7 @@ section 3.3).
 | `testing.md` | partly | 4: the minimal machine's inodes, groups, modes, times, attributes, hard links and FIFOs: hearth's M2 files; 4: the trees' fixture programs: hearth's M2 trees; 3: the HTTP server and its client, and TLS in the real loop: not planned |
 | `json.md` | partly | 4: writing in pieces, a body encoded a piece at a time as io grants room; 6: the fuzz target; 7: several documents in one stream; 8: codecs from schemas: not planned |
 | `http.md` | partly | 3: chunked uploads; 3 and 5: content codings beyond the gzip encoder (smith's perf), trailer fields, HTTP/2 and upgrades; 4: reconnecting an event stream, and a reconnection time in a block of its own; 5: a request's body read while answering it; 6: the selective collector on each event's data in the protocol worlds, their heap metered, the fuzz targets; 8: a pool per peer, `Expect: 100-continue` waited for, the server's deadlines: not planned |
-| `tls.md` | partly | 1: the server side, with client certificates; 3.6: a user of the native face, a framed connection over TLS (channel.md, 7); 5: the real loop, a loopback exchange through the shell against a local rustls server, and the fuzz target; kernel TLS (shell.md, 8): not planned; 3.4: `Name::server`, a name read back as what it is: temper's forge-kit |
+| `tls.md` | partly | 1: the server side, with client certificates; 3.6: a user of the native face, a framed connection over TLS (channel.md, 7); 5: the real loop, a loopback exchange through the shell against a local rustls server, and the fuzz target; kernel TLS (shell.md, 8): not planned; 3.4: `Name::server`, a name read back as what it is: temper's forge-kit; 4: `sign_rs256` and `RS256_KEY_BYTES`, an App's signature: o/github's GitHub work |
 | `codec.md` | partly | 7: maps and sets, smaller integers, other languages: not planned |
 | `channel.md` | yes | 12: compression, bodies across frames, named calls, reconnecting: not planned |
 | `kv.md` | partly | 6: payload logs, 12: a shared sync, values on disk: not planned |
@@ -64,9 +64,9 @@ section 3.3).
 | `ui-web.md` | partly | 11, 15: the file picker, and parts for other effects; 15: the bundle served compressed, tabs of one person sharing one stream, HTTP/2; 16: a server keeping the previous bundle's digest directory; 14.2: the face typing into a field holding words: not planned (jig's skein-ui `later.md`); 14.2: the harness opening a printed line as a whole URL from either output, a page of another origin it serves, a printed URL again, and awaiting trouble and a request's status with its own `Host`: temper's client-api |
 | `forge.md` | no | 2 to 9, 11: `skein-forge`, the vocabulary, Forgejo's dialect and its call plans, the markers, deliveries, credentials and the pin, held today by temper's `temper-forge-forgejo` and `temper-engine-domain-forge-client`: temper's forge-kit; 9: a recorded fact for a job no runner took: not planned (temper's forgejo-17 `later.md`); 3, 8, 10: GitHub's additions to the vocabulary (validators, `Rate`, `Queued`, the protection's queue and `Bypass`, `NotConnected`, `NotInstalled`, `Credential::App`): o/github's GitHub work, after forge-kit's skein steps 07.3, 08.1 to 08.4, 09.1 and 10.5 |
 | `forge-github.md` | no | 2 to 14: `skein_forge::github`, GitHub's dialect at its pin, the App's documents, deliveries and the delivery log, the job log's redirect, the setup's documents: o/github's GitHub work; 15: its open questions |
-| `forge-connection.md` | no | 2 to 9: the component, held today by temper's `temper-engine-protocol-forge`: temper's forge-kit; 10: the added protocol owner/stories/invariants and independent complete-holder measurement: to the GitHub draft, section 17 (ruling 189); 5.1: renewal; 6: a listener over TLS, for a forge on another host (`tls.md`, 1): not planned |
-| `forge-client.md` | no | 2 to 10: the working set, keeping up, fresh reads, the budget, effects' keys, lanes and recovery, restart, held today by temper's `temper-engine-domain-forge-client`: temper's forge-kit |
-| `forge-setup.md` | no | 2 to 4, 6, 8: the access, the three modes and Forgejo's reconcile, held today by temper's `temper-forge-setup`: temper's forge-kit; 7: added world stories beyond the move: to the GitHub draft, section 17 (ruling 189); 5: GitHub's plan: not planned |
+| `forge-connection.md` | no | 2 to 9: the component, held today by temper's `temper-engine-protocol-forge`: temper's forge-kit; 3 to 8: access handed at runtime, `Kind::GitHub`, its installations, tokens and renewal, the App's JWT, the delivery log's puller, the job log's redirect, the new stops and limits: o/github's GitHub work, after forge-kit's skein steps 07.3, 08.1 to 08.4, 09.1 and 10.5; 10: the GitHub cases, the protocol world (forge-kit's 09.2 to 09.4) and the full holders' worst case (08.5): o/github's GitHub work, after the same steps; 6: a listener over TLS, for a forge on another host (`tls.md`, 1): not planned |
+| `forge-client.md` | no | 2 to 10: the working set, keeping up, fresh reads, the budget, effects' keys, lanes and recovery, restart, held today by temper's `temper-engine-domain-forge-client`: temper's forge-kit; 4.1, 6, 7.1, 8: the forge's rate window and free `304`s in the budget, the writer given at runtime and kept as a row, `NotConnected` and `NotInstalled`: o/github's GitHub work, after forge-kit's skein steps 07.3, 08.1 to 08.4, 09.1 and 10.5 |
+| `forge-setup.md` | no | 2 to 4, 6.1, 6.2, 8: the access, the three modes and Forgejo's reconcile, held today by temper's `temper-forge-setup`: temper's forge-kit; 3, 4: the admin's token kept, no team and no org hook, access per repository and its repair (4.5), connected's two tokens checked (4.6), an owned forge's admin's token taken over (4.7); 5, 10: GitHub's plans; 6.3, 6.4: the host component and the items' bytes: o/github's GitHub work, after forge-kit's skein steps 07.3, 08.1 to 08.4, 09.1 and 10.5; 7: the setup world (forge-kit's 07.4 and the GitHub draft's, section 17) and its worst case: o/github's GitHub work |
 | `fake-forge.md` | no | 2 to 8: the fake forge's domain and protocol layer, the forge peer, the throwaway Forgejo and the conformance, held today by temper's fakes, `ForgeHost` and tools: temper's forge-kit; 4: deliveries to an organization's hook, in a world: not planned; 3: the real-git bridge: a design of its own; 10, 11: GitHub's layer (`testing/skein-fake-forge-github`) and GitHub's conformance on it and live: o/github's GitHub work, the domain's gains in 10.2 after forge-kit; 9: speculative merges in the queue, recorded live transcripts: not planned |
 
 ## 3. Not planned
@@ -228,13 +228,15 @@ section 3.3).
   face typing into a field holding words, a test answering a native
   dialog, the kit's `browser.rs` split. Each waits for the application
   or the plan its row names.
-- **GitHub's setup plan** (`forge-setup.md`, section 5). Waits for a
-  service on GitHub. Its dialect is o/github's GitHub work (section 2).
 - **GitHub's later** (`forge-github.md`, sections 4.3 and 15;
   `fake-forge.md`, section 9): reads batched into one GraphQL query,
   conditional reads beyond the delivery log, speculative merges in the
   fake's queue, live transcripts recorded for replay. Each waits for a
   budget or a world that needs it.
+- **A connected GitHub's fine-grained token, and an App's hook at a
+  public address** (`forge-setup.md`, section 9): a connected GitHub is
+  an App the person made, and every App's hook is at no listener. Each
+  waits for a service that asks.
 - **The real-git bridge** (`fake-forge.md`, section 3): real git
   against the fake forge, for real-loop worlds. Waits for a design
   session of its own.

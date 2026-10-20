@@ -223,9 +223,9 @@ domain, and holds no clock of its own.
   `pull_request_rejected`, `pull_request_comment`, `create`, a tag's events,
   or a job cancelled or skipped. Deliveries go to the configured endpoint
   only; a hook made through the setup routes is stored and routes nothing.
-- **The setup's routes** (accounts, tokens, organizations, teams, members and
-  organization hooks) are served from this layer's own bounded store, not the
-  domain's (forge-setup.md, section 4).
+- **The setup's routes** (accounts, tokens, organizations, and a
+  repository's read by id, collaborators and hooks) are served from this
+  layer's own bounded store, not the domain's (forge-setup.md, section 4).
 
 ## 5. The forge peer
 
@@ -349,12 +349,13 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
   response body before masking and every output before writing. A leak stops
   the run naming the case and the kind of secret, never its value.
 - **The groups:** the dialect's cases; the setup (accounts, tokens,
-  organizations, teams and hooks, under the least admin scopes); `cli-`
-  facts (Forgejo's command line, outcomes only); `runner-` facts
-  (registration, the runner's connection, a workflow that clones a private
-  repository with the job's token); and the Actions facts, which run two
-  inline host-shell jobs, one succeeding and one failing, with nothing
-  downloaded. The runner groups are `unchecked` without the runner.
+  organizations, repositories' collaborators and hooks, under the least
+  admin scopes); `cli-` facts (Forgejo's command line, outcomes only);
+  `runner-` facts (registration, the runner's connection, a workflow
+  that clones a private repository with the job's token); and the
+  Actions facts, which run two inline host-shell jobs, one succeeding
+  and one failing, with nothing downloaded. The runner groups are
+  `unchecked` without the runner.
 - **`--component`** runs the kit's component (forge-connection.md) through
   real io sockets on the shell's ring against a fresh fixture, under the
   scopes `read:user`, `write:issue` and `write:repository`. It replaces only

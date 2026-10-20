@@ -1,82 +1,109 @@
 # Setting up a forge
 
-Provisional, 2026-10-18. `skein-forge-setup` makes a code forge ready
+Provisional, 2026-10-20. `skein-forge-setup` makes a code forge ready
 for a service. It ends with an access: the identity the service acts as,
 its credentials, the repositories it may write and the hooks that
-deliver to its listener. Forgejo's making is reconcile, a step machine
-that says each request and fails naming its step. GitHub's plan comes
-later.
+deliver to its listener. Each making is a plan, a step machine that says
+each request and fails naming its step: Forgejo's reconcile and its
+access per repository, and GitHub's App made by manifest, installed and
+checked. Its host component runs the plans in the owner's loop.
 
 ## 1. In one page
 
-- **A crate of step code.** It depends on skein-lib, skein-json and
-  `skein-forge` (forge.md, section 2), names no host, reads no file and
-  opens no socket.
+- **A crate of step code.** Its plans depend on skein-lib, skein-json
+  and `skein-forge` (forge.md, section 2), name no host, read no file and
+  open no socket. Its host component asks its owner's io (6.3).
 - **It ends with an access** (section 2): an identity, an API and a git
-  credential, a reach, a webhooks' secret and hooks. The component
-  (forge-connection.md) needs these and nothing more.
+  credential, a reach, and for Forgejo a webhooks' secret and hooks. The
+  component (forge-connection.md) needs these and nothing more.
 - **Three modes** (section 3): connected, where a person makes the
   access; managed, where the service makes it with an authority the
   person gives; owned, where the service runs the forge and then sets up
   as managed. Only Forgejo can be owned.
+- **The admin's token is kept,** by the owner, and read by the setup
+  host alone, for reconcile and for access at adoption (section 3). The
+  forge component never holds it.
 - **Reconcile is Forgejo's plan** (section 4): a pure machine, events in
   and at most one need out, with six steps in a fixed order. Each reads
-  first and writes only where the forge differs.
+  first and writes only where the forge differs. Beside it: access to
+  one repository at its adoption (4.5), connected's tokens checked (4.6),
+  and an owned forge's admin's token taken over (4.7).
+- **GitHub's plans** (section 5): the App's manifest as a pure function,
+  its conversion kept before the browser is answered, the bot's id, an
+  installation accepted by its state, the App's hook and checks, and an
+  App a person made, pasted. Each state is one-time (5.7).
 - **Given values, not configuration.** The owner gives the bot's login
-  and email, the tokens' names, the orgs and their owner, whether an
-  absent org is made, the admin's name for a failure, the listener's
-  address, the word and its limits (4.1). Reconcile asks its host for
-  each secret.
-- **It says each request; its host runs it** (section 6). The host
-  decides where a value lives. Reconcile names no file, and fails naming
-  its step, never a secret (4.4).
-- **GitHub's plan is later** (section 5), as seams only.
-- **Verified** against answers and in a world against the fake forge
-  (section 7), on the facts of Forgejo in section 8.
+  and email, the tokens' names, an owned forge's orgs and their owner,
+  the admin's name for a failure, the listeners' addresses, the word and
+  its limits (4.1, 6.3). A plan asks its host for each item.
+- **Items are named, never placed** (6.4). Each has its bytes pinned, and
+  the crate decodes them for the owner. The owner keeps each written
+  item durably before it acts on the plan's end.
+- **Two hosts** (section 6): the host component, which an owner runs in
+  its protocol layer beside the forge component, and the one-shot host
+  that skein-shell's `drive` runs for a command.
+- **Verified** against answers and in worlds against the fake forge
+  (section 7), on the facts of Forgejo in section 8 and of GitHub in
+  section 10.
 
 ## 2. The result: an access
 
 The setup ends with what the component needs (forge-connection.md,
-section 3), and nothing more:
+section 3.5), and nothing more:
 
-- **The identity** the service acts as, by the forge's id.
+- **The identity** the service acts as, by the forge's id: Forgejo's
+  bot, or GitHub's App's bot user, `<slug>[bot]`.
 - **Its API credential and its git credential,** of the forge's kind
   (forge.md, section 8). Forgejo's are tokens that do not expire, with
-  the scopes of 4.3, step 3.
-- **Its reach:** the repositories it may write. Forgejo's is a team on
-  each org, the identity its member. GitHub's is the App's
-  installations (section 5).
-- **The webhooks' secret, and hooks** that deliver to the service's
-  listener (forge-connection.md, section 6), at `/hooks/<number>`, the
-  number being the owner's for the forge.
+  the scopes of 4.3, step 3, both the owner's. GitHub's is the App's id
+  and private key; the component mints each installation's tokens from
+  it, git's among them (forge-connection.md, section 5).
+- **Its reach:** the repositories it may write. Forgejo's is the bot a
+  collaborator with `write` on each repository the owner adopted (4.5).
+  GitHub's is the App's installations the owner accepted (5.4).
+- **Forgejo's webhooks' secret, and hooks** that deliver to the
+  service's listener (forge-connection.md, section 6), one on each
+  adopted repository, at `/hooks/<number>`, the number being the
+  owner's for the forge. GitHub's App has a hook at no listener and no
+  secret kept: the component reads its delivery log (5.5).
 
 An access is of one forge. One without hooks is whole: a forge given no
 listener, or one not on loopback, gets neither hooks nor secret, and the
 service polls (forge-client.md, section 4). The crate holds no access:
-it gives its host each value to keep.
+it gives its host each value to keep, as items (6.4), and the owner
+builds the access from them.
 
 ## 3. Three modes
 
-- **Connected:** the person runs the forge and makes the access. The
-  service strictly needs the identity's API token, git token and id,
-  and for webhooks their secret. The person makes:
-  - a forge user for the service, not a site admin, with its two tokens
+- **Connected:** the person runs the forge and makes the access.
+  - On Forgejo, the service strictly needs the identity's API token, git
+    token and id, and for webhooks their secret. The person makes a
+    forge user for the service, not a site admin, with its two tokens
     (4.3, step 3) and its write access to each repository the service
-    works on, as a collaborator or through a team;
-  - optionally, each repository's or org's webhook to the listener, with
-    the secret and the events of forge.md, section 7, and Forgejo's
-    `[webhook] ALLOWED_HOST_LIST` letting it reach the listener. A
-    repository with no hook is polled.
+    works on, as a collaborator or through a team; and optionally each
+    repository's or org's webhook to the listener, with the secret and
+    the events of forge.md, section 7, and Forgejo's `[webhook]
+    ALLOWED_HOST_LIST` letting it reach the listener. A repository with
+    no hook is polled. The two tokens are checked as one user (4.6).
+  - On GitHub, the person makes an App and pastes its id and private
+    key; the service checks it, names what it lacks, sets its hook and
+    installs it through its own link (5.8).
 - **Managed:** the person runs the forge and gives an authority: a
-  Forgejo site admin's token, or approval of a GitHub App (section 5).
-  Reconcile asks for it at a run alone; the running service never has
-  it. With no admin's token, a forge is connected.
+  Forgejo site admin's token, or the making of a GitHub App by its
+  manifest (section 5).
+  - **The admin's token is kept** by the owner, durably and privately,
+    and read by the setup host alone, for reconcile at each start and
+    for the access at each adoption (4.5). The forge component never
+    holds it, and no request of the running service carries it. It is
+    asked for once, never at each adoption, and stays after setup.
+  - **Forgetting it** makes the forge connected: the bot, its tokens and
+    its id stay, and no reconcile runs.
 - **Owned:** the service runs Forgejo on loopback and CI's runner beside
   it, makes an admin on it, and sets up as managed with that admin's
-  token. The preparation and the running are the service's (section 9).
-  Reconcile differs in one step: it is given to make an absent org,
-  private and owned by the person whose login it is given (4.1; 4.3,
-  step 5).
+  token, which it takes over from the preparation (4.7). The preparation
+  and the running are the service's (section 9). Reconcile differs in
+  one step: it is given orgs to make when absent, private and owned by
+  the person whose login it is given (4.1; 4.3, step 5).
 - **Layered.** Each mode makes the values the one below reads:
 
   ```
@@ -87,17 +114,21 @@ it gives its host each value to keep.
 
   The service is the same in every mode. Nothing passes between the
   layers but the values and the forge's number.
-- **A mode is per forge and changes by the owner's values and a
-  restart.** Owned to managed: the service stops running the forge, and
-  the admin's token it made stays valid. Managed to connected: no
-  reconcile runs, and the values stay as last written. Connected to
-  managed: an admin's token is given; reconcile adopts or makes the bot.
+- **A mode is per forge.** Owned to managed: the service stops running
+  the forge, and the admin's token it took over stays valid. Managed to
+  connected: the admin's token is forgotten, and the values stay as last
+  written. Connected to managed: an admin's token is given, and the
+  connected user is kept: reconcile is given its login as the bot's and
+  takes it over when its full name carries the mark (4.3, step 2), and
+  refuses it `Unmarked` otherwise. The identity never changes under a
+  forge's writer (forge-client.md, section 7.1).
 
 ## 4. Forgejo's plan: reconcile
 
 Reconcile is the pure machine for a managed or an owned Forgejo. It
 decides from what it reads, and keeps no record of its own: the forge is
-its record.
+its record. The plans beside it (4.5 to 4.7) share its events, needs and
+failures.
 
 ### 4.1 What it is given
 
@@ -105,14 +136,14 @@ its record.
   - the forge's number;
   - the bot's login and email;
   - the tokens' names, one for the API and one for git;
-  - the orgs, at least one and at most the limit's;
-  - the orgs' owner, one optional value: the person's login when the
-    forge is owned, and an absent org is then made, owned by it; none
-    when managed, and an absent org then stops the run (4.3, step 5);
+  - the orgs to make and their owner, one optional value: when the forge
+    is owned, the person's orgs, at most the limit's, each made when
+    absent and owned by the person's login; none when managed;
+  - the repositories adopted, by id, at most `repositories` (4.5);
   - the name a failure gives the admin;
   - the listener's address, if any. The hook's URL is derived from it:
     `http://<address>/hooks/<number>`, the number being the forge's
-    (4.3, step 6);
+    (4.5);
   - the word, which marks the bot;
   - its limits (4.4).
 
@@ -121,9 +152,9 @@ its record.
   orgs, 120 s, 100 ms and 5 s.
 - **Asked of its host, as needs,** when a step reaches them: the admin's
   token, the API and git tokens, the bot's id as last kept, and the
-  webhooks' secret. These are the items. Each is named by what it is,
-  never by where it lives. The host gives it, or says it has none; an
-  empty value is none, for every item. The admin's token is asked for
+  webhooks' secret. These are the items (6.4). Each is named by what it
+  is, never by where it lives. The host gives it, or says it has none;
+  an empty value is none, for every item. The admin's token is asked for
   like the rest and held to the run's end.
 - **The API's address and transport are its host's:** reconcile says a
   request, never an address. Plaintext to loopback (section 9).
@@ -132,24 +163,33 @@ its record.
 
 `step(machine, event, out)` takes one event and pushes at most one need.
 The host reserves room for one before each step (`MAX_OUT` is 1;
-programming-model.md, section 5.2).
+programming-model.md, section 5.2). Every plan, Forgejo's and GitHub's,
+has this shape.
 
 | Need | The host's event |
 |---|---|
-| `Send { request, token }` | `Reply`: a document, a page of rows, nothing, a status, or down |
+| `Send { request, auth }` | `Reply`: a document, a page of rows, nothing, a status, unsigned, or down |
 | `Read(item)` | `Read`: the value kept, or none |
 | `Write { item, bytes }` | `Written`, once the value is kept whole |
 | `Draw(n)` | `Drawn`: `n` random bytes |
-| `Done`, `Stop(failure)` | none: the run has ended |
+| `Done(outcome)`, `Stop(failure)` | none: the plan has ended |
 
 - **The first event is `Begin`.** An event a step did not ask for ends
-  the run with `Unexpected`; a machine that has ended ignores events.
-- **A request carries no credential.** The token travels beside it, and
-  the host puts it in the header.
+  the plan with `Unexpected`; a machine that has ended ignores events.
+- **A request carries no credential.** Its `auth` travels beside it, and
+  the host puts it in the header: `Token(secret)`, a Forgejo token sent
+  as `token <value>`; `App { id, key }`, an App's JWT, which the host
+  signs afresh for each request (5.3) and sends as `Bearer <jwt>`; or
+  `None`. A key the host cannot sign with answers `Unsigned`, and the
+  request is never sent.
 - **The host decodes a reply** with `skein-forge`'s decoders (forge.md,
-  section 5): 2xx with a document, `Document`; with a listing, `Rows`,
-  one page; 2xx with no body, `Empty`; any other status, `Status(code)`;
-  no answer or a body that does not decode, `Down`.
+  section 5; forge-github.md, sections 8 and 11): 2xx with a document,
+  `Document`; with a listing, `Rows`, one page; 2xx with no body,
+  `Empty`; any other status, `Status(code)`; no answer or a body that
+  does not decode, `Down`.
+- **The outcome** is `Done` for most plans, and carries what the owner
+  serves or shows: the manifest's page (5.1), the install link (5.4), or
+  what an App lacks (5.6).
 
 ### 4.3 The steps
 
@@ -189,124 +229,324 @@ forge differs.
      the API token; `write:repository` and `read:user` for git's, so
      that this step can ask whose it is.
    - It never uses the bot's password and never signs in as the bot.
-4. **The bot's id.** It asks for the id kept, and writes it in decimal
-   when it differs.
-5. **Each org,** in the order given.
-   - An absent org (404) is made when the orgs have an owner (`POST
-     /api/v1/admin/users/{owner}/orgs`), private and owned by the orgs'
-     owner. When not, the run stops with `OrgMissing`.
-   - In it, a team named the bot's login: found in the org's teams
-     (paged), made when absent, edited when it differs from the wanted
-     one. The wanted team is on every repository the org has or will
-     have (`includes_all_repositories`), its `permission` `write`, sent
-     explicitly, and `write` on the units a service uses: code, issues,
-     pull requests and actions. Adopting any repository of the org then
-     finds the bot's write access with no admin act at runtime.
-   - The bot its member: the team's members are listed (paged), and the
-     bot is added when absent.
-6. **Each org's webhook,** when the listener is on loopback. With none,
-   or one elsewhere, the run ends `Done` after step 5.
-   - The URL is `http://<address>/hooks/<number>`, the address being
-     `127.x.y.z:port` or `[::1]:port`.
-   - The secret is asked for once. When the host has none, reconcile
-     draws 32 bytes, renders 64 lowercase hex digits and writes them.
-   - Per org, the hooks are listed (paged). Of those with that URL the
-     lowest id is kept and each other is deleted (a 404 is as good),
-     since each would deliver every change again. A hook of another URL
-     is left alone.
-   - The kept hook is patched at every run, or made when none is kept:
-     the URL, the secret, the subscribed events (forge.md, section 7),
-     JSON and active. Forgejo never shows a hook's secret.
+4. **The bot's id.** It asks for the id kept, and writes it (6.4) when
+   it differs.
+5. **Each org to make,** in the order given, when the forge is owned:
+   an absent org (404) is made (`POST
+   /api/v1/admin/users/{owner}/orgs`), private and owned by the orgs'
+   owner. A present one is left as it is. No team is made: the bot's
+   reach is each adopted repository's (step 6). With no orgs given, the
+   step reads nothing.
+6. **Each adopted repository's access,** in the order given: the bot a
+   collaborator, and its hook when the listener is on loopback, checked
+   and repaired as 4.5 says. With none adopted, the run ends `Done`
+   after step 5.
 
 ### 4.4 Converging, bounds and failures
 
 - **From Forgejo, every time.** A second run with nothing changed
   writes nothing to the host and only the hooks' patches to the forge.
-  A bot deleted, a token revoked, a hook deleted, a team member removed
-  or a team a person edited is made again at the next run.
-- **Bounded:** the orgs at most `orgs`; every listing paged by the
-  forge's page cap, read once from `GET /api/v1/settings/api`
-  (`max_response_items`; zero is `Unexpected`), a page shorter than the
-  cap being the last; the run within `deadline`. The limits are `orgs`,
-  `deadline`, `backoff` and `backoff_max`, each at least 1, with
-  `backoff <= backoff_max < deadline`; the crate names the pair that
-  breaks it.
+  A bot deleted, a token revoked, a hook deleted or a collaborator
+  removed is made again at the next run.
+- **Bounded:** the orgs at most `orgs`, the repositories at most
+  `repositories`; every listing paged by the forge's page cap, read once
+  from `GET /api/v1/settings/api` (`max_response_items`; zero is
+  `Unexpected`), a page shorter than the cap being the last; the run
+  within `deadline`. The limits are `orgs`, `repositories`, `deadline`,
+  `backoff` and `backoff_max`, each at least 1, with `backoff <=
+  backoff_max < deadline`; the crate names the pair that breaks it.
 - **It waits for the forge.** The host makes the first request again on
   a `Down` or a 5xx, after `backoff`, doubling, never past `backoff_max`
-  nor the time `deadline` leaves (6.2), so a host may start reconcile
-  beside Forgejo with no readiness probe. After the first answer a
-  `Down` stops the machine.
+  nor the time `deadline` leaves (6.2, 6.3), so a host may start
+  reconcile beside Forgejo with no readiness probe. After the first
+  answer a `Down` stops the machine.
 - **A failure** is `{forge, step, subject, why}`, and shows no secret
   (lib.md, section 6). The step is `Admin`, `Bot` (its id included),
-  `Token`, `Org` (its team included) or `Hook`. The subject is the
-  admin's given name, the bot's login, the token's name or the org's
-  name (the `Hook` step's too). The why is `Missing`, `Refused(status)`,
-  `NotAdmin`, `BotIsAdmin`,
-  `Unmarked`, `OrgMissing`, `Down` or `Unexpected`. It stops the run and
-  leaves each value written whole and valid.
+  `Token`, `Org`, `Repository` (its collaborator and hook), and for
+  GitHub's plans `App`, `Installation` and `State` (section 5). The
+  subject is the admin's given name, the bot's login, the token's name
+  (`api` or `git` when connected, 4.6), the org's name, the
+  repository's path, or its id in decimal before its path is read, the
+  App's slug or id, an installation's id, or the plan whose state it
+  is. The why is `Missing`, `Refused(status)`, `NotAdmin`, `BotIsAdmin`,
+  `Unmarked`, `OtherUser`, `OtherApp`, `KeyForm`, `Unknown`, `Busy`,
+  `Down` or `Unexpected`. It stops the run and leaves each value written
+  whole and valid.
 - **Several services on one forge** each have their own word and bot,
-  so their own team and hooks; another's bot is `Unmarked`.
+  so their own collaborators and hooks; another's bot is `Unmarked`.
 - **What it cannot set:** Forgejo's settings its API does not change,
   the webhooks' `ALLOWED_HOST_LIST` and whether Actions are enabled. A
   forge whose host list refuses the listener delivers no hook, and
   polling keeps up.
 
-## 5. GitHub's plan, later
+### 4.5 Access to a repository, at adoption and at each start
 
-Marked later. It says what the plan will ask, and binds no code.
+`Adopt { forge, repository }` gives the bot access to one repository
+when the owner adopts it, by the admin's token, before the owner's
+first call to it; reconcile's step 6 runs the same for each adopted
+repository at each start, so access a person removed is repaired.
 
-- **Managed is the App manifest flow:**
-  1. The machine drafts the manifest: the App's name, URL, webhook URL
-     and events, and its permissions (contents, issues and pull requests
-     to write; checks, statuses, actions and metadata to read).
-  2. The person creates the App on GitHub, which redirects their
-     browser to the host's loopback listener with a code, as in
-     oauth.md, section 6.5.
-  3. The machine exchanges the code for the App's id, private key and
-     webhook secret.
-  4. The person installs the App on their orgs or repositories.
-  5. The machine finds the installations and the repositories each one
-     reaches.
-- **Reconcile then checks and reports.** No API makes an installation,
-  so it repairs nothing and names what the person must do. Installing
-  the App is its scope, in place of teams.
-- **The credentials are of the installation kind** (forge.md,
-  section 8): the identity is the App's bot user, and git authenticates
-  over HTTPS with the installation's token, which expires within the
-  hour and which the component renews (forge-connection.md, section 5).
-- **Connected** is a fine-grained token, or an App the person makes and
-  installs. **Owned:** none.
+1. **The admin's token,** as step 1 (4.3). Reconcile's run has it
+   already.
+2. **The repository,** `GET /api/v1/repositories/{id}`: its path. A
+   `404` stops `Adopt` with `Missing`; reconcile passes over a
+   repository the forge no longer has, which the owner's client finds
+   gone.
+3. **The bot a collaborator:** `GET
+   /api/v1/repos/{owner}/{repo}/collaborators/{bot}/permission`; below
+   `write`, `PUT .../collaborators/{bot}` with `{"permission":"write"}`.
+   A repository the bot owns, or one whose org gives the bot more, is
+   left as it is.
+4. **Its hook,** when the listener is on loopback; with none, or one
+   elsewhere, the plan ends `Done` after step 3.
+   - The URL is `http://<address>/hooks/<number>`, the address being
+     `127.x.y.z:port` or `[::1]:port`.
+   - The secret is asked for once. When the host has none, the plan
+     draws 32 bytes, renders 64 lowercase hex digits and writes them.
+   - The repository's hooks are listed (`GET .../hooks`, paged). Of
+     those with that URL the lowest id is kept and each other is deleted
+     (a 404 is as good), since each would deliver every change again. A
+     hook of another URL is left alone.
+   - The kept hook is patched at every run, or made when none is kept:
+     the URL, the secret, the subscribed events (forge.md, section 7),
+     JSON and active. Forgejo never shows a hook's secret.
+
+A collaborator or a hook on a listing's second page is found there,
+neither repeated nor passed over.
+
+### 4.6 Connected's two tokens, checked
+
+`Check { forge }` runs when a person connects a Forgejo, and when they
+replace its tokens. It asks for the API token and git's, as the person
+gave them (the owner serves them from what the request carried), and
+the user kept, if any.
+
+- `GET /api/v1/user` with the API token answers the identity: its id
+  and login, which the owner shows ("connected as temper, id 7"). One
+  that is a site admin is refused `BotIsAdmin`: the service acts as no
+  admin.
+- `GET /api/v1/user` with git's must answer the same user. Either token
+  refused (a 401, or git's 403 for a missing `read:user`) stops the plan
+  `Refused(status)`; two users stop it `OtherUser`, each naming which
+  token, `api` or `git`.
+- A user kept that differs stops it `OtherUser`: a replacement answers as
+  the user the forge already has. Otherwise the plan writes the user's id
+  and ends `Done`; the owner keeps the tokens and the secret it was given.
+
+### 4.7 An owned forge's admin's token, taken over
+
+`TakeOver { forge, admin_token }` takes the token the owned forge's
+preparation left in its handover file, at the service's start. The
+owner reads the file and hands its value; the plan:
+
+1. checks it as step 1 (4.3), naming the admin;
+2. writes it as the admin's token;
+3. lists the admin's own tokens (`GET
+   /api/v1/admin/users/{admin}/tokens`, paged, the login from step 1),
+   and deletes each but the one whose last eight characters are the
+   taken token's, by step 3's routes (4.3), so no older admin's token
+   stays valid.
+
+The owner removes the file after `Done`, never before, and then runs
+reconcile as for a managed forge. Each preparation makes a new token;
+a start with no file reads the token kept.
+
+## 5. GitHub's plans
+
+One App per deployment, owned by the connecting account, public, made by
+its manifest (5.1, 5.2) or by the person (5.8). Its requests and their
+documents are forge-github.md's (section 11); the plans say which, in
+what order, and what each answer decides. Every App's request
+(`/app...`) carries the App's JWT (5.3); the conversion and the bot's
+lookup carry none.
+
+### 5.1 The manifest
+
+`Manifest { forge, target }` makes the page that sends the person's
+browser to GitHub to make the App. `target` is `Personal` or `Org(login)`.
+
+- **A pure function** of the given values: the word and a random part,
+  three bytes drawn, as six lowercase hex digits, the name being
+  `<word>-<random>`; GitHub's web origin, `<web>`, which is
+  `https://github.com` or the fake's (forge-github.md, section 11); the
+  deployment's URL; the redirect and setup addresses on the owner's
+  clients' listener, whole URLs; and the state, which the host draws
+  (5.7).
+- **The manifest:** `name`; `url`, the deployment's; `public` true;
+  `redirect_url`, the redirect address; `setup_url`, the setup address,
+  with `setup_on_update` true; `hook_attributes`, the URL
+  `https://<name>.invalid/` and active (5.5); and `default_permissions`
+  and `default_events`, the wanted ones (5.6).
+- **The page:** a form that posts the manifest, as a field, to
+  `<web>/settings/apps/new?state=<state>`, or for an org
+  `<web>/organizations/<login>/settings/apps/new?state=<state>`,
+  at most `page_bytes`. `Done` carries it; the owner serves it at its
+  own address for that state, while the state lives.
+
+The person may rename the App on GitHub's page: the slug the conversion
+answers is the App's, whatever the manifest said.
+
+### 5.2 The conversion
+
+`Convert { forge, code, state }` runs when GitHub redirects the
+person's browser back with the code and the state. The host checks the
+state first (5.7). Then:
+
+1. **The conversion,** `POST /app-manifests/{code}/conversions`, no
+   credential, within the code's hour. It answers the App's id, slug,
+   owner, private key as PEM and webhook secret, and an OAuth client's
+   id and secret. The plan keeps none of the OAuth pair, nor the webhook
+   secret (5.5).
+2. **The key, turned into DER:** the PEM's `RSA PRIVATE KEY` block, its
+   base64 decoded, at most `key_bytes`. Any other block, a key past
+   `key_bytes`, or base64 that does not decode stops it `KeyForm`.
+3. **The App's read,** `GET /app` on the JWT, proving the key signs:
+   the id answered must be the conversion's (`OtherApp` otherwise), and
+   an `Unsigned` stops it `KeyForm`.
+4. **The bot's id** (5.3).
+5. **The writes:** the App's id, slug, key (DER) and bot's id. `Done`
+   comes after the last is `Written`.
+
+The owner answers the browser only after `Done`, so a person never sees
+an App made whose key the service lost, and then connects the forge
+(forge-connection.md, section 3.5) and offers the install link (5.4). A
+code used twice, or past its hour, is refused by GitHub: `Refused(404)`
+or the status it answers.
+
+### 5.3 The bot's id, and the JWT
+
+- **The bot** is the App's user, `<slug>[bot]`: `GET
+  /users/<slug>%5Bbot%5D`, with no credential, answers its id. A `404`
+  stops the plan `Missing`. The id is the access's user, which the
+  component checks at each start on an installation's token
+  (forge-connection.md, section 3.4).
+- **The JWT** is the dialect's `github::jwt` (forge-github.md, section
+  8.1), signed by the host with `skein_tls::sign_rs256` (tls.md, section
+  4) on the wall's time, issued a minute in the past and valid ten
+  minutes. The host signs one for each request; the plan never sees one.
+
+### 5.4 Installing, and accepting
+
+- **`Install { forge }`** answers the link that installs the App, with
+  a fresh state: `<web>/apps/<slug>/installations/new?state=<state>`.
+  It reads the App's slug and sends nothing. Installing on another
+  account is the same plan again. Which repositories the installation
+  takes is the person's choice on GitHub's page; ones granted later
+  arrive as its repositories' change (forge-connection.md, section 4.4).
+- **`Accept { forge, installation, state }`** runs when GitHub's setup
+  address brings the person back with the installation's id and the
+  state. The host checks the state as one of `Install`'s (5.7). The plan
+  reads the App's id and key and the accepted set, reads the
+  installation (`GET /app/installations/{id}`; a `404` stops it
+  `Missing`), adds its id and writes the set. The owner then hands the
+  set down (forge-connection.md, section 4.4).
+- **Only installations accepted this way are the service's.** Another
+  account may install a public App: such an installation is never used,
+  and reconcile uninstalls it (5.6).
+
+### 5.5 The hook, at no listener
+
+The App's hook is at `https://<name>.invalid/` at its making, and at
+`https://<slug>.invalid/` once reconcile or a paste sets it, active,
+with no secret the service keeps. GitHub cannot deliver there, and keeps
+each delivery in the App's log, which the component reads on the App's
+JWT (forge-connection.md, section 6.5). So a deployment needs no address
+GitHub can reach, and no webhooks' secret is kept for GitHub: an access
+that carries one is refused (forge-connection.md, section 3.5).
+
+### 5.6 The App's checks: GitHub's reconcile
+
+`Reconcile { forge }` runs at each start, before the owner connects the
+forge, and after a connect. It reads the App's id and key and the
+accepted set; then:
+
+1. **The App,** `GET /app`: a `401` is the key no longer taken, and
+   stops it `Refused(401)`, which the owner shows with the offer to
+   replace the key (5.8); another id stops it `OtherApp`.
+2. **Its permissions and events** against the wanted: contents, pull
+   requests and issues, and merge queues, to write; checks, statuses,
+   actions, administration and metadata to read; never workflows, never
+   administration to write. The events: push, pull request and its
+   reviews and review comments, issue comments, issues, check runs and
+   suites, statuses, workflow jobs and runs, branch creation and
+   deletion, and merge groups. Each lacking one is named in the outcome,
+   `Lacking`, at most the wanted's count, never refused: GitHub asks the
+   person to approve what a newer service asks more, on the App's page.
+3. **Its hook,** `GET /app/hook/config`; one whose URL is not
+   `https://<slug>.invalid/` is set to it (`PATCH /app/hook/config`).
+4. **Its installations,** `GET /app/installations`, paged: an accepted
+   id gone is dropped from the set, which is written; one not accepted,
+   made more than `state_life` ago, is uninstalled (`DELETE
+   /app/installations/{id}`; a `404` is as good). A younger one may be
+   waiting for its person's `Accept`.
+
+A second run with nothing changed writes nothing.
+
+### 5.7 States, one-time
+
+- **The host draws each state:** 16 bytes, as 32 lowercase hex digits,
+  for `Manifest` and `Install`, bound to the forge and to the plan that
+  will take it, `Convert` or `Accept`.
+- **It lives `state_life`,** at most an hour, the conversion code's
+  life, in the host's memory alone: at most `states`, the oldest going
+  first when full. A restart forgets them; the person starts again.
+- **Taken once:** `Convert` or `Accept` with a state that is unknown,
+  used, expired, of another forge or of the other plan stops at once,
+  `State`, `Unknown`, and sends nothing. The state is used when its plan
+  starts, whatever its end.
+
+### 5.8 An App a person made, pasted
+
+`Paste { forge, app }` connects an App the person made, with its id
+and private key pasted. The owner serves the pasted key as `Pasted`
+(6.4), read once and never written.
+
+1. **The key:** the pasted PEM turned into DER, as 5.2's step 2.
+2. **The App's read,** `GET /app`: its id must be `app`, and the id
+   kept, when the forge has one, must be too (`OtherApp`); its slug is
+   read.
+3. **The bot's id** (5.3); a forge that has a user kept must find the
+   same (`OtherUser`).
+4. **Its hook** set, and **its permissions and events** checked, as
+   5.6's steps 2 and 3.
+5. **The writes:** the App's id, slug, key (DER) and bot's id, then
+   `Done`, carrying what it lacks.
+
+The person installs it through `Install` (5.4). Replacing the key is the
+same plan, with the id kept.
 
 ## 6. The crate, and its host
 
 ### 6.1 The crate
 
-- **Step code,** under the Rust subset (programming-model.md,
-  section 10): the access's types and checks, Forgejo's reconcile, and
-  GitHub's plan later. It depends on skein-lib, skein-json and
-  `skein-forge`, which holds the setup's documents: admin users and
-  their tokens, orgs, teams and members, and org hooks (forge.md,
-  section 5; section 4.3).
+- **Step code,** under the Rust subset (programming-model.md, section
+  10): the access's types and checks, Forgejo's plans, GitHub's plans,
+  the items' decoders and the host component. Its plans depend on
+  skein-lib, skein-json and `skein-forge`, which holds the setup's
+  documents (forge.md, section 5; forge-github.md, section 11). The host
+  component adds io's vocabulary, skein-http's client and skein-tls's
+  client and signing, as the forge component does (forge-connection.md,
+  section 2).
 - **The owner checks the setup's values and limits at its start,** for
   every command it runs. The crate gives the checks. A refusal names a
   `Place`, the crate's name for each given value and each limit (an org
-  by its index), which the owner maps to its own path for the person;
-  never a value's content. Two limits out of order name both places, in
-  the order 4.4 writes them (`backoff <= backoff_max < deadline`).
+  or a repository by its index), which the owner maps to its own path
+  for the person; never a value's content. Two limits out of order name
+  both places, in the order 4.4 writes them (`backoff <= backoff_max <
+  deadline`).
 
-### 6.2 The host
+### 6.2 The one-shot host
 
-The host is the service's: ordinary Rust on skein-http over skein-io,
-one-shot, running one reconcile for one forge, driven by skein-shell's
-`drive` (shell.md, section 12). Reconcile says; the host runs and hands
-back the outcome. A service with several forges runs a machine for each.
-Its duties:
+The one-shot host is the service's, for a command: ordinary Rust on
+skein-http over skein-io, running one plan for one forge, driven by
+skein-shell's `drive` (shell.md, section 12). The plan says; the host
+runs and hands back the outcome. Its duties:
 
 - **Run a `Send`:** encode the request with `skein-forge`'s encoder, add
-  the `Host` (`skein-forge`'s `host`, forge.md, section 5.1),
-  `Authorization: token <value>` and the owner's user agent,
-  make one exchange on a connection closed after it, and decode the
-  answer into a `Reply` (4.2).
+  the `Host` (`skein-forge`'s `host`, forge.md, section 5.1), the
+  header of its `auth` and the owner's user agent, make one exchange on
+  a connection closed after it, and decode the answer into a `Reply`
+  (4.2).
 - **Keep and give the items.** It decides where each lives, and keeps it
   private and whole: written beside its place and renamed over it. A
   `Read` is answered with the value, or none.
@@ -318,49 +558,137 @@ Its duties:
 - **Hold the forge's lock** across a run, and say the outcome in the
   service's way: its exit status, its words.
 
+### 6.3 The host component
+
+The host component runs the plans inside a running service: a component
+of the owner's protocol layer, beside the forge component and apart from
+it, in skein's component shape. It holds the admin's token and the App's
+key only while a plan that asked for them runs, and drops them at its
+end.
+
+- **Construction:** `Host::new(limits, settings)` checks both (6.1).
+  The settings name each forge, its number, kind, API address and
+  transport as forge-connection.md's do, and its given values: Forgejo's
+  of 4.1 but the repositories, and GitHub's of 5.1 but the state; and
+  the owner's user agent.
+- **Entry points:** `down` takes one request of the owner, `up` one of
+  io's events, `fire` one expired deadline, and `next_deadline` says the
+  earliest; each emits at most 4 events up and 4 requests to io. The
+  owner gives io its own tokens for the host's connections, keeping the
+  host's token in each, as for the forge component.
+
+| Down | Up |
+|---|---|
+| `Request::Run { run, plan }` | `Event::Need { run, need }`: a `Read` or a `Write` |
+| `Request::Answer { run, answer }`: `Read(value)` or `Written` | `Event::Done { run, outcome }` |
+| `Request::Close` | `Event::Stop { run, failure }` |
+| | `Event::Closed` |
+
+- **A run** is the owner's number for one plan: `Reconcile { forge,
+  adopted }`, `Adopt { forge, repository }`, `Check { forge }`,
+  `TakeOver { forge, admin_token }`, `Manifest { forge, target }`,
+  `Convert { forge, code, state }`, `Install { forge }`, `Accept {
+  forge, installation, state }`, `Reconcile { forge }` (GitHub's) or
+  `Paste { forge, app }`, each of the forge's kind. At most `runs` run at
+  once, one per forge: another for a forge that has one stops at once,
+  `Busy`, and so does one past `runs`.
+- **It does the needs** of 4.2 but the items: a `Send` on a connection of
+  its own to the forge, opened for it and closed after its answer,
+  waiting for the forge as 4.4 says on its own deadlines; a `Draw` from
+  the env's source; the states of 5.7. A `Read` or a `Write` goes up,
+  and the run waits for its answer. One answer per need: an answer for a
+  run with no need waiting is ignored.
+- **Each run ends once,** `Done` or `Stop`, within `deadline`. `Close`
+  ends every run unheard and the host says `Closed` when io has settled
+  every socket.
+
+### 6.4 The items
+
+An item is a value a plan reads or writes, named by what it is. The
+owner keeps each where it chooses, durably and privately, and hands back
+the bytes it was given, unchanged. It keeps each written item before it
+answers `Written`, and acts on a plan's end only after: so a browser is
+answered, and a connect sent, only on what a restart would find.
+
+| Item | Bytes |
+|---|---|
+| `AdminToken`, `ApiToken`, `GitToken`, `WebhookSecret` | the token's or the secret's text, at most `token_bytes` |
+| `User` | the identity's forge user id: 8 bytes, little-endian, never 0 |
+| `AppId` | the App's id: 8 bytes, little-endian, never 0 |
+| `AppSlug` | the App's slug's text, at most `name_bytes` |
+| `AppKey` | the App's key, PKCS#1 `RSAPrivateKey` DER, at most `key_bytes` |
+| `Accepted` | the accepted installations' ids, 8 bytes each, little-endian, ascending and distinct, at most `installations`; empty is none |
+| `Pasted` | a pasted App key's PEM, read once, never written (5.8) |
+
+- **The crate decodes each** for the owner, which builds the access
+  from them (forge-connection.md, section 3.5): one total function per
+  item, from its bytes to its value, none for bytes that break the
+  table.
+- **An item's bytes are a stored format:** a change to them is a new
+  item, never new bytes for an old one. The owner's own records, its
+  forge's kind and address among them, are its own.
+
 ## 7. Verification
 
 The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
 
-- **Step tests,** reconcile driven by answers: each step read, then
+- **Step tests,** each plan driven by answers: each step read, then
   written only where the forge differs; the marker's refusal, and the
   mark found only whole; a site admin bot refused, and a user both
   unmarked and a site admin refused `Unmarked`; a revoked token made
   again, and one answered `403`; an empty item taken as none; the hooks
   patched; an event out of order; the hook's URL for loopback addresses
-  alone; the check refusing no org, and the limits' relation at its
-  bound and one past. The documents are tested with `skein-forge`
-  (forge.md, section 11).
-- **Reconcile's world** (testing-strategy.md, 2.4) plays the host over a
-  store of items and the fake forge's setup routes (fake-forge.md,
-  section 4). It checks:
+  alone; the limits' relation at its bound and one past. For GitHub: the
+  manifest's contents, field by field, for each target; the conversion's
+  writes before `Done`; a key of another form refused; an id other than
+  the kept one refused; each permission or event lacking named; a stray
+  installation uninstalled and a young one left; each item's decoder at
+  its bounds. The documents are tested with `skein-forge` (forge.md,
+  section 11; forge-github.md, section 14).
+- **The setup world** (testing-strategy.md, 2.4), in skein's
+  `tests/forge/setup`, plays the host component over a store of items
+  and the fake forge's setup routes and GitHub layer (fake-forge.md,
+  section 4), through HTTP bytes. It checks:
   - an empty forge converged: the bot, both tokens with their scopes,
-    answering as the bot, the team and the hooks;
-  - a token kept untouched when it answers as the bot, and made again
-    when it is another user's or was never made;
+    answering as the bot, and each adopted repository's collaborator and
+    hook;
+  - a token kept untouched when it answers as the bot, made again when it
+    is another user's or was never made, and one found on a listing's
+    second page replaced;
   - a second run writing only the hooks' patches;
-  - a deleted bot, a revoked token, a removed team member, a deleted
-    hook and a team a person edited, each made again;
-  - two hooks with the listener's URL, the lowest id patched and the
-    other deleted, and a hook of another URL left alone;
-  - a missing org refused when given not to be made, and made for the
-    orgs' owner when given so; a listing longer than a page read to its
-    end;
-  - the secret drawn when missing and kept when present; a person's
-    account under the bot's login refused;
+  - a deleted bot, a revoked token, a removed collaborator and a deleted
+    hook, each made again;
+  - a collaborator or a repository's hook on a listing's second page
+    neither repeated nor passed over; two hooks with the listener's URL,
+    the lowest id patched and the other deleted, and a hook of another
+    URL left alone;
+  - an owned forge's missing org made for its owner; the secret drawn
+    when missing and kept when present; a person's account under the
+    bot's login refused; another service's bot refused as unmarked; two
+    services keeping separate access on one forge; a listener off
+    loopback making no hook and no secret;
+  - connected's tokens as one user, and as two, refused naming which;
+    an admin's token taken over and its older tokens deleted;
+  - on GitHub: the conversion's answer kept before `Done`; a state used
+    twice, or unknown, refused; an installation accepted, and a stray
+    one uninstalled; the hook's address set; a pasted App lacking a
+    permission named;
   - no secret in a failure's `Debug` or in the trace.
+- **The worst case,** against the counting allocator (skein-heap): every
+  limit at its maximum, `runs` plans running, each holding its items,
+  and `states` states, metered against `worst_case`.
 - **Fuzzy:** random initial forges converge, and a second run writes only
   the hooks' patches (testing-strategy.md, section 8).
-- **Against a real Forgejo,** the conformance records section 8's facts,
-  and a service tests its host on the throwaway (fake-forge.md,
-  sections 7 and 6).
+- **Against a real forge,** the conformance records sections 8's and
+  10's facts, and a service tests its host on the throwaway Forgejo
+  (fake-forge.md, sections 7 and 6). No suite calls GitHub itself.
 
 ## 8. What reconcile relies on of Forgejo
 
 Each fact is recorded by the conformance on the throwaway Forgejo at the
 pin (forge.md, section 4.3), and named by the fact's name.
 
-- **Users and tokens, by the admin's token** (steps 1 to 3):
+- **Users and tokens, by the admin's token** (steps 1 to 3, and 4.7):
   - the admin's token reads as a site admin; another's is refused:
     `setup-the-admin-token-reads-user-as-a-site-admin`,
     `setup-a-non-admin-token-is-refused-the-admin-routes`;
@@ -370,9 +698,11 @@ pin (forge.md, section 4.3), and named by the fact's name.
     `setup-created-user-is-no-site-admin-and-keeps-its-full-name`,
     `setup-user-of-a-login-reads-admin-flag-and-full-name`,
     `setup-user-of-a-missing-login-is-404`;
-  - tokens list by name and scopes, never value, and page; are made
-    with their value, refused under a used name, and deleted:
+  - tokens list by name, scopes and last eight characters, never value,
+    and page; are made with their value, refused under a used name, and
+    deleted:
     `setup-token-list-shows-names-and-scopes-without-values`,
+    `setup-token-list-shows-the-last-eight`,
     `setup-token-list-pages-by-page-and-limit`,
     `setup-admin-route-makes-a-token-answering-201-with-name-scopes-and-value`,
     `setup-token-of-an-existing-name-is-refused`,
@@ -384,31 +714,28 @@ pin (forge.md, section 4.3), and named by the fact's name.
     `setup-a-git-token-of-write-repository-alone-is-refused-user`,
     `setup-a-git-token-of-write-repository-and-read-user-answers-user-as-the-bot`,
     `setup-api-token-without-write-issue-is-refused-an-issue-write`.
-- **Orgs and teams** (step 5): an org an admin makes for a user is
-  private and takes `write:admin` alone; a missing org is a 404; a team
-  on all repositories with `write` on four units reads back, pages and
-  is edited whole; its member lists and writes in a later repository:
+- **Orgs** (step 5): an org an admin makes for a user is private and
+  takes `write:admin` alone; a missing org is a 404:
   `setup-org-made-for-a-user-by-an-admin-is-201-and-private`,
   `setup-org-made-for-a-user-takes-write-admin-alone`,
-  `setup-org-missing-is-404`,
-  `setup-team-made-with-write-all-repositories-and-four-units`,
-  `setup-team-listing-reads-back-what-was-made`,
-  `setup-team-listing-pages-by-limit`,
-  `setup-team-edit-replaces-units-and-flags`,
-  `setup-team-members-list-the-added-user`,
-  `setup-team-member-writes-in-a-repository-made-later`.
-- **Org hooks** (step 6): a loopback hook is made, JSON and active,
-  lists its events and never shows its secret; two may share a URL; a
-  patch or a deletion leaves the org's others; a listing pages;
-  `ALLOWED_HOST_LIST` refuses loopback unless it names the listener:
-  `setup-hook-for-a-loopback-address-is-made`,
-  `setup-hook-is-json-and-active`,
-  `setup-hook-lists-the-events-it-was-made-with`,
-  `setup-hook-never-shows-its-secret`,
-  `setup-hook-of-one-url-can-be-made-twice`,
-  `setup-hook-patch-leaves-the-orgs-other-hook`,
-  `setup-hook-delete-is-204-and-leaves-the-orgs-other-hooks`,
-  `setup-hook-listing-pages-by-limit`,
+  `setup-org-missing-is-404`.
+- **Repositories' access** (step 6, 4.5): a repository reads by id for
+  the admin, a private one too; an admin's `PUT` of a collaborator
+  answers 204 and grants `write`, which its permission reads back; a
+  repository's loopback hook is made, JSON and active, lists its events
+  and never shows its secret; two may share a URL; a patch or a deletion
+  leaves the repository's others; a listing pages; `ALLOWED_HOST_LIST`
+  refuses loopback unless it names the listener:
+  `setup-repository-by-id-reads-its-path-for-an-admin`,
+  `setup-collaborator-put-by-an-admin-answers-204-and-grants-write`,
+  `setup-collaborator-permission-reads-back-write`,
+  `setup-repository-hook-for-a-loopback-address-is-made`,
+  `setup-repository-hook-is-json-and-active`,
+  `setup-repository-hook-lists-the-events-it-was-made-with`,
+  `setup-repository-hook-never-shows-its-secret`,
+  `setup-repository-hook-of-one-url-can-be-made-twice`,
+  `setup-repository-hook-patch-and-delete-leave-the-others`,
+  `setup-repository-hook-listing-pages-by-limit`,
   `delivery-loopback-is-refused-by-default`,
   `delivery-loopback-is-allowed-when-named`.
 - **Paging:** the page cap is 50 by default
@@ -423,11 +750,40 @@ pin (forge.md, section 4.3), and named by the fact's name.
   plan when a second does.
 - **Reconcile over TLS,** for a managed forge on another host. Default:
   plaintext to loopback alone, and the owner refuses a forge on TLS.
+  The host component speaks TLS for GitHub, so the default is the
+  owner's, not the host's.
 - **A hook left at an old listener's address,** after the listener
   moves. Default: left alone; the person deletes it.
-- **Repositories outside the orgs,** a person's own among them.
-  Default: as connected's: the person makes the bot a collaborator and
-  adds the hook, or the repository is polled. Making one writable and
-  hooked without the person is later.
-- **GitHub's needs of its host:** a link shown, a redirect heard, a key
-  kept. Default: decided with its plan.
+- **An App's hook made inactive by hand.** `PATCH /app/hook/config` sets
+  the URL, the content type and the secret, never whether it is active,
+  and an inactive hook logs no delivery. Default: the conformance finds
+  whether the App's read shows it (section 10); until then, the
+  client's polling keeps up, and a stopped log is the person's to see.
+- **A fine-grained token as a connected GitHub.** Default: later; a
+  connected GitHub is an App the person made (5.8).
+- **The deployment's public address** as the App's hook, for a
+  deployment GitHub can reach. Default: later; every App's hook is at no
+  listener (5.5).
+
+## 10. What GitHub's plans rely on of GitHub
+
+Each fact is recorded by the conformance against github.com, on the
+probe App and repositories alone, at the API's pin (forge-github.md,
+section 12), and named in its section 13. No suite makes these calls.
+
+- **The manifest flow:** a manifest posted with a state comes back with
+  a code and the same state; the conversion answers the id, slug, owner,
+  PKCS#1 PEM key and webhook secret once, and refuses the code again; a
+  hook at an `.invalid` address is taken, active.
+- **The App's routes on its JWT:** `GET /app` answers its id, slug,
+  permissions and events; a JWT of a revoked key is a `401`; `GET` and
+  `PATCH /app/hook/config` read and set the hook's URL; installations
+  list, read by id and are deleted.
+- **The bot:** `GET /users/<slug>%5Bbot%5D` answers its id with no
+  credential; GraphQL's `viewer` on an installation's token answers the
+  same.
+- **Installing:** the install link with a state brings the person back
+  to the setup address with the installation's id and the state.
+- **To find:** whether an `installation_target` row reaches the log
+  unsubscribed, and whether an inactive hook shows in the App's read
+  (section 9).
