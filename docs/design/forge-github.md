@@ -359,7 +359,8 @@ bound, revisions, markers and malformed answers; and GitHub's:
 | nothing written, as forge.md 5.4 | `Unavailable` |
 | a `301` or `307` on a repository's route (renamed or moved): the row dropped | `Unavailable` |
 | a `403` or `429` with `x-ratelimit-remaining` 0, before any write succeeded | `RateLimited { after }`: `Retry-After` when given, else `x-ratelimit-reset` less `Date` |
-| a `403` or `429` "You have exceeded a secondary rate limit", or with `Retry-After` | `RateLimited { after }`: `Retry-After`, else 60 seconds |
+| a `403` or `429` "You have exceeded a secondary rate limit", or with `Retry-After`, before any write succeeded | `RateLimited { after }`: `Retry-After`, else 60 seconds |
+| on `SetReviewers`, once its addition succeeded: nothing heard, a `5xx`, a malformed answer or a rate limit on the removal | `Timeout`, no rollback; a typed refusal stays final |
 | after a byte was written, as forge.md 5.4, a `5xx` included | `Timeout` |
 | a malformed answer (section 6) | `Timeout` on a write; `InvalidAnswer` on a read |
 | `401`, on a token or the JSON Web Token | `Forbidden` |
