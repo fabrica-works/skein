@@ -256,6 +256,8 @@ pub enum Error {
     InvalidAnswer,
     /// Client admission refused, no API call was made.
     Busy,
+    /// The forge is not connected, or stopped; no API call was made.
+    NotConnected,
 }
 /// The kind of an item in the forge listing.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

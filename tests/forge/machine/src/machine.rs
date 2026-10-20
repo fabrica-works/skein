@@ -74,7 +74,9 @@ pub struct Machine {
     connects: VecDeque<Connect>,
     answers: BTreeMap<u64, Answered>,
     requests: Vec<Vec<u8>>,
-    stopped: Option<(u16, Stopped)>,
+    stopped: Vec<(u16, Stopped)>,
+    connected_forges: Vec<u16>,
+    access_answers: usize,
     opened: u32,
     aborts: u32,
     closed: bool,
@@ -133,6 +135,7 @@ impl Machine {
             })
             .collect::<Vec<_>>();
         let wall = if tls_addresses.is_empty() { Wall::EPOCH } else { skein_tls_world::pki::VALID };
+        let access_answers = settings.forges.iter().filter(|forge| forge.access.is_some()).count();
         let mut world = Self {
             component: Component::new(settings, &limits, &fixtures::shared()).expect("fixture bounds agree"),
             env: Env { now: Time::ZERO, wall, limits },
@@ -143,7 +146,9 @@ impl Machine {
             connects: VecDeque::new(),
             answers: BTreeMap::new(),
             requests: Vec::new(),
-            stopped: None,
+            stopped: Vec::new(),
+            connected_forges: Vec::new(),
+            access_answers,
             opened: 0,
             aborts: 0,
             closed: false,
@@ -243,6 +248,9 @@ impl Machine {
     }
     /// Delivers an owner action, preserving every answer offer in the history.
     pub fn action(&mut self, request: Request) {
+        if matches!(&request, Request::Connect { .. }) {
+            self.access_answers += 1;
+        }
         if let Request::Refused(answer) | Request::Returned(answer) = &request {
             assert!(self.answers.remove(&answer.call.raw()).is_some(), "owner holds a delivered answer");
         }
@@ -377,12 +385,21 @@ impl Machine {
     }
     fn events(&mut self) {
         while let Some(event) = self.above.pop() {
+            if let Event::Connected { forge } = event {
+                self.connected_forges.push(forge);
+                assert!(
+                    self.stopped.len() + self.connected_forges.len() <= self.access_answers,
+                    "one answer per connect"
+                );
+                continue;
+            }
             let name = match &event {
                 Event::Answered(_) => "answered",
                 Event::Stopped { .. } => "stopped",
                 Event::Hint(_) => "hint",
                 Event::ListenerLost => "lost",
                 Event::Closed => "closed",
+                Event::Connected { .. } => unreachable!("connected taken"),
             };
             self.event_order.push(name);
             match event {
@@ -391,8 +408,13 @@ impl Machine {
                     assert!(self.answers.insert(answer.call.raw(), answer).is_none(), "one answer per call");
                 }
                 Event::Stopped { forge, why } => {
-                    assert!(self.stopped.replace((forge, why)).is_none(), "one stop");
+                    self.stopped.push((forge, why));
+                    assert!(
+                        self.stopped.len() + self.connected_forges.len() <= self.access_answers,
+                        "one answer per connect"
+                    );
                 }
+                Event::Connected { .. } => unreachable!("connected taken"),
                 Event::Hint(_) | Event::ListenerLost => panic!("webhooks absent"),
                 Event::Closed => {
                     assert!(!self.closed, "one close");
@@ -575,7 +597,12 @@ impl Machine {
     /// Whether startup stopped, and its reason.
     #[must_use]
     pub fn stopped(&self) -> Option<(u16, Stopped)> {
-        self.stopped
+        self.stopped.last().copied()
+    }
+    /// Forges whose starts completed, in delivery order.
+    #[must_use]
+    pub fn connected_forges(&self) -> &[u16] {
+        &self.connected_forges
     }
     /// Every complete request, in arrival order.
     #[must_use]

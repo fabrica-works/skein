@@ -128,9 +128,12 @@ impl Hooked {
     fn call(&mut self, env: &Env<Limits>, settings: &Settings, call: http::Call) {
         let forge = delivery::hook_forge(&call.target);
         let mut secret = None;
-        for (number, value) in &settings.webhooks.as_ref().expect("configured listener").secrets {
-            if Some(*number) == forge {
-                secret = Some(value);
+        for configured in &settings.forges {
+            if Some(configured.number) == forge {
+                secret = match &configured.access {
+                    Some(access) => access.webhook_secret.as_ref(),
+                    None => None,
+                };
                 break;
             }
         }

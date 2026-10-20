@@ -7,6 +7,8 @@ use skein_lib::{Duration, Time};
 /// Where a forge's start is; `next` is the wait the next unanswered read takes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Start {
+    /// No access: no start runs, and calls are answered `NotConnected`. A connect begins Checking.
+    Unconnected,
     /// `GET /api/v1/user` sent or to send.
     Checking { next: Duration },
     /// `GET /api/v1/settings/api` sent or to send.
@@ -15,7 +17,7 @@ pub enum Start {
     Waiting { until: Time, next: Duration },
     /// Serves calls; `cap` is the forge's `max_response_items`.
     Ready { cap: u32 },
-    /// The engine stops, naming the forge. Terminal.
+    /// Says stopped once, naming the forge, and holds no access until the next connect.
     Stopped(Stopped),
 }
 
@@ -25,7 +27,7 @@ pub fn heard(start: Start, heard: Heard, user: u64, now: Time, limits: &Limits) 
     let (read, next) = match start {
         Start::Checking { next } => (StartRead::User, next),
         Start::Settings { next } => (StartRead::ApiSettings, next),
-        Start::Waiting { .. } | Start::Ready { .. } | Start::Stopped(_) => return start,
+        Start::Unconnected | Start::Waiting { .. } | Start::Ready { .. } | Start::Stopped(_) => return start,
     };
     let doubled = next.saturating_mul(2).min(limits.start_backoff_max);
     match heard {

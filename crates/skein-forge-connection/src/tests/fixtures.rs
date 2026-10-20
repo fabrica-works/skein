@@ -93,8 +93,11 @@ pub fn settings() -> Settings {
             kind: Kind::Forgejo,
             address: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 3000))),
             transport: Transport::Plaintext { name: None },
-            credential: skein_forge::credential::Credential::Token(Secret::new(Box::from(TOKEN))),
-            user: WRITER,
+            access: Some(crate::Access {
+                credential: skein_forge::credential::Credential::Token(Secret::new(Box::from(TOKEN))),
+                user: WRITER,
+                webhook_secret: None,
+            }),
         })
         .expect("one forge");
     Settings { forges, webhooks: None, word: Box::from(WORD), user_agent: Box::from(USER_AGENT) }
@@ -161,6 +164,7 @@ impl Harness {
         self.component.reclaim();
         for _ in 0..self.up.len() {
             match self.up.pop().expect("queued event") {
+                Event::Connected { .. } => {}
                 Event::Answered(answer) => {
                     assert!(self.answered(answer.call.raw()).is_none(), "one terminal per call");
                     drop(self.answers.insert(answer.call.raw(), answer).expect("fixture answers fit"));
@@ -494,10 +498,9 @@ pub fn known() -> Harness {
 pub const HOOK_SECRET: &[u8] = b"fixture-hook-secret";
 pub fn hook_settings() -> Settings {
     let mut settings = settings();
-    let mut secrets = List::with_capacity(2);
-    secrets.push((FORGE, Secret::new(Box::from(HOOK_SECRET)))).expect("secret");
-    settings.webhooks =
-        Some(crate::hooks::Webhooks { listener: skein_io::Addr::Ip(([127, 0, 0, 1], 7200).into()), secrets });
+    settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").webhook_secret =
+        Some(Secret::new(Box::from(HOOK_SECRET)));
+    settings.webhooks = Some(crate::hooks::Webhooks { listener: skein_io::Addr::Ip(([127, 0, 0, 1], 7200).into()) });
     settings
 }
 pub const HOOK_REPOSITORY: u64 = 2;
@@ -691,7 +694,11 @@ impl HookHarness {
             for _ in 0..up.len() {
                 match up.pop().expect("queued event") {
                     Event::Hint(_) => self.hints = self.hints.saturating_add(1),
-                    Event::Answered(_) | Event::Stopped { .. } | Event::ListenerLost | Event::Closed => {
+                    Event::Connected { .. }
+                    | Event::Answered(_)
+                    | Event::Stopped { .. }
+                    | Event::ListenerLost
+                    | Event::Closed => {
                         unreachable!("hook emits hints")
                     }
                 }

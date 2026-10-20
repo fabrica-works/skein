@@ -47,7 +47,7 @@ impl Joint {
     #[must_use]
     pub fn cutting(seed: u64, cut_chance: u32, faults: Faults) -> Self {
         let mut settings = fixtures::settings();
-        settings.forges.get_mut(0).expect("forge").user = 1;
+        settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").user = 1;
         let mut config = fixtures::protocol_config();
         config.faults = faults;
         Self::with(seed, cut_chance, config, fixtures::limits(), settings, fixtures::shared(), checks(1000))
@@ -55,7 +55,7 @@ impl Joint {
     #[must_use]
     pub fn hooked(seed: u64) -> Self {
         let mut settings = fixtures::hook_settings();
-        settings.forges.get_mut(0).expect("forge").user = 1;
+        settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").user = 1;
         Self::with(
             seed,
             0,
@@ -69,7 +69,7 @@ impl Joint {
     #[must_use]
     pub fn failing(seed: u64) -> Self {
         let mut settings = fixtures::settings();
-        settings.forges.get_mut(0).expect("forge").user = 1;
+        settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").user = 1;
         Self::with(seed, 0, fixtures::protocol_config(), fixtures::limits(), settings, fixtures::shared(), checks(0))
     }
     #[must_use]
@@ -255,7 +255,7 @@ impl Joint {
                 Event::Stopped { forge, why } => panic!("forge {forge} stopped: {why:?}"),
                 Event::Hint(hint) => self.hints.push(hint),
                 Event::ListenerLost => panic!("hook listener lost"),
-                Event::Closed => {}
+                Event::Connected { .. } | Event::Closed => {}
             }
         }
         while let Some(observation) = self.domain.pop_observation() {

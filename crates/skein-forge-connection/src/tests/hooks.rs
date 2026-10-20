@@ -7,7 +7,8 @@ use skein_lib::Secret;
 #[test]
 fn a_hook_secret_past_its_bound_is_unusable_naming_the_forge() {
     let mut settings = fixtures::hook_settings();
-    settings.webhooks.as_mut().expect("hooks").secrets.get_mut(0).expect("secret").1 = Secret::new(Box::new([7; 129]));
+    settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").webhook_secret =
+        Some(Secret::new(Box::new([7; 129])));
     assert_eq!(limits::check(&fixtures::limits(), &fixtures::shared(), &settings), Err(Unusable::Secret { forge: 1 }));
 }
 #[test]

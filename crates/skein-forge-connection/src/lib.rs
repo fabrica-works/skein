@@ -10,9 +10,9 @@ pub mod hooks;
 pub mod limits;
 pub mod settings;
 pub mod start;
-pub use boundary::{Answered, Event, Request, StartRead, Stopped};
+pub use boundary::{Answered, Event, Request, StartRead, Stopped, Value};
 pub use component::{Component, Diagnostics, MAX_OUT};
 pub use limits::{Limits, Shared, Unusable};
-pub use settings::Settings;
+pub use settings::{Access, Settings};
 #[cfg(test)]
 mod tests;

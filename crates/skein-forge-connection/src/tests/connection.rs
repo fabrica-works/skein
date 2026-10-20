@@ -531,7 +531,7 @@ fn terminal_start_states_ignore_every_start_answer() {
     // The terminal matrix uses the 23-second backoff horizon and the same limits.
     let now = Time::ZERO.saturating_add(Duration::from_secs(23));
     let limits = fixtures::limits();
-    for state in [Start::Ready { cap: 2 }, Start::Stopped(crate::Stopped::OtherUser { user: 1 })] {
+    for state in [Start::Unconnected, Start::Ready { cap: 2 }, Start::Stopped(crate::Stopped::OtherUser { user: 1 })] {
         for heard in [
             StartHeard::Unanswered,
             StartHeard::User { id: fixtures::WRITER },

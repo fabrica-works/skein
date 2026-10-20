@@ -306,7 +306,9 @@ impl Listener {
                         self.closed_events += 1;
                         self.event_order.push("closed");
                     }
-                    Event::Answered(_) | Event::Stopped { .. } => panic!("no outbound replies"),
+                    Event::Connected { .. } | Event::Answered(_) | Event::Stopped { .. } => {
+                        panic!("no outbound replies")
+                    }
                 }
             }
             let sockets: Vec<_> = self.peers.keys().copied().collect();

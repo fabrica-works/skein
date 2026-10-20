@@ -513,3 +513,31 @@ fn effect_admission_and_restoration_require_authenticated_writer_configuration()
     assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Failed(Error::Forbidden))]);
     assert!(h.send().is_none());
 }
+
+#[test]
+fn a_write_meeting_no_connection_fails_at_once() {
+    let error = Error::NotConnected;
+    let mut h = Harness::new();
+    h.make(1, comment(), Condition::None);
+    h.clock();
+    let write = h.one();
+    h.answer(write, Err(error));
+    assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Failed(error))]);
+    assert_eq!(h.writes, 1);
+    assert!(h.send().is_none());
+}
+#[test]
+fn a_find_meeting_no_connection_is_tried_again() {
+    use super::fixtures::recovery as fixture;
+    let error = Error::NotConnected;
+    let mut h = fixture::uncertain_comment();
+    let find = h.one();
+    let op = find.op.clone();
+    h.answer(find, Err(error));
+    assert_eq!(h.outcomes.as_slice(), &[(1, Outcome::Uncertain)]);
+    assert!(h.send().is_none());
+    assert!(h.domain.next_deadline().expect("retry") < at(fixture::ATTEMPT_DEADLINE));
+    h.fire(fixture::ATTEMPT_DEADLINE - 1);
+    assert_eq!(h.one().op, op);
+    assert_eq!(h.writes, 1);
+}

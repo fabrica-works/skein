@@ -410,7 +410,6 @@ fn a_returned_answer_is_never_offered_again() {
 const OTHER: u16 = 2;
 fn two_idle_forge_one_connections() -> Machine {
     use skein_forge_connection::settings::{Forge, Kind, Transport};
-    use skein_lib::Secret;
     // Forge 2 has its own admitted loopback endpoint; both starts complete first.
     let mut settings = fixtures::settings();
     settings
@@ -420,8 +419,7 @@ fn two_idle_forge_one_connections() -> Machine {
             kind: Kind::Forgejo,
             address: skein_io::Addr::Ip(([127, 0, 0, 1], 3001).into()),
             transport: Transport::Plaintext { name: None },
-            credential: skein_forge::credential::Credential::Token(Secret::new(Box::from(fixtures::TOKEN))),
-            user: fixtures::WRITER,
+            access: Some(fixtures::access(fixtures::TOKEN, fixtures::WRITER, None)),
         })
         .expect("second admitted forge");
     let mut script = fixtures::locate_script();

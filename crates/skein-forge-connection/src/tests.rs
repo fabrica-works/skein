@@ -177,9 +177,26 @@ fn forge_setting_boundaries() {
         let mut settings = fixtures::settings();
         let forge = settings.forges.get_mut(0).expect("one forge");
         forge.address = address;
-        forge.credential = skein_forge::credential::Credential::Token(Secret::new(Box::from(token)));
-        forge.user = user;
+        forge.access.as_mut().expect("fixture access").credential =
+            skein_forge::credential::Credential::Token(Secret::new(Box::from(token)));
+        forge.access.as_mut().expect("fixture access").user = user;
         assert_eq!(limits::check(&fixtures::limits(), &fixtures::shared(), &settings), Err(expected), "{name}");
+    }
+    for (label, access, expected) in [
+        ("no access", None, Ok(())),
+        (
+            "App credential",
+            Some(crate::Access {
+                credential: skein_forge::credential::Credential::App { id: 1, key: Secret::new(Box::new([])) },
+                user: fixtures::WRITER,
+                webhook_secret: None,
+            }),
+            Err(Unusable::Credential { forge: fixtures::FORGE }),
+        ),
+    ] {
+        let mut settings = fixtures::settings();
+        settings.forges.get_mut(0).expect("forge").access = access;
+        fixtures::admission(settings, &fixtures::limits(), expected, label.as_bytes());
     }
     let mut settings = fixtures::settings();
     settings.forges.get_mut(0).expect("forge").address = skein_io::Addr::Ip(([0, 0, 0, 0, 0, 0, 0, 1], 3000).into());
@@ -448,7 +465,7 @@ fn request_head_counts_user_agent() {
             .expect("target room")
             .checked_sub(host.len())
             .expect("host room")
-            .checked_sub(fixtures::TOKEN.len())
+            .checked_sub(usize::try_from(limits.token_bytes).expect("token fits"))
             .expect("token room")
             .checked_sub(fixtures::HEAD_FRAMING)
             .expect("framing room");
@@ -477,7 +494,7 @@ fn header_controls_are_refused_before_io() {
         (b"\xff", true),
     ] {
         let mut settings = fixtures::settings();
-        settings.forges.get_mut(0).expect("forge").credential =
+        settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").credential =
             skein_forge::credential::Credential::Token(Secret::new(Box::from(value)));
         let expected = if valid { Ok(()) } else { Err(Unusable::Token { forge: fixtures::FORGE }) };
         fixtures::admission(settings, &fixtures::limits(), expected, value);
@@ -488,7 +505,7 @@ fn header_controls_are_refused_before_io() {
     }
     for (user, expected) in [(0, Err(Unusable::User { forge: fixtures::FORGE })), (1, Ok(()))] {
         let mut settings = fixtures::settings();
-        settings.forges.get_mut(0).expect("forge").user = user;
+        settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").user = user;
         fixtures::admission(settings, &fixtures::limits(), expected, b"user");
     }
 }
@@ -514,7 +531,7 @@ fn forge_count_token_and_hook_boundaries() {
         (fixtures::TOKEN_BOUND + 1, Err(Unusable::Token { forge: fixtures::FORGE })),
     ] {
         let mut settings = fixtures::settings();
-        settings.forges.get_mut(0).expect("forge").credential =
+        settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").credential =
             skein_forge::credential::Credential::Token(Secret::new(fixtures::filled(length, b'a')));
         fixtures::admission(settings, &limits, expected, b"token bound");
     }
@@ -531,17 +548,25 @@ fn hook_setting_boundaries() {
         settings.webhooks.as_mut().expect("hooks").listener = listener;
         fixtures::admission(settings, &fixtures::limits(), expected, b"listener");
     }
-    for (forge, length, expected) in [
-        (fixtures::FORGE, 0, Err(Unusable::Secret { forge: fixtures::FORGE })),
-        (fixtures::FORGE, fixtures::SECRET_BOUND, Ok(())),
-        (fixtures::FORGE, fixtures::SECRET_BOUND + 1, Err(Unusable::Secret { forge: fixtures::FORGE })),
-        (99, fixtures::HOOK_SECRET.len(), Err(Unusable::Secret { forge: 99 })),
+    for (length, expected) in [
+        (0, Err(Unusable::Secret { forge: fixtures::FORGE })),
+        (fixtures::SECRET_BOUND, Ok(())),
+        (fixtures::SECRET_BOUND + 1, Err(Unusable::Secret { forge: fixtures::FORGE })),
     ] {
         let mut settings = fixtures::hook_settings();
-        *settings.webhooks.as_mut().expect("hooks").secrets.get_mut(0).expect("secret") =
-            (forge, Secret::new(fixtures::filled(length, b'a')));
+        settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").webhook_secret =
+            Some(Secret::new(fixtures::filled(length, b'a')));
         fixtures::admission(settings, &fixtures::limits(), expected, b"secret");
     }
+    let mut settings = fixtures::settings();
+    settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").webhook_secret =
+        Some(Secret::new(Box::from(fixtures::HOOK_SECRET)));
+    fixtures::admission(
+        settings,
+        &fixtures::limits(),
+        Err(Unusable::Secret { forge: fixtures::FORGE }),
+        b"no listener",
+    );
 }
 
 fn numeric_boundaries() {
@@ -656,10 +681,10 @@ fn stack_boundaries() {
 #[test]
 fn vocabulary_app_credential_is_unusable_in_settings() {
     let mut settings = fixtures::settings();
-    settings.forges.get_mut(0).expect("one forge").credential =
+    settings.forges.get_mut(0).expect("one forge").access.as_mut().expect("fixture access").credential =
         skein_forge::credential::Credential::App { id: 1, key: Secret::new(Box::new([])) };
     assert_eq!(
         limits::check(&fixtures::limits(), &fixtures::shared(), &settings),
-        Err(Unusable::Token { forge: fixtures::FORGE })
+        Err(Unusable::Credential { forge: fixtures::FORGE })
     );
 }

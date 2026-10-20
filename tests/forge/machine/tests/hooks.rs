@@ -60,7 +60,7 @@ fn a_path_without_a_forge_is_answered_404() {
 #[test]
 fn a_path_without_a_secret_is_answered_404() {
     let mut settings = fixtures::hook_settings();
-    settings.webhooks.as_mut().expect("hooks").secrets = skein_lib::List::with_capacity(2);
+    settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").webhook_secret = None;
     let mut world = Listener::new(7, fixtures::hook_limits(), settings);
     let peer = world.accept();
     world.send(peer, &deliveries::signed(b"/hooks/1", b"ping", fixtures::PING));
@@ -264,4 +264,27 @@ fn drive_hook_deadline(phase: HookPhase, seconds: u64) -> [u64; 4] {
     world.advance_to(Time::from_nanos(seconds * 1_000_000_000));
     let after = world.counts();
     [after[0] - before[0], after[1] - before[1], after[2] - before[2], after[3]]
+}
+
+#[test]
+fn a_secret_handed_by_connect_verifies_the_next_delivery() {
+    let mut settings = fixtures::hook_settings();
+    settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").webhook_secret = None;
+    let mut world = Listener::new(7, fixtures::hook_limits(), settings);
+    let peer = world.accept();
+    world.send(peer, &deliveries::push(b"main", 7));
+    assert_eq!(world.status(peer), Some(404));
+    world.request(Request::Connect {
+        forge: fixtures::FORGE,
+        access: fixtures::access(fixtures::TOKEN, fixtures::WRITER, Some(fixtures::HOOK_SECRET)),
+    });
+    let peer = world.accept();
+    world.send(peer, &deliveries::push(b"main", 7));
+    world.run_for(SECOND);
+    assert_eq!(world.status(peer), Some(204));
+    assert_eq!(world.hints().len(), 1);
+    let debug = format!("{} {:?}", world.debug(), world.hints());
+    for secret in [fixtures::TOKEN, fixtures::HOOK_SECRET] {
+        assert!(!debug.as_bytes().windows(secret.len()).any(|window| window == secret));
+    }
 }

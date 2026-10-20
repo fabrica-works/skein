@@ -35,13 +35,28 @@ pub fn limits() -> Limits {
 use core::net::{Ipv4Addr, SocketAddr};
 use skein_forge::api;
 use skein_forge_connection::{
-    Settings, Shared,
+    Access, Settings, Shared,
     settings::{Forge, Kind, Transport},
 };
 use skein_lib::{List, Secret};
 pub const FORGE: u16 = 1;
 pub const REPO: api::Repository = api::Repository { forge: 1, repository: 1 };
 pub const TOKEN: &[u8] = b"0123456789abcdef0123456789abcdef01234567";
+pub const TOKEN_B: &[u8] = b"fedcba9876543210fedcba9876543210fedcba98";
+#[must_use]
+pub fn access(token: &[u8], user: u64, secret: Option<&[u8]>) -> Access {
+    Access {
+        credential: skein_forge::credential::Credential::Token(Secret::new(Box::from(token))),
+        user,
+        webhook_secret: secret.map(|secret| Secret::new(Box::from(secret))),
+    }
+}
+#[must_use]
+pub fn unconnected() -> Settings {
+    let mut settings = settings();
+    settings.forges.get_mut(0).expect("forge").access = None;
+    settings
+}
 #[must_use]
 pub fn shared() -> Shared {
     Shared {
@@ -76,8 +91,7 @@ pub fn settings() -> Settings {
             kind: Kind::Forgejo,
             address: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 3000))),
             transport: Transport::Plaintext { name: None },
-            credential: skein_forge::credential::Credential::Token(Secret::new(Box::from(TOKEN))),
-            user: WRITER,
+            access: Some(access(TOKEN, WRITER, None)),
         })
         .expect("one forge");
     Settings {
@@ -176,12 +190,10 @@ pub const PING: &[u8] = b"{\"zen\":\"a delivery of no row\"}";
 #[must_use]
 pub fn hook_settings() -> Settings {
     let mut settings = settings();
-    let mut secrets = List::with_capacity(2);
-    secrets.push((FORGE, Secret::new(Box::from(HOOK_SECRET)))).expect("secret");
-    settings.webhooks = Some(skein_forge_connection::hooks::Webhooks {
-        listener: skein_io::Addr::Ip(([127, 0, 0, 1], 7200).into()),
-        secrets,
-    });
+    settings.forges.get_mut(0).expect("forge").access.as_mut().expect("fixture access").webhook_secret =
+        Some(Secret::new(Box::from(HOOK_SECRET)));
+    settings.webhooks =
+        Some(skein_forge_connection::hooks::Webhooks { listener: skein_io::Addr::Ip(([127, 0, 0, 1], 7200).into()) });
     settings
 }
 #[must_use]

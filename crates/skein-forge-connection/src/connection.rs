@@ -120,7 +120,8 @@ impl Connection {
             .push(field(b"Host", &crate::settings::host(forge).expect("checked forge host")))
             .expect("five header fields");
         let auth =
-            skein_forge::forgejo::credential::authorization(&forge.credential).expect("checked credential length");
+            skein_forge::forgejo::credential::authorization(&forge.access.as_ref().expect("held access").credential)
+                .expect("checked credential length");
         headers.push(field(b"Authorization", auth.expose())).expect("five header fields");
         headers.push(field(b"User-Agent", user_agent)).expect("five header fields");
         let body = match &encoded.body {

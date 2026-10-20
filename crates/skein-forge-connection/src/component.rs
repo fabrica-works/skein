@@ -39,6 +39,7 @@ pub(crate) struct Waiting {
     pub connection: Option<Token>,
     pub cost: u32,
     pub charged: bool,
+    pub revoked: bool,
     pub deadline: Time,
 }
 #[derive(Debug)]
@@ -74,8 +75,13 @@ impl Component {
         let mut starts = List::with_capacity(limits.forges);
         let mut start_tokens = List::with_capacity(limits.forges);
         let mut start_plans = List::with_capacity(limits.forges);
-        for _ in &settings.forges {
-            starts.push(Start::Checking { next: limits.start_backoff }).expect("checked forge count");
+        for forge in &settings.forges {
+            let state = if forge.access.is_some() {
+                Start::Checking { next: limits.start_backoff }
+            } else {
+                Start::Unconnected
+            };
+            starts.push(state).expect("checked forge count");
             start_tokens.push(None).expect("checked forge count");
             start_plans.push(None).expect("checked forge count");
         }
@@ -110,7 +116,10 @@ impl Component {
             self.hooks.begin(settings, io);
         }
         for at in 0..self.starts.len() {
-            *self.starts.get_mut(at).expect("configured start") = Start::Checking { next: env.limits.start_backoff };
+            if self.settings.forges.get(at).expect("configured forge").access.is_some() {
+                *self.starts.get_mut(at).expect("configured start") =
+                    Start::Checking { next: env.limits.start_backoff };
+            }
         }
         self.drive_room(env, up, io, MAX_OUT.above, MAX_OUT.below.saturating_sub(io.len().saturating_sub(before)));
     }
@@ -125,6 +134,18 @@ impl Component {
             return;
         }
         match request {
+            Request::Connect { forge, access } => {
+                let above = up.len();
+                let below = io.len();
+                self.connect(env, forge, access, up, io);
+                self.drive_room(
+                    env,
+                    up,
+                    io,
+                    MAX_OUT.above.saturating_sub(up.len().saturating_sub(above)),
+                    MAX_OUT.below.saturating_sub(io.len().saturating_sub(below)),
+                );
+            }
             Request::Call { call, repository, op } => {
                 assert!(!self.calls.contains_key(&call), "one live call per token");
                 let id = self
@@ -137,6 +158,7 @@ impl Component {
                         connection: None,
                         cost: 0,
                         charged: false,
+                        revoked: false,
                         deadline: env.now.saturating_add(env.limits.deadline),
                     })
                     .expect("client bounds admitted calls");
@@ -194,6 +216,59 @@ impl Component {
                 self.closed = true;
                 self.hooks.close();
                 self.drive(env, up, io, MAX_OUT.above);
+            }
+        }
+    }
+    fn connect(
+        &mut self,
+        env: &Env<Limits>,
+        number: u16,
+        access: crate::Access,
+        up: &mut Queue<Event>,
+        io: &mut Queue<skein_io::Request>,
+    ) {
+        let mut position = None;
+        for at in 0..self.settings.forges.len() {
+            if self.settings.forges.get(at).expect("configured forge").number == number {
+                position = Some(at);
+                break;
+            }
+        }
+        let Some(at) = position else {
+            return;
+        };
+        let forge = self.settings.forges.get_mut(at).expect("configured forge");
+        let mut checked = limits::access(&env.limits, self.settings.webhooks.is_some(), &access);
+        if checked.is_ok()
+            && let Some(held) = &forge.access
+            && held.user != access.user
+        {
+            checked = Err(crate::Value::User);
+        }
+        for (_, id) in &self.calls {
+            let call = self.waiting.get_mut(*id).expect("indexed call");
+            if call.repository.forge == number && call.plan.is_some() {
+                call.revoked = true;
+            }
+        }
+        if let Some(token) = self.start_tokens.get_mut(at).expect("configured slot").take()
+            && let Some(id) = self.connections.get(&token)
+        {
+            let c = self.connection_slab.get_mut(*id).expect("start connection");
+            c.close(c.in_flight(), io);
+        }
+        *self.start_plans.get_mut(at).expect("configured plan") = None;
+        match checked {
+            Ok(()) => {
+                forge.access = Some(access);
+                *self.starts.get_mut(at).expect("configured start") =
+                    Start::Checking { next: env.limits.start_backoff };
+            }
+            Err(value) => {
+                forge.access = None;
+                let why = crate::Stopped::Invalid { value };
+                *self.starts.get_mut(at).expect("configured start") = Start::Stopped(why);
+                up.push(Event::Stopped { forge: number, why });
             }
         }
     }
@@ -372,10 +447,10 @@ impl Component {
         env: &Env<Limits>,
         up: &mut Queue<Event>,
     ) {
-        let forge = self.settings.forges.get(at).expect("configured forge");
+        let forge = self.settings.forges.get_mut(at).expect("configured forge");
         let state = self.starts.get_mut(at).expect("configured start");
         let previous = *state;
-        *state = start::heard(previous, heard, forge.user, env.now, &env.limits);
+        *state = start::heard(previous, heard, forge.access.as_ref().expect("held access").user, env.now, &env.limits);
         if start_read(*state) == Some(Read::ApiSettings)
             && *state != previous
             && let Some(Some(token)) = self.start_tokens.get(at)
@@ -387,7 +462,10 @@ impl Component {
         if let Some(reason) = stopped(*state)
             && *state != previous
         {
+            forge.access = None;
             up.push(Event::Stopped { forge: forge.number, why: reason });
+        } else if ready(*state) && *state != previous {
+            up.push(Event::Connected { forge: forge.number });
         }
     }
     fn drive_starts(
@@ -583,25 +661,37 @@ fn start_read(state: Start) -> Option<Read> {
     match state {
         Start::Checking { .. } => Some(Read::User),
         Start::Settings { .. } => Some(Read::ApiSettings),
-        Start::Waiting { .. } | Start::Ready { .. } | Start::Stopped(_) => None,
+        Start::Unconnected | Start::Waiting { .. } | Start::Ready { .. } | Start::Stopped(_) => None,
     }
 }
 fn backoff(state: Start) -> Option<(Time, skein_lib::Duration)> {
     match state {
         Start::Waiting { until, next } => Some((until, next)),
-        Start::Checking { .. } | Start::Settings { .. } | Start::Ready { .. } | Start::Stopped(_) => None,
+        Start::Unconnected
+        | Start::Checking { .. }
+        | Start::Settings { .. }
+        | Start::Ready { .. }
+        | Start::Stopped(_) => None,
     }
 }
 fn stopped(state: Start) -> Option<crate::Stopped> {
     match state {
         Start::Stopped(reason) => Some(reason),
-        Start::Checking { .. } | Start::Settings { .. } | Start::Waiting { .. } | Start::Ready { .. } => None,
+        Start::Unconnected
+        | Start::Checking { .. }
+        | Start::Settings { .. }
+        | Start::Waiting { .. }
+        | Start::Ready { .. } => None,
     }
 }
 fn ready(state: Start) -> bool {
     match state {
         Start::Ready { .. } => true,
-        Start::Checking { .. } | Start::Settings { .. } | Start::Waiting { .. } | Start::Stopped(_) => false,
+        Start::Unconnected
+        | Start::Checking { .. }
+        | Start::Settings { .. }
+        | Start::Waiting { .. }
+        | Start::Stopped(_) => false,
     }
 }
 

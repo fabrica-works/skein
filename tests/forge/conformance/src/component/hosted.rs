@@ -122,8 +122,13 @@ impl Hosted {
                 kind: skein_forge_connection::settings::Kind::Forgejo,
                 address: skein_io::Addr::Ip(([127, 0, 0, 1], f.instance.port()).into()),
                 transport: skein_forge_connection::settings::Transport::Plaintext { name: None },
-                credential: skein_forge::credential::Credential::Token(Secret::new(token.value().as_bytes().into())),
-                user: f.writer.id,
+                access: Some(skein_forge_connection::Access {
+                    credential: skein_forge::credential::Credential::Token(Secret::new(
+                        token.value().as_bytes().into(),
+                    )),
+                    user: f.writer.id,
+                    webhook_secret: None,
+                }),
             })
             .expect("one forge");
         let shared = skein_forge_connection::Shared {
@@ -277,6 +282,7 @@ impl Host for Hosted {
         }
         while let Some(e) = self.above.pop() {
             match e {
+                Event::Connected { .. } => {}
                 Event::Answered(a) => assert!(self.answer.replace(a).is_none(), "once per call"),
                 Event::Stopped { why, .. } => {
                     assert!(self.stopped.replace(why).is_none(), "one stop");

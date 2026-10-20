@@ -27,7 +27,7 @@ impl Shape {
             Self::Plain => settings(),
             Self::Hooked => fixtures::hook_settings(),
         };
-        settings.forges.get_mut(0).expect("fixture forge").user = 1;
+        settings.forges.get_mut(0).expect("fixture forge").access.as_mut().expect("fixture access").user = 1;
         settings
     }
 }
@@ -56,7 +56,7 @@ pub(crate) fn shared() -> Shared {
 
 pub(crate) fn settings() -> Settings {
     let mut settings = fixtures::settings();
-    settings.forges.get_mut(0).expect("fixture forge").user = 1;
+    settings.forges.get_mut(0).expect("fixture forge").access.as_mut().expect("fixture access").user = 1;
     settings
 }
 

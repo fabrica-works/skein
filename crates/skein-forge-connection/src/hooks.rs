@@ -2,14 +2,13 @@
 use crate::{Event, Limits};
 use skein_forge::api;
 use skein_io::Addr;
-use skein_lib::{Env, Id, List, Map, Queue, Secret, Slab, Time, Token};
+use skein_lib::{Env, Id, Map, Queue, Slab, Time, Token};
 pub(crate) mod connection;
 use connection::{Closing, Hooked};
-/// The listener and the secrets it alone owns.
+/// The listener; each forge's webhook secret is in its access.
 #[derive(Clone, Debug)]
 pub struct Webhooks {
     pub listener: Addr,
-    pub secrets: List<(u16, Secret)>,
 }
 /// A verified hint held by its connection until root admission takes it.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

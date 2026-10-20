@@ -103,7 +103,7 @@ pub enum Unusable {
     PlaintextName { forge: u16 },
     /// The secret bound must admit at least 32 bytes.
     SecretBytes { bytes: u32 },
-    /// A secret has no forge, is empty, or exceeds its byte bound.
+    /// A forge's webhook secret with no listener, empty, or past its byte bound.
     Secret { forge: u16 },
     /// A webhook listener must be a loopback IP socket.
     Listener,
@@ -127,6 +127,8 @@ pub enum Unusable {
     Forges { forges: u32 },
     /// Two forges with one number.
     Duplicate { forge: u16 },
+    /// A forge's credential of the other dialect's kind.
+    Credential { forge: u16 },
     /// An API token empty, past `token_bytes`, or containing unsafe header controls.
     Token { forge: u16 },
     /// A user of 0.
@@ -137,7 +139,10 @@ pub enum Unusable {
     Request { forge: u16 },
 }
 
-use crate::settings::{Settings, Transport};
+use crate::{
+    Access, Value,
+    settings::{Settings, Transport},
+};
 use alloc::boxed::Box;
 use core::mem::size_of;
 use skein_forge::api;
@@ -247,16 +252,15 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
                 return Err(Unusable::Duplicate { forge: forge.number });
             }
         }
-        let token = match &forge.credential {
-            skein_forge::credential::Credential::Token(token) => token,
-            // Credential::App gets its meaning in runtime 02.
-            skein_forge::credential::Credential::App { .. } => return Err(Unusable::Token { forge: forge.number }),
-        };
-        if !header_value(token.expose()) || token.len() > usize::try_from(l.token_bytes).expect("u32 fits") {
-            return Err(Unusable::Token { forge: forge.number });
-        }
-        if forge.user == 0 {
-            return Err(Unusable::User { forge: forge.number });
+        if let Some(a) = &forge.access
+            && let Err(value) = access(l, settings.webhooks.is_some(), a)
+        {
+            return Err(match value {
+                Value::Credential => Unusable::Credential { forge: forge.number },
+                Value::Token => Unusable::Token { forge: forge.number },
+                Value::User => Unusable::User { forge: forge.number },
+                Value::Secret => Unusable::Secret { forge: forge.number },
+            });
         }
         let tls = match &forge.transport {
             Transport::Plaintext { name } => {
@@ -285,7 +289,7 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
             )
             .ok_or(Unusable::Zero)?;
         let head = head
-            .checked_add(u64::try_from(token.len()).ok().ok_or(Unusable::Zero)?)
+            .checked_add(u64::from(l.token_bytes))
             .ok_or(Unusable::Zero)?
             .checked_add(u64::try_from(settings.user_agent.len()).ok().ok_or(Unusable::Zero)?)
             .ok_or(Unusable::Zero)?
@@ -296,22 +300,29 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
         }
     }
     if let Some(hooks) = &settings.webhooks {
-        if hooks.secrets.len() > l.forges {
-            return Err(Unusable::Forges { forges: l.forges });
-        }
         match hooks.listener {
             skein_io::Addr::Ip(ip) if ip.ip().is_loopback() => {}
             skein_io::Addr::Ip(_) | skein_io::Addr::InProcess(_) => return Err(Unusable::Listener),
         }
-        for (forge, secret) in &hooks.secrets {
-            let mut known = false;
-            for configured in &settings.forges {
-                known |= configured.number == *forge;
-            }
-            if !known || secret.is_empty() || secret.len() > usize::try_from(l.hook_secret_bytes).expect("u32 fits") {
-                return Err(Unusable::Secret { forge: *forge });
-            }
-        }
+    }
+    Ok(())
+}
+/// A connect's check of one access (forge-connection.md, 3.5), before any io.
+pub(crate) fn access(l: &Limits, listener: bool, access: &Access) -> Result<(), Value> {
+    let token = match &access.credential {
+        skein_forge::credential::Credential::Token(token) => token,
+        skein_forge::credential::Credential::App { .. } => return Err(Value::Credential),
+    };
+    if !header_value(token.expose()) || token.len() > usize::try_from(l.token_bytes).expect("u32 fits") {
+        return Err(Value::Token);
+    }
+    if access.user == 0 {
+        return Err(Value::User);
+    }
+    if let Some(secret) = &access.webhook_secret
+        && (!listener || secret.is_empty() || secret.len() > usize::try_from(l.hook_secret_bytes).expect("u32 fits"))
+    {
+        return Err(Value::Secret);
     }
     Ok(())
 }
@@ -437,7 +448,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(u64::from(l.tls.send.max(s.io.output)))?
         .checked_add(u64::from(l.body_bytes).checked_mul(6)?.checked_add(1024)?)?
         .checked_add(socket)?;
-    let hooks = hook_heap(l, decoder, socket, forges)?;
+    let hooks = hook_heap(l, decoder, socket)?;
     let calls = Slab::<Waiting>::worst_case(s.calls)?
         .checked_add(Map::<Token, Token>::worst_case(l.connections)?)?
         .checked_add(List::<(Token, Id<Waiting>)>::worst_case(s.calls)?)?
@@ -477,6 +488,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         List::<Forge>::worst_case(l.forges)?.checked_add(List::<Start>::worst_case(l.forges)?)?.checked_add(
             u64::from(forges).checked_mul(
                 u64::from(l.token_bytes)
+                    .checked_add(u64::from(l.hook_secret_bytes))?
                     .checked_add(u64::from(l.tls.send.max(s.io.output)))?
                     .checked_add(skein_tls::client::worst_case(&l.tls)?)?,
             )?,
@@ -499,8 +511,8 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(u64::try_from(size_of::<Answered>()).ok()?)
 }
 
-fn hook_heap(l: &Limits, decoder: u64, socket: u64, forges: u32) -> Option<u64> {
-    use skein_lib::{List, Queue};
+fn hook_heap(l: &Limits, decoder: u64, socket: u64) -> Option<u64> {
+    use skein_lib::Queue;
     skein_http::server::worst_case(&hook_http(l))?
         .checked_add(tokenizer::worst_case(&hook_documents(l).json)?)?
         .checked_add(decoder)?
@@ -515,9 +527,7 @@ fn hook_heap(l: &Limits, decoder: u64, socket: u64, forges: u32) -> Option<u64> 
         .checked_add(u64::from(l.hook_head_bytes))?
         .checked_add(u64::from(l.chunk).checked_mul(2)?)?
         .checked_mul(u64::from(l.hooks))?
-        .checked_add(crate::hooks::storage(l.hooks)?)?
-        .checked_add(List::<(u16, skein_lib::Secret)>::worst_case(l.forges)?)?
-        .checked_add(u64::from(l.hook_secret_bytes).checked_mul(u64::from(forges))?)
+        .checked_add(crate::hooks::storage(l.hooks)?)
 }
 
 fn plaintext_name(name: &[u8]) -> bool {

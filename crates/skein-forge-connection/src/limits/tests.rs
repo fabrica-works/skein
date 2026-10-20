@@ -124,3 +124,75 @@ fn maximal_answer(listing: Listing) -> api::Answer {
         },
     }
 }
+
+#[test]
+fn connect_checks_name_the_refused_value() {
+    use crate::{Access, Value};
+    use skein_forge::credential::Credential;
+    use skein_lib::Secret;
+    let token = Credential::Token(Secret::new(Box::from(fixtures::TOKEN)));
+    for (label, credential, user, listener, secret, expected) in [
+        (
+            "App",
+            Credential::App { id: 1, key: Secret::new(Box::new([])) },
+            fixtures::WRITER,
+            true,
+            None,
+            Err(Value::Credential),
+        ),
+        ("empty token", Credential::Token(Secret::new(Box::new([]))), fixtures::WRITER, true, None, Err(Value::Token)),
+        (
+            "token bound",
+            Credential::Token(Secret::new(fixtures::filled(fixtures::TOKEN_BOUND, b'a'))),
+            fixtures::WRITER,
+            true,
+            None,
+            Ok(()),
+        ),
+        (
+            "token past bound",
+            Credential::Token(Secret::new(fixtures::filled(fixtures::TOKEN_BOUND + 1, b'a'))),
+            fixtures::WRITER,
+            true,
+            None,
+            Err(Value::Token),
+        ),
+        (
+            "token control",
+            Credential::Token(Secret::new(Box::from(b"a\n".as_slice()))),
+            fixtures::WRITER,
+            true,
+            None,
+            Err(Value::Token),
+        ),
+        ("zero user", token.clone(), 0, true, None, Err(Value::User)),
+        (
+            "no listener",
+            token.clone(),
+            fixtures::WRITER,
+            false,
+            Some(Secret::new(Box::from(fixtures::HOOK_SECRET))),
+            Err(Value::Secret),
+        ),
+        ("empty secret", token.clone(), fixtures::WRITER, true, Some(Secret::new(Box::new([]))), Err(Value::Secret)),
+        (
+            "secret bound",
+            token.clone(),
+            fixtures::WRITER,
+            true,
+            Some(Secret::new(fixtures::filled(fixtures::SECRET_BOUND, b'a'))),
+            Ok(()),
+        ),
+        (
+            "secret past bound",
+            token,
+            fixtures::WRITER,
+            true,
+            Some(Secret::new(fixtures::filled(fixtures::SECRET_BOUND + 1, b'a'))),
+            Err(Value::Secret),
+        ),
+    ] {
+        let access = Access { credential, user, webhook_secret: secret };
+        assert_eq!(super::access(&fixtures::limits(), listener, &access), expected, "{label}");
+    }
+}

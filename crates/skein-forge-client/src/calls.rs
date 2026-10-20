@@ -328,6 +328,7 @@ pub(crate) fn answered(
             | Error::Protected
             | Error::Refused
             | Error::InvalidAnswer
+            | Error::NotConnected
             | Error::Busy => {}
         }
     }

@@ -1,14 +1,14 @@
 //! Forge component settings (forge-connection.md, sections 2, 3.5, 7 and 8).
 use alloc::boxed::Box;
 use skein_io::Addr;
-use skein_lib::List;
+use skein_lib::{List, Secret};
 
 /// Owner inputs held by the component until close.
 #[derive(Debug)]
 pub struct Settings {
     /// At most `Limits::forges`, numbers unique.
     pub forges: List<Forge>,
-    /// The listener and secrets, present together (forge-connection.md, 5).
+    /// The listener; each forge's secret is in its access (forge-connection.md, 6.1).
     pub webhooks: Option<crate::hooks::Webhooks>,
     /// Owner word used in markers and webhook hints, at most 16 bytes.
     pub word: Box<[u8]>,
@@ -25,10 +25,23 @@ pub struct Forge {
     /// The API's socket address, resolved before the loop; never an in-process name.
     pub address: Addr,
     pub transport: Transport,
+    /// The access the forge holds; with none it runs no start, and its calls are
+    /// answered `NotConnected`.
+    pub access: Option<Access>,
+}
+
+/// What lets the component act on a forge as its user (forge-connection.md,
+/// 3.5): handed at construction or by `Request::Connect`, replaced whole,
+/// never logged.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Access {
     /// The API token, in `Authorization: token <t>`: never logged, granted or stored.
     pub credential: skein_forge::credential::Credential,
-    /// The forge user the token belongs to, checked by the start's `GET /api/v1/user`.
+    /// The forge user the token stands for, never 0, checked by the start's
+    /// `GET /api/v1/user`.
     pub user: u64,
+    /// The secret of the forge's webhook path; only beside a listener.
+    pub webhook_secret: Option<Secret>,
 }
 
 /// The documents a forge speaks.

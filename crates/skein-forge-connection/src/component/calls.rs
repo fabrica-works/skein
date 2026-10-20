@@ -85,8 +85,22 @@ impl Component {
                 self.finish(call, id, Err(api::Error::Unavailable), up);
                 continue;
             };
-            if !super::ready(*self.starts.get(at).expect("forge start")) {
-                continue;
+            if waiting.connection.is_none() {
+                if waiting.revoked {
+                    let error = waiting.plan.as_ref().expect("begun call").error(api::Error::Forbidden);
+                    self.finish(call, id, Err(error), up);
+                    continue;
+                }
+                if waiting.plan.is_none() {
+                    match *self.starts.get(at).expect("forge start") {
+                        Start::Unconnected | Start::Stopped(_) => {
+                            self.finish(call, id, Err(api::Error::NotConnected), up);
+                            continue;
+                        }
+                        Start::Checking { .. } | Start::Settings { .. } | Start::Waiting { .. } => continue,
+                        Start::Ready { .. } => {}
+                    }
+                }
             }
             if !self.assign(call, id, at, env, up, io) {
                 continue;
@@ -130,7 +144,11 @@ impl Component {
         let forge = waiting.repository.forge;
         let cap = match *self.starts.get(at).expect("start") {
             Start::Ready { cap } => cap,
-            Start::Checking { .. } | Start::Settings { .. } | Start::Waiting { .. } | Start::Stopped(_) => {
+            Start::Unconnected
+            | Start::Checking { .. }
+            | Start::Settings { .. }
+            | Start::Waiting { .. }
+            | Start::Stopped(_) => {
                 return false;
             }
         };
@@ -214,19 +232,17 @@ impl Component {
             }
             let c = self.connection_slab.get_mut(connection).expect("holding connection");
             if c.phase == Phase::Idle {
-                let request =
-                    self.waiting.get_mut(id).expect("indexed call").plan.as_mut().expect("call plan").pending();
-                if let Some(request) = request {
-                    c.deadline = Some(self.waiting.get(id).expect("call").deadline);
-                    c.raw_room(
-                        self.waiting
-                            .get(id)
-                            .expect("call")
-                            .plan
-                            .as_ref()
-                            .expect("plan")
-                            .raw_room(self.shared.answer_bytes),
-                    );
+                let waiting = self.waiting.get_mut(id).expect("indexed call");
+                if waiting.revoked {
+                    c.deadline = Some(env.now.saturating_add(env.limits.idle));
+                    let error = waiting.plan.as_ref().expect("call plan").error(api::Error::Forbidden);
+                    self.finish(call, id, Err(error), up);
+                    break;
+                }
+                let plan = waiting.plan.as_mut().expect("call plan");
+                if let Some(request) = plan.pending() {
+                    c.deadline = Some(waiting.deadline);
+                    c.raw_room(plan.raw_room(self.shared.answer_bytes));
                     match c.start(
                         env,
                         self.settings.forges.get(at).expect("forge"),
@@ -235,7 +251,7 @@ impl Component {
                         request.range,
                     ) {
                         Ok(()) => {
-                            c.keep_after(self.waiting.get(id).expect("call").plan.as_ref().expect("plan").after());
+                            c.keep_after(plan.after());
                         }
                         Err(_) => {
                             self.finish(call, id, Err(api::Error::Refused), up);

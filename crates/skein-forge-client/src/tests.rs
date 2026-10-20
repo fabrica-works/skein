@@ -41,6 +41,16 @@ const LIMITS: Limits = Limits {
 const REPO: Repository = Repository { forge: 2, repository: 5 };
 
 #[test]
+fn a_fresh_read_meeting_no_connection_ends_once() {
+    let error = Error::NotConnected;
+    let mut h = Harness::new(LIMITS);
+    h.read(1);
+    let sent = h.send().expect("fresh read");
+    terminal(&h.answer(&sent, 0, Err(error)), 1, error);
+    assert!(h.send().is_none());
+}
+
+#[test]
 fn a_fresh_read_starts_immediately_without_global_lifetime_silence() {
     let mut h = Harness::new(LIMITS);
     h.read(1);
