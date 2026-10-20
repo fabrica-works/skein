@@ -464,7 +464,13 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                 match row {
                     Row::Installation(row) => installations.push(row.clone()).unwrap(),
                     Row::Reachable(row) => reachable.push(row.clone()).unwrap(),
-                    Row::Pull(_) | Row::Context(_) | Row::Run(_) | Row::Issue(_) | Row::Comment(_) | Row::Branch(_) => {
+                    Row::Pull(_)
+                    | Row::Context(_)
+                    | Row::Run(_)
+                    | Row::Issue(_)
+                    | Row::Comment(_)
+                    | Row::Collaborator(_)
+                    | Row::Branch(_) => {
                         panic!("App row fixture")
                     }
                 }

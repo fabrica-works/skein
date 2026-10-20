@@ -32,12 +32,44 @@ fn json(row: Option<&document::User>, value: api::Permission, json: &mut Encoder
         json.string(&row.login);
     } else {
         json.key(b"role_name");
-        json.string(match value {
-            api::Permission::None => b"none",
-            api::Permission::Read => b"read",
-            api::Permission::Write => b"write",
-            api::Permission::Admin => b"admin",
-        });
+        json.string(role(value));
     }
     json.object_end();
+}
+
+/// Writes a collaborator listing without per-user requests.
+pub fn collaborators(rows: &[document::Collaborator], out: &mut Writer) -> Result<(), Overflow> {
+    let limits = output_limits(out)?;
+    let mut measure = Encoder::measure(&limits);
+    collaborators_json(rows, &mut measure);
+    let Ok(length) = measure.measured() else {
+        return Err(Overflow);
+    };
+    let mut encoder = Encoder::write(length, &limits);
+    collaborators_json(rows, &mut encoder);
+    out.put(&encoder.finish())
+}
+fn collaborators_json(rows: &[document::Collaborator], json: &mut Encoder) {
+    json.array_start();
+    for row in rows {
+        json.object_start();
+        json.key(b"id");
+        json.unsigned(row.id);
+        json.key(b"role_name");
+        json.string(role(row.permission));
+        if let Some(login) = &row.login {
+            json.key(b"login");
+            json.string(login);
+        }
+        json.object_end();
+    }
+    json.array_end();
+}
+fn role(value: api::Permission) -> &'static [u8] {
+    match value {
+        api::Permission::None => b"none",
+        api::Permission::Read => b"read",
+        api::Permission::Write => b"write",
+        api::Permission::Admin => b"admin",
+    }
 }

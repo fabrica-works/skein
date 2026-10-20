@@ -33,6 +33,7 @@ pub struct Decoder {
     pulls: pulls::State,
     user: document::User,
     permission: crate::api::Permission,
+    collaborator: document::Collaborator,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -51,6 +52,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         pulls: pulls::State::new(limits.inner),
         user: document::User { id: 0, login: Box::from([]) },
         permission: crate::api::Permission::None,
+        collaborator: people::collaborator(),
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -93,6 +95,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::PullsFor { .. } => Kind::PullRows,
         Request::CombinedStatus { .. } => Kind::CombinedStatus,
         Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::Collaborators { .. } => Kind::CollaboratorRows,
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
         Request::Branch { .. } => Kind::Branch,
@@ -110,7 +113,6 @@ pub fn kind(request: &Request) -> Option<Kind> {
         | Request::RulesForBranch { .. }
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }
-        | Request::Collaborators { .. }
         => return None,
     })
 }
@@ -193,6 +195,10 @@ impl Decoder {
                 }
             }
             Move::BodyLong(Some(node), length) => self.issues.long(node, length),
+            Move::End(Node::Collaborator) => {
+                let row = core::mem::replace(&mut self.collaborator, people::collaborator());
+                return Ok((tokenizer::Request::Next, Step::Row(Row::Collaborator(row))));
+            }
             Move::End(Node::BranchName) => {
                 return Ok((
                     tokenizer::Request::Next,
@@ -206,7 +212,8 @@ impl Decoder {
                 }
             }
             Move::End(
-                Node::User
+                Node::CollaboratorRows
+                | Node::User
                 | Node::Permission
                 | Node::Repository
                 | Node::Owner
@@ -237,9 +244,12 @@ impl Decoder {
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
-                    Kind::PullRows | Kind::CheckRuns | Kind::BranchRows | Kind::IssueRows | Kind::CommentRows => {
-                        Document::Rows
-                    }
+                    Kind::CollaboratorRows
+                    | Kind::PullRows
+                    | Kind::CheckRuns
+                    | Kind::BranchRows
+                    | Kind::IssueRows
+                    | Kind::CommentRows => Document::Rows,
                     Kind::Issue => Document::Issue(self.issues.document()),
                     Kind::Error => Document::Error(document::Refusal {
                         message: core::mem::replace(&mut self.message, Box::from([])),
@@ -303,6 +313,13 @@ impl Decoder {
                 key,
                 token,
             ) => return self.app.scalar(node, key, token),
+            (Node::Collaborator, b"id", Token::Number(text)) => {
+                self.collaborator.id = crate::forgejo::id::unsigned(&text).ok_or(Malformed::Range { field: key })?;
+            }
+            (Node::Collaborator, b"login", Token::String(text)) => self.collaborator.login = Some(text),
+            (Node::Collaborator, b"role_name", Token::String(text)) => {
+                self.collaborator.permission = people::permission(&text)?;
+            }
             (Node::User, b"id", Token::Number(text)) => {
                 self.user.id = crate::forgejo::id::unsigned(&text).ok_or(Malformed::Range { field: key })?;
             }
@@ -331,7 +348,9 @@ impl Decoder {
             (Node::Error, b"message", Token::String(text)) => self.message = text,
             (Node::ErrorEntry, b"message", Token::String(text)) => self.error = text,
             (
-                Node::User
+                Node::Collaborator
+                | Node::CollaboratorRows
+                | Node::User
                 | Node::Permission
                 | Node::Repository
                 | Node::Owner

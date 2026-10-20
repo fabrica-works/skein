@@ -214,3 +214,112 @@ fn github_permission_bounds_and_failures() {
         ended(Err(api::Error::InvalidAnswer))
     );
 }
+
+fn collaborator(id: u64, permission: api::Permission) -> document::Collaborator {
+    document::Collaborator { id, permission, login: None }
+}
+fn collaborator_row(call: &mut Call, row: document::Collaborator) -> Result<Option<Step>, api::Error> {
+    call.heard(Heard::Row(Row::Collaborator(row)))
+}
+#[test]
+fn github_collaborators_roles_without_fanout() {
+    let request = Request::Collaborators { owner: owner(), name: name(), page: 3, per_page: 4 };
+    golden(
+        &request,
+        b"/repos/acme/widgets/collaborators?affiliation=all&per_page=4&page=3",
+        Some(Kind::CollaboratorRows),
+        Accept::Json,
+    );
+    let rows = [
+        collaborator(USER, api::Permission::Admin),
+        collaborator(2, api::Permission::Write),
+        collaborator(3, api::Permission::Read),
+        collaborator(4, api::Permission::None),
+    ];
+    let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+    server::collaborators(&rows, &mut out).unwrap();
+    let expected = rows.clone().map(Row::Collaborator);
+    document(Kind::CollaboratorRows, &bytes(out), Document::Rows, &expected);
+    let mut call = Call::new(api::Read::Collaborators { page: 3 }, bounds(), true);
+    assert_eq!(call.begin(), Ok(Step::send(request)));
+    call.head(false);
+    for row in rows {
+        assert_eq!(collaborator_row(&mut call, row), Ok(None));
+    }
+    assert_eq!(
+        call.done(Document::Rows),
+        ended(Ok(api::Answer::Collaborators {
+            more: false,
+            collaborators: Box::from([
+                api::Collaborator { user: USER, permission: api::Permission::Admin },
+                api::Collaborator { user: 2, permission: api::Permission::Write },
+                api::Collaborator { user: 3, permission: api::Permission::Read },
+                api::Collaborator { user: 4, permission: api::Permission::None }
+            ])
+        }))
+    );
+}
+#[test]
+fn github_collaborators_link_and_bounds() {
+    for more in [false, true] {
+        let mut call =
+            Call::new(api::Read::Collaborators { page: 1 }, Bounds { rows: 1, answer_bytes: 16, ..bounds() }, true);
+        call.begin().unwrap();
+        call.head(more);
+        let mut row = collaborator(USER, api::Permission::Read);
+        row.login = Some(user().login);
+        assert_eq!(collaborator_row(&mut call, row), Ok(None));
+        assert_eq!(call.tables.user(KEY.forge, USER), Some(b"alice".as_slice()));
+        assert_eq!(
+            call.done(Document::Rows),
+            ended(Ok(api::Answer::Collaborators {
+                more,
+                collaborators: Box::from([api::Collaborator { user: USER, permission: api::Permission::Read }])
+            }))
+        );
+    }
+    let mut call = started(api::Read::Collaborators { page: 1 }, Bounds { rows: 1, ..bounds() });
+    collaborator_row(&mut call, collaborator(USER, api::Permission::Read)).unwrap();
+    assert_eq!(collaborator_row(&mut call, collaborator(2, api::Permission::Read)), ended(Err(api::Error::TooLarge)));
+    for bounds in
+        [Bounds { answer_bytes: 15, ..bounds() }, Bounds { rows: 0, ..bounds() }, Bounds { page_size: 0, ..bounds() }]
+    {
+        assert_eq!(Call::new(api::Read::Collaborators { page: 1 }, bounds, true).begin(), Err(api::Error::TooLarge));
+    }
+}
+#[test]
+fn github_collaborators_malformed_and_failures() {
+    for wire in [
+        br#"[{"id":1,"role_name":"future"}]"#.as_slice(),
+        br#"[{"role_name":"read"}]"#,
+        br#"[{"id":1,"id":null,"role_name":"read"}]"#,
+        br#"[{"id":1,"role_name":true}]"#,
+    ] {
+        malformed(Kind::CollaboratorRows, wire);
+    }
+    for chunk in [1, 7] {
+        let (rows, value) = decode(
+            Kind::CollaboratorRows,
+            br#"[{"id":1,"login":"alice","role_name":"maintain"},{"id":2,"role_name":"triage"}]"#,
+            chunk,
+            &limits(),
+        );
+        assert_eq!(value, Ok(Document::Rows));
+        assert_eq!(
+            rows.as_slice(),
+            &[
+                Row::Collaborator(document::Collaborator {
+                    id: 1,
+                    login: Some(user().login),
+                    permission: api::Permission::Admin
+                }),
+                Row::Collaborator(collaborator(2, api::Permission::Read))
+            ]
+        );
+    }
+    let mut call = started(api::Read::Collaborators { page: 1 }, bounds());
+    assert_eq!(call.done(Document::Permission(api::Permission::Read)), ended(Err(api::Error::InvalidAnswer)));
+    let mut call = Call::new(api::Read::Collaborators { page: 1 }, bounds(), true);
+    call.begin().unwrap();
+    assert_eq!(call.heard(Heard::Head { status: 404, head: Head::new() }), ended(Err(api::Error::Missing)));
+}

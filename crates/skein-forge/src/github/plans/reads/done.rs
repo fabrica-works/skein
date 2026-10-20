@@ -28,6 +28,7 @@ impl Plan {
                     | Read::PullFor { .. }
                     | Read::Statuses { .. }
                     | Read::Permission { .. }
+                    | Read::Collaborators { .. }
                     | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
@@ -37,6 +38,7 @@ impl Plan {
             document::Document::Combined(combined) => self.combined_done(combined, bounds),
             document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
             document::Document::Rows => match self.read {
+                Read::Collaborators { .. } => self.collaborators_done(bounds),
                 Read::Items { .. } | Read::Item { .. } => self.issue_rows_done(bounds),
                 Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_rows_done(bounds),
                 Read::Locate { .. }
@@ -85,6 +87,7 @@ impl Plan {
             | Read::PullFor { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
+            | Read::Collaborators { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
@@ -97,6 +100,7 @@ impl Plan {
             | Read::PullFor { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
+            | Read::Collaborators { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }

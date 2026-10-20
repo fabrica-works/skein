@@ -32,6 +32,8 @@ pub(super) enum Node {
     BotUser,
     User,
     Permission,
+    CollaboratorRows,
+    Collaborator,
     Repository,
     Owner,
     Branch,
@@ -132,6 +134,9 @@ fn comment_fields() -> &'static [Field] {
 #[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::Collaborator => {
+            const { &[field(b"id", Read::Number), field(b"role_name", Read::Text), optional(b"login", Read::Text)] }
+        }
         Node::User => const { &[field(b"id", Read::Number), field(b"login", Read::Text)] },
         Node::Permission => const { &[field(b"role_name", Read::Text)] },
         Node::PullObject => {
@@ -256,7 +261,8 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::PullRows
+        Node::CollaboratorRows
+        | Node::PullRows
         | Node::Reviewers
         | Node::Contexts
         | Node::Runs
@@ -276,6 +282,7 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::CollaboratorRows => Some(Role::Document(Node::Collaborator)),
         Node::PullRows => Some(Role::Document(Node::PullObject)),
         Node::Reviewers => Some(Role::Document(Node::Reviewer)),
         Node::Contexts => Some(Role::Document(Node::Context)),
@@ -316,6 +323,7 @@ fn element(role: Role) -> Option<Role> {
         | Node::Conversion
         | Node::User
         | Node::Permission
+        | Node::Collaborator
         | Node::BotUser
         | Node::Repository
         | Node::Owner
@@ -374,6 +382,7 @@ impl Walk {
             document::Kind::BotUser => Node::BotUser,
             document::Kind::User => Node::User,
             document::Kind::Permission => Node::Permission,
+            document::Kind::CollaboratorRows => Node::CollaboratorRows,
             document::Kind::Repository => Node::Repository,
             document::Kind::Branch => Node::Branch,
             document::Kind::BranchRows => Node::BranchRows,

@@ -49,6 +49,7 @@ impl Plan {
             | Read::PullFor { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
+            | Read::Collaborators { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }
@@ -130,10 +131,12 @@ impl Plan {
                 | Read::PullFor { .. }
                 | Read::Statuses { .. }
                 | Read::Permission { .. }
+                | Read::Collaborators { .. }
                 | Read::Refused,
                 document::Row::Issue(_)
                 | document::Row::Comment(_)
                 | document::Row::Installation(_)
+                | document::Row::Collaborator(_)
                 | document::Row::Reachable(_)
                 | document::Row::Pull(_)
                 | document::Row::Context(_)
@@ -161,6 +164,7 @@ impl Plan {
             | Read::PullFor { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
+            | Read::Collaborators { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         if issue.number != number {
@@ -188,6 +192,7 @@ impl Plan {
             | Read::PullFor { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
+            | Read::Collaborators { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(Some(self.send(Request::Comments {
@@ -229,6 +234,7 @@ impl Plan {
             | Read::PullFor { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
+            | Read::Collaborators { .. }
             | Read::Refused => Err(api::Error::InvalidAnswer),
         }
     }

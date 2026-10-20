@@ -34,6 +34,8 @@ pub enum Kind {
     User,
     /// A repository permission.
     Permission,
+    /// Streamed repository collaborators.
+    CollaboratorRows,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -71,6 +73,7 @@ pub enum Row {
     Context(Context),
     /// One check run.
     Run(Run),
+    Collaborator(Collaborator),
 }
 /// GitHub's message and bounded error messages.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -238,4 +241,12 @@ pub struct Run {
 pub struct User {
     pub id: u64,
     pub login: Box<[u8]>,
+}
+
+/// A collaborator's role and optional bounded login for the users table.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Collaborator {
+    pub id: u64,
+    pub permission: api::Permission,
+    pub login: Option<Box<[u8]>>,
 }

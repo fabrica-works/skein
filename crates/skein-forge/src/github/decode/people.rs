@@ -11,3 +11,7 @@ pub(super) fn permission(word: &[u8]) -> Result<api::Permission, Malformed> {
         _ => Err(Malformed::Value { field: b"role_name" }),
     }
 }
+
+pub(super) fn collaborator() -> crate::github::document::Collaborator {
+    crate::github::document::Collaborator { id: 0, permission: api::Permission::None, login: None }
+}

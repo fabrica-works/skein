@@ -30,6 +30,7 @@ enum Read {
     PullFor { head: Box<[u8]>, base: Box<[u8]> },
     Statuses { commit: api::Commit, page: u32 },
     Permission { user: u64 },
+    Collaborators { page: u32 },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -68,6 +69,7 @@ pub struct Plan {
     issues: issues::State,
     pulls: pulls::State,
     login: Option<Box<[u8]>>,
+    collaborators: List<api::Collaborator>,
 }
 impl Plan {
     #[must_use]
@@ -82,6 +84,7 @@ impl Plan {
             api::Read::Pull { number } => Read::Pull { number },
             api::Read::PullFor { head, base } => Read::PullFor { head, base },
             api::Read::Statuses { commit, page } => Read::Statuses { commit, page },
+            api::Read::Collaborators { page } => Read::Collaborators { page },
             api::Read::Permission { user } => Read::Permission { user },
             api::Read::Reviews { .. }
             | api::Read::Remarks { .. }
@@ -90,8 +93,7 @@ impl Plan {
             | api::Read::Checks { .. }
             | api::Read::Job { .. }
             | api::Read::File { .. }
-            | api::Read::Protection { .. }
-            | api::Read::Collaborators { .. } => Read::Refused,
+            | api::Read::Protection { .. } => Read::Refused,
         };
         Self {
             repository,
@@ -108,6 +110,7 @@ impl Plan {
             issues: issues::State::new(),
             pulls: pulls::State::new(),
             login: None,
+            collaborators: List::with_capacity(0),
         }
     }
     pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
@@ -130,6 +133,11 @@ impl Plan {
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
+            Read::Collaborators { .. } => {
+                let capacity = size::capacity(bounds, crate::measure::COLLABORATOR_BYTES)?;
+                self.limit = size::page_size(bounds, capacity)?;
+                self.collaborators = List::with_capacity(capacity);
+            }
             Read::Permission { user } => {
                 if let Some(login) = tables.user(self.repository.forge, *user) {
                     self.login = Some(Box::from(login));
@@ -160,6 +168,7 @@ impl Plan {
     fn initial(&mut self) -> Result<Step, api::Error> {
         match self.read {
             Read::Permission { .. } => return self.permission_initial(),
+            Read::Collaborators { .. } => return self.collaborators_initial(),
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => return self.pull_initial(),
             Read::Locate { .. }
             | Read::Settings
@@ -189,6 +198,7 @@ impl Plan {
             | Read::Locate { .. }
             | Read::Settings
             | Read::Permission { .. }
+            | Read::Collaborators { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
@@ -248,6 +258,7 @@ impl Plan {
                         | Read::PullFor { .. }
                         | Read::Statuses { .. }
                         | Read::Permission { .. }
+                        | Read::Collaborators { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
@@ -267,7 +278,7 @@ impl Plan {
                     Response::Body { .. } => {}
                     Response::None | Response::Head => return Err(api::Error::InvalidAnswer),
                 }
-                self.keep_row(row, bounds, word)?;
+                self.keep_row(row, bounds, word, tables)?;
                 Ok(None)
             }
             Heard::Done(body) => {
@@ -314,8 +325,15 @@ impl Plan {
             },
         }
     }
-    fn keep_row(&mut self, row: document::Row, bounds: Bounds, word: &[u8]) -> Result<(), api::Error> {
+    fn keep_row(
+        &mut self,
+        row: document::Row,
+        bounds: Bounds,
+        word: &[u8],
+        tables: &mut Tables,
+    ) -> Result<(), api::Error> {
         match self.read {
+            Read::Collaborators { .. } => return self.collaborator_row(row, bounds, tables),
             Read::Items { .. } | Read::Item { .. } => return self.issue_row(row, bounds, word),
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => return self.pull_row(row, bounds),
             Read::Locate { .. }
@@ -346,6 +364,7 @@ impl Plan {
             | document::Row::Pull(_)
             | document::Row::Context(_)
             | document::Row::Run(_)
+            | document::Row::Collaborator(_)
             | document::Row::Reachable(_) => Err(api::Error::InvalidAnswer),
         }
     }
