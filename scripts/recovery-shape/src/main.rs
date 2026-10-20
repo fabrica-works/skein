@@ -6,6 +6,7 @@
     reason = "this host-side AST checker uses standard collections and diagnostics; step-code bans do not apply"
 )]
 mod connection_shapes;
+mod listing_sizes;
 mod plan_shapes;
 
 use syn::{
@@ -166,7 +167,12 @@ fn main() {
     let mut bad = false;
     let mut plan_shapes_mode = false;
     let mut connection_shapes_mode = false;
+    let mut listing_sizes_mode = false;
     for arg in std::env::args().skip(1) {
+        if arg == "--listing-sizes" {
+            listing_sizes_mode = true;
+            continue;
+        }
         if arg == "--connection-shapes" {
             connection_shapes_mode = true;
             continue;
@@ -176,7 +182,9 @@ fn main() {
             continue;
         }
         if arg == "--controls" {
-            if connection_shapes_mode {
+            if listing_sizes_mode {
+                listing_sizes::controls();
+            } else if connection_shapes_mode {
                 connection_shapes::controls();
             } else if plan_shapes_mode {
                 plan_shapes::controls();
@@ -187,7 +195,9 @@ fn main() {
         }
         let source = std::fs::read_to_string(&arg).expect("source file");
         assert!(source.len() <= SOURCE_LIMIT, "source exceeds bounded input size");
-        let errors = if connection_shapes_mode {
+        let errors = if listing_sizes_mode {
+            listing_sizes::check(&source)
+        } else if connection_shapes_mode {
             connection_shapes::check(&source)
         } else if plan_shapes_mode {
             plan_shapes::check(&source)

@@ -16,6 +16,8 @@ cargo run --locked --target-dir target/recovery-shape --manifest-path scripts/re
 cargo run --locked --target-dir target/recovery-shape --manifest-path scripts/recovery-shape/Cargo.toml -- --plan-shapes --controls crates/skein-forge/src/forgejo/plans/tests/edges.rs
 # testing-strategy.md 10: sampled 03.3 behaviours and capacities.
 cargo run --locked --target-dir target/recovery-shape --manifest-path scripts/recovery-shape/Cargo.toml -- --connection-shapes --controls crates/skein-forge-connection/src/tests/connection.rs crates/skein-forge-connection/src/limits/tests.rs
+# testing-strategy.md 10: Named fixtures and sizes, in the two sampled listing tests.
+cargo run --locked --target-dir target/recovery-shape --manifest-path scripts/recovery-shape/Cargo.toml -- --listing-sizes --controls crates/skein-forge/src/forgejo/plans/tests/calls.rs
 cargo clippy --workspace --all-targets -- -D warnings
 # The portable libraries and the browser-only halves on their shipping target.
 cargo check --target wasm32-unknown-unknown -p skein-lib -p skein-codec -p skein-http
