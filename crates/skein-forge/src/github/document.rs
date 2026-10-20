@@ -310,7 +310,8 @@ pub struct Pull {
     pub closed: bool,
     pub merged: bool,
     pub merge_commit: Option<api::Commit>,
-    pub mergeable: bool,
+    /// None while GitHub computes mergeability.
+    pub mergeable: Option<bool>,
     pub head: Box<[u8]>,
     pub base: Box<[u8]>,
     pub head_commit: api::Commit,

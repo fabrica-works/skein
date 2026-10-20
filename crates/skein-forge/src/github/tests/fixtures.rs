@@ -13,6 +13,7 @@ use skein_lib::{
 pub const DOCUMENT_BYTES: u32 = 4096;
 pub const STRING_BYTES: u32 = 128;
 pub const INNER: u32 = 4;
+pub const PULL_COMPUTING: &str = r#"{"number":5,"state":"open","head":{"ref":"feature","sha":"0123456789abcdef0123456789abcdef01234567","repo":null},"base":{"ref":"main","sha":"abcdef0123456789abcdef0123456789abcdef01"},"mergeable":null}"#;
 pub const SHA: &[u8; 40] = b"0123456789abcdef0123456789abcdef01234567";
 pub const OTHER_SHA: &[u8; 40] = b"abcdef0123456789abcdef0123456789abcdef01";
 pub const REPOSITORY: &[u8] = br#"{"id":18446744073709551615,"owner":{"login":"o","id":9007199254740993,"type":"Organization"},"name":"n","default_branch":"main","html_url":"https://github.com/o/n","allow_merge_commit":true,"allow_squash_merge":false,"allow_rebase_merge":true}"#;
@@ -199,7 +200,7 @@ pub fn pull(number: u64) -> super::super::document::Pull {
         closed: false,
         merged: false,
         merge_commit: None,
-        mergeable: true,
+        mergeable: Some(true),
         head: Box::from(*b"feature"),
         base: Box::from(*b"main"),
         head_commit: super::super::id::commit(SHA).unwrap(),

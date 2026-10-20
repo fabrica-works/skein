@@ -84,7 +84,7 @@ pub(super) fn pull(value: document::Pull, ci: api::Ci) -> Result<api::Pull, api:
         commit: value.head_commit,
         base_commit: Some(value.base_commit),
         merged,
-        mergeable: value.mergeable,
+        mergeable: value.mergeable == Some(true),
         ci,
         queued: None,
         dequeued: None,

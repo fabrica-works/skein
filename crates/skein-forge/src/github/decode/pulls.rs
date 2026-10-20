@@ -27,7 +27,7 @@ fn pull() -> document::Pull {
         closed: false,
         merged: false,
         merge_commit: None,
-        mergeable: false,
+        mergeable: None,
         head: Box::from([]),
         base: Box::from([]),
         head_commit: [0; 32],
@@ -92,7 +92,7 @@ impl State {
                 if key == b"merged" {
                     self.pull.merged = token == Token::True;
                 } else {
-                    self.pull.mergeable = token == Token::True;
+                    self.pull.mergeable = Some(token == Token::True);
                 }
             }
             Token::String(text) => {

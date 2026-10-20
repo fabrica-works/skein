@@ -153,3 +153,45 @@ fn github_fake_pull_routes_refuse_outside_installation() {
     }
     assert_eq!(h.calls, 0);
 }
+
+#[test]
+fn github_fake_mergeable_is_null_until_drawn_head_or_base_settle_deadline() {
+    use skein_lib::{Duration, Time, Wall};
+    let mut replays = Vec::new();
+    for _replay in 0..2 {
+        let mut config = r::domain_config();
+        config.settle_min = Duration::from_secs(3);
+        config.settle_max = Duration::from_secs(7);
+        config.resolution = Duration::ZERO;
+        let mut h = f::Harness::with_domain(f::limits(), f::config(), config);
+        h.drain_timers = false;
+        let (number, head) = r::pull(&mut h);
+        let token = r::token(&mut h);
+        let mut deadlines = Vec::new();
+        for (branch, parent, path) in [(b"feature".as_slice(), head, b"head".as_slice()), (b"trunk", h.first, b"base".as_slice())] {
+            let next = skein_fake_forge_domain::commit(&mut h.domain, &config, parent,
+                Box::from([a::File { path: f::boxed(path), content: f::boxed(b"contents") }]), b"move").unwrap().unwrap();
+            let start = h.env.now;
+            r::call(&mut h, a::Op::Git(a::Git::Push { branch: f::boxed(branch), commit: next, expected: None }));
+            let target = format!("/repos/acme/widgets/pulls/{number}");
+            let before = h.ask(Method::Get, target.as_bytes(), Some(token.expose()), b"");
+            assert!(skein_lib::bytes::find(&before.body, b"\"mergeable\":null").is_some());
+            let mut deadline = None;
+            // Sample the rendered transition; the domain tests its exact nanosecond boundary.
+            for tick in 0..=70_u64 {
+                let at = Time::from_nanos(start.as_nanos().checked_add(tick.checked_mul(100_000_000).unwrap()).unwrap());
+                h.env.now = at;
+                h.now = Wall::from_nanos(at.as_nanos());
+                let answer = h.ask(Method::Get, target.as_bytes(), Some(token.expose()), b"");
+                if skein_lib::bytes::find(&answer.body, b"\"mergeable\":null").is_none() {
+                    assert!((30..=70).contains(&tick));
+                    deadline = Some(at);
+                    break;
+                }
+            }
+            deadlines.push(deadline.expect("settles within upper bound"));
+        }
+        replays.push(deadlines);
+    }
+    assert_eq!(replays[0], replays[1]);
+}

@@ -196,6 +196,24 @@ fn github_pull_reads_three_requests() {
     );
 }
 #[test]
+fn github_pull_null_mergeable_reads_as_false() {
+    let body = fixtures::PULL_COMPUTING.as_bytes();
+    for chunk in [1, 7, u32::try_from(body.len()).unwrap()] {
+        let (rows, decoded) = decode(Kind::Pull, body, chunk, &limits());
+        assert!(rows.is_empty());
+        let Document::Pull(pull) = decoded.unwrap() else { panic!("pull document") };
+        assert_eq!(pull.mergeable, None);
+        let mut call = started(api::Read::Pull { number: 5 });
+        call.head(false);
+        assert_eq!(
+            call.heard(Heard::Done(Body::Document(Document::Pull(pull)))),
+            Some(Step::send(combined_request(1, 1)))
+        );
+        assert_eq!(call.combined(api::Check::Pending, 0, &[], false), Some(Step::send(runs_request(1, 8))));
+        assert!(!pull_answer(call.runs(&[], false)).mergeable);
+    }
+}
+#[test]
 fn github_pull_resolves_absent_repository() {
     for read in [api::Read::Pull { number: 5 }, pull_for(), statuses(3)] {
         let mut call = Call::new(read.clone(), bounds(), false);

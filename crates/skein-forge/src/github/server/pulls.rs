@@ -200,7 +200,10 @@ fn pull_json(row: &document::Pull, merged: bool, json: &mut Encoder) -> Result<(
         None => json.null(),
     }
     json.key(b"mergeable");
-    json.boolean(row.mergeable);
+    match row.mergeable {
+        Some(mergeable) => json.boolean(mergeable),
+        None => json.null(),
+    }
     json.key(b"head");
     reference(&row.head, &row.head_commit, json)?;
     json.key(b"base");

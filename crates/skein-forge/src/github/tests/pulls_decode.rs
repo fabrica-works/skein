@@ -1,4 +1,4 @@
-use super::fixtures::{self, bytes, decode, limits};
+use super::fixtures::{self, PULL_COMPUTING as PULL, bytes, decode, limits};
 use crate::{
     api,
     github::{
@@ -9,9 +9,8 @@ use crate::{
 };
 use skein_lib::{Overflow, Writer};
 
-const PULL: &str = r#"{"number":5,"state":"open","head":{"ref":"feature","sha":"0123456789abcdef0123456789abcdef01234567","repo":null},"base":{"ref":"main","sha":"abcdef0123456789abcdef0123456789abcdef01"},"mergeable":null}"#;
 fn assert_decode(kind: Kind, body: &[u8], expected: Document, expected_rows: &[Row]) {
-    for chunk in [1, 7] {
+    for chunk in [1, 7, u32::try_from(body.len()).unwrap()] {
         let (rows, answer) = decode(kind, body, chunk, &limits());
         assert_eq!(answer, Ok(expected.clone()));
         assert_eq!(rows.as_slice(), expected_rows);
@@ -20,21 +19,26 @@ fn assert_decode(kind: Kind, body: &[u8], expected: Document, expected_rows: &[R
 #[test]
 fn github_pull_document_round_trips() {
     for (closed, merged) in [(false, false), (true, false), (true, true)] {
-        let mut pull = fixtures::pull(5);
-        pull.closed = closed;
-        pull.merged = merged;
-        pull.merge_commit = Some(pull.base_commit);
-        let mut out = Writer::new(4096);
-        server::pull(&pull, &mut out).unwrap();
-        assert_decode(Kind::Pull, &bytes(out), Document::Pull(pull.clone()), &[]);
-        let mut small = Writer::new(1);
-        assert_eq!(server::pull(&pull, &mut small), Err(Overflow));
-        assert_eq!(small.written(), 0);
+        for mergeable in [Some(true), Some(false), None] {
+            let mut pull = fixtures::pull(5);
+            pull.closed = closed;
+            pull.merged = merged;
+            pull.merge_commit = Some(pull.base_commit);
+            pull.mergeable = mergeable;
+            let mut out = Writer::new(4096);
+            server::pull(&pull, &mut out).unwrap();
+            assert_decode(Kind::Pull, &bytes(out), Document::Pull(pull.clone()), &[]);
+            let mut small = Writer::new(1);
+            assert_eq!(server::pull(&pull, &mut small), Err(Overflow));
+            assert_eq!(small.written(), 0);
+        }
     }
     let mut pull = fixtures::pull(5);
-    pull.mergeable = false;
+    pull.mergeable = None;
     pull.reviewers = Box::from([]);
     assert_decode(Kind::Pull, PULL.as_bytes(), Document::Pull(pull.clone()), &[]);
+    let absent = PULL.replace(r#","mergeable":null"#, "");
+    assert_decode(Kind::Pull, absent.as_bytes(), Document::Pull(pull.clone()), &[]);
     let reordered = PULL.replace(r#""head":{"ref":"feature","sha":"0123456789abcdef0123456789abcdef01234567","repo":null},"base":{"ref":"main","sha":"abcdef0123456789abcdef0123456789abcdef01"}"#,
         r#""base":{"sha":"abcdef0123456789abcdef0123456789abcdef01","ref":"main"},"head":{"sha":"0123456789abcdef0123456789abcdef01234567","ref":"feature"}"#);
     assert_decode(Kind::Pull, reordered.as_bytes(), Document::Pull(pull), &[]);
@@ -78,10 +82,17 @@ fn github_pull_rows_round_trip() {
     let first = fixtures::pull(5);
     let mut second = fixtures::pull(6);
     second.closed = true;
+    second.mergeable = Some(false);
     second.reviewers = Box::from([]);
+    let third = document::Pull { mergeable: None, ..fixtures::pull(7) };
     let mut out = Writer::new(4096);
-    server::pulls(&[first.clone(), second.clone()], &mut out).unwrap();
-    assert_decode(Kind::PullRows, &bytes(out), Document::Rows, &[Row::Pull(first), Row::Pull(second)]);
+    server::pulls(&[first.clone(), second.clone(), third.clone()], &mut out).unwrap();
+    assert_decode(
+        Kind::PullRows,
+        &bytes(out),
+        Document::Rows,
+        &[Row::Pull(first), Row::Pull(second), Row::Pull(third)],
+    );
     assert_decode(Kind::PullRows, b"[]", Document::Rows, &[]);
     let mut small = Writer::new(1);
     assert_eq!(server::pulls(&[fixtures::pull(5)], &mut small), Err(Overflow));

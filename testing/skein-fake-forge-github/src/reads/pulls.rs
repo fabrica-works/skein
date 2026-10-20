@@ -15,7 +15,7 @@ pub(super) fn document(row: a::Pull) -> Option<d::Pull> {
         closed: row.state == a::State::Closed,
         merged: row.merged.is_some(),
         merge_commit: if row.queue_merged { None } else { optional_commit(row.merged) },
-        mergeable: row.mergeable,
+        mergeable: if row.checking { None } else { Some(row.mergeable) },
         head: row.head,
         base: row.base,
         head_commit: commit(row.commit),
