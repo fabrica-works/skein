@@ -78,17 +78,23 @@ pub(crate) struct Clock {
     pub expiry: Time,
     pub due: Option<Time>,
     pub pending: bool,
+    pub next: Duration,
 }
 impl Clock {
     pub fn empty() -> Self {
-        Self { expiry: Time::ZERO, due: None, pending: false }
+        Self { expiry: Time::ZERO, due: None, pending: false, next: Duration::ZERO }
     }
     pub fn pending() -> Self {
         Self { pending: true, ..Self::empty() }
     }
-    pub fn minted(expires: Wall, env: &skein_lib::Env<crate::Limits>) -> Self {
+    pub fn minted(expires: Wall, next: Duration, env: &skein_lib::Env<crate::Limits>) -> Self {
         let (expiry, due) = token_times(expires, env.now, env.wall, env.limits.renew_before);
-        Self { expiry, due: Some(due), pending: false }
+        let (due, next) = if due <= env.now {
+            retry_times(next.max(env.limits.start_backoff), Duration::ZERO, env)
+        } else {
+            (due, Duration::ZERO)
+        };
+        Self { expiry, due: Some(due), pending: false, next }
     }
     fn fire(&mut self, now: Time) {
         if let Some(due) = self.due
@@ -102,6 +108,10 @@ impl Clock {
         self.pending = false;
         self.due = None;
     }
+}
+/// Short mints and failed private work share the capped exponential backoff.
+pub(crate) fn retry_times(next: Duration, after: Duration, env: &skein_lib::Env<crate::Limits>) -> (Time, Duration) {
+    (env.now.saturating_add(after.max(next)), next.saturating_mul(2).min(env.limits.start_backoff_max))
 }
 /// Eligibility, active scopes and private waits are independent of API usability.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

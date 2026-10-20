@@ -451,6 +451,9 @@ An installation's tokens are, by the component itself:
   `expires_at` less `env.wall`, and the due time is `env.now` plus it,
   less `renew_before` (programming-model.md, section 9). A wall that
   jumps later moves no due time.
+  - A mint already due when it is heard is used, and renewed after the
+    private backoff, as a failed renewal is: a short `expires_at` or a
+    skewed wall makes no loop.
 - **Run on the forge's own connections,** within `deadline`, each
   request counted in no call's cost, as a start's reads are.
 - **A call that needs a token while its mint runs waits,** within its

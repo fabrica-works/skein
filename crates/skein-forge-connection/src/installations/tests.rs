@@ -270,7 +270,7 @@ fn mint_fixes_due_on_the_monotonic_clock() {
         wall: Wall::from_nanos(1000),
         limits: crate::Limits { renew_before: Duration::from_nanos(200), ..fixtures::limits() },
     };
-    let mut clock = Clock::minted(Wall::from_nanos(1600), &env);
+    let mut clock = Clock::minted(Wall::from_nanos(1600), NEXT, &env);
     assert_eq!((clock.expiry, clock.due), (Time::from_nanos(700), Some(Time::from_nanos(500))));
     for wall in [Wall::from_nanos(9000), Wall::EPOCH] {
         env.wall = wall;
@@ -302,7 +302,7 @@ fn elapsed_wall_life_saturates_to_zero() {
 }
 #[test]
 fn due_is_consumed_once_into_pending_work() {
-    let mut clock = Clock { expiry: Time::from_nanos(100), due: Some(Time::from_nanos(80)), pending: false };
+    let mut clock = Clock { expiry: Time::from_nanos(100), due: Some(Time::from_nanos(80)), ..Clock::empty() };
     clock.fire(Time::from_nanos(79));
     assert!(!clock.pending);
     clock.fire(Time::from_nanos(80));

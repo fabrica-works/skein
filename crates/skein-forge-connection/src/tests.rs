@@ -311,8 +311,9 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
     // each of eight inner entries needs max(3*128 + 2*48 + 2*16,
     // 4*128 + 2*24 + 2*16) = 592 bytes: the App's builder/document overlap
     // adds 80 per entry. Seven decoders therefore add 7 * (112 + 8*80) = 5264
-    // bytes.
-    const FIXTURE_HEAP: u64 = 3_643_486;
+    // bytes. The two retained private backoffs add 176 bytes (16 bytes in
+    // each of eleven leaf slots).
+    const FIXTURE_HEAP: u64 = 3_643_662;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(

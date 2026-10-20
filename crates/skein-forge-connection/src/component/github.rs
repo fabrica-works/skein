@@ -3,7 +3,7 @@ use super::{Component, OwnPlan, backoff};
 use crate::{
     Event, Limits, StartRead, Stopped, Value,
     connection::{self, Exchange, Phase},
-    installations::{Clock, HeldToken, Read, Resume, Selected, Tokens, Work},
+    installations::{Clock, HeldToken, Read, Resume, Selected, Tokens, Work, retry_times},
     start::Start,
 };
 use skein_forge::{
@@ -124,8 +124,7 @@ impl Component {
             | Start::Waiting { .. }
             | Start::Stopped(_) => return,
         };
-        let until = env.now.saturating_add(gh.retry.unwrap_or(Duration::ZERO).max(next));
-        let doubled = next.saturating_mul(2).min(env.limits.start_backoff_max);
+        let (until, doubled) = retry_times(next, gh.retry.unwrap_or(Duration::ZERO), env);
         if gh.connected {
             match state {
                 Start::Minting { .. } => {
@@ -143,6 +142,7 @@ impl Component {
                         gh.reread = false;
                         gh.refused_read = true;
                     } else {
+                        row.clock(scope).next = doubled;
                         gh.work = Work::Waiting { until, next: doubled, resume: Resume::Minting { scope } };
                     }
                 }
@@ -189,6 +189,7 @@ impl Component {
         if let Some((id, scope)) = chosen {
             let row = gh.rows.get_mut(&id).expect("eligible row");
             row.state = Tokens::Minting { scope };
+            let next = next.max(row.clock(scope).next);
             row.clock(scope).take();
             gh.selected = Some(Selected { id, connect: gh.connect, revision: row.revision });
             gh.mint = Some((id, scope));
@@ -331,6 +332,7 @@ impl Component {
         env: &Env<Limits>,
         up: &mut Queue<Event>,
     ) -> bool {
+        let next = active_next(self.github_state(at));
         if !self.github.get(at).expect("forge slot").as_ref().expect("GitHub state").selected_valid() {
             return true;
         }
@@ -351,7 +353,7 @@ impl Component {
                         Scope::Full => {
                             row.api = Some(minted.token);
                             row.api_expires = minted.expires;
-                            row.full = Clock::minted(minted.expires, env);
+                            row.full = Clock::minted(minted.expires, next, env);
                             row.token_revision = row.token_revision.checked_add(1).expect("Full token revision space");
                             row.refused_revision = None;
                             row.state = Tokens::Current;
@@ -359,7 +361,7 @@ impl Component {
                         }
                         Scope::Contents => {
                             row.git_expires = minted.expires;
-                            row.contents = Clock::minted(minted.expires, env);
+                            row.contents = Clock::minted(minted.expires, next, env);
                             row.state = Tokens::Current;
                             gh.held = Some(HeldToken {
                                 selected: gh.selected.expect("selected Contents"),
@@ -1180,7 +1182,7 @@ mod tests {
                         revision: 0,
                         token_revision: 0,
                         refused_revision: None,
-                        full: Clock { expiry: Time::from_nanos(expiry.as_nanos()), due: None, pending: false },
+                        full: Clock { expiry: Time::from_nanos(expiry.as_nanos()), ..Clock::empty() },
                         contents: Clock::empty(),
                         account: Account { id: 22, login: Box::from(b"acme".as_slice()) },
                         suspended: false,

@@ -19,20 +19,29 @@ const NEW_FULL: &[u8] = b"artificial-renewed-full";
 const NEW_CONTENTS: &[u8] = b"artificial-renewed-contents";
 const INITIAL_REQUESTS: u32 = 4; // listing, two scopes and Viewer
 const REPEATED_FIRES: u32 = 3; // one consumed timer must withstand repeated delivery
+// The fixture wall stays at the epoch; thirty seconds is half renew_before.
+const SHORT_EXPIRY: &[u8] = b"1970-01-01T00:00:30Z";
+const NORMAL_EXPIRY: &[u8] = b"1970-01-01T00:02:00Z";
+const NORMAL_DUE: Duration = Duration::from_secs(60);
+const MINT_REQUEST: &[u8] = b"POST /app/installations/1/access_tokens HTTP/1.1\r\n";
 pub(crate) fn ready() -> Harness {
     initial(CONTENTS_EXPIRY)
 }
 fn initial(contents_expiry: &[u8]) -> Harness {
-    let mut h = Harness::new(fixtures::github_settings());
-    accepted(&mut h, &[1]);
-    h.connected(FORGE);
-    h.answer(FORGE, &fixtures::ok(LIVE));
-    h.answer(FORGE, &mint(FULL, EXPIRES));
-    h.answer(FORGE, &mint(CONTENTS, contents_expiry));
+    let mut h = minted_pair(EXPIRES, contents_expiry);
     h.answer(FORGE, &fixtures::ok(VIEWER));
     h.run(Duration::ZERO);
     // Let the idle socket settle before crossing the renewal timer.
     h.run(h.env.limits.idle);
+    h
+}
+fn minted_pair(full_expiry: &[u8], contents_expiry: &[u8]) -> Harness {
+    let mut h = Harness::new(fixtures::github_settings());
+    accepted(&mut h, &[1]);
+    h.connected(FORGE);
+    h.answer(FORGE, &fixtures::ok(LIVE));
+    h.answer(FORGE, &mint(FULL, full_expiry));
+    h.answer(FORGE, &mint(CONTENTS, contents_expiry));
     h
 }
 pub(crate) fn advance(h: &mut Harness, seconds: u64) {
@@ -211,6 +220,131 @@ fn contents_only_renewal_keeps_full_usable() {
     renewed_contents(&mut h);
     usable(&h, NEW_FULL);
     assert_eq!(h.component.test_github().rows.get(&1).expect("row").token_revision, 2);
+}
+fn scope_renewing(scope: Scope) -> Harness {
+    match scope {
+        Scope::Full => renewing(),
+        Scope::Contents => contents_renewing(),
+    }
+}
+fn heard_mints(h: &Harness) -> u32 {
+    skein_lib::bytes::count(&h.all_request_bytes(FORGE), MINT_REQUEST, u32::MAX)
+}
+fn just_before(h: &mut Harness, due: Time) {
+    let before = Time::from_nanos(due.as_nanos().saturating_sub(Duration::from_millis(1).as_nanos()));
+    h.run(before.saturating_since(h.env.now));
+}
+fn scope_clock(h: &Harness, scope: Scope) -> crate::installations::Clock {
+    let row = h.component.test_github().rows.get(&1).expect("renewing row");
+    match scope {
+        Scope::Full => row.full,
+        Scope::Contents => row.contents,
+    }
+}
+fn short_mints_at_cap(scope: Scope) -> Harness {
+    let mut h = scope_renewing(scope);
+    for wait in [1, 2, 4, 8] {
+        h.answer(FORGE, &mint(NEW_FULL, SHORT_EXPIRY));
+        h.run(Duration::from_secs(wait));
+        h.connected(FORGE);
+    }
+    h
+}
+#[test]
+fn already_due_full_is_sent_on_viewer() {
+    // Half the lead and exactly the lead both give an already-due mint.
+    for expires in [SHORT_EXPIRY, b"1970-01-01T00:01:00Z"] {
+        let mut h = minted_pair(expires, CONTENTS_EXPIRY);
+        let wire = h.request_bytes(FORGE);
+        let viewer = skein_lib::bytes::find(&wire, b"POST /graphql HTTP/1.1\r\n").expect("Viewer sent");
+        assert!(contains(
+            wire.get(viewer..).expect("Viewer request"),
+            b"Authorization: Bearer artificial-full-api-secret\r\n"
+        ));
+        usable(&h, FULL);
+        h.answer(FORGE, &fixtures::ok(VIEWER));
+        h.run(Duration::ZERO);
+        public_ready(&h);
+    }
+}
+#[test]
+fn short_mints_double_backoff_then_hold_at_cap() {
+    for scope in [Scope::Full, Scope::Contents] {
+        let mut h = scope_renewing(scope);
+        let initial = heard_mints(&h);
+        // Four cap windows, beyond the initial thirty-second token life.
+        for (wait, extra) in [(1, 1), (2, 2), (4, 3), (8, 4), (8, 5), (8, 6), (8, 7)] {
+            h.answer(FORGE, &mint(NEW_FULL, SHORT_EXPIRY));
+            let due = h.env.now.saturating_add(Duration::from_secs(wait));
+            assert_eq!(scope_clock(&h, scope).due, Some(due), "{scope:?}");
+            for _ in 0..REPEATED_FIRES {
+                h.run(Duration::ZERO);
+            }
+            just_before(&mut h, due);
+            assert_eq!(heard_mints(&h), initial + extra - 1, "{scope:?}: before {wait}s");
+            h.run(Duration::from_millis(1));
+            h.connected(FORGE);
+            assert_eq!(heard_mints(&h), initial + extra, "{scope:?}: after {wait}s");
+            assert_eq!(h.component.test_github().mint, Some((1, scope)));
+        }
+    }
+}
+#[test]
+fn normal_life_resets_short_mint_backoff() {
+    for scope in [Scope::Full, Scope::Contents] {
+        let mut h = short_mints_at_cap(scope);
+        h.answer(FORGE, &mint(NEW_FULL, NORMAL_EXPIRY));
+        let due = h.env.now.saturating_add(NORMAL_DUE);
+        assert_eq!(scope_clock(&h, scope).due, Some(due), "{scope:?}");
+        let count = heard_mints(&h);
+        just_before(&mut h, due);
+        assert_eq!(heard_mints(&h), count, "{scope:?}: before normal due");
+        h.run(Duration::from_millis(1));
+        h.connected(FORGE);
+        assert_eq!(heard_mints(&h), count + 1, "{scope:?}: at normal due");
+        h.answer(FORGE, &mint(NEW_FULL, SHORT_EXPIRY));
+        assert_eq!(scope_clock(&h, scope).due, Some(due.saturating_add(SECOND)), "{scope:?}: reset");
+    }
+}
+#[test]
+fn short_mints_preserve_the_other_scope_clock_and_backoff() {
+    for (scope, other) in [(Scope::Full, Scope::Contents), (Scope::Contents, Scope::Full)] {
+        let mut h = scope_renewing(scope);
+        // The other scope's four-second next wait (two doublings) survives these answers.
+        h.component.test_github_mut().rows.get_mut(&1).expect("row").clock(other).next = Duration::from_secs(4);
+        let before = scope_clock(&h, other);
+        for wait in [1, 2] {
+            h.answer(FORGE, &mint(NEW_FULL, SHORT_EXPIRY));
+            let after = scope_clock(&h, other);
+            assert_eq!(
+                (after.expiry, after.due, after.pending, after.next),
+                (before.expiry, before.due, before.pending, before.next),
+                "{scope:?}"
+            );
+            h.run(Duration::from_secs(wait));
+            h.connected(FORGE);
+        }
+    }
+}
+#[test]
+fn short_mints_and_failures_share_backoff() {
+    for scope in [Scope::Full, Scope::Contents] {
+        let mut h = scope_renewing(scope);
+        for (failed, wait) in [(true, 1), (false, 2), (true, 4), (false, 8)] {
+            if failed {
+                h.answer(FORGE, &fixtures::status(503));
+            } else {
+                h.answer(FORGE, &mint(NEW_FULL, SHORT_EXPIRY));
+            }
+            assert_eq!(
+                h.component.test_github().deadline(),
+                Some(h.env.now.saturating_add(Duration::from_secs(wait))),
+                "{scope:?}"
+            );
+            h.run(Duration::from_secs(wait));
+            h.connected(FORGE);
+        }
+    }
 }
 fn waits(mut h: Harness, label: &str) {
     h.run(Duration::ZERO);
