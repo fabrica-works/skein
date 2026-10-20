@@ -774,7 +774,9 @@ The host's heap has a bound the owner admits before it starts
   - **`runs` connections,** each at the most a configured forge's
     transport needs: HTTP's client, TLS's client when a forge speaks TLS,
     the stack's queues, the JSON tokenizer, the larger configured
-    dialect's decoder and document, the rows its request's page may hold,
+    dialect's decoder and document, the rows its request's page may hold
+    (the largest page its kind's plans send; a call asking for more is
+    refused at the connection's opening, before a byte goes out),
     the body held up to `body_bytes_in`,
     the request's head (a GitHub forge's JWT signed for it included) and
     body, and io's share for the stream it opens: intake, receive buffer,

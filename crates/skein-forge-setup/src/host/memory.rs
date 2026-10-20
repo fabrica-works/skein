@@ -139,7 +139,7 @@ fn github_decoder(l: &Limits) -> Option<u64> {
 }
 
 // Price the largest page any setup plan for this configured kind can request.
-fn largest_page(l: &Limits, kind: &Kind) -> Option<u32> {
+pub(super) fn largest_page(l: &Limits, kind: &Kind) -> Option<u32> {
     match kind {
         Kind::Forgejo(given) => {
             use forgejo::request::{Page, Request};

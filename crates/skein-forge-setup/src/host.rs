@@ -366,6 +366,11 @@ impl Host {
     }
 }
 fn open(run: Token, forge: &Forge, agent: &[u8], send: &Send, env: &Env<Limits>) -> Result<Connection, Refused> {
+    // A call's rows stay within the page the host's heap priced (6.5).
+    match (connection::row_bound(&send.call), memory::largest_page(&env.limits, &forge.kind)) {
+        (Some(rows), Some(priced)) if rows <= priced => {}
+        _ => return Err(Refused::Unexpected),
+    }
     match &forge.kind {
         Kind::Forgejo(_) => {
             let (request, credential) =
