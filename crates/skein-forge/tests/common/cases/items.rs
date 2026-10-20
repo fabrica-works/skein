@@ -34,16 +34,16 @@ pub fn issue(number: u64, pull: bool, title: &[u8], body: &[u8], author: u64, at
     }
 }
 pub fn edited() -> Issue {
-    issue(3, false, b"edited title", b"<!-- kit:key 01000001 -->\nissue text", 2, 1_577_817_006_000_000_000)
+    issue(3, false, b"edited title", b"<!-- kit:key 01000001 -->\nissue text", 2, 1_577_817_005_000_000_000)
 }
 pub fn feature() -> Issue {
-    issue(1, true, b"feature/slash", b"fixture pull", 1, 1_577_817_010_000_000_000)
+    issue(1, true, b"feature/slash", b"fixture pull", 1, 1_577_817_009_000_000_000)
 }
 pub fn conflict() -> Issue {
-    issue(2, true, b"conflict", b"fixture pull", 1, 1_577_817_008_000_000_000)
+    issue(2, true, b"conflict", b"fixture pull", 1, 1_577_817_007_000_000_000)
 }
 pub fn writer() -> Issue {
-    issue(4, true, b"writer pull", b"writer text", 2, 1_577_817_009_000_000_000)
+    issue(4, true, b"writer pull", b"writer text", 2, 1_577_817_008_000_000_000)
 }
 pub fn listing(page: u32, kind: Option<IssueKind>, since: Wall) -> Request {
     Request::Issues {
@@ -134,7 +134,7 @@ pub fn cases() -> Vec<(&'static str, Request, Answer)> {
                 sha: Some(forgejo::sha(4)),
                 statuses: Box::from([CommitStatus {
                     creator: Some(forgejo::user(2)),
-                    updated_at: Wall::from_nanos(1_577_817_006_000_000_000),
+                    updated_at: Wall::from_nanos(1_577_817_005_000_000_000),
                     context: Box::from(*b"fixture/other"),
                     status: StatusState::Pending,
                     description: Box::from([]),

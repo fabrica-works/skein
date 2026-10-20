@@ -132,7 +132,7 @@ Content-Length: 7185
     "is_locked": false,
     "comments": 0,
     "created_at": "2020-01-01T00:00:02+05:30",
-    "updated_at": "2020-01-01T00:00:05+05:30",
+    "updated_at": "2020-01-01T00:00:04+05:30",
     "closed_at": null,
     "due_date": null,
     "pull_request": null,

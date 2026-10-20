@@ -95,7 +95,7 @@ pub fn cases() -> Vec<(&'static str, Request, Option<Answer>, u16)> {
                         StatusState::Success,
                         b"Successful in 0s",
                         b"/fixture/specimen/actions/runs/1/jobs/0",
-                        1_577_817_012_000_000_000,
+                        1_577_817_011_000_000_000,
                     ),
                     status(
                         b"conformance / fail (push)",

@@ -9,10 +9,10 @@ Date: Wed, 01 Jan 2020 00:00:00 GMT
 Connection: close
 Content-Length: 493
 
-2026-10-20T03:21:38.8793219Z Runner 00000000-0000-0000-0000-000000000003 (version:v13.2.0) received task 2 of job fail, triggered by event: push
-2026-10-20T03:21:38.8814432Z workflow prepared
-2026-10-20T03:21:38.8818453Z ⭐ Run Main printf 'KIT_CONFORMANCE_FAILED_JOB\n'\nexit 1
-2026-10-20T03:21:38.8834819Z KIT_CONFORMANCE_FAILED_JOB
-2026-10-20T03:21:38.8840030Z ⚙️ [runner]: RUN exit status 1
-2026-10-20T03:21:38.8840469Z 🏁  Job failed
-2026-10-20T03:21:38.8844187Z Job 'fail' failed
+2020-01-01T00:00:16.0000000Z Runner 00000000-0000-0000-0000-000000000003 (version:v13.2.0) received task 2 of job fail, triggered by event: push
+2020-01-01T00:00:17.0000000Z workflow prepared
+2020-01-01T00:00:18.0000000Z ⭐ Run Main printf 'KIT_CONFORMANCE_FAILED_JOB\n'\nexit 1
+2020-01-01T00:00:19.0000000Z KIT_CONFORMANCE_FAILED_JOB
+2020-01-01T00:00:20.0000000Z ⚙️ [runner]: RUN exit status 1
+2020-01-01T00:00:21.0000000Z 🏁  Job failed
+2020-01-01T00:00:22.0000000Z Job 'fail' failed

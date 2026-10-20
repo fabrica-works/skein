@@ -167,17 +167,17 @@ holds delivery-carries-the-repository-id
 holds delivery-subscribed-events-read-back
 holds delivery-signature-is-hmac-sha256-hex
 holds delivery-refs-are-full-and-tags-are-told-apart
-fails delivery-branch-deletion-sends-no-push: job statuses=[true, true], pull mergeability=[[false, false, true], [false, false, true]]
+fails delivery-branch-deletion-sends-no-push: job statuses=[true, true], pull mergeability=[[false, true], [false, true]]
 holds delivery-echoes-the-actors-own-writes
 holds delivery-loopback-is-refused-by-default
 holds delivery-loopback-is-allowed-when-named
 holds delivery-failed-delivery-is-not-sent-again
 holds delivery-pull-reads-not-mergeable-while-checked
 holds delivery-job-end-follows-its-commit-status
-fails delivery-job-end-precedes-its-commit-status: job statuses=[true, true], pull mergeability=[[false, false, true], [false, false, true]]
-fails delivery-pull-is-settled-when-its-push-is-delivered: job statuses=[true, true], pull mergeability=[[false, false, true], [false, false, true]]
+fails delivery-job-end-precedes-its-commit-status: job statuses=[true, true], pull mergeability=[[false, true], [false, true]]
+fails delivery-pull-is-settled-when-its-push-is-delivered: job statuses=[true, true], pull mergeability=[[false, true], [false, true]]
 holds delivery-pull-is-checking-when-its-push-is-delivered
-# delivery-pull-is-checking-when-its-push-is-delivered: job statuses=[true, true], pull mergeability=[[false, false, true], [false, false, true]]
+# delivery-pull-is-checking-when-its-push-is-delivered: job statuses=[true, true], pull mergeability=[[false, true], [false, true]]
 holds webhook-deliveries
 holds component-start-ready
 holds component-start-other-user-stops

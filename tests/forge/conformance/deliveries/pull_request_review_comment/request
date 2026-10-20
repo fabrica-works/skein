@@ -241,7 +241,7 @@ Content-Length: 16524
         "default_branch": "main",
         "archived": false,
         "created_at": "2020-01-01T00:00:02+05:30",
-        "updated_at": "2020-01-01T00:00:07+05:30",
+        "updated_at": "2020-01-01T00:00:08+05:30",
         "archived_at": "1970-01-01T05:30:00+05:30",
         "permissions": {
           "admin": false,
@@ -346,7 +346,7 @@ Content-Length: 16524
         "default_branch": "main",
         "archived": false,
         "created_at": "2020-01-01T00:00:02+05:30",
-        "updated_at": "2020-01-01T00:00:07+05:30",
+        "updated_at": "2020-01-01T00:00:08+05:30",
         "archived_at": "1970-01-01T05:30:00+05:30",
         "permissions": {
           "admin": false,
@@ -393,7 +393,7 @@ Content-Length: 16524
     "merge_base": "000000000000000000000000000000000000000d",
     "due_date": null,
     "created_at": "2020-01-01T00:00:07+05:30",
-    "updated_at": "2020-01-01T00:00:09+05:30",
+    "updated_at": "2020-01-01T00:00:10+05:30",
     "closed_at": null,
     "pin_order": 0,
     "flow": 0
@@ -480,7 +480,7 @@ Content-Length: 16524
     "default_branch": "main",
     "archived": false,
     "created_at": "2020-01-01T00:00:02+05:30",
-    "updated_at": "2020-01-01T00:00:07+05:30",
+    "updated_at": "2020-01-01T00:00:08+05:30",
     "archived_at": "1970-01-01T05:30:00+05:30",
     "permissions": {
       "admin": false,

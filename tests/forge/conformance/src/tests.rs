@@ -75,16 +75,23 @@ fn a_fact_line_is_holds_fails_or_unchecked_with_its_reason() {
 }
 #[test]
 fn a_fact_read_from_a_case_compares_its_status_and_message() {
-    let mut exchange = Exchange {
+    assert!(crate::facts::matches(&conflict_exchange(), 409, "head out of date"));
+}
+#[test]
+fn a_fact_read_from_a_case_rejects_a_different_status() {
+    let mut exchange = conflict_exchange();
+    exchange.status = 405;
+    assert!(!crate::facts::matches(&exchange, 409, "head out of date"));
+}
+fn conflict_exchange() -> Exchange {
+    Exchange {
         sent: Vec::new(),
         status: 409,
         head: b"HTTP/1.1 409 Conflict\r\n".to_vec(),
         body: b"{\"message\":\"head out of date\"}".to_vec(),
-    };
-    assert!(crate::facts::matches(&exchange, 409, "head out of date"));
-    exchange.status = 405;
-    assert!(!crate::facts::matches(&exchange, 409, "head out of date"));
+    }
 }
+
 #[test]
 fn the_component_block_is_replaced_and_other_lines_kept() {
     use crate::facts::{self, Fact, Outcome};
@@ -153,11 +160,19 @@ fn the_runner_configuration_names_one_connection_by_its_token_file() {
 }
 #[test]
 fn a_listed_runner_is_found_by_its_uuid() {
-    let body = crate::json::Json::parse(r#"[{"id":1,"uuid":"30313233-3435-3637-3839-616263646566","owner_id":0,"repo_id":0,"name":"r1","status":"idle","version":"v@","labels":["kit-host"],"description":"","ephemeral":false}]"#.replace('@', skein_throwaway_forgejo::RUNNER_VERSION).as_bytes()).expect("row");
+    let body = listed_runner();
     let row = crate::registration::listed(&body, "30313233-3435-3637-3839-616263646566").expect("found");
     assert_eq!(row.get("name").str(), Some("r1"));
+}
+#[test]
+fn a_runner_absent_from_the_list_is_not_found() {
+    let body = listed_runner();
     assert_eq!(crate::registration::listed(&body, "absent").map(|_| ()), None);
 }
+fn listed_runner() -> crate::json::Json {
+    crate::json::Json::parse(r#"[{"id":1,"uuid":"30313233-3435-3637-3839-616263646566","owner_id":0,"repo_id":0,"name":"r1","status":"idle","version":"v@","labels":["kit-host"],"description":"","ephemeral":false}]"#.replace('@', skein_throwaway_forgejo::RUNNER_VERSION).as_bytes()).expect("row")
+}
+
 #[test]
 fn the_clone_workflow_runs_steps_only_and_names_the_jobs_token() {
     let workflow = crate::job_clone::workflow();
@@ -170,12 +185,18 @@ fn the_clone_workflow_runs_steps_only_and_names_the_jobs_token() {
 
 #[test]
 fn a_signature_holds_only_for_the_body_it_signs() {
-    use crate::deliveries::{Received, signed};
-    let mut received = Received { head: b"X-Forgejo-Signature: 1f5a95724ba9e23c63adf66cb4c7df0ea84725008688c6ddd5606088fc16ca20\r\nX-Hub-Signature-256: sha256=1f5a95724ba9e23c63adf66cb4c7df0ea84725008688c6ddd5606088fc16ca20\r\n".to_vec(), body: b"body".to_vec() };
-    assert!(signed(&received));
-    received.body.push(b'!');
-    assert!(!signed(&received));
+    assert!(crate::deliveries::signed(&signed_body()));
 }
+#[test]
+fn a_signature_refuses_a_changed_body() {
+    let mut received = signed_body();
+    received.body.push(b'!');
+    assert!(!crate::deliveries::signed(&received));
+}
+fn signed_body() -> crate::deliveries::Received {
+    crate::deliveries::Received { head: b"X-Forgejo-Signature: 1f5a95724ba9e23c63adf66cb4c7df0ea84725008688c6ddd5606088fc16ca20\r\nX-Hub-Signature-256: sha256=1f5a95724ba9e23c63adf66cb4c7df0ea84725008688c6ddd5606088fc16ca20\r\n".to_vec(), body: b"body".to_vec() }
+}
+
 #[test]
 fn masking_also_rewrites_the_listeners_port_and_delivery_ids() {
     let mut mask = Mask::new(40000);
@@ -195,6 +216,16 @@ fn a_masked_delivery_keeps_a_content_length_that_matches_its_body() {
     assert_eq!(
         mask::response(&mut mask, &exchange),
         b"POST /hooks/1 HTTP/1.1\r\nContent-Length: 14\r\n\r\n127.0.0.1:3001"
+    );
+    let exchange = Exchange {
+        sent: Vec::new(),
+        status: 0,
+        head: b"POST /hooks/1 HTTP/1.1\r\nContent-Length: 33\r\n\r\n".to_vec(),
+        body: b"2026-10-18T12:34:56.1234567+05:30".to_vec(),
+    };
+    assert_eq!(
+        mask::response(&mut mask, &exchange),
+        b"POST /hooks/1 HTTP/1.1\r\nContent-Length: 33\r\n\r\n2020-01-01T00:00:01.0000000+05:30"
     );
 }
 #[test]
@@ -321,4 +352,82 @@ fn masking_sorts_the_deprecated_units_set_in_every_team() {
         mask::response(&mut Mask::new(3000), &exchange),
         b"HTTP/1.1 200 OK\r\nContent-Length: 79\r\n\r\n[{\"units\":[\"repo.code\",\"repo.pulls\"]},{\"units\":[\"repo.actions\",\"repo.issues\"]}]"
     );
+}
+
+#[test]
+fn unquoted_log_times_keep_fraction_width_offset_and_identity() {
+    let mut mask = Mask::new(3000);
+    let raw = b"2026-10-18T12:34:56.1234567+05:30";
+    assert_eq!(mask.bytes(b"\"2026-10-18T12:34:56.1234567+05:30\""), b"\"2020-01-01T00:00:01+05:30\"");
+    assert_eq!(mask.bytes(raw), b"2020-01-01T00:00:01.0000000+05:30");
+    assert_eq!(mask.bytes(b"2026-10-18T12:34:57.89Z"), b"2020-01-01T00:00:02.00Z");
+    assert_eq!(mask.bytes(b"\"2026-10-18T12:34:57.89Z\""), b"\"2020-01-01T00:00:02Z\"");
+    assert_eq!(mask.bytes(raw), b"2020-01-01T00:00:01.0000000+05:30");
+}
+
+#[test]
+fn recorded_corpus_has_no_unmasked_uuid_or_log_time() {
+    let mut bad_uuids = 0;
+    let mut bad_times = 0;
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for group in ["transcripts", "deliveries"] {
+        for case in std::fs::read_dir(corpus.join(group)).expect("corpus group") {
+            let case = case.expect("case").path();
+            if !case.is_dir() {
+                continue;
+            }
+            for name in ["request", "response"] {
+                let bytes = std::fs::read(case.join(name)).expect("capture");
+                let (uuids, times) = unmasked_fields(&bytes);
+                bad_uuids += uuids;
+                bad_times += times;
+            }
+        }
+    }
+    assert_eq!(bad_uuids, 0);
+    assert_eq!(bad_times, 0);
+}
+
+// Inspect captured bytes directly, independently of the mask and the dialect decoder.
+fn unmasked_fields(bytes: &[u8]) -> (usize, usize) {
+    const UUID: &[u8] = b"00000000-0000-0000-0000-000000000000";
+    const CANONICAL_DATE: &[u8] = b"2020-01-01T";
+    const TIME: &[u8] = b"2020-01-01T00:00:00";
+    let mut bad_uuids = 0;
+    let mut bad_times = 0;
+    let mut at = 0;
+    // Hyphens select the sparse field candidates without walking every large-body window.
+    for part in bytes.split(|b| *b == b'-') {
+        at += part.len();
+        if let Some(start) = at.checked_sub(8)
+            && let Some(value) = bytes.get(start..start + UUID.len())
+            && value
+                .iter()
+                .enumerate()
+                .all(|(i, b)| if [8, 13, 18, 23].contains(&i) { *b == b'-' } else { b.is_ascii_hexdigit() })
+            && !value.starts_with(b"00000000-0000-0000-0000-")
+        {
+            bad_uuids += 1;
+        }
+        if let Some(start) = at.checked_sub(4)
+            && let Some(value) = bytes.get(start..start + TIME.len())
+            && value.iter().enumerate().all(|(i, b)| match i {
+                4 | 7 => *b == b'-',
+                10 => *b == b'T',
+                13 | 16 => *b == b':',
+                _ => b.is_ascii_digit(),
+            })
+            && (&b"2000"[..]..=&b"2999"[..]).contains(&&value[..4])
+        {
+            let tail = &bytes[start + TIME.len()..];
+            let fraction = tail.strip_prefix(b".").unwrap_or_default();
+            if !value.starts_with(CANONICAL_DATE)
+                || fraction.iter().take_while(|b| b.is_ascii_digit()).any(|b| *b != b'0')
+            {
+                bad_times += 1;
+            }
+        }
+        at += 1;
+    }
+    (bad_uuids, bad_times)
 }

@@ -26,8 +26,11 @@ admin scope set. It registers newly made token values and their eight-digit
 tails before masking, and checks every kept capture for those secrets.
 The component facts run under `read:user`, `write:issue`, and `write:repository`.
 
-One map masks object ids, UUIDs and quoted RFC3339 times by first appearance across the
-run, preserving id width and time offset. Ports become 3000; Date and
+Maps mask object ids, UUIDs and RFC3339 times by first appearance across the
+run, preserving id width and time offset. Quoted and unquoted timestamps share
+the same time map keyed by the original timestamp without quotes. Quoted
+fractions are dropped; unquoted log fractions retain their width with zero
+digits. Numeric resource ids and unrelated text stay unchanged. Ports become 3000; Date and
 Last-Modified become 2020-01-01. Numeric resource ids remain stable because
 provisioning has a fixed order. Every output is checked for all fixture
 secrets before it is written, and response bodies are also checked before
@@ -54,6 +57,6 @@ The `cli-` facts check migration, users, scoped tokens and dumps through Forgejo
 The `runner-` facts check secret-file registration, the deprecated offline file command, and the runner’s connection through its token file. A final workflow checks cloning a private repository with the job’s token. No registration file is used by the running runner.
 
 Response unit arrays are sorted. Git pkt-line length prefixes stay intact while
-their payloads are masked. Unquoted runner log times remain in the corpus;
-the mask completion step owns that repair. Delivery CI requires `--runner`;
+their payloads are masked. Unquoted runner log times use the same canonical
+2020 date and first-appearance ordinal as quoted timestamps. Delivery CI requires `--runner`;
 recording refuses it when the flag is absent.

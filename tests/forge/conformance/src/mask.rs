@@ -82,19 +82,19 @@ impl Mask {
                     && time[10] == b'T'
                     && (&b"2000"[..]..=&b"2999"[..]).contains(&&time[..4])
                 {
-                    let next = self.times.len() + 1;
-                    let n = *self.times.entry(time.to_vec()).or_insert(next);
-                    let offset = if time.ends_with(b"Z") {
-                        "Z"
-                    } else {
-                        std::str::from_utf8(&time[time.len() - 6..]).expect("RFC3339 offset")
-                    };
-                    out.extend_from_slice(
-                        format!("\"2020-01-01T{:02}:{:02}:{:02}{offset}\"", n / 3600, n / 60 % 60, n % 60).as_bytes(),
-                    );
+                    out.push(b'"');
+                    out.extend_from_slice(&self.time(time, 0));
+                    out.push(b'"');
                     at += end + 2;
                     continue;
                 }
+            }
+            if (at == 0 || !bytes[at - 1].is_ascii_alphanumeric())
+                && let Some((time, fraction)) = log_time(&bytes[at..])
+            {
+                out.extend_from_slice(&self.time(time, fraction));
+                at += time.len();
+                continue;
             }
             if bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at]) {
                 let end =
@@ -116,6 +116,56 @@ impl Mask {
         }
         out
     }
+    fn time(&mut self, time: &[u8], fraction: usize) -> Vec<u8> {
+        let next = self.times.len() + 1;
+        let n = *self.times.entry(time.to_vec()).or_insert(next);
+        let offset = if time.ends_with(b"Z") { &time[time.len() - 1..] } else { &time[time.len() - 6..] };
+        let mut out = format!("2020-01-01T{:02}:{:02}:{:02}", n / 3600, n / 60 % 60, n % 60).into_bytes();
+        if fraction != 0 {
+            out.push(b'.');
+            out.resize(out.len() + fraction, b'0');
+        }
+        out.extend_from_slice(offset);
+        out
+    }
+}
+// Only complete RFC3339 tokens are log times; resource numbers and pkt lengths are not.
+fn log_time(bytes: &[u8]) -> Option<(&[u8], usize)> {
+    let date = bytes.get(..19)?;
+    if ![4, 7].iter().all(|i| date[*i] == b'-')
+        || date[10] != b'T'
+        || ![13, 16].iter().all(|i| date[*i] == b':')
+        || !date.iter().enumerate().all(|(i, b)| [4, 7, 10, 13, 16].contains(&i) || b.is_ascii_digit())
+        || !(&b"2000"[..]..=&b"2999"[..]).contains(&&date[..4])
+    {
+        return None;
+    }
+    let mut end = date.len();
+    let mut fraction = 0;
+    if bytes.get(end) == Some(&b'.') {
+        end += 1;
+        fraction = bytes[end..].iter().take_while(|b| b.is_ascii_digit()).count();
+        if fraction == 0 {
+            return None;
+        }
+        end += fraction;
+    }
+    if bytes.get(end) == Some(&b'Z') {
+        end += 1;
+    } else {
+        let offset = bytes.get(end..end + 6)?;
+        if ![b'+', b'-'].contains(&offset[0])
+            || offset[3] != b':'
+            || ![1, 2, 4, 5].iter().all(|i| offset[*i].is_ascii_digit())
+        {
+            return None;
+        }
+        end += offset.len();
+    }
+    if bytes.get(end).is_some_and(u8::is_ascii_alphanumeric) {
+        return None;
+    }
+    Some((&bytes[..end], fraction))
 }
 // Validate the complete pkt-line stream before touching the first-appearance maps.
 // Flush and delimiter packets consist only of their four-byte length prefix.
