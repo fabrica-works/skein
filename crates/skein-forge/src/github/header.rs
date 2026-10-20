@@ -1,6 +1,9 @@
 //! The answer head read beside GitHub's documents (forge-github.md, section 2).
 use super::limits::Limits;
-use crate::forgejo::{id::unsigned, time};
+use crate::{
+    api,
+    forgejo::{id::unsigned, time},
+};
 use alloc::boxed::Box;
 use skein_lib::{Duration, Wall};
 /// GitHub's rate window, present only when all three fields arrived.
@@ -120,6 +123,17 @@ impl Head {
             None => self.reset,
         }
     }
+}
+/// Maps a complete GitHub rate window for the component's answer envelope.
+#[must_use]
+pub fn rate(head: &Head) -> Option<api::Rate> {
+    let fields = head.rate?;
+    Some(api::Rate { limit: fields.limit, remaining: fields.remaining, reset_at: fields.reset })
+}
+/// Checks an answer's entity tag against the vocabulary's validator bound.
+#[must_use]
+pub fn validator(head: &Head) -> Option<api::Validator> {
+    api::Validator::new(head.etag.as_ref()?.as_bytes())
 }
 /// Reads one header field; unknown names are ignored.
 pub fn field(head: &mut Head, name: &[u8], value: &[u8], limits: &Limits) {

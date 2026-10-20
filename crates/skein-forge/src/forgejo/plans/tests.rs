@@ -35,6 +35,22 @@ fn identity_start_sends_user_and_returns_id() {
 }
 
 #[test]
+fn github_rate_and_validator_are_none_in_forgejo_plans() {
+    let fields = super::Fields { date: None, retry_after: None, has_more: None, content_range: None, close: false };
+    let mut plan = begun(start::Read::User);
+    assert_eq!(plan.heard(Heard::Head { status: 200, fields: fields.clone() }), None);
+    let user = fixtures::user(fixtures::START_USER, b"alice");
+    let terminal = plan.heard(Heard::Done(Body::Document(Document::User(user))));
+    assert_eq!(terminal, Some(start::Step::Done(start::Heard::User { id: fixtures::START_USER })));
+
+    let mut conditional = begun(start::Read::User);
+    assert_eq!(
+        conditional.heard(Heard::Head { status: 304, fields }),
+        Some(start::Step::Done(start::Heard::Status { status: 304, retry: None }))
+    );
+}
+
+#[test]
 fn page_cap_start_returns_positive_cap() {
     let mut plan = start::Plan::new(start::Read::ApiSettings);
     let sent = plan.begin();

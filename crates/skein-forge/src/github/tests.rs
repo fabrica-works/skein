@@ -5,6 +5,7 @@ mod items;
 mod kinds;
 mod pulls;
 mod pulls_decode;
+mod rate_validator;
 use super::{
     credential,
     decode::Malformed,
