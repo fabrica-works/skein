@@ -469,7 +469,9 @@ pub(crate) fn kind_of(request: &dialect::request::Request) -> Result<Option<dial
         | Request::OpenPull { .. }
         | Request::Close { .. }
         | Request::DeleteBranch { .. }
-        | Request::Reviewers { .. } => return Err(Refused::Unexpected),
+        | Request::Reviewers { .. }
+        | Request::Merge { .. }
+        | Request::Enqueue { .. } => return Err(Refused::Unexpected),
     }))
 }
 fn authorization(auth: &Auth, encoded: dialect::request::Auth, wall: Wall) -> Result<Option<Secret>, Refused> {
