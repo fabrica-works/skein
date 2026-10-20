@@ -618,6 +618,18 @@ impl Host for Peer {
     }
 }
 
+/// The least [`http::Limits::response`] the issuer's answers fit: its URI,
+/// two document strings percent-encoded at three bytes per byte, and the
+/// 267 fixed bytes of its largest answer's framing.
+#[must_use]
+pub fn least_response(issuer: &issuer::Limits) -> Option<u32> {
+    issuer
+        .uri_bytes
+        .checked_add(issuer.document.string_bytes.checked_mul(3)?)?
+        .checked_add(issuer.document.string_bytes.checked_mul(3)?)?
+        .checked_add(267)
+}
+
 /// Checked complete process envelope, including issuer plans and observations.
 #[must_use]
 pub fn worst_case(limits: &Limits, issuer: &issuer::Limits, http: &http::Limits, transport: Transport) -> Option<u64> {
@@ -627,12 +639,7 @@ pub fn worst_case(limits: &Limits, issuer: &issuer::Limits, http: &http::Limits,
         || http.read == 0
         || http.send == 0
         || http.headers < 2
-        || http.response
-            < issuer
-                .uri_bytes
-                .checked_add(issuer.document.string_bytes.checked_mul(3)?)?
-                .checked_add(issuer.document.string_bytes.checked_mul(3)?)?
-                .checked_add(267)?
+        || http.response < least_response(issuer)?
     {
         return None;
     }
@@ -709,7 +716,8 @@ fn percent(value: &[u8], out: &mut Vec<u8>) {
 
 #[cfg(test)]
 mod tests {
-    use super::redirect;
+    use super::{Limits, Transport, http, issuer, least_response, redirect, worst_case};
+    use skein_lib::Duration;
 
     #[test]
     fn redirect_preserves_registered_uri_and_escapes_code_and_state() {
@@ -728,5 +736,57 @@ mod tests {
             b"http://127.0.0.1:1234/callback?code=code&state=state&client_id=client%20%2B"
         );
         assert!(redirect(b"http://127.0.0.1:1234/callback", b"state", b"code", None, 4).is_none());
+    }
+
+    #[test]
+    fn response_floor_admits_exactly_the_bound() {
+        let limits = Limits {
+            io: skein_io::Limits {
+                sockets: 3,
+                refusals: 1,
+                intake: 32_768,
+                receive: 1024,
+                output: 32_768,
+                sends: 2,
+                accepts: 1,
+                backlog: 1,
+                close_timeout: Duration::from_secs(1),
+                names: 0,
+                retry: Duration::from_millis(1),
+            },
+            connections: 2,
+            queue: 64,
+            plaintext: 32_768,
+            ciphertext: 32_768,
+            observations: 16,
+            observation_bytes: 4096,
+        };
+        let issuer = issuer::Limits {
+            document: skein_oauth::Limits {
+                document_bytes: 1024,
+                string_bytes: 256,
+                token_bytes: 256,
+                client_bytes: 64,
+                detail_bytes: 64,
+                record_bytes: 2048,
+                depth: 8,
+                tokens: 64,
+                issued_client_bytes: 0,
+                granted_bytes: 64,
+                subject_bytes: 0,
+                id_token_bytes: 1024,
+            },
+            uri_bytes: 256,
+            request_bytes: 1024,
+            codes: 2,
+            rotations: 2,
+            plans: 2,
+            carried: 1,
+        };
+        let floor = least_response(&issuer).expect("the fixture's response floor fits u32");
+        for (response, admitted) in [(floor, true), (floor - 1, false)] {
+            let http = http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response, send: 512 };
+            assert_eq!(worst_case(&limits, &issuer, &http, Transport::Plaintext).is_some(), admitted, "{response}");
+        }
     }
 }

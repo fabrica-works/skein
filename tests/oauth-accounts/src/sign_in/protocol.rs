@@ -22,6 +22,11 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
         profile.io.sockets = 6;
     }
     let registration = registration(story);
+    let issuer_limits = fake::Limits {
+        codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 },
+        carried: 3,
+        ..crate::world::issuer_limits(&profile.client)
+    };
     let mut issuer = fake::Issuer::new(
         fake::Config {
             authorization_url: registration.authorization_url.clone(),
@@ -32,15 +37,7 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             refresh_token: bytes::copy_of(b"seed"),
             terms: super::issuer::port_terms(story),
         },
-        fake::Limits {
-            document: profile.client.document,
-            uri_bytes: 256,
-            request_bytes: 1024,
-            codes: if matches!(story, Story::TwoPorts | Story::OpenIdAgain) { 2 } else { 1 },
-            rotations: 2,
-            plans: 2,
-            carried: 3,
-        },
+        issuer_limits,
     )
     .expect("issuer");
     for (access, refresh) in [(b'a', b"r1".as_slice()), (b'b', b"r2".as_slice())] {
@@ -60,8 +57,15 @@ pub fn protocol(seed: u64, story: Story) -> (Vec<Fact>, Vec<String>) {
             })
             .expect("plan");
     }
-    let server_limits =
-        http::Limits { head: 2048, headers: 16, body: 1024, read: 256, response: 256 + 6 * 1024 + 267, send: 256 };
+    let server_limits = http::Limits {
+        head: 2048,
+        headers: 16,
+        body: 1024,
+        read: 256,
+        response: skein_fake_peers::oauth::least_response(&issuer_limits)
+            .expect("world issuer response floor fits u32"),
+        send: 256,
+    };
     let mut server = http::Server::new(&server_limits);
     let mut server_events = Queue::with_capacity(ROOM);
     let mut server_requests = Queue::with_capacity(ROOM);
