@@ -225,7 +225,11 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
   budget.
 - **The disk floor.** Below the machine's floor, 40 GB unless
   `tmp/machine.env` says otherwise, no new implementer starts, and
-  finished targets are cleared. A target grows to about 21 GB.
+  finished targets are cleared. A target grows to about 21 GB. `heavy`
+  refuses to queue below it, naming the floor, what is free and the
+  ten largest targets, worktrees and caches. It also collects the
+  build cache (`kache gc`) after each task and every two minutes of a
+  gate, since the cache holds its limit only when collected.
 - **Repins.** A repository's `Cargo.lock` pins its upstreams' git
   revisions. A repin moves a pin to the upstream's `origin/main` (`heavy
   cargo update -p <one of its packages>`; jig moves smith and skein
