@@ -48,6 +48,8 @@ pub enum Connect {
 #[derive(Clone, Copy, Debug)]
 pub enum Pause {
     Connecting,
+    /// The server handshake flight, before the client can become ready.
+    Handshaking,
     /// Bytes of the next request delivered to the peer before holding io.
     Writing(usize),
     /// Bytes of the next response delivered before the peer goes silent.
@@ -88,6 +90,10 @@ pub struct Machine {
     hold_settlement: bool,
     settling: Vec<Token>,
     event_order: Vec<&'static str>,
+    tls_addresses: Vec<skein_io::Addr>,
+    handshake_cut: Option<crate::tls::HandshakeCut>,
+    flight_length: Option<usize>,
+    flight_status: Option<crate::tls::CutStatus>,
 }
 impl std::fmt::Debug for Machine {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -118,9 +124,18 @@ impl Machine {
     /// Starts with other component limits or settings; shared bounds stay the fixture's.
     #[must_use]
     pub fn with(seed: u64, limits: Limits, settings: Settings, script: Vec<Answer>) -> Self {
+        let tls_addresses = settings
+            .forges
+            .iter()
+            .filter_map(|forge| {
+                matches!(forge.transport, skein_forge_connection::settings::Transport::Tls { .. })
+                    .then_some(forge.address)
+            })
+            .collect::<Vec<_>>();
+        let wall = if tls_addresses.is_empty() { Wall::EPOCH } else { skein_tls_world::pki::VALID };
         let mut world = Self {
             component: Component::new(settings, &limits, &fixtures::shared()).expect("fixture bounds agree"),
-            env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
+            env: Env { now: Time::ZERO, wall, limits },
             above: Queue::with_capacity(256),
             below: Queue::with_capacity(256),
             peers: BTreeMap::new(),
@@ -144,6 +159,10 @@ impl Machine {
             hold_settlement: false,
             settling: Vec::new(),
             event_order: Vec::new(),
+            tls_addresses,
+            handshake_cut: None,
+            flight_length: None,
+            flight_status: None,
         };
         world.component.begin(&world.env, &mut world.above, &mut world.below);
         world
@@ -166,10 +185,7 @@ impl Machine {
         let end = self.env.now.saturating_add(span);
         while self.env.now < end {
             self.tick();
-            let busy = self
-                .peers
-                .values()
-                .any(|peer| peer.awaiting_request || peer.remaining > 0 || (peer.wire.eof && !peer.wire.ended));
+            let busy = self.peers.values().any(Peer::busy);
             self.env.now = if busy || !self.below.is_empty() {
                 self.env.now.saturating_add(Duration::from_nanos(10_000)).min(end)
             } else {
@@ -194,6 +210,17 @@ impl Machine {
     pub fn cut(&mut self, cut: Cut) {
         self.cut = Some(cut);
     }
+    /// Cuts this trial's own captured TLS handshake flight.
+    pub(crate) fn cut_handshake(&mut self, cut: crate::tls::HandshakeCut) {
+        self.handshake_cut = Some(cut);
+    }
+    #[must_use]
+    pub fn flight_length(&self) -> usize {
+        self.flight_length.expect("captured flight")
+    }
+    pub(crate) fn flight_status(&self) -> crate::tls::CutStatus {
+        self.flight_status.expect("captured cut position")
+    }
     /// Drains bounded same-time work, then fires timers at exactly this time.
     pub fn advance_to(&mut self, time: Time) {
         self.settle();
@@ -204,6 +231,14 @@ impl Machine {
     fn settle(&mut self) {
         for _ in 0..1000 {
             self.tick();
+            if self.closed
+                || (!self.settling.is_empty()
+                    && self.settling.len() == self.peers.len()
+                    && self.below.is_empty()
+                    && self.above.is_empty())
+            {
+                break;
+            }
         }
     }
     /// Delivers an owner action, preserving every answer offer in the history.
@@ -261,14 +296,20 @@ impl Machine {
     pub fn release_response(&mut self) {
         let (owner, bytes) = self.held_response.take().expect("held response");
         let peer = self.peers.get_mut(&owner).expect("held peer");
-        peer.remaining += bytes.len();
-        peer.wire.write(&bytes);
+        peer.write(&bytes);
         self.pause = None;
     }
     fn up(&mut self, event: skein_io::Event) {
         self.component.up(&self.env, event, &mut self.above, &mut self.below);
     }
     fn tick(&mut self) {
+        for peer in self.peers.values_mut() {
+            peer.begin_tick();
+        }
+        if !self.tls_addresses.is_empty() {
+            self.env.wall =
+                Wall::from_nanos(skein_tls_world::pki::VALID.as_nanos().saturating_add(self.env.now.as_nanos()));
+        }
         self.events();
         while let Some(request) = self.below.pop() {
             self.io(request);
@@ -285,13 +326,39 @@ impl Machine {
             if self.paused == Some(owner) {
                 continue;
             }
-            if self.pause.is_some_and(|(at, pause)| at == self.requests.len() && matches!(pause, Pause::Writing(0))) {
+            let peer = self.peers.get(&owner).expect("peer");
+            let handshake = peer.handshaking();
+            if self.pause.is_some_and(|(at, pause)| {
+                at == self.requests.len()
+                    && (matches!(pause, Pause::Writing(0)) && !handshake
+                        || matches!(pause, Pause::Handshaking) && handshake)
+            }) {
                 continue;
             }
             let peer = self.peers.get_mut(&owner).expect("peer");
             if peer.connected
                 && let Some(up) = peer.wire.answer()
             {
+                peer.answered();
+                if matches!(up, Up::Room) && peer.handshake_flight_delivered() {
+                    if self
+                        .pause
+                        .is_some_and(|(at, pause)| at == self.requests.len() && matches!(pause, Pause::Writing(0)))
+                    {
+                        self.paused = Some(owner);
+                        continue;
+                    }
+                    if let Some(cut) = self.cut
+                        && !cut.response
+                        && cut.at == 0
+                        && cut.request == self.requests.len()
+                    {
+                        self.cut = None;
+                        peer.terminate();
+                        self.up(skein_io::Event::Stream { owner, up: cut.end() });
+                        continue;
+                    }
+                }
                 let up = if matches!(up, Up::End) && peer.reset { Up::Failed(Fault::Reset) } else { up };
                 if let Up::Bytes(bytes) = &up {
                     peer.remaining = peer.remaining.saturating_sub(bytes.len());
@@ -339,7 +406,15 @@ impl Machine {
         match request {
             skein_io::Request::Connect { owner, addr } => {
                 self.opened += 1;
-                self.peers.insert(owner, Peer::new(self.seed.wrapping_add(owner.raw()), addr));
+                self.peers.insert(
+                    owner,
+                    Peer::new(
+                        self.seed.wrapping_add(owner.raw()),
+                        addr,
+                        self.tls_addresses.contains(&addr),
+                        self.handshake_cut,
+                    ),
+                );
                 self.up(skein_io::Event::Connecting { owner, socket: owner });
                 match self.connects.pop_front().unwrap_or(Connect::Made) {
                     Connect::Made => {
@@ -359,30 +434,39 @@ impl Machine {
             }
             skein_io::Request::Stream { stream, down } => {
                 let peer = self.peers.get_mut(&stream).expect("stream peer");
-                if matches!(&down, Down::Demand { room, .. } if *room > 0) || matches!(&down, Down::Send(_)) {
-                    peer.awaiting_request = true;
-                }
                 let sent = match &down {
                     Down::Send(bytes) => bytes.len(),
                     Down::Demand { .. } | Down::Finish => 0,
                 };
                 let sending = sent > 0;
                 let writing = matches!(&down, Down::Demand { room, .. } if *room > 0);
-                peer.wire.take(down);
+                let plain = peer.take(down);
+                self.flight_length = peer.flight_length.or(self.flight_length);
+                self.flight_status = peer.flight_status.or(self.flight_status);
+                if let Some(reset) = peer.failure.take() {
+                    self.up(skein_io::Event::Stream {
+                        owner: stream,
+                        up: if reset { Up::Failed(Fault::Reset) } else { Up::End },
+                    });
+                    return;
+                }
                 if writing
+                    && !peer.is_tls()
+                    && !peer.handshaking()
                     && let Some(cut) = self.cut
                     && !cut.response
                     && cut.request == self.requests.len()
                     && cut.at == 0
                 {
                     self.cut = None;
+                    peer.terminate();
                     self.up(skein_io::Event::Stream { owner: stream, up: cut.end() });
                     return;
                 }
-                if sending {
+                if sending && plain > 0 {
                     let ordinal = self.requests.len();
                     self.written.resize(ordinal + 1, 0);
-                    self.written[ordinal] += sent;
+                    self.written[ordinal] += plain;
                     if let Some((at, Pause::Writing(bytes))) = self.pause
                         && at == self.requests.len()
                     {
@@ -398,6 +482,7 @@ impl Machine {
                         peer.truncate(cut.at);
                         self.written[ordinal] = self.written[ordinal].min(cut.at);
                         self.cut = None;
+                        peer.terminate();
                         self.up(skein_io::Event::Stream { owner: stream, up: cut.end() });
                     }
                 }
@@ -437,7 +522,7 @@ impl Machine {
         let ordinal = self.requests.len();
         self.requests.push(request);
         let peer = self.peers.get_mut(&owner).expect("peer");
-        peer.awaiting_request = false;
+        peer.responding();
         let response = match answer.response {
             Response::Case(case) => Response::Bytes(case_bytes(case)),
             other @ (Response::Bytes(_) | Response::Reset | Response::Cut { .. } | Response::Silent) => other,
@@ -446,8 +531,7 @@ impl Machine {
             if let Some((at, Pause::Reading(length))) = self.pause
                 && at == ordinal
             {
-                peer.remaining = length;
-                peer.wire.write(&bytes[..length]);
+                peer.write(&bytes[..length]);
                 self.held_response = Some((owner, bytes[length..].to_vec()));
                 return;
             }
@@ -455,9 +539,9 @@ impl Machine {
                 && cut.response
                 && cut.request == ordinal
             {
-                peer.remaining = cut.at;
-                peer.wire.write(&bytes[..cut.at]);
+                peer.write(&bytes[..cut.at]);
                 peer.wire.eof = true;
+                peer.terminate();
                 peer.reset = cut.reset;
                 self.cut = None;
                 return;
@@ -466,19 +550,20 @@ impl Machine {
         match response {
             Response::Case(case) => {
                 let bytes = case_bytes(case);
-                peer.remaining = bytes.len();
-                peer.wire.write(&bytes);
+                peer.write(&bytes);
             }
             Response::Bytes(bytes) => {
-                peer.remaining = bytes.len();
-                peer.wire.write(&bytes);
+                peer.write(&bytes);
             }
             Response::Cut { case, at } => {
-                peer.remaining = at;
-                peer.wire.write(&case_bytes(case)[..at]);
+                peer.write(&case_bytes(case)[..at]);
                 peer.wire.eof = true;
+                peer.terminate();
             }
-            Response::Reset => self.up(skein_io::Event::Stream { owner, up: Up::Failed(Fault::Reset) }),
+            Response::Reset => {
+                peer.terminate();
+                self.up(skein_io::Event::Stream { owner, up: Up::Failed(Fault::Reset) });
+            }
             Response::Silent => {}
         }
     }

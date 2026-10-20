@@ -281,32 +281,42 @@ fn start_deadlines_retry_and_end_waiting_calls() {
         DeadlineRow { name: "checking and waiting", request: 0, pause: machine::Pause::Reading(0) },
         DeadlineRow { name: "settings and waiting", request: 1, pause: machine::Pause::Reading(0) },
     ] {
-        let mut world = Machine::new(7, fixtures::locate_script());
-        assert_eq!(drive_deadline(&mut world, &row, Duration::ZERO), (0, Error::Unavailable, 1, 1), "{}", row.name);
-        let opened = world.connections_opened();
-        world.connects(&[Connect::Refused]);
-        world.advance_to(START_RETRY);
-        assert_eq!(world.connections_opened(), opened + 1, "{} start retries", row.name);
-        assert!(world.close());
+        for secure in [false, true] {
+            let mut world = transport_machine(secure, fixtures::locate_script());
+            assert_eq!(drive_deadline(&mut world, &row, Duration::ZERO), (0, Error::Unavailable, 1, 1), "{}", row.name);
+            let opened = world.connections_opened();
+            world.connects(&[Connect::Refused]);
+            world.advance_to(START_RETRY);
+            assert_eq!(world.connections_opened(), opened + 1, "{} start retries", row.name);
+            assert!(world.close());
+        }
     }
 }
 #[test]
 fn unseen_call_deadlines_are_unavailable_at_no_cost() {
-    for row in [
-        DeadlineRow { name: "connecting", request: 2, pause: machine::Pause::Connecting },
-        DeadlineRow { name: "sending before first byte", request: 2, pause: machine::Pause::Writing(0) },
-    ] {
-        let mut world = ready_for_deadline();
-        assert_eq!(drive_deadline(&mut world, &row, CALL_ADMISSION), (0, Error::Unavailable, 1, 1), "{}", row.name);
-        assert!(world.close());
+    for secure in [false, true] {
+        let mut rows = vec![
+            DeadlineRow { name: "connecting", request: 2, pause: machine::Pause::Connecting },
+            DeadlineRow { name: "sending before first byte", request: 2, pause: machine::Pause::Writing(0) },
+        ];
+        if secure {
+            rows.push(DeadlineRow { name: "handshaking", request: 2, pause: machine::Pause::Handshaking });
+        }
+        for row in rows {
+            let mut world = ready_for_deadline(secure);
+            assert_eq!(drive_deadline(&mut world, &row, CALL_ADMISSION), (0, Error::Unavailable, 1, 1), "{}", row.name);
+            assert!(world.close());
+        }
     }
 }
 #[test]
 fn deadlines_end_each_phase() {
-    for row in deadline_rows() {
-        let mut world = ready_for_deadline();
-        assert_eq!(drive_deadline(&mut world, &row, CALL_ADMISSION), (1, Error::Timeout, 1, 1), "{}", row.name);
-        assert!(world.close());
+    for secure in [false, true] {
+        for row in deadline_rows() {
+            let mut world = ready_for_deadline(secure);
+            assert_eq!(drive_deadline(&mut world, &row, CALL_ADMISSION), (1, Error::Timeout, 1, 1), "{}", row.name);
+            assert!(world.close());
+        }
     }
 }
 fn deadline_rows() -> [DeadlineRow; 3] {
@@ -324,8 +334,8 @@ fn deadline_rows() -> [DeadlineRow; 3] {
         DeadlineRow { name: "reading body", request: 2, pause: Reading(body + 1) },
     ]
 }
-fn ready_for_deadline() -> Machine {
-    let mut world = Machine::new(7, fixtures::locate_script());
+fn ready_for_deadline(secure: bool) -> Machine {
+    let mut world = transport_machine(secure, fixtures::locate_script());
     // The generated start leaves an idle socket; let it expire before the call.
     world.run_for(CALL_ADMISSION);
     world
@@ -498,6 +508,7 @@ enum ClosePhase {
     Settings,
     Waiting,
     Connecting,
+    Handshaking,
     SendingBefore,
     Sending,
     Reading,
@@ -583,9 +594,14 @@ struct ListenerCloseRow {
 #[test]
 fn owner_close_wins_or_follows_each_terminal() {
     use ListenerClosePhase::{Answering, Body, Closing, Head, Hint};
-    for row in close_rows() {
-        assert_eq!(drive_close(&row), row.expected, "{row:?}");
+    for secure in [false, true] {
+        for row in close_rows() {
+            assert_eq!(drive_close(&row, secure), row.expected, "{row:?}, TLS={secure}");
+        }
     }
+    let handshaking =
+        CloseRow { phase: ClosePhase::Handshaking, delivery: Delivery::Before, expected: [0, 0, 0, 1, 0, 0] };
+    assert_eq!(drive_close(&handshaking, true), handshaking.expected, "{handshaking:?}");
     for row in [
         ListenerCloseRow { phase: Head, expected: [0, 0, 0, 1, 0, 0] },
         ListenerCloseRow { phase: Body, expected: [0, 0, 0, 1, 0, 0] },
@@ -600,10 +616,10 @@ fn owner_close_wins_or_follows_each_terminal() {
 // Refusal-prefix room keeps the waiting fixture from the queue's default Made fallback.
 const WAITING_CONNECT_REFUSALS: usize = 32;
 
-fn close_machine(row: &CloseRow) -> Machine {
+fn close_machine(row: &CloseRow, secure: bool) -> Machine {
     use ClosePhase::{
-        Checking, Closed, Connecting, Idle, Reading, ReadingBody, Resolving, Sending, SendingBefore, Settings, Stopped,
-        Waiting,
+        Checking, Closed, Connecting, Handshaking, Idle, Reading, ReadingBody, Resolving, Sending, SendingBefore,
+        Settings, Stopped, Waiting,
     };
     let mut script = fixtures::locate_script();
     if matches!(row.phase, Checking | Stopped) && !matches!(row.delivery, Delivery::Before)
@@ -625,7 +641,7 @@ fn close_machine(row: &CloseRow) -> Machine {
             },
         ]);
     }
-    let mut world = Machine::new(7, script);
+    let mut world = transport_machine(secure, script);
     if matches!(row.phase, Waiting) {
         world.connects(&[Connect::Refused; WAITING_CONNECT_REFUSALS]);
     }
@@ -633,6 +649,7 @@ fn close_machine(row: &CloseRow) -> Machine {
         let pause = match row.phase {
             Checking | Settings | Reading | Resolving => Some(machine::Pause::Reading(0)),
             Connecting => Some(machine::Pause::Connecting),
+            Handshaking => Some(machine::Pause::Handshaking),
             SendingBefore => Some(machine::Pause::Writing(0)),
             Sending => Some(machine::Pause::Writing(1)),
             ReadingBody => Some(deadline_rows()[2].pause),
@@ -642,10 +659,10 @@ fn close_machine(row: &CloseRow) -> Machine {
             let at = match row.phase {
                 Checking => 0,
                 Settings => 1,
-                Waiting | Connecting | SendingBefore | Sending | Reading | ReadingBody | Resolving | Idle | Closed
-                | Stopped => 2,
+                Waiting | Connecting | Handshaking | SendingBefore | Sending | Reading | ReadingBody | Resolving
+                | Idle | Closed | Stopped => 2,
             };
-            if matches!(row.phase, Connecting) {
+            if matches!(row.phase, Connecting | Handshaking) {
                 world.advance_to(skein_lib::Time::ZERO.saturating_add(CALL_ADMISSION));
             }
             world.pause_at(at, pause);
@@ -653,7 +670,7 @@ fn close_machine(row: &CloseRow) -> Machine {
     }
     match row.phase {
         Checking | Settings if !matches!(row.delivery, Delivery::Before) => {}
-        Checking | Settings | Waiting | Connecting | SendingBefore | Sending | Reading | ReadingBody => {
+        Checking | Settings | Waiting | Connecting | Handshaking | SendingBefore | Sending | Reading | ReadingBody => {
             world.call(1, fixtures::REPO, fixtures::locate());
         }
         Resolving => world.call(1, fixtures::REPO, fixtures::branch()),
@@ -663,7 +680,7 @@ fn close_machine(row: &CloseRow) -> Machine {
         skein_lib::Time::ZERO.saturating_add(CALL_ADMISSION)
     } else if matches!(row.phase, Waiting) && !matches!(row.delivery, Delivery::Before) {
         DEADLINE
-    } else if matches!(row.phase, Connecting) && matches!(row.delivery, Delivery::Before) {
+    } else if matches!(row.phase, Connecting | Handshaking) && matches!(row.delivery, Delivery::Before) {
         skein_lib::Time::ZERO.saturating_add(CALL_ADMISSION)
     } else {
         skein_lib::Time::ZERO
@@ -671,9 +688,9 @@ fn close_machine(row: &CloseRow) -> Machine {
     world
 }
 
-fn drive_close(row: &CloseRow) -> [usize; 6] {
+fn drive_close(row: &CloseRow, secure: bool) -> [usize; 6] {
     use skein_forge_connection::Request;
-    let mut world = close_machine(row);
+    let mut world = close_machine(row, secure);
     let baseline = if matches!(row.phase, ClosePhase::Stopped) { world.event_order().len() } else { 0 };
     if matches!(row.delivery, Delivery::Refused | Delivery::Returned) {
         let answer = world.answered(1).expect("delivered answer").clone();
@@ -744,4 +761,31 @@ fn drive_listener_close(phase: ListenerClosePhase) -> [usize; 6] {
         usize::try_from(counts[3]).expect("small"),
         after_closed,
     ]
+}
+
+#[test]
+fn a_tls_forge_starts_and_answers_a_call() {
+    let mut world = Machine::with(
+        7,
+        fixtures::limits(),
+        skein_forge_machine_world::tls::settings(),
+        vec![
+            Answer::case("GET /api/v1/user", "user"),
+            Answer::case("GET /api/v1/settings/api", "settings-api"),
+            Answer::case("GET /api/v1/repositories/1", "repository-by-id"),
+            Answer::case("GET /api/v1/repos/fixture/specimen/branches/main", "branch"),
+        ],
+    );
+    world.call(1, fixtures::REPO, fixtures::branch());
+    world.run_for(SECOND);
+    let answer = world.answered(1).expect("one terminal");
+    assert_eq!(answer.cost, 2);
+    assert!(answer.result.is_ok());
+    assert!(world.script_done());
+    assert!(world.close());
+}
+
+fn transport_machine(secure: bool, script: Vec<Answer>) -> Machine {
+    let settings = if secure { skein_forge_machine_world::tls::settings() } else { fixtures::settings() };
+    Machine::with(7, fixtures::limits(), settings, script)
 }

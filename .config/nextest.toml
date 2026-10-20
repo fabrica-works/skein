@@ -5,7 +5,7 @@
 # tests it stopped; a test past its slow period is flagged SLOW as it runs.
 
 [profile.default]
-default-filter = "not binary(/^fuzzy_/) and not binary(/^browser_/) and not binary(=live)"
+default-filter = "not binary(/^fuzzy_/) and not binary(/^browser_/) and not binary(=live) and not binary(/^exhaustive_/)"
 global-timeout = "15s"
 slow-timeout = { period = "3s" }
 
@@ -17,6 +17,12 @@ priority = 10
 
 [profile.fuzzy]
 default-filter = "binary(/^fuzzy_/)"
+global-timeout = "60s"
+slow-timeout = { period = "20s" }
+
+# Every TLS byte with real handshakes; run outside the gate after each push.
+[profile.exhaustive]
+default-filter = "binary(/^exhaustive_/)"
 global-timeout = "60s"
 slow-timeout = { period = "20s" }
 
