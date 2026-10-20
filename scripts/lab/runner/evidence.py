@@ -39,15 +39,24 @@ def publish(lab, key_path, record):
     problems = run_refusals(record)
     if problems:
         raise Refused(problems[0].member, problems[0].why)
+    if key_path != f"keys/{record['experiment']}/{record['key']}":
+        raise Refused('run.key', 'publication address differs from run identity')
     previous = read(lab, key_path)
     if not judge.seed_admitted(previous, record['seed']):
         raise Refused('seed', 'a fourth seed is forbidden')
+    existing = [r for r in previous if r['run'] == record['run']]
     attempt = 1 + sum(r['seed'] == record['seed'] for r in previous)
-    if record['attempt'] != attempt or any(r['run'] == record['run'] for r in previous):
+    if not existing and record['attempt'] != attempt:
         raise Refused('attempt', 'run is not additive')
     lab.write_once(f"{key_path}/runs/{record['run']}/run.json", canonical.record_bytes(record))
-    lab.append_line(key_path + '/evidence.jsonl', line_for(record))
-    lab.replace_derived(key_path + '/verdict.json', judge.verdict_record(record['key'], previous + [line_for(record)]))
+    if not existing:
+        lab.append_line(key_path + '/evidence.jsonl', line_for(record))
+        previous.append(line_for(record))
+    lab.replace_derived(key_path + '/verdict.json', judge.verdict_record(record['key'], previous))
+    # Publication failure leaves the worker's live marker intact. A repeated
+    # publish verifies immutable bytes and reconciles without duplicating events.
+    from .finding_store import sync
+    sync(lab, record['ended'])
 
 
 def require_recovered(lab):
@@ -67,6 +76,7 @@ def require_recovered(lab):
         finally:
             os.close(parent)
         for key in sorted(keys):
+            published = {r['run'] for r in read(lab, 'keys/' + name + '/' + key)}
             prefix = 'keys/' + name + '/' + key + '/runs'
             try:
                 runs = lab.directory(prefix)
@@ -83,5 +93,5 @@ def require_recovered(lab):
                     files = os.listdir(directory)
                 finally:
                     os.close(directory)
-                if 'live.json' in files or 'run.json' not in files:
+                if 'live.json' in files or 'run.json' not in files or run not in published:
                     raise Refused('recovery', path + ': unfinished run retained; owner recovery required')

@@ -1,0 +1,6 @@
+[
+  {"reruns": ["fail"], "numerator": 1, "denominator": 1, "flaky": false},
+  {"reruns": ["pass"], "numerator": 0, "denominator": 1, "flaky": true},
+  {"reruns": ["error"], "numerator": 0, "denominator": 1, "flaky": false},
+  {"reruns": ["incomplete", "error", "fail", "pass"], "numerator": 1, "denominator": 4, "flaky": true}
+]

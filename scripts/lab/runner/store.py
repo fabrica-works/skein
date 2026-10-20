@@ -33,12 +33,14 @@ def checked_directory(path):
         raise
 
 
-def _read_at(fd, name, *, allow_hardlinks=False):
+def _read_at(fd, name, *, allow_hardlinks=False, private=False):
     opened = os.open(name, FILE_FLAGS, dir_fd=fd)
     try:
         metadata = os.fstat(opened)
         if not stat.S_ISREG(metadata.st_mode) or (not allow_hardlinks and metadata.st_nlink != 1):
             raise Refused(name, "expected a regular file with one link")
+        if private and (metadata.st_uid != os.getuid() or metadata.st_mode & 0o077):
+            raise Refused(name, "lab file must be owned by this user and private")
         with os.fdopen(os.dup(opened), "rb") as stream:
             data = stream.read()
         after = os.fstat(opened)
@@ -183,7 +185,7 @@ class Lab:
     def read(self, path):
         fd, name = self._parent(path)
         try:
-            return _read_at(fd, name)[0]
+            return _read_at(fd, name, private=True)[0]
         finally:
             os.close(fd)
 
@@ -232,6 +234,7 @@ class Lab:
                     raise OSError("append made no progress")
                 data = data[written:]
             os.fsync(opened)
+            os.fsync(fd)
         finally:
             if opened is not None:
                 os.close(opened)
@@ -247,8 +250,8 @@ class Lab:
             os.close(fd)
 
     def replace_derived(self, path, value):
-        if path.rsplit('/', 1)[-1] != 'verdict.json':
-            raise Refused(path, 'only the derived verdict may be replaced')
+        if path.rsplit('/', 1)[-1] != 'verdict.json' and path != 'findings/index.json':
+            raise Refused(path, 'only derived verdicts and findings/index.json may be replaced')
         fd, name = self._parent(path)
         temporary = '.derived-' + secrets.token_hex(16)
         try:

@@ -1,4 +1,4 @@
-# Lab null-driver runner
+# Lab null-driver runner and findings
 
 Python 3.11+, standard library only. Run from any directory:
 
@@ -68,15 +68,15 @@ heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/uni
 ```
 
 Unit tests start no child processes and use no clock or sleep. CLI stories
-call `main` with temporary inputs and explicit machine facts; native Git
-export and machine checks need native validation. Driver runs, findings,
-campaigns, recovery and pruning are later slices.
+call `main` with temporary inputs, explicit machine facts and supplied finding
+times; native Git export and machine checks need native validation. Driver
+runs, triage, campaigns, general recovery and pruning are later slices.
 
 
 `run` and `judge` support **`driver: null` only**. A nonnull driver and a supplied
 `--campaign` are explicitly refused. There is no model, transport to Codex,
-tool broker, triager or finding creation in this slice. Raw signatures,
-summaries and evidence paths remain in each run for later finding work.
+tool broker or triager in this slice. Judged failures publish finding
+candidates and occurrences from their retained signatures and evidence.
 
 The lifecycle in `runner/life.py` consumes events and returns ordered requests.
 It selects the next ready dependency set using canonical u64 draws, renders a
@@ -131,8 +131,9 @@ limits: every deadline comes from the experiment's named class.
 append-only `lab-event/1`; each line has `event` and monotonic `ms` plus that
 event's observations. The live marker is `lab-live/1` with `unit`.
 `evidence.jsonl` contains canonical `lab-evidence/1` lines verified against the
-immutable run records. Only `verdict.json` (`lab-verdict/1`) is replaced from
+immutable run records. `verdict.json` (`lab-verdict/1`) is replaced from
 verified evidence. It records each seed's judged and unjudged run ids.
+The other replaceable derived path is exactly `findings/index.json`.
 
 Exactly three distinct seeds, each with a judged run, are required for a final
 verdict. A fourth seed is refused before launch. An explicit rerun under one of
@@ -162,5 +163,88 @@ heavy python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/pro
 Missing or denied systemd/bubblewrap capabilities produce an explicit
 process-tier skip/refusal. They prove nothing about native containment. Unit
 stories use supplied times without sleeping; the AST boundary includes `life`
-and `checks`. The unit tier runs in `scripts/check.sh`; the process tier runs
+and `checks`, plus `findings`. The unit tier runs in `scripts/check.sh`; the process tier runs
 before the exhaustive suite in `scripts/after-landing.sh`.
+
+Findings follow lab.md, sections 9 and 10.2:
+
+```
+lab finding F-0001 class experiment --by owner
+lab finding F-0001 file --by owner
+lab finding F-0001 take --by owner
+lab finding F-0001 fix --experiment sha256:... --by owner
+lab finding F-0001 close --recheck sha256:... --by owner
+```
+
+Every writing command reconciles retained published evidence under the lab's
+lock. A judged non-use failure creates `F-0001` upward or attaches to the
+finding with exactly the same signature. Failure identity is `(key, run,
+failure id)`, so repeated reconciliation and repeated publication add no
+duplicate occurrence. Summaries, names, seeds and message similarity do not
+match findings. Use failures await triage; no model, triage invocation,
+proposal, class or human judgment is generated. The pure reader validates
+supplied `proposed` events; the CLI has no triage/import command.
+
+Each `findings/F-NNNN.jsonl` line is canonical `lab-finding/1`, with `event`,
+`t` (UTC milliseconds) and `by`. Candidates retain signature/kind/summary and
+run/key/seed/failure identity; occurrences and reopenings retain that failure
+identity. Proposed class/title/reason remains distinct from owner `classed`.
+The six classes are exactly `world`, `fake`, `below`, `tools`, `experiment`,
+`lab`. An omitted `--by` on owner commands records `uid:<uid>`; `take` requires
+`--by`. Reserved actors `runner` and `triager` cannot confirm a class or act
+as an owner.
+
+Filing needs a fail/flaky verdict from exactly three judged seeds, a rerun of
+the first failing seed, and a proposed or confirmed class. A nonreproducing,
+error or incomplete rerun is retained with its outcome and reproduction
+result. Filing records the verified verdict snapshot, `flaky` (whether any
+judged run lacked the signature), and the first failing seed's rerun results.
+Its reproduction accounting includes every attempt after each key/seed's
+first signature failure: explicit numerator, denominator, and each outcome.
+An error or incomplete attempt with no signature contributes to the
+denominator; its outcome stays error or incomplete.
+
+`take` follows filing; `fix` needs a taken finding and a confirmed class.
+For world/fake/below/tools, fix arguments are `--repository /absolute/path
+--commit FULL_OID --test LOWEST_WORLD_TEST [--test ...] --product-commit
+FULL_OID`. Those test names record the owner's evidence that they fail before
+the fix and pass after it; the lab does not run or repair product tests. For
+experiment, `--experiment DIGEST` names the retained corrected experiment,
+which must differ from the original. For lab, use `--runner-commit FULL_OID
+--test OWN_TEST [--test ...]`. Missing, unknown or mixed-class fix members
+refuse. Findings write no product repository, forge issue or message.
+
+The host completes experiment-class close/reopen verification. It checks the
+retained key's digest and shape, frozen experiment bytes, and frozen subject
+record/source/artifacts. Close derives a fresh verdict from retained runs and
+evidence: a new key, exactly three judged passing seeds, no judged signature,
+and equality with the corrected experiment digest. Cached `verdict.json` and
+caller booleans supply no proof. It records `rechecked` with the verified
+verdict snapshot, then `closed`. A later original-experiment failure is
+`occurred` while closed; a corrected-experiment recurrence is `reopened`.
+Historical verdict snapshots are verified against retained evidence prefixes,
+so a later recurrence does not invalidate the earlier recheck history.
+
+Product-class host close/closed-recurrence verification remains unavailable:
+it requires an independently verified product repository binding, the
+subject's commit, and read-only Git ancestry from the fix's `product_commit`.
+Repository paths in `about`, hash order and cached provenance are insufficient.
+Lab-class host close remains unavailable: it needs a verified mapping from
+`key.lab.runner` to `runner_commit` and an explicit owner judgment. These cases
+refuse with those requirements. The pure lifecycle accepts supplied verified
+carriage facts; lab recheck and reopening additionally require an owner actor
+and explicit `judgment`. Mechanical reconciliation never reopens a lab finding.
+No generic process/tree lifecycle contains Git or ancestry logic.
+
+`findings/index.json` (`lab-finding-index/1`) is rebuilt from event histories
+and verified run evidence, including reproduction counts; its content is
+never read as truth. Corrupt derived bytes can be replaced; corrupt source
+events, missing evidence, duplicate/gapped IDs, unsafe modes, links and
+partial JSONL appends refuse. Event histories only append. Publication runs
+reconciliation before the worker clears `live.json`; a failed publication
+retains that marker. Explicit owner re-entry through the publication adapter
+verifies existing immutable bytes and reconciles additive evidence without
+duplicate occurrences. A cut between rechecked and closed can be finished
+after verifying the current evidence again. Missing run/evidence publication
+or live markers still require owner recovery; there is no general crash
+recovery, sweeper or pruner.

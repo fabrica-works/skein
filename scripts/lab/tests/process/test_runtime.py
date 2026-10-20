@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from runner import canonical, evidence, store
+from runner import canonical, evidence, finding_store, store
 from runner.host import CapabilityError, await_removed, manager, namespace_probe
 
 PYTHON = os.path.realpath(sys.executable)
@@ -223,6 +223,46 @@ class Runtime(unittest.TestCase):
         self.assertIn('panic/server/standin.rs:7:2', signatures)
         self.assertFalse(any(s.startswith('stop/server/') for s in signatures))
         self.assert_empty(record)
+
+    def test_retained_judged_failures_through_owner_experiment_recheck(self):
+        self.experiment(check='fail')
+        original_bytes = (self.directory / 'experiment.json').read_bytes()
+        for seed in ('1', '2', '3', '1'):
+            status, _output, stderr = self.cli('run', seed=seed)
+            self.assertEqual(status, 1, stderr)
+        original_path, _lines, records = self.records()
+        for record in records:
+            self.assert_empty(record)
+        t = records[-1]['ended']
+        with store.open_lab(self.lab_root) as lab, lab.lock():
+            derived = finding_store.sync(lab, t)
+            finding = next(f for f in derived['findings'] if f['signature'] == 'check/end/state/private-canary')
+            identity = finding['id']
+            finding_store.act(lab, identity, 'class', t, 'owner', finding_class='experiment')
+            finding_store.act(lab, identity, 'file', t, 'owner')
+            finding_store.act(lab, identity, 'take', t, 'owner')
+        self.experiment(check='pass')
+        status, output, stderr = self.cli('judge')
+        self.assertEqual((status, output), (0, 'pass'), stderr)
+        with store.open_lab(self.lab_root) as lab, lab.lock():
+            records_by_key, paths = finding_store.sources(lab)
+            corrected = next(k for k in paths if paths[k] != original_path)
+            key = canonical.loads(lab.read(paths[corrected] + '/key.json'))
+            t = records_by_key[corrected][-1]['ended']
+            for record in records_by_key[corrected]:
+                self.assert_empty(record)
+            finding_store.act(lab, identity, 'fix', t, 'owner', fix={'experiment': key['experiment']})
+            derived = finding_store.act(lab, identity, 'close', t, 'owner', recheck=corrected)
+            self.assertEqual(next(f['state'] for f in derived['findings'] if f['id'] == identity), 'closed')
+        # The retained faulty experiment still fails and attaches while closed.
+        (self.directory / 'experiment.json').write_bytes(original_bytes)
+        status, _output, stderr = self.cli('run', seed='1')
+        self.assertEqual(status, 1, stderr)
+        with store.open_lab(self.lab_root) as lab, lab.lock():
+            values = finding_store.histories(lab)[identity]
+            self.assertEqual(values[-1]['event'], 'occurred')
+            derived = finding_store.sync(lab, values[-1]['t'])
+            self.assertEqual(next(f['state'] for f in derived['findings'] if f['id'] == identity), 'closed')
 
     def notified(self, detach):
         endpoint = str(self.root / 'notify')

@@ -9,7 +9,7 @@ COST_FIELDS = ("ready_seconds", "command_seconds", "stop_seconds", "driver_secon
                "driver_actions", "driver_input_tokens")
 FORMATS = {"lab-experiment/1", "lab-tree/1", "lab-subject/1", "lab-key/1",
            "lab-settings/1", "lab-run/1", "lab-evidence/1", "lab-verdict/1",
-           "lab-event/1", "lab-live/1"}
+           "lab-event/1", "lab-live/1", "lab-finding/1", "lab-finding-index/1"}
 
 
 @dataclass(frozen=True)
@@ -182,6 +182,11 @@ def run_refusals(value):
             out.append(Refusal(m + '.signature', 'expected printable ASCII signature segments'))
         if type(f.get('evidence')) is not list or any(not relative(p) for p in f.get('evidence', [])):
             out.append(Refusal(m + '.evidence', 'expected relative evidence paths'))
+    failures = obj.get('failures')
+    if type(failures) is list and not out:
+        ids = [f['id'] for f in failures]
+        if len(set(ids)) != len(ids) or any(not text_value(i) for i in ids):
+            out.append(Refusal('run.failures.id', 'failure ids must be nonempty and unique'))
     for field, members in (('errors', ('what', 'detail')), ('undecided', ('check', 'reason'))):
         if type(obj.get(field)) is list:
             for i, item in enumerate(obj[field]):
@@ -198,3 +203,103 @@ def run_refusals(value):
 
 def signature_value(text):
     return type(text) is str and bool(text) and all(33 <= ord(c) <= 126 for c in text)
+
+
+FINDING_ID = re.compile(r'F-(?:[0-9]{4}|[1-9][0-9]{4,})\Z')
+CLASSES = ('world', 'fake', 'below', 'tools', 'experiment', 'lab')
+FINDING_FIELDS = {
+    'candidate': ('signature', 'kind', 'summary', 'run', 'key', 'seed', 'failure'),
+    'occurred': ('run', 'key', 'seed', 'failure'),
+    'proposed': ('class', 'title', 'reason'),
+    'filed': ('verdict', 'flaky', 'reruns'),
+    'classed': ('class',), 'taken': (), 'fixed': ('fix',),
+    'rechecked': ('key', 'verdict'), 'closed': (),
+    'reopened': ('run', 'key', 'seed', 'failure'),
+}
+
+
+def utc_value(value):
+    """Validate a supplied UTC calendar value without consulting a clock."""
+    if type(value) is not str:
+        return False
+    m = re.fullmatch(r'([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\.([0-9]{3})Z', value)
+    if m is None:
+        return False
+    year, month, day, hour, minute, second, _ms = map(int, m.groups())
+    leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    days = (31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    return year > 0 and 1 <= month <= 12 and 1 <= day <= days[month - 1] and hour < 24 and minute < 60 and second < 60
+
+
+def finding_refusals(value):
+    from .canonical import u64
+    out = []
+    event = value.get('event') if type(value) is dict else None
+    fields = FINDING_FIELDS.get(event, ()) if type(event) is str else ()
+    obj = shape(value, ('format', 'event', 't', 'by') + fields, ('judgment',), 'finding', out)
+    if obj.get('format') != 'lab-finding/1':
+        out.append(Refusal('finding.format', 'expected lab-finding/1'))
+    if type(event) is not str or event not in FINDING_FIELDS:
+        out.append(Refusal('finding.event', 'unknown event'))
+    if not utc_value(obj.get('t')):
+        out.append(Refusal('finding.t', 'expected UTC calendar time with milliseconds'))
+    if not text_value(obj.get('by')):
+        out.append(Refusal('finding.by', 'expected actor'))
+    if 'judgment' in obj and (event not in ('rechecked', 'reopened') or not text_value(obj['judgment'])):
+        out.append(Refusal('finding.judgment', 'owner judgment belongs to recheck or reopening'))
+    for field in ('kind', 'summary', 'failure', 'title', 'reason'):
+        valid = type(obj.get(field)) is str if field == 'summary' else text_value(obj.get(field))
+        if field in fields and not valid:
+            out.append(Refusal('finding.' + field, 'expected nonempty text'))
+    if 'signature' in fields and not signature_value(obj.get('signature')):
+        out.append(Refusal('finding.signature', 'expected printable ASCII signature'))
+    if 'class' in fields and obj.get('class') not in CLASSES:
+        out.append(Refusal('finding.class', 'unknown class'))
+    if 'key' in fields and not digest_value(obj.get('key')):
+        out.append(Refusal('finding.key', 'expected key digest'))
+    if 'run' in fields and (type(obj.get('run')) is not str or not RUN_ID.fullmatch(obj['run'])):
+        out.append(Refusal('finding.run', 'invalid run id'))
+    if 'seed' in fields:
+        try:
+            u64(obj.get('seed'))
+        except Refused as error:
+            out.append(error.refusal)
+    if event == 'filed':
+        if type(obj.get('flaky')) is not bool or type(obj.get('reruns')) is not list:
+            out.append(Refusal('finding.filed', 'expected flaky boolean and rerun results'))
+    if event in ('filed', 'rechecked') and type(obj.get('verdict')) is not dict:
+        out.append(Refusal('finding.verdict', 'expected verdict snapshot'))
+    if event == 'fixed' and type(obj.get('fix')) is not dict:
+        out.append(Refusal('finding.fix', 'expected fix evidence'))
+    return out
+
+
+def text_value(value):
+    return type(value) is str and bool(value.strip()) and '\x00' not in value
+
+
+def commit_value(value):
+    return type(value) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', value) is not None
+
+
+def fix_refusals(value, finding_class):
+    out = []
+    if finding_class not in CLASSES:
+        return [Refusal('fix.class', 'confirmed class required')]
+    fields = (('experiment',) if finding_class == 'experiment' else
+              ('runner_commit', 'tests') if finding_class == 'lab' else
+              ('repository', 'commit', 'tests', 'product_commit'))
+    obj = shape(value, fields, (), 'fix', out)
+    for field in fields:
+        item = obj.get(field)
+        if field == 'experiment':
+            valid = digest_value(item)
+        elif field in ('commit', 'product_commit', 'runner_commit'):
+            valid = commit_value(item)
+        elif field == 'tests':
+            valid = type(item) is list and bool(item) and all(text_value(t) for t in item) and len(set(item)) == len(item)
+        else:
+            valid = text_value(item) and item.startswith('/')
+        if not valid:
+            out.append(Refusal('fix.' + field, 'missing or invalid fix evidence'))
+    return out

@@ -1,5 +1,6 @@
 """The subject -> validate -> key command path (lab.md, 10.2)."""
 import argparse
+from datetime import datetime, timezone
 import errno
 import os
 from pathlib import Path
@@ -9,7 +10,7 @@ import secrets
 import subprocess
 import stat
 import sys
-from . import canonical, evidence, experiment, judge, store
+from . import canonical, evidence, experiment, finding_store, judge, store
 from .records import Refusal, Refused, digest_value, subject_refusals
 
 
@@ -263,7 +264,7 @@ def _artifact(text):
     return name, path
 
 
-def main(argv=None, *, lab_root=None):
+def main(argv=None, *, lab_root=None, finding_time=None):
     parser = argparse.ArgumentParser(prog="lab", description="Capture, validate, run and judge lab experiments.")
     commands = parser.add_subparsers(dest="command", required=True)
     subject = commands.add_parser("subject", help="capture a commit tree and named artifacts")
@@ -274,6 +275,23 @@ def main(argv=None, *, lab_root=None):
     validate = commands.add_parser("validate", help="validate all experiment fields and print the key's digest")
     validate.add_argument("experiment")
     validate.add_argument("--subject", required=True)
+    finding = commands.add_parser('finding', help='act on retained finding evidence')
+    finding.add_argument('id')
+    actions = finding.add_subparsers(dest='action', required=True)
+    for action in ('file', 'class', 'take', 'fix', 'close'):
+        command = actions.add_parser(action)
+        command.add_argument('--by', default='uid:' + str(os.getuid()), required=action == 'take')
+        if action == 'class':
+            command.add_argument('finding_class', choices=('world', 'fake', 'below', 'tools', 'experiment', 'lab'))
+        elif action == 'fix':
+            command.add_argument('--repository')
+            command.add_argument('--commit')
+            command.add_argument('--test', action='append')
+            command.add_argument('--product-commit')
+            command.add_argument('--experiment', dest='corrected_experiment')
+            command.add_argument('--runner-commit')
+        elif action == 'close':
+            command.add_argument('--recheck', required=True)
     for name in ('run', 'judge'):
         runtime = commands.add_parser(name, help='run a null-driver experiment' if name == 'run' else 'judge exactly three seeds')
         runtime.add_argument('experiment')
@@ -289,6 +307,23 @@ def main(argv=None, *, lab_root=None):
     try:
         with store.open_lab(root) as lab, lab.lock() as lock_fd:
             evidence.require_recovered(lab)
+            now = finding_time
+            if args.command == 'finding' and now is None:
+                now = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+            finding_store.sync(lab, now)
+            if args.command == 'finding':
+                fix = None
+                if args.action == 'fix':
+                    fields = {'repository': args.repository, 'commit': args.commit, 'tests': args.test,
+                              'product_commit': args.product_commit, 'experiment': args.corrected_experiment,
+                              'runner_commit': args.runner_commit}
+                    fix = {k: v for k, v in fields.items() if v is not None}
+                derived = finding_store.act(lab, args.id, args.action, now, args.by,
+                                            finding_class=getattr(args, 'finding_class', None), fix=fix,
+                                            recheck=getattr(args, 'recheck', None))
+                state = next(f['state'] for f in derived['findings'] if f['id'] == args.id)
+                print(args.id + ' ' + state)
+                return 0
             if args.command in ('run', 'judge'):
                 return runtime_command(lab, lock_fd, args)
             if args.command == "subject":
