@@ -1,4 +1,41 @@
-use crate::forgejo::pin::{RUNNER_VERSION, VERSION, names_forgejo, names_runner};
+use crate::forgejo::pin::{
+    Binary, FORGEJO_SHA256_LINUX_AMD64, FORGEJO_SHA256_LINUX_ARM64, RUNNER_SHA256_LINUX_AMD64,
+    RUNNER_SHA256_LINUX_ARM64, RUNNER_VERSION, VERSION, digest, names_forgejo, names_runner,
+};
+
+#[test]
+fn digest_answers_only_the_pinned_release_architectures() {
+    for (binary, arch, expected) in [
+        (Binary::Forgejo, "amd64", Some(FORGEJO_SHA256_LINUX_AMD64)),
+        (Binary::Forgejo, "arm64", Some(FORGEJO_SHA256_LINUX_ARM64)),
+        (Binary::Runner, "amd64", Some(RUNNER_SHA256_LINUX_AMD64)),
+        (Binary::Runner, "arm64", Some(RUNNER_SHA256_LINUX_ARM64)),
+        (Binary::Forgejo, "x86_64", None),
+        (Binary::Runner, "x86_64", None),
+        (Binary::Forgejo, "aarch64", None),
+        (Binary::Runner, "aarch64", None),
+        (Binary::Forgejo, "386", None),
+        (Binary::Runner, "386", None),
+        (Binary::Forgejo, "AMD64", None),
+        (Binary::Runner, "AMD64", None),
+        (Binary::Forgejo, "", None),
+        (Binary::Runner, "", None),
+    ] {
+        assert_eq!(digest(binary, arch), expected, "{binary:?} {arch:?}");
+    }
+}
+
+#[test]
+fn pinned_digests_are_64_lowercase_hex_digits() {
+    for pinned in
+        [FORGEJO_SHA256_LINUX_AMD64, FORGEJO_SHA256_LINUX_ARM64, RUNNER_SHA256_LINUX_AMD64, RUNNER_SHA256_LINUX_ARM64]
+    {
+        assert_eq!(pinned.len(), 64, "{pinned}");
+        for byte in pinned.bytes() {
+            assert!(byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte), "{pinned}");
+        }
+    }
+}
 
 #[test]
 fn forgejo_s_line_with_its_build_details_names_the_pin() {
