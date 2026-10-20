@@ -11,7 +11,7 @@ pub enum Access {
     Write,
 }
 
-/// The permissions of temper's draft 5 (forge-github.md, 11).
+/// The App's permissions (forge-github.md, 11).
 pub const PERMISSIONS: [(&[u8], Access); 9] = [
     (b"contents", Access::Write),
     (b"pull_requests", Access::Write),

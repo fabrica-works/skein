@@ -94,8 +94,8 @@ fn requests() -> [RequestCase; 14] {
             body: None,
         },
         RequestCase {
-            request: Request::BotUser { slug: Box::from(*b"temper-probe") },
-            target: b"/users/temper-probe%5Bbot%5D",
+            request: Request::BotUser { slug: Box::from(*b"probe-app") },
+            target: b"/users/probe-app%5Bbot%5D",
             method: Method::Get,
             auth: Auth::None,
             body: None,
