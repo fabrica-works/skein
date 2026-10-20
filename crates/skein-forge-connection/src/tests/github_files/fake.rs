@@ -18,7 +18,12 @@ pub(super) struct Fake {
 }
 impl Fake {
     pub fn new(content: &[u8], divergent: bool) -> Self {
-        let config = config();
+        Self::with_files(content, divergent, 1)
+    }
+    pub(super) fn with_files(content: &[u8], divergent: bool, files: u32) -> Self {
+        let mut config = config();
+        config.limits.files = config.limits.files.max(files);
+        config.limits.page_size = config.limits.page_size.max(files);
         let mut domain = domain::Domain::new(&config, 5);
         let first = domain::repository(
             &mut domain,
@@ -43,7 +48,7 @@ impl Fake {
             },
         );
         domain::grant(&mut domain, b"acme/widgets", 9, a::Permission::Write);
-        let mut service = github_service();
+        let mut service = github_service(files.max(2));
         assert_eq!(
             service.installations_mut().install(
                 22,
@@ -56,15 +61,22 @@ impl Fake {
         );
         let (token, _) =
             service.installations_mut().mint(1, installations::Scope::Full, Wall::EPOCH).expect("fake token");
-        let head = domain::commit(
-            &mut domain,
-            &config,
-            first,
-            Box::new([a::File { path: Box::from(b"file".as_slice()), content: Box::from(content) }]),
-            b"feature",
-        )
-        .expect("commit room")
-        .expect("parent exists");
+        let mut tree = List::with_capacity(files);
+        for index in 0..files {
+            let path = if files == 1 {
+                Box::from(b"file".as_slice())
+            } else {
+                let index = skein_lib::Decimal::of(u64::from(index));
+                let mut path = Writer::new(4_usize.checked_add(index.as_bytes().len()).expect("path length"));
+                path.put(b"file").expect("prefix");
+                path.put(index.as_bytes()).expect("index");
+                path.finish()
+            };
+            tree.push(a::File { path, content: Box::from(content) }).expect("file count");
+        }
+        let head = domain::commit(&mut domain, &config, first, tree.into_boxed(), b"feature")
+            .expect("commit room")
+            .expect("parent exists");
         let mut fake = Self {
             service,
             domain,
@@ -270,7 +282,7 @@ fn config() -> domain::Config {
     }
 }
 
-fn github_service() -> service::Service {
+fn github_service(page: u32) -> service::Service {
     let mut repositories = List::with_capacity(1);
     repositories
         .push(service::Row {
@@ -290,7 +302,7 @@ fn github_service() -> service::Service {
         github: crate::limits::github_documents(&f::limits()),
         installations: installations::Limits { installations: 1, tokens: 2, listed: 1 },
         pages: pages::Limits { states: 1, manifest_bytes: 2048 },
-        page: 2,
+        page,
         body: f::BODY_ROOM,
         response: 8192,
     };

@@ -647,7 +647,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: Forges, owned_bytes: u64) -> O
     // Common call storage: record and indexes, three operation copies, and the
     // held answer below. A slot holds one dialect's plans and payloads at a time:
     // Forgejo's boxed read/write plans, staging lists and decoded rows, or GitHub's
-    // boxed plans, discovery table/candidates and retained answer handoffs.
+    // boxed plans, discovery table/candidates, files state and retained answer handoffs.
     let forgejo_call = if forges.forgejo > 0 { forgejo_call_heap(l, s)? } else { 0 };
     let github_call = if forges.github > 0 { github_call_heap(l, s)? } else { 0 };
     let calls = Slab::<Waiting>::worst_case(s.calls)?
@@ -726,15 +726,80 @@ fn forgejo_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
         )
 }
 
-// Both boxed plan envelopes, retained operation/answer overlap, discovery staging and candidates.
-fn github_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
-    u64::try_from(size_of::<skein_forge::github::plans::reads::Plan>())
+// Both boxed plans, discovery tables/candidates and three answer envelopes:
+// retained payloads (including current file bodies, Item and Pull), terminal
+// conversion overlap, and handoffs. Common call storage pays operation copies.
+// Read containers reserve min(rows, answer_bytes / measure width), irrespective
+// of page_size. Only one read runs: take the largest reserved storage, including
+// Branches, Items, Item comments, Statuses, Checks + pending jobs, Collaborators,
+// Remarks and Reviews. Their texts fit the retained answer envelope:
+// Branches' names; Items/Item's label boxes/text, key, title and body;
+// comments/reviews' key/body; Pull's reviewers/head/base/dequeued;
+// Statuses/Checks' context/description/url; Remarks' path/body; Settings'
+// default_branch. Collaborator logins move into the shared users table.
+// Files additionally retain descriptors beside File/Commit storage. Paths move
+// from descriptors through current into files; previous paths move into previous.
+// Price these names once across those owners, capped together by descriptor_size.
+// FileStatus and current/previous envelopes live inside the boxed read plan;
+// commits are fixed arrays, and raw bodies fit the retained answer envelope.
+// Reviewers holds two id lists, two login lists and their boxed envelope; login
+// payloads and request copies fit two answer envelopes. Merge's enqueue id is
+// string-bounded. Row copies, request owner/name, Permission login/request copy,
+// marked write bodies and refusal cursor/etag/location coexist with payloads.
+// Route and Discovery's scalar cursor/revisions/errors are inline in Waiting;
+// its candidates and one-row tables are priced beside the plan boxes.
+pub(crate) fn github_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
+    use skein_forge::{github, measure};
+    use skein_lib::{List, Queue};
+    let files = github_read_capacity(s, measure::FILE_BYTES)?;
+    let commits = github_read_capacity(s, measure::COMMIT_BYTES)?;
+    let names = u64::from(files).checked_mul(u64::from(l.string_bytes))?.checked_mul(2)?;
+    let mut read = Queue::<github::document::File>::worst_case(files)?
+        .checked_add(List::<api::File>::worst_case(files)?)?
+        .checked_add(List::<api::Commit>::worst_case(commits)?)?
+        .checked_add(names.min(u64::from(s.answer_bytes)))?;
+    // STATUS_BYTES covers Checks' status and pending-job slot together.
+    let statuses = github_read_capacity(s, measure::STATUS_BYTES)?;
+    for storage in [
+        List::<Box<[u8]>>::worst_case(github_read_capacity(s, measure::STRING_BYTES)?)?,
+        List::<api::Summary>::worst_case(github_read_capacity(s, measure::SUMMARY_BYTES)?)?,
+        List::<api::Comment>::worst_case(github_read_capacity(s, measure::COMMENT_BYTES)?)?,
+        List::<api::Status>::worst_case(statuses)?.checked_add(List::<(u32, u64)>::worst_case(statuses)?)?,
+        List::<api::Collaborator>::worst_case(github_read_capacity(s, measure::COLLABORATOR_BYTES)?)?,
+        List::<api::Remark>::worst_case(github_read_capacity(s, measure::REMARK_BYTES)?)?,
+        List::<api::Review>::worst_case(github_read_capacity(s, measure::REVIEW_BYTES)?)?,
+    ] {
+        read = read.max(storage);
+    }
+    let desired = s.rows.min(s.op_bytes.checked_div(8)?).min(s.answer_bytes.checked_div(8)?);
+    let current = s.rows.min(l.inner).min(s.answer_bytes.checked_div(8)?);
+    let logins = s.rows.min(s.answer_bytes.checked_div(8)?);
+    // Four List envelopes and two words cover bytes, added and their padding.
+    let reviewers = u64::try_from(size_of::<(List<u64>, List<Box<[u8]>>, u64)>())
         .ok()?
         .checked_mul(2)?
-        .checked_add(u64::try_from(size_of::<skein_forge::github::plans::writes::Plan>()).ok()?)?
+        .checked_add(List::<u64>::worst_case(desired)?)?
+        .checked_add(List::<u64>::worst_case(current)?)?
+        .checked_add(List::<Box<[u8]>>::worst_case(logins)?)?;
+    u64::try_from(size_of::<github::plans::reads::Plan>())
+        .ok()?
+        .checked_mul(2)?
+        .checked_add(u64::try_from(size_of::<github::plans::writes::Plan>()).ok()?)?
         .checked_add(github_tables_heap(l, 1, 1)?)?
-        .checked_add(skein_lib::List::<crate::installations::Selected>::worst_case(l.installations)?)?
+        .checked_add(List::<crate::installations::Selected>::worst_case(l.installations)?)?
+        .checked_add(read)?
+        .checked_add(reviewers)?
+        // Two repository rows (probe/original), request owner/name and three
+        // strings for Permission's login/request, a raw path or Merge's id.
+        // Each decoded field is string_bytes-bounded.
+        .checked_add(u64::from(l.string_bytes).checked_mul(11)?)?
+        .checked_add(u64::from(l.body_bytes))?
+        .checked_add(256_u64.checked_add(u64::from(l.target_bytes))?)?
         .checked_add(u64::from(s.answer_bytes).checked_mul(3)?)
+}
+// reads::size::capacity: the backing allocation precedes page_size admission.
+fn github_read_capacity(s: &Shared, width: usize) -> Option<u32> {
+    Some(s.rows.min(s.answer_bytes.checked_div(u32::try_from(width).ok()?)?))
 }
 // Tuple envelopes price each dialect-private entry's row and LRU counter.
 // Discovery's one-row staging coexists with both full public tables.

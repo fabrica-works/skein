@@ -22,7 +22,7 @@ fn run(h: &mut f::Harness, fake: &mut Fake, read: Read) -> crate::Answered {
     h.call(1, f::REPO, Op::Read(read));
     h.run(Duration::ZERO);
     h.connected(f::FORGE);
-    for _ in 0_u32..16 {
+    for _ in 0_u32..64 {
         if h.request_bytes(f::FORGE).is_empty() {
             h.connected(f::FORGE);
         }
@@ -33,7 +33,7 @@ fn run(h: &mut f::Harness, fake: &mut Fake, read: Read) -> crate::Answered {
             return answer.clone();
         }
     }
-    unreachable!("contents plan settles within sixteen exchanges")
+    unreachable!("contents plan settles within sixty-four exchanges")
 }
 #[test]
 fn each_contents_operation_answers_through_the_github_fake() {
@@ -184,5 +184,91 @@ fn active_file_handoffs_drop_on_connection_loss_and_component_close() {
         }
         h.run(Duration::ZERO);
         assert_eq!(h.component.test_github_handoffs(), 0, "{end:?}");
+    }
+}
+
+#[test]
+fn largest_github_compare_page_fits_one_slots_heap() {
+    measure_files_page(true);
+}
+
+#[test]
+fn largest_github_pull_files_page_fits_one_slots_heap() {
+    measure_files_page(false);
+}
+
+#[expect(clippy::print_stdout, clippy::disallowed_macros, reason = "report measured call peaks for the heap ledger")]
+fn measure_files_page(comparison: bool) {
+    let l = f::limits();
+    let shared = f::shared();
+    let slot = crate::limits::github_call_heap(&l, &shared).expect("GitHub slot");
+    let content = f::filled(256, b'x');
+    let mut fake = Fake::with_files(&content, false, shared.rows);
+    let mut h = harness(&fake);
+    let head = object(fake.head);
+    // Allocate the connection's stack and socket before counting call state.
+    drop(run(&mut h, &mut fake, Read::File { head, path: Box::from(b"file0".as_slice()), max_bytes: 0 }));
+    drop(h.answers.remove(&1));
+    let read = if comparison {
+        Read::Compare { before: object(fake.first), after: head }
+    } else {
+        Read::PullFiles { number: fake.number, head, page: 1 }
+    };
+    let mut call_heap = CallHeap { peak: 0, held: 0 };
+    let span = skein_heap::Span::start();
+    h.call(1, f::REPO, Op::Read(read));
+    h.run(Duration::ZERO);
+    h.connected(f::FORGE);
+    call_heap.count(span.end());
+    for _ in 0_u32..64 {
+        let span = skein_heap::Span::start();
+        if h.request_bytes(f::FORGE).is_empty() {
+            h.connected(f::FORGE);
+        }
+        call_heap.count(span.end());
+        // The fake's request processing and response allocations are its own.
+        let response = fake.answer(&h.request_bytes(f::FORGE));
+        let span = skein_heap::Span::start();
+        h.answer(f::FORGE, &response);
+        h.run(Duration::ZERO);
+        call_heap.count(span.end());
+        if let Some(answer) = h.answered(1) {
+            let Ok(answer) = &answer.result else { unreachable!("full files page succeeds") };
+            let files = if comparison {
+                let Answer::Compare { files, commits, .. } = answer else { unreachable!("Compare answer") };
+                // Component Compare requests admit one commit per page.
+                assert_eq!(commits.len(), 1);
+                files
+            } else {
+                let Answer::PullFiles { files, more, .. } = answer else { unreachable!("PullFiles answer") };
+                assert!(!more);
+                files
+            };
+            assert_eq!(u32::try_from(files.len()).expect("row count"), shared.rows);
+            for file in files {
+                assert_eq!(file.after.as_deref(), Some(content.as_ref()));
+            }
+            assert!(
+                u64::try_from(call_heap.peak).expect("positive peak") <= slot,
+                "comparison={comparison}: {} > {slot}",
+                call_heap.peak
+            );
+            println!("comparison={comparison}: peak {} bytes <= GitHub call heap {slot}", call_heap.peak);
+            return;
+        }
+    }
+    unreachable!("full page settles within sixty-four exchanges")
+}
+
+// Sum only component/harness spans. Each next step starts with the retained
+// growth of the preceding steps; fake allocations between them are excluded.
+struct CallHeap {
+    peak: i64,
+    held: i64,
+}
+impl CallHeap {
+    fn count(&mut self, growth: skein_heap::Grown) {
+        self.peak = self.peak.max(self.held.checked_add(growth.peak).expect("peak growth"));
+        self.held = self.held.checked_add(growth.net).expect("retained growth");
     }
 }

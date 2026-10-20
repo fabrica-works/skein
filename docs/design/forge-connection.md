@@ -740,7 +740,9 @@ It is the sum of:
   handoffs coexist with the plans, row copies and held answers. Each
   active call's discovery also holds at most `installations` ids with
   eligibility revisions and a cursor; the successful probe plan and
-  original plan may overlap at handoff;
+  original plan may overlap at handoff; GitHub files state holds its bounded
+  descriptor queue, File and Commit lists, current file, previous path and
+  their owned paths and raw bodies;
   each forge's credential, secret and name, a
   TLS name's DNS text or a plaintext name (an IP name holds none); and
   the word and the user agent;

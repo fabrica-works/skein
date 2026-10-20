@@ -20,6 +20,9 @@ use alloc::boxed::Box;
 use core::net::{Ipv4Addr, SocketAddr};
 use skein_lib::{Duration, Time};
 
+#[global_allocator]
+static HEAP: skein_heap::Counting = skein_heap::Counting;
+
 #[test]
 fn the_start_stops_on_another_user_or_a_4xx_and_waits_otherwise() {
     let limits = fixtures::limits();
@@ -341,17 +344,23 @@ const FIXTURE_HEAP: u64 = 2_814_955;
 // GitHub's tables are 3888; discovery's one-row tables are 2056.
 // Call payload = 2*1352 (probe/original read boxes) + write box 480
 // + staging 2056 + 3*24 (revision-bearing candidates) + 3*65536
-// (retained answer handoffs) = 201_920. Route/discovery envelopes are
+// (payload/conversion/handoff envelopes) + max read storage 3008:
+// descriptors 8*40, File rows 8*48, Commit rows 8*32 and paths/previous
+// names min(8*2*128, 65536) = 2048, moved through current/previous.
+// File bodies share the payload envelope; current/previous are inline.
+// Reviewers box 4*32+2*8 + id lists 8*8+8*8 + login slots 8*16 = 400.
+// Row/request/login/id text 11*128 + marked body 1042 + refusal header
+// 2*128+1024 = 3730. Call payload = 209_058. Route/discovery envelopes are
 // in Waiting's slab slot; both own-plan slots occupy 344 bytes each.
 // Total = 3*767923 + index 288 + slab 3*1400 + 489960 + 138280
-// + 2*201920 + 3888 + 1056 + 489769 + 46360 + 260 = 3_881_670.
-const GITHUB_FIXTURE_HEAP: u64 = 3_881_670;
+// + 2*209058 + 3888 + 1056 + 489769 + 46360 + 260 = 3_895_946.
+const GITHUB_FIXTURE_HEAP: u64 = 3_895_946;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 520 + drive-list pair 16 + 3*512 operation copies + 65536 held
 // answer bytes, plus the selected dialect's payload from the ledgers above.
 const FORGEJO_CALL_SLOT: u64 = 151_208; // 520 + 16 + 1536 + 65536 + 83600.
-const GITHUB_CALL_SLOT: u64 = 269_528; // 520 + 16 + 1536 + 65536 + 201920.
+const GITHUB_CALL_SLOT: u64 = 276_666; // 520 + 16 + 1536 + 65536 + 209058.
 const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
 const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
 const MIXED: limits::Forges = limits::Forges { forgejo: 1, github: 1 };
@@ -392,6 +401,43 @@ fn a_github_forge_pays_its_app_share() {
         ),
         Some(GITHUB_FIXTURE_HEAP),
     );
+}
+
+#[test]
+fn a_github_slot_prices_its_files_state() {
+    use skein_forge::{github, measure};
+    use skein_lib::{List, Queue};
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    let files = s.rows.min(
+        s.answer_bytes
+            .checked_div(u32::try_from(measure::FILE_BYTES).expect("file width"))
+            .expect("nonzero file width"),
+    );
+    let commits = s.rows.min(
+        s.answer_bytes
+            .checked_div(u32::try_from(measure::COMMIT_BYTES).expect("commit width"))
+            .expect("nonzero commit width"),
+    );
+    // files_admission reserves these capacities before page_size limits requests.
+    let containers = Queue::<github::document::File>::worst_case(files)
+        .expect("descriptors")
+        .checked_add(List::<api::File>::worst_case(files).expect("files"))
+        .expect("files storage")
+        .checked_add(List::<api::Commit>::worst_case(commits).expect("commits"))
+        .expect("all containers");
+    let names = u64::from(files)
+        .checked_mul(2)
+        .expect("two names")
+        .checked_mul(u64::from(l.string_bytes))
+        .expect("bounded names")
+        .min(u64::from(s.answer_bytes));
+    let slot = limits::github_call_heap(&l, &s).expect("GitHub slot");
+    assert!(slot >= containers.checked_add(names).expect("file state"));
+    // Isolate the reserve from the fixed plans and answer envelopes: this catches
+    // a missing files term even when the fixture's answer budget dwarfs its rows.
+    let empty = limits::github_call_heap(&l, &crate::Shared { rows: 0, ..s }).expect("empty reserve");
+    assert!(slot.checked_sub(empty).expect("row growth") >= containers + names);
 }
 
 #[test]
