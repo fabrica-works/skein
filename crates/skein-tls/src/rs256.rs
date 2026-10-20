@@ -1,9 +1,35 @@
-//! OAuth's RS256 check through the TLS ring provider (oauth.md, 2.2; tls.md, 4).
+//! RS256 through the TLS ring provider: OAuth's check (oauth.md, 2.2) and a GitHub App's signature (tls.md, 4).
 
 use alloc::boxed::Box;
 
+use rustls::pki_types::PrivateKeyDer;
+use rustls::sign::SigningKey;
 use rustls::{SignatureScheme, crypto::ring};
 use skein_lib::Writer;
+
+/// The largest PKCS#1 `RSAPrivateKey` DER of a 2048-bit RSA key that ring
+/// signs with: a 4-byte sequence header; version 0 (3 bytes); `n` and `d`,
+/// 256 bytes with a sign byte (261 each); `e` at most ring's 2^33 - 1
+/// (7); `p`, `q`, `dP`, `dQ` and `qInv`, 128 bytes with a sign byte (132
+/// each). 4 + 3 + 261 + 7 + 261 + 5 * 132.
+pub const RS256_KEY_BYTES: usize = 1196;
+
+/// An RS256 signature of `message` (RSASSA-PKCS1-v1_5, SHA-256) by a
+/// 2048-bit RSA key, PKCS#1 `RSAPrivateKey` DER of at most
+/// [`RS256_KEY_BYTES`]; none for any other key, or one ring refuses.
+/// It draws ring's blinding randomness from the kernel; the signature
+/// does not depend on it. The key is parsed at each call, never kept.
+#[must_use]
+pub fn sign_rs256(key: &[u8], message: &[u8]) -> Option<[u8; 256]> {
+    if key.len() > RS256_KEY_BYTES {
+        return None;
+    }
+    let key = PrivateKeyDer::Pkcs1(key.into());
+    let key = ring::sign::RsaSigningKey::new(&key).ok()?;
+    let signer = key.choose_scheme(&[SignatureScheme::RSA_PKCS1_SHA256])?;
+    let signature = signer.sign(message).ok()?;
+    <[u8; 256]>::try_from(signature.as_slice()).ok()
+}
 
 /// An RS256 signature check by an RSA key of 2048 to 8192 bits.
 #[must_use]
@@ -28,15 +54,23 @@ pub fn verify_rs256(modulus: &[u8], exponent: &[u8], message: &[u8], signature: 
 }
 
 fn public_key(modulus: &[u8], exponent: &[u8]) -> Option<Box<[u8]>> {
-    let n = unsigned(modulus);
-    let e = unsigned(exponent);
-    let n_len = integer_len(n)?;
-    let e_len = integer_len(e)?;
-    let contents = element_len(n_len)?.checked_add(element_len(e_len)?)?;
+    integers(&[modulus, exponent])
+}
+
+pub(crate) fn integers(values: &[&[u8]]) -> Option<Box<[u8]>> {
+    let mut contents = 0_usize;
+    for value in values {
+        if value.is_empty() {
+            return None;
+        }
+        contents = contents.checked_add(element_len(integer_len(unsigned(value))?)?)?;
+    }
     let mut writer = Writer::new(element_len(contents)?);
     header(&mut writer, 0x30, contents);
-    integer(&mut writer, n, n_len);
-    integer(&mut writer, e, e_len);
+    for value in values {
+        let bytes = unsigned(value);
+        integer(&mut writer, bytes, integer_len(bytes)?);
+    }
     Some(writer.finish())
 }
 

@@ -10,6 +10,8 @@
 //! - [`Config`] is what every connection shares, made at startup from the
 //!   roots a service trusts and the protocols it offers by ALPN; [`Name`]
 //!   is each connection's server.
+//! - [`verify_rs256`] and [`sign_rs256`]: RS256 by ring, kept behind this
+//!   crate (tls.md, 4).
 //!
 //! It is the one exception of programming-model.md, section 3: the only
 //! step code that depends on a crate from outside skein and the service,
@@ -31,7 +33,7 @@ mod session;
 #[cfg(test)]
 mod tests;
 
-pub use rs256::verify_rs256;
+pub use rs256::{RS256_KEY_BYTES, sign_rs256, verify_rs256};
 
 pub use config::{ALPN, Config, Name, Parsed, Refusal, Server, roots_worst_case};
 /// What [`Config::new`] takes: the roots a service trusts, which its shell
