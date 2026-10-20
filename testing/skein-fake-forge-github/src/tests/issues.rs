@@ -58,19 +58,8 @@ fn github_fake_issues_and_comments_drive_the_dialect_plans() {
 fn github_fake_issues_list_pulls_in_the_same_numbering() {
     let mut h = r::harness();
     let issue = r::issue(&mut h, b"issue");
-    h.branch(b"feature");
-    let a::Answer::Created(pull) = r::call(
-        &mut h,
-        a::Op::Write(a::Write::OpenPull {
-            title: f::boxed(b"pull"),
-            body: f::boxed(b"pull body"),
-            head: f::boxed(b"feature"),
-            base: f::boxed(b"trunk"),
-            opens_empty: true,
-        }),
-    ) else {
-        panic!("created pull")
-    };
+    let (pull, head) = r::pull(&mut h);
+    r::call(&mut h, a::Op::Write(a::Write::Merge { number: pull, head }));
     let token = r::token(&mut h);
     let api::Answer::Items { items, .. } =
         r::read(&mut h, &token, api::Read::Items { since: Time::ZERO, page: 1, kind: None }).expect("mixed listing")
@@ -91,6 +80,9 @@ fn github_fake_issues_list_pulls_in_the_same_numbering() {
     let response = h.ask(Method::Get, b"/repos/acme/widgets/issues/2", Some(token.expose()), b"");
     let (_, Document::Issue(row)) = h.decode(Kind::Issue, &response) else { panic!("pull issue") };
     assert!(row.pull);
+    assert_eq!(row.state, api::State::Closed);
+    assert!(!row.merged, "the listing's merged_at is null");
+    assert!(skein_lib::bytes::find(&response.body, br#""merged_at":null"#).is_some());
 }
 #[test]
 fn github_fake_issue_routes_refuse_outside_installation_and_invalid_pages() {

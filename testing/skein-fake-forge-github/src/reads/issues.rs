@@ -11,8 +11,8 @@ fn issue(row: a::Summary) -> d::Issue {
     d::Issue {
         number: row.number,
         pull: row.kind == a::Kind::Pull,
-        // Summary has no landed commit; closed pulls remain closed in the
-        // neutral summary. The pull route supplies the merge's identity.
+        // Summary has no merge fact. Issue listings use merged_at: null;
+        // the pull route supplies the merge commit (fake-forge.md, 10.4).
         merged: false,
         state: match row.state {
             a::State::Open => api::State::Open,

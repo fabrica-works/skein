@@ -24,6 +24,7 @@ mod reviews;
 #[derive(Debug)]
 pub(crate) enum Read {
     Repository(u64),
+    PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     Reviews { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
     ReviewComments { owner: Box<[u8]>, name: Box<[u8]>, number: u64, review: u64 },
     Collaborators { owner: Box<[u8]>, name: Box<[u8]>, page: u32, per_page: u32 },
@@ -43,6 +44,7 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Repository(Row),
+    PullGraphql { repository: u32, number: u64 },
     Reviews { page: u32, size: u32, target: Box<[u8]> },
     ReviewComments(u64),
     Collaborators { page: u32, size: u32, target: Box<[u8]> },
@@ -61,7 +63,8 @@ pub(crate) enum Pending {
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::Reviews { owner, name, .. }
+        Read::PullGraphql { owner, name, .. }
+        | Read::Reviews { owner, name, .. }
         | Read::ReviewComments { owner, name, .. }
         | Read::Collaborators { owner, name, .. }
         | Read::Permission { owner, name, .. }
@@ -106,6 +109,9 @@ pub(crate) fn call(
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::PullGraphql { number, .. } => {
+            (Pending::PullGraphql { repository: row.id, number }, Op::Read(a::Read::Pull { number }))
+        }
         Read::Reviews { number, page, per_page, .. } => (
             Pending::Reviews { page, size: per_page.min(service.limits.page), target: bytes::copy_of(target) },
             Op::Read(a::Read::Pull { number }),
@@ -212,7 +218,8 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
             }
             result => result,
         },
-        Pending::Reviews { .. }
+        Pending::PullGraphql { .. }
+        | Pending::Reviews { .. }
         | Pending::ReviewComments(_)
         | Pending::Collaborators { .. }
         | Pending::Permission
@@ -232,6 +239,7 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
         Err(error) => return refused(error, limits),
     };
     match pending.kind {
+        Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),
         Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),
         Pending::ReviewComments(review) => reviews::comments(answer, review, limits),
         Pending::Collaborators { page, size, target } => people::collaborators(answer, page, size, &target, limits),

@@ -27,7 +27,7 @@ pub(crate) enum App {
 #[derive(Debug)]
 pub(crate) enum Token {
     Reachable(u32),
-    Viewer,
+    Graphql,
     User(u64),
     Read(reads::Read),
 }
@@ -37,7 +37,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         return None;
     }
     if method == Method::Post && target == b"/graphql" {
-        return Some(Route::Token(Token::Viewer));
+        return Some(Route::Token(Token::Graphql));
     }
     // REST keeps server::route's canonical targets, including explicit paging.
     Some(match server::route(method, target, limits)? {

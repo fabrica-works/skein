@@ -341,7 +341,23 @@ impl Service {
                         Outcome::Reply(response)
                     }
                     routes::Token::User(id) => Outcome::Reply(reads::user(self, id, self.body_fits(request.body))),
-                    routes::Token::Viewer => Outcome::Reply(self.viewer(request.body)),
+                    routes::Token::Graphql => {
+                        if !self.body_fits(request.body) {
+                            return Outcome::Reply(answers::response(200, &Body::Graphql, limits));
+                        }
+                        match server::graphql_body(request.body, &limits.github) {
+                            Some(server::Graphql::Viewer) => Outcome::Reply(self.viewer()),
+                            Some(server::Graphql::Pull { owner, name, number }) => reads::call(
+                                self,
+                                reads::Read::PullGraphql { owner, name, number },
+                                &grant,
+                                request.target,
+                                self.body_fits(request.body),
+                                reply_to,
+                            ),
+                            None => Outcome::Reply(answers::response(200, &Body::Graphql, limits)),
+                        }
+                    }
                     routes::Token::Read(read) => {
                         reads::call(self, read, &grant, request.target, self.body_fits(request.body), reply_to)
                     }
@@ -450,10 +466,7 @@ impl Service {
         }
         response
     }
-    fn viewer(&self, body: &[u8]) -> Response {
-        if !self.body_fits(body) || server::graphql(body).is_none() {
-            return answers::response(200, &Body::Graphql, &self.limits);
-        }
+    fn viewer(&self) -> Response {
         let Some(login) = joined(&self.app.slug, b"[bot]") else {
             return answers::failed();
         };
@@ -587,6 +600,11 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     bytes = bytes
         .checked_add(List::<d::File>::worst_case(300)?)?
         .checked_add(List::<skein_forge::api::Commit>::worst_case(limits.page)?)?;
+    // The query reader retains at most 16 tokens and their decoded text
+    // (bounded by its input), while its tokenizer and input intake coexist.
+    bytes = bytes
+        .checked_add(List::<skein_json::Token>::worst_case(16)?)?
+        .checked_add(u64::from(limits.github.body_bytes))?;
     let row_bytes = u64::from(limits.github.string_bytes).checked_mul(4)?.checked_add(256)?;
     bytes
         .checked_add(row_bytes.checked_mul(u64::from(limits.page))?)?

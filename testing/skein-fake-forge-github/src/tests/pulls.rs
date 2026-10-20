@@ -10,26 +10,33 @@ use skein_forge::{
 };
 
 #[test]
-fn github_fake_pull_selection_drives_the_plans_to_the_ci_boundary() {
+fn github_fake_pull_and_pull_for_drive_complete_plans_with_empty_ci_fixture() {
     let mut h = r::harness();
     let (number, commit) = r::pull(&mut h);
     let token = r::token(&mut h);
     for read in
         [api::Read::Pull { number }, api::Read::PullFor { head: f::boxed(b"feature"), base: f::boxed(b"trunk") }]
     {
-        let pull = r::select_pull(&mut h, &token, read);
+        let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, read).unwrap() else {
+            panic!("pull answer")
+        };
         assert_eq!(pull.number, number);
-        assert_eq!(pull.head_commit, r::object(commit));
-        assert_eq!(pull.base_commit, r::object(h.first));
-        assert!(!pull.closed && !pull.merged);
+        assert_eq!(pull.commit, r::object(commit));
+        assert_eq!(pull.base_commit, Some(r::object(h.first)));
+        assert_eq!(pull.state, api::State::Open);
+        assert_eq!(pull.merged, None);
         assert!(pull.mergeable);
     }
     r::call(&mut h, a::Op::Write(a::Write::Close { number }));
-    assert!(
-        r::select_pull(&mut h, &token, api::Read::PullFor { head: f::boxed(b"feature"), base: f::boxed(b"trunk") })
-            .closed,
-        "fallback finds oldest closed pull"
-    );
+    let api::Answer::Pull(closed) = r::read_with_empty_ci(
+        &mut h,
+        &token,
+        api::Read::PullFor { head: f::boxed(b"feature"), base: f::boxed(b"trunk") },
+    )
+    .unwrap() else {
+        panic!("closed pull answer")
+    };
+    assert_eq!(closed.state, api::State::Closed, "fallback finds oldest closed pull");
     assert_eq!(r::read(&mut h, &token, api::Read::Pull { number: 999 }), Err(api::Error::Missing));
     assert_eq!(
         r::read(&mut h, &token, api::Read::PullFor { head: f::boxed(b"missing"), base: f::boxed(b"trunk") }),

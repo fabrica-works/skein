@@ -57,7 +57,8 @@ pub fn mint_scope(body: &[u8]) -> Option<Scope> {
 /// Reads the exact identity query body (forge-github.md, 4.3).
 #[must_use]
 pub fn graphql(body: &[u8]) -> Option<Request> {
-    if body == br#"{"query":"query { viewer { login databaseId } }"}"# { Some(Request::Viewer) } else { None }
+    let query = body.strip_prefix(br#"{"query":""#)?.strip_suffix(br#""}"#)?;
+    if query == document::VIEWER { Some(Request::Viewer) } else { None }
 }
 /// Reads a hook's url through the bounded document decoder.
 #[must_use]

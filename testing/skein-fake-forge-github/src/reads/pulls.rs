@@ -92,3 +92,25 @@ pub(super) fn compare(answer: a::Answer, size: u32, limits: &Limits) -> Response
         d::Compare { total_commits, behind_by: u64::from(!contains_base), merge_base: optional_commit(merge_base) };
     answers::response(200, &Body::Compare(&document, ids.as_slice(), rows.as_slice()), limits)
 }
+
+// Node IDs are opaque GitHub-layer identities; repository and number make them
+// stable and distinct without another domain store.
+pub(super) fn graphql(answer: a::Answer, repository: u32, number: u64, limits: &Limits) -> Response {
+    let a::Answer::Pull(row) = answer else {
+        return answers::failed();
+    };
+    let Some(prefix) = crate::service::joined(b"PR_", skein_lib::Decimal::of(u64::from(repository)).as_bytes()) else {
+        return answers::failed();
+    };
+    let Some(prefix) = crate::service::joined(&prefix, b"_") else {
+        return answers::failed();
+    };
+    let Some(id) = crate::service::joined(&prefix, skein_lib::Decimal::of(number).as_bytes()) else {
+        return answers::failed();
+    };
+    if u64::try_from(id.len()).expect("bounded decimal ID") > u64::from(limits.github.string_bytes) {
+        return answers::failed();
+    }
+    let row = d::PullGraphql { id, merge_commit: optional_commit(row.merged), queued: None, dequeued: None };
+    answers::response(200, &Body::PullGraphql(&row), limits)
+}

@@ -1,5 +1,5 @@
 //! GitHub's HTTP over the fake forge (fake-forge.md, section 10):
-//! its App's keys, token check, installations and their tokens.
+//! App authentication, installations and token reads over the shared domain.
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 

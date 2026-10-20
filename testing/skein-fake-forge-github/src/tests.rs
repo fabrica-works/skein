@@ -44,3 +44,5 @@ mod read_support;
 mod people;
 mod pulls;
 mod reviews;
+
+mod queries;
