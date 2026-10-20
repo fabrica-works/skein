@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 
 use skein_io::kernel::{Complete, Done, Exit, Fd, Op, OpenHow, Pipe, Signal, Spawn, Submit, Way};
-use skein_lib::{Queue, Time, Token, Wall};
+use skein_lib::{Duration, Queue, Time, Token, Wall};
 use skein_world::{Host, Inherited, Machine};
 
 /// One sequential kernel operation in a parent or child script.
@@ -23,6 +23,8 @@ pub enum Act {
     Write(usize, &'static [u8]),
     /// The script reads from one inherited pipe, possibly its end.
     Read(usize),
+    /// Reads a byte at a time until the accumulated pipe bytes contain this marker.
+    ReadUntil(usize, &'static [u8]),
     /// The script closes an inherited pipe before continuing its exchange.
     Close(usize),
     /// The parent waits for its child to exit.
@@ -43,6 +45,8 @@ pub enum Act {
     ReadSignal,
     /// The script stops until this simulated instant.
     Pause(Time),
+    /// The script pauses from the iteration that starts this act.
+    PauseFor(Duration),
 }
 
 /// A script runs kernel operations and closes all its descriptors at the end.
@@ -138,7 +142,7 @@ impl Script {
         self.waiting = true;
     }
 
-    fn start(&mut self, act: Act) {
+    fn start(&mut self, act: Act, now: Time) {
         let kind = match act {
             Act::Spawn | Act::SpawnStderr => Op::Spawn {
                 spawn: Box::new(Spawn {
@@ -160,7 +164,19 @@ impl Script {
                 }),
             },
             Act::Write(at, bytes) => Op::PipeWrite { fd: self.fds[at], bytes: Box::from(bytes), from: 0 },
-            Act::Read(at) => Op::PipeRead { fd: self.fds[at], buf: Box::new([0; 32]) },
+            Act::Read(at) | Act::ReadUntil(at, _) => {
+                if let Act::ReadUntil(_, bytes) = act {
+                    assert!(!bytes.is_empty(), "a read marker has bytes");
+                    if self.received.windows(bytes.len()).any(|window| window == bytes) {
+                        return;
+                    }
+                    self.acts.push_front(act);
+                }
+                Op::PipeRead {
+                    fd: self.fds[at],
+                    buf: vec![0; if matches!(act, Act::ReadUntil(..)) { 1 } else { 32 }].into_boxed_slice(),
+                }
+            }
             Act::Close(at) => Op::Close { fd: self.fds.remove(at) },
             Act::OpenRoot(index, path, how) => Op::Open { root: self.roots[index], path: Box::from(path), how },
             Act::WriteFile(index, bytes) => Op::Write { fd: self.fds[index], bytes: Box::from(bytes), at: 0, from: 0 },
@@ -186,6 +202,10 @@ impl Script {
             Act::ReadSignal => Op::ReadSignal { fd: self.signal.expect("child signal source") },
             Act::Pause(until) => {
                 self.pause = Some(until);
+                return;
+            }
+            Act::PauseFor(duration) => {
+                self.pause = Some(now.saturating_add(duration));
                 return;
             }
         };
@@ -216,6 +236,9 @@ impl Host for Script {
                 }
                 Ok(Done::Count(count)) => {
                     if let Op::PipeRead { buf, .. } | Op::Read { buf, .. } = &complete.kind {
+                        if matches!(self.acts.front(), Some(Act::ReadUntil(..))) {
+                            assert_ne!(count, 0, "the pipe ended before its read marker");
+                        }
                         self.received.extend_from_slice(&buf[..usize::try_from(count).expect("small count")]);
                     }
                 }
@@ -230,8 +253,13 @@ impl Host for Script {
                     | Done::Bound(_)
                     | Done::Accepted { .. }
                     | Done::Stat(_),
-                )
-                | Err(_) => {}
+                ) => {}
+                Err(error) => {
+                    assert!(
+                        !matches!(self.acts.front(), Some(Act::ReadUntil(..))),
+                        "the pipe failed before its read marker: {error:?}"
+                    );
+                }
             }
             self.results.push(complete.result);
         }
@@ -240,7 +268,7 @@ impl Host for Script {
         }
         self.pause = None;
         if let Some(act) = self.acts.pop_front() {
-            self.start(act);
+            self.start(act, now);
             return;
         }
         if let Some(fd) = self

@@ -161,7 +161,14 @@ fn terminal_is_controlling_and_the_persons_interrupt_reaches_only_the_child() {
             "test -t 0 && test -t 1 && test ! -t 2 || exit 90; test -r /dev/tty || exit 91; trap 'printf interrupted >&2; exit 23' INT; printf 'ready\\n'; read value; exit 92",
         ),
         Mode::Terminal,
-        &[Act::Read(0), Act::Write(0, b"\x03"), Act::Read(0), Act::Read(0), Act::Read(0), Act::Read(0)],
+        &[
+            Act::ReadUntil(0, b"ready\r\n"),
+            Act::Write(0, b"\x03"),
+            Act::Read(0),
+            Act::Read(0),
+            Act::Read(0),
+            Act::Read(0),
+        ],
         false,
     );
     let (child, person) = observations(&outcome);

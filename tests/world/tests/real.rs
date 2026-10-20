@@ -185,9 +185,9 @@ fn referee_signal_reaches_a_hosted_child_through_its_pipe() {
 #[should_panic(expected = "process 0 woke for policy deadline")]
 fn a_keep_time_after_the_last_word_fails_the_world_naming_the_process() {
     let clock = Clock::new();
-    let deadline = clock.now().now.saturating_add(Duration::from_millis(5));
     let mut world = real::World::new(Judge);
-    world.spawn(|| Script::new(&[Act::Pause(deadline)]));
+    // The pause and the last word use the same iteration snapshot.
+    world.spawn(|| Script::new(&[Act::PauseFor(Duration::from_millis(5))]));
     let _outcome = world.run(&clock, Duration::from_secs(1));
 }
 
