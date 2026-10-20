@@ -577,11 +577,15 @@ fn write_escaped_content(writer: &mut Writer, text: &[u8]) {
             Escaped::Short(letter) => &[b'\\', letter],
             Escaped::Unicode => &[b'\\', b'u', b'0', b'0', hex(byte.wrapping_shr(4)), hex(byte & 0x0F)],
         };
-        put(writer, text.get(run..at).expect("the run ends at this byte"));
+        if run != at {
+            put(writer, text.get(run..at).expect("the run ends at this byte"));
+        }
         put(writer, spelled);
         run = at.checked_add(1).expect("within the text");
     }
-    put(writer, text.get(run..).expect("the run is within the text"));
+    if run != text.len() {
+        put(writer, text.get(run..).expect("the run is within the text"));
+    }
 }
 
 /// The hex digit of a value below sixteen.

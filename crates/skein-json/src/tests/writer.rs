@@ -85,6 +85,35 @@ fn strings_escape_quotes_backslashes_and_control_characters() {
 }
 
 #[test]
+fn adjacent_escapes_fit_exactly_at_their_compact_length() {
+    for (text, expected) in [
+        (b"\x00\n\\\"\x1f".as_slice(), br#""\u0000\n\\\"\u001f""#.as_slice()),
+        (b"plain\x00\n\\\"\x1f", br#""plain\u0000\n\\\"\u001f""#),
+        (b"\x00\n\\\"\x1fplain", br#""\u0000\n\\\"\u001fplain""#),
+    ] {
+        let length = u32::try_from(expected.len()).unwrap();
+        let limits = Limits { length, ..WRITER };
+        let mut measure = Encoder::measure(&limits);
+        measure.string(text);
+        assert_eq!(measure.measured(), Ok(length));
+        let mut write = Encoder::write(length, &limits);
+        write.string(text);
+        assert_eq!(write.finish().as_ref(), expected);
+        assert_eq!(tokens(expected), [string(text)]);
+        let mut short = Encoder::measure(&Limits { length: length - 1, ..limits });
+        short.string(text);
+        assert_eq!(short.measured(), Err(Refusal::TooLong));
+    }
+}
+
+#[test]
+#[should_panic(expected = "a document measured first is never refused")]
+fn a_writing_pass_with_invalid_utf8_is_a_bug() {
+    let mut json = Encoder::write(4, &WRITER);
+    json.string(b"\xC0\x80");
+}
+
+#[test]
 fn what_the_writer_writes_the_tokenizer_reads_back() {
     let document = written(|json| {
         json.array_start();
