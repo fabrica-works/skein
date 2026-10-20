@@ -124,6 +124,38 @@ Chances are per mille, in `Config`, and drawn from the domain's seed.
 - **Every change is observed,** content and all, and so is every write the
   forge refused, in a bounded queue a referee drains (`pop_observation`). A
   full queue drops and counts (`observations_lost`).
+- **Written out, each is a JSON line,** for a referee in another process,
+  such as temper's fake forge's `--observations` file (temper's
+  `protocol/setup.md`, 8.4). The protocol layer's `observations` holds the
+  encoding, since the domain has no JSON: `encode` writes a `Line`, an
+  observation or the count lost, as one object and a newline, and
+  `decode` reads one back exactly. For example:
+
+      {"observation":"moved","repository":"temper/widget","branch":"landing","from":3,"to":4,"by":2}
+      {"observations_lost":0}
+
+  - **The object's first member** is `observation`, the variant's name in
+    lower case, as `moved` or `wiki`, and the rest are its fields by their
+    names, in their order. The count lost is
+    `{"observations_lost": N}`, the writer's last line.
+  - **A number,** a commit, a user, an item, an id, a revision or a
+    position, is a JSON integer, exact to `u64`. An absent value is
+    `null`, a list is an array, and an opened pull request's `branches`
+    an object of its fields.
+  - **A name,** a repository's, a branch's, a label's, a context's or a
+    page's, is a string. Content, a title, a body or a page's content, is
+    base64, so its bytes cross whole, as on the git route (section 4). A
+    name that is not UTF-8 has no line: `encode` answers none, and the
+    writer counts it with the lost.
+  - **An enum** is its variant's name in snake case: a `kind`, a
+    `verdict`, a `state`, and a refusal's `what`, its operation
+    (`create_issue` to `create`). A refusal's `error` is an object: its
+    `name`, the error's in snake case, then its fields: `reset`, in
+    nanoseconds as the domain's `Time` holds it, for `rate_limited`; `what` for
+    `missing`; and `number`, `head` and `position` for `already_queued`.
+  - **A reader** takes the members in any order and refuses an unknown,
+    a repeated or a missing one, naming it. So a reader older than its
+    writer fails by name rather than misreading.
 - **A world acts from outside the API** with free functions (grants,
   commits, branch moves, CI outcomes, reachability) and, at settle, reads the
   store (`inspect`), the `tally` of what the forge did and refused, and the
@@ -451,6 +483,9 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
   decoded by `skein-forge`, with a signature that holds for its body only,
   and the git route: each call's statuses, a credential's login, the
   store's calls beside the domain's faults, and `objects` at its bound.
+  The observations' lines: every variant and error round-trips through
+  `encode` and `decode`, a name that is not UTF-8 has none, and a line
+  with a member unknown, repeated or missing is refused by its name.
 - **Memory:** a forge filled to its limits, and a long merge history walked
   through both parents, stay within `worst_case`, in binaries of their own
   under the counting allocator (testing.md, section 6).
