@@ -484,46 +484,51 @@ impl<P: Host, R: Referee<P>, M: Machine> World<P, R, M> {
         if *self.finished.get(at).expect("a status per process") {
             return;
         }
-        // Inspect the completion before the parent's next iterate: a hosted
-        // child already exists when its parent learns that it was spawned.
-        let mut arrived =
-            Queue::with_capacity(self.procs.get_mut(at).expect("a process at each index").completions().room());
-        self.sim.reap(pid, &mut arrived);
-        while let Some(complete) = arrived.pop() {
-            if let (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd, .. })) = (&complete.kind, &complete.result)
-                && let Some((program_at, entry)) =
-                    self.programs.iter().enumerate().find(|(_, entry)| entry.program == spawn.program)
-            {
-                let active = self
-                    .hosted
-                    .iter()
-                    .zip(&self.finished)
-                    .filter(|(hosted, finished)| **hosted == Some(program_at) && !**finished)
-                    .count();
-                assert!(
-                    active < usize::try_from(entry.instances).expect("instances fit"),
-                    "hosted program fits its instance provision"
-                );
-                let make = entry.make;
-                let operations = entry.operations;
-                let (child, pipes) = self.sim.bind_service(pid, *pidfd);
-                let roots = self
-                    .pending_startup
-                    .remove(&(pid, complete.op))
-                    .expect("a hosted launch prepared its startup descriptors");
-                let appends =
-                    roots.appends.into_iter().map(|(name, handle)| (name, self.sim.append(child, handle))).collect();
-                let roots =
-                    roots.roots.into_iter().map(|(name, handle)| (name, self.sim.root(child, handle))).collect();
-                let inherited = Inherited { pipes, roots, appends, signal: self.sim.open_signal_source(child) };
-                self.signals.insert(self.next_host, (child, inherited.signal));
-                let child_at = self.admit(child, Some(program_at), || make(spawn, &inherited));
-                assert!(
-                    self.procs.get(child_at).expect("newly admitted child").operations() <= operations,
-                    "hosted program operations fit its provision"
-                );
+        if self.programs.is_empty() {
+            // No hosted program to bind: completions go straight to the host's queue.
+            self.sim.reap(pid, self.procs.get_mut(at).expect("a process at each index").completions());
+        } else {
+            // Inspect the completion before the parent's next iterate: a hosted
+            // child already exists when its parent learns that it was spawned.
+            let mut arrived =
+                Queue::with_capacity(self.procs.get_mut(at).expect("a process at each index").completions().room());
+            self.sim.reap(pid, &mut arrived);
+            while let Some(complete) = arrived.pop() {
+                if let (Op::Spawn { spawn }, Ok(Done::Spawned { pidfd, .. })) = (&complete.kind, &complete.result)
+                    && let Some((program_at, entry)) =
+                        self.programs.iter().enumerate().find(|(_, entry)| entry.program == spawn.program)
+                {
+                    let active = self
+                        .hosted
+                        .iter()
+                        .zip(&self.finished)
+                        .filter(|(hosted, finished)| **hosted == Some(program_at) && !**finished)
+                        .count();
+                    assert!(
+                        active < usize::try_from(entry.instances).expect("instances fit"),
+                        "hosted program fits its instance provision"
+                    );
+                    let make = entry.make;
+                    let operations = entry.operations;
+                    let (child, pipes) = self.sim.bind_service(pid, *pidfd);
+                    let roots = self
+                        .pending_startup
+                        .remove(&(pid, complete.op))
+                        .expect("a hosted launch prepared its startup descriptors");
+                    let appends =
+                        roots.appends.into_iter().map(|(name, handle)| (name, self.sim.append(child, handle))).collect();
+                    let roots =
+                        roots.roots.into_iter().map(|(name, handle)| (name, self.sim.root(child, handle))).collect();
+                    let inherited = Inherited { pipes, roots, appends, signal: self.sim.open_signal_source(child) };
+                    self.signals.insert(self.next_host, (child, inherited.signal));
+                    let child_at = self.admit(child, Some(program_at), || make(spawn, &inherited));
+                    assert!(
+                        self.procs.get(child_at).expect("newly admitted child").operations() <= operations,
+                        "hosted program operations fit its provision"
+                    );
+                }
+                self.procs.get_mut(at).expect("a process at each index").completions().push(complete);
             }
-            self.procs.get_mut(at).expect("a process at each index").completions().push(complete);
         }
         let proc = self.procs.get_mut(at).expect("a process at each index");
         match &mut self.heap {
