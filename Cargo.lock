@@ -790,6 +790,7 @@ dependencies = [
  "skein-fake-forge-protocol",
  "skein-forge",
  "skein-forge-connection",
+ "skein-heap",
  "skein-http",
  "skein-io",
  "skein-json",

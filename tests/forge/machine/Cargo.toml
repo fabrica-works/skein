@@ -9,6 +9,7 @@ license.workspace = true
 
 [dependencies]
 skein-forge.workspace = true
+skein-heap.workspace = true
 skein-lib.workspace = true
 skein-http.workspace = true
 skein-json.workspace = true

@@ -4,6 +4,7 @@ pub mod github;
 pub mod hooks;
 pub mod joint;
 pub mod machine;
+pub mod memory;
 mod peer;
 pub mod pipe;
 pub mod tls;

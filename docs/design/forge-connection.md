@@ -993,6 +993,10 @@ The owner's domain owes:
   webhook connection holding a hint, and every holder filled: the
   access handed at runtime, an App's key and JWT, each installation's
   tokens and each puller's held hint, metered against `worst_case`.
+  The machine world's `full_forgejo_holders_fit_the_declared_worst_case`,
+  `full_github_holders_fit_the_declared_worst_case` and
+  `full_mixed_holders_fit_the_declared_worst_case` tests measure this per
+  kind and with both kinds together.
 - **The conformance** drives the component against a real Forgejo
   (fake-forge.md, section 7).
 
