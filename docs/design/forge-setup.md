@@ -26,8 +26,9 @@ checked. Its host component runs the plans in the owner's loop.
 - **Reconcile is Forgejo's plan** (section 4): a pure machine, events in
   and at most one need out, with six steps in a fixed order. Each reads
   first and writes only where the forge differs. Beside it: access to
-  one repository at its adoption (4.5), connected's tokens checked (4.6),
-  and an owned forge's admin's token taken over (4.7).
+  one repository at its adoption (4.5), connected's tokens checked
+  (4.6), an owned forge's admin's token taken over (4.7), and the
+  repositories its admin can see, for a picker (4.8).
 - **GitHub's plans** (section 5): the App's manifest as a pure function,
   its conversion kept before the browser is answered, the bot's id, an
   installation accepted by its state, the App's hook and checks, and an
@@ -127,7 +128,7 @@ builds the access from them.
 
 Reconcile is the pure machine for a managed or an owned Forgejo. It
 decides from what it reads, and keeps no record of its own: the forge is
-its record. The plans beside it (4.5 to 4.7) share its events, needs and
+its record. The plans beside it (4.5 to 4.8) share its events, needs and
 failures.
 
 ### 4.1 What it is given
@@ -188,8 +189,9 @@ has this shape.
   `Empty`; any other status, `Status(code)`; no answer or a body that
   does not decode, `Down`.
 - **The outcome** is `Done` for most plans, and carries what the owner
-  serves or shows: the manifest's page (5.1), the install link (5.4), or
-  what an App lacks (5.6).
+  serves or shows: the manifest's page (5.1), the install link (5.4),
+  what an App lacks (5.6), or a page of the repositories an admin can
+  see (4.8).
 
 ### 4.3 The steps
 
@@ -252,9 +254,10 @@ forge differs.
   `repositories`; every listing paged by the forge's page cap, read once
   from `GET /api/v1/settings/api` (`max_response_items`; zero is
   `Unexpected`), a page shorter than the cap being the last; the run
-  within `deadline`. The limits are `orgs`, `repositories`, `deadline`,
-  `backoff` and `backoff_max`, each at least 1, with `backoff <=
-  backoff_max < deadline`; the crate names the pair that breaks it.
+  within `deadline`. The limits are `orgs`, `repositories`, `reachable`,
+  `deadline`, `backoff` and `backoff_max`, each at least 1, with
+  `backoff <= backoff_max < deadline`; the crate names the pair that
+  breaks it.
 - **It waits for the forge.** The host makes the first request again on
   a `Down` or a 5xx, after `backoff`, doubling, never past `backoff_max`
   nor the time `deadline` leaves (6.2, 6.3), so a host may start
@@ -350,6 +353,34 @@ owner reads the file and hands its value; the plan:
 The owner removes the file after `Done`, never before, and then runs
 reconcile as for a managed forge. Each preparation makes a new token;
 a start with no file reads the token kept.
+
+### 4.8 The repositories the admin can see
+
+`Reachable { forge, page }` reads one page of the repositories a managed
+or an owned Forgejo's admin can see, for the owner's picker: the person
+picks among them the ones to adopt (4.5). It writes nothing, to the
+forge or to its host, so it runs beside the forge's one writing plan
+(6.3).
+
+1. **The admin's token,** as step 1 (4.3): `Missing` or `NotAdmin`.
+2. **The page cap,** read from `GET /api/v1/settings/api` as 4.4 says.
+3. **One page:**
+   `GET /api/v1/repos/search?sort=id&order=asc&page=<page>&limit=<n>`,
+   `n` being the least of `reachable` and the cap. The answer is
+   `{"ok": true, "data": [...]}`, the rows in `data`; one whose `ok` is
+   not true is `Unexpected`. An admin's search finds every owner's
+   repositories, the private ones too.
+4. **The outcome,** `Done(Reachable { rows, more })`: each row the
+   repository's id, its owner's id and login, its name, and whether it
+   is private; `more` when the page holds `n` rows.
+
+- **Paged by number,** from 1, since Forgejo's search has no keyset: the
+  owner asks for `page + 1` while `more`. In id order a repository made
+  while the person pages lands on the last page; one deleted moves the
+  later rows back by one, so the next page may pass one over, and the
+  next listing finds it.
+- **Bounded** by `reachable`, at least 1, the rows of one page, held in
+  memory with the outcome.
 
 ## 5. GitHub's plans
 
@@ -584,14 +615,16 @@ end.
 | `Request::Close` | `Event::Stop { run, failure }` |
 | | `Event::Closed` |
 
-- **A run** is the owner's number for one plan: `Reconcile { forge,
-  adopted }`, `Adopt { forge, repository }`, `Check { forge }`,
-  `TakeOver { forge, admin_token }`, `Manifest { forge, target }`,
-  `Convert { forge, code, state }`, `Install { forge }`, `Accept {
-  forge, installation, state }`, `Reconcile { forge }` (GitHub's) or
-  `Paste { forge, app }`, each of the forge's kind. At most `runs` run at
-  once, one per forge: another for a forge that has one stops at once,
-  `Busy`, and so does one past `runs`.
+- **A run** is the owner's number for one plan:
+  `Reconcile { forge, adopted }`, `Adopt { forge, repository }`,
+  `Check { forge }`, `TakeOver { forge, admin_token }`,
+  `Manifest { forge, target }`, `Convert { forge, code, state }`,
+  `Install { forge }`, `Accept { forge, installation, state }`,
+  `Reconcile { forge }` (GitHub's) or `Paste { forge, app }`, each of
+  the forge's kind, or `Reachable { forge, page }` (4.8). A forge has at
+  most one writing run at once and one `Reachable` beside it: another of
+  either stops at once, `Busy`, and so does one past `runs`, which
+  counts both.
 - **It does the needs** of 4.2 but the items: a `Send` on a connection of
   its own to the forge, opened for it and closed after its answer,
   waiting for the forge as 4.4 says on its own deadlines; a `Draw` from
@@ -627,6 +660,13 @@ answered, and a connect sent, only on what a restart would find.
 - **An item's bytes are a stored format:** a change to them is a new
   item, never new bytes for an old one. The owner's own records, its
   forge's kind and address among them, are its own.
+- **`User` was the id's decimal text** before this design, and temper
+  keeps it so today, in a managed or an owned forge's `user` file, which
+  temper-service reads at its start. That is the one stored-format break
+  this pin makes. The crate reads and writes the 8 bytes alone; the
+  owner converts its old value once, before it first answers a `Read` of
+  it, and tells the two forms apart by its own record, never by length,
+  since an id of eight digits is eight bytes too.
 
 ## 7. Verification
 
@@ -638,13 +678,14 @@ The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
   unmarked and a site admin refused `Unmarked`; a revoked token made
   again, and one answered `403`; an empty item taken as none; the hooks
   patched; an event out of order; the hook's URL for loopback addresses
-  alone; the limits' relation at its bound and one past. For GitHub: the
-  manifest's contents, field by field, for each target; the conversion's
-  writes before `Done`; a key of another form refused; an id other than
-  the kept one refused; each permission or event lacking named; a stray
-  installation uninstalled and a young one left; each item's decoder at
-  its bounds. The documents are tested with `skein-forge` (forge.md,
-  section 11; forge-github.md, section 14).
+  alone; the limits' relation at its bound and one past; the admin's
+  search, a full page with `more`, a short last page, and a non-admin
+  refused. For GitHub: the manifest's contents, field by field, for each
+  target; the conversion's writes before `Done`; a key of another form
+  refused; an id other than the kept one refused; each permission or
+  event lacking named; a stray installation uninstalled and a young one
+  left; each item's decoder at its bounds. The documents are tested with
+  `skein-forge` (forge.md, section 11; forge-github.md, section 14).
 - **The setup world** (testing-strategy.md, 2.4), in skein's
   `tests/forge/setup`, plays the host component over a store of items
   and the fake forge's setup routes and GitHub layer (fake-forge.md,
@@ -669,6 +710,9 @@ The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
     loopback making no hook and no secret;
   - connected's tokens as one user, and as two, refused naming which;
     an admin's token taken over and its older tokens deleted;
+  - the repositories the admin can see, listed page by page to the end,
+    another owner's private one among them, while a writing run goes on
+    for the same forge;
   - on GitHub: the conversion's answer kept before `Done`; a state used
     twice, or unknown, refused; an installation accepted, and a stray
     one uninstalled; the hook's address set; a pasted App lacking a
@@ -682,6 +726,15 @@ The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
 - **Against a real forge,** the conformance records sections 8's and
   10's facts, and a service tests its host on the throwaway Forgejo
   (fake-forge.md, sections 7 and 6). No suite calls GitHub itself.
+- **The App never changes live** (fake-forge.md, section 11, which holds
+  the rule). The probe App's fixture installations are accepted by no
+  state, so GitHub's reconcile (5.6) would uninstall them and set the
+  App's hook. No plan of section 5 runs against github.com: a live run
+  never sends `DELETE /app/installations/<id>` or
+  `PATCH /app/hook/config` and changes nothing of the App; strays, the
+  uninstall and the hook's set are shown on the fake alone; and a
+  repository a run adds to an installation or removes from it is put
+  back at the run's end.
 
 ## 8. What reconcile relies on of Forgejo
 
@@ -738,9 +791,15 @@ pin (forge.md, section 4.3), and named by the fact's name.
   `setup-repository-hook-listing-pages-by-limit`,
   `delivery-loopback-is-refused-by-default`,
   `delivery-loopback-is-allowed-when-named`.
+- **The admin's search** (4.8): it lists to a site admin every owner's
+  repositories, the private ones too; answers `ok` and `data`; and pages
+  by `page` and `limit` in id order:
+  `setup-search-by-an-admin-lists-every-owners-private-repositories`,
+  `setup-search-answers-ok-and-data`,
+  `setup-search-sorted-by-id-pages-by-page-and-limit`.
 - **Paging:** the page cap is 50 by default
-(`api-default-page-cap-50-and-30`).
-  **Order:** reconcile relies on none after a delivery.
+  (`api-default-page-cap-50-and-30`).
+- **Order:** reconcile relies on none after a delivery.
 
 ## 9. Open questions
 
@@ -756,8 +815,10 @@ pin (forge.md, section 4.3), and named by the fact's name.
   moves. Default: left alone; the person deletes it.
 - **An App's hook made inactive by hand.** `PATCH /app/hook/config` sets
   the URL, the content type and the secret, never whether it is active,
-  and an inactive hook logs no delivery. Default: the conformance finds
-  whether the App's read shows it (section 10); until then, the
+  and an inactive hook logs no delivery. Whether the App's read shows it
+  stays `unchecked` on github.com (`inactive-hook-visible`,
+  forge-github.md, section 13), since a live run changes nothing of the
+  App (section 7); an App made to be changed would find it. Default: the
   client's polling keeps up, and a stopped log is the person's to see.
 - **A fine-grained token as a connected GitHub.** Default: later; a
   connected GitHub is an App the person made (5.8).
@@ -769,21 +830,28 @@ pin (forge.md, section 4.3), and named by the fact's name.
 
 Each fact is recorded by the conformance against github.com, on the
 probe App and repositories alone, at the API's pin (forge-github.md,
-section 12), and named in its section 13. No suite makes these calls.
+section 12), and named in its section 13. No suite makes these calls. A
+live run reads the App and changes nothing of it (section 7), so a fact
+that needs the App changed is shown on the fake and stays `unchecked` on
+github.com; temper's draft found those first (its section 11), its Setup
+probe making the probe App.
 
-- **The manifest flow:** a manifest posted with a state comes back with
-  a code and the same state; the conversion answers the id, slug, owner,
-  PKCS#1 PEM key and webhook secret once, and refuses the code again; a
-  hook at an `.invalid` address is taken, active.
+- **The manifest flow,** `unchecked` live: a manifest posted with a
+  state comes back with a code and the same state; the conversion
+  answers the id, slug, owner, PKCS#1 PEM key and webhook secret once,
+  and refuses the code again; a hook at an `.invalid` address is taken,
+  active.
 - **The App's routes on its JWT:** `GET /app` answers its id, slug,
-  permissions and events; a JWT of a revoked key is a `401`; `GET` and
-  `PATCH /app/hook/config` read and set the hook's URL; installations
-  list, read by id and are deleted.
+  permissions and events; `GET /app/hook/config` reads the hook's URL;
+  installations list and read by id. Left `unchecked` live: a JWT of a
+  revoked key is a `401`, `PATCH /app/hook/config` sets the URL, and an
+  installation is deleted.
 - **The bot:** `GET /users/<slug>%5Bbot%5D` answers its id with no
   credential; GraphQL's `viewer` on an installation's token answers the
   same.
-- **Installing:** the install link with a state brings the person back
-  to the setup address with the installation's id and the state.
+- **Installing,** `unchecked` live, since it takes a person's browser:
+  the install link with a state brings the person back to the setup
+  address with the installation's id and the state.
 - **To find:** whether an `installation_target` row reaches the log
-  unsubscribed, and whether an inactive hook shows in the App's read
-  (section 9).
+  unsubscribed; whether an inactive hook shows in the App's read stays
+  `unchecked` live (section 9).

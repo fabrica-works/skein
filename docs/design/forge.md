@@ -456,8 +456,8 @@ pin (4.3), holds:
   decoder and encoder, the table to hints and the listener's path for a
   forge (section 7).
 - **The setup's documents:** the admin's reads, the bot, its tokens,
-  orgs, and a repository's read by id, collaborator and hooks
-  (forge-setup.md, section 4).
+  orgs, a repository's read by id, collaborator and hooks, and the
+  repositories the admin can see (forge-setup.md, section 4).
 - **Names, times and ids:** percent-encoding of a path's segments, RFC
   3339 times in both directions, and object ids in 40 or 64 hexadecimal
   digits.
