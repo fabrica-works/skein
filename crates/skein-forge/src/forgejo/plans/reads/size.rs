@@ -25,6 +25,7 @@ pub(super) fn summary(item: &api::Summary, limit: u32) -> Result<u64, api::Error
     total = total.checked_add(length(&item.title)).ok_or(api::Error::TooLarge)?;
     total.checked_add(length(&item.body)).ok_or(api::Error::TooLarge)
 }
+#[expect(clippy::too_many_lines, reason = "the exhaustive answer measure keeps every answer variant visible")]
 pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
     let mut total = 0_u64;
     match answer {
@@ -122,6 +123,7 @@ pub fn answer(answer: &api::Answer, limit: u32) -> Result<u64, api::Error> {
         | api::Answer::Commented(_)
         | api::Answer::Reviewed(_)
         | api::Answer::Merged(_)
+        | api::Answer::Queued
         | api::Answer::Branch(_)
         | api::Answer::Done => return Err(api::Error::InvalidAnswer),
     }

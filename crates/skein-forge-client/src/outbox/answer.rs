@@ -43,7 +43,10 @@ pub(crate) fn answered(
         }
         Answer::Branch(created) => branch_created(d, env, number, created, out),
         Answer::Done => done(d, env, number, out),
-        Answer::Statuses { .. }
+        // Forgejo never answers Queued; it gets its meaning in runtime 30
+        // (the client's merge queue, forge-client 7.7).
+        Answer::Queued
+        | Answer::Statuses { .. }
         | Answer::Branches(_)
         | Answer::Remarks { .. }
         | Answer::PullFiles { .. }

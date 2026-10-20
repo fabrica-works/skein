@@ -281,7 +281,7 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
         crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes"),
     )
     .expect("fixture bound fits");
-    assert_eq!(bytes, 2_812_047, "complete owner-value fixture bound");
+    assert_eq!(bytes, 2_812_351, "complete owner-value fixture bound");
     let owner_bytes = u64::try_from(fixtures::WORD.len() + fixtures::USER_AGENT.len()).expect("fixture lengths");
     assert_eq!(crate::settings::owned_bytes(&fixtures::settings()), Some(owner_bytes));
     assert_eq!(limits::worst_case(&limits, &shared, 1, 0).expect("fixed bound") + owner_bytes, bytes);
@@ -651,4 +651,15 @@ fn stack_boundaries() {
             assert_eq!(limits::stack(stacked, DEMAND, cap), expected, "{stacked:?}/{cap}");
         }
     }
+}
+
+#[test]
+fn vocabulary_app_credential_is_unusable_in_settings() {
+    let mut settings = fixtures::settings();
+    settings.forges.get_mut(0).expect("one forge").credential =
+        skein_forge::credential::Credential::App { id: 1, key: Secret::new(Box::new([])) };
+    assert_eq!(
+        limits::check(&fixtures::limits(), &fixtures::shared(), &settings),
+        Err(Unusable::Token { forge: fixtures::FORGE })
+    );
 }

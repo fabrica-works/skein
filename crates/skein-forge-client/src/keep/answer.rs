@@ -93,6 +93,7 @@ pub(crate) fn answered_repository(
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Located { .. }
         | Answer::Done => unreachable!("listing answer shape"),
@@ -191,6 +192,7 @@ pub(crate) fn answered_resource(
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => unreachable!("resource operation answer shape"),
     }

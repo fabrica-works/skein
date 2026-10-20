@@ -5,7 +5,46 @@
 //! or `Write` to provider calls and returns one typed terminal. A job-log
 //! read names one run, job, attempt, and head, and returns at most its byte cap.
 use alloc::boxed::Box;
-use skein_lib::{Duration, Time};
+use skein_lib::{Duration, Time, Wall};
+
+/// The largest printable read validator retained from a forge.
+pub const VALIDATOR_BYTES: usize = 128;
+/// The display reason's byte bound; decoders truncate at a UTF-8 boundary instead of refusing the read.
+pub const DEQUEUED_BYTES: usize = 256;
+
+/// A forge's request window, so the client can use its allowance and reset time.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Rate {
+    /// The requests the window allows.
+    pub limit: u32,
+    /// The requests left in the window.
+    pub remaining: u32,
+    /// When the window resets, as an epoch wall time.
+    pub reset_at: Wall,
+}
+/// A bounded printable read validator, retained for conditional requests.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Validator(Box<[u8]>);
+impl Validator {
+    /// Checks the non-empty printable ASCII bound before copying.
+    #[must_use]
+    pub fn new(bytes: &[u8]) -> Option<Self> {
+        if bytes.is_empty() || bytes.len() > VALIDATOR_BYTES {
+            return None;
+        }
+        for byte in bytes {
+            if !(0x20..=0x7e).contains(byte) {
+                return None;
+            }
+        }
+        Some(Self(skein_lib::bytes::copy_of(bytes)))
+    }
+    /// The validator's HTTP spelling, for a conditional request.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 /// A forge commit identifier in the adapter’s fixed-width form.
 pub type Commit = [u8; 32];
@@ -171,6 +210,8 @@ pub enum Answer {
     Reviewed(u64),
     /// Return merged.
     Merged(Commit),
+    /// The pull request was put in the merge queue at the head named by `Write::Merge`, final for its call.
+    Queued,
     /// Return branch.
     Branch(BranchCreation),
     /// Return done.
@@ -334,6 +375,10 @@ pub struct Pull {
     pub merged: Option<Commit>,
     pub mergeable: bool,
     pub ci: Ci,
+    /// The position in a merge queue when the pull request is in one.
+    pub queued: Option<u32>,
+    /// Why a queue last ejected it; decoders truncate to `DEQUEUED_BYTES` at a UTF-8 boundary for display.
+    pub dequeued: Option<Box<[u8]>>,
 }
 /// A review with its identity, verdict and observed version.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

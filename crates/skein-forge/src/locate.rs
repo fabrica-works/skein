@@ -31,6 +31,7 @@ pub fn accepts(answer: &Answer) -> bool {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => false,
     }

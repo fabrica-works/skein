@@ -474,6 +474,8 @@ fn an_answer_for_another_pull_cannot_satisfy_a_fresh_read() {
     h.read(8);
     let call = h.one();
     let answer = api::Pull {
+        queued: None,
+        dequeued: None,
         reviewers: Box::new([]),
         number: 9,
         state: api::State::Open,
@@ -589,4 +591,10 @@ fn a_job_answers_step_name_counts_against_answer_bytes() {
 #[test]
 fn a_zero_settle_window_is_refused() {
     assert_eq!(worst_case(&Limits { settle: Duration::ZERO, ..LIMITS }), None);
+}
+
+#[test]
+fn vocabulary_queued_is_not_accepted_for_merge() {
+    let merge = Op::Write(Write::Merge { number: 1, head: [1; 32] });
+    assert!(!crate::api::accepts(&merge, &Answer::Queued));
 }

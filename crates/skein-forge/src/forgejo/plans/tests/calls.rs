@@ -22,6 +22,8 @@ fn summary() -> api::Summary {
 }
 fn pull() -> api::Pull {
     api::Pull {
+        queued: None,
+        dequeued: None,
         number: 1,
         state: api::State::Open,
         head: Box::from(&b"work"[..]),

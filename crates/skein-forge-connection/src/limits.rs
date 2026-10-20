@@ -247,7 +247,11 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
                 return Err(Unusable::Duplicate { forge: forge.number });
             }
         }
-        let skein_forge::credential::Credential::Token(token) = &forge.credential;
+        let token = match &forge.credential {
+            skein_forge::credential::Credential::Token(token) => token,
+            // Credential::App gets its meaning in runtime 02.
+            skein_forge::credential::Credential::App { .. } => return Err(Unusable::Token { forge: forge.number }),
+        };
         if !header_value(token.expose()) || token.len() > usize::try_from(l.token_bytes).expect("u32 fits") {
             return Err(Unusable::Token { forge: forge.number });
         }

@@ -259,6 +259,8 @@ fn measure_answer_string() {
 fn measure_answer_reviewer() {
     measured(
         &Answer::Pull(api::Pull {
+            queued: None,
+            dequeued: None,
             reviewers: Box::new([7]),
             number: 1,
             state: api::State::Open,
@@ -340,4 +342,94 @@ fn host_uses_names_and_omits_both_default_ports() {
         crate::host::host(SocketAddr::from((Ipv6Addr::LOCALHOST, 3000)), None),
         Some(Box::from(&b"[0:0:0:0:0:0:0:1]:3000"[..]))
     );
+}
+
+#[test]
+fn vocabulary_validator_accepts_up_to_128_printable_bytes() {
+    for length in 1..=api::VALIDATOR_BYTES {
+        let bytes = [b'~'; api::VALIDATOR_BYTES];
+        let value = bytes.get(..length).expect("within validator bound");
+        let validator = api::Validator::new(value).expect("printable bytes fit");
+        assert_eq!(validator.as_bytes(), value);
+    }
+    for byte in 0x20..=0x7e {
+        assert_eq!(api::Validator::new(&[byte]).expect("printable ASCII").as_bytes(), &[byte]);
+    }
+}
+
+#[test]
+fn vocabulary_validator_rejects_129_bytes_empty_and_control_bytes() {
+    assert_eq!(api::VALIDATOR_BYTES, 128);
+    assert_eq!(api::Validator::new(&[b'a'; 129]), None);
+    assert_eq!(api::Validator::new(b""), None);
+    for byte in (0..=0x1f).chain(0x7f..=0xff) {
+        assert_eq!(api::Validator::new(&[b'a', byte, b'z']), None, "byte {byte}");
+    }
+}
+
+#[test]
+fn vocabulary_rate_carries_limit_remaining_and_reset() {
+    let reset = skein_lib::Wall::from_nanos(3_600_000_000_000);
+    let rate = api::Rate { limit: 5000, remaining: 4999, reset_at: reset };
+    assert_eq!((rate.limit, rate.remaining, rate.reset_at), (5000, 4999, reset));
+}
+
+#[test]
+fn vocabulary_queued_is_not_a_merged_commit() {
+    assert_ne!(Answer::Queued, Answer::Merged([1; 32]));
+}
+
+fn vocabulary_forgejo_pull() -> api::Pull {
+    use crate::forgejo::plans::plan::Step;
+    let mut run = fixtures::Run::known(api::Op::Read(api::Read::Pull { number: 1 }));
+    run.begin();
+    run.answer(200, fixtures::PULL);
+    let Step::Done(Ok(Answer::Pull(pull))) = run.answer(200, fixtures::EMPTY_STATUS) else {
+        panic!("Forgejo pull read completes");
+    };
+    pull
+}
+
+#[test]
+fn vocabulary_pull_queued_and_dequeued_default_to_none_in_forgejo() {
+    let pull = vocabulary_forgejo_pull();
+    assert_eq!((pull.queued, pull.dequeued), (None, None));
+}
+
+#[test]
+fn vocabulary_dequeued_bound_is_256_bytes() {
+    assert_eq!(api::DEQUEUED_BYTES, 256);
+    assert_eq!(api::DEQUEUED_BYTES.cmp(&api::VALIDATOR_BYTES), core::cmp::Ordering::Greater);
+}
+
+#[test]
+fn vocabulary_measure_counts_dequeued_bytes_and_not_queued() {
+    let mut pull = vocabulary_forgejo_pull();
+    let baseline = crate::measure::pull(&pull).expect("fixture fits");
+    pull.queued = Some(1);
+    assert_eq!(crate::measure::pull(&pull), Some(baseline));
+    let reason = b"The head moved.";
+    pull.dequeued = Some(Box::from(reason.as_slice()));
+    let expected = baseline.checked_add(u64::try_from(reason.len()).expect("short reason")).expect("fixture fits");
+    assert_eq!(crate::measure::pull(&pull), Some(expected));
+    assert_eq!(crate::measure::answer(&Answer::Pull(pull)), Some(expected));
+}
+
+#[test]
+fn vocabulary_measure_of_queued_is_zero() {
+    assert_eq!(crate::measure::answer(&Answer::Queued), Some(0));
+}
+
+fn vocabulary_app_credential() -> crate::credential::Credential {
+    crate::credential::Credential::App { id: 1, key: skein_lib::Secret::new(Box::new([])) }
+}
+
+#[test]
+fn vocabulary_app_credential_gives_no_forgejo_authorization() {
+    assert_eq!(crate::forgejo::credential::authorization(&vocabulary_app_credential()), None);
+}
+
+#[test]
+fn vocabulary_app_credential_gives_no_github_authorization() {
+    assert_eq!(crate::github::credential::authorization(&vocabulary_app_credential()), None);
 }

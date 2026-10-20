@@ -191,6 +191,7 @@ pub fn answer(value: &Answer) -> Option<u64> {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => Some(0),
     }
@@ -198,5 +199,11 @@ pub fn answer(value: &Answer) -> Option<u64> {
 /// Count a pull's strings and reviewers, without a scalar struct width.
 #[must_use]
 pub fn pull(value: &Pull) -> Option<u64> {
-    rows(value.reviewers.len(), ID_BYTES)?.checked_add(bytes(&value.head)?)?.checked_add(bytes(&value.base)?)
+    rows(value.reviewers.len(), ID_BYTES)?
+        .checked_add(bytes(&value.head)?)?
+        .checked_add(bytes(&value.base)?)?
+        .checked_add(match &value.dequeued {
+            Some(reason) => bytes(reason)?,
+            None => 0,
+        })
 }

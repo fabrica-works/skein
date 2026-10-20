@@ -63,6 +63,7 @@ impl Referee {
             | api::Answer::Commented(_)
             | api::Answer::Reviewed(_)
             | api::Answer::Merged(_)
+            | api::Answer::Queued
             | api::Answer::Branch(_)
             | api::Answer::Done => {}
         }

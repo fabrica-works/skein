@@ -233,6 +233,8 @@ pub fn pull(value: d::PullRequest, format: ObjectFormat, ci: api::Ci) -> Result<
         reviewers.push(user.id).expect("reviewer count measured");
     }
     Ok(api::Pull {
+        queued: None,
+        dequeued: None,
         reviewers: reviewers.into_boxed(),
         number: value.number,
         state: state(value.state),

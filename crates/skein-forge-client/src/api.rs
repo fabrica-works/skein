@@ -29,32 +29,35 @@ enum Shape {
     Branch,
     Done,
 }
-fn shape(answer: &Answer) -> Shape {
+fn shape(answer: &Answer) -> Option<Shape> {
     match answer {
-        Answer::Located { .. } => Shape::Located,
-        Answer::Items { .. } => Shape::Items,
-        Answer::Item { .. } => Shape::Item,
-        Answer::Pull(_) => Shape::Pull,
-        Answer::Reviews { .. } => Shape::Reviews,
-        Answer::Statuses { .. } => Shape::Statuses,
-        Answer::Remarks { .. } => Shape::Remarks,
-        Answer::Commit(_) => Shape::Commit,
-        Answer::Branches(_) => Shape::Branches,
-        Answer::PullFiles { .. } => Shape::PullFiles,
-        Answer::Compare { .. } => Shape::Compare,
-        Answer::Checks(_) => Shape::Checks,
-        Answer::Job { .. } => Shape::Job,
-        Answer::File { .. } => Shape::File,
-        Answer::Protection(_) => Shape::Protection,
-        Answer::Settings(_) => Shape::Settings,
-        Answer::Collaborators { .. } => Shape::Collaborators,
-        Answer::Permission(_) => Shape::Permission,
-        Answer::Created(_) => Shape::Created,
-        Answer::Commented(_) => Shape::Commented,
-        Answer::Reviewed(_) => Shape::Reviewed,
-        Answer::Merged(_) => Shape::Merged,
-        Answer::Branch(_) => Shape::Branch,
-        Answer::Done => Shape::Done,
+        Answer::Located { .. } => Some(Shape::Located),
+        Answer::Items { .. } => Some(Shape::Items),
+        Answer::Item { .. } => Some(Shape::Item),
+        Answer::Pull(_) => Some(Shape::Pull),
+        Answer::Reviews { .. } => Some(Shape::Reviews),
+        Answer::Statuses { .. } => Some(Shape::Statuses),
+        Answer::Remarks { .. } => Some(Shape::Remarks),
+        Answer::Commit(_) => Some(Shape::Commit),
+        Answer::Branches(_) => Some(Shape::Branches),
+        Answer::PullFiles { .. } => Some(Shape::PullFiles),
+        Answer::Compare { .. } => Some(Shape::Compare),
+        Answer::Checks(_) => Some(Shape::Checks),
+        Answer::Job { .. } => Some(Shape::Job),
+        Answer::File { .. } => Some(Shape::File),
+        Answer::Protection(_) => Some(Shape::Protection),
+        Answer::Settings(_) => Some(Shape::Settings),
+        Answer::Collaborators { .. } => Some(Shape::Collaborators),
+        Answer::Permission(_) => Some(Shape::Permission),
+        Answer::Created(_) => Some(Shape::Created),
+        Answer::Commented(_) => Some(Shape::Commented),
+        Answer::Reviewed(_) => Some(Shape::Reviewed),
+        Answer::Merged(_) => Some(Shape::Merged),
+        Answer::Branch(_) => Some(Shape::Branch),
+        // Forgejo never answers Queued; it gets its meaning in runtime 30
+        // (the client's merge queue, forge-client 7.7).
+        Answer::Queued => None,
+        Answer::Done => Some(Shape::Done),
     }
 }
 pub(crate) fn accepts(op: &Op, answer: &Answer) -> bool {
@@ -94,7 +97,7 @@ pub(crate) fn accepts(op: &Op, answer: &Answer) -> bool {
             | Write::DeleteBranch { .. } => Shape::Done,
         },
     };
-    if shape(answer) != expected {
+    if shape(answer) != Some(expected) {
         return false;
     }
     match op {
@@ -126,6 +129,7 @@ pub(crate) fn accepts(op: &Op, answer: &Answer) -> bool {
                 | Answer::Commented(_)
                 | Answer::Reviewed(_)
                 | Answer::Merged(_)
+                | Answer::Queued
                 | Answer::Branch(_)
                 | Answer::Done => false,
             },
@@ -187,6 +191,7 @@ fn checks_at_head(answer: &Answer, head: Commit) -> bool {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => false,
     }
@@ -235,6 +240,7 @@ fn items_ordered(answer: &Answer, kind: Option<Kind>) -> bool {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => false,
     }
@@ -272,6 +278,7 @@ fn reviews_ordered(answer: &Answer) -> bool {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => false,
     }
@@ -312,6 +319,7 @@ fn item_matches(answer: &Answer, number: u64, after: u64) -> bool {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => false,
     }
@@ -340,6 +348,7 @@ fn pull_answer(answer: &Answer) -> Option<&Pull> {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => None,
     }
@@ -368,6 +377,7 @@ fn observed_head(answer: &Answer) -> Option<Commit> {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => None,
     }
@@ -398,6 +408,7 @@ fn compared(answer: &Answer, before: Commit, after: Commit) -> bool {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => false,
     }
@@ -431,6 +442,7 @@ fn file_matches(answer: &Answer, head: Commit, path: &[u8], max_bytes: u32) -> b
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => false,
     }

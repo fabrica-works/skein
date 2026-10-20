@@ -486,6 +486,7 @@ fn adoption_reads_history_and_preserves_foreign_or_copied_marker_news() {
             | api::Answer::Commented(_)
             | api::Answer::Reviewed(_)
             | api::Answer::Merged(_)
+            | api::Answer::Queued
             | api::Answer::Branch(_)
             | api::Answer::Done => panic!("fixture has only issue news"),
         }
@@ -551,6 +552,7 @@ fn comment_ids(world: &World) -> skein_lib::List<u64> {
             | api::Answer::Commented(_)
             | api::Answer::Reviewed(_)
             | api::Answer::Merged(_)
+            | api::Answer::Queued
             | api::Answer::Branch(_)
             | api::Answer::Done => {}
         }
@@ -606,6 +608,7 @@ fn review_page_recovery_keeps_old_pending_submissions_without_duplicate_news() {
             | api::Answer::Commented(_)
             | api::Answer::Reviewed(_)
             | api::Answer::Merged(_)
+            | api::Answer::Queued
             | api::Answer::Branch(_)
             | api::Answer::Done => {}
         }
@@ -718,6 +721,7 @@ fn review_count(world: &World) -> u32 {
             | api::Answer::Commented(_)
             | api::Answer::Reviewed(_)
             | api::Answer::Merged(_)
+            | api::Answer::Queued
             | api::Answer::Branch(_)
             | api::Answer::Done => {}
         }

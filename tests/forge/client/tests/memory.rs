@@ -104,6 +104,8 @@ impl Measured {
                 more: false,
             },
             Asked::Pull(number) => api::Answer::Pull(api::Pull {
+                queued: None,
+                dequeued: None,
                 number,
                 state: api::State::Open,
                 head: bytes(self.env.limits.op_bytes / 2, 1),

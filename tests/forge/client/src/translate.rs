@@ -332,6 +332,8 @@ fn pull_answer(asked: &client::Op, pull: forge::Pull, l: &Limits) -> client::Ans
     match asked {
         client::Op::Read(read) => match read {
             client::Read::Pull { .. } | client::Read::PullFor { .. } => client::Answer::Pull(client::Pull {
+                queued: None,
+                dequeued: None,
                 number: pull.number,
                 state: state(pull.state),
                 head: pull.head,

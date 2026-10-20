@@ -4,7 +4,11 @@ use skein_lib::{Secret, Writer};
 /// Renders a vocabulary credential, retaining its redaction.
 #[must_use]
 pub fn authorization(credential: &Credential) -> Option<Secret> {
-    let Credential::Token(token) = credential;
+    let token = match credential {
+        Credential::Token(token) => token,
+        // Credential::App gets its meaning in runtime 02.
+        Credential::App { .. } => return None,
+    };
     bearer(token)
 }
 /// Renders a token, installation token or App JSON Web Token.

@@ -190,6 +190,8 @@ fn github_pull_reads_three_requests() {
             merged: None,
             mergeable: true,
             ci: api::Ci::Passed,
+            queued: None,
+            dequeued: None,
         }
     );
 }

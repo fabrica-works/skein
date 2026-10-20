@@ -339,6 +339,8 @@ fn joined(pieces: &[&[u8]]) -> Box<[u8]> {
 }
 fn expected_pull(number: u64, state: api::State) -> api::Pull {
     api::Pull {
+        queued: None,
+        dequeued: None,
         reviewers: Box::from([]),
         number,
         state,

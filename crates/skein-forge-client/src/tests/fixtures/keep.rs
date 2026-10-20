@@ -175,6 +175,8 @@ pub(in crate::tests) fn summary() -> api::Summary {
 }
 pub(in crate::tests) fn current() -> api::Pull {
     api::Pull {
+        queued: None,
+        dequeued: None,
         number: 9,
         state: api::State::Open,
         head: Box::from(&b"topic"[..]),

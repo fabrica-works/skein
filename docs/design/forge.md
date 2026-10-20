@@ -265,7 +265,7 @@ and no policy. Every type is a plain value.
     its configured window (forge-client.md, section 6). Forgejo's
     answers carry none.
   - **`Validator`,** a read's validator (an `ETag`), at most 128
-    printable bytes. A read sent with one that the forge answers
+    printable bytes (`VALIDATOR_BYTES`). A read sent with one that the forge answers
     `304` is answered as not modified, at no cost (`free`). Forgejo's
     dialect sends none.
 
@@ -344,7 +344,7 @@ By name; the code holds the fields.
 - **`Pull`:** a pull request's head and base branches and commits, its
   merge commit, whether it is mergeable, its reviewers, its `Ci`, and
   `queued`, its position in a merge queue when it is in one, and
-  `dequeued`, the forge's words for why a queue last ejected it.
+  `dequeued`, the forge's words for why a queue last ejected it, at most `DEQUEUED_BYTES` (256) bytes.
 - **`Review`:** a review, with its `Verdict`, its commit, its key, its
   `Provenance`, its `revision`, its time and whether it is official.
 - **`Remark`:** a comment attached to a review at a path and a line.
