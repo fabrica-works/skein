@@ -154,7 +154,7 @@ R as in section 3; `<size>` the page size; `GQ` a GraphQL request
 |---|---|---|
 | `Read::Items { since, page, kind }` | `GET R/issues?state=all&since=<since>&sort=updated&direction=asc&per_page=<size>&page=<page>` | each row a `Summary`: `number`; a `pull_request` member makes it a pull, and its `merged_at` makes one closed merged; `state`; `user.id`; `labels[].name`; `updated_at`; `title`; `body` (null as empty) and its key. A row of the other kind than the call's is skipped, and counts toward the page. Rows of one second are put in order of number before the page answers. `more` from `Link`; `now` from `Date` |
 | `Read::Item { number, after }` | `GET R/issues/<number>`; `GET R/issues/<number>/comments?per_page=<size>&page=<n>` from page 1, until the answer is full or a page has no next | the issue as a `Summary`; its comments with ids above `after`, oldest first, as forge.md 5.2's: `id`, `user.id`, `created_at`, `body` and its key, provenance, revision; `more` when one is left |
-| `Read::Pull { number }` | `GET R/pulls/<number>`; `GET R/commits/<head.sha>/status?per_page=1`; `GET R/commits/<head.sha>/check-runs?filter=latest&per_page=<size>&page=<n>`, every page; `GQ pull` when the pull is open and the repository's owner an organization, or merged with `merge_commit_sha` null | `number`; `state`, `merged` making it merged; `head.ref`, `base.ref`, `head.sha`, `base.sha`; `merged` from `merge_commit_sha`, else `mergeCommit.oid`; `mergeable`, null as false; `requested_reviewers[].id`; `queued` from `mergeQueueEntry.position`; `Ci` from both (4.4) |
+| `Read::Pull { number }` | `GET R/pulls/<number>`; `GET R/commits/<head.sha>/status?per_page=1`; `GET R/commits/<head.sha>/check-runs?filter=latest&per_page=<size>&page=<n>`, every page; `GQ pull` when the pull is open and the repository's owner an organization, or merged with `merge_commit_sha` null | `number`; `state`, `merged` making it merged; `head.ref`, `base.ref`, `head.sha`, `base.sha`; `merged` from `merge_commit_sha`, else `mergeCommit.oid`; `mergeable`, null as false; `requested_reviewers[].id`; `queued` from `mergeQueueEntry.position`; `dequeued` from the last `RemovedFromMergeQueueEvent`'s `reason`; `Ci` from both (4.4) |
 | `Read::PullFor { head, base }` | `GET R/pulls?state=open&head=<owner>:<head>&base=<base>&per_page=1`; when none, `GET R/pulls?state=all&head=<owner>:<head>&base=<base>&sort=created&direction=asc&per_page=1`; then as `Pull` for the number found | the open pull request for the head and base, else the oldest; `Missing` when there is none. `<owner>` is the repository's own: a fork's head is not followed (temper's draft 18) |
 | `Read::Reviews { number, page }` | `GET R/pulls/<number>/reviews?per_page=<size>&page=<page>` | as forge.md 5.2; `state` mapped `APPROVED` to `Approve`, `CHANGES_REQUESTED` to `RequestChanges`, `COMMENTED` and `DISMISSED` to `Comment`; `PENDING` and a null `submitted_at` skipped, counting toward the page; `commit_id`; `official` when `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR` (section 15) |
 | `Read::Statuses { commit, page }` | `GET R/commits/<commit>/status?per_page=<size>&page=<page>` | `Ci` from `state` and `total_count`, 0 being `None`; each `statuses[]` row: `updated_at`, `context`, `state`, `description`, `target_url`; no job; `more` from `Link` |
@@ -224,8 +224,11 @@ answer with `errors` is a refusal (section 7).
   (8.4).
 - **`pull`:** `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { pullRequest(number: $number)
-  { id mergeCommit { oid } mergeQueueEntry { position } } } }`, a pull
-  request's node id, its landed commit and its queue position.
+  { id mergeCommit { oid } mergeQueueEntry { position } timelineItems(last:
+  1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes { ... on
+  RemovedFromMergeQueueEvent { reason } } } } } }`, a pull request's node
+  id, its landed commit, its queue position and why the queue last
+  ejected it.
 - **`enqueue`:** `mutation($id: ID!, $head: GitObjectID!) {
   enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid:
   $head}) { mergeQueueEntry { position } } }`.
@@ -280,7 +283,9 @@ Batched reads are later (temper's draft 18).
   comes later: the log's `pull_request` `dequeued`, with its reason, and
   `merge_group` `destroyed` (section 9) hint the item; the client reads
   the pull, whose `merged` is the group's commit, from `mergeCommit`
-  (4.1).
+  (4.1). An ejected pull is open with no `queued`, and its `dequeued`
+  holds the queue's reason, as GitHub words it: a hint carries no
+  payload, so the reason is read with the pull.
 - **The method** is the row's: the first of merge, squash and rebase
   that the repository allows (`allow_merge_commit`,
   `allow_squash_merge`, `allow_rebase_merge`). A queue merges by its own

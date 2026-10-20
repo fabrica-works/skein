@@ -343,7 +343,8 @@ By name; the code holds the fields.
   its `Provenance`, its `revision` and its body.
 - **`Pull`:** a pull request's head and base branches and commits, its
   merge commit, whether it is mergeable, its reviewers, its `Ci`, and
-  `queued`, its position in a merge queue when it is in one.
+  `queued`, its position in a merge queue when it is in one, and
+  `dequeued`, the forge's words for why a queue last ejected it.
 - **`Review`:** a review, with its `Verdict`, its commit, its key, its
   `Provenance`, its `revision`, its time and whether it is official.
 - **`Remark`:** a comment attached to a review at a path and a line.

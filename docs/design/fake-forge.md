@@ -454,6 +454,9 @@ only what GitHub has and Forgejo lacks (10.2).
   change the store.
 - **Installations and their tokens.** An installation is an account and
   either all its repositories or a list of them, and may be suspended.
+  A repository's `owner.type` is its account's kind, so one an
+  organization owns reads `Organization`, and its pulls take the queue
+  (forge-github.md, 4.1 and 5.1).
   The mint answers a token that expires an hour later on the forge's
   clock, full, or contents-only when the body asks. The domain sees the
   bot's user number, and the layer refuses beforehand what the token
@@ -471,9 +474,15 @@ only what GitHub has and Forgejo lacks (10.2).
   routes, which the same listener serves:
   - `POST /settings/apps/new?state=<s>`, and
     `/organizations/<org>/settings/apps/new?state=<s>`, take the form's
-    `manifest` field. The answer is `302` to the manifest's
-    `redirect_url?code=<c>&state=<s>`. The code is single-use and
-    expires an hour later.
+    `manifest` field. The answer is `200` with a small page holding one
+    link, `Create GitHub App` (id `create`), to the manifest's
+    `redirect_url?code=<c>&state=<s>`; a test follows it as a person
+    clicks GitHub's own form, and no form's `form-action` governs it.
+    The code is single-use and expires an hour later. The layer keeps
+    each state's posted manifest, which a test reads through the
+    layer's handle by state (its `redirect_url`, `setup_url`,
+    `hook_attributes` and the rest), since the page's post is not
+    otherwise in sight.
   - `POST /app-manifests/<code>/conversions` makes the App and answers
     as forge-github.md, section 11, says.
   - `GET /apps/<slug>/installations/new?state=<s>` takes `account=<login>`
