@@ -118,8 +118,9 @@ byte-path files, scripted commands and local git mechanics for domain
 worlds (fake-checkout.md). It has no simulated-kernel adapter, inode or
 permission model. Services retain their policy, remote implementations,
 clock, cancellation and delivery ledgers; the kit answers synchronous
-mechanical operations only. Its focused leaf tests and small replay sweep
-stay beside the crate in `testing/skein-fake-checkout/tests`.
+mechanical operations only. It lives in `crates/`, as temper's `temper
+fake git` ships it, and its focused leaf tests and small replay sweep are
+the crate `tests/fake-checkout`, by the rule below.
 
 A code forge has fakes of its own (fake-forge.md). `skein-fake-forge-domain`,
 a step crate on skein-lib alone, plays a forge's state, CI, merges and git,
@@ -230,13 +231,13 @@ crates/skein-fake-forge-domain  the fake forge's domain (fake-forge.md, 2 and 3)
 crates/skein-fake-forge-protocol its Forgejo protocol layer (fake-forge.md, 4)
 crates/skein-fake-oauth         an independent rotating OAuth issuer (oauth.md, 5)
 crates/skein-fake-peers         the LLM, OAuth and forge peers hosted on loopback io, in a world or as an application's own process (fake-forge.md, 5)
+crates/skein-fake-checkout      files, scripted commands and local git for a service's domain worlds, and for a service's fake git as a program (fake-checkout.md)
 testing/skein-conformance       the conformance suite: the backend interface, the scenarios, the driver, the checks
 testing/skein-heap              the counting allocator, the meter that checks a step against its worst case, and the span a world meters its processes with
 testing/skein-scratch           a scratch directory beneath the system's temporary one, removed when dropped, for tests of files on the real kernel
 testing/skein-world             the world harness: processes' iterate over the simulator or the real ring, the referee, the trace, the heap
 testing/skein-echo-client       the fake echo client, a step machine
 testing/skein-fake-machine      the minimal fake machine: files beneath a root, its programs, and its face behind the simulator
-testing/skein-fake-checkout     files, scripted commands and local git for a service's domain worlds (fake-checkout.md)
 testing/skein-fake-forge-github the fake forge's GitHub layer (fake-forge.md, 10)
 testing/skein-throwaway-forgejo the pinned Forgejo run on loopback in a scratch directory (fake-forge.md, 6)
 testing/skein-fake-channel      a scripted framed peer for a service's protocol worlds (channel.md)
@@ -268,6 +269,7 @@ tests/forge/setup               the setup world: the host component over a store
 tests/forge/conformance         the conformance tool, outside the suites: a throwaway Forgejo driven, each fact the dialect relies on recorded (fake-forge.md, 7)
 tests/fake-forge                the fake forge's domain against the counting allocator, skein-fake-forge-tests
 tests/fake-peers                the LLM, OAuth and forge peers on loopback io against their clients, skein-fake-peers-tests
+tests/fake-checkout             the fake checkout's leaf tests and its replay sweep against a small private remote, skein-fake-checkout-tests
 tests/channel                   the framed channel's machine and protocol worlds, skein-channel-world
 tests/codec                     a generated sample codec and its worlds, skein-codec-tests
 tests/kv                        the store over file io, the simulated kernel and a crashing fake disk, skein-kv-tests
@@ -287,9 +289,9 @@ examples/ui/*                   the UI example: its view, its browser shell and 
 No crate under `crates/` has a `tests/` directory: its step tests are
 in `src/`, and whatever drives it from outside is a crate under `tests/`,
 named by its path. The fakes moved from `testing/` (temper's
-`draft/first-run.md`, 3.5) follow it too: the forge domain's memory test
-and the peers' tests are crates under `tests/`, and the protocol layer's
-fixtures are in its `src/tests/`. Such a crate is ordinary Rust (programming-model.md,
+`draft/first-run.md`, 3.5) follow it too: the forge domain's memory test,
+the peers' tests and the checkout's are crates under `tests/`, and the
+protocol layer's fixtures are in its `src/tests/`. Such a crate is ordinary Rust (programming-model.md,
 10.2): what its test binaries share is its library, in `src/` (the
 simulator's harness and its scripted exchange, a backend of the suite,
 the naive functions lib is compared with, a machine's world and the

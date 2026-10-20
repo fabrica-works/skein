@@ -13,7 +13,9 @@ The dialect is forge.md's; the parts under test are the kit's others.
   a step crate with a vocabulary of its own. It is Forgejo-shaped, and no
   better (section 2).
 - **Its git** lives in the same store, so a branch pushed is the head the API
-  reads. It is reached through a typed transport, never over HTTP (section 3).
+  reads. It is reached through a typed transport: a shared handle within a
+  process, and the protocol layer's private git route from another one.
+  Git's own protocol is never served (section 3).
 - **The protocol layer** (`crates/skein-fake-forge-protocol`) serves
   Forgejo's API over the domain on skein's HTTP server, with its quirks, the
   setup's routes, signed deliveries and byte faults (section 4).
@@ -159,10 +161,20 @@ against.
   zero. The caller is a user number, mapped from its credential by the
   protocol layer's tables (section 4), so a token for the API and one for git
   stand for the same user.
-- **No git over HTTP.** A working tree reaches the store through
-  `git::Remote`, answered without the network; commands, arguments and pack
-  formats are the service's. A bridge for real git is designed separately,
-  and lands here.
+- **Within a process,** a working tree reaches the store through
+  `git::Remote`, answered on the shared forge (section 5) without the
+  network.
+- **From another process,** the same calls travel the protocol layer's
+  private git route (section 4) on the forge peer's listener, with the
+  store's reads and commits beside them. So a fake of the service's git
+  can run as a program of its own, as temper's `temper fake git` does
+  beside a demo's forge. The domain stays the only store: such a program
+  holds nothing the store has not answered, and keeps no object past its
+  command.
+- **No git over HTTP.** Git's own protocol, its smart HTTP and its packs,
+  is never served; commands, arguments and their outputs are the
+  service's. A bridge for real git is designed separately, and lands
+  here.
 
 ## 4. The protocol layer
 
@@ -223,6 +235,42 @@ domain, and holds no clock of its own.
   `pull_request_rejected`, `pull_request_comment`, `create`, a tag's events,
   or a job cancelled or skipped. Deliveries go to the configured endpoint
   only; a hook made through the setup routes is stored and routes nothing.
+- **The git route** is private, for a fake of a service's git that runs
+  in another process (section 3); Forgejo has none like it. A request is
+  `POST /.fake/git/<call>` with a JSON body, and its answer is JSON, one
+  call each. A first segment that begins with a dot names no Forgejo
+  account, so the route shadows none of Forgejo's. A commit is its count,
+  a JSON number; a branch or repository name is a string; paths, contents
+  and messages are base64, so bytes cross whole. The tally counts it
+  route by route, and the byte faults reach it as they reach every route.
+- **The repository's calls** are `clone`, `fetch`, `create` and `push`,
+  section 3's `Op::Git` one for one, and `branch`, the domain's read of a
+  branch's head, which a fake asks to word its output as git does. Each
+  names a repository by its full name and is one domain call, with
+  section 2.3's latency, rate and faults. Its credential is
+  `Authorization: Basic` of a login and a token, as git sends what its
+  remote URL or `http.extraHeader` holds: `tokens` maps the token to a
+  user number, and `users` must give that number the login. A missing or
+  unknown credential is `401`. A domain error is a status and a JSON body
+  naming it: `403` forbidden, protected or refused, so the caller knows
+  it was known; `404` missing, naming the repository, branch or commit;
+  `502` unreachable; and `429`, `503` and `500` as above. A push answers
+  pushed or rejected, a creation created or exists, both `200`.
+- **The store's calls** reach git's object database, which is the
+  domain's: `objects` reads commits, `commit`, `merge` and `commit-tree`
+  store them as section 3's scenario functions do, and `ancestor` asks
+  `is_ancestor`. They are no domain call, so they meet no latency, rate
+  or domain fault, and they take no credential, as a local git command
+  has none. That is the stated limit of a fake: anyone on loopback can
+  read every object by its count and store new ones, though never move a
+  branch. A store with no room is `507`, a tree past the domain's limits
+  `413`. `new` refuses layer limits whose request or answer cannot hold
+  the largest tree the domain allows.
+- **`objects`** answers each commit it is asked whole (parents, tree and
+  message), and the graph alone (the parents) of the commits before them
+  by both parents, newest first, bounded by `max_response_items` and the
+  answer's room. An object never changes, so a caller keeps what it has
+  been given for the rest of its command.
 - **The setup's routes** (accounts, tokens, organizations, a repository's
   read by id, collaborators and hooks, and the admin's repository search,
   in id order and paged by number as Forgejo pages it) are served from this
@@ -280,7 +328,10 @@ peers host theirs. The real loop hosts the same one.
   forge once: its domain, its configuration, the time of the last pass and
   the replies not yet routed. It hands the peer a single-threaded shared
   handle, and may hand the same forge to any fake in its process that acts
-  on it, such as a fake of a service's git component (section 3).
+  on it, such as a fake of a service's git component (section 3). A fake
+  in another process reaches it on the peer's listener by the git route
+  (section 4), each request borrowing the forge in the peer's pass, by
+  rule 1.
 - **Rules of sharing:** (1) each entry point borrows the forge for one pass,
   so borrows never overlap; (2) the peer writes the world's time into the
   forge at the start of each pass, and another fake reads it; (3) whoever
@@ -397,7 +448,9 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
 - **Step tests** sit in each crate. The domain's cover each call's decision,
   listings, merges, protection, CI and hooks. The protocol layer's cover
   routes, errors, faults, the tally, the setup routes and deliveries, each
-  decoded by `skein-forge`, with a signature that holds for its body only.
+  decoded by `skein-forge`, with a signature that holds for its body only,
+  and the git route: each call's statuses, a credential's login, the
+  store's calls beside the domain's faults, and `objects` at its bound.
 - **Memory:** a forge filled to its limits, and a long merge history walked
   through both parents, stay within `worst_case`, in binaries of their own
   under the counting allocator (testing.md, section 6).
@@ -416,7 +469,8 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
 
 - **A bridge for real git** needs a protocol it speaks, over a listener of
   the peer's. It is designed separately and lands in section 3. Default:
-  none; a working tree reaches the store through `git::Remote`.
+  none; a fake of a service's git reaches the store through
+  `git::Remote`, in its process or by the git route (section 4).
 - **The GitHub layer's speculative merges.** A queue's group is built
   from the entry ahead, one at a time (10.2); github.com batches groups.
   Default: one at a time, until a story needs batches.
