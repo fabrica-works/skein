@@ -1,8 +1,9 @@
-//! A loopback Forgejo peer over one owner's shared forge (fake-forge.md, 5).
+//! A loopback Forgejo or GitHub peer over one owner's shared forge (fake-forge.md, 5).
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 
+use self::layer as protocol;
 use skein_fake_forge_domain::{self as domain, api};
-use skein_fake_forge_protocol as protocol;
+use skein_fake_forge_protocol as forgejo;
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{Down, Up};
 use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
@@ -13,6 +14,7 @@ use crate::transport::Wire;
 use crate::{Error, Limits, Transport};
 
 mod delivery;
+mod layer;
 mod observe;
 mod shared;
 
@@ -24,7 +26,7 @@ pub struct Forge {
     pub now: Time,
     /// Replies not yet consumed by their owner, and hooks awaiting routing.
     pub pending: Queue<domain::Request>,
-    pub hooks: Option<protocol::delivery::Endpoint>,
+    pub hooks: Option<forgejo::delivery::Endpoint>,
     serial: u64,
 }
 
@@ -52,7 +54,7 @@ pub enum Observation {
         result: Result<api::Answer, api::Error>,
     },
     Delivery {
-        post: Option<protocol::delivery::Post>,
+        post: Option<forgejo::delivery::Post>,
         outcome: Delivery,
     },
 }
@@ -79,6 +81,7 @@ struct Connection {
 }
 struct Call {
     token: Token,
+    local: Token,
     connection: Token,
     user: u64,
     repository: Box<[u8]>,
@@ -106,16 +109,48 @@ impl Peer {
     pub fn new(
         address: SocketAddr,
         limits: Limits,
-        mut config: protocol::Config,
-        protocol: protocol::Limits,
+        mut config: forgejo::Config,
+        protocol: forgejo::Limits,
         forge: Rc<RefCell<Forge>>,
         seed: u64,
     ) -> Result<Self, Error> {
         config.hooks = None;
-        let bound = worst_case(&limits, &protocol, &config, &forge.borrow()).ok_or(Error::Limits)?;
-        let protocol_bound = protocol::worst_case(&protocol, &config).ok_or(Error::Limits)?;
-        let service = protocol::Service::new(config, &protocol, seed).map_err(|_| Error::Limits)?;
-        let call_capacity = call_capacity(&protocol, &forge.borrow()).ok_or(Error::Limits)?;
+        let protocol_bound = forgejo::worst_case(&protocol, &config).ok_or(Error::Limits)?;
+        let service =
+            protocol::Service::Forgejo(forgejo::Service::new(config, &protocol, seed).map_err(|_| Error::Limits)?);
+        Self::host(address, limits, protocol::Limits::Forgejo(protocol), service, protocol_bound, forge)
+    }
+    /// GitHub's API and browser pages share this listener and the owner's forge.
+    /// Blob hosting and GitHub hook delivery have separate owners (fake-forge.md, 10.3–10.5).
+    pub fn github(
+        address: SocketAddr,
+        limits: Limits,
+        config: skein_fake_forge_github::Config,
+        protocol: skein_fake_forge_github::Limits,
+        forge: Rc<RefCell<Forge>>,
+        seed: u64,
+    ) -> Result<Self, Error> {
+        // Port 0 may bind any u16 port; reserve its longest spelling at admission.
+        let origin = format!("http://{}", SocketAddr::new(address.ip(), u16::MAX));
+        if origin.len() > usize::try_from(protocol.github.target_bytes).map_err(|_| Error::Limits)? {
+            return Err(Error::Limits);
+        }
+        let protocol_bound = skein_fake_forge_github::worst_case(&protocol, &config).ok_or(Error::Limits)?;
+        let service = protocol::Service::Github(
+            skein_fake_forge_github::Service::new(config, &protocol, seed).map_err(|_| Error::Limits)?,
+        );
+        Self::host(address, limits, protocol::Limits::Github(protocol), service, protocol_bound, forge)
+    }
+    fn host(
+        address: SocketAddr,
+        limits: Limits,
+        protocol: protocol::Limits,
+        service: protocol::Service,
+        protocol_bound: u64,
+        forge: Rc<RefCell<Forge>>,
+    ) -> Result<Self, Error> {
+        let bound = shared::bound(&limits, &protocol, protocol_bound, &forge.borrow()).ok_or(Error::Limits)?;
+        let call_capacity = call_capacity(&protocol, &forge.borrow(), limits.connections).ok_or(Error::Limits)?;
         Ok(Self {
             face: Face::new(address, limits)?,
             forge,
@@ -152,6 +187,11 @@ impl Peer {
                 assert_eq!(owner, LISTENER);
                 self.face.listener = Some(listener);
                 self.face.address = Some(addr.socket().expect("loopback socket address"));
+                if let protocol::Service::Github(service) = &mut self.service {
+                    // The listening event supplies the origin, including a kernel-selected port.
+                    let base = format!("http://{}", self.face.address.expect("bound address"));
+                    service.set_origin(base.into_bytes().into_boxed_slice()).expect("bounded local origin");
+                }
             }
             io::Event::Accepted { owner, socket, .. } => {
                 assert_eq!(owner, LISTENER);
@@ -228,6 +268,16 @@ impl Peer {
         }
     }
 
+    fn dispatch(&mut self, forge: &mut Forge, env: &Env<domain::Config>, connection: Token, event: domain::Event) {
+        let domain::Event::Call { reply_to, user, repository, op } = event;
+        let local = reply_to.into_token();
+        let token = forge.next_reply();
+        assert!(self.calls.len() < self.calls.capacity(), "admitted call snapshots fit");
+        self.calls.push(Call { token, local, connection, user, repository: repository.clone(), op: op.clone() });
+        let Forge { domain, pending, .. } = forge;
+        domain::step(domain, env, domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op }, pending);
+    }
+
     fn progress(&mut self, now: Time, wall: Wall) {
         let env = Env { now, wall, limits: self.protocol };
         // Moving the Rc, rather than borrowing through self, keeps the one pass borrow explicit.
@@ -236,8 +286,10 @@ impl Peer {
         forge.now = now;
         // Endpoint ownership lives in the service only for this pass; refusal leaves it empty.
         self.destination = forge.hooks.as_ref().and_then(delivery::address);
-        let previous = self.service.set_hooks(forge.hooks.take());
-        assert!(previous.is_err() || previous.expect("admitted endpoint").is_none());
+        if !self.service.is_github() {
+            let previous = self.service.set_hooks(forge.hooks.take());
+            assert!(previous.is_err() || previous.expect("admitted endpoint").is_none());
+        }
         let domain_env = Env { now, wall, limits: forge.config };
         for index in 0..self.connections.len() {
             if self.face.requests.room() < 32 {
@@ -272,23 +324,7 @@ impl Peer {
             {
                 match event {
                     protocol::Event::Domain(event) => {
-                        let domain::Event::Call { reply_to, user, repository, op } = event;
-                        let token = reply_to.into_token();
-                        assert!(self.calls.len() < self.calls.capacity(), "admitted call snapshots fit");
-                        self.calls.push(Call {
-                            token,
-                            connection: connection.owner,
-                            user,
-                            repository: repository.clone(),
-                            op: op.clone(),
-                        });
-                        let Forge { domain, pending, .. } = &mut *forge;
-                        domain::step(
-                            domain,
-                            &domain_env,
-                            domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op },
-                            pending,
-                        );
+                        self.dispatch(&mut forge, &domain_env, connection.owner, event);
                     }
                     protocol::Event::Close => connection.closing = true,
                     protocol::Event::Closed => {}
@@ -332,7 +368,9 @@ impl Peer {
         self.route(&mut forge, &env);
         forge.domain.reclaim();
         self.service.reclaim();
-        forge.hooks = self.service.set_hooks(None).expect("clearing an endpoint is valid");
+        if !self.service.is_github() {
+            forge.hooks = self.service.set_hooks(None).expect("clearing an endpoint is valid");
+        }
     }
 }
 
@@ -393,16 +431,11 @@ impl Host for Peer {
     }
 }
 
-fn call_capacity(protocol: &protocol::Limits, forge: &Forge) -> Option<u32> {
-    protocol.calls.checked_add(forge.config.limits.calls)
+fn call_capacity(protocol: &protocol::Limits, forge: &Forge, connections: u32) -> Option<u32> {
+    protocol.calls(connections).checked_add(forge.config.limits.calls)
 }
 /// Checked envelope for machines, pending payloads, connections, snapshots and frozen records.
 #[must_use]
-pub fn worst_case(
-    limits: &Limits,
-    protocol: &protocol::Limits,
-    config: &protocol::Config,
-    forge: &Forge,
-) -> Option<u64> {
-    shared::bound(limits, protocol, protocol::worst_case(protocol, config)?, forge)
+pub fn worst_case(limits: &Limits, protocol: &forgejo::Limits, config: &forgejo::Config, forge: &Forge) -> Option<u64> {
+    shared::bound(limits, &protocol::Limits::Forgejo(*protocol), forgejo::worst_case(protocol, config)?, forge)
 }

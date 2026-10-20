@@ -5,6 +5,8 @@ use skein_shell::Host;
 
 #[path = "forge/fixtures.rs"]
 mod fixtures;
+#[path = "forge/github.rs"]
+mod github;
 use fixtures::{ONE_REPLY, World};
 
 #[test]

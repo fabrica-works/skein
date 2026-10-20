@@ -230,7 +230,7 @@ crates/skein-fake-llm-*         the scripted LLM peer: its domain and its byte p
 crates/skein-fake-forge-domain  the fake forge's domain (fake-forge.md, 2 and 3)
 crates/skein-fake-forge-protocol its Forgejo protocol layer (fake-forge.md, 4)
 crates/skein-fake-oauth         an independent rotating OAuth issuer (oauth.md, 5)
-crates/skein-fake-peers         the LLM, OAuth and forge peers hosted on loopback io, in a world or as an application's own process (fake-forge.md, 5)
+crates/skein-fake-peers         the LLM, OAuth and forge peers hosted on loopback io, in a world or as an application's own process (fake-forge.md, 5); links testing/skein-fake-forge-github for GitHub's face
 crates/skein-fake-checkout      files, scripted commands and local git for a service's domain worlds, and for a service's fake git as a program (fake-checkout.md)
 testing/skein-conformance       the conformance suite: the backend interface, the scenarios, the driver, the checks
 testing/skein-heap              the counting allocator, the meter that checks a step against its worst case, and the span a world meters its processes with

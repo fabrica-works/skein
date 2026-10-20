@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 skein-lib.workspace = true
 skein-fake-forge-domain.workspace = true
+# GitHub's face, on the shared host.
+skein-fake-forge-github.workspace = true
 skein-fake-forge-protocol.workspace = true
 skein-io.workspace = true
 skein-shell.workspace = true

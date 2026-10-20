@@ -58,3 +58,13 @@ Contracts: `fake-llm.md`, section 3; `oauth.md`, section 5;
 The LLM peer reads a body of announced length in batches up to the HTTP
 read cap, and a chunked body a byte at a time. A request reaches the
 domain only at HTTP's `End`.
+
+`forge::Peer::new` serves Forgejo and `forge::Peer::github` hosts the
+`testing/skein-fake-forge-github` layer for GitHub's API and browser routes
+on one plaintext loopback origin. Both borrow an owner's
+`Rc<RefCell<forge::Forge>>`; peers and another fake may share that handle.
+Each domain call receives a shared reply identity, translated back to its
+connection's local identity at the terminal. Unrelated replies stay pending.
+The listening event supplies GitHub's pagination origin, including the bound
+port. GitHub hooks stay pending for their owner; its blob origin and delivery
+push are separate work (fake-forge.md, sections 5 and 10.5).

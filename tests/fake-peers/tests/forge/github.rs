@@ -1,0 +1,592 @@
+//! Both dialects over loopback byte streams on the same replaying kernel.
+use super::fixtures as f;
+use skein_fake_forge_domain::{self as domain, api as da};
+use skein_fake_forge_github::{
+    self as fake,
+    service::{Account, AppFacts, Row},
+};
+use skein_fake_peers::forge::{Forge, Observation, Peer};
+use skein_fake_peers_tests as support;
+use skein_forge::{
+    api,
+    github::{
+        self,
+        document::{Document, Kind},
+        plans::{
+            Body, Heard,
+            plan::{Bounds, Plan, Step},
+            tables::Tables,
+        },
+        request::Method,
+    },
+};
+use skein_io::kernel::{Complete, Done, Family, Fd, Op, Submit};
+use skein_json::tokenizer;
+use skein_lib::{
+    Env, Intake, List, Queue, ReplyTo, Secret, Time, Token, Wall, bytes,
+    stream::{Down, Up},
+};
+use skein_shell::Host;
+use skein_sim::{Pid, Sim};
+use std::{cell::RefCell, rc::Rc};
+
+const BOT: u64 = 9;
+const APP: u64 = 7;
+const PERSON: u64 = 31;
+const OWNER: u64 = 22;
+const SLUG: &[u8] = b"example-app";
+const ISSUE: &[u8] = br#"{"title":"A shared issue","body":"A shared body"}"#;
+const MANIFEST: &[u8] = br#"{"name":"example-app","url":"http://127.0.0.1/","redirect_url":"http://127.0.0.1/callback","setup_url":"http://127.0.0.1/setup","public":true}"#;
+// One bootstrap plus two write/readback sequences fit 128 records and 128 KiB.
+const RECORDS: u32 = 128;
+const RECORD_BYTES: u32 = 131_072;
+const PASSES: u32 = 10_000;
+const BODY_BYTES: u32 = 4096;
+const RESPONSE_BYTES: u32 = 8192;
+
+fn limits() -> fake::Limits {
+    fake::Limits {
+        http: skein_http::server::Limits {
+            head: 4096,
+            headers: 16,
+            body: u64::from(BODY_BYTES),
+            read: 128,
+            response: 16384,
+            send: 128,
+        },
+        github: github::limits::Limits {
+            json: tokenizer::Limits { depth: 16, string: 4096, number: 32, chunk: 128, length: 16384 },
+            writer: skein_json::writer::Limits { depth: 16, length: RESPONSE_BYTES },
+            string_bytes: 256,
+            body_bytes: BODY_BYTES,
+            inner: 8,
+            target_bytes: 1024,
+        },
+        installations: fake::installations::Limits { installations: 3, tokens: 4, listed: 2 },
+        pages: fake::pages::Limits { states: 3, manifest_bytes: 2048 },
+        page: 1,
+        body: BODY_BYTES,
+        response: RESPONSE_BYTES,
+    }
+}
+fn config() -> fake::Config {
+    let mut repositories = List::with_capacity(1);
+    repositories
+        .push(Row {
+            id: 2,
+            owner: f::boxed(b"org"),
+            owner_id: OWNER,
+            organization: true,
+            name: f::boxed(b"repo"),
+            private: true,
+        })
+        .expect("repository row fits");
+    let mut accounts = List::with_capacity(3);
+    for (login, id, organization) in [(b"org".as_slice(), OWNER, true), (b"alice", PERSON, false), (b"bob", 32, false)]
+    {
+        accounts.push(Account { login: f::boxed(login), id, organization }).expect("account row fits");
+    }
+    fake::Config {
+        base: f::boxed(b"http://127.0.0.1:1"),
+        app: fake::app::App {
+            id: APP,
+            slug: f::boxed(SLUG),
+            owner: PERSON,
+            permissions: Box::new([]),
+            events: Box::new([]),
+            key: fake::keys::KEYS[0],
+            webhook: Secret::new(f::boxed(b"invented-hook-secret")),
+        },
+        app_facts: AppFacts::Complete,
+        shown: fake::service::Shown::Ruleset,
+        ruleset_id: 17,
+        pull_requests_only: false,
+        required_signatures: false,
+        bot: BOT,
+        hook: f::boxed(b"http://127.0.0.1/hooks"),
+        repositories,
+        accounts,
+        person: f::boxed(b"alice"),
+    }
+}
+struct Reply {
+    status: u16,
+    headers: Vec<(Vec<u8>, Vec<u8>)>,
+    body: Vec<u8>,
+}
+impl Reply {
+    fn parse(wire: &[u8]) -> Self {
+        let split = bytes::find(wire, b"\r\n\r\n").expect("response head");
+        let mut lines = wire[..split].split(|b| *b == b'\n');
+        let first = lines.next().expect("response status line");
+        let status = std::str::from_utf8(&first[9..12]).expect("ASCII status").parse().expect("numeric status");
+        let headers = lines
+            .map(|line| {
+                let at = line.iter().position(|b| *b == b':').expect("header field");
+                (line[..at].to_vec(), line[at + 2..line.len() - 1].to_vec())
+            })
+            .collect();
+        Self { status, headers, body: wire[split + 4..].to_vec() }
+    }
+    fn header(&self, name: &[u8]) -> Option<&[u8]> {
+        self.headers.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).map(|(_, value)| value.as_slice())
+    }
+    fn decode(&self, kind: Kind) -> (Vec<github::document::Row>, Document) {
+        let mut bounds = limits().github;
+        // Conversion readers admit the complete PEM within the JSON scalar cap.
+        if kind == Kind::Conversion {
+            bounds.string_bytes = bounds.json.string;
+        }
+        let mut decoder = github::decode::decoder(kind, &bounds);
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: bounds.json };
+        let mut tokenizer = tokenizer::Tokenizer::new(&bounds.json);
+        let mut above = Queue::with_capacity(1);
+        let mut below = Queue::with_capacity(1);
+        let mut intake = Intake::with_capacity(RESPONSE_BYTES);
+        intake.append(&self.body).expect("response fits intake");
+        let mut rows = Vec::new();
+        tokenizer::down(&mut tokenizer, &env, tokenizer::Request::Next, &mut above, &mut below);
+        for _ in 0..self.body.len().saturating_mul(8).saturating_add(64) {
+            if let Some(event) = above.pop() {
+                let (request, step) = decoder.step(event);
+                match step {
+                    github::decode::Step::Demand => {}
+                    github::decode::Step::Row(row) => rows.push(row),
+                    github::decode::Step::Done(doc) => return (rows, doc),
+                    github::decode::Step::Malformed(_) => panic!("response document must decode"),
+                }
+                tokenizer::down(&mut tokenizer, &env, request, &mut above, &mut below);
+            } else {
+                let Down::Demand { read, .. } = below.pop().expect("JSON input demand") else {
+                    panic!("JSON reads only")
+                };
+                let up = intake.meet(read).map_or(Up::End, Up::Bytes);
+                tokenizer::up(&mut tokenizer, &env, up, &mut above, &mut below);
+            }
+        }
+        panic!("response decoding settles")
+    }
+}
+struct World {
+    github: Peer,
+    forgejo: Peer,
+    forge: Rc<RefCell<Forge>>,
+    sim: Sim,
+    github_pid: Pid,
+    forgejo_pid: Pid,
+    client_pid: Pid,
+    serial: u64,
+    passes: u32,
+}
+impl World {
+    fn new(seed: u64) -> Self {
+        let forge = f::configured_forge(seed, f::fake_config(), false);
+        domain::grant(&mut forge.borrow_mut().domain, f::REPOSITORY, BOT, da::Permission::Write);
+        let peer_limits =
+            skein_fake_peers::Limits { observations: RECORDS, observation_bytes: RECORD_BYTES, ..f::limits() };
+        let github = Peer::github(f::address(), peer_limits, config(), limits(), Rc::clone(&forge), seed)
+            .expect("bounded GitHub peer");
+        let forgejo = Peer::new(f::address(), peer_limits, f::config(), f::protocol_limits(), Rc::clone(&forge), seed)
+            .expect("bounded Forgejo peer");
+        let mut sim = Sim::new(seed, skein_sim::Config::calm());
+        let (github_pid, forgejo_pid, client_pid) = (sim.spawn_process(), sim.spawn_process(), sim.spawn_process());
+        let mut world = Self { github, forgejo, forge, sim, github_pid, forgejo_pid, client_pid, serial: 0, passes: 0 };
+        while world.github.address().is_none() || world.forgejo.address().is_none() {
+            world.pass();
+        }
+        world
+    }
+    fn pass(&mut self) {
+        self.passes += 1;
+        assert!(self.passes <= PASSES, "GitHub world settles within its pass bound");
+        for (pid, peer) in [(self.github_pid, &mut self.github), (self.forgejo_pid, &mut self.forgejo)] {
+            self.sim.reap(pid, peer.completions());
+            peer.iterate(self.sim.now(), self.sim.wall());
+            self.sim.submit(pid, peer.submissions());
+        }
+        if !self.github.work_pending(self.sim.now())
+            && !self.forgejo.work_pending(self.sim.now())
+            && let Some(next) = [self.sim.next_due(), self.github.next_deadline(), self.forgejo.next_deadline()]
+                .into_iter()
+                .flatten()
+                .min()
+        {
+            self.sim.advance_to(next);
+        }
+    }
+    fn client(&mut self, kind: Op) -> Complete {
+        self.serial += 1;
+        let token = Token::new(self.serial);
+        let mut output = Queue::with_capacity(1);
+        let mut input = Queue::with_capacity(1);
+        output.push(Submit { op: token, kind });
+        self.sim.submit(self.client_pid, &mut output);
+        loop {
+            self.sim.reap(self.client_pid, &mut input);
+            if let Some(complete) = input.pop() {
+                return complete;
+            }
+            self.pass();
+        }
+    }
+    fn open(&mut self, github: bool) -> Fd {
+        let Done::Fd(fd) = support::call(&mut self.sim, self.client_pid, 1, Op::Socket { family: Family::Ipv4 }) else {
+            panic!("client socket")
+        };
+        let addr = if github { self.github.address() } else { self.forgejo.address() }.expect("bound peer address");
+        support::call(&mut self.sim, self.client_pid, 2, Op::Connect { fd, addr });
+        fd
+    }
+    fn send(&mut self, fd: Fd, wire: &[u8]) {
+        let mut from = 0;
+        while usize::try_from(from).expect("send offset fits usize") < wire.len() {
+            let complete = self.client(Op::Send { fd, bytes: f::boxed(wire), from });
+            let Ok(Done::Count(sent)) = complete.result else { panic!("client sends") };
+            assert!(sent > 0);
+            from += sent;
+        }
+    }
+    fn receive(&mut self, fd: Fd) -> Reply {
+        let mut wire = Vec::new();
+        loop {
+            let complete = self.client(Op::Recv { fd, buf: Box::new([0; 1024]) });
+            let Ok(Done::Count(count)) = complete.result else { panic!("client receives") };
+            if count == 0 {
+                break;
+            }
+            let Op::Recv { buf, .. } = complete.kind else { panic!("receive buffer") };
+            wire.extend_from_slice(&buf[..usize::try_from(count).expect("received count fits usize")]);
+        }
+        support::call(&mut self.sim, self.client_pid, 3, Op::Close { fd });
+        Reply::parse(&wire)
+    }
+    fn fetch(&mut self, method: Method, target: &[u8], body: &[u8], auth: Option<&Secret>) -> Reply {
+        let fd = self.open(true);
+        self.send(fd, &request(method, target, body, auth));
+        self.receive(fd)
+    }
+    fn manifest(&mut self) -> Reply {
+        let mut form = b"manifest=".to_vec();
+        for byte in MANIFEST {
+            form.extend_from_slice(format!("%{byte:02X}").as_bytes());
+        }
+        self.fetch(Method::Post, b"/settings/apps/new?state=example-state", &form, None)
+    }
+    fn convert(&mut self) -> Reply {
+        let page = self.manifest();
+        let at = bytes::find(&page.body, b"?code=").expect("manifest create link") + b"?code=".len();
+        let end = page.body[at..].iter().position(|b| *b == b'&').expect("conversion code delimiter") + at;
+        let mut target = b"/app-manifests/".to_vec();
+        target.extend_from_slice(&page.body[at..end]);
+        target.extend_from_slice(b"/conversions");
+        self.fetch(Method::Post, &target, b"", None)
+    }
+    fn jwt(&self) -> Secret {
+        let now = self.sim.wall();
+        let expires = Wall::from_nanos(now.as_nanos().checked_add(600_000_000_000).expect("JWT expiration fits clock"));
+        let input = github::jwt::signing_input(8, now, expires).expect("JWT signing input");
+        let signature = skein_tls::sign_rs256(fake::keys::KEYS[0], &input).expect("fixture key signs JWT");
+        let token = github::jwt::token(&input, &signature).expect("JWT encoding");
+        bearer(token.expose())
+    }
+    fn install(&mut self, account: &[u8]) -> Reply {
+        let mut target = b"/apps/example-app/installations/new?state=install-state&account=".to_vec();
+        target.extend_from_slice(account);
+        self.fetch(Method::Get, &target, b"", None)
+    }
+    fn token(&mut self) -> Secret {
+        self.convert();
+        self.install(b"org");
+        let response = self.fetch(Method::Post, b"/app/installations/1/access_tokens", b"", Some(&self.jwt()));
+        let (_, Document::Minted(minted)) = response.decode(Kind::Minted) else { panic!("minted installation token") };
+        bearer(minted.token.expose())
+    }
+    fn plan(&mut self, token: &Secret, op: api::Op) -> Result<api::Answer, api::Error> {
+        let bounds = Bounds { inner: 8, page_size: 1, rows: 8, answer_bytes: RESPONSE_BYTES, body_bytes: BODY_BYTES };
+        let mut plan = Plan::new(api::Repository { forge: 1, repository: 2 }, op);
+        let mut tables = Tables::new(4, 8);
+        let mut step = plan.begin(bounds, SLUG, &mut tables).expect("plan begins");
+        for _ in 0..32 {
+            let exchange = match step {
+                Step::Done(result) => return result,
+                Step::Send(exchange) => exchange,
+            };
+            let encoded =
+                github::request::encode(&exchange.request, &limits().github).expect("bounded request encoding");
+            let response =
+                self.fetch(encoded.method, &encoded.target, encoded.body.as_deref().unwrap_or(b""), Some(token));
+            let mut head = github::header::Head::new();
+            for (name, value) in &response.headers {
+                github::header::field(&mut head, name, value, &limits().github);
+            }
+            let kind = if response.status < 300 {
+                github::decode::kind(&exchange.request).expect("request document kind")
+            } else {
+                Kind::Error
+            };
+            let (rows, document) = response.decode(kind);
+            let mut events = vec![Heard::Head { status: response.status, head }];
+            events.extend(rows.into_iter().map(Heard::Row));
+            events.push(Heard::Done(Body::Document(document)));
+            let mut next = None;
+            for event in events {
+                if let Some(advance) = plan.heard(event, bounds, SLUG, &mut tables).expect("plan accepts response") {
+                    next = Some(advance);
+                    break;
+                }
+            }
+            step = next.expect("exchange advances plan");
+        }
+        panic!("bounded plan settles")
+    }
+    fn settle(&mut self) {
+        self.github.shutdown();
+        self.forgejo.shutdown();
+        while !self.github.is_empty() || !self.forgejo.is_empty() {
+            self.pass();
+        }
+        for pid in [self.github_pid, self.forgejo_pid, self.client_pid] {
+            self.sim.assert_quiescent(pid);
+            self.sim.assert_no_open_fds(pid);
+        }
+    }
+}
+fn bearer(token: &[u8]) -> Secret {
+    let mut value = b"Bearer ".to_vec();
+    value.extend_from_slice(token);
+    Secret::new(value.into_boxed_slice())
+}
+fn request(method: Method, target: &[u8], body: &[u8], auth: Option<&Secret>) -> Vec<u8> {
+    request_reuse(method, target, body, auth, false)
+}
+fn request_reuse(method: Method, target: &[u8], body: &[u8], auth: Option<&Secret>, keep: bool) -> Vec<u8> {
+    let method = match method {
+        Method::Get => b"GET".as_slice(),
+        Method::Post => b"POST",
+        Method::Put => b"PUT",
+        Method::Patch => b"PATCH",
+        Method::Delete => b"DELETE",
+    };
+    let mut wire = method.to_vec();
+    wire.push(b' ');
+    wire.extend_from_slice(target);
+    wire.extend_from_slice(b" HTTP/1.1\r\nHost: 127.0.0.1\r\nUser-Agent: example-app\r\nX-GitHub-Api-Version: ");
+    wire.extend_from_slice(github::pin::API_VERSION.as_bytes());
+    if let Some(auth) = auth {
+        wire.extend_from_slice(b"\r\nAuthorization: ");
+        wire.extend_from_slice(auth.expose());
+    }
+    let connection = if keep { "keep-alive" } else { "close" };
+    wire.extend_from_slice(
+        format!("\r\nConnection: {connection}\r\nContent-Length: {}\r\n\r\n", body.len()).as_bytes(),
+    );
+    wire.extend_from_slice(body);
+    wire
+}
+
+#[test]
+fn github_peer_serves_repository_reads_and_writes_over_the_shared_forge() {
+    let mut world = World::new(f::SEED);
+    let token = world.token();
+    let made = world
+        .plan(
+            &token,
+            api::Op::Write(api::Write::CreateIssue {
+                title: f::boxed(b"A shared issue"),
+                body: f::boxed(b"A shared body"),
+                key: f::boxed(b"example-key"),
+            }),
+        )
+        .expect("issue created");
+    assert!(matches!(made, api::Answer::Created(1)));
+    let read = world.plan(&token, api::Op::Read(api::Read::Item { number: 1, after: 0 })).expect("issue read");
+    let api::Answer::Item { item, .. } = read else { panic!("issue read") };
+    assert_eq!(item.title.as_ref(), b"A shared issue");
+    let fd = world.open(false);
+    world.send(fd, &f::request(b"/api/v1/repos/org/repo/issues/1"));
+    let response = world.receive(fd);
+    assert_eq!(response.status, 200);
+    assert!(bytes::find(&response.body, b"A shared issue").is_some());
+    assert!(world.forge.borrow().pending.is_empty());
+    assert!(world.forge.borrow().now > Time::ZERO);
+    for peer in [&world.github, &world.forgejo] {
+        assert!(peer.observations().iter().all(|record| match record {
+            Observation::Head { call, .. } => call.header(b"authorization").is_none_or(<[u8]>::is_empty),
+            Observation::Connection { .. } | Observation::Call { .. } | Observation::Delivery { .. } => true,
+        }));
+    }
+    world.settle();
+}
+#[test]
+fn github_peer_pages_link_to_its_own_origin() {
+    let mut world = World::new(f::SEED);
+    let token = world.token();
+    for _ in 0..2 {
+        world.fetch(Method::Post, b"/repos/org/repo/issues", ISSUE, Some(&token));
+    }
+    let response = world.fetch(
+        Method::Get,
+        b"/repos/org/repo/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=1&page=1",
+        b"",
+        Some(&token),
+    );
+    assert_eq!(response.status, 200);
+    let link = response.header(b"Link").expect("next page");
+    let expected = format!(
+        "<http://{}/repos/org/repo/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=1&page=2>; rel=\"next\"",
+        world.github.address().expect("bound GitHub address")
+    );
+    assert_eq!(link, expected.as_bytes());
+    let target = link
+        .strip_prefix(format!("<http://{}", world.github.address().expect("bound GitHub address")).as_bytes())
+        .expect("link uses peer origin")
+        .split(|b| *b == b'>')
+        .next()
+        .expect("next page target");
+    let next = world.fetch(Method::Get, target, b"", Some(&token));
+    assert_eq!(next.status, 200);
+    assert!(next.header(b"Link").is_none());
+    world.settle();
+}
+#[test]
+fn github_peer_serves_the_manifest_and_conversion_pages() {
+    let mut world = World::new(f::SEED);
+    let page = world.manifest();
+    assert_eq!(page.status, 200);
+    assert_eq!(page.header(b"content-type"), Some(b"text/html".as_slice()));
+    assert!(bytes::find(&page.body, b"Create GitHub App").is_some());
+    let conversion = world.convert();
+    assert_eq!(conversion.status, 201);
+    assert_eq!(conversion.header(b"content-type"), Some(b"application/json".as_slice()));
+    let (_, Document::Conversion(app)) = conversion.decode(Kind::Conversion) else { panic!("converted App") };
+    assert_eq!(app.slug.as_ref(), SLUG);
+    let installed = world.install(b"org");
+    assert_eq!(installed.status, 302);
+    assert_eq!(
+        installed.header(b"Location"),
+        Some(b"http://127.0.0.1/setup?installation_id=1&setup_action=install&state=install-state".as_slice())
+    );
+    world.settle();
+}
+#[test]
+fn github_peer_shutdown_settles_a_mid_request_client() {
+    let mut world = World::new(f::SEED);
+    let token = world.token();
+    let fd = world.open(true);
+    let wire = request(Method::Post, b"/repos/org/repo/issues", ISSUE, Some(&token));
+    let split = wire.len() - ISSUE.len() + ISSUE.len() / 2;
+    world.send(fd, &wire[..split]);
+    while !world.github.observations().iter().any(|record| {
+        matches!(record,
+        Observation::Head { call, .. } if call.target.as_ref() == b"/repos/org/repo/issues")
+    }) {
+        world.pass();
+    }
+    world.github.shutdown();
+    world.pass();
+    assert!(!world.github.is_empty());
+    world.send(fd, &wire[split..]);
+    let response = world.receive(fd);
+    assert_eq!(response.status, 201);
+    let calls = world.github.observations().iter().filter(|record| matches!(record, Observation::Call { .. })).count();
+    assert_eq!(calls, f::ONE_REPLY);
+    world.settle();
+}
+#[test]
+fn github_peer_seed_replays_names_and_replies() {
+    fn run() -> (World, Vec<u8>) {
+        let mut world = World::new(f::SEED);
+        let token = world.token();
+        let response = world.fetch(Method::Post, b"/repos/org/repo/issues", ISSUE, Some(&token));
+        world.settle();
+        (world, response.body)
+    }
+    let (first, first_reply) = run();
+    let (second, second_reply) = run();
+    assert!(first_reply == second_reply, "reply bytes replay");
+    assert!(first.github.observations() == second.github.observations(), "GitHub observations replay");
+    assert!(first.forgejo.observations() == second.forgejo.observations(), "Forgejo observations replay");
+    assert!(first.sim.render_trace() == second.sim.render_trace(), "byte trace replays");
+}
+
+#[test]
+fn github_and_forgejo_route_concurrent_calls_to_their_owners() {
+    let mut world = World::new(f::SEED);
+    let token = world.token();
+    let external = world.forge.borrow_mut().next_reply();
+    world
+        .forge
+        .borrow_mut()
+        .pending
+        .push(domain::Request::Reply { to: ReplyTo::new(external), result: Ok(da::Answer::Done) });
+    let github = world.open(true);
+    let forgejo = world.open(false);
+    world.send(github, &request(Method::Get, b"/repos/org/repo", b"", Some(&token)));
+    world.send(forgejo, &f::request(b"/api/v1/repos/org/repo/branches/main"));
+    let github = world.receive(github);
+    let forgejo = world.receive(forgejo);
+    assert_eq!((github.status, forgejo.status), (200, 200));
+    assert!(matches!(github.decode(Kind::Repository).1, Document::Repository(_)));
+    assert!(bytes::find(&forgejo.body, b"\"name\":\"main\"").is_some());
+    let domain::Request::Reply { to, result } =
+        world.forge.borrow_mut().pending.pop().expect("external reply retained")
+    else {
+        panic!("external terminal")
+    };
+    assert_eq!(to.into_token(), external);
+    assert_eq!(result, Ok(da::Answer::Done));
+    world.settle();
+}
+
+#[test]
+fn github_peer_reuses_a_connection_after_its_response() {
+    let mut world = World::new(f::SEED);
+    world.convert();
+    for (target, status) in [
+        (b"/unknown".as_slice(), 404),
+        (b"/apps/example-app/installations/new?state=reuse-state&account=org".as_slice(), 302),
+    ] {
+        let before = world.github.observations().len();
+        let fd = world.open(true);
+        let mut wire = request_reuse(Method::Get, target, b"", None, true);
+        wire.extend_from_slice(&request(Method::Get, target, b"", None));
+        world.send(fd, &wire);
+        let response = world.receive(fd);
+        assert_eq!(response.status, status);
+        assert_eq!(bytes::count(&response.body, format!("HTTP/1.1 {status} ").as_bytes(), 2), 1);
+        let heads = world.github.observations()[before..]
+            .iter()
+            .filter(|record| matches!(record, Observation::Head { .. }))
+            .count();
+        assert_eq!(heads, 2);
+    }
+    world.settle();
+}
+
+#[test]
+fn github_peer_keeps_a_continuation_until_the_followup_reply() {
+    let mut world = World::new(f::SEED);
+    let token = world.token();
+    world.fetch(Method::Post, b"/repos/org/repo/issues", ISSUE, Some(&token));
+    let before = world.github.observations().len();
+    // The author read succeeds; the domain then refuses reviewing an issue.
+    let response = world.fetch(
+        Method::Post,
+        b"/repos/org/repo/pulls/1/reviews",
+        br#"{"event":"COMMENT","body":"A review"}"#,
+        Some(&token),
+    );
+    assert_eq!(response.status, 404);
+    let calls: Vec<_> =
+        world.github.observations()[before..]
+            .iter()
+            .filter_map(|record| {
+                if let Observation::Call { connection, op, .. } = record { Some((connection, op)) } else { None }
+            })
+            .collect();
+    assert_eq!(calls.len(), f::WRITE_AND_READBACK);
+    assert!(matches!(calls[0].1, da::Op::Read(da::Read::Item { number: 1, .. })));
+    assert!(matches!(calls[1].1, da::Op::Write(da::Write::Review { number: 1, .. })));
+    assert_eq!(calls[0].0, calls[1].0);
+    world.settle();
+}

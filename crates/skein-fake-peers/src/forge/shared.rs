@@ -1,8 +1,8 @@
 //! Shared pending ownership and checked hosted heap accounting.
+use super::layer as protocol;
 use super::{Call, Connection, Forge, Observation, call_capacity};
 use crate::{Limits, Transport, face, transport};
 use skein_fake_forge_domain as domain;
-use skein_fake_forge_protocol as protocol;
 use skein_lib::{Queue, Time, Token};
 use std::mem::size_of;
 
@@ -13,7 +13,8 @@ impl Forge {
         let capacity = config.limits.calls.checked_add(config.limits.hooks).expect("bounded pending capacity");
         Self { domain, config, now: Time::ZERO, pending: Queue::with_capacity(capacity), hooks: None, serial: 0 }
     }
-    /// External reply rights use slots outside the HTTP service's admitted range.
+    /// Allocates a shared reply identity for a peer or another domain caller.
+    /// Peers translate their connection-local reply rights through this range.
     pub fn next_reply(&mut self) -> Token {
         self.serial =
             self.serial.checked_add(1).filter(|serial| *serial < (1 << 60)).expect("finite external reply rights");
@@ -25,10 +26,10 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
     let config = &forge.config;
     let domain = &config.limits;
     if limits.io.sockets < limits.connections.checked_mul(2)?.checked_add(1)?
-        || limits.connections > protocol.connections
-        || protocol.calls >= (7 << 28)
-        || limits.plaintext < protocol.http.head.max(protocol.http.read)
-        || limits.io.output < protocol.http.response.max(protocol.http.send)
+        || limits.connections > protocol.connections(limits.connections)
+        || protocol.calls(limits.connections) >= (7 << 28)
+        || limits.plaintext < protocol.http().head.max(protocol.http().read)
+        || limits.io.output < protocol.http().response.max(protocol.http().send)
         || forge.pending.capacity() < domain.calls.checked_add(domain.hooks)?
         || domain.repositories == 0
         || domain.users == 0
@@ -59,15 +60,29 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
         .checked_add(Queue::<skein_lib::stream::Down>::worst_case(limits.queue)?)?
         .checked_add(Queue::<skein_lib::stream::Up>::worst_case(limits.queue)?)?
         .checked_add(u64::from(limits.queue).checked_mul(payload.checked_add(u64::from(limits.plaintext))?)?)?;
+    let layer_bound = match protocol {
+        protocol::Limits::Forgejo(_) => protocol_bound,
+        // The GitHub layer envelope includes one connection. Each additional
+        // hosted connection retains its own HTTP buffers and continuation.
+        protocol::Limits::Github(github) => protocol_bound
+            .checked_add(
+                skein_fake_forge_github::server::worst_case(github)?
+                    .checked_mul(u64::from(limits.connections.saturating_sub(1)))?,
+            )?
+            .checked_add(Queue::<skein_fake_forge_github::Event>::worst_case(skein_fake_forge_github::MAX_UP)?)?,
+    };
     face::worst_case(limits)?
-        .checked_add(super::delivery::worst_case(limits, protocol, forge.hooks.as_ref())?)?
-        .checked_add(protocol_bound)?
+        .checked_add(match protocol {
+            protocol::Limits::Forgejo(protocol) => super::delivery::worst_case(limits, protocol, forge.hooks.as_ref())?,
+            protocol::Limits::Github(_) => 0,
+        })?
+        .checked_add(layer_bound)?
         .checked_add(domain_bound)?
         .checked_add(Queue::<domain::Request>::worst_case(forge.pending.capacity())?)?
         .checked_add(u64::from(forge.pending.capacity()).checked_mul(domain_bound)?)?
         .checked_add(u64::from(limits.connections).checked_mul(connection)?)?
         .checked_add(
-            u64::from(call_capacity(protocol, forge)?)
+            u64::from(call_capacity(protocol, forge, limits.connections)?)
                 .checked_mul(u64::try_from(size_of::<Call>()).ok()?.checked_add(payload)?)?,
         )?
         // Each frozen record owns a full inline slot, including a pull's

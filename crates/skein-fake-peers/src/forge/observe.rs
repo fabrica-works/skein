@@ -1,7 +1,7 @@
 //! Frozen terminal ownership and bounded observation payloads.
+use super::layer as protocol;
 use super::{Connection, Forge, Observation, Peer};
 use skein_fake_forge_domain::{self as domain, api};
-use skein_fake_forge_protocol as protocol;
 use skein_lib::{Env, ReplyTo};
 use std::mem::size_of_val;
 
@@ -39,7 +39,13 @@ impl Peer {
                     (token, domain::Request::Reply { to: ReplyTo::new(token), result })
                 }
                 hook @ domain::Request::Hook { .. } => {
-                    self.deliver(&hook);
+                    // GitHub hook intake and push belong to the delivery layer;
+                    // leave these records to the shared forge's owner for now.
+                    if self.service.is_github() {
+                        forge.pending.push(hook);
+                    } else {
+                        self.deliver(&hook);
+                    }
                     continue;
                 }
             };
@@ -71,7 +77,9 @@ impl Peer {
                 bytes,
             );
             // A retired HTTP call still consumes its snapshot; an unrelated reply stays above.
-            if let Ok((owner, reply)) = self.service.target(reply)
+            let domain::Request::Reply { result, .. } = reply else { unreachable!("reply terminal") };
+            let reply = domain::Request::Reply { to: ReplyTo::new(call.local), result };
+            if let Some((owner, reply)) = self.service.target(reply)
                 && let Some(index) = self.connections.iter().position(|connection| connection.owner == owner)
             {
                 let mut connection = self.connections.remove(index);
@@ -80,6 +88,7 @@ impl Peer {
                     &mut self.service,
                     env,
                     reply,
+                    &forge.domain,
                     &mut connection.above,
                     &mut connection.below,
                 );

@@ -15,6 +15,7 @@ skein-sim.workspace = true
 [dev-dependencies]
 skein-fake-peers.workspace = true
 skein-fake-forge-domain.workspace = true
+skein-fake-forge-github.workspace = true
 skein-fake-forge-protocol.workspace = true
 skein-fake-llm-domain.workspace = true
 skein-fake-llm-protocol.workspace = true
@@ -25,6 +26,7 @@ skein-json.workspace = true
 skein-llm.workspace = true
 skein-oauth.workspace = true
 skein-shell.workspace = true
+skein-tls.workspace = true
 skein-llm-world = { path = "../llm" }
 
 # Ordinary Rust (programming-model.md, 10.2); tests/clippy.toml governs these tests.

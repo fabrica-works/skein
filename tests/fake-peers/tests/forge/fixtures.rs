@@ -151,7 +151,7 @@ pub fn fake_config() -> domain::Config {
 pub fn shared() -> Rc<RefCell<Forge>> {
     configured_forge(SEED, fake_config(), false)
 }
-fn configured_forge(seed: u64, config: domain::Config, hooked: bool) -> Rc<RefCell<Forge>> {
+pub(super) fn configured_forge(seed: u64, config: domain::Config, hooked: bool) -> Rc<RefCell<Forge>> {
     let mut domain = domain::Domain::new(&config, seed);
     domain::repository(
         &mut domain,
