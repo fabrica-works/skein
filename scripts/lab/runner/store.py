@@ -167,8 +167,10 @@ class Lab:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
-                raise Refused("lab.lock", "another lab writer holds the lock") from error
-            yield
+                active = os.pread(fd, os.fstat(fd).st_size, 0).decode("utf-8", "replace").strip()
+                raise Refused("lab.lock", "another lab writer holds the lock" + (": " + active if active else "")) from error
+            os.ftruncate(fd, 0)
+            yield fd
         finally:
             os.close(fd)
 
@@ -233,6 +235,53 @@ class Lab:
         finally:
             if opened is not None:
                 os.close(opened)
+            os.close(fd)
+
+    def create_file(self, path):
+        """Create one private evidence stream, never follow or replace a name."""
+        fd, name = self._parent(path, create=True)
+        try:
+            return os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                           0o600, dir_fd=fd)
+        finally:
+            os.close(fd)
+
+    def replace_derived(self, path, value):
+        if path.rsplit('/', 1)[-1] != 'verdict.json':
+            raise Refused(path, 'only the derived verdict may be replaced')
+        fd, name = self._parent(path)
+        temporary = '.derived-' + secrets.token_hex(16)
+        try:
+            try:
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                info = None
+            if info is not None and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                                     or info.st_uid != os.getuid() or info.st_mode & 0o077):
+                raise Refused(path, 'derived target must be a private owned regular file')
+            opened = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=fd)
+            with os.fdopen(opened, 'wb') as stream:
+                stream.write(canonical.record_bytes(value))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, name, src_dir_fd=fd, dst_dir_fd=fd)
+            os.fsync(fd)
+        finally:
+            try:
+                os.unlink(temporary, dir_fd=fd)
+            except FileNotFoundError:
+                pass
+            os.close(fd)
+
+    def remove_live(self, path):
+        if path.rsplit('/', 1)[-1] != 'live.json':
+            raise Refused(path, 'only the live marker is removed here')
+        fd, name = self._parent(path)
+        try:
+            os.unlink(name, dir_fd=fd)
+            os.fsync(fd)
+        finally:
             os.close(fd)
 
     def capture(self, category, identity, files, *, empty_dirs=()):

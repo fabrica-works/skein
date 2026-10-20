@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import secrets
+import subprocess
 import stat
 import sys
-from . import canonical, experiment, store
+from . import canonical, evidence, experiment, judge, store
 from .records import Refusal, Refused, digest_value, subject_refusals
 
 
@@ -85,7 +87,8 @@ def _machine_facts(lab):
         userns = False
     return {"private": True, "lock_available": True,
             "disk_ok": shutil.disk_usage(lab.root).free >= floor * 1024 ** 3,
-            "containment": cgroup.is_file() and manager and userns and shutil.which("systemd-run", path=os.defpath) is not None,
+            "containment": cgroup.is_file() and manager and userns
+            and all(shutil.which(name, path=os.defpath) is not None for name in ("systemd-run", "systemctl")),
             "bubblewrap": shutil.which("bwrap", path=os.defpath) is not None}
 
 
@@ -99,8 +102,8 @@ def _experiment_input(directory):
     return exp, files
 
 
-def validate_command(lab, directory, subject_id):
-    exp, files = _experiment_input(directory)
+def validate_command(lab, directory, subject_id, *, inputs=None):
+    exp, files = _experiment_input(directory) if inputs is None else inputs
     out = []
     try:
         settings = canonical.loads(lab.read("settings.json"))
@@ -146,7 +149,7 @@ def validate_command(lab, directory, subject_id):
         except (OSError, Refused):
             continue
     helpers = [os.path.realpath(sys.executable)]
-    for name in ("git", "systemd-run", "bwrap"):
+    for name in ("git", "systemd-run", "systemctl", "bwrap"):
         path = shutil.which(name, path=os.defpath)
         if path:
             helpers.append(path)
@@ -184,6 +187,68 @@ def validate_command(lab, directory, subject_id):
     return identity, []
 
 
+def runtime_command(lab, lock_fd, args):
+    from .transport import launch
+    seed_problems = []
+    if args.command == 'run' and args.seed is not None:
+        try:
+            canonical.u64(args.seed)
+        except Refused as error:
+            seed_problems.append(error.refusal)
+    if args.campaign is not None:
+        seed_problems.append(Refusal('campaign', 'campaign integration is unsupported by this runtime'))
+    inputs = _experiment_input(args.experiment)
+    exp, _files = inputs
+    identity, problems = validate_command(lab, args.experiment, args.subject, inputs=inputs)
+    if exp.get('driver') is not None:
+        problems.append(Refusal('driver', 'nonnull drivers are unsupported by this runtime'))
+    problems.extend(seed_problems)
+    if problems:
+        for problem in problems:
+            print(str(problem), file=sys.stderr)
+        return 2
+    key_path = f"keys/{exp['name']}/{identity}"
+    previous = evidence.read(lab, key_path)
+    if args.command == 'run':
+        seed = args.seed
+        if seed is None:
+            if len({e['seed'] for e in previous}) == 3:
+                raise Refused('seed', 'three seeds already exist; supply one explicitly for an additive rerun')
+            seed = _new_seed(previous)
+        if not judge.seed_admitted(previous, seed):
+            raise Refused('seed', 'a fourth seed is forbidden')
+        record, status = launch(lab, lock_fd, key_path, seed, None)
+        print(record['run'])
+        for error in record['errors']:
+            print(error['what'] + ': ' + error['detail'], file=sys.stderr)
+        return status
+    while True:
+        decision = judge.next_seed(previous)
+        derived = judge.verdict_record(identity, previous)
+        lab.replace_derived(key_path + '/verdict.json', derived)
+        if decision['action'] == 'done':
+            print(derived['verdict'])
+            return 0 if derived['verdict'] == 'pass' else 1
+        if decision['action'] == 'blocked':
+            print('seed ' + decision['seed'] + ' needs an explicit additive run', file=sys.stderr)
+            print(derived['verdict'])
+            return 3
+        record, status = launch(lab, lock_fd, key_path, _new_seed(previous), None)
+        previous = evidence.read(lab, key_path)
+        if record['outcome'] not in ('pass', 'fail') or status >= 128:
+            print('not enough evidence')
+            print('seed ' + record['seed'] + ' needs an explicit additive run', file=sys.stderr)
+            return status if status in (3, 4) or status >= 128 else 4
+
+
+def _new_seed(previous):
+    existing = {e['seed'] for e in previous}
+    seed = canonical.u64_text(secrets.randbits(64))
+    while seed in existing:
+        seed = canonical.u64_text(secrets.randbits(64))
+    return seed
+
+
 def _runner_digest():
     runner_root = Path(__file__).resolve().parent.parent
     return canonical.tree_digest(store.walk(runner_root, exclude=("tests",)))
@@ -199,7 +264,7 @@ def _artifact(text):
 
 
 def main(argv=None, *, lab_root=None):
-    parser = argparse.ArgumentParser(prog="lab", description="Capture subjects and validate immutable lab inputs.")
+    parser = argparse.ArgumentParser(prog="lab", description="Capture, validate, run and judge lab experiments.")
     commands = parser.add_subparsers(dest="command", required=True)
     subject = commands.add_parser("subject", help="capture a commit tree and named artifacts")
     subject.add_argument("--repository", required=True)
@@ -209,13 +274,23 @@ def main(argv=None, *, lab_root=None):
     validate = commands.add_parser("validate", help="validate all experiment fields and print the key's digest")
     validate.add_argument("experiment")
     validate.add_argument("--subject", required=True)
+    for name in ('run', 'judge'):
+        runtime = commands.add_parser(name, help='run a null-driver experiment' if name == 'run' else 'judge exactly three seeds')
+        runtime.add_argument('experiment')
+        runtime.add_argument('--subject', required=True)
+        runtime.add_argument('--campaign')
+        if name == 'run':
+            runtime.add_argument('--seed')
     args = parser.parse_args(argv)
     if sys.version_info < (3, 11):
         parser.error("Python 3.11 or later is required")
     previous_umask = os.umask(0o077)
     root = lab_root if lab_root is not None else Path.home() / "src/rust/tmp/lab"
     try:
-        with store.open_lab(root) as lab, lab.lock():
+        with store.open_lab(root) as lab, lab.lock() as lock_fd:
+            evidence.require_recovered(lab)
+            if args.command in ('run', 'judge'):
+                return runtime_command(lab, lock_fd, args)
             if args.command == "subject":
                 identity = store.capture_subject(lab, args.repository, args.commit, args.exclude, args.artifact)
                 problems = []
@@ -230,6 +305,9 @@ def main(argv=None, *, lab_root=None):
     except (Refused, FileNotFoundError, PermissionError, NotADirectoryError) as error:
         print(str(error), file=sys.stderr)
         return 2
+    except (RuntimeError, subprocess.SubprocessError) as error:
+        print(f"lab: {error}", file=sys.stderr)
+        return 4
     except OSError as error:
         print(f"lab: {error}", file=sys.stderr)
         return 2 if error.errno == errno.ELOOP else 4

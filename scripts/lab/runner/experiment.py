@@ -2,7 +2,7 @@
 import re
 from . import canonical
 from .records import (COST_FIELDS, NAME, Refusal, Refused, digest_value, lab_refusals,
-                      positive, relative, shape, subject_refusals)
+                      positive, relative, shape, signature_value, subject_refusals)
 
 
 def _parts(text):
@@ -363,8 +363,8 @@ def validate(experiment, subject, settings, facts):
     planted = _list(exp.get("planted"), "planted", out)
     seen = set()
     for i, signature in enumerate(planted):
-        if type(signature) is not str or not signature or any(c in signature for c in "\n\r\0"):
-            out.append(Refusal(f"planted.{i}", "expected signature text"))
+        if not signature_value(signature):
+            out.append(Refusal(f"planted.{i}", "expected a printable ASCII signature without spaces"))
         elif signature in seen:
             out.append(Refusal(f"planted.{i}", "duplicate signature"))
         else:

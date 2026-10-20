@@ -67,3 +67,23 @@ def verdict(evidence):
         return "not enough evidence"
     outcomes = {item["outcome"] for item in judged}
     return next(iter(outcomes)) if len(outcomes) == 1 else "flaky"
+
+
+def next_seed(evidence):
+    """A pending seed requires an explicit run; judge never retries it."""
+    seeds, judged = _evidence(evidence)
+    pending = [s for s in seeds if not any(r['seed'] == s for r in judged)]
+    if pending:
+        return dict(action='blocked', seed=pending[0])
+    if len(seeds) == 3:
+        return dict(action='done', verdict=verdict(evidence))
+    return dict(action='draw', excluded=seeds)
+
+
+def verdict_record(key, evidence):
+    seeds, judged = _evidence(evidence)
+    return dict(format='lab-verdict/1', key=key, policy='three-seeds', verdict=verdict(evidence),
+                seeds=[dict(seed=s, state=('judged' if any(r['seed'] == s for r in judged) else 'not judged'),
+                            judged=[r['run'] for r in evidence if r['seed'] == s and r['outcome'] in ('pass', 'fail')],
+                            not_judged=[r['run'] for r in evidence if r['seed'] == s and r['outcome'] in ('error', 'incomplete')])
+                       for s in seeds])

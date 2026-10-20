@@ -8,7 +8,8 @@ SAFE = (1 << 53) - 1
 COST_FIELDS = ("ready_seconds", "command_seconds", "stop_seconds", "driver_seconds",
                "driver_actions", "driver_input_tokens")
 FORMATS = {"lab-experiment/1", "lab-tree/1", "lab-subject/1", "lab-key/1",
-           "lab-settings/1"}
+           "lab-settings/1", "lab-run/1", "lab-evidence/1", "lab-verdict/1",
+           "lab-event/1", "lab-live/1"}
 
 
 @dataclass(frozen=True)
@@ -128,3 +129,72 @@ def lab_refusals(value):
         if not positive(cost.get(field)):
             out.append(Refusal("lab.cost." + field, "expected a positive safe integer"))
     return out
+
+
+RUN_ID = re.compile(r'[0-9]{8}T[0-9]{9}Z-[0-9a-f]{6}\Z')
+OUTCOMES = ('pass', 'fail', 'incomplete', 'error')
+
+
+def evidence_refusals(value):
+    from .canonical import u64
+    out = []
+    obj = shape(value, ('format', 'run', 'seed', 'attempt', 'outcome', 'signatures', 'ended'), (), 'evidence', out)
+    if obj.get('format') != 'lab-evidence/1':
+        out.append(Refusal('evidence.format', 'expected lab-evidence/1'))
+    if type(obj.get('run')) is not str or not RUN_ID.fullmatch(obj['run']):
+        out.append(Refusal('evidence.run', 'invalid run id'))
+    try:
+        u64(obj.get('seed'))
+    except Refused as error:
+        out.append(error.refusal)
+    if not positive(obj.get('attempt')):
+        out.append(Refusal('evidence.attempt', 'expected positive attempt'))
+    if obj.get('outcome') not in OUTCOMES:
+        out.append(Refusal('evidence.outcome', 'unknown outcome'))
+    if type(obj.get('signatures')) is not list or any(not signature_value(s) for s in obj.get('signatures', [])):
+        out.append(Refusal('evidence.signatures', 'expected signatures'))
+    if type(obj.get('ended')) is not str or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z', obj['ended']):
+        out.append(Refusal('evidence.ended', 'expected UTC milliseconds'))
+    return out
+
+
+def run_refusals(value):
+    fields = ('run', 'key', 'experiment', 'seed', 'attempt', 'campaign', 'started', 'ended', 'outcome',
+              'schedule', 'processes', 'commands', 'driver', 'failures', 'undecided', 'errors', 'bounds', 'usage')
+    out = []
+    obj = shape(value, ('format',) + fields, ('about',), 'run', out)
+    if obj.get('format') != 'lab-run/1':
+        out.append(Refusal('run.format', 'expected lab-run/1'))
+    if not digest_value(obj.get('key')):
+        out.append(Refusal('run.key', 'expected key digest'))
+    for field in ('failures', 'undecided', 'errors', 'commands', 'bounds'):
+        if type(obj.get(field)) is not list:
+            out.append(Refusal('run.' + field, 'expected list'))
+    if type(obj.get('processes')) is not dict:
+        out.append(Refusal('run.processes', 'expected named processes'))
+    for i, failure in enumerate(obj.get('failures', []) if type(obj.get('failures')) is list else []):
+        m = f'run.failures.{i}'
+        f = shape(failure, ('id', 'signature', 'kind', 'summary', 'evidence'), (), m, out)
+        for field in ('id', 'kind', 'summary'):
+            if type(f.get(field)) is not str:
+                out.append(Refusal(m + '.' + field, 'expected text'))
+        if not signature_value(f.get('signature')):
+            out.append(Refusal(m + '.signature', 'expected printable ASCII signature segments'))
+        if type(f.get('evidence')) is not list or any(not relative(p) for p in f.get('evidence', [])):
+            out.append(Refusal(m + '.evidence', 'expected relative evidence paths'))
+    for field, members in (('errors', ('what', 'detail')), ('undecided', ('check', 'reason'))):
+        if type(obj.get(field)) is list:
+            for i, item in enumerate(obj[field]):
+                m = f'run.{field}.{i}'
+                value = shape(item, members, (), m, out)
+                if any(type(value.get(k)) is not str for k in members):
+                    out.append(Refusal(m, 'expected text members'))
+    if not out:
+        evidence = {k: obj[k] for k in ('run', 'seed', 'attempt', 'outcome', 'ended')}
+        evidence.update(format='lab-evidence/1', signatures=[f['signature'] for f in obj['failures']])
+        out.extend(evidence_refusals(evidence))
+    return out
+
+
+def signature_value(text):
+    return type(text) is str and bool(text) and all(33 <= ord(c) <= 126 for c in text)
