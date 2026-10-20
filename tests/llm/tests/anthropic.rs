@@ -438,7 +438,10 @@ fn oversized_arguments_complete_and_truncated_http_fails_once() {
     world.request(client::Request::Start);
     world.run();
     world.assert_once();
-    assert!(world.seen.iter().any(|event| matches!(event, client::Event::Failed { failure: Failure::Protocol, .. })));
+    // A body cut short of its length is a cut exchange (llm.md, section 2.5).
+    assert!(
+        world.seen.iter().any(|event| matches!(event, client::Event::Failed { failure: Failure::Unavailable, .. }))
+    );
 }
 
 #[test]
