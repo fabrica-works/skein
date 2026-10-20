@@ -755,6 +755,12 @@ impl Walk {
                     {
                         return Err(Malformed::Bound { field: b"errors" });
                     }
+                    if frame.node == Role::Document(Node::Errors)
+                        && let Event::Token(Token::String(text)) = event
+                    {
+                        self.want = Want::Element;
+                        return Ok(Move::Scalar(Node::Errors, b"message", Token::String(text)));
+                    }
                     let node = element(frame.node).expect("array role");
                     self.start(node, &event)
                 }

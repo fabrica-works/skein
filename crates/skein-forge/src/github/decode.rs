@@ -542,6 +542,11 @@ impl Decoder {
             }
             (Node::Error, b"message", Token::String(text)) => self.message = text,
             (Node::ErrorEntry, b"message", Token::String(text)) => self.error = text,
+            (Node::Errors, b"message", Token::String(text)) => {
+                if self.errors.push(text).is_err() {
+                    return Err(Malformed::Bound { field: b"errors" });
+                }
+            }
             (
                 Node::Collaborator
                 | Node::CollaboratorRows

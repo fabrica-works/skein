@@ -462,3 +462,23 @@ fn document_bounds(good: limits::Limits) {
 mod writes;
 
 mod pull_graphql;
+
+#[test]
+fn github_refusal_errors_accept_strings_objects_and_mixed_entries() {
+    for entries in [
+        r#"["Review Can not approve your own pull request"]"#,
+        r#"[{"message":"Review Can not approve your own pull request"}]"#,
+        r#"["detail",{"message":"Review Can not approve your own pull request"}]"#,
+    ] {
+        let input = alloc::fmt::format(format_args!(r#"{{"message":"Unprocessable Entity","errors":{entries}}}"#));
+        for chunk in [1, 7, 4096] {
+            let (_, decoded) = decode(Kind::Error, input.as_bytes(), chunk, &limits());
+            let Document::Error(refusal) = decoded.unwrap() else { panic!("refusal") };
+            assert_eq!(refusal.errors.last().unwrap().as_ref(), b"Review Can not approve your own pull request");
+            assert_eq!(
+                failure::classify(Asked::Review { empty: true }, 422, &Head::new(), Some(&refusal)),
+                Verdict::Fail(api::Error::Refused, Drop::Nothing)
+            );
+        }
+    }
+}

@@ -83,6 +83,10 @@ fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> 
         }
         Answer::Merge(commit) => {
             json.object_start();
+            json.key(b"merged");
+            json.boolean(true);
+            json.key(b"message");
+            json.string(b"Pull Request successfully merged");
             json.key(b"sha");
             json.string(&id::write_commit(commit).ok_or(Overflow)?);
             json.object_end();

@@ -310,3 +310,10 @@ fn followed_request_preserves_target_and_refuses_one_past_the_limit() {
     let request = Request::Followed { target: fixtures::filled(cap + 1, b'x') };
     assert_eq!(request::encode(&request, &limits), Err(request::Refusal::TooLong));
 }
+
+#[test]
+fn job_rejects_an_unsolicited_partial_blob_before_reading_its_body() {
+    let mut call = Call::new(8, true, bounds());
+    call.redirected();
+    assert_eq!(call.head(206, None), Some(failed(api::Error::InvalidAnswer)));
+}

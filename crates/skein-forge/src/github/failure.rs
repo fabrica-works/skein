@@ -8,7 +8,7 @@ pub const SECONDARY: &[u8] = b"You have exceeded a secondary rate limit";
 pub const INTEGRATION: &[u8] = b"Resource not accessible by integration";
 /// Moved head text, matched whole (merge-stale-409).
 pub const MERGE_STALE: &[u8] = b"Head branch was modified. Review and try the merge again.";
-/// Unmergeable text, matched whole (merge-after-move-405-not-mergeable; merge-closed-405-not-mergeable).
+/// Unmergeable text, matched whole (merge-after-move-405-not-mergeable).
 pub const NOT_MERGEABLE: &[u8] = b"Pull Request is not mergeable";
 /// Rules message, matched whole (ruleset-approval-405).
 pub const RULES: &[u8] = b"Repository rule violations found";
@@ -59,7 +59,7 @@ pub enum Verdict {
     Enqueue,
     BranchExists,
 }
-/// Matches the message's lines, then each errors[].message, without trimming.
+/// Matches the message's lines, then each errors[] string or errors[].message, without trimming.
 fn has(refusal: Option<&Refusal>, text: &[u8], mode: Match) -> bool {
     let Some(refusal) = refusal else {
         return false;
@@ -165,7 +165,12 @@ pub fn classify(asked: Asked, status: u16, head: &Head, refusal: Option<&Refusal
             Asked::OpenPull { .. } if has(refusal, PULL_EXISTS, Match::Prefix) => api::Error::Exists,
             Asked::CreateBranch if has(refusal, REF_EXISTS, Match::Whole) => return Verdict::BranchExists,
             Asked::DeleteBranch if has(refusal, REF_MISSING, Match::Whole) => api::Error::Missing,
-            Asked::Review { .. } if has(refusal, OWN_REVIEW, Match::Whole) => api::Error::Refused,
+            Asked::Review { .. }
+                if has(refusal, OWN_REVIEW, Match::Whole)
+                    || has(refusal, b"Review Can not approve your own pull request", Match::Whole) =>
+            {
+                api::Error::Refused
+            }
             Asked::OpenPull { .. } | Asked::Review { .. } | Asked::Write { .. } if empty => api::Error::Empty,
             Asked::Read
             | Asked::Job
