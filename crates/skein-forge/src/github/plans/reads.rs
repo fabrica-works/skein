@@ -292,7 +292,7 @@ impl Plan {
     }
     #[expect(
         clippy::too_many_lines,
-        reason = "the read dispatcher exhaustively handles heads, rows and terminal bodies"
+        reason = "the read dispatcher exhaustively handles heads, rows and terminal bodies, including write results"
     )]
     fn advance(
         &mut self,
