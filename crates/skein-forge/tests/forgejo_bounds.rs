@@ -21,12 +21,13 @@ const SEEDS: [u64; 3] = [0, 7, 31];
 const ONE_TERMINAL: usize = 1;
 const EMPTY_ROWS: &[skein_forge::forgejo::document::Row] = &[];
 
+type BoundaryRow = (&'static str, fn(&mut Limits));
+
 #[test]
-#[expect(clippy::type_complexity, reason = "the reference table pairs each named limit with its mutator")]
 fn limits_accept_the_profile_and_reject_each_problem() {
     let good = forgejo::profile_limits();
     assert_eq!(limits::check(&good), Ok(()));
-    let zeros: [(&str, fn(&mut Limits)); 8] = [
+    let zeros: [BoundaryRow; 8] = [
         ("string_bytes", |l| l.string_bytes = 0),
         ("body_bytes", |l| l.body_bytes = 0),
         ("inner", |l| l.inner = 0),
@@ -46,7 +47,7 @@ fn limits_accept_the_profile_and_reject_each_problem() {
         value.json.string = bound - 1;
         assert_eq!(limits::check(&value), Err(Problem::TokenizerString), "{field}");
     }
-    let depths: [(&str, fn(&mut Limits)); 2] = [
+    let depths: [BoundaryRow; 2] = [
         ("json", |l: &mut Limits| l.json.depth = MIN_DEPTH - 1),
         ("writer", |l: &mut Limits| l.writer.depth = MIN_DEPTH - 1),
     ];
