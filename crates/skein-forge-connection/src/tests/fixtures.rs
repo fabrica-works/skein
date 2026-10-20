@@ -116,6 +116,8 @@ pub struct Harness {
     pub endpoints: List<(skein_io::Addr, u16)>,
     pub opened: u32,
     pub stopped: Option<(u16, crate::Stopped)>,
+    pub git_tokens: Option<List<Event>>,
+    pub connected_count: u32,
     pub closed: bool,
 }
 #[derive(Debug)]
@@ -135,6 +137,12 @@ impl Harness {
         for forge in &settings.forges {
             endpoints.push((forge.address, forge.number)).expect("configured endpoints");
         }
+        let mut github = false;
+        for forge in &settings.forges {
+            if forge.kind == Kind::GitHub {
+                github = true;
+            }
+        }
         let mut h = Self {
             component: Component::new(settings, &env.limits, &shared).expect("fixture limits agree"),
             env,
@@ -145,6 +153,8 @@ impl Harness {
             endpoints,
             opened: 0,
             stopped: None,
+            git_tokens: if github { Some(List::with_capacity(32)) } else { None },
+            connected_count: 0,
             closed: false,
         };
         h.component.begin(&h.env, &mut h.up, &mut h.io);
@@ -167,7 +177,9 @@ impl Harness {
         self.component.reclaim();
         for _ in 0..self.up.len() {
             match self.up.pop().expect("queued event") {
-                Event::Connected { .. } => {}
+                Event::Connected { .. } => {
+                    self.connected_count = self.connected_count.checked_add(1).expect("fixture connects");
+                }
                 Event::Answered(answer) => {
                     assert!(self.answered(answer.call.raw()).is_none(), "one terminal per call");
                     drop(self.answers.insert(answer.call.raw(), answer).expect("fixture answers fit"));
@@ -175,6 +187,9 @@ impl Harness {
                 Event::Stopped { forge, why } => {
                     assert!(self.stopped.is_none(), "start stopped once");
                     self.stopped = Some((forge, why));
+                }
+                event @ Event::GitToken { .. } => {
+                    self.git_tokens.as_mut().expect("GitHub fixture").push(event).expect("fixture tokens fit");
                 }
                 Event::Hint(_) | Event::ListenerLost => panic!("webhooks absent"),
                 Event::Closed => {
@@ -380,7 +395,7 @@ pub fn response(code: u16, body: &[u8]) -> Box<[u8]> {
 pub fn last_page(body: &[u8]) -> Box<[u8]> {
     response_with_fields(200, body, b"X-HasMore: false\r\n")
 }
-fn response_with_fields(code: u16, body: &[u8], fields: &[u8]) -> Box<[u8]> {
+pub fn response_with_fields(code: u16, body: &[u8], fields: &[u8]) -> Box<[u8]> {
     let decimal = skein_lib::Decimal::of(u64::try_from(body.len()).expect("body length"));
     let mut out = skein_lib::Writer::new(
         body.len()
@@ -743,7 +758,8 @@ impl HookHarness {
             for _ in 0..up.len() {
                 match up.pop().expect("queued event") {
                     Event::Hint(_) => self.hints = self.hints.saturating_add(1),
-                    Event::Connected { .. }
+                    Event::GitToken { .. }
+                    | Event::Connected { .. }
                     | Event::Answered(_)
                     | Event::Stopped { .. }
                     | Event::ListenerLost

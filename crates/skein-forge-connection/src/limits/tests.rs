@@ -263,3 +263,14 @@ fn a_forges_key_and_jwt_are_in_the_worst_case() {
         u64::from(forges).checked_mul(100).expect("key growth")
     );
 }
+
+#[test]
+fn github_document_depth_needs_ten_only_for_github() {
+    for (depth, expected) in
+        [(9, Err(Unusable::GitHubDocuments(skein_forge::github::limits::Problem::Depth))), (10, Ok(()))]
+    {
+        let limits = super::Limits { depth, ..fixtures::limits() };
+        assert_eq!(check(&limits, &fixtures::shared(), &fixtures::github_settings()), expected);
+        assert_eq!(check(&limits, &fixtures::shared(), &fixtures::settings()), Ok(()));
+    }
+}

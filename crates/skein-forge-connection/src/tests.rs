@@ -2,6 +2,7 @@ mod connection;
 mod contents;
 mod dialects;
 pub(crate) mod fixtures;
+mod github_start;
 mod hooks;
 mod reads;
 mod writes;
@@ -291,7 +292,7 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 #[test]
 fn the_worst_case_counts_answers_and_refuses_overflow() {
     // Complete fixture heap (7.5), including both dialects' routing and decoder state.
-    const FIXTURE_HEAP: u64 = 2_820_543;
+    const FIXTURE_HEAP: u64 = 3_592_558;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(
@@ -800,9 +801,16 @@ fn unusable_github_settings_name_the_forge() {
 }
 
 #[test]
-fn the_component_refuses_a_github_forge_until_its_start_lands() {
+fn the_component_admits_a_github_forge() {
+    Component::new(fixtures::github_settings(), &fixtures::limits(), &fixtures::shared()).expect("GitHub admitted");
+}
+
+#[test]
+fn a_github_forge_without_access_is_inert() {
     let mut settings = fixtures::github_settings();
-    settings.forges.get_mut(0).expect("forge").number = fixtures::OTHER_FORGE;
-    let result = Component::new(settings, &fixtures::limits(), &fixtures::shared());
-    assert_eq!(result.expect_err("GitHub start is not built"), Unusable::GitHub { forge: fixtures::OTHER_FORGE });
+    settings.forges.get_mut(0).expect("forge").access = None;
+    let mut h = fixtures::Harness::new(settings);
+    h.run(Duration::from_secs(20));
+    assert_eq!(h.start(fixtures::FORGE), Start::Unconnected);
+    assert_eq!(h.connections_opened(), 0);
 }

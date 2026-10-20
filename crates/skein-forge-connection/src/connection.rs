@@ -36,19 +36,8 @@ use skein_lib::{
 /// A component-selected request and its complete Authorization value.
 #[derive(Debug)]
 pub(crate) enum Exchange {
-    Forgejo {
-        request: request::Request,
-        range: Option<Range>,
-        authorization: Secret,
-    },
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the component starts GitHub exchanges in task 24; connection tests exercise them")
-    )]
-    GitHub {
-        request: github::request::Request,
-        authorization: Option<Secret>,
-    },
+    Forgejo { request: request::Request, range: Option<Range>, authorization: Secret },
+    GitHub { request: github::request::Request, authorization: Option<Secret> },
 }
 /// Exchange events belong to the connection's dialect.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -145,6 +134,7 @@ pub(crate) struct Connection {
     uploaded: u32,
     raw_range: Range,
     raw_cap: u32,
+    json_limits: tokenizer::Limits,
 }
 impl Connection {
     pub fn new(forge: &Forge, l: &Limits, shared: Shared, deadline: Time) -> Self {
@@ -182,6 +172,7 @@ impl Connection {
             uploaded: 0,
             raw_range: Range::Head(0),
             raw_cap: shared.answer_bytes,
+            json_limits: limits::documents(l).json,
         }
     }
     pub fn start(
@@ -270,6 +261,7 @@ impl Connection {
                 .push(skein_http::Header { name: Box::from(&b"Range"[..]), value: value.finish() })
                 .expect("five Forgejo header fields");
         }
+        self.json_limits = limits::documents(&env.limits).json;
         self.request = Some(request);
         self.upload = upload;
         self.uploaded = 0;
@@ -331,7 +323,7 @@ impl Connection {
         http::down(&mut self.http, &h, request, &mut self.http_up, &mut self.http_down);
     }
     fn json_down(&mut self, env: &Env<Limits>, request: tokenizer::Request) {
-        let j = Env { now: env.now, wall: env.wall, limits: limits::documents(&env.limits).json };
+        let j = Env { now: env.now, wall: env.wall, limits: self.json_limits };
         tokenizer::down(&mut self.json, &j, request, &mut self.json_up, &mut self.json_down);
     }
     /// Routes at most a fixed number of child-machine movements. Remaining work stays owned.
@@ -417,7 +409,7 @@ impl Connection {
             http::Event::Response(response) => self.response(env, response),
             http::Event::Body(event) => match &mut self.receive {
                 Receiving::Json(_) => {
-                    let j = Env { now: env.now, wall: env.wall, limits: limits::documents(&env.limits).json };
+                    let j = Env { now: env.now, wall: env.wall, limits: self.json_limits };
                     tokenizer::up(&mut self.json, &j, event, &mut self.json_up, &mut self.json_down);
                 }
                 Receiving::Empty => {
@@ -515,7 +507,11 @@ impl Connection {
         match self.request.as_ref().expect("head belongs to a request") {
             Request::Forgejo(_) => self.forgejo_response(env, response),
             Request::GitHub(request) => {
-                let l = limits::github_documents(&env.limits);
+                let mut l = limits::github_documents(&env.limits);
+                if github::decode::kind(request) == Some(github::document::Kind::Minted) && response.status == 201 {
+                    l = limits::github_mint_documents(&env.limits);
+                }
+                self.json_limits = l.json;
                 let mut head = github::header::Head::new();
                 for field in &response.headers {
                     github::header::field(&mut head, &field.name, &field.value, &l);
@@ -683,6 +679,11 @@ impl Connection {
                     github::decode::Step::Demand => JsonStep::Demand(request),
                     github::decode::Step::Row(row) => {
                         JsonStep::Row(Heard::GitHub(github::plans::Heard::Row(row)), request)
+                    }
+                    github::decode::Step::Done(github::document::Document::Minted(minted))
+                        if minted.token.len() > usize::try_from(env.limits.token_bytes).expect("token bound") =>
+                    {
+                        JsonStep::Malformed(decode::Malformed::Bound { field: b"token" })
                     }
                     github::decode::Step::Done(document) => {
                         JsonStep::Done(Body::GitHub(github::plans::Body::Document(document)))

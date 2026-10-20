@@ -697,7 +697,7 @@ It is the sum of:
   the word and the user agent;
 - for each of `hooks`: its stack, HMAC state, decoded fields and held
   hint; and the listener;
-- each forge's own connection, priced as one of `connections`;
+- each GitHub forge's own connection, priced in addition to `connections`;
 - for each GitHub forge: its key at `key_bytes` and its JWT at
   `JWT_BYTES`; its installations' table full, each row's login at
   `name_bytes`, its API token at `token_bytes` and two expiries; its log

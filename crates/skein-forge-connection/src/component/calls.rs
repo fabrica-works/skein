@@ -100,10 +100,20 @@ impl Component {
                             self.finish(call, id, Err(api::Error::NotConnected), up);
                             continue;
                         }
-                        Start::Checking { .. } | Start::Settings { .. } | Start::Waiting { .. } => continue,
+                        Start::Listing { .. }
+                        | Start::Minting { .. }
+                        | Start::Identity { .. }
+                        | Start::Checking { .. }
+                        | Start::Settings { .. }
+                        | Start::Waiting { .. } => continue,
                         Start::Ready { .. } => {}
                     }
                 }
+            }
+            // Task 27 replaces this guard with GitHub call plans and installation routing.
+            if self.settings.forges.get(at).expect("forge").kind == crate::settings::Kind::GitHub {
+                self.finish(call, id, Err(api::Error::Unavailable), up);
+                continue;
             }
             if !self.assign(call, id, at, env, up, io) {
                 continue;
@@ -147,7 +157,10 @@ impl Component {
         let forge = waiting.repository.forge;
         let cap = match *self.starts.get(at).expect("start") {
             Start::Ready { cap } => cap,
-            Start::Unconnected
+            Start::Listing { .. }
+            | Start::Minting { .. }
+            | Start::Identity { .. }
+            | Start::Unconnected
             | Start::Checking { .. }
             | Start::Settings { .. }
             | Start::Waiting { .. }
@@ -158,15 +171,27 @@ impl Component {
         let mut token = None;
 
         let mut other = None;
+        let call_connections = self.call_connections();
         for (owner, connection) in &self.connections {
             let c = self.connection_slab.get(*connection).expect("indexed connection");
+            let mut reserved = false;
+            for n in 0..self.own_tokens.len() {
+                if self.own_tokens.get(n) == Some(&Some(*owner))
+                    && self.settings.forges.get(n).expect("forge").kind == crate::settings::Kind::GitHub
+                {
+                    reserved = true;
+                }
+            }
+            if reserved {
+                continue;
+            }
             if c.phase == Phase::Idle && !c.closing && !self.holders.contains_key(owner) {
                 if c.forge == forge {
                     token = Some(*owner);
                     break;
                 }
                 let mut start = false;
-                for start_token in &self.start_tokens {
+                for start_token in &self.own_tokens {
                     if *start_token == Some(*owner) {
                         start = true;
                     }
@@ -176,8 +201,11 @@ impl Component {
                 }
             }
         }
-        if token.is_none() && self.connections.len() < self.connections.capacity() {
-            token = Some(self.open_start(at, env, io));
+        if token.is_none()
+            && call_connections < env.limits.connections
+            && self.connections.len() < self.connections.capacity()
+        {
+            token = Some(self.open_call(at, env, io));
         }
         if token.is_none() {
             if let Some(other) = other {
@@ -186,7 +214,9 @@ impl Component {
             return false;
         }
         let token = token.expect("selected connection");
-        *self.start_tokens.get_mut(at).expect("forge slot") = None;
+        if self.own_tokens.get(at) == Some(&Some(token)) {
+            *self.own_tokens.get_mut(at).expect("forge slot") = None;
+        }
         let _old = self.holders.insert(token, call).expect("one holder per connection");
         let waiting = self.waiting.get_mut(id).expect("indexed call");
         waiting.connection = Some(token);

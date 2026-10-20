@@ -7,15 +7,21 @@ use skein_lib::{Duration, Time};
 /// Where a forge's start is; `next` is the wait the next unanswered read takes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Start {
-    /// No access: no start runs, and calls are answered `NotConnected`. A connect begins Checking.
+    /// No access: no start runs, and calls are answered `NotConnected`.
     Unconnected,
     /// `GET /api/v1/user` sent or to send.
     Checking { next: Duration },
     /// `GET /api/v1/settings/api` sent or to send.
     Settings { next: Duration },
-    /// Asked again at `until`, from `Checking`.
+    /// GitHub's App installations read.
+    Listing { next: Duration },
+    /// GitHub's accepted installations' Full and Contents mints.
+    Minting { next: Duration },
+    /// GitHub's bot viewer read on an API token.
+    Identity { next: Duration },
+    /// Asked again at `until`, from Checking or GitHub's Listing.
     Waiting { until: Time, next: Duration },
-    /// Serves calls; `cap` is the forge's `max_response_items`.
+    /// Serves calls; `cap` is the forge's page cap.
     Ready { cap: u32 },
     /// Says stopped once, naming the forge, and holds no access until the next connect.
     Stopped(Stopped),
@@ -27,7 +33,13 @@ pub fn heard(start: Start, heard: Heard, user: u64, now: Time, limits: &Limits) 
     let (read, next) = match start {
         Start::Checking { next } => (StartRead::User, next),
         Start::Settings { next } => (StartRead::ApiSettings, next),
-        Start::Unconnected | Start::Waiting { .. } | Start::Ready { .. } | Start::Stopped(_) => return start,
+        Start::Listing { .. }
+        | Start::Minting { .. }
+        | Start::Identity { .. }
+        | Start::Unconnected
+        | Start::Waiting { .. }
+        | Start::Ready { .. }
+        | Start::Stopped(_) => return start,
     };
     let doubled = next.saturating_mul(2).min(limits.start_backoff_max);
     match heard {

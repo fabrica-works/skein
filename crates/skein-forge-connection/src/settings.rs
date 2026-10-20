@@ -35,10 +35,9 @@ pub struct Forge {
 /// never logged.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Access {
-    /// The API token, in `Authorization: token <t>`: never logged, granted or stored.
+    /// Forgejo's token or GitHub's App id and signing key; never logged.
     pub credential: skein_forge::credential::Credential,
-    /// The forge user the token stands for, never 0, checked by the start's
-    /// `GET /api/v1/user`.
+    /// The expected user, never 0: Forgejo's user read or GitHub's bot viewer checks it.
     pub user: u64,
     /// The secret of the forge's webhook path; only beside a listener.
     pub webhook_secret: Option<Secret>,

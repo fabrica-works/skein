@@ -1,7 +1,15 @@
 //! Forge component boundary (forge-connection.md, sections 2, 3.5, 7 and 8).
 use crate::Access;
+use alloc::boxed::Box;
 use skein_forge::api;
-use skein_lib::Token;
+use skein_lib::{Secret, Token, Wall};
+
+/// An installation account at the connection boundary (forge-connection.md, 2.1).
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Account {
+    pub id: u64,
+    pub login: Box<[u8]>,
+}
 
 /// One call's terminal, the forge client's `Event::Answered` field for field. The
 /// component makes it; the routing hands it to the root as `Event::Forge`, and hands
@@ -22,6 +30,8 @@ pub enum Request {
     /// Connected or one Stopped, unless a later connect for that forge comes first.
     /// A forge not configured, or a Request after Close, is ignored.
     Connect { forge: u16, access: Access },
+    /// Replaces the bounded set of accepted installations (forge-connection.md, 4.4).
+    Installations { forge: u16, accepted: Box<[u64]> },
     /// The root's `Request::Forge`: ended by exactly one `Event::Answered`.
     Call { call: Token, repository: api::Repository, op: api::Op },
     /// An answer the root's admission did not take (`try_step`'s `Err`): held, offered
@@ -44,6 +54,8 @@ pub enum Request {
 pub enum Event {
     /// A call's one terminal.
     Answered(Answered),
+    /// Git's Contents token, handed to the owner once (forge-connection.md, 5.3).
+    GitToken { forge: u16, installation: u64, account: Account, token: Secret, expires: Wall },
     /// A verified delivery, after its response is queued.
     Hint(crate::hooks::Hinted),
     /// The webhooks listener failed to bind or was lost.
@@ -62,20 +74,29 @@ pub enum Event {
 pub enum Stopped {
     /// A connect's access refused before any io, naming the value.
     Invalid { value: Value },
-    /// `GET /api/v1/user` answered with another user's id.
+    /// The App JWT was refused.
+    KeyRefused,
+    /// An installation mint was refused permanently.
+    TokenRefused { installation: u64, status: u16 },
+    /// The identity read answered with another user's id.
     OtherUser { user: u64 },
-    /// A `4xx` other than `429` to one of the start's reads: `401` or `403` refused the
-    /// token; any other, the address names no Forgejo API.
+    /// A `4xx` other than `429` to one of the start's reads.
     Refused { read: StartRead, status: u16 },
 }
 
-/// The start's two reads.
+/// The start's reads.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum StartRead {
     /// `GET /api/v1/user`.
     User,
     /// `GET /api/v1/settings/api`.
     ApiSettings,
+    /// GitHub's `GET /app/installations`.
+    Installations,
+    /// GitHub's installation token mint.
+    Mint,
+    /// GitHub's GraphQL viewer read.
+    Viewer,
 }
 
 /// The value of an access a connect's check refused (forge-connection.md, 3.5).

@@ -83,6 +83,7 @@ pub struct Machine {
     requests: Vec<Vec<u8>>,
     stopped: Vec<(u16, Stopped)>,
     connected_forges: Vec<u16>,
+    git_tokens: Vec<Event>,
     access_answers: usize,
     opened: u32,
     aborts: u32,
@@ -173,6 +174,7 @@ impl Machine {
             requests: Vec::new(),
             stopped: Vec::new(),
             connected_forges: Vec::new(),
+            git_tokens: Vec::new(),
             access_answers,
             opened: 0,
             aborts: 0,
@@ -425,6 +427,7 @@ impl Machine {
                 continue;
             }
             let name = match &event {
+                Event::GitToken { .. } => "git-token",
                 Event::Answered(_) => "answered",
                 Event::Stopped { .. } => "stopped",
                 Event::Hint(_) => "hint",
@@ -434,6 +437,10 @@ impl Machine {
             };
             self.event_order.push(name);
             match event {
+                event @ Event::GitToken { .. } => {
+                    assert!(self.fake.is_some(), "GitHub fixture");
+                    self.git_tokens.push(event);
+                }
                 Event::Answered(answer) => {
                     self.deliveries.push(answer.clone());
                     assert!(self.answers.insert(answer.call.raw(), answer).is_none(), "one answer per call");
@@ -637,6 +644,16 @@ impl Machine {
     #[must_use]
     pub fn connected_forges(&self) -> &[u16] {
         &self.connected_forges
+    }
+    /// Contents tokens handed to the owner, with Secret redaction.
+    #[must_use]
+    pub fn git_tokens(&self) -> &[Event] {
+        &self.git_tokens
+    }
+    /// A configured forge's public start phase.
+    #[must_use]
+    pub fn start(&self, forge: u16) -> Option<skein_forge_connection::start::Start> {
+        self.component.start(forge)
     }
     /// Every complete request, in arrival order.
     #[must_use]

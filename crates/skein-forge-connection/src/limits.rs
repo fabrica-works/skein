@@ -145,8 +145,8 @@ pub enum Unusable {
     RenewBefore { renew_before: Duration, deadline: Duration },
     /// `key_bytes` below `skein_tls::RS256_KEY_BYTES`.
     KeyBytes { key_bytes: u32 },
-    /// A GitHub forge: its start is not built yet (task 24 removes this).
-    GitHub { forge: u16 },
+    /// GitHub's derived document limits refused.
+    GitHubDocuments(skein_forge::github::limits::Problem),
     /// A user of 0.
     User { forge: u16 },
     /// Plaintext to an address not on loopback, or an in-process name.
@@ -272,6 +272,21 @@ fn check_github(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
         }
     }
     if github {
+        if let Err(problem) = skein_forge::github::limits::check(&github_documents(l)) {
+            return Err(Unusable::GitHubDocuments(problem));
+        }
+        if let Err(problem) = skein_forge::github::limits::check(&github_mint_documents(l)) {
+            return Err(Unusable::GitHubDocuments(problem));
+        }
+        l.installations
+            .checked_mul(
+                u32::try_from(size_of::<skein_forge::github::document::Installation>())
+                    .ok()
+                    .ok_or(Unusable::Zero)?
+                    .checked_add(l.string_bytes)
+                    .ok_or(Unusable::Zero)?,
+            )
+            .ok_or(Unusable::Zero)?;
         if l.deadline > APP_DEADLINE {
             return Err(Unusable::AppDeadline { deadline: l.deadline });
         }
@@ -451,6 +466,14 @@ pub(crate) fn github_documents(l: &Limits) -> skein_forge::github::limits::Limit
         target_bytes: docs.target_bytes,
     }
 }
+// RFC 3339's YYYY-MM-DDTHH:MM:SSZ must fit even when token_bytes is smaller.
+const MINTED_TIME_BYTES: u32 = 20;
+pub(crate) fn github_mint_documents(l: &Limits) -> skein_forge::github::limits::Limits {
+    let mut docs = github_documents(l);
+    docs.string_bytes = l.token_bytes.max(MINTED_TIME_BYTES);
+    docs.json.string = docs.json.string.max(docs.string_bytes);
+    docs
+}
 /// The body stream's demands are chunked; heads use the stream's complete send cap.
 #[must_use]
 pub fn http(l: &Limits, tls: bool, io: &skein_io::Limits) -> skein_http::client::Limits {
@@ -481,6 +504,41 @@ pub fn hook_documents(l: &Limits) -> documents::Limits {
     docs.json.length = l.hook_body_bytes;
     docs
 }
+fn decoder_heap(l: &Limits) -> Option<u64> {
+    let fixed_decoder =
+        size_of::<skein_forge::github::decode::Decoder>().max(size_of::<skein_forge::forgejo::client::Decoder>());
+    // Conservatively covers the boxed decoder state and both builder/delivered
+    // rows: 32 scalar strings, two bodies, three lists of texts/users, and the
+    // walker's depth stack. Both dialects fit these payload envelopes;
+    // each boxed decoder also holds its fixed builder state.
+    let inner = u64::from(l.string_bytes)
+        .checked_mul(3)?
+        .checked_add(u64::try_from(size_of::<skein_forge::forgejo::document::User>()).ok()?.checked_mul(2)?)?
+        .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?)?;
+    let bytes = u64::from(l.string_bytes.max(github_mint_documents(l).string_bytes))
+        .checked_mul(32)?
+        .checked_add(u64::from(l.inner).checked_mul(inner)?)?
+        .checked_add(u64::from(l.body_bytes).checked_mul(2)?)?
+        .checked_add(u64::from(l.depth).checked_mul(128)?)?
+        .checked_add(4096)?
+        .checked_add(u64::try_from(fixed_decoder).ok()?)?;
+    Some(bytes)
+}
+// The retained table, its replacement listing, and the event handoff overlap.
+fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
+    use skein_lib::{List, Map};
+    Map::<u64, crate::installations::Row>::worst_case(l.installations)?
+        .checked_add(skein_lib::Set::<u64>::worst_case(l.installations)?.checked_mul(2)?)?
+        .checked_add(List::<u64>::worst_case(l.installations)?)?
+        .checked_add(List::<skein_forge::github::document::Installation>::worst_case(l.installations)?)?
+        .checked_add(
+            u64::from(l.installations)
+                .checked_mul(u64::from(s.name_bytes).checked_mul(3)?.checked_add(u64::from(l.token_bytes))?)?,
+        )?
+        .checked_add(u64::from(l.token_bytes).checked_mul(4)?)?
+        .checked_add(u64::try_from(size_of::<crate::Event>()).ok()?)?
+        .checked_add(u64::from(s.name_bytes))
+}
 /// Conservative complete heap, pricing TLS on every connection because this interface
 /// knows the forge count, not their transports. Raw growth includes its doubling overlap.
 #[must_use]
@@ -493,25 +551,11 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
     };
     use skein_forge::forgejo::plans::tables::{RepositoryEntry, UserEntry};
     use skein_lib::{Id, Intake, List, Map, Queue, Slab, Token};
+    let connections = l.connections.checked_add(forges)?;
     let docs = documents(l);
-    let fixed_decoder =
-        size_of::<skein_forge::github::decode::Decoder>().max(size_of::<skein_forge::forgejo::client::Decoder>());
     let raw = u64::from(s.answer_bytes).checked_mul(2)?;
-    // Conservatively covers the boxed decoder state and both builder/delivered
-    // rows: 32 scalar strings, two bodies, three lists of texts/users, and the
-    // walker's depth stack. Both dialects fit these payload envelopes;
-    // each boxed decoder also holds its fixed builder state.
-    let inner = u64::from(l.string_bytes)
-        .checked_mul(3)?
-        .checked_add(u64::try_from(size_of::<skein_forge::forgejo::document::User>()).ok()?.checked_mul(2)?)?
-        .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?)?;
-    let decoder = u64::from(l.string_bytes)
-        .checked_mul(32)?
-        .checked_add(u64::from(l.inner).checked_mul(inner)?)?
-        .checked_add(u64::from(l.body_bytes).checked_mul(2)?)?
-        .checked_add(u64::from(l.depth).checked_mul(128)?)?
-        .checked_add(4096)?
-        .checked_add(u64::try_from(fixed_decoder).ok()?)?;
+    let installation_rows = installation_heap(l, s)?;
+    let decoder = decoder_heap(l)?;
     let socket = Intake::worst_case(s.io.intake)?
         .checked_add(u64::from(s.io.receive))?
         .checked_add(u64::from(s.io.output))?
@@ -519,7 +563,10 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
     let connection = skein_http::client::worst_case(&http(l, true, &s.io))?
         .max(skein_http::client::worst_case(&http(l, false, &s.io))?)
         .checked_add(skein_tls::client::worst_case(&l.tls)?)?
-        .checked_add(tokenizer::worst_case(&docs.json)?)?
+        .checked_add(tokenizer::worst_case(&tokenizer::Limits {
+            string: github_mint_documents(l).json.string,
+            ..docs.json
+        })?)?
         .checked_add(decoder)?
         .checked_add(raw)?
         .checked_add(crate::connection::routing_bytes()?)?
@@ -528,7 +575,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(socket)?;
     let hooks = hook_heap(l, decoder, socket)?;
     let calls = Slab::<Waiting>::worst_case(s.calls)?
-        .checked_add(Map::<Token, Token>::worst_case(l.connections)?)?
+        .checked_add(Map::<Token, Token>::worst_case(connections)?)?
         .checked_add(List::<(Token, Id<Waiting>)>::worst_case(s.calls)?)?
         .checked_add(Map::<Token, Id<Waiting>>::worst_case(s.calls)?)?
         .checked_add(
@@ -574,9 +621,13 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
             )?,
         )?;
     connection
-        .checked_mul(u64::from(l.connections))?
-        .checked_add(Map::<Token, Id<crate::connection::Connection>>::worst_case(l.connections)?)?
-        .checked_add(Slab::<crate::connection::Connection>::worst_case(l.connections)?)?
+        .checked_mul(u64::from(connections))?
+        .checked_add(List::<Option<Box<crate::installations::GitHub>>>::worst_case(l.forges)?)?
+        .checked_add(u64::from(forges).checked_mul(
+            installation_rows.checked_add(u64::try_from(size_of::<crate::installations::GitHub>()).ok()?)?,
+        )?)?
+        .checked_add(Map::<Token, Id<crate::connection::Connection>>::worst_case(connections)?)?
+        .checked_add(Slab::<crate::connection::Connection>::worst_case(connections)?)?
         .checked_add(List::<Option<Token>>::worst_case(l.forges)?)?
         .checked_add(List::<Option<crate::component::OwnPlan>>::worst_case(l.forges)?)?
         .checked_add(hooks)?
@@ -622,7 +673,7 @@ fn plaintext_name(name: &[u8]) -> bool {
     true
 }
 
-fn header_value(value: &[u8]) -> bool {
+pub(crate) fn header_value(value: &[u8]) -> bool {
     if value.is_empty() {
         return false;
     }
