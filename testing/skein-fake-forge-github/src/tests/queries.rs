@@ -132,7 +132,6 @@ fn github_fake_graphql_matches_documents_and_bounds_variables() {
     assert_eq!(viewer.id, f::BOT);
     for body in [
         br#"{"query":"query { viewer { databaseId login } }"}"#.as_slice(),
-        br#"{"query":"mutation { enqueuePullRequest { id } }"}"#,
         br#"{"query":"query { viewer { login databaseId } }","query":"other"}"#,
         br#"{"query":"query { viewer { login databaseId } }","variables":null}"#,
         br#"{"query":"query { viewer { login databaseId } }"} []"#,
@@ -182,4 +181,55 @@ fn github_fake_graphql_pull_reads_the_domains_retained_admission() {
     let response = query(&mut h, &token, b"widgets", number);
     let entry = h.domain.queue_entries(b"acme/widgets").unwrap().first().unwrap();
     assert_eq!(pull(&h, &response).queued, Some(entry.position));
+}
+
+fn enqueue(h: &mut f::Harness, token: &Secret, id: &[u8], head: u64) -> crate::service::Response {
+    let encoded =
+        github::request::encode(&Request::Enqueue { id: f::boxed(id), head: r::object(head) }, &h.limits.github)
+            .unwrap();
+    h.ask(encoded.method, &encoded.target, Some(token.expose()), encoded.body.as_deref().unwrap())
+}
+fn enqueued(h: &f::Harness, response: &crate::service::Response) -> u32 {
+    assert_eq!(response.status, 200);
+    let (_, Document::Enqueued(position)) = h.decode(Kind::Enqueue, response) else { panic!("admission entry") };
+    position
+}
+#[test]
+fn github_fake_enqueue_is_idempotent_and_pull_reads_its_position() {
+    let mut h = r::harness();
+    skein_fake_forge_domain::grant(&mut h.domain, b"acme/widgets", f::BOT, a::Permission::Write);
+    let (number, head) = r::pull(&mut h);
+    let token = r::token(&mut h);
+    let response = query(&mut h, &token, b"widgets", number);
+    let id = pull(&h, &response).id;
+    for _delivery in 0..2_u32 {
+        let response = enqueue(&mut h, &token, &id, head);
+        assert_eq!(enqueued(&h, &response), 1);
+    }
+    let entries = h.domain.queue_entries(b"acme/widgets").unwrap();
+    assert_eq!(entries, [a::QueueEntry { number, head, position: 1 }]);
+    let response = query(&mut h, &token, b"widgets", number);
+    assert_eq!(pull(&h, &response).queued, Some(1));
+}
+#[test]
+fn github_fake_enqueue_distinguishes_stale_heads_and_unknown_nodes() {
+    let mut h = r::harness();
+    skein_fake_forge_domain::grant(&mut h.domain, b"acme/widgets", f::BOT, a::Permission::Write);
+    let (number, head) = r::pull(&mut h);
+    let token = r::token(&mut h);
+    let response = query(&mut h, &token, b"widgets", number);
+    let id = pull(&h, &response).id;
+    let stale = h.first;
+    let response = enqueue(&mut h, &token, &id, stale);
+    assert_eq!(response.status, 200);
+    let (_, Document::Graphql(error)) = h.decode(Kind::Enqueue, &response) else { panic!("stale error") };
+    assert_eq!(error.kind.as_ref(), b"UNPROCESSABLE");
+    assert!(error.message.ends_with(github::failure::ENQUEUE_STALE));
+    for id in [b"unknown".as_slice(), b"PR_2_999", b"PR_999_1", b"PR_02_1", b"PR_6_1"] {
+        let response = enqueue(&mut h, &token, id, head);
+        assert_eq!(response.status, 200);
+        let (_, Document::Graphql(error)) = h.decode(Kind::Enqueue, &response) else { panic!("missing node") };
+        assert_eq!(error.kind.as_ref(), b"NOT_FOUND");
+    }
+    assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
 }

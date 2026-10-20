@@ -24,6 +24,7 @@ mod reviews;
 #[derive(Debug)]
 pub(crate) enum Read {
     Repository(u64),
+    Enqueue { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     QueueMerge { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     Reviews { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
@@ -45,6 +46,7 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Repository(Row),
+    Enqueue,
     QueueMerge(api::Commit),
     PullGraphql { repository: u32, number: u64 },
     Reviews { page: u32, size: u32, target: Box<[u8]> },
@@ -65,7 +67,8 @@ pub(crate) enum Pending {
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::QueueMerge { owner, name, .. }
+        Read::Enqueue { owner, name, .. }
+        | Read::QueueMerge { owner, name, .. }
         | Read::PullGraphql { owner, name, .. }
         | Read::Reviews { owner, name, .. }
         | Read::ReviewComments { owner, name, .. }
@@ -91,6 +94,29 @@ fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
         }
     }
 }
+fn writing(read: &Read) -> bool {
+    match read {
+        Read::Enqueue { .. } | Read::QueueMerge { .. } => true,
+        Read::Repository(_)
+        | Read::PullGraphql { .. }
+        | Read::Reviews { .. }
+        | Read::ReviewComments { .. }
+        | Read::Collaborators { .. }
+        | Read::Permission { .. }
+        | Read::Pull { .. }
+        | Read::PullsFor { .. }
+        | Read::PullFiles { .. }
+        | Read::Compare { .. }
+        | Read::Raw { .. }
+        | Read::Issues { .. }
+        | Read::Issue { .. }
+        | Read::Comments { .. }
+        | Read::Locate { .. }
+        | Read::Branch { .. }
+        | Read::Branches { .. } => false,
+    }
+}
+
 pub(crate) fn call(
     service: &Service,
     read: Read,
@@ -108,10 +134,19 @@ pub(crate) fn call(
     if !body_fits {
         return Outcome::Reply(answers::refusal(413, b"Payload Too Large", &service.limits));
     }
+    if writing(&read) && grant.scope == crate::installations::Scope::Contents {
+        return Outcome::Reply(answers::refusal(403, b"Resource not accessible by integration", &service.limits));
+    }
     let Some(repository) = full(row) else {
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::Enqueue { number, head, .. } => {
+            let Some(head) = count(&head) else {
+                return Outcome::Reply(enqueue_finish(Err(Error::Stale), &service.limits));
+            };
+            (Pending::Enqueue, Op::Write(a::Write::Enqueue { number, head }))
+        }
         Read::QueueMerge { number, head, .. } => (Pending::QueueMerge(head), Op::Read(a::Read::Pull { number })),
         Read::PullGraphql { number, .. } => {
             (Pending::PullGraphql { repository: row.id, number }, Op::Read(a::Read::Pull { number }))
@@ -216,6 +251,7 @@ fn count(value: &api::Commit) -> Option<u64> {
 
 pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, limits: &Limits) -> Response {
     let result = match &pending.kind {
+        Pending::Enqueue => return enqueue_finish(result, limits),
         Pending::PullsFor { .. } => match result {
             Err(Error::Missing(a::What::Item | a::What::Pull)) => {
                 return answers::response(200, &Body::Pulls(&[]), limits);
@@ -244,17 +280,8 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
         Err(error) => return refused(error, limits),
     };
     match pending.kind {
-        Pending::QueueMerge(head) => {
-            let Answer::Pull(pull) = answer else { return answers::failed(); };
-            // Task 23 owns ordinary REST merges; only the queue refusal is served here.
-            if !pull.queue_required { return answers::missing(limits); }
-            if commit(pull.commit) != head {
-                return answers::refusal(409, skein_forge::github::failure::MERGE_STALE, limits);
-            }
-            let Some(prefix) = service::joined(skein_forge::github::failure::RULES, b"\n") else { return answers::failed(); };
-            let Some(message) = service::joined(&prefix, skein_forge::github::failure::QUEUE) else { return answers::failed(); };
-            answers::refusal(405, &message, limits)
-        }
+        Pending::Enqueue => enqueue_finish(Ok(answer), limits),
+        Pending::QueueMerge(head) => queue_merge(answer, head, limits),
         Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),
         Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),
         Pending::ReviewComments(review) => reviews::comments(answer, review, limits),
@@ -337,6 +364,116 @@ fn refused(error: Error, limits: &Limits) -> Response {
         | Error::Unreachable
         | Error::Refused => answers::failed(),
     }
+}
+
+fn queue_merge(answer: Answer, head: api::Commit, limits: &Limits) -> Response {
+    let Answer::Pull(pull) = answer else {
+        return answers::failed();
+    };
+    // Task 23 owns ordinary REST merges; only the queue refusal is served here.
+    if !pull.queue_required {
+        return answers::missing(limits);
+    }
+    if commit(pull.commit) != head {
+        return answers::refusal(409, skein_forge::github::failure::MERGE_STALE, limits);
+    }
+    let Some(prefix) = service::joined(skein_forge::github::failure::RULES, b"\n") else {
+        return answers::failed();
+    };
+    let Some(message) = service::joined(&prefix, skein_forge::github::failure::QUEUE) else {
+        return answers::failed();
+    };
+    answers::refusal(405, &message, limits)
+}
+
+fn enqueue_finish(result: Result<Answer, Error>, limits: &Limits) -> Response {
+    let entry = match result {
+        Ok(answer) => {
+            let Answer::Pull(pull) = answer else {
+                return answers::failed();
+            };
+            pull.queued
+        }
+        Err(Error::AlreadyQueued(entry)) => Some(entry),
+        Err(Error::Stale) => {
+            return answers::response(
+                200,
+                &Body::GraphqlRefusal(b"UNPROCESSABLE", skein_forge::github::failure::ENQUEUE_STALE),
+                limits,
+            );
+        }
+        Err(Error::Missing(_)) => {
+            return answers::response(
+                200,
+                &Body::GraphqlRefusal(b"NOT_FOUND", b"Could not resolve to a PullRequest node"),
+                limits,
+            );
+        }
+        Err(Error::Unavailable | Error::Timeout | Error::RateLimited { .. }) => return answers::failed(),
+        Err(
+            Error::Forbidden
+            | Error::TooLarge
+            | Error::Full
+            | Error::Exists
+            | Error::Circular
+            | Error::NothingToMerge
+            | Error::Empty
+            | Error::Closed
+            | Error::Conflict
+            | Error::Protected
+            | Error::Unreachable
+            | Error::Refused,
+        ) => {
+            return answers::response(
+                200,
+                &Body::GraphqlRefusal(b"UNPROCESSABLE", b"Cannot enqueue pull request"),
+                limits,
+            );
+        }
+    };
+    match entry {
+        Some(entry) => answers::response(200, &Body::Enqueued(entry.position), limits),
+        None => answers::failed(),
+    }
+}
+
+fn node(id: &[u8]) -> Option<(u32, u64)> {
+    let suffix = id.strip_prefix(b"PR_")?;
+    let at = bytes::find(suffix, b"_")?;
+    let repository = skein_forge::forgejo::id::unsigned(suffix.get(..at)?)?;
+    let number = skein_forge::forgejo::id::unsigned(suffix.get(at.checked_add(1)?..)?)?;
+    Some((u32::try_from(repository).ok()?, number))
+}
+
+pub(crate) fn enqueue(service: &Service, id: &[u8], head: api::Commit, grant: &Grant, reply_to: ReplyTo) -> Outcome {
+    let missing = answers::response(
+        200,
+        &Body::GraphqlRefusal(b"NOT_FOUND", b"Could not resolve to a PullRequest node"),
+        &service.limits,
+    );
+    let Some((repository, number)) = node(id) else {
+        return Outcome::Reply(missing);
+    };
+    let Some(row) = service.repositories.get(&repository) else {
+        return Outcome::Reply(missing);
+    };
+    if !service.installations.reaches(grant, repository) {
+        return Outcome::Reply(missing);
+    }
+    let Some(canonical) = pulls::node_id(repository, number, &service.limits) else {
+        return Outcome::Reply(missing);
+    };
+    if canonical.as_ref() != id {
+        return Outcome::Reply(missing);
+    }
+    call(
+        service,
+        Read::Enqueue { owner: row.owner.clone(), name: row.name.clone(), number, head },
+        grant,
+        b"/graphql",
+        true,
+        reply_to,
+    )
 }
 
 fn repository(row: Row, answer: Answer, limits: &Limits) -> Response {

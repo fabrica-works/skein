@@ -5,9 +5,18 @@ use skein_lib::Secret;
 
 fn harness(queue: bool) -> f::Harness {
     let config = r::harness().env.limits;
-    let mut h = f::Harness::with_protection(f::limits(), f::config(), config, Some(a::Protection {
-        queue, branch: f::boxed(b"trunk"), contexts: Box::from([]), approvals: 0, dismiss_stale: false,
-    }));
+    let mut h = f::Harness::with_protection(
+        f::limits(),
+        f::config(),
+        config,
+        Some(a::Protection {
+            queue,
+            branch: f::boxed(b"trunk"),
+            contexts: Box::from([]),
+            approvals: 0,
+            dismiss_stale: false,
+        }),
+    );
     fake::grant(&mut h.domain, b"acme/widgets", f::BOT, a::Permission::Write);
     h
 }
@@ -16,7 +25,13 @@ fn ask(h: &mut f::Harness, token: &Secret, request: &Request) -> crate::service:
     h.ask(encoded.method, &encoded.target, Some(token.expose()), encoded.body.as_deref().unwrap_or(b""))
 }
 fn merge(number: u64, head: u64) -> Request {
-    Request::Merge { owner: f::boxed(b"acme"), name: f::boxed(b"widgets"), number, head: r::object(head), method: Method::Rebase }
+    Request::Merge {
+        owner: f::boxed(b"acme"),
+        name: f::boxed(b"widgets"),
+        number,
+        head: r::object(head),
+        method: Method::Rebase,
+    }
 }
 #[test]
 fn direct_merge_of_a_queue_branch_answers_the_two_rule_lines_without_merging() {
@@ -27,7 +42,10 @@ fn direct_merge_of_a_queue_branch_answers_the_two_rule_lines_without_merging() {
     let message = f::parts(&[failure::RULES, b"\n", failure::QUEUE]);
     f::refusal(&h, &response, 405, &message);
     assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
-    let a::Answer::Pull(pull) = h.domain.inspect(&h.env.limits, b"acme/widgets", &a::Read::Pull { number }).unwrap() else { panic!("pull") };
+    let a::Answer::Pull(pull) = h.domain.inspect(&h.env.limits, b"acme/widgets", &a::Read::Pull { number }).unwrap()
+    else {
+        panic!("pull")
+    };
     assert_eq!(pull.state, a::State::Open);
     assert_eq!(pull.merged, None);
 }

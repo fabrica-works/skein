@@ -341,32 +341,28 @@ impl Service {
                         Outcome::Reply(response)
                     }
                     routes::Token::User(id) => Outcome::Reply(reads::user(self, id, self.body_fits(request.body))),
-                    routes::Token::Graphql => {
-                        if !self.body_fits(request.body) {
-                            return Outcome::Reply(answers::response(200, &Body::Graphql, limits));
-                        }
-                        match server::graphql_body(request.body, &limits.github) {
-                            Some(server::Graphql::Viewer) => Outcome::Reply(self.viewer()),
-                            Some(server::Graphql::Pull { owner, name, number }) => reads::call(
-                                self,
-                                reads::Read::PullGraphql { owner, name, number },
-                                &grant,
-                                request.target,
-                                self.body_fits(request.body),
-                                reply_to,
-                            ),
-                            None => Outcome::Reply(answers::response(200, &Body::Graphql, limits)),
-                        }
-                    }
+                    routes::Token::Graphql => self.graphql(request, &grant, reply_to),
                     routes::Token::QueueMerge { owner, name, number } => {
                         let route = request::Request::Merge {
-                            owner, name, number, head: [0; 32], method: github::plans::tables::Method::Merge,
+                            owner,
+                            name,
+                            number,
+                            head: [0; 32],
+                            method: github::plans::tables::Method::Merge,
                         };
                         let Some(request::Request::Merge { owner, name, number, head, .. }) =
                             server::write_body(route, request.body, &limits.github)
-                        else { return Outcome::Reply(answers::refusal(422, b"Validation Failed", limits)); };
-                        reads::call(self, reads::Read::QueueMerge { owner, name, number, head }, &grant,
-                            request.target, self.body_fits(request.body), reply_to)
+                        else {
+                            return Outcome::Reply(answers::refusal(422, b"Validation Failed", limits));
+                        };
+                        reads::call(
+                            self,
+                            reads::Read::QueueMerge { owner, name, number, head },
+                            &grant,
+                            request.target,
+                            self.body_fits(request.body),
+                            reply_to,
+                        )
                     }
                     routes::Token::Read(read) => {
                         reads::call(self, read, &grant, request.target, self.body_fits(request.body), reply_to)
@@ -375,6 +371,30 @@ impl Service {
             }
         }
     }
+    fn graphql(&self, request: &Request<'_>, grant: &Grant, reply_to: ReplyTo) -> Outcome {
+        let limits = &self.limits;
+        if !self.body_fits(request.body) {
+            return Outcome::Reply(answers::response(200, &Body::Graphql, limits));
+        }
+        let enqueue = request::Request::Enqueue { id: Box::from([]), head: [0; 32] };
+        if let Some(request::Request::Enqueue { id, head }) = server::write_body(enqueue, request.body, &limits.github)
+        {
+            return reads::enqueue(self, &id, head, grant, reply_to);
+        }
+        match server::graphql_body(request.body, &limits.github) {
+            Some(server::Graphql::Viewer) => Outcome::Reply(self.viewer()),
+            Some(server::Graphql::Pull { owner, name, number }) => reads::call(
+                self,
+                reads::Read::PullGraphql { owner, name, number },
+                grant,
+                request.target,
+                self.body_fits(request.body),
+                reply_to,
+            ),
+            None => Outcome::Reply(answers::response(200, &Body::Graphql, limits)),
+        }
+    }
+
     /// Completes the one domain call. No served route needs a second call.
     pub fn finish(&mut self, pending: Pending, result: Result<fake::api::Answer, fake::api::Error>) -> Response {
         reads::finish(pending, result, &self.limits)

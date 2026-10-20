@@ -4,6 +4,7 @@ use crate::{
     answers::{self, Body},
     service::{Limits, Response},
 };
+use alloc::boxed::Box;
 use skein_fake_forge_domain::api as a;
 use skein_forge::github::document as d;
 use skein_lib::List;
@@ -95,26 +96,28 @@ pub(super) fn compare(answer: a::Answer, size: u32, limits: &Limits) -> Response
 
 // Node IDs are opaque GitHub-layer identities; repository and number make them
 // stable and distinct without another domain store.
+#[expect(clippy::manual_map, reason = "step code spells Option transformations with exhaustive matches")]
 pub(super) fn graphql(answer: a::Answer, repository: u32, number: u64, limits: &Limits) -> Response {
     let a::Answer::Pull(row) = answer else {
         return answers::failed();
     };
-    let Some(prefix) = crate::service::joined(b"PR_", skein_lib::Decimal::of(u64::from(repository)).as_bytes()) else {
+    let Some(id) = node_id(repository, number, limits) else {
         return answers::failed();
     };
-    let Some(prefix) = crate::service::joined(&prefix, b"_") else {
-        return answers::failed();
-    };
-    let Some(id) = crate::service::joined(&prefix, skein_lib::Decimal::of(number).as_bytes()) else {
-        return answers::failed();
-    };
-    if u64::try_from(id.len()).expect("bounded decimal ID") > u64::from(limits.github.string_bytes) {
-        return answers::failed();
-    }
     let queued = match row.queued {
         Some(entry) => Some(entry.position),
         None => None,
     };
     let row = d::PullGraphql { id, merge_commit: optional_commit(row.merged), queued, dequeued: None };
     answers::response(200, &Body::PullGraphql(&row), limits)
+}
+
+pub(super) fn node_id(repository: u32, number: u64, limits: &Limits) -> Option<Box<[u8]>> {
+    let prefix = crate::service::joined(b"PR_", skein_lib::Decimal::of(u64::from(repository)).as_bytes())?;
+    let prefix = crate::service::joined(&prefix, b"_")?;
+    let id = crate::service::joined(&prefix, skein_lib::Decimal::of(number).as_bytes())?;
+    if u64::try_from(id.len()).expect("bounded decimal ID") > u64::from(limits.github.string_bytes) {
+        return None;
+    }
+    Some(id)
 }
