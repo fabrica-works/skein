@@ -461,3 +461,68 @@ fn github_status_replay_and_bounds() {
         );
     }
 }
+fn create_branch() -> api::Write {
+    api::Write::CreateBranch { branch: Box::from(*b"alice/x y"), commit: commit() }
+}
+#[test]
+fn github_create_branch_ref_and_bounds() {
+    let mut tables = tables();
+    let mut plan = write_plan(create_branch());
+    let request = begin(&mut plan, &mut tables);
+    golden(
+        &request,
+        Method::Post,
+        b"/repos/acme/widgets/git/refs",
+        Some(br#"{"ref":"refs/heads/alice/x y","sha":"0123456789abcdef0123456789abcdef01234567"}"#),
+        Some(Kind::Done),
+    );
+    roundtrip_body(&request);
+    encoded_body_bounds(&request);
+    for (string_bytes, ok) in [(9, true), (8, false)] {
+        assert_eq!(request::encode(&request, &crate::github::limits::Limits { string_bytes, ..limits() }).is_ok(), ok);
+    }
+    head(&mut plan, 201, &mut tables);
+    assert_eq!(
+        finish(&mut plan, Body::Document(Document::Done), &mut tables),
+        ended(Ok(api::Answer::Branch(api::BranchCreation::Created)))
+    );
+    let request = Request::CreateBranch {
+        owner: Box::from(*b"acme"),
+        name: Box::from(*b"widgets"),
+        branch: Box::from(*b"alice"),
+        commit: [255; 32],
+    };
+    assert_eq!(request::encode(&request, &limits()), Err(request::Refusal::Text));
+}
+#[test]
+fn github_create_branch_exists_not_409() {
+    for (status, message, answer) in [
+        (422, b"Reference already exists".as_slice(), Ok(api::Answer::Branch(api::BranchCreation::Exists))),
+        (409, b"Reference already exists", Err(api::Error::Refused)),
+        (422, b"unknown", Err(api::Error::Refused)),
+    ] {
+        let mut tables = tables();
+        let mut plan = write_plan(create_branch());
+        begin(&mut plan, &mut tables);
+        head(&mut plan, status, &mut tables);
+        assert_eq!(finish(&mut plan, refusal(message), &mut tables), ended(answer));
+    }
+}
+#[test]
+fn github_create_branch_find() {
+    let mut tables = tables();
+    let mut write = write_plan(create_branch());
+    begin(&mut write, &mut tables);
+    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), ended(Err(api::Error::Timeout)));
+    let mut find = Plan::new(KEY, api::Op::Read(api::Read::Branch { branch: Box::from(*b"alice/x y") }));
+    begin(&mut find, &mut tables);
+    head(&mut find, 200, &mut tables);
+    assert_eq!(
+        finish(
+            &mut find,
+            Body::Document(Document::Branch(document::Branch { name: Box::from(*b"alice/x y"), commit: commit() })),
+            &mut tables
+        ),
+        ended(Ok(api::Answer::Commit(commit())))
+    );
+}

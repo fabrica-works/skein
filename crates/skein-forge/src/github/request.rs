@@ -66,6 +66,7 @@ pub enum Request {
     Reopen { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     Edit { owner: Box<[u8]>, name: Box<[u8]>, number: u64, title: Option<Box<[u8]>>, body: Option<Box<[u8]>> },
     Status { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, context: Box<[u8]>, check: api::Check },
+    CreateBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]>, commit: api::Commit },
     Close { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     DeleteBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
 }
@@ -140,6 +141,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Close { .. }
         | Request::Edit { .. }
         | Request::Status { .. }
+        | Request::CreateBranch { .. }
         | Request::User { .. } => Accept::Json,
     };
     let (method, auth) = selection(request);
@@ -264,6 +266,10 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.repo(owner, name)?;
             out.put(b"/statuses/");
             out.commit(commit)?;
+        }
+        Request::CreateBranch { owner, name, .. } => {
+            out.repo(owner, name)?;
+            out.put(b"/git/refs");
         }
         Request::DeleteBranch { owner, name, branch } => {
             out.repo(owner, name)?;
@@ -446,6 +452,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Close { .. }
         | Request::Edit { .. }
         | Request::Status { .. }
+        | Request::CreateBranch { .. }
         | Request::User { .. } => unreachable!("item target dispatch"),
     }
     Ok(())
@@ -491,7 +498,7 @@ fn selection(request: &Request) -> (Method, Auth) {
         Request::Uninstall { .. } => (Method::Delete, Auth::App),
         Request::Conversion { .. } => (Method::Post, Auth::None),
         Request::BotUser { .. } => (Method::Get, Auth::None),
-        Request::Status { .. } | Request::Viewer => (Method::Post, Auth::Installation),
+        Request::CreateBranch { .. } | Request::Status { .. } | Request::Viewer => (Method::Post, Auth::Installation),
         Request::Reachable { .. }
         | Request::Repository { .. }
         | Request::Locate { .. }
@@ -521,7 +528,8 @@ fn selection(request: &Request) -> (Method, Auth) {
 }
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
-        Request::Status { .. }
+        Request::CreateBranch { .. }
+        | Request::Status { .. }
         | Request::Mint { scope: Scope::Contents, .. }
         | Request::Viewer
         | Request::SetHook { .. }
@@ -565,7 +573,7 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
     }
     let bounds = skein_json::writer::Limits { depth: super::limits::DEPTH, length: limits.body_bytes };
     let mut measure = skein_json::writer::Encoder::measure(&bounds);
-    body_json(request, &mut measure);
+    body_json(request, &mut measure)?;
     let length = match measure.measured() {
         Ok(length) => length,
         Err(skein_json::writer::Refusal::Text) => return Err(Refusal::Text),
@@ -576,12 +584,19 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
         ) => return Err(Refusal::TooLong),
     };
     let mut out = skein_json::writer::Encoder::write(length, &bounds);
-    body_json(request, &mut out);
+    body_json(request, &mut out)?;
     Ok(Some(out.finish()))
 }
-fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) {
+fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Result<(), Refusal> {
     json.object_start();
     match request {
+        Request::CreateBranch { branch, commit, .. } => {
+            json.key(b"ref");
+            json.string_parts(&[b"refs/heads/", branch]);
+            json.key(b"sha");
+            json.string(&id::write_commit(commit).ok_or(Refusal::Text)?);
+        }
+
         Request::Status { context, check, .. } => {
             json.key(b"state");
             json.string(match check {
@@ -661,6 +676,7 @@ fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) {
         | Request::User { .. } => unreachable!("request has a body"),
     }
     json.object_end();
+    Ok(())
 }
 
 fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
@@ -726,6 +742,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Close { .. }
         | Request::Edit { .. }
         | Request::Status { .. }
+        | Request::CreateBranch { .. }
         | Request::User { .. } => unreachable!("App target dispatch"),
     }
     Ok(())
@@ -740,6 +757,7 @@ fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
 
 fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
     match request {
+        Request::CreateBranch { branch, .. } => bounded(branch, limits.string_bytes)?,
         Request::Status { context, .. } => bounded(context, limits.string_bytes)?,
         Request::Edit { title, body, .. } => {
             if let Some(title) = title {

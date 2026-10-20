@@ -119,7 +119,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::Collaborators { .. } => Kind::CollaboratorRows,
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
-        Request::Status { .. } | Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => Kind::Done,
+        Request::CreateBranch { .. } | Request::Status { .. } | Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => Kind::Done,
         Request::Branch { .. } => Kind::Branch,
         Request::Branches { .. } => Kind::BranchRows,
         // Raw bodies, and an uninstall's empty answer.

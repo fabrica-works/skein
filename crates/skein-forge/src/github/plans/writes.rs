@@ -51,15 +51,15 @@ impl Plan {
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
             | api::Write::Edit { .. }
-            | api::Write::Status { .. } => {}
+            | api::Write::Status { .. }
+            | api::Write::CreateBranch { .. } => {}
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
-            | api::Write::Update { .. }
-            | api::Write::CreateBranch { .. } => return Err(api::Error::Refused),
+            | api::Write::Update { .. } => return Err(api::Error::Refused),
         }
         self.row = tables.repository(self.repository).cloned();
         if self.row.is_none() {
@@ -83,6 +83,9 @@ impl Plan {
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::CreateBranch { branch, commit } => {
+                Request::CreateBranch { owner, name, branch: branch.clone(), commit: *commit }
+            }
             api::Write::Status { commit, context, check } => {
                 Request::Status { owner, name, commit: *commit, context: context.clone(), check: *check }
             }
@@ -98,8 +101,7 @@ impl Plan {
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
-            | api::Write::Update { .. }
-            | api::Write::CreateBranch { .. } => return Err(api::Error::Refused),
+            | api::Write::Update { .. } => return Err(api::Error::Refused),
         };
         self.stage = Stage::Mutate;
         Ok(self.send(request))
@@ -107,7 +109,7 @@ impl Plan {
     fn status(&self) -> u16 {
         match self.write {
             api::Write::DeleteBranch { .. } => 204,
-            api::Write::Status { .. } => 201,
+            api::Write::Status { .. } | api::Write::CreateBranch { .. } => 201,
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
@@ -117,13 +119,13 @@ impl Plan {
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
             | api::Write::Merge { .. }
-            | api::Write::Update { .. }
-            | api::Write::CreateBranch { .. } => 200,
+            | api::Write::Update { .. } => 200,
         }
     }
     fn asked(&self) -> Asked {
         match &self.write {
             api::Write::DeleteBranch { .. } => Asked::DeleteBranch,
+            api::Write::CreateBranch { .. } => Asked::CreateBranch,
             api::Write::Edit { title, body, .. } => {
                 Asked::Write { empty: empty(title.as_deref()) || empty(body.as_deref()) }
             }
@@ -136,8 +138,7 @@ impl Plan {
             | api::Write::Reopen { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
-            | api::Write::Status { .. }
-            | api::Write::CreateBranch { .. } => Asked::Write { empty: false },
+            | api::Write::Status { .. } => Asked::Write { empty: false },
         }
     }
     pub fn heard(
@@ -210,7 +211,8 @@ impl Plan {
                     error
                 })
             }
-            Verdict::BranchExists | Verdict::Enqueue => Err(self.invalid()),
+            Verdict::BranchExists => Ok(api::Answer::Branch(api::BranchCreation::Exists)),
+            Verdict::Enqueue => Err(self.invalid()),
         }
     }
     fn refusal_head(&self) -> Option<(u16, &Head)> {
@@ -250,82 +252,87 @@ impl Plan {
                     api::Error::Unavailable
                 })
             }
-            Heard::Done(body) => {
-                if let Some((status, head)) = self.refusal_head() {
-                    let refusal = match &body {
-                        Body::Document(Document::Error(refusal)) => Some(refusal),
-                        Body::Document(
-                            Document::Installation(_)
-                            | Document::Minted(_)
-                            | Document::Viewer(_)
-                            | Document::Graphql(_)
-                            | Document::App(_)
-                            | Document::HookConfig(_)
-                            | Document::Conversion(_)
-                            | Document::User(_)
-                            | Document::Compare(_)
-                            | Document::Permission(_)
-                            | Document::Done
-                            | Document::BotUser(_)
-                            | Document::Repository(_)
-                            | Document::Branch(_)
-                            | Document::Issue(_)
-                            | Document::Pull(_)
-                            | Document::Job(_)
-                            | Document::Combined(_)
-                            | Document::Rows,
-                        )
-                        | Body::Raw { .. }
-                        | Body::Empty
-                        | Body::Malformed(_) => None,
-                    };
-                    let answer = self.refusal(status, head, refusal, tables)?;
-                    return self.terminal(answer, bounds);
-                }
-                match body {
-                    Body::Malformed(error) => return Err(self.malformed(error)),
-                    Body::Document(Document::Repository(repository)) if self.stage == Stage::Resolve => {
-                        let id = crate::github::id::repository(repository.id)?;
-                        if id == 0 || id != self.repository.repository {
-                            return Err(self.invalid());
-                        }
-                        let row = tables::repository(&repository);
-                        tables.keep_repository(self.repository, row.clone());
-                        tables.keep_user(self.repository.forge, repository.owner_id, repository.owner);
-                        self.row = Some(row);
-                        return Ok(Some(self.mutation()?));
-                    }
-                    Body::Empty if self.stage == Stage::Mutate && self.asked() == Asked::DeleteBranch => {}
-                    Body::Document(Document::Done)
-                        if self.stage == Stage::Mutate && self.asked() != Asked::DeleteBranch => {}
-                    Body::Document(
-                        Document::Installation(_)
-                        | Document::Minted(_)
-                        | Document::Viewer(_)
-                        | Document::Graphql(_)
-                        | Document::App(_)
-                        | Document::HookConfig(_)
-                        | Document::Conversion(_)
-                            | Document::User(_)
-                            | Document::Compare(_)
-                            | Document::Permission(_)
-                        | Document::Done
-                        | Document::BotUser(_)
-                        | Document::Repository(_)
-                        | Document::Branch(_)
-                        | Document::Issue(_)
-                        | Document::Pull(_)
-                        | Document::Job(_)
-                        | Document::Combined(_)
-                        | Document::Rows
-                        | Document::Error(_),
-                    )
-                    | Body::Empty
-                    | Body::Raw { .. } => return Err(self.invalid()),
-                }
-                self.terminal(api::Answer::Done, bounds)
-            }
+            Heard::Done(body) => self.done(body, bounds, tables),
         }
+    }
+    fn done(&mut self, body: Body, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
+        if let Some((status, head)) = self.refusal_head() {
+            let refusal = match &body {
+                Body::Document(Document::Error(refusal)) => Some(refusal),
+                Body::Document(
+                    Document::Installation(_)
+                    | Document::Minted(_)
+                    | Document::Viewer(_)
+                    | Document::Graphql(_)
+                    | Document::App(_)
+                    | Document::HookConfig(_)
+                    | Document::Conversion(_)
+                 | Document::User(_)
+                 | Document::Compare(_)
+                 | Document::Permission(_)
+                    | Document::Done
+                    | Document::BotUser(_)
+                    | Document::Repository(_)
+                    | Document::Branch(_)
+                    | Document::Issue(_)
+                    | Document::Pull(_)
+                    | Document::Job(_)
+                | Document::Combined(_)
+                    | Document::Rows,
+                )
+                | Body::Raw { .. }
+                | Body::Empty
+                | Body::Malformed(_) => None,
+            };
+            let answer = self.refusal(status, head, refusal, tables)?;
+            return self.terminal(answer, bounds);
+        }
+        match body {
+            Body::Malformed(error) => return Err(self.malformed(error)),
+            Body::Document(Document::Repository(repository)) if self.stage == Stage::Resolve => {
+                let id = crate::github::id::repository(repository.id)?;
+                if id == 0 || id != self.repository.repository {
+                    return Err(self.invalid());
+                }
+                let row = tables::repository(&repository);
+                tables.keep_repository(self.repository, row.clone());
+                tables.keep_user(self.repository.forge, repository.owner_id, repository.owner);
+                self.row = Some(row);
+                return Ok(Some(self.mutation()?));
+            }
+            Body::Empty if self.stage == Stage::Mutate && self.asked() == Asked::DeleteBranch => {}
+            Body::Document(Document::Done) if self.stage == Stage::Mutate && self.asked() != Asked::DeleteBranch => {}
+            Body::Document(
+                Document::Installation(_)
+                | Document::Minted(_)
+                | Document::Viewer(_)
+                | Document::Graphql(_)
+                | Document::App(_)
+                | Document::HookConfig(_)
+                | Document::Conversion(_)
+                 | Document::User(_)
+                 | Document::Compare(_)
+                 | Document::Permission(_)
+                | Document::Done
+                | Document::BotUser(_)
+                | Document::Repository(_)
+                | Document::Branch(_)
+                | Document::Issue(_)
+                | Document::Pull(_)
+                | Document::Job(_)
+                | Document::Combined(_)
+                | Document::Rows
+                | Document::Error(_),
+            )
+            | Body::Empty
+            | Body::Raw { .. } => return Err(self.invalid()),
+        }
+        let answer = if self.asked() == Asked::CreateBranch {
+            api::Answer::Branch(api::BranchCreation::Created)
+        } else {
+            api::Answer::Done
+        };
+        self.terminal(answer, bounds)
     }
 }
 

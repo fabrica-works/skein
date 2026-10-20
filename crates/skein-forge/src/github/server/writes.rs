@@ -208,8 +208,26 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 }
 /// Decodes a write's body separately from route dispatch; path fields come from the caller.
 #[must_use]
+#[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::CreateBranch { owner, name, .. } => {
+            let fields = parse(
+                body,
+                &[Field { key: b"ref", body: true, required: true }, Field { key: b"sha", body: true, required: true }],
+                limits,
+            )?;
+            let branch = fields.get(b"ref")?.strip_prefix(b"refs/heads/")?;
+            if u64::try_from(branch.len()).ok()? > u64::from(limits.string_bytes) {
+                return None;
+            }
+            Some(Request::CreateBranch {
+                owner,
+                name,
+                branch: Box::from(branch),
+                commit: super::id::commit(fields.get(b"sha")?)?,
+            })
+        }
         Request::Status { owner, name, commit, .. } => {
             let fields = parse(
                 body,

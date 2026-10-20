@@ -23,6 +23,7 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::Reachable { page: 1, per_page: 100 }, Kind::ReachableRows),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
+        (Request::CreateBranch { owner: owner(), name: name(), branch: Box::from(*b"alice"), commit }, Kind::Done),
         (
             Request::Status {
                 owner: owner(),
