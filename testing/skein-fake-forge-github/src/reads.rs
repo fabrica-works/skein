@@ -19,6 +19,7 @@ use skein_lib::{List, ReplyTo, Wall, bytes};
 mod checks;
 mod issues;
 pub(crate) mod people;
+pub(crate) mod protection;
 mod pulls;
 mod reviews;
 
@@ -26,6 +27,7 @@ mod reviews;
 pub(crate) enum Read {
     Checks { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, page: u32, per_page: u32, runs: bool },
     Job { owner: Box<[u8]>, name: Box<[u8]>, id: u64 },
+    Protection { owner: Box<[u8]>, name: Box<[u8]>, query: protection::Read },
     Repository(u64),
     Enqueue { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
@@ -49,6 +51,7 @@ pub(crate) enum Read {
 pub(crate) enum Pending {
     Checks { repository: Box<[u8]>, commit: u64, page: u32, size: u32, target: Box<[u8]>, runs: bool },
     Job { repository: Box<[u8]> },
+    Protection { repository: Box<[u8]>, query: protection::Read },
     Repository(Row),
     Enqueue,
     PullGraphql { repository: u32, number: u64 },
@@ -72,6 +75,7 @@ fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
         Read::Checks { owner, name, .. }
         | Read::Job { owner, name, .. }
+        | Read::Protection { owner, name, .. }
         | Read::Enqueue { owner, name, .. }
         | Read::PullGraphql { owner, name, .. }
         | Read::Reviews { owner, name, .. }
@@ -103,6 +107,7 @@ fn writing(read: &Read) -> bool {
         Read::Enqueue { .. } => true,
         Read::Checks { .. }
         | Read::Job { .. }
+        | Read::Protection { .. }
         | Read::Repository(_)
         | Read::PullGraphql { .. }
         | Read::Reviews { .. }
@@ -167,6 +172,12 @@ pub(crate) fn call(
         Read::Job { id, .. } => {
             (Pending::Job { repository: bytes::copy_of(&repository) }, Op::Read(a::Read::Job { job: id }))
         }
+        Read::Protection { query, .. } => (
+            Pending::Protection { repository: repository.clone(), query },
+            // GitHub's rule documents need repository read access, whereas
+            // the shared admin-only Protection read serves Forgejo's face.
+            Op::Read(a::Read::Settings),
+        ),
         Read::Enqueue { number, head, .. } => {
             let Some(head) = count(&head) else {
                 return Outcome::Reply(enqueue_finish(Err(Error::Stale), &service.limits));
@@ -280,9 +291,10 @@ pub(crate) fn count(value: &api::Commit) -> Option<u64> {
 pub(crate) fn finish(
     pending: Pending,
     result: Result<Answer, Error>,
-    limits: &Limits,
+    service: &Service,
     domain: &fake::Domain,
 ) -> Response {
+    let limits = &service.limits;
     let result = match &pending {
         Pending::Enqueue => return enqueue_finish(result, limits),
         Pending::PullsFor { .. } => match result {
@@ -293,6 +305,7 @@ pub(crate) fn finish(
         },
         Pending::Checks { .. }
         | Pending::Job { .. }
+        | Pending::Protection { .. }
         | Pending::PullGraphql { .. }
         | Pending::Reviews { .. }
         | Pending::ReviewComments(_)
@@ -318,6 +331,12 @@ pub(crate) fn finish(
             checks::render(answer, &repository, commit, page, size, &target, runs, limits, domain)
         }
         Pending::Job { repository } => checks::job(answer, &repository, limits, domain),
+        Pending::Protection { repository, query } => {
+            let Answer::Settings(_) = answer else {
+                return answers::failed();
+            };
+            protection::finish(service, domain, &repository, query)
+        }
         Pending::Enqueue => enqueue_finish(Ok(answer), limits),
         Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),
         Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),
@@ -352,33 +371,35 @@ pub(crate) fn finish(
             };
             answers::response(200, &Body::Branch(&d::Branch { name, commit: commit(count) }), limits)
         }
-        Pending::Branches { page, size, target } => {
-            let Answer::Cloned { branches, .. } = answer else {
+        Pending::Branches { page, size, target } => branches(answer, page, size, &target, limits),
+    }
+}
+
+fn branches(answer: Answer, page: u32, size: u32, target: &[u8], limits: &Limits) -> Response {
+    let Answer::Cloned { branches, .. } = answer else {
+        return answers::failed();
+    };
+    let Ok(total) = u64::try_from(branches.len()) else {
+        return answers::failed();
+    };
+    let Some(page) = Page::new(page, size, total) else {
+        return answers::failed();
+    };
+    let mut names = List::with_capacity(size);
+    for (index, branch) in branches.iter().enumerate() {
+        let Ok(index) = u64::try_from(index) else {
+            return answers::failed();
+        };
+        if page.contains(index) {
+            let Ok(length) = u32::try_from(branch.branch.len()) else {
                 return answers::failed();
             };
-            let Ok(total) = u64::try_from(branches.len()) else {
+            if length > limits.github.string_bytes || names.push(branch.branch.as_ref()).is_err() {
                 return answers::failed();
-            };
-            let Some(page) = Page::new(page, size, total) else {
-                return answers::failed();
-            };
-            let mut names = List::with_capacity(size);
-            for (index, branch) in branches.iter().enumerate() {
-                let Ok(index) = u64::try_from(index) else {
-                    return answers::failed();
-                };
-                if page.contains(index) {
-                    let Ok(length) = u32::try_from(branch.branch.len()) else {
-                        return answers::failed();
-                    };
-                    if length > limits.github.string_bytes || names.push(branch.branch.as_ref()).is_err() {
-                        return answers::failed();
-                    }
-                }
             }
-            page.link(answers::response(200, &Body::Branches(names.as_slice()), limits), &target, limits)
         }
     }
+    page.link(answers::response(200, &Body::Branches(names.as_slice()), limits), target, limits)
 }
 fn refused(error: Error, limits: &Limits) -> Response {
     match error {
@@ -412,6 +433,13 @@ fn enqueue_finish(result: Result<Answer, Error>, limits: &Limits) -> Response {
             pull.queued
         }
         Err(Error::AlreadyQueued(entry)) => Some(entry),
+        Err(Error::Protected) => {
+            return answers::response(
+                200,
+                &Body::GraphqlRefusal(b"UNPROCESSABLE", crate::texts::ENQUEUE_APPROVALS),
+                limits,
+            );
+        }
         Err(Error::Stale) => {
             return answers::response(
                 200,
@@ -437,7 +465,6 @@ fn enqueue_finish(result: Result<Answer, Error>, limits: &Limits) -> Response {
             | Error::Empty
             | Error::Closed
             | Error::Conflict
-            | Error::Protected
             | Error::Unreachable
             | Error::Refused,
         ) => {

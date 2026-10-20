@@ -251,6 +251,9 @@ fn running_queue(green: bool) -> (f::Harness, u64, u64, Secret) {
         f::config(),
         config,
         Some(a::Protection {
+            linear: false,
+            code_owners: false,
+            bypassing_users: Box::from([]),
             queue: true,
             branch: f::boxed(b"trunk"),
             contexts: Box::from([f::boxed(b"ci")]),
@@ -363,4 +366,27 @@ fn failed_group_leaves_pull_plan_open_with_ci_failure() {
     assert_eq!(pull.queued, None);
     assert_eq!(pull.merged, None);
     assert_eq!(pull.dequeued.as_deref(), Some(b"CI_FAILURE".as_slice()));
+}
+
+#[test]
+fn unapproved_enqueue_answers_the_unrecorded_graphql_text_without_an_entry() {
+    let mut h = protected(true, 1, Box::from([]));
+    let (number, head) = r::pull(&mut h);
+    let token = r::token(&mut h);
+    let request = Request::Enqueue {
+        id: f::parts(&[b"PR_2_", skein_lib::Decimal::of(number).as_bytes()]),
+        head: r::object(head),
+    };
+    let response = ask(&mut h, &token, &request);
+    assert_eq!(response.status, 200);
+    let (rows, document) = h.decode(github::document::Kind::Enqueue, &response);
+    assert_eq!(rows.len(), 0);
+    assert_eq!(
+        document,
+        github::document::Document::Graphql(github::document::GraphqlRefusal {
+            kind: f::boxed(b"UNPROCESSABLE"),
+            message: f::boxed(crate::texts::ENQUEUE_APPROVALS),
+        })
+    );
+    assert!(h.domain.queue_entries(b"acme/widgets").unwrap().is_empty());
 }

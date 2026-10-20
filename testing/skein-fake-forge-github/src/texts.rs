@@ -52,3 +52,7 @@ pub(crate) const CHECK_FAILING: &[u8] = b"\" is failing.";
 pub(crate) const CI_FAILURE: &[u8] = b"CI_FAILURE";
 // unrecorded: GitHub's spelling as forge-github.md names it.
 pub(crate) const MERGE_CONFLICT: &[u8] = b"MERGE_CONFLICT";
+// classic-protection-404-under-rulesets.
+pub(crate) const BRANCH_NOT_PROTECTED: &[u8] = b"Branch not protected";
+// unrecorded: o/github will record it.
+pub(crate) const ENQUEUE_APPROVALS: &[u8] = b"unrecorded: o/github will record it";

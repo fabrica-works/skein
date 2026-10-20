@@ -48,6 +48,10 @@ pub fn config() -> Config {
     Config {
         app: app(),
         app_facts: service::AppFacts::Complete,
+        shown: service::Shown::Ruleset,
+        ruleset_id: 17,
+        pull_requests_only: false,
+        required_signatures: false,
         bot: BOT,
         hook: boxed(b"https://hook.test/start"),
         repositories,

@@ -45,6 +45,13 @@ pub enum AppFacts {
     /// Keep only the first permission at read access, and the first event.
     Narrow,
 }
+/// How the scenario shows domain protection (fake-forge.md, 10.1).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Shown {
+    Ruleset,
+    Classic,
+    Both,
+}
 /// The scenario's GitHub-only tables, including the signed-in browser account.
 #[derive(Debug)]
 pub struct Config {
@@ -54,6 +61,13 @@ pub struct Config {
     pub app_facts: AppFacts,
     /// Domain user acting for every installation.
     pub bot: u64,
+    pub shown: Shown,
+    /// Stable ruleset id supplied by the scenario, shared across its repository routes.
+    pub ruleset_id: u64,
+    /// Report `PullsOnly` for a bypassing App bot; otherwise `Always`.
+    pub pull_requests_only: bool,
+    /// A layer fact: the domain has no signing engine.
+    pub required_signatures: bool,
     /// Initial webhook URL.
     pub hook: Box<[u8]>,
     /// Repository rows, in any order; ids and owner/name pairs must be unique.
@@ -157,6 +171,10 @@ pub struct Service {
     pub(crate) app: App,
     pub(crate) app_facts: AppFacts,
     pub(crate) bot: u64,
+    pub(crate) shown: Shown,
+    pub(crate) ruleset_id: u64,
+    pub(crate) pull_requests_only: bool,
+    pub(crate) required_signatures: bool,
     pub(crate) hook: Box<[u8]>,
     pub(crate) accounts: List<Account>,
     pub(crate) person: Box<[u8]>,
@@ -172,7 +190,8 @@ impl Service {
             return Err(Problem::Limits);
         }
         let string = usize::try_from(limits.github.string_bytes).or(Err(Problem::Limits))?;
-        if config.bot == 0
+        if config.ruleset_id == 0
+            || config.bot == 0
             || config.bot == config.app.id
             || config.app.id == 0
             || config.app.slug.is_empty()
@@ -251,6 +270,10 @@ impl Service {
             app: config.app,
             app_facts: config.app_facts,
             bot: config.bot,
+            shown: config.shown,
+            ruleset_id: config.ruleset_id,
+            pull_requests_only: config.pull_requests_only,
+            required_signatures: config.required_signatures,
             hook: config.hook,
             accounts: config.accounts,
             person: config.person,
@@ -390,7 +413,7 @@ impl Service {
         domain: &fake::Domain,
     ) -> Outcome {
         match pending.kind {
-            PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, &self.limits, domain)),
+            PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
         }
     }
@@ -631,6 +654,12 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     bytes = bytes
         .checked_add(List::<d::Run>::worst_case(limits.page)?.max(List::<d::Context>::worst_case(limits.page)?))?
         .checked_add(u64::from(limits.page).checked_mul(14)?)?;
+    // Five retained rule rows and the page's cloned contexts coexist.
+    bytes = bytes
+        .checked_add(List::<d::Rule>::worst_case(5)?)?
+        .checked_add(List::<d::Rule>::worst_case(5)?)?
+        .checked_add(List::<Box<[u8]>>::worst_case(limits.github.inner)?)?
+        .checked_add(u64::from(limits.github.inner).checked_mul(u64::from(limits.github.string_bytes))?)?;
     // The query reader retains at most 16 tokens and their decoded text
     // (bounded by its input), while its tokenizer and input intake coexist.
     bytes = bytes

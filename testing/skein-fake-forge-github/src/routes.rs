@@ -101,6 +101,23 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::ReviewComments { owner, name, number, review, page, per_page } if page > 0 && per_page > 0 => {
             Route::Token(Token::Read(reads::Read::ReviewComments { owner, name, number, review }))
         }
+        Request::RulesForBranch { owner, name, branch, page } if page > 0 => {
+            Route::Token(Token::Read(reads::Read::Protection {
+                owner,
+                name,
+                query: reads::protection::Read::Rules { branch, page, target: skein_lib::bytes::copy_of(target) },
+            }))
+        }
+        Request::Ruleset { owner, name, id } => Route::Token(Token::Read(reads::Read::Protection {
+            owner,
+            name,
+            query: reads::protection::Read::Ruleset(id),
+        })),
+        Request::ClassicProtection { owner, name, branch } => Route::Token(Token::Read(reads::Read::Protection {
+            owner,
+            name,
+            query: reads::protection::Read::Classic(branch),
+        })),
         Request::Merge { owner, name, number, head, method } => {
             Route::Token(Token::Write(writes::Route::Merge { owner, name, number, head, method }))
         }
@@ -154,8 +171,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::PullFiles { .. }
         | Request::Compare { .. }
         | Request::RulesForBranch { .. }
-        | Request::Ruleset { .. }
-        | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Enqueue { .. }
         | Request::PullGraphql { .. } => return None,
