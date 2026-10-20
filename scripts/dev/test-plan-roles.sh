@@ -52,6 +52,134 @@ git -C "$t/clone" add t.rs
 git -C "$t/clone" commit -qm $'Add the test\n\nPlan: demo'
 out=$(capture status land_run --gate true)
 expect "land refuses a test name the Pulse's pattern matches" "$out" 'status=2' 'land:' "the plan's Pulse names tests matching (_and_)" 't.rs: reads_and_writes'
+
+# After-landing uses this world's repository and a copy of the helper,
+# with heavy and machine effects confined to the fixture.
+after=$t/after-landing
+mkdir -p "$after/kit" "$after/bin" "$after/tmp/after-landing/sibling" "$after/outside"
+cp "$kit/after-landing" "$after/kit/after-landing"
+after_commit=$(git -C "$t/clone" rev-parse HEAD)
+after_target=$after/tmp/after-landing/clone/target
+after_log=$after/tmp/after-landing/clone-$(git -C "$t/clone" rev-parse --short HEAD).log
+echo keep >"$after/tmp/after-landing/sibling/sentinel"
+echo keep >"$after/outside/sentinel"
+cat >"$after/kit/heavy" <<'EOF'
+#!/usr/bin/env bash
+[[ $* == '--gate -- scripts/after-landing.sh' ]] || exit 70
+[[ $(git rev-parse HEAD) == "$AFTER_COMMIT" ]] || exit 71
+if [[ ${AFTER_REQUIRE_CLEAN:-} == 1 && -e target ]]; then exit 72; fi
+echo attempt >>"$AFTER_STATE/attempts"
+if [[ ${AFTER_ABSENT:-} != 1 ]]; then
+    mkdir -p target
+    ln -sf "$AFTER_STATE/outside" target/link
+    echo build >target/artifact
+fi
+if [[ $AFTER_STATUS == 9 ]]; then
+    echo 'heavy: fixture refusal'
+else
+    echo 'heavy: queued task 1 in gate'
+    echo 'fixture tier output'
+fi
+exit "$AFTER_STATUS"
+EOF
+cat >"$after/bin/hostname" <<'EOF'
+#!/usr/bin/env bash
+[[ $* == -s ]] || exit 1
+echo "$AFTER_HOST"
+EOF
+cat >"$after/bin/rm" <<'EOF'
+#!/usr/bin/env bash
+[[ $* == '-rf --one-file-system -- target' ]] || exit 73
+if [[ ${AFTER_HOLD_CLEANUP:-} == 1 ]]; then
+    touch "$AFTER_STATE/cleanup-held"
+    for ((i=0; i<50; i++)); do
+        [[ ! -e $AFTER_STATE/release-cleanup ]] || break
+        sleep 0.1
+    done
+    [[ -e $AFTER_STATE/release-cleanup ]] || exit 74
+fi
+[[ ${AFTER_RM_FAIL:-} != 1 ]] || { echo 'fixture removal failed' >&2; exit 75; }
+exec /usr/bin/rm "$@"
+EOF
+cat >"$after/bin/flock" <<'EOF'
+#!/usr/bin/env bash
+[[ -z ${AFTER_WAITING:-} ]] || touch "$AFTER_WAITING"
+exec /usr/bin/flock "$@"
+EOF
+cat >"$after/bin/kache" <<'EOF'
+#!/usr/bin/env bash
+[[ $* == gc && ! -e $AFTER_TARGET ]] || exit 76
+echo gc >>"$AFTER_STATE/gc"
+exit 1
+EOF
+chmod +x "$after/kit/heavy" "$after/bin/"*
+after_run() {
+    PATH=$after/bin:$PATH DEV_TMP=$after/tmp AFTER_STATE=$after AFTER_COMMIT=$after_commit \
+        AFTER_TARGET=$after_target AFTER_HOST=$1 AFTER_STATUS=$2 \
+        timeout 10 "$after/kit/after-landing" "$t/clone/.git" "$after_commit" fixture-branch
+}
+while IFS='|' read -r host code target; do
+    out=$(capture status after_run "$host" "$code")
+    expect "after-landing $host exit $code" "$out" "status=$code"
+    expect "after-landing $host target $target" "$(if [[ -d $after_target ]]; then echo kept; else echo removed; fi)" "$target"
+    expect "after-landing keeps sibling" "$(cat "$after/tmp/after-landing/sibling/sentinel")" keep
+    expect "after-landing keeps nested link referent" "$(cat "$after/outside/sentinel")" keep
+    expect "after-landing keeps log" "$(cat "$after_log")" 'heavy:'
+done <<'AFTER'
+x1|0|removed
+x1|23|removed
+x1|9|removed
+other|0|kept
+AFTER
+expect "after-landing failure context" "$(cat "$after/tmp/director/inbox/after-landing.md")" \
+    "clone ${after_commit:0:10} (fixture-branch, \"Add the test\") failed (exit 23)" \
+    'was refused by heavy, so nothing ran: heavy: fixture refusal' "log $after_log"
+rm -rf "$after_target"
+out=$(AFTER_ABSENT=1 capture status after_run x1 0)
+expect "after-landing missing target is harmless" "$out" 'status=0'
+expect "after-landing collects released cache blocks best effort" "$(wc -l <"$after/gc")" 4
+expect "after-landing log is private" "$(stat -c %a "$after_log")" 600
+
+ln -s "$after/outside" "$after_target"
+out=$(capture status after_run x1 23)
+expect "after-landing unsafe target preserves tier failure" "$out" 'status=23'
+expect "after-landing reports unsafe cleanup" "$(cat "$after_log" "$after/tmp/director/inbox/after-landing.md")" \
+    'refusing unsafe target cleanup:' 'target cleanup failed (exit 1)' 'failed (exit 23)'
+expect "after-landing leaves symlink referent" "$(cat "$after/outside/sentinel")" keep
+rm "$after_target"
+out=$(AFTER_RM_FAIL=1 capture status after_run x1 0)
+expect "after-landing reports removal failure on success" "$out" 'status=1'
+expect "after-landing logs removal failure" "$(cat "$after_log")" 'fixture removal failed'
+out=$(AFTER_RM_FAIL=1 capture status after_run x1 9)
+expect "after-landing removal failure preserves refusal" "$out" 'status=9'
+expect "after-landing keeps refusal and cleanup diagnostics" "$(tail -n2 "$after/tmp/director/inbox/after-landing.md")" \
+    'was refused by heavy, so nothing ran: heavy: fixture refusal' 'target cleanup failed (exit 1)'
+
+mv "${after_target%/target}" "$after/moved"
+ln -s "$after/moved" "${after_target%/target}"
+out=$(capture status after_run x1 0)
+expect "after-landing refuses a linked lane path" "$out" 'status=1'
+expect "after-landing preserves a linked lane's target" "$(cat "$after/moved/target/artifact")" build
+rm "${after_target%/target}"
+mv "$after/moved" "${after_target%/target}"
+
+# A second run reaches flock while the first is inside target removal.
+: >"$after/attempts"
+AFTER_HOLD_CLEANUP=1 after_run x1 0 &
+after_first=$!
+poll_until 50 test -e "$after/cleanup-held"
+AFTER_WAITING=$after/next-waiting AFTER_REQUIRE_CLEAN=1 after_run x1 0 &
+after_next=$!
+poll_until 50 test -e "$after/next-waiting"
+expect "after-landing cleanup holds the next run's lock" \
+    "$(capture status flock -n "$after/tmp/after-landing/clone.lock" true)" 'status=1'
+expect "after-landing next tier waits for cleanup" "$(wc -l <"$after/attempts")" 1
+touch "$after/release-cleanup"
+wait "$after_first"
+wait "$after_next"
+expect "after-landing next tier starts after cleanup" "$(wc -l <"$after/attempts")" 2
+expect "after-landing retains lane and lock" "$(if [[ -d ${after_target%/target} && -f $after/tmp/after-landing/clone.lock && ! -e $after_target ]]; then echo kept; fi)" kept
+
 before=$(cat "$run/ledger.tsv")
 out=$(capture status "$plan" set --help state=ready)
 expect "plan set refuses an option" "$out" 'status=2' 'plan:' 'a step is not an option: --help'

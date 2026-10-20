@@ -13,6 +13,7 @@
 # to the director's inbox, tmp/director/inbox/after-landing.md, naming the
 # repository, the commit, its branch and subject, and the log.
 set -euo pipefail
+umask 077
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 # The workspace, as land finds it.
@@ -39,6 +40,20 @@ report() {
         >>"$tmp/director/inbox/after-landing.md"
 }
 
+# x1's kept targets hold cache blocks past the cache's limit (owners.md,
+# 4.5). Stay inside this lane's physical worktree; rm does not follow
+# links within target, and must not cross a filesystem mounted below it.
+cleanup_target() (
+    [[ $(hostname -s) == x1 ]] || exit 0
+    cd -P -- "$wt" || exit 1
+    if [[ $PWD != "$wt" || -L target || ( -e target && ! -d target ) ]]; then
+        echo "after-landing: refusing unsafe target cleanup: $wt/target" >&2
+        exit 1
+    fi
+    rm -rf --one-file-system -- target || exit 1
+    if command -v kache >/dev/null; then kache gc >/dev/null 2>&1 || true; fi
+)
+
 # One run at a time per repository: they share the worktree and its target.
 exec 7>"$dir/$repo.lock"
 flock 7
@@ -62,5 +77,13 @@ if ((status != 0)); then
         reason=$(sed -n '/^heavy: /{p;q;}' <<<"$out")
         report "was refused by heavy, so nothing ran: $reason"
     fi
+fi
+# Descriptor 7 still holds the lane lock through cleanup, including when
+# heavy failed or refused the attempt. Its status takes precedence.
+cleanup_status=0
+cleanup_target >>"$log" 2>&1 || cleanup_status=$?
+if ((cleanup_status != 0)); then
+    report "target cleanup failed (exit $cleanup_status)"
+    ((status != 0)) || status=$cleanup_status
 fi
 exit "$status"
