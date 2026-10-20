@@ -2,6 +2,7 @@
 use crate::{
     answers::{self, Body, Page},
     app::{self, App},
+    auth::Access,
     installations::{self, Grant, Installations, Kind, Mint, Scope},
     manifest::Manifest,
     pages::{self, Answer, Page as BrowserPage},
@@ -10,7 +11,7 @@ use crate::{
 use alloc::boxed::Box;
 use skein_fake_forge_domain as fake;
 use skein_forge::github::{self, document as d, request, server};
-use skein_lib::{List, Map, Overflow, ReplyTo, Wall, Writer};
+use skein_lib::{List, Map, Overflow, ReplyTo, Secret, Wall, Writer};
 
 /// GitHub's repository metadata absent from the shared domain.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -84,6 +85,8 @@ pub struct Config {
     pub accounts: List<Account>,
     /// Login of the signed-in browser user, from accounts.
     pub person: Box<[u8]>,
+    /// Person secrets and their domain user numbers, bounded by github.inner.
+    pub tokens: List<(Secret, u64)>,
 }
 /// All retained tables and transient input/output are bounded here.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -202,6 +205,7 @@ pub(crate) enum PendingKind {
     Read(reads::Pending),
     Write(writes::Pending),
     Blob,
+    EditReach { installation: u64, repository: u32, add: bool },
 }
 /// GitHub's own state, with no clock, socket or HTTP parser.
 #[derive(Debug)]
@@ -218,6 +222,7 @@ pub struct Service {
     pub(crate) hook: Box<[u8]>,
     pub(crate) accounts: List<Account>,
     pub(crate) person: Box<[u8]>,
+    pub(crate) tokens: List<(Secret, u64)>,
     pub(crate) pages: pages::Store,
     pub(crate) repositories: Map<u32, Row>,
     pub(crate) installations: Installations,
@@ -278,6 +283,7 @@ impl Service {
         if !person_found {
             return Err(Problem::Config);
         }
+        crate::auth::check(&config, limits)?;
         let mut repositories = Map::with_capacity(limits.github.inner);
         for row in config.repositories.into_boxed() {
             if repositories.insert(row.id, row).is_err() {
@@ -303,6 +309,7 @@ impl Service {
             hook: config.hook,
             accounts: config.accounts,
             person: config.person,
+            tokens: config.tokens,
             pages: pages::Store::new(limits.pages, seed),
             repositories,
             installations: Installations::new(&limits.installations, seed),
@@ -378,40 +385,51 @@ impl Service {
                 Outcome::Reply(self.app_route(route, request, now))
             }
             routes::Route::Token(route) => {
-                let Ok(grant) = self.installations.token(bearer, now) else {
-                    return Outcome::Reply(answers::unauthorized(limits));
+                let access = match self.access(bearer, now) {
+                    Ok(access) => access,
+                    Err(response) => return Outcome::Reply(response),
                 };
-                let grant = *grant;
-                let Some(installation) = self.installations.get(grant.installation) else {
-                    return Outcome::Reply(answers::unauthorized(limits));
-                };
-                // Suspension does not revoke the token; resuming the installation restores its use.
-                if installation.suspended {
-                    return Outcome::Reply(answers::refusal(403, answers::SUSPENDED, limits));
-                }
                 match route {
-                    routes::Token::Reachable(page) => {
-                        let response = if self.body_fits(request.body) {
-                            self.reachable(page, &grant, request.target)
-                        } else {
-                            answers::refusal(413, b"Payload Too Large", limits)
-                        };
-                        Outcome::Reply(response)
+                    routes::Token::Reachable(page) => crate::auth::reachable(self, page, access, request),
+                    routes::Token::Identity => Outcome::Reply(match access {
+                        Access::Person(user) => reads::user(self, user, self.body_fits(request.body)),
+                        Access::Installation { .. } => answers::refusal(403, crate::texts::INTEGRATION, limits),
+                    }),
+                    routes::Token::Revoke => Outcome::Reply(match access {
+                        Access::Person(_) => answers::unauthorized(limits),
+                        Access::Installation { .. } => {
+                            self.installations.revoke(bearer);
+                            crate::auth::empty()
+                        }
+                    }),
+                    routes::Token::EditReach { installation, repository, add } => {
+                        crate::auth::edit_reach(self, access, installation, repository, add, reply_to)
                     }
-                    routes::Token::User(id) => Outcome::Reply(reads::user(self, id, self.body_fits(request.body))),
-                    routes::Token::Graphql => self.graphql(request, &grant, reply_to),
-                    routes::Token::Write(route) => writes::call(self, route, &grant, request.body, reply_to),
+                    routes::Token::User(id) => Outcome::Reply(if access.contents() {
+                        answers::refusal(403, crate::texts::INTEGRATION, limits)
+                    } else {
+                        reads::user(self, id, self.body_fits(request.body))
+                    }),
+                    routes::Token::Graphql => self.graphql(request, &access, reply_to),
+                    routes::Token::Write(route) => writes::call(self, route, &access, request.body, reply_to),
                     routes::Token::Read(read) => {
-                        reads::call(self, read, &grant, request.target, self.body_fits(request.body), now, reply_to)
+                        reads::call(self, read, &access, request.target, self.body_fits(request.body), now, reply_to)
                     }
                 }
             }
         }
     }
-    fn graphql(&self, request: &Request<'_>, grant: &Grant, reply_to: ReplyTo) -> Outcome {
+    fn graphql(&self, request: &Request<'_>, grant: &Access, reply_to: ReplyTo) -> Outcome {
         let limits = &self.limits;
         if !self.body_fits(request.body) {
             return Outcome::Reply(answers::response(200, &Body::Graphql, limits));
+        }
+        if grant.contents() {
+            return Outcome::Reply(answers::response(
+                200,
+                &Body::GraphqlRefusal(b"FORBIDDEN", crate::texts::INTEGRATION),
+                limits,
+            ));
         }
         let enqueue = request::Request::Enqueue { id: Box::from([]), head: [0; 32] };
         if let Some(request::Request::Enqueue { id, head }) = server::write_body(enqueue, request.body, &limits.github)
@@ -419,7 +437,7 @@ impl Service {
             return reads::enqueue(self, &id, head, grant, reply_to);
         }
         match server::graphql_body(request.body, &limits.github) {
-            Some(server::Graphql::Viewer) => Outcome::Reply(self.viewer()),
+            Some(server::Graphql::Viewer) => Outcome::Reply(self.viewer(grant.user())),
             Some(server::Graphql::Pull { owner, name, number }) => reads::call(
                 self,
                 reads::Read::PullGraphql { owner, name, number },
@@ -447,6 +465,9 @@ impl Service {
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
             PendingKind::Blob => Outcome::Reply(crate::logs::finish(result, &self.limits)),
+            PendingKind::EditReach { installation, repository, add } => {
+                Outcome::Reply(crate::auth::finish_reach(self, installation, repository, add, result))
+            }
         };
         self.local_links(outcome)
     }
@@ -590,11 +611,12 @@ impl Service {
         }
         response
     }
-    fn viewer(&self) -> Response {
-        let Some(login) = joined(&self.app.slug, b"[bot]") else {
+    fn viewer(&self, user: u64) -> Response {
+        let login = if user == self.bot { joined(&self.app.slug, b"[bot]") } else { reads::people::login(self, user) };
+        let Some(login) = login else {
             return answers::failed();
         };
-        answers::response(200, &Body::Viewer(&d::Viewer { id: self.bot, login }), &self.limits)
+        answers::response(200, &Body::Viewer(&d::Viewer { id: user, login }), &self.limits)
     }
     fn installation_page(&self, page: u32, target: &[u8]) -> Response {
         let Ok(total) = u64::try_from(self.installations.iter().count()) else {
@@ -615,10 +637,10 @@ impl Service {
         page.link(answers::response(200, &Body::Installations(rows.as_slice()), &self.limits), target, &self.limits)
     }
     // The fake pages by its own limits.page, independent of the request's size.
-    fn reachable(&self, number: u32, grant: &Grant, target: &[u8]) -> Response {
+    pub(crate) fn reachable(&self, number: u32, grant: &Grant, target: &[u8]) -> Response {
         let mut total = 0_u64;
         for (id, _) in &self.repositories {
-            if self.installations.reaches(grant, *id) {
+            if self.reaches(grant, *id) {
                 let Some(next) = total.checked_add(1) else {
                     return answers::failed();
                 };
@@ -631,7 +653,7 @@ impl Service {
         let mut index = 0_u64;
         let mut rows = List::with_capacity(self.limits.page);
         for (id, row) in &self.repositories {
-            if !self.installations.reaches(grant, *id) {
+            if !self.reaches(grant, *id) {
                 continue;
             }
             if page.contains(index)
@@ -695,6 +717,7 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         return None;
     }
     let mut bytes = crate::server::worst_case(limits)?
+        .checked_add(List::<u32>::worst_case(limits.installations.listed)?)?
         .checked_add(u64::from(limits.github.target_bytes))?
         .checked_add(pages::worst_case(limits)?)?
         .checked_add(crate::logs::worst_case(limits)?)?
@@ -702,7 +725,12 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     for account in &config.accounts {
         bytes = bytes.checked_add(u64::try_from(account.login.len()).ok()?)?;
     }
-    bytes = bytes.checked_add(u64::try_from(config.person.len()).ok()?)?;
+    bytes = bytes
+        .checked_add(u64::try_from(config.person.len()).ok()?)?
+        .checked_add(List::<(Secret, u64)>::worst_case(config.tokens.capacity())?)?;
+    for (secret, _) in &config.tokens {
+        bytes = bytes.checked_add(u64::try_from(secret.expose().len()).ok()?)?;
+    }
     bytes = bytes
         .checked_add(Installations::worst_case(&limits.installations)?)?
         .checked_add(Map::<u32, Row>::worst_case(limits.github.inner)?)?

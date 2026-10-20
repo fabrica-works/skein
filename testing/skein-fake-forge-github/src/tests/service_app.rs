@@ -171,7 +171,13 @@ fn github_fake_reachable_pages() {
     let mut limits = f::limits();
     limits.page = 1;
     let mut h = Harness::with(limits, f::config());
-    for (id, targets) in [(1, &[2_u64, 4][..]), (2, &[2_u64, 4, 6][..])] {
+    assert!(h.service.installations_mut().remove(2));
+    let all = h
+        .service
+        .installations_mut()
+        .install(22, b"acme", crate::installations::Kind::Organization, crate::installations::Reach::All, h.now)
+        .unwrap();
+    for (id, targets) in [(1, &[2_u64, 4][..]), (all, &[2_u64, 4, 6][..])] {
         let token = bearer(h.mint(id, false).token.expose());
         for (index, expected) in targets.iter().enumerate() {
             let page = u32::try_from(index).expect("fixture page").checked_add(1).expect("page");

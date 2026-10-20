@@ -106,6 +106,7 @@ fn config() -> fake::Config {
         ruleset_id: 17,
         pull_requests_only: false,
         required_signatures: false,
+        tokens: List::with_capacity(0),
         bot: BOT,
         hook: f::boxed(b"http://127.0.0.1/hooks"),
         repositories,

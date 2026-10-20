@@ -59,3 +59,5 @@ mod write_pulls;
 mod write_merge;
 
 mod protection;
+
+mod auth;

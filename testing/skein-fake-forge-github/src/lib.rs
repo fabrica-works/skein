@@ -5,6 +5,7 @@
 
 extern crate alloc;
 mod answers;
+mod auth;
 pub mod app;
 pub mod installations;
 pub mod keys;

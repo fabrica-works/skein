@@ -30,7 +30,7 @@ pub(super) fn user(service: &Service, id: u64, body_fits: bool) -> Response {
     }
     answers::response(200, &Body::User(&d::User { id, login }), &service.limits)
 }
-fn login(service: &Service, id: u64) -> Option<Box<[u8]>> {
+pub(crate) fn login(service: &Service, id: u64) -> Option<Box<[u8]>> {
     for account in &service.accounts {
         if account.id == id {
             return Some(account.login.clone());

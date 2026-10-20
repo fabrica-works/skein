@@ -97,6 +97,7 @@ impl Fake {
             ruleset_id: 17,
             pull_requests_only: false,
             required_signatures: false,
+            tokens: List::with_capacity(0),
             bot: 9,
             hook: Box::from(hook),
             repositories: fixture_repositories(),

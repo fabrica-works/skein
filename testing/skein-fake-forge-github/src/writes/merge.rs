@@ -19,11 +19,12 @@ pub(super) enum Stage {
     Pull { number: u64, queue: bool },
     Author { pull: Box<a::Pull>, queue: bool },
 }
-fn call(service: &Service, repository: Box<[u8]>, stage: Stage, op: a::Op, reply_to: ReplyTo) -> Outcome {
-    dispatch(service, Pending { repository, stage: WriteStage::Merge(stage) }, op, reply_to)
+fn call(user: u64, repository: Box<[u8]>, stage: Stage, op: a::Op, reply_to: ReplyTo) -> Outcome {
+    dispatch(Pending { user, repository, stage: WriteStage::Merge(stage) }, op, reply_to)
 }
 pub(super) fn finish(
     service: &Service,
+    user: u64,
     repository: Box<[u8]>,
     stage: Stage,
     result: Result<a::Answer, a::Error>,
@@ -33,7 +34,7 @@ pub(super) fn finish(
     let limits = &service.limits;
     let answer = match result {
         Ok(answer) => answer,
-        Err(error) => return refused(service, repository, stage, error, reply_to),
+        Err(error) => return refused(service, user, repository, stage, error, reply_to),
     };
     match stage {
         Stage::Settings { number, head, method } => {
@@ -56,7 +57,7 @@ pub(super) fn finish(
                 };
                 return Outcome::Reply(answers::refusal(405, &message, limits));
             }
-            call(service, repository, Stage::Head { number, head }, a::Op::Read(a::Read::Pull { number }), reply_to)
+            call(user, repository, Stage::Head { number, head }, a::Op::Read(a::Read::Pull { number }), reply_to)
         }
         Stage::Head { number, head } => {
             let a::Answer::Pull(pull) = answer else {
@@ -66,11 +67,11 @@ pub(super) fn finish(
                 return Outcome::Reply(answers::refusal(409, texts::MERGE_STALE, limits));
             }
             if pull.queue_required {
-                return queue(service, repository, number, reply_to);
+                return queue(user, repository, number, reply_to);
             }
             // fake-forge.md, 10.4: the domain squashes every allowed method.
             call(
-                service,
+                user,
                 repository,
                 Stage::Merge { number },
                 a::Op::Write(a::Write::Merge { number, head: pull.commit }),
@@ -88,7 +89,7 @@ pub(super) fn finish(
                 return Outcome::Reply(fallback(limits));
             };
             call(
-                service,
+                user,
                 repository,
                 Stage::Author { pull: Box::new(pull), queue },
                 a::Op::Read(a::Read::Item { number, after: 0 }),
@@ -103,12 +104,19 @@ pub(super) fn finish(
         }
     }
 }
-fn refused(service: &Service, repository: Box<[u8]>, stage: Stage, error: a::Error, reply_to: ReplyTo) -> Outcome {
+fn refused(
+    service: &Service,
+    user: u64,
+    repository: Box<[u8]>,
+    stage: Stage,
+    error: a::Error,
+    reply_to: ReplyTo,
+) -> Outcome {
     let limits = &service.limits;
     match stage {
         Stage::Merge { number } if error == a::Error::Protected => {
             return call(
-                service,
+                user,
                 repository,
                 Stage::Pull { number, queue: false },
                 a::Op::Read(a::Read::Pull { number }),
@@ -222,6 +230,6 @@ fn fallback(limits: &Limits) -> Response {
     answers::response(405, &Body::Rules(texts::RULES_FALLBACK), limits)
 }
 
-fn queue(service: &Service, repository: Box<[u8]>, number: u64, reply_to: ReplyTo) -> Outcome {
-    call(service, repository, Stage::Pull { number, queue: true }, a::Op::Read(a::Read::Pull { number }), reply_to)
+fn queue(user: u64, repository: Box<[u8]>, number: u64, reply_to: ReplyTo) -> Outcome {
+    call(user, repository, Stage::Pull { number, queue: true }, a::Op::Read(a::Read::Pull { number }), reply_to)
 }

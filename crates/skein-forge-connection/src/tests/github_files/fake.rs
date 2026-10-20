@@ -338,6 +338,7 @@ fn github_service(page: u32) -> service::Service {
             ruleset_id: 17,
             pull_requests_only: false,
             required_signatures: false,
+            tokens: List::with_capacity(0),
             bot: 9,
             hook: Box::from(b"https://hook.test/".as_slice()),
             repositories,

@@ -135,6 +135,11 @@ impl HostWorld {
     pub fn github_installation_ids(&mut self) -> Vec<u64> {
         self.github.as_mut().expect("GitHub scenario").installation_ids()
     }
+    /// Selects all repositories of this fixture installation's account.
+    pub fn github_all_repositories(&mut self, id: u64) {
+        use skein_fake_forge_github::installations::Reach;
+        assert!(self.github.as_mut().expect("GitHub scenario").installations_mut().set_reach(id, Reach::All));
+    }
     pub fn github_remove(&mut self, id: u64) {
         assert!(self.github.as_mut().expect("GitHub scenario").installations_mut().remove(id));
     }

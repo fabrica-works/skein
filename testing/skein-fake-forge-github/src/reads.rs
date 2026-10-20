@@ -1,7 +1,7 @@
 //! Repository reads each translate to one shared-domain call.
 use crate::{
     answers::{self, Body, Page},
-    installations::Grant,
+    auth::Access,
     service::{self, Limits, Outcome, Response, Row, Service},
 };
 use alloc::boxed::Box;
@@ -105,14 +105,19 @@ fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
         }
     }
 }
-fn writing(read: &Read) -> bool {
+fn contents(read: &Read) -> bool {
     match read {
-        Read::Enqueue { .. } => true,
-        Read::Checks { .. }
+        Read::Repository(_)
+        | Read::Locate { .. }
+        | Read::Branch { .. }
+        | Read::Branches { .. }
+        | Read::Compare { .. }
+        | Read::Raw { .. } => true,
+        Read::Enqueue { .. }
+        | Read::Checks { .. }
         | Read::Job { .. }
         | Read::JobLog { .. }
         | Read::Protection { .. }
-        | Read::Repository(_)
         | Read::PullGraphql { .. }
         | Read::Reviews { .. }
         | Read::ReviewComments { .. }
@@ -120,15 +125,10 @@ fn writing(read: &Read) -> bool {
         | Read::Permission { .. }
         | Read::Pull { .. }
         | Read::PullsFor { .. }
-        | Read::PullFiles { .. }
-        | Read::Compare { .. }
-        | Read::Raw { .. }
         | Read::Issues { .. }
         | Read::Issue { .. }
         | Read::Comments { .. }
-        | Read::Locate { .. }
-        | Read::Branch { .. }
-        | Read::Branches { .. } => false,
+        | Read::PullFiles { .. } => false,
     }
 }
 
@@ -136,7 +136,7 @@ fn writing(read: &Read) -> bool {
 pub(crate) fn call(
     service: &Service,
     read: Read,
-    grant: &Grant,
+    grant: &Access,
     target: &[u8],
     body_fits: bool,
     now: Wall,
@@ -145,13 +145,13 @@ pub(crate) fn call(
     let Some(row) = row(service, &read) else {
         return Outcome::Reply(answers::missing(&service.limits));
     };
-    if !service.installations.reaches(grant, row.id) {
+    if !grant.reaches(service, row.id) {
         return Outcome::Reply(answers::missing(&service.limits));
     }
     if !body_fits {
         return Outcome::Reply(answers::refusal(413, b"Payload Too Large", &service.limits));
     }
-    if writing(&read) && grant.scope == crate::installations::Scope::Contents {
+    if !contents(&read) && grant.contents() {
         return Outcome::Reply(answers::refusal(403, b"Resource not accessible by integration", &service.limits));
     }
     let Some(repository) = full(row) else {
@@ -264,7 +264,7 @@ pub(crate) fn call(
     };
     Outcome::Call(
         service::Pending { kind: service::PendingKind::Read(kind) },
-        fake::Event::Call { reply_to, user: service.bot, repository, op },
+        fake::Event::Call { reply_to, user: grant.user(), repository, op },
     )
 }
 pub(crate) fn full(row: &Row) -> Option<Box<[u8]>> {
@@ -517,7 +517,7 @@ fn node(id: &[u8]) -> Option<(u32, u64)> {
     Some((u32::try_from(repository).ok()?, number))
 }
 
-pub(crate) fn enqueue(service: &Service, id: &[u8], head: api::Commit, grant: &Grant, reply_to: ReplyTo) -> Outcome {
+pub(crate) fn enqueue(service: &Service, id: &[u8], head: api::Commit, grant: &Access, reply_to: ReplyTo) -> Outcome {
     let missing = answers::response(
         200,
         &Body::GraphqlRefusal(b"NOT_FOUND", b"Could not resolve to a PullRequest node"),
@@ -529,7 +529,7 @@ pub(crate) fn enqueue(service: &Service, id: &[u8], head: api::Commit, grant: &G
     let Some(row) = service.repositories.get(&repository) else {
         return Outcome::Reply(missing);
     };
-    if !service.installations.reaches(grant, repository) {
+    if !grant.reaches(service, repository) {
         return Outcome::Reply(missing);
     }
     let Some(canonical) = pulls::node_id(repository, number, &service.limits) else {

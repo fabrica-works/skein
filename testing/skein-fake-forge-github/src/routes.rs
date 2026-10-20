@@ -27,6 +27,9 @@ pub(crate) enum App {
 #[derive(Debug)]
 pub(crate) enum Token {
     Reachable(u32),
+    Identity,
+    Revoke,
+    EditReach { installation: u64, repository: u32, add: bool },
     Graphql,
     User(u64),
     Read(reads::Read),
@@ -37,6 +40,26 @@ pub(crate) enum Token {
 pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<Route> {
     if target.len() > usize::try_from(limits.target_bytes).ok()? {
         return None;
+    }
+    if method == Method::Get && target == b"/user" {
+        return Some(Route::Token(Token::Identity));
+    }
+    if method == Method::Delete && target == b"/installation/token" {
+        return Some(Route::Token(Token::Revoke));
+    }
+    if let Some(tail) = target.strip_prefix(b"/user/installations/") {
+        let split = skein_lib::bytes::find(tail, b"/")?;
+        let installation = tail.get(..split)?;
+        let repository = tail.get(split.checked_add(1)?..)?;
+        let repository = repository.strip_prefix(b"repositories/")?;
+        let installation = skein_forge::forgejo::id::unsigned(installation)?;
+        let repository = u32::try_from(skein_forge::forgejo::id::unsigned(repository)?).ok()?;
+        let add = match method {
+            Method::Put => true,
+            Method::Delete => false,
+            Method::Get | Method::Post | Method::Patch => return None,
+        };
+        return Some(Route::Token(Token::EditReach { installation, repository, add }));
     }
     if method == Method::Post && target == b"/graphql" {
         return Some(Route::Token(Token::Graphql));

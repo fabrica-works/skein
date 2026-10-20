@@ -56,6 +56,7 @@ pub fn config() -> Config {
         ruleset_id: 17,
         pull_requests_only: false,
         required_signatures: false,
+        tokens: List::with_capacity(0),
         bot: BOT,
         hook: boxed(b"https://hook.test/start"),
         repositories,

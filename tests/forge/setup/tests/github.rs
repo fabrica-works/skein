@@ -62,7 +62,8 @@ fn assert_heard(world: &HostWorld, expected: &[Heard]) {
 #[test]
 fn the_host_lists_the_first_page_of_an_installations_repositories() {
     let mut world = HostWorld::github(7, &[]);
-    world.run_plan(1, picker(Some(2), 1));
+    world.github_all_repositories(1);
+    world.run_plan(1, picker(Some(1), 1));
     world.finish();
     assert_heard(&world, &[done(1, &[row(2, b"widgets", true), row(4, b"tools", false)], true)]);
     assert_eq!(world.reads(), &[Item::Accepted, Item::AppId, Item::AppKey]);
@@ -73,7 +74,8 @@ fn the_host_lists_the_first_page_of_an_installations_repositories() {
 #[test]
 fn the_host_lists_the_last_page_of_an_installations_repositories() {
     let mut world = HostWorld::github(11, &[]);
-    world.run_plan(1, picker(Some(2), 2));
+    world.github_all_repositories(1);
+    world.run_plan(1, picker(Some(1), 2));
     world.finish();
     assert_heard(&world, &[done(1, &[row(6, b"absent", false)], false)]);
 }
@@ -163,8 +165,9 @@ fn a_second_github_picker_stops_busy_while_the_first_is_held() {
 #[test]
 fn a_github_picker_and_a_forgejo_reconcile_run_at_once_on_their_forges() {
     let mut world = HostWorld::github(43, &[]);
+    world.github_all_repositories(1);
     world.run(1);
-    world.run_plan(2, picker(Some(2), 1));
+    world.run_plan(2, picker(Some(1), 1));
     world.finish();
     hidden(&world);
     assert_eq!(world.heard().len(), 2);
@@ -180,7 +183,8 @@ fn a_github_picker_and_a_forgejo_reconcile_run_at_once_on_their_forges() {
 #[test]
 fn no_token_or_jwt_is_heard_or_written() {
     let mut world = HostWorld::github(47, &[]);
-    world.run_plan(1, picker(Some(2), 1));
+    world.github_all_repositories(1);
+    world.run_plan(1, picker(Some(1), 1));
     world.finish();
     assert_heard(&world, &[done(1, &[row(2, b"widgets", true), row(4, b"tools", false)], true)]);
     assert!(world.needs().iter().all(|need| matches!(need, Need::Read(_))));

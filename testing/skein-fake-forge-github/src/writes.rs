@@ -1,7 +1,7 @@
 //! GitHub mutations decoded by the dialect and applied to the shared domain.
 use crate::{
     answers::{self, Body},
-    installations::Grant,
+    auth::Access,
     reads,
     service::{Limits, Outcome, Response, Service},
     texts,
@@ -163,6 +163,7 @@ impl Route {
 }
 #[derive(Debug)]
 pub(crate) struct Pending {
+    user: u64,
     repository: Box<[u8]>,
     stage: Stage,
 }
@@ -182,7 +183,7 @@ enum Stage {
     ReviewAuthor { number: u64, verdict: skein_forge::api::Verdict, body: Box<[u8]> },
     Reviewers(bool),
 }
-pub(crate) fn call(service: &Service, route: Route, grant: &Grant, body: &[u8], reply_to: ReplyTo) -> Outcome {
+pub(crate) fn call(service: &Service, route: Route, grant: &Access, body: &[u8], reply_to: ReplyTo) -> Outcome {
     let (owner, name) = route.path();
     let mut found = None;
     for (_, row) in &service.repositories {
@@ -193,10 +194,10 @@ pub(crate) fn call(service: &Service, route: Route, grant: &Grant, body: &[u8], 
     let Some(row) = found else {
         return Outcome::Reply(answers::missing(&service.limits));
     };
-    if !service.installations.reaches(grant, row.id) {
+    if !grant.reaches(service, row.id) {
         return Outcome::Reply(answers::missing(&service.limits));
     }
-    if grant.scope == crate::installations::Scope::Contents && !route.contents() {
+    if grant.contents() && !route.contents() {
         return Outcome::Reply(answers::refusal(403, texts::INTEGRATION, &service.limits));
     }
     if !service.body_fits(body) {
@@ -205,20 +206,21 @@ pub(crate) fn call(service: &Service, route: Route, grant: &Grant, body: &[u8], 
     let Some(request) = server::write_body(route.request(), body, &service.limits.github) else {
         return Outcome::Reply(answers::refusal(422, b"Validation Failed", &service.limits));
     };
-    let (stage, op) = match operation(service, request) {
+    let (stage, op) = match operation(service, request, grant) {
         Ok(value) => value,
         Err(response) => return Outcome::Reply(response),
     };
     let Some(repository) = reads::full(row) else {
         return Outcome::Reply(answers::failed());
     };
-    dispatch(service, Pending { repository, stage }, op, reply_to)
+    dispatch(Pending { user: grant.user(), repository, stage }, op, reply_to)
 }
-fn dispatch(service: &Service, pending: Pending, op: Op, reply_to: ReplyTo) -> Outcome {
+fn dispatch(pending: Pending, op: Op, reply_to: ReplyTo) -> Outcome {
     let repository = pending.repository.clone();
+    let user = pending.user;
     Outcome::Call(
         crate::service::Pending { kind: crate::service::PendingKind::Write(pending) },
-        fake::Event::Call { reply_to, user: service.bot, repository, op },
+        fake::Event::Call { reply_to, user, repository, op },
     )
 }
 fn verdict_of(verdict: skein_forge::api::Verdict) -> a::Verdict {
@@ -229,7 +231,7 @@ fn verdict_of(verdict: skein_forge::api::Verdict) -> a::Verdict {
     }
 }
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively translates each write request")]
-fn operation(service: &Service, request: Request) -> Result<(Stage, Op), Response> {
+fn operation(service: &Service, request: Request, access: &Access) -> Result<(Stage, Op), Response> {
     let (stage, write) = match request {
         Request::Merge { number, head, method, .. } => {
             return Ok((Stage::Merge(merge::Stage::Settings { number, head, method }), Op::Read(a::Read::Settings)));
@@ -242,7 +244,10 @@ fn operation(service: &Service, request: Request) -> Result<(Stage, Op), Respons
         }
         Request::DeleteBranch { branch, .. } => (Stage::DeleteBranch, Write::DeleteBranch { branch }),
         Request::Status { commit, context, check, .. } => {
-            let mut allowed = false;
+            let mut allowed = match access {
+                Access::Person(_) => true,
+                Access::Installation { .. } => false,
+            };
             for permission in &service.app.permissions {
                 if permission.name.as_ref() == b"statuses"
                     && permission.access == skein_forge::github::document::Access::Write
@@ -349,7 +354,9 @@ pub(crate) fn finish(
     domain: &fake::Domain,
 ) -> Outcome {
     let stage = match pending.stage {
-        Stage::Merge(stage) => return merge::finish(service, pending.repository, stage, result, reply_to, domain),
+        Stage::Merge(stage) => {
+            return merge::finish(service, pending.user, pending.repository, stage, result, reply_to, domain);
+        }
         stage @ (Stage::Branch
         | Stage::DeleteBranch
         | Stage::Status
@@ -401,12 +408,11 @@ pub(crate) fn finish(
             let a::Answer::Item { item, .. } = answer else {
                 return Outcome::Reply(answers::failed());
             };
-            if item.author == service.bot && verdict != skein_forge::api::Verdict::Comment {
+            if item.author == pending.user && verdict != skein_forge::api::Verdict::Comment {
                 return Outcome::Reply(answers::refusal(422, texts::OWN_REVIEW, limits));
             }
             return dispatch(
-                service,
-                Pending { repository: pending.repository, stage: Stage::Reviewed },
+                Pending { user: pending.user, repository: pending.repository, stage: Stage::Reviewed },
                 Op::Write(Write::Review { number, verdict: Some(verdict_of(verdict)), body }),
                 reply_to,
             );
@@ -419,8 +425,7 @@ pub(crate) fn finish(
                 return Outcome::Reply(answers::refusal(422, texts::UPDATE_STALE, limits));
             }
             return dispatch(
-                service,
-                Pending { repository: pending.repository, stage: Stage::Updated },
+                Pending { user: pending.user, repository: pending.repository, stage: Stage::Updated },
                 Op::Write(Write::Update { number }),
                 reply_to,
             );

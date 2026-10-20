@@ -77,6 +77,7 @@ pub(crate) fn service(seed: u64, key: &'static [u8]) -> Service {
             ruleset_id: 17,
             pull_requests_only: false,
             required_signatures: false,
+            tokens: List::with_capacity(0),
             bot: USER,
             hook: Box::from(b"https://hook.test/start".as_slice()),
             repositories,

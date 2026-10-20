@@ -65,7 +65,7 @@ fn github_fake_repository_reads_outside_reach_are_404() {
     let id = h
         .service
         .installations_mut()
-        .install(25, b"limited", crate::installations::Kind::User, f::listed(&[2]), h.now)
+        .install(22, b"acme", crate::installations::Kind::Organization, f::listed(&[2]), h.now)
         .expect("listed installation");
     let token = bearer(h.mint(id, false).token.expose());
     for target in [
@@ -236,7 +236,8 @@ fn github_fake_read_continuations_reject_wrong_answers() {
 #[test]
 fn github_fake_table_row_missing_from_domain_is_404() {
     let mut h = Harness::new();
-    let token = bearer(h.mint(2, false).token.expose());
+    assert!(h.service.installations_mut().set_reach(1, crate::installations::Reach::All));
+    let token = bearer(h.mint(1, false).token.expose());
     let response = h.ask(Method::Get, b"/repositories/6", Some(token.expose()), b"");
     refusal(&h, &response, 404, b"Not Found");
     assert_eq!(h.calls, 1, "table row is checked against domain at call time");

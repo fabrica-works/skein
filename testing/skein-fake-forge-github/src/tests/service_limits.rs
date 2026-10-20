@@ -16,7 +16,7 @@ fn github_fake_heads_are_checked() {
         (false, None, b"/app".as_slice(), 403),
         (true, None, b"/app", 400),
         (true, Some(b"2020-01-01".as_slice()), b"/app", 400),
-        (true, Some(github::pin::API_VERSION.as_bytes()), b"/user", 404),
+        (true, Some(github::pin::API_VERSION.as_bytes()), b"/user", 401),
         (true, Some(github::pin::API_VERSION.as_bytes()), b"/repos/o/n/pulls", 404),
         (true, Some(github::pin::API_VERSION.as_bytes()), b"/user/1", 401),
     ] {
