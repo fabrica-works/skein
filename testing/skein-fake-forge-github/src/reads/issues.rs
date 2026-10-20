@@ -11,6 +11,8 @@ fn issue(row: a::Summary) -> d::Issue {
     d::Issue {
         number: row.number,
         pull: row.kind == a::Kind::Pull,
+        // The listing keeps only the merge fact: merged_at carries the
+        // updated time, and a reader reads only its presence.
         merged: row.merged,
         state: match row.state {
             a::State::Open => api::State::Open,
