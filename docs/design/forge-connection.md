@@ -301,9 +301,11 @@ and, on GitHub, its owner's account id, which chooses its installation
 (forge.md, 4.2).
 
 - **Filled** by the read of the repository by id, counted in the call
-  that needed it; by a locate; by a read of its settings; and, on
-  GitHub, by each delivery read whole (6.5), whose repository carries
-  its owner.
+  that needed it; by a locate; and by a read of its settings. On
+  GitHub, each delivery read whole (6.5) renames a kept row within its
+  owner, and drops it for a new owner, whose account may differ. Its
+  repository names neither the account nor the settings, so it makes
+  no row.
 - **Dropped** when a call by its path ends on a `404` or is answered a
   redirect, or a merge is refused its style (forge.md, 5.4); the next
   call resolves the id again. A `404` that is an answer (forge.md, 5.2)
@@ -611,8 +613,8 @@ in no call's cost, one at a time.
     `Repositories` up;
   - one the dialect hints is read whole, `GET
     /app/hook/deliveries/<id>`, within `delivery_bytes`, and decoded as
-    it streams into its hint, as a webhook's is (6.2). Its repository
-    fills that repository's row (4.2). One past `delivery_bytes` hints
+    it streams into its hint, as a webhook's is (6.2). Its repository's
+    path renames or drops that repository's row (4.2). One past `delivery_bytes` hints
     nothing, and the client's polling finds it;
   - any other is passed over, unread.
 - **A hint goes up** as 6.2's do: one held for the forge while the owner

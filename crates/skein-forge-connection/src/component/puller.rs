@@ -147,6 +147,18 @@ impl Component {
             | Delivery::Other => {}
         }
         if let Some(hint) = github::delivery::hint(forge, &self.settings.word, &logged.delivery) {
+            if let Some(path) = logged.repository
+                && let Some(row) = self.github_tables.repository(hint.repository)
+            {
+                // A path alone cannot supply a missing row's owner account or settings (4.2).
+                if row.owner == path.owner {
+                    let row = github::plans::tables::Repository { name: path.name, ..row.clone() };
+                    self.github_tables.keep_repository(hint.repository, row);
+                } else {
+                    // Another owner may be another account, which routes the calls: the next read fills it.
+                    self.github_tables.drop_repository(hint.repository);
+                }
+            }
             let source = *self.own_tokens.get(at).expect("forge token");
             let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
             gh.puller.source = source;

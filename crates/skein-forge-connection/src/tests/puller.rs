@@ -2,6 +2,7 @@
 use super::{fixtures as f, github_start as start};
 use crate::{Change, Event, Fact, Limits, Request, Stopped, puller::State};
 use alloc::boxed::Box;
+use skein_forge::api::{self, Answer, Op, Read};
 use skein_lib::{Decimal, Duration, List, Time, Wall, Writer};
 
 const TAG: &[u8] = b"ETag: \"baseline\"\r\n";
@@ -9,6 +10,7 @@ const NEXT: &[u8] =
     b"ETag: \"new\"\r\nLink: <https://api.github.test/app/hook/deliveries?cursor=older%2Fpage>; rel=\"next\"\r\n";
 const NEW_TAG: &[u8] = b"ETag: \"new\"\r\n";
 const DATE: &[u8] = b"1970-01-01T00:00:00Z";
+const LOG_REPO: api::Repository = api::Repository { forge: f::FORGE, repository: 7 };
 const ISSUE: &[u8] = br#"{"action":"opened","issue":{"number":3,"body":"hello"},"repository":{"id":7}}"#;
 const REPOSITORIES: &[u8] = br#"{"action":"added","installation":{"id":1,"account":{"id":22,"login":"acme"}}}"#;
 
@@ -108,6 +110,114 @@ fn next_poll(h: &mut f::Harness) {
     // A test may keep its own connection alive by raising idle above log_poll.
     h.run(h.env.limits.log_poll);
     h.connected(f::FORGE);
+}
+
+fn issue_path(owner: &[u8], name: &[u8]) -> Box<[u8]> {
+    joined(&[
+        br#"{"action":"opened","issue":{"number":3,"body":"hello"},"repository":{"id":7,"owner":{"login":""#,
+        owner,
+        br#""},"name":""#,
+        name,
+        br#""}}"#,
+    ])
+}
+fn logged_poll(h: &mut f::Harness, id: u8, event: &[u8], payload: &[u8]) {
+    next_poll(h);
+    h.answer(
+        f::FORGE,
+        &page(&[row(id, event, false), row(id.checked_sub(1).expect("previous guid"), b"ping", false)], NEW_TAG),
+    );
+    h.answer(f::FORGE, &delivery(event, payload));
+    hints(h);
+}
+
+#[test]
+fn logged_renames_update_kept_rows_and_route_by_the_new_name() {
+    let mut h = baseline(f::limits());
+    f::github_account(&mut h, 1, 22, b"acme", start::FULL);
+    f::github_repository(&mut h, LOG_REPO, 22);
+    let other_forge = api::Repository { forge: 2, repository: LOG_REPO.repository };
+    f::github_repository(&mut h, other_forge, 23);
+    let other = h.component.github_tables().repository(other_forge).expect("other forge").clone();
+    let mut expected = h.component.github_tables().repository(LOG_REPO).expect("kept row").clone();
+    for (id, name) in [(2, b"gadgets".as_slice()), (3, b"new-name")] {
+        logged_poll(&mut h, id, b"issues", &issue_path(b"acme", name));
+        expected.name = Box::from(name);
+        assert_eq!(h.component.github_tables().repository(LOG_REPO), Some(&expected));
+        assert_eq!(h.component.github_tables().repository(other_forge), Some(&other));
+    }
+    assert_eq!(h.hints.len(), 2);
+    assert!(h.answers.is_empty());
+    assert!(facts(&h).is_empty());
+    assert!(h.installation_events.as_ref().expect("events").is_empty());
+    h.call(1, LOG_REPO, Op::Read(Read::Branch { branch: Box::from(b"main".as_slice()) }));
+    h.run(Duration::ZERO);
+    h.connected(f::FORGE);
+    assert_eq!(requests(&h, b"GET /repos/acme/new-name/branches/main "), 1);
+    assert_eq!(requests(&h, b"GET /repositories/7 "), 0);
+    h.answer(f::FORGE, &f::ok(f::GITHUB_BRANCH));
+    h.run(Duration::ZERO);
+    let answer = h.answered(1).expect("branch answer");
+    assert_eq!((answer.cost, &answer.result), (1, &Ok(Answer::Commit([0; 32]))));
+}
+
+#[test]
+fn logged_owner_change_drops_the_row_for_the_next_read() {
+    let mut h = baseline(f::limits());
+    f::github_repository(&mut h, LOG_REPO, 22);
+    f::github_repository(&mut h, f::REPO, 22);
+    let kept = h.component.github_tables().repository(f::REPO).expect("other repository").clone();
+    logged_poll(&mut h, 2, b"issues", &issue_path(b"team", b"widgets"));
+    assert!(h.component.github_tables().repository(LOG_REPO).is_none());
+    assert_eq!(h.component.github_tables().repository(f::REPO), Some(&kept));
+    assert_eq!(h.hints.len(), 1);
+}
+
+#[test]
+fn logged_path_leaves_a_missing_repository_row_absent() {
+    let mut h = baseline(f::limits());
+    f::github_repository(&mut h, f::REPO, 22);
+    let kept = h.component.github_tables().repository(f::REPO).expect("other repository").clone();
+    logged_poll(&mut h, 2, b"issues", &issue_path(b"team", b"gadgets"));
+    assert!(h.component.github_tables().repository(LOG_REPO).is_none());
+    assert_eq!(h.component.github_tables().repository(f::REPO), Some(&kept));
+    assert_eq!(h.hints.len(), 1);
+}
+
+#[test]
+fn absent_paths_oversized_and_unhinted_deliveries_leave_rows_alone() {
+    let oversized = joined(&[
+        br#"{"repository":{"id":7,"owner":{"login":"team"},"name":"gadgets"},"issue":{"number":3,"body":""#,
+        &f::filled(600, b'b'),
+        br#""}}"#,
+    ]);
+    let unhinted = br#"{"action":"unknown","pull_request":{"number":3},"repository":{"id":7,"owner":{"login":"team"},"name":"gadgets"}}"#;
+    for (label, event, payload, count) in [
+        ("id only", b"issues".as_slice(), ISSUE, 1),
+        ("past delivery_bytes", b"issues", oversized.as_ref(), 0),
+        ("unhinted action", b"pull_request", unhinted.as_slice(), 0),
+    ] {
+        let mut h = baseline(Limits { delivery_bytes: 512, ..f::limits() });
+        f::github_repository(&mut h, LOG_REPO, 22);
+        let kept = h.component.github_tables().repository(LOG_REPO).expect("kept row").clone();
+        logged_poll(&mut h, 2, event, payload);
+        assert_eq!(h.component.github_tables().repository(LOG_REPO), Some(&kept), "{label}");
+        assert_eq!(h.hints.len(), count, "{label}");
+        assert!(h.answers.is_empty(), "{label}");
+    }
+}
+
+#[test]
+fn logged_fill_keeps_its_row_recent_for_table_eviction() {
+    let mut h = baseline(f::limits());
+    f::github_repository(&mut h, LOG_REPO, 22);
+    f::github_repository(&mut h, f::REPO, 22);
+    logged_poll(&mut h, 2, b"issues", &issue_path(b"acme", b"gadgets"));
+    let third = api::Repository { forge: f::FORGE, repository: 8 };
+    f::github_repository(&mut h, third, 22);
+    assert!(h.component.github_tables().repository(LOG_REPO).is_some());
+    assert!(h.component.github_tables().repository(f::REPO).is_none());
+    assert!(h.component.github_tables().repository(third).is_some());
 }
 
 #[test]
