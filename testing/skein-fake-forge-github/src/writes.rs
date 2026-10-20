@@ -129,7 +129,9 @@ impl Route {
     }
     fn contents(&self) -> bool {
         match self {
-            Self::CreateBranch { .. } | Self::DeleteBranch { .. } => true,
+            Self::CreateBranch { .. } | Self::DeleteBranch { .. } | Self::CreateIssue { .. } | Self::Edit { .. } => {
+                true
+            }
             Self::Merge { .. }
             | Self::Status { .. }
             | Self::OpenPull { .. }
@@ -138,9 +140,7 @@ impl Route {
             | Self::Reviewers { .. }
             | Self::Reopen { .. }
             | Self::Close { .. }
-            | Self::Edit { .. }
-            | Self::Post { .. }
-            | Self::CreateIssue { .. } => false,
+            | Self::Post { .. } => false,
         }
     }
     fn path(&self) -> (&[u8], &[u8]) {
@@ -206,6 +206,12 @@ pub(crate) fn call(service: &Service, route: Route, grant: &Access, body: &[u8],
     let Some(request) = server::write_body(route.request(), body, &service.limits.github) else {
         return Outcome::Reply(answers::refusal(422, b"Validation Failed", &service.limits));
     };
+    // The issue PATCH route also carries state changes, which remain scope refusals.
+    if grant.contents()
+        && let Request::Close { .. } | Request::Reopen { .. } = &request
+    {
+        return Outcome::Reply(answers::refusal(403, texts::INTEGRATION, &service.limits));
+    }
     let (stage, op) = match operation(service, request, grant) {
         Ok(value) => value,
         Err(response) => return Outcome::Reply(response),
@@ -404,7 +410,11 @@ pub(crate) fn finish(
                 return Outcome::Reply(answers::failed());
             };
             if item.author == pending.user && verdict != skein_forge::api::Verdict::Comment {
-                return Outcome::Reply(answers::refusal(422, texts::OWN_REVIEW, limits));
+                let mut response = answers::refusal(422, b"Unprocessable Entity", limits);
+                response.body = skein_lib::bytes::copy_of(
+                    br#"{"message":"Unprocessable Entity","errors":["Review Can not approve your own pull request"]}"#,
+                );
+                return Outcome::Reply(response);
             }
             return dispatch(
                 Pending { user: pending.user, repository: pending.repository, stage: Stage::Reviewed },

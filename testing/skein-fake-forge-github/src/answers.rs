@@ -25,7 +25,7 @@ pub(crate) enum Body<'a> {
     Hook(&'a d::Hook),
     Installation(&'a d::Installation),
     Installations(&'a [d::Installation]),
-    Minted(&'a d::Minted),
+    Minted(&'a d::Minted, &'a [d::Permission], crate::installations::Scope),
     Reachable(&'a [d::Reachable], u64),
     Viewer(&'a d::Viewer),
     Graphql,
@@ -69,7 +69,7 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::Hook(row) => server::hook(row, out),
         Body::Installation(row) => server::installation(row, out),
         Body::Installations(rows) => server::installations(rows, out),
-        Body::Minted(row) => server::minted(row, out),
+        Body::Minted(row, permissions, scope) => minted(row, permissions, *scope, out),
         Body::Reachable(rows, total) => server::reachable(rows, *total, out),
         Body::Viewer(row) => server::viewer(row, out),
         Body::GraphqlRefusal(kind, message) => server::graphql_refusal(kind, message, out),
@@ -94,6 +94,48 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::Remarks(rows) => server::remarks(rows, out),
         Body::Refusal(message) => server::refusal(message, &[], out),
     }
+}
+fn minted(
+    row: &d::Minted,
+    permissions: &[d::Permission],
+    scope: crate::installations::Scope,
+    out: &mut Writer,
+) -> Result<(), Overflow> {
+    use skein_json::writer::{Encoder, Limits};
+    let Ok(length) = u32::try_from(out.room()) else { return Err(Overflow) };
+    let limits = Limits { depth: 2, length };
+    let mut measure = Encoder::measure(&limits);
+    minted_json(row, permissions, scope, &mut measure);
+    let Ok(length) = measure.measured() else { return Err(Overflow) };
+    let mut json = Encoder::write(length, &limits);
+    minted_json(row, permissions, scope, &mut json);
+    out.put(&json.finish())
+}
+fn minted_json(
+    row: &d::Minted,
+    permissions: &[d::Permission],
+    scope: crate::installations::Scope,
+    json: &mut skein_json::writer::Encoder,
+) {
+    json.object_start();
+    json.key(b"token");
+    json.string(row.token.expose());
+    json.key(b"expires_at");
+    json.string(&skein_forge::forgejo::time::write(row.expires));
+    json.key(b"permissions");
+    json.object_start();
+    for permission in permissions {
+        let include = match scope {
+            crate::installations::Scope::Full => true,
+            crate::installations::Scope::Contents => permission.name.as_ref() == b"contents",
+        };
+        if include {
+            json.key(&permission.name);
+            json.string(permission.access.text());
+        }
+    }
+    json.object_end();
+    json.object_end();
 }
 // Writer is exact-sized. Pad the scratch writer, then retain only the encoded
 // prefix; both allocations are included in worst_case's response scratch.

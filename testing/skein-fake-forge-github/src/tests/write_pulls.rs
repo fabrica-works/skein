@@ -196,7 +196,8 @@ fn github_fake_review_refuses_approving_own_pull() {
             body: f::boxed(b"approve"),
         },
     );
-    f::refusal(&h, &response, 422, crate::texts::OWN_REVIEW);
+    f::refusal(&h, &response, 422, b"Unprocessable Entity");
+    assert!(skein_lib::bytes::find(&response.body, b"Review Can not approve your own pull request").is_some());
 }
 #[test]
 fn github_fake_pull_writes_outside_installation_are_missing() {

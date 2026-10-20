@@ -4,7 +4,7 @@
 pub(crate) const INTEGRATION: &[u8] = b"Resource not accessible by integration";
 // merge-stale-409.
 pub(crate) const MERGE_STALE: &[u8] = b"Head branch was modified. Review and try the merge again.";
-// merge-after-move-405-not-mergeable; merge-closed-405-not-mergeable.
+// merge-after-move-405-not-mergeable.
 pub(crate) const NOT_MERGEABLE: &[u8] = b"Pull Request is not mergeable";
 // ruleset-approval-405.
 pub(crate) const RULES: &[u8] = b"Repository rule violations found";
@@ -27,8 +27,7 @@ pub(crate) const NO_COMMITS: &[u8] = b"No commits between ";
 // pulls-422-exists; from `A pull request already exists for alice` in
 // github/tests/writes.rs; the fake supplies the requested head.
 pub(crate) const PULL_EXISTS: &[u8] = b"A pull request already exists for ";
-// approve-own-422.
-pub(crate) const OWN_REVIEW: &[u8] = b"Can not approve your own pull request";
+
 // refs-422-exists.
 pub(crate) const REF_EXISTS: &[u8] = b"Reference already exists";
 // refs-delete-missing-422.

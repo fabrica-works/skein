@@ -36,6 +36,8 @@ pub enum Event {
 pub struct Server {
     owner: Token,
     blob: bool,
+    first_byte: bool,
+    issue_write: bool,
     state: State,
     http: http::Server,
     events: Queue<http::Event>,
@@ -54,6 +56,8 @@ impl Server {
         Ok(Self {
             owner,
             blob: false,
+            first_byte: false,
+            issue_write: false,
             state: State::New,
             http: http::Server::new(&limits.http),
             events: Queue::with_capacity(4),
@@ -105,6 +109,9 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(List::<Header>::worst_case(limits.http.headers)?.checked_mul(2)?)?
         .checked_add(u64::from(limits.http.head).checked_mul(2)?)?
         .checked_add(Intake::worst_case(limits.body)?)?
+        // A conditional repository read retains its admission and a quoted digest.
+        .checked_add(u64::try_from(size_of::<crate::rates::Admission>()).ok()?)?
+        .checked_add(66)?
         // dispatch's extracted body and the authenticated admission copy, or
         // writes::Stage::ReviewAuthor.body, coexist; service counts decoding.
         .checked_add(u64::from(limits.body).checked_mul(2)?)?
@@ -379,7 +386,9 @@ fn event_up(
 }
 fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above: &mut Queue<Event>) {
     let call = server.call.take().expect("accepted head");
+    server.issue_write = call.method == HttpMethod::Post && call.target.ends_with(b"/issues");
     if server.blob {
+        server.first_byte = call.header(b"range") == Some(b"bytes=0-0");
         let method = if call.method == HttpMethod::Get { Method::Get } else { Method::Post };
         let outcome = service.blob(
             method,
@@ -486,6 +495,21 @@ fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut locati
         location = None;
     }
     let mut headers = List::with_capacity(11);
+    if server.blob && server.first_byte && reply.status == 200 && !reply.body.is_empty() {
+        let size = skein_lib::Decimal::of(u64::try_from(reply.body.len()).expect("bounded blob"));
+        let value = crate::service::joined(b"bytes 0-0/", size.as_bytes()).expect("range header");
+        headers.push(Header { name: bytes::copy_of(b"Content-Range"), value }).expect("range slot");
+        reply.status = 206;
+        reply.body = bytes::copy_of(reply.body.get(..1).expect("nonempty blob"));
+    }
+    if !server.blob && reply.status == 201 && server.issue_write {
+        headers
+            .push(Header {
+                name: bytes::copy_of(b"X-Accepted-GitHub-Permissions"),
+                value: bytes::copy_of(b"issues=write"),
+            })
+            .expect("permissions slot");
+    }
     if let Some(rate) = reply.rate {
         crate::rates::headers(rate, reply.status == 403, &mut headers);
     }

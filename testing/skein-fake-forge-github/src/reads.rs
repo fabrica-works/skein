@@ -587,7 +587,22 @@ fn repository(row: Row, answer: Answer, limits: &Limits) -> Response {
         squash: settings.squash,
         rebase: settings.rebase,
     };
-    answers::response(200, &Body::Repository(&document), limits)
+    let mut response = answers::response(200, &Body::Repository(&document), limits);
+    let mut tag = skein_lib::Writer::new(66);
+    tag.put(b"\"").expect("tag");
+    for byte in skein_lib::sha256::digest(&response.body) {
+        for nibble in [byte / 16, byte % 16] {
+            tag.put(&[if nibble < 10 {
+                b'0'.saturating_add(nibble)
+            } else {
+                b'a'.saturating_add(nibble.saturating_sub(10))
+            }])
+            .expect("tag");
+        }
+    }
+    tag.put(b"\"").expect("tag");
+    response.etag = Some(tag.finish());
+    response
 }
 
 pub(crate) fn user(service: &Service, id: u64, body_fits: bool) -> Response {

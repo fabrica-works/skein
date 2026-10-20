@@ -55,8 +55,17 @@ pub(crate) fn call(service: &Service, route: Route, access: Access, body: &[u8],
         return Outcome::Reply(answers::missing(&service.limits));
     }
     let protection = if creating {
-        let Some(rule) = protection(service, body) else {
-            return Outcome::Reply(answers::refusal(422, b"Validation Failed", &service.limits));
+        let mut missing_parameters = false;
+        let Some(rule) = protection(service, body, &mut missing_parameters) else {
+            return Outcome::Reply(answers::refusal(
+                422,
+                if missing_parameters {
+                    b"Invalid request.\n\nInvalid property /rules/0: data matches no possible input. See `documentation_url`."
+                } else {
+                    b"Validation Failed"
+                },
+                &service.limits,
+            ));
         };
         Some(rule)
     } else {
@@ -159,7 +168,7 @@ fn once(seen: &mut u32, bit: u32) -> Option<()> {
     Some(())
 }
 // Inferred request subset from GitHub docs; live sessions did not record a request body.
-fn protection(service: &Service, body: &[u8]) -> Option<a::Protection> {
+fn protection(service: &Service, body: &[u8], missing: &mut bool) -> Option<a::Protection> {
     if !service.body_fits(body) {
         return None;
     }
@@ -207,7 +216,7 @@ fn protection(service: &Service, body: &[u8]) -> Option<a::Protection> {
             }
             b"rules" => {
                 once(&mut seen, 32)?;
-                rules(&mut cursor, &mut rule, service.limits.github.inner)?;
+                rules(&mut cursor, &mut rule, service.limits.github.inner, missing)?;
             }
             _ => return None,
         }
@@ -228,6 +237,9 @@ fn branch(c: &mut Cursor) -> Option<Box<[u8]>> {
     if branch.is_empty() {
         return None;
     }
+    c.want(&Token::ArrayEnd)?;
+    c.want(&Token::Key(bytes::copy_of(b"exclude")))?;
+    c.want(&Token::ArrayStart)?;
     c.want(&Token::ArrayEnd)?;
     c.want(&Token::ObjectEnd)?;
     c.want(&Token::ObjectEnd)?;
@@ -265,7 +277,7 @@ fn actors(c: &mut Cursor, service: &Service) -> Option<Box<[u64]>> {
     }
     None
 }
-fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32) -> Option<()> {
+fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32, missing: &mut bool) -> Option<()> {
     c.want(&Token::ArrayStart)?;
     let mut seen = 0_u32;
     for _ in 0..c.tokens.len() {
@@ -284,9 +296,17 @@ fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32) -> Option<()> {
             }
         }
         match (kind?.as_ref(), parameters) {
-            (b"pull_request", Some(Parameter::Approvals(count))) => {
+            (b"pull_request", Some(Parameter::Approvals(count, fields))) => {
+                if fields != 31 {
+                    *missing = true;
+                    return None;
+                }
                 once(&mut seen, 1)?;
                 rule.approvals = count;
+            }
+            (b"pull_request", None) => {
+                *missing = true;
+                return None;
             }
             (b"required_status_checks", Some(Parameter::Contexts(contexts))) => {
                 once(&mut seen, 2)?;
@@ -304,31 +324,57 @@ fn rules(c: &mut Cursor, rule: &mut a::Protection, bound: u32) -> Option<()> {
 
 #[derive(Debug)]
 enum Parameter {
-    Approvals(u32),
+    Approvals(u32, u32),
     Contexts(Box<[Box<[u8]>]>),
 }
 fn parameter(c: &mut Cursor, bound: u32) -> Option<Parameter> {
     c.want(&Token::ObjectStart)?;
-    let Key::Name(key) = c.key()? else { return None };
-    let value = match key.as_ref() {
-        b"required_approving_review_count" => Parameter::Approvals(u32::try_from(c.number()?).ok()?),
-        b"required_status_checks" => {
-            c.want(&Token::ArrayStart)?;
-            let mut contexts = List::with_capacity(bound);
-            for _ in 0..c.tokens.len() {
-                if c.tokens.get(c.at)? == &Token::ArrayEnd {
-                    break;
-                }
-                c.want(&Token::ObjectStart)?;
-                c.want(&Token::Key(bytes::copy_of(b"context")))?;
-                contexts.push(c.text()?).ok()?;
-                c.want(&Token::ObjectEnd)?;
+    let mut seen = 0;
+    let mut count = None;
+    let mut contexts = None;
+    for _ in 0..c.tokens.len() {
+        let Key::Name(key) = c.key()? else { break };
+        match key.as_ref() {
+            b"required_approving_review_count" => {
+                once(&mut seen, 1)?;
+                count = Some(u32::try_from(c.number()?).ok()?);
             }
-            c.want(&Token::ArrayEnd)?;
-            Parameter::Contexts(contexts.into_boxed())
+            b"dismiss_stale_reviews_on_push"
+            | b"require_code_owner_review"
+            | b"require_last_push_approval"
+            | b"required_review_thread_resolution" => {
+                let bit = match key.as_ref() {
+                    b"dismiss_stale_reviews_on_push" => 2,
+                    b"require_code_owner_review" => 4,
+                    b"require_last_push_approval" => 8,
+                    b"required_review_thread_resolution" => 16,
+                    _ => return None,
+                };
+                once(&mut seen, bit)?;
+                c.want(&Token::False)?;
+            }
+            b"required_status_checks" => {
+                once(&mut seen, 32)?;
+                c.want(&Token::ArrayStart)?;
+                let mut names = List::with_capacity(bound);
+                for _ in 0..c.tokens.len() {
+                    if c.tokens.get(c.at)? == &Token::ArrayEnd {
+                        break;
+                    }
+                    c.want(&Token::ObjectStart)?;
+                    c.want(&Token::Key(bytes::copy_of(b"context")))?;
+                    names.push(c.text()?).ok()?;
+                    c.want(&Token::ObjectEnd)?;
+                }
+                c.want(&Token::ArrayEnd)?;
+                contexts = Some(names.into_boxed());
+            }
+            _ => return None,
         }
-        _ => return None,
-    };
-    c.want(&Token::ObjectEnd)?;
-    Some(value)
+    }
+    match (seen, count, contexts) {
+        (fields, count, None) if fields < 32 => Some(Parameter::Approvals(count.unwrap_or(0), fields)),
+        (32, None, Some(contexts)) => Some(Parameter::Contexts(contexts)),
+        _ => None,
+    }
 }

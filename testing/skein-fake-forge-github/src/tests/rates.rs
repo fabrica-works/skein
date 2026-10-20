@@ -129,3 +129,38 @@ fn github_fake_person_token_expiration_is_optional_and_follows_every_answer() {
         assert_eq!(response.rate.unwrap().expires, None);
     }
 }
+
+#[test]
+fn github_fake_repository_validator_checks_current_settings_and_304_is_free_at_the_limit() {
+    let mut config = f::config();
+    config.rate_quota = 2;
+    let mut h = f::Harness::with_domain(f::limits(), config, super::read_support::domain_config());
+    let token = super::read_support::token(&mut h);
+    let target = b"/repos/acme/widgets";
+    let first = h.ask(Method::Get, target, Some(token.expose()), b"");
+    assert_eq!(first.status, 200);
+    let tag = first.etag.unwrap();
+    let same = h.ask_validated(Method::Get, target, Some(token.expose()), b"", Some(&tag));
+    assert_eq!(same.status, 304);
+    assert!(same.body.is_empty());
+    assert_eq!(same.rate.unwrap().rate.used, first.rate.unwrap().rate.used);
+    skein_fake_forge_domain::settings(
+        &mut h.domain,
+        b"acme/widgets",
+        skein_fake_forge_domain::api::Settings {
+            default: f::boxed(b"trunk"),
+            merge: false,
+            squash: false,
+            rebase: true,
+        },
+    );
+    let changed = h.ask_validated(Method::Get, target, Some(token.expose()), b"", Some(&tag));
+    assert_eq!(changed.status, 200);
+    assert_eq!(changed.rate.unwrap().rate.used, 2);
+    let new_tag = changed.etag.unwrap();
+    assert_ne!(tag, new_tag);
+    let same = h.ask_validated(Method::Get, target, Some(token.expose()), b"", Some(&new_tag));
+    assert_eq!(same.status, 304);
+    assert_eq!(same.rate.unwrap().rate.used, 2);
+    assert_eq!(h.ask_validated(Method::Get, target, Some(token.expose()), b"", Some(&tag)).status, 403);
+}

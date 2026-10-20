@@ -313,7 +313,7 @@ impl World {
         self.send(fd, &request(method, target, body, auth));
         self.receive(fd)
     }
-    fn fetch_blob(&mut self, target: &[u8]) -> Reply {
+    fn fetch_blob(&mut self, target: &[u8], range: bool) -> Reply {
         let Done::Fd(fd) = support::call(&mut self.sim, self.client_pid, 1, Op::Socket { family: Family::Ipv4 }) else {
             panic!("blob client socket")
         };
@@ -321,7 +321,11 @@ impl World {
         support::call(&mut self.sim, self.client_pid, 2, Op::Connect { fd, addr: address });
         let mut wire = b"GET ".to_vec();
         wire.extend_from_slice(target);
-        wire.extend_from_slice(b" HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=0-0\r\nConnection: close\r\n\r\n");
+        wire.extend_from_slice(b" HTTP/1.1\r\nHost: 127.0.0.1\r\n");
+        if range {
+            wire.extend_from_slice(b"Range: bytes=0-0\r\n");
+        }
+        wire.extend_from_slice(b"Connection: close\r\n\r\n");
         self.send(fd, &wire);
         self.receive(fd)
     }
@@ -400,7 +404,7 @@ impl World {
                     assert_eq!(redirect.origin.port, address.port());
                     assert!(!redirect.origin.tls);
                     assert_eq!(redirect.origin.host.as_ref(), address.ip().to_string().as_bytes());
-                    let response = self.fetch_blob(&redirect.target);
+                    let response = self.fetch_blob(&redirect.target, false);
                     assert_eq!(response.status, 200);
                     let github::plans::plan::Retention::Tail { bytes } = retention else {
                         panic!("job log retains tail")
@@ -756,7 +760,7 @@ fn github_peer_runs_the_dialects_job_log_redirect_plan_through_the_blob_face() {
         assert_eq!(truncated, cap < expected.len());
         let record = world.github.blob_records().expect("GitHub records").iter().last().expect("blob request");
         assert!(!record.authorization);
-        assert!(record.range);
+        assert!(!record.range);
     }
     world.settle();
 }
@@ -778,9 +782,10 @@ fn github_peer_charges_the_log_redirect_once_and_leaves_blob_fetches_free() {
     assert_eq!(used(&redirect), used(&before) + 1, "one admission for the log redirect");
     let location = github::redirect::parse(redirect.header(b"Location").expect("log location"), 1024, 1024)
         .expect("signed blob redirect");
-    let blob = world.fetch_blob(&location.target);
-    assert_eq!(blob.status, 200);
-    assert!(!blob.body.is_empty());
+    let blob = world.fetch_blob(&location.target, true);
+    assert_eq!(blob.status, 206);
+    assert_eq!(blob.body.len(), 1);
+    assert!(blob.header(b"Content-Range").expect("partial content range").starts_with(b"bytes 0-0/"));
     assert!(blob.header(b"X-RateLimit-Used").is_none());
     let record = world.github.blob_records().expect("GitHub records").iter().last().expect("blob request");
     assert!(!record.authorization);

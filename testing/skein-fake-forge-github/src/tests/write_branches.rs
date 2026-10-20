@@ -140,7 +140,7 @@ fn github_fake_branch_and_status_writes_refuse_outside_installation() {
     assert_eq!(h.calls, 0);
 }
 #[test]
-fn github_fake_contents_token_writes_branches_and_refuses_issues() {
+fn github_fake_contents_token_writes_branches_and_issues() {
     let mut h = w::harness();
     let token = f::bearer(h.mint(1, true).token.expose());
     let head = r::object(h.first);
@@ -158,6 +158,6 @@ fn github_fake_contents_token_writes_branches_and_refuses_issues() {
             &token,
             api::Write::CreateIssue { key: f::boxed(b"key"), title: f::boxed(b"title"), body: f::boxed(b"body") }
         ),
-        Err(api::Error::Forbidden)
+        Ok(api::Answer::Created(1))
     );
 }

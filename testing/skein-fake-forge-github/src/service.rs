@@ -221,6 +221,7 @@ pub(crate) enum PendingKind {
     Mutation(crate::mutations::Mutation),
     CommentEdit(crate::comment_edit::Edit),
     Read(reads::Pending),
+    Conditional { read: reads::Pending, admission: Box<crate::rates::Admission>, validator: Box<[u8]> },
     Write(writes::Pending),
     Blob,
     EditReach { installation: u64, repository: u32, add: bool },
@@ -228,6 +229,7 @@ pub(crate) enum PendingKind {
 /// GitHub's own state, with no clock, socket or HTTP parser.
 #[derive(Debug)]
 pub struct Service {
+    pub(crate) rate_heads: Map<fake::RateKey, crate::rates::Heads>,
     pub(crate) rate_quota: u32,
     pub(crate) rate_window: skein_lib::Duration,
     pub(crate) deliveries: crate::delivery::Store,
@@ -308,6 +310,7 @@ impl Service {
                 limits.blob_records,
                 seed,
             ),
+            rate_heads: Map::with_capacity(limits.github.inner),
             rate_quota: config.rate_quota,
             rate_window: config.rate_window,
             deliveries: crate::delivery::Store::new(config.deliveries, limits.deliveries, seed),
@@ -413,7 +416,7 @@ impl Service {
         let outcome = self.request_inner(request, now, reply_to);
         self.local_links(outcome)
     }
-    fn request_inner(&mut self, request: &Request<'_>, now: Wall, _reply_to: ReplyTo) -> Outcome {
+    fn request_inner(&mut self, request: &Request<'_>, now: Wall, reply_to: ReplyTo) -> Outcome {
         let limits = &self.limits;
         if !request.agent {
             return Outcome::Reply(answers::refusal(403, b"User agent required", limits));
@@ -466,6 +469,19 @@ impl Service {
                     Ok(bearer) => bearer,
                     Err(response) => return Outcome::Reply(response),
                 };
+                if let routes::Token::Read(reads::Read::Locate { .. } | reads::Read::Repository(_)) = &route
+                    && let Some(validator) = request.validator
+                    && validator.len() == 66
+                {
+                    let admission = crate::rates::Admission::new(
+                        crate::rates::Route::Token(route),
+                        bearer,
+                        request,
+                        now,
+                        self.limits.body,
+                    );
+                    return self.conditional(admission, validator, reply_to);
+                }
                 Outcome::Admit(crate::rates::Admission::new(
                     crate::rates::Route::Token(route),
                     bearer,
@@ -567,6 +583,20 @@ impl Service {
             PendingKind::CommentEdit(pending) => crate::comment_edit::finish(self, pending, result, reply_to),
             PendingKind::Mutation(pending) => Outcome::Reply(crate::mutations::finish(self, pending, result, domain)),
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
+            PendingKind::Conditional { read, admission, validator } => {
+                let mut response = reads::finish(read, result, self, domain);
+                if response.status == 200
+                    && response.etag.as_deref() == Some(validator.as_ref())
+                    && let Some(heads) = self.rate_heads.get(&admission.key())
+                    && heads.rate.reset > admission.now()
+                {
+                    response.status = 304;
+                    response.body = Box::new([]);
+                    response.rate = Some(*heads);
+                    return Outcome::Reply(response);
+                }
+                Outcome::Admit(*admission)
+            }
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
             PendingKind::Blob => Outcome::Reply(crate::logs::finish(result, &self.limits)),
             PendingKind::EditReach { installation, repository, add } => {
@@ -693,7 +723,11 @@ impl Service {
             request::Scope::Contents => Scope::Contents,
         };
         match self.installations.mint(id, scope, now) {
-            Ok((token, expires)) => answers::response(201, &Body::Minted(&d::Minted { token, expires }), &self.limits),
+            Ok((token, expires)) => answers::response(
+                201,
+                &Body::Minted(&d::Minted { token, expires }, &self.app.permissions, scope),
+                &self.limits,
+            ),
             Err(Mint::Missing) => answers::missing(&self.limits),
             Err(Mint::Suspended) => answers::refusal(403, answers::SUSPENDED, &self.limits),
             Err(Mint::Full) => answers::refusal(503, b"Server Error", &self.limits),
@@ -831,6 +865,7 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         return None;
     }
     let mut bytes = crate::server::worst_case(limits)?
+        .checked_add(Map::<fake::RateKey, crate::rates::Heads>::worst_case(limits.github.inner)?)?
         .checked_add(List::<u32>::worst_case(limits.installations.listed)?)?
         .checked_add(skein_lib::Queue::<crate::delivery::Post>::worst_case(config.deliveries.log_entries)?)?
         .checked_add(

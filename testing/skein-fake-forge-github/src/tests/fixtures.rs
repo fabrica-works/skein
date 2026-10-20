@@ -208,9 +208,19 @@ impl Harness {
         }
     }
     pub fn ask(&mut self, method: Method, target: &[u8], authorization: Option<&[u8]>, body: &[u8]) -> Response {
+        self.ask_validated(method, target, authorization, body, None)
+    }
+    pub fn ask_validated(
+        &mut self,
+        method: Method,
+        target: &[u8],
+        authorization: Option<&[u8]>,
+        body: &[u8],
+        validator: Option<&[u8]>,
+    ) -> Response {
         let outcome = self.service.request(
             &Request {
-                validator: None,
+                validator,
                 method,
                 target,
                 authorization,

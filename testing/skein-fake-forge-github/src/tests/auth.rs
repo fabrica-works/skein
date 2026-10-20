@@ -273,9 +273,15 @@ fn routes() -> Box<[(Route, Class)]> {
         ),
         (Route::Reopen { owner: owner(), name: name(), number: 1 }, Full),
         (Route::Close { owner: owner(), name: name(), number: 1 }, Full),
-        (Route::Edit { owner: owner(), name: name(), number: 1, title: Some(f::boxed(b"edited")), body: None }, Full),
+        (
+            Route::Edit { owner: owner(), name: name(), number: 1, title: Some(f::boxed(b"edited")), body: None },
+            Contents,
+        ),
         (Route::Post { owner: owner(), name: name(), number: 1, body: f::boxed(b"comment") }, Full),
-        (Route::CreateIssue { owner: owner(), name: name(), title: f::boxed(b"issue"), body: f::boxed(b"body") }, Full),
+        (
+            Route::CreateIssue { owner: owner(), name: name(), title: f::boxed(b"issue"), body: f::boxed(b"body") },
+            Contents,
+        ),
         (
             Route::Status {
                 owner: owner(),

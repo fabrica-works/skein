@@ -54,6 +54,9 @@ impl Admission {
             now,
         }
     }
+    pub(crate) const fn now(&self) -> Wall {
+        self.now
+    }
     #[must_use]
     pub const fn key(&self) -> domain::RateKey {
         match self.bearer {
@@ -63,6 +66,63 @@ impl Admission {
     }
 }
 impl Service {
+    pub(crate) fn conditional(&mut self, admission: Admission, validator: &[u8], reply_to: ReplyTo) -> Outcome {
+        let access = match self.access(admission.bearer) {
+            Ok(access) => access,
+            Err(response) => return Outcome::Reply(response),
+        };
+        let Route::Token(routes::Token::Read(ref read)) = admission.route else { return Outcome::Admit(admission) };
+        let read = match read {
+            crate::reads::Read::Locate { owner, name } => {
+                crate::reads::Read::Locate { owner: owner.clone(), name: name.clone() }
+            }
+            crate::reads::Read::Repository(id) => crate::reads::Read::Repository(*id),
+            crate::reads::Read::Checks { .. }
+            | crate::reads::Read::JobLog { .. }
+            | crate::reads::Read::Job { .. }
+            | crate::reads::Read::Protection { .. }
+            | crate::reads::Read::Enqueue { .. }
+            | crate::reads::Read::PullGraphql { .. }
+            | crate::reads::Read::Reviews { .. }
+            | crate::reads::Read::ReviewComments { .. }
+            | crate::reads::Read::Collaborators { .. }
+            | crate::reads::Read::Permission { .. }
+            | crate::reads::Read::Pull { .. }
+            | crate::reads::Read::PullsFor { .. }
+            | crate::reads::Read::PullFiles { .. }
+            | crate::reads::Read::Compare { .. }
+            | crate::reads::Read::Raw { .. }
+            | crate::reads::Read::Issues { .. }
+            | crate::reads::Read::Issue { .. }
+            | crate::reads::Read::Comments { .. }
+            | crate::reads::Read::Branch { .. }
+            | crate::reads::Read::Branches { .. } => return Outcome::Admit(admission),
+        };
+        let outcome = crate::reads::call(
+            self,
+            read,
+            &access,
+            &admission.target,
+            admission.body.is_empty(),
+            admission.now,
+            reply_to,
+        );
+        match outcome {
+            Outcome::Call(mut pending, event) => {
+                let crate::service::PendingKind::Read(read) = pending.kind else {
+                    return Outcome::Reply(answers::failed());
+                };
+                pending.kind = crate::service::PendingKind::Conditional {
+                    read,
+                    admission: Box::new(admission),
+                    validator: bytes::copy_of(validator),
+                };
+                Outcome::Call(pending, event)
+            }
+            Outcome::Reply(response) => Outcome::Reply(response),
+            Outcome::Admit(admission) => Outcome::Admit(admission),
+        }
+    }
     /// Charges the authenticated identity in the shared domain's bounded windows.
     pub fn admit(
         &mut self,
@@ -81,6 +141,7 @@ impl Service {
         result: Result<domain::Rate, domain::RateDenied>,
         reply_to: ReplyTo,
     ) -> Outcome {
+        let key = admission.key();
         let expires = match admission.bearer {
             Bearer::Person { index, .. } => match self.tokens.get(index) {
                 Some((_, _, expires)) => *expires,
@@ -114,6 +175,9 @@ impl Service {
                 Heads { expires, rate, after: Some(after), at: admission.now },
             ),
         };
+        if self.rate_heads.get(&key).is_some() || self.rate_heads.len() < self.rate_heads.capacity() {
+            self.rate_heads.insert(key, heads).expect("rate snapshot room");
+        }
         attach(self.local_links(outcome), Some(heads))
     }
     #[must_use]
