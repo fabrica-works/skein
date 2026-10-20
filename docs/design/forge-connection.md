@@ -765,7 +765,8 @@ It is the sum of:
   bounds Location, including the host), both at `log_origins`; and its
   puller, its validator and cursor at the dialect's bounds, a guid, the
   page of log rows and its handoff, the delivery's streaming decoder
-  and its row's bounded event word, and the hint it holds.
+  and its row's bounded event word, the payload's repository path at
+  39 owner bytes and 100 name bytes, and the hint it holds.
 
 A long thread or a large payload costs time, not memory. The owner
 counts its io's worst case once.

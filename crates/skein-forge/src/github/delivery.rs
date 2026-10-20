@@ -59,6 +59,17 @@ pub fn verify(secret: &[u8], body: &[u8], header: &[u8]) -> bool {
     sha256::equal(&mac.finish(), &expected)
 }
 
+/// GitHub's repository path limits, in bytes.
+pub const OWNER_BYTES: u32 = 39;
+pub const NAME_BYTES: u32 = 100;
+
+/// The payload's repository path, when both names are present.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Path {
+    pub owner: Box<[u8]>,
+    pub name: Box<[u8]>,
+}
+
 /// A pull action is retained whole within `string_bytes`; only dequeued has a reason.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Pull {

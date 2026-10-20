@@ -454,7 +454,15 @@ fn puller_holding_a_hint_fits_its_counting_allocator_ledger() {
     let body = f::filled(usize::try_from(h.env.limits.body_bytes).expect("body bytes"), b'b');
     let response = delivery(
         b"issues",
-        &joined(&[br#"{"action":"opened","issue":{"number":3,"body":""#, &body, br#""},"repository":{"id":7}}"#]),
+        &joined(&[
+            br#"{"action":"opened","issue":{"number":3,"body":""#,
+            &body,
+            br#""},"repository":{"id":7,"owner":{"login":""#,
+            &[b'a'; 39],
+            br#""},"name":""#,
+            &[b'w'; 100],
+            br#""}}"#,
+        ]),
     );
     next_poll(&mut h);
     h.answer(f::FORGE, &page);
@@ -575,4 +583,34 @@ fn puller_heap_does_not_grow_with_the_delivery_byte_bound() {
     let small = Limits { delivery_bytes: 64 * 1024, ..f::limits() };
     let large = Limits { delivery_bytes: 1024 * 1024, ..small };
     assert_eq!(crate::limits::puller_heap(&small), crate::limits::puller_heap(&large));
+}
+
+#[test]
+fn an_overlong_repository_path_hints_nothing_and_the_next_row_hints() {
+    for (owner_len, name_len) in [(40, 7), (4, 101)] {
+        let mut h = baseline(f::limits());
+        next_poll(&mut h);
+        h.answer(
+            f::FORGE,
+            &page(&[row(3, b"issues", false), row(2, b"issues", false), row(1, b"ping", false)], NEW_TAG),
+        );
+        let owner = f::filled(owner_len, b'a');
+        let name = f::filled(name_len, b'w');
+        let bad = joined(&[
+            br#"{"action":"opened","issue":{"number":3,"body":"hello"},"repository":{"id":7,"owner":{"login":""#,
+            &owner,
+            br#""},"name":""#,
+            &name,
+            br#""}}"#,
+        ]);
+        h.answer(f::FORGE, &delivery(b"issues", &bad));
+        hints(&mut h);
+        assert!(h.hints.is_empty());
+        h.connected(f::FORGE);
+        assert_eq!(requests(&h, b"GET /app/hook/deliveries/2 "), 1);
+        h.answer(f::FORGE, &delivery(b"issues", ISSUE));
+        hints(&mut h);
+        assert_eq!(h.hints.len(), 1);
+        assert_eq!(kept(&h), Some(expected(3)));
+    }
 }

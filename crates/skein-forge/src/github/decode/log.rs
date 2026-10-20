@@ -18,11 +18,21 @@ pub(super) struct State {
     depth: u32,
     payload: Option<Box<delivery::Decoder>>,
     decoded: Option<crate::github::Delivery>,
+    repository: Option<crate::github::delivery::Path>,
     limits: Limits,
 }
 impl State {
     pub(super) fn new(limits: &Limits) -> Self {
-        Self { row: row(), event: None, header: None, depth: 0, payload: None, decoded: None, limits: *limits }
+        Self {
+            row: row(),
+            event: None,
+            header: None,
+            depth: 0,
+            payload: None,
+            decoded: None,
+            repository: None,
+            limits: *limits,
+        }
     }
     pub(super) fn active(&self) -> bool {
         self.depth != 0
@@ -61,6 +71,7 @@ impl State {
         }
         if let Some(decoder) = &mut self.payload {
             self.decoded = Some(finish(decoder)?);
+            self.repository = decoder.path();
         }
         self.payload = None;
         Ok(Request::Next)
@@ -127,7 +138,11 @@ impl State {
     }
     pub(super) fn document(&mut self) -> Result<log::Logged, Malformed> {
         let delivery = self.delivery()?;
-        Ok(log::Logged { event: self.event.take().expect("checked event"), delivery })
+        Ok(log::Logged {
+            event: self.event.take().expect("checked event"),
+            delivery,
+            repository: self.repository.take(),
+        })
     }
     fn delivery(&mut self) -> Result<crate::github::Delivery, Malformed> {
         let event = self.event.as_ref().ok_or(Malformed::Missing { field: b"event" })?;

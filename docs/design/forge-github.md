@@ -527,7 +527,10 @@ subscribing; the others are temper's draft section 5's, and no more.
   login }`. The component makes them `Event::Installation`
   (forge-connection.md, section 5).
 - **Bounded.** A push's `commits`, a pull's diff fields and every
-  repository object but its id are skipped as they pass.
+  repository field but its id, owner's login and name are skipped as
+  they pass. The login is at most 39 bytes and the name at most 100;
+  either past its bound is malformed. The decoder can hand out their
+  path when both are present; id-only bodies remain valid.
 
 ### 9.3 The delivery log
 
@@ -548,6 +551,9 @@ subscribing; the others are temper's draft section 5's, and no more.
   and equal the row's event, or the read is malformed. The decoder reads
   `request.headers` (`X-GitHub-Event`, `X-GitHub-Delivery`) and
   `request.payload` as a pushed body is (9.2); its `response` is skipped.
+  The logged delivery carries the payload's repository path when both
+  its owner's login and name are present, and none for a kind with no
+  repository.
 - **Trusted by its channel,** not its signature: the payload comes back
   re-encoded, so no HMAC is checked; the read is the App's own, over
   TLS, on its token.

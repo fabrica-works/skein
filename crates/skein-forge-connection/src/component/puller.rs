@@ -146,8 +146,6 @@ impl Component {
             | Delivery::Ci { .. }
             | Delivery::Other => {}
         }
-        // The dialect's Logged retains only the repository id, so routing metadata
-        // is filled by the next ordinary repository read (forge-connection.md, 4.2).
         if let Some(hint) = github::delivery::hint(forge, &self.settings.word, &logged.delivery) {
             let source = *self.own_tokens.get(at).expect("forge token");
             let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");

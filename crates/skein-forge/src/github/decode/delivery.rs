@@ -28,6 +28,8 @@ pub struct Decoder {
     walk: Walk,
     event: Event,
     repository: u64,
+    owner: Option<Box<[u8]>>,
+    name: Option<Box<[u8]>>,
     number: u64,
     body: Body,
     action: Box<[u8]>,
@@ -49,6 +51,8 @@ pub fn decoder(event: &[u8], limits: &Limits) -> Option<Decoder> {
         walk: Walk::delivery(event, limits),
         event,
         repository: 0,
+        owner: None,
+        name: None,
         number: 0,
         // GitHub's absent and null descriptions both mean an empty description.
         body: Body::Kept(Box::from([])),
@@ -74,6 +78,16 @@ pub fn step(decoder: &mut Decoder, _limits: &Limits, event: &tokenizer::Event) -
     decoder.step(event.clone())
 }
 impl Decoder {
+    /// Takes the repository path after a successful finish, when both names were present.
+    pub fn path(&mut self) -> Option<delivery::Path> {
+        if !self.terminal {
+            return None;
+        }
+        match (self.owner.take(), self.name.take()) {
+            (Some(owner), Some(name)) => Some(delivery::Path { owner, name }),
+            (Some(_) | None, None) | (None, Some(_)) => None,
+        }
+    }
     /// Owns the event's bounded strings instead of copying them.
     pub fn step(&mut self, event: tokenizer::Event) -> Step {
         if self.terminal {
@@ -111,6 +125,8 @@ impl Decoder {
     fn scalar(&mut self, node: Payload, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
             (Payload::Repository, b"id", Token::Number(text)) => self.repository = unsigned(&text),
+            (Payload::Repository, b"name", Token::String(text)) => self.name = Some(text),
+            (Payload::RepositoryOwner, b"login", Token::String(text)) => self.owner = Some(text),
             (Payload::Item | Payload::Number | Payload::Root(Event::Pull), b"number", Token::Number(text)) => {
                 self.number = unsigned(&text);
             }
@@ -137,6 +153,7 @@ impl Decoder {
             (
                 Payload::Root(_)
                 | Payload::Repository
+                | Payload::RepositoryOwner
                 | Payload::Item
                 | Payload::Number
                 | Payload::Body

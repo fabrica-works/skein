@@ -624,7 +624,14 @@ pub(crate) fn decoder_heap(l: &Limits, forges: Forges) -> Option<u64> {
         .checked_add(u64::from(l.body_bytes).checked_mul(2)?)?
         .checked_add(u64::from(l.depth).checked_mul(128)?)?
         .checked_add(4096)?
-        .checked_add(u64::try_from(fixed_decoder).ok()?)?;
+        .checked_add(u64::try_from(fixed_decoder).ok()?)?
+        // The shared GitHub payload decoder moves the path into its logged document.
+        .checked_add(if forges.github > 0 {
+            u64::from(skein_forge::github::delivery::OWNER_BYTES)
+                .checked_add(u64::from(skein_forge::github::delivery::NAME_BYTES))?
+        } else {
+            0
+        })?;
     Some(bytes)
 }
 /// A full log page includes bounded event/action text and both header values.

@@ -103,6 +103,7 @@ pub(super) enum Node {
 pub(super) enum Payload {
     Root(Hook),
     Repository,
+    RepositoryOwner,
     Item,
     Number,
     Body,
@@ -120,6 +121,8 @@ enum Role {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Read {
     Text,
+    Login,
+    Name,
     Body,
     LongBody,
     LongText,
@@ -852,6 +855,8 @@ impl Walk {
                         frame.touched |= bit;
                         self.want = Want::Value(*field, bit);
                         return Ok(Move::Demand(match field.read {
+                            Read::Login => Request::Text(super::super::delivery::OWNER_BYTES),
+                            Read::Name => Request::Text(super::super::delivery::NAME_BYTES),
                             Read::Reason => Request::Text(self.limits.json.string),
                             Read::Text | Read::Secret | Read::LongText => Request::Text(self.limits.string_bytes),
                             Read::Body => Request::Text(self.limits.body_bytes.min(self.limits.string_bytes)),
@@ -905,6 +910,8 @@ impl Walk {
                 return Ok(scalar(node, field.key, Token::True));
             }
             Read::Text
+            | Read::Login
+            | Read::Name
             | Read::Secret
             | Read::Body
             | Read::LongBody
@@ -937,11 +944,20 @@ impl Walk {
         };
         let valid = match (&field.read, &token) {
             (
-                Read::Text | Read::Secret | Read::Body | Read::LongBody | Read::LongText | Read::Reason,
+                Read::Text
+                | Read::Login
+                | Read::Name
+                | Read::Secret
+                | Read::Body
+                | Read::LongBody
+                | Read::LongText
+                | Read::Reason,
                 Token::String(text),
             ) => {
                 if field.read != Read::LongBody
                     && field.read != Read::Reason
+                    && field.read != Read::Login
+                    && field.read != Read::Name
                     && text.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize")
                 {
                     return Err(if field.read == Read::Secret {
@@ -949,6 +965,26 @@ impl Walk {
                     } else {
                         Malformed::TooLong { field: field.key }
                     });
+                }
+                let bound = match field.read {
+                    Read::Login => Some(super::super::delivery::OWNER_BYTES),
+                    Read::Name => Some(super::super::delivery::NAME_BYTES),
+                    Read::Text
+                    | Read::Secret
+                    | Read::Presence
+                    | Read::Body
+                    | Read::LongBody
+                    | Read::LongText
+                    | Read::Reason
+                    | Read::Number
+                    | Read::Boolean
+                    | Read::Payload
+                    | Read::Container(_) => None,
+                };
+                if let Some(bound) = bound
+                    && text.len() > usize::try_from(bound).expect("path bound fits usize")
+                {
+                    return Err(Malformed::TooLong { field: field.key });
                 }
                 true
             }
@@ -961,6 +997,8 @@ impl Walk {
             (Read::Boolean, Token::True | Token::False) => true,
             (
                 Read::Text
+                | Read::Login
+                | Read::Name
                 | Read::Secret
                 | Read::Presence
                 | Read::Body
@@ -1153,7 +1191,17 @@ fn payload_fields(node: Payload) -> &'static [Field] {
                 ]
             }
         }
-        Payload::Repository | Payload::Sender | Payload::InstallationId => const { &[field(b"id", Read::Number)] },
+        Payload::Repository => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    optional(b"name", Read::Name),
+                    optional(b"owner", Read::Container(Role::Payload(Payload::RepositoryOwner))),
+                ]
+            }
+        }
+        Payload::RepositoryOwner => const { &[optional(b"login", Read::Login)] },
+        Payload::Sender | Payload::InstallationId => const { &[field(b"id", Read::Number)] },
         Payload::Item => const { &[field(b"number", Read::Number), optional(b"body", Read::LongBody)] },
         Payload::Number => const { &[field(b"number", Read::Number)] },
         Payload::Body => const { &[optional(b"body", Read::LongBody)] },

@@ -241,6 +241,7 @@ fn wrapped(payload: &[u8], payload_first: bool, event: &[u8]) -> Box<[u8]> {
 fn logged_delivery_reuses_the_pushed_decoder_and_skips_response_in_any_member_order() {
     let expected = Logged {
         event: copy_of(b"issues"),
+        repository: None,
         delivery: crate::github::delivery::decode(b"issues", ISSUE, &limits()).unwrap(),
     };
     for payload_first in [false, true] {
@@ -287,7 +288,7 @@ fn logged_unhinted_event_is_other() {
     let input = br#"{"event":"ping","request":{"headers":{"X-GitHub-Event":"ping","X-GitHub-Delivery":"01234567-89ab-cdef-0123-456789abcdef"},"payload":{"ignored":[null]}},"response":null}"#;
     assert_eq!(
         logged(b"ping", input, 1, &limits()).1,
-        Ok(Document::Delivery(Logged { event: copy_of(b"ping"), delivery: Delivery::Other }))
+        Ok(Document::Delivery(Logged { event: copy_of(b"ping"), delivery: Delivery::Other, repository: None }))
     );
 }
 
@@ -370,6 +371,7 @@ fn github_log_delivery_streams_a_payload_before_its_event_fields() {
             result,
             Ok(Document::Delivery(Logged {
                 event: copy_of(b"issues"),
+                repository: None,
                 delivery: crate::github::delivery::decode(b"issues", ISSUE, &limits()).unwrap(),
             }))
         );
@@ -400,6 +402,82 @@ fn github_log_delivery_refuses_an_event_other_than_its_rows() {
         let input = super::fixtures::bytes(out);
         for chunk in [1, 7, u32::try_from(input.len()).unwrap()] {
             assert_eq!(logged(b"issues", &input, chunk, &limits()).1, Err(error));
+        }
+    }
+}
+
+fn named_delivery(event: &[u8], payload: &[u8]) -> Box<[u8]> {
+    let mut out = Writer::new(4096);
+    out.put(br#"{"request":{"payload":"#).unwrap();
+    out.put(payload).unwrap();
+    out.put(br#", "headers":{"X-GitHub-Event":""#).unwrap();
+    out.put(event).unwrap();
+    out.put(br#"","X-GitHub-Delivery":"01234567-89ab-cdef-0123-456789abcdef"}},"event":""#).unwrap();
+    out.put(event).unwrap();
+    out.put(br#""}"#).unwrap();
+    super::fixtures::bytes(out)
+}
+
+#[test]
+fn github_log_delivery_names_the_payloads_repository() {
+    use crate::github::delivery::Path;
+    for (event, payload, expected) in [
+        (b"push".as_slice(), br#"{"ref":"refs/heads/main","after":"0000000000000000000000000000000000000001","deleted":false,"sender":{"id":1},"repository":{"id":7,"owner":{"login":"acme"},"name":"widgets"}}"#.as_slice(), Some(Path { owner: copy_of(b"acme"), name: copy_of(b"widgets") })),
+        (b"pull_request", br#"{"action":"opened","number":3,"repository":{"name":"widgets","owner":{"login":"alice"},"id":7}}"#, Some(Path { owner: copy_of(b"alice"), name: copy_of(b"widgets") })),
+        (b"ping", br#"{"repository":{"id":7,"owner":{"login":"acme"},"name":"widgets"}}"#, None),
+        (b"installation_repositories", br#"{"action":"added","installation":{"id":1,"account":{"id":22,"login":"acme"}},"repository":{"id":7,"owner":{"login":"acme"},"name":"widgets"}}"#, None),
+        (b"issues", br#"{"action":"opened","issue":{"number":3},"repository":{"id":7}}"#, None),
+        (b"issues", br#"{"action":"opened","issue":{"number":3},"repository":{"id":7,"owner":{"login":"acme"}}}"#, None),
+        (b"issues", br#"{"action":"opened","issue":{"number":3},"repository":{"id":7,"name":"widgets"}}"#, None),
+    ] {
+        let input = named_delivery(event, payload);
+        for chunk in [1, 7, u32::try_from(input.len()).unwrap()] {
+            let Document::Delivery(value) = logged(event, &input, chunk, &limits()).1.unwrap() else { panic!("logged delivery") };
+            assert_eq!(value.repository, expected);
+            assert_eq!(value.delivery, crate::github::delivery::decode(event, payload, &limits()).unwrap());
+        }
+    }
+}
+
+#[test]
+fn github_log_delivery_bounds_both_repository_names() {
+    for (owner_len, name_len, error) in
+        [(39, 100, None), (40, 100, Some(b"login".as_slice())), (39, 101, Some(b"name".as_slice()))]
+    {
+        let owners = [b'a'; 40];
+        let names = [b'w'; 101];
+        let owner = owners.get(..owner_len).unwrap();
+        let name = names.get(..name_len).unwrap();
+        let mut out = Writer::new(4096);
+        out.put(br#"{"action":"opened","issue":{"number":3},"repository":{"id":7,"owner":{"login":""#).unwrap();
+        out.put(owner).unwrap();
+        out.put(br#""},"name":""#).unwrap();
+        out.put(name).unwrap();
+        out.put(br#""}}"#).unwrap();
+        let payload = super::fixtures::bytes(out);
+        let input = named_delivery(b"issues", &payload);
+        // Path bounds are GitHub's own, independent of the other scalar strings.
+        let mut bound = limits();
+        bound.string_bytes = 36;
+        for chunk in [1, 7, u32::try_from(input.len()).unwrap()] {
+            let result = logged(b"issues", &input, chunk, &bound).1;
+            match error {
+                None => {
+                    let Document::Delivery(value) = result.unwrap() else { panic!("logged delivery") };
+                    assert_eq!(
+                        value.repository,
+                        Some(crate::github::delivery::Path { owner: copy_of(owner), name: copy_of(name) })
+                    );
+                    crate::github::delivery::decode(b"issues", &payload, &bound).unwrap();
+                }
+                Some(field) => {
+                    assert_eq!(result, Err(Malformed::Bound { field }));
+                    assert_eq!(
+                        crate::github::delivery::decode(b"issues", &payload, &bound),
+                        Err(Malformed::TooLong { field })
+                    );
+                }
+            }
         }
     }
 }

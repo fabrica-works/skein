@@ -57,6 +57,7 @@ impl Row {
 pub struct Logged {
     pub event: Box<[u8]>,
     pub delivery: super::delivery::Delivery,
+    pub repository: Option<super::delivery::Path>,
 }
 
 /// Only the first page carries an entity tag.
