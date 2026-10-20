@@ -2623,7 +2623,7 @@ be told from a loaded machine.
 - **It gains most when worktrees are new,** and little on the crates a
   session keeps editing.
 - **The kit pins its version.** `kache-setup`, run through `heavy
-  --exclusive`, installs the pinned release, caps its store at the
+  --gate` so that no build runs while it swaps, installs the pinned release, caps its store at the
   machine file's `KACHE_MAX_GB` and keeps the disk floor; from 1.2, kache
   collects its own store past its cap. `plan check` warns of another
   version.

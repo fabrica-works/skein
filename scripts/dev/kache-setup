@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Install the build cache, kache, at the version the kit pins, and set it up
-# (owners.md, 4.5): run it on each machine, through the queue, so that no
-# build is running while its wrapper is swapped:
+# (owners.md, 4.5): run it on each machine through the gate lane, which
+# waits for every running task, a gate's among them, so that no build is
+# running while its wrapper is swapped and its store cleared (heavy's
+# --exclusive alone waits for no gate):
 #
-#   heavy --exclusive -- kache-setup
+#   heavy --gate -- kache-setup
 #
 # It downloads the pinned release, checks it against its digest, and swaps
 # ~/.local/bin/kache by rename (and ~/bin/kache, an older install's path, for

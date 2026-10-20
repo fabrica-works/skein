@@ -415,7 +415,7 @@ check_machine() {
         pinned=$(sed -n 's/^version=//p' "$kit/kache-setup")
         [[ $(kache --version 2>/dev/null) == "kache $pinned" ]] &&
             ok "kache is $pinned, the kit's pin" ||
-            warn "kache is not $pinned, the kit's pin: heavy --exclusive -- kache-setup"
+            warn "kache is not $pinned, the kit's pin: heavy --gate -- kache-setup"
     else
         warn "no kache rustc-wrapper in ~/.cargo/config.toml"
     fi
