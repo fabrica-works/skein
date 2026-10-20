@@ -232,7 +232,12 @@ peers host theirs. The real loop hosts the same one.
   implements `Host` (shell.md, section 12), and a checked `worst_case` sums
   the face, the protocol layer, the shared forge, the connections and the
   observations. It records connections, request heads, calls with their
-  terminals, and deliveries with their outcomes.
+  terminals, and deliveries with their outcomes: two records for each
+  connection (its opening and its close), two for each call (its head and
+  its terminal) and one for each delivery. Nothing drains them. So a
+  world's cap is the most its stories can record, derived from what bounds
+  them, such as their deadline and their clients' rates and lives, never a
+  count one run happened to record.
 - **Plaintext only.** Its `base` is `http://`; its face is the shared one
   with `Transport::Plaintext` and a `queue` of at least 64.
 - **It hosts the layer over a forge it is handed.** The owner builds the
@@ -252,11 +257,19 @@ peers host theirs. The real loop hosts the same one.
   (section 4) and delivered over loopback to the endpoint's `host`, the
   address it connects to and the request's `Host` alike, as a Forgejo posts
   to its hook's URL. An owner whose listener binds port 0 sets the endpoint
-  in the forge it shares once the listener's address is known, before a hook
-  is due; until then, and for a `host` that is no loopback `ip:port`, there
-  is no address. Delivery is best effort: one that cannot be written (no
-  address, no room, the connection refused or reset) is dropped and
-  observed, never resent.
+  in the forge it shares once that listener listens, its address known
+  after io's listening event as the peer's own is, not at its bind, before
+  a hook it means to have written is due. Until then, and for a `host` that
+  is no loopback `ip:port`, there is no address. Delivery is best effort:
+  one that cannot be written (no address, no room, the connection refused
+  or reset) is dropped and observed, never resent. A hook due before the
+  owner's listener listens is such a drop, and one due once the owner has
+  begun to stop may be; neither the peer nor the owner holds a hook back
+  for the listener. A world asserts a delivery written only for a hook due inside
+  its listener's life: a story set up before any host runs loses the
+  setup's hooks, and a story that asserts the hook its own end releases
+  ends only once each hook the forge released (its domain's tally) has its
+  delivery's outcome.
 
 ## 6. The throwaway Forgejo
 
