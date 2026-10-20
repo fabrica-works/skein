@@ -111,12 +111,16 @@ impl<R: 'static> Fetch<R> {
         listen(
             &promise,
             move |value| {
-                let reader = value
-                    .dyn_into::<Response>()
-                    .ok()
-                    .filter(|response| response.status() == 200)
-                    .and_then(|response| response.body())
-                    .and_then(|body| body.get_reader().dyn_into::<ReadableStreamDefaultReader>().ok());
+                let Ok(response) = value.dyn_into::<Response>() else {
+                    shared.end_stream(ticket);
+                    return;
+                };
+                if response.status() != 200 {
+                    shared.refuse_stream(ticket, response.status());
+                    return;
+                }
+                let reader =
+                    response.body().and_then(|body| body.get_reader().dyn_into::<ReadableStreamDefaultReader>().ok());
                 let Some(reader) = reader else {
                     shared.end_stream(ticket);
                     return;
@@ -158,6 +162,13 @@ impl<R: 'static> Fetch<R> {
 impl<R: 'static> Shared<R> {
     fn end_stream(&self, ticket: u64) {
         let report = self.fetch.borrow_mut().end_stream(ticket);
+        self.ended_stream(report);
+    }
+    fn refuse_stream(&self, ticket: u64, status: u16) {
+        let report = self.fetch.borrow_mut().refuse_stream(ticket, status);
+        self.ended_stream(report);
+    }
+    fn ended_stream(&self, report: Option<Report>) {
         if let Some(report) = report {
             let stream = self.stream.borrow_mut().take();
             if let Some(stream) = stream {

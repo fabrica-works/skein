@@ -17,6 +17,7 @@ pub enum Report {
     Answered { exchange: u32, status: u16, body: Box<[u8]> },
     Failed { exchange: u32 },
     StreamOpened,
+    StreamRefused { status: u16 },
     StreamPiece { bytes: Box<[u8]> },
     StreamEnded,
 }
@@ -126,5 +127,9 @@ impl Fetch {
         }
         self.stream = None;
         Some(Report::StreamEnded)
+    }
+    /// The stream's answer came with a status other than 200: the stream is closed.
+    pub fn refuse_stream(&mut self, ticket: u64, status: u16) -> Option<Report> {
+        self.end_stream(ticket).map(|_| Report::StreamRefused { status })
     }
 }

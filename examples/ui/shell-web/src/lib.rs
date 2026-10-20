@@ -127,7 +127,9 @@ impl Shell {
                     read_on = true;
                     Some(ViewReport::StreamPiece { bytes })
                 }
-                Report::Fetch(fetch::Report::StreamEnded) => Some(ViewReport::StreamEnded),
+                Report::Fetch(fetch::Report::StreamRefused { .. } | fetch::Report::StreamEnded) => {
+                    Some(ViewReport::StreamEnded)
+                }
                 Report::Carried(Carried::Written { .. }) => None,
                 Report::Carried(Carried::Refused { .. }) => Some(ViewReport::Failed { exchange: 0 }),
             };

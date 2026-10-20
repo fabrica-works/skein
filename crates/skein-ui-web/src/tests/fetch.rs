@@ -52,3 +52,21 @@ fn an_old_streams_end_cannot_end_its_replacement() {
     fetch.open_stream(2);
     assert_eq!(fetch.end_stream(old), None);
 }
+
+#[test]
+fn a_stream_refused_reports_its_status_and_ends() {
+    let mut fetch = crate::fetch::Fetch::new(1);
+    let ticket = fetch.open_stream(2);
+    assert_eq!(fetch.refuse_stream(ticket, 401), Some(crate::fetch::Report::StreamRefused { status: 401 }));
+    assert_eq!(fetch.stream_ticket(), None);
+    assert_eq!(fetch.end_stream(ticket), None);
+}
+
+#[test]
+fn an_old_streams_refusal_cannot_end_its_replacement() {
+    let mut fetch = crate::fetch::Fetch::new(1);
+    let old = fetch.open_stream(2);
+    let new = fetch.open_stream(2);
+    assert_eq!(fetch.refuse_stream(old, 401), None);
+    assert_eq!(fetch.stream_ticket(), Some(new));
+}
