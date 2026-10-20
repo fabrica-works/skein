@@ -2,8 +2,8 @@
 extern crate alloc;
 use skein_fake_forge_domain as domain;
 use skein_fake_forge_protocol::{
-    Config, Event, Faults, Hosted, Limits, Repository, Server, Service, closed, delivery, down, resume_with_domain,
-    start, up_with_domain,
+    Config, Event, Faults, Hosted, Limits, Repository, Server, Service, closed, delivery, down, resume,
+    resume_with_domain, start, up, up_with_domain,
 };
 #[cfg(test)]
 #[path = "../src/tests/fixtures.rs"]
@@ -73,5 +73,66 @@ mod tests {
         assert!(skein_lib::bytes::find(&h.body(), b"\"graph\":[{\"commit\":15,").is_some());
         let measured = meter.end();
         meter.check(measured, bound, &"maximal git trees and both-parent frontier");
+    }
+    #[test]
+    fn client_objects_decoder_fits_its_priced_scratch() {
+        use skein_json::tokenizer::{self as json, Tokenizer};
+        use skein_lib::{
+            Env, Queue, Time, Wall,
+            stream::{Down, Held},
+        };
+        let limits = fixtures::limits();
+        let domain = fixtures::fake_config().limits;
+        let mut objects = List::with_capacity(5);
+        for commit in 1..=5 {
+            objects
+                .push(git::Object {
+                    commit,
+                    parent: Some(1),
+                    merge_parent: Some(1),
+                    tree: tree(&domain),
+                    message: bytes(domain.title_bytes.saturating_add(domain.body_bytes).saturating_add(2), 0xff),
+                })
+                .expect("whole objects");
+        }
+        let body =
+            git::server::encode(&git::Answer::Objects { objects: objects.into_boxed(), graph: Box::new([]) }, &limits)
+                .expect("five largest trees fit the wire");
+        let bound = git::decoder_worst_case(&limits)
+            .expect("decoder bound")
+            .checked_add(json::worst_case(&limits.documents.json).expect("tokenizer bound"))
+            .expect("combined bound")
+            .checked_add(Queue::<json::Event>::worst_case(1).expect("event slot"))
+            .expect("combined bound")
+            .checked_add(Queue::<Down>::worst_case(1).expect("demand slot"))
+            .expect("combined bound");
+        let meter = Meter::new();
+        meter.start();
+        let mut decoder = git::client::decoder(git::Name::Objects, 200, Time::ZERO, &limits);
+        let mut tokenizer = Tokenizer::new(&limits.documents.json);
+        let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.documents.json };
+        let mut above = Queue::with_capacity(1);
+        let mut below = Queue::with_capacity(1);
+        let mut input = Held::new(body);
+        json::down(&mut tokenizer, &env, git::client::first(&decoder), &mut above, &mut below);
+        let answer = loop {
+            if let Some(event) = above.pop() {
+                match git::client::step(&mut decoder, &limits, &event) {
+                    git::client::Step::Demand(request) => {
+                        json::down(&mut tokenizer, &env, request, &mut above, &mut below);
+                    }
+                    git::client::Step::Decoded(answer) => break answer.expect("objects answer"),
+                    git::client::Step::Malformed => panic!("objects grammar"),
+                }
+            } else {
+                let Some(Down::Demand { read, .. }) = below.pop() else { panic!("tokenizer demand") };
+                json::up(&mut tokenizer, &env, input.answer(read).expect("whole body"), &mut above, &mut below);
+            }
+        };
+        let git::Answer::Objects { objects, graph } = answer else { panic!("objects") };
+        assert_eq!(objects.len(), 5);
+        assert!(graph.is_empty());
+        let measured = meter.end();
+        meter.check(measured, bound, &"client's compact document, decoded trees and tokenizer");
     }
 }

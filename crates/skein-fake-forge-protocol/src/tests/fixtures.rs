@@ -81,6 +81,7 @@ pub struct Harness {
     pub demand: Option<(Read, u32)>,
     pub output: List<u8>,
     pub calls: u32,
+    pub lend_domain: bool,
     pub captured_head: Option<skein_http::server::Call>,
     pub closed: bool,
     pub deliveries: List<crate::delivery::Post>,
@@ -133,6 +134,7 @@ impl Harness {
             demand: None,
             output: List::with_capacity(65536),
             calls: 0,
+            lend_domain: true,
             captured_head: None,
             closed: false,
             deliveries: List::with_capacity(32),
@@ -156,14 +158,18 @@ impl Harness {
             self.fake_env.now = self.fake_env.now.saturating_add(tick);
             self.env.now = fake::time(&self.fake_env.limits, self.fake_env.now);
             self.env.wall = Wall::from_nanos(self.env.now.as_nanos());
-            crate::resume_with_domain(
-                &mut self.server,
-                &mut self.service,
-                crate::Hosted { domain: &mut self.domain, config: &self.fake_env.limits },
-                &self.env,
-                &mut self.above,
-                &mut self.below,
-            );
+            if self.lend_domain {
+                crate::resume_with_domain(
+                    &mut self.server,
+                    &mut self.service,
+                    crate::Hosted { domain: &mut self.domain, config: &self.fake_env.limits },
+                    &self.env,
+                    &mut self.above,
+                    &mut self.below,
+                );
+            } else {
+                crate::resume(&mut self.server, &mut self.service, &self.env, &mut self.above, &mut self.below);
+            }
             self.capture_head();
             while let Some(down) = self.below.pop() {
                 match down {
@@ -191,15 +197,19 @@ impl Harness {
                 };
                 if let Some(up) = up {
                     self.demand = None;
-                    crate::up_with_domain(
-                        &mut self.server,
-                        &mut self.service,
-                        crate::Hosted { domain: &mut self.domain, config: &self.fake_env.limits },
-                        &self.env,
-                        up,
-                        &mut self.above,
-                        &mut self.below,
-                    );
+                    if self.lend_domain {
+                        crate::up_with_domain(
+                            &mut self.server,
+                            &mut self.service,
+                            crate::Hosted { domain: &mut self.domain, config: &self.fake_env.limits },
+                            &self.env,
+                            up,
+                            &mut self.above,
+                            &mut self.below,
+                        );
+                    } else {
+                        crate::up(&mut self.server, &mut self.service, &self.env, up, &mut self.above, &mut self.below);
+                    }
                 }
             }
             self.capture_head();

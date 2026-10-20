@@ -307,7 +307,7 @@ domain, and holds no clock of its own.
 - **Credentials.** The header is `Authorization: token <value>`; an unknown
   token is `401`. Tokens stay in this layer: no domain call, observation or
   tally holds one. The tally counts requests at the entrance: total, by route
-  (up to 64), by user, unrouted and unauthorized.
+  (up to 74), by user, unrouted and unauthorized.
 - **Forgejo's quirks are kept,** so a client that leans on Forgejo being
   better than it is fails here first: the default order is newest created
   first, and `sort=leastupdate` gives least recently updated first; a page is
@@ -394,6 +394,30 @@ domain, and holds no clock of its own.
   by both parents, newest first, bounded by `max_response_items` and the
   answer's room. An object never changes, so a caller keeps what it has
   been given for the rest of its command.
+- **The wire** uses standard, padded base64 for paths, contents and
+  messages. Repository names are full names; commits are JSON integers.
+  Members may arrive in any order.
+  - `clone`: `{"repository"}` answers `{"default", "branches":
+    [{"branch", "commit"}]}`.
+  - `fetch`: `{"repository"}` with at most one of `"branch"` or `"commit"`
+    answers `{"commit"}`; neither asks for the default branch.
+  - `create`: `{"repository", "branch", "commit"}` answers
+    `{"result":"created"|"exists"}`.
+  - `push`: `{"repository", "branch", "commit"}` with optional `"expected"`
+    answers `{"result":"pushed"|"rejected"}`.
+  - `branch`: `{"repository", "branch"}` answers `{"commit"}`.
+  - `objects`: `{"commits":[..]}` answers `{"objects":[{"commit", "parent",
+    "merge_parent", "tree":[{"path", "content"}], "message"}],
+    "graph":[{"commit", "parent", "merge_parent"}]}`. An absent parent is
+    `null`.
+  - `commit`: `{"parent", "tree", "message"}`; `merge`: `{"parent",
+    "merge_parent", "tree", "message"}`; `commit-tree`: `{"parent", "tree",
+    "message"}` with optional `"merging"`. Each answers `{"commit":N|null}`;
+    trees carry `[{"path", "content"}]` as above.
+  - `ancestor`: `{"ancestor", "commit"}` answers `{"ancestor":true|false}`.
+  - A body other than one object, an unknown, repeated or missing member,
+    a wrong type, invalid base64, or both `"branch"` and `"commit"` on a
+    fetch is malformed, `422`.
 - **The setup's routes** (accounts, tokens, organizations, a repository's
   read by id, collaborators and hooks, and the admin's repository search,
   in id order and paged by number as Forgejo pages it) are served from this

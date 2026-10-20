@@ -238,8 +238,9 @@ impl Tally {
         }
     }
     pub(crate) fn count_store(&mut self, route: Option<Route>) {
+        let unauthorized = self.unauthorized;
         self.count(route, None);
-        self.unauthorized = self.unauthorized.saturating_sub(1);
+        self.unauthorized = unauthorized;
     }
     pub fn count(&mut self, route: Option<Route>, user: Option<u64>) {
         self.total = self.total.saturating_add(1);
