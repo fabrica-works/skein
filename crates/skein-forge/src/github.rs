@@ -10,6 +10,7 @@ pub mod id;
 pub mod jwt;
 pub mod limits;
 pub mod pin;
+pub mod plans;
 pub mod redirect;
 pub mod request;
 pub mod server;
