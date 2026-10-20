@@ -264,22 +264,53 @@ fn a_write_body_is_read_before_its_scripted_response() {
 // The deadline is ten seconds in the admitted fixture; inspect its two sides.
 const DEADLINE: skein_lib::Time = skein_lib::Time::from_nanos(10_000_000_000);
 const BEFORE_DEADLINE: skein_lib::Time = skein_lib::Time::from_nanos(9_999_999_999);
+// The fixture's idle timeout is five seconds; SECOND allows observing startup first.
+// This is an observation allowance, not a bound on the duration of startup.
+const CALL_ADMISSION: Duration = Duration::from_secs(5).saturating_add(SECOND);
+// The fixture's ten-second deadline plus its one-second initial start backoff.
+const START_RETRY: skein_lib::Time = DEADLINE.saturating_add(SECOND);
 #[derive(Debug)]
 struct DeadlineRow {
     name: &'static str,
-    started: bool,
     request: usize,
     pause: machine::Pause,
-    expected: (u32, Error, usize, u32),
+}
+#[test]
+fn start_deadlines_retry_and_end_waiting_calls() {
+    for row in [
+        DeadlineRow { name: "checking and waiting", request: 0, pause: machine::Pause::Reading(0) },
+        DeadlineRow { name: "settings and waiting", request: 1, pause: machine::Pause::Reading(0) },
+    ] {
+        let mut world = Machine::new(7, fixtures::locate_script());
+        assert_eq!(drive_deadline(&mut world, &row, Duration::ZERO), (0, Error::Unavailable, 1, 1), "{}", row.name);
+        let opened = world.connections_opened();
+        world.connects(&[Connect::Refused]);
+        world.advance_to(START_RETRY);
+        assert_eq!(world.connections_opened(), opened + 1, "{} start retries", row.name);
+        assert!(world.close());
+    }
+}
+#[test]
+fn unseen_call_deadlines_are_unavailable_at_no_cost() {
+    for row in [
+        DeadlineRow { name: "connecting", request: 2, pause: machine::Pause::Connecting },
+        DeadlineRow { name: "sending before first byte", request: 2, pause: machine::Pause::Writing(0) },
+    ] {
+        let mut world = ready_for_deadline();
+        assert_eq!(drive_deadline(&mut world, &row, CALL_ADMISSION), (0, Error::Unavailable, 1, 1), "{}", row.name);
+        assert!(world.close());
+    }
 }
 #[test]
 fn deadlines_end_each_phase() {
     for row in deadline_rows() {
-        assert_eq!(drive_deadline(&row), row.expected, "{}", row.name);
+        let mut world = ready_for_deadline();
+        assert_eq!(drive_deadline(&mut world, &row, CALL_ADMISSION), (1, Error::Timeout, 1, 1), "{}", row.name);
+        assert!(world.close());
     }
 }
-fn deadline_rows() -> [DeadlineRow; 7] {
-    use machine::Pause::{Connecting, Reading, Writing};
+fn deadline_rows() -> [DeadlineRow; 3] {
+    use machine::Pause::{Reading, Writing};
     let response = match fixtures::locate_script().pop().expect("locate response").response {
         Response::Bytes(bytes) => bytes,
         Response::Case(_) | Response::Reset | Response::Cut { .. } | Response::Silent => {
@@ -288,80 +319,25 @@ fn deadline_rows() -> [DeadlineRow; 7] {
     };
     let body = response.windows(4).position(|part| part == b"\r\n\r\n").expect("head") + 4;
     [
-        DeadlineRow {
-            name: "checking and waiting",
-            started: false,
-            request: 0,
-            pause: Reading(0),
-            expected: (0, Error::Unavailable, 1, 1),
-        },
-        DeadlineRow {
-            name: "settings and waiting",
-            started: false,
-            request: 1,
-            pause: Reading(0),
-            expected: (0, Error::Unavailable, 1, 1),
-        },
-        DeadlineRow {
-            name: "connecting",
-            started: true,
-            request: 2,
-            pause: Connecting,
-            expected: (0, Error::Unavailable, 1, 1),
-        },
-        DeadlineRow {
-            name: "sending before first byte",
-            started: true,
-            request: 2,
-            pause: Writing(0),
-            expected: (0, Error::Unavailable, 1, 1),
-        },
-        DeadlineRow {
-            name: "sending after first byte",
-            started: true,
-            request: 2,
-            pause: Writing(1),
-            expected: (1, Error::Timeout, 1, 1),
-        },
-        DeadlineRow {
-            name: "reading head",
-            started: true,
-            request: 2,
-            pause: Reading(1),
-            expected: (1, Error::Timeout, 1, 1),
-        },
-        DeadlineRow {
-            name: "reading body",
-            started: true,
-            request: 2,
-            pause: Reading(body + 1),
-            expected: (1, Error::Timeout, 1, 1),
-        },
+        DeadlineRow { name: "sending after first byte", request: 2, pause: Writing(1) },
+        DeadlineRow { name: "reading head", request: 2, pause: Reading(1) },
+        DeadlineRow { name: "reading body", request: 2, pause: Reading(body + 1) },
     ]
 }
-
-fn drive_deadline(row: &DeadlineRow) -> (u32, Error, usize, u32) {
+fn ready_for_deadline() -> Machine {
     let mut world = Machine::new(7, fixtures::locate_script());
-    if row.started {
-        // The generated start leaves an idle socket; let it expire before the call.
-        world.run_for(Duration::from_secs(6));
-    }
-    let admission = if row.started { Duration::from_secs(6) } else { Duration::ZERO };
+    // The generated start leaves an idle socket; let it expire before the call.
+    world.run_for(CALL_ADMISSION);
+    world
+}
+fn drive_deadline(world: &mut Machine, row: &DeadlineRow, admission: Duration) -> (u32, Error, usize, u32) {
     world.pause_at(row.request, row.pause);
     world.call(1, fixtures::REPO, fixtures::locate());
     world.advance_to(BEFORE_DEADLINE.saturating_add(admission));
     assert_eq!((world.deliveries().len(), world.aborts()), (0, 0), "{} before", row.name);
     world.advance_to(DEADLINE.saturating_add(admission));
     let answer = world.answered(1).expect("one deadline terminal");
-    let result = (answer.cost, answer.result.clone().expect_err("deadline"), world.deliveries().len(), world.aborts());
-    if !row.started {
-        let opened = world.connections_opened();
-        world.connects(&[Connect::Refused]);
-        world.advance_to(skein_lib::Time::from_nanos(11_000_000_000));
-        assert_eq!(world.connections_opened(), opened + 1, "{} start retries", row.name);
-    }
-    assert!(world.close());
-    result
+    (answer.cost, answer.result.clone().expect_err("deadline"), world.deliveries().len(), world.aborts())
 }
 #[test]
 fn a_start_doubles_its_backoff_to_the_cap() {
