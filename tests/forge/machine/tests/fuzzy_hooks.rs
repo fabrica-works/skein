@@ -17,3 +17,10 @@ fn a_delivery_split_at_every_point_is_answered_alike() {
         assert!(world.hinted_after_answer(), "split {split}");
     }
 }
+
+#[test]
+fn listener_faults_at_each_byte() {
+    for (case, counts) in hooks::listener_faults(7).into_iter().enumerate() {
+        assert_eq!(counts, [0, 0, 0, 0, 0, 1], "case {case}");
+    }
+}

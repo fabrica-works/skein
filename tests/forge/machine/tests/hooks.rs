@@ -213,3 +213,55 @@ fn a_held_hint_stops_the_next_body_until_it_is_offered() {
     assert_eq!(world.statuses(peer), [204, 204]);
     assert_eq!(world.hints().len(), 2);
 }
+
+#[derive(Clone, Copy, Debug)]
+enum HookPhase {
+    Head,
+    Body,
+    Answering,
+    Closing,
+}
+
+#[test]
+fn deadlines_end_each_hook_phase() {
+    for (phase, seconds) in
+        [(HookPhase::Head, 10), (HookPhase::Body, 10), (HookPhase::Answering, 10), (HookPhase::Closing, 1)]
+    {
+        assert_eq!(drive_hook_deadline(phase, seconds), [0, 0, 1, 0], "{phase:?}");
+    }
+}
+
+fn drive_hook_deadline(phase: HookPhase, seconds: u64) -> [u64; 4] {
+    use skein_lib::Time;
+    let mut world = world();
+    let socket = world.accept();
+    let post = deliveries::push(b"main", 7);
+    match phase {
+        HookPhase::Head => world.write(socket, &post.head[..post.head.len() - 1]),
+        HookPhase::Body => {
+            world.write(socket, &post.head);
+            world.write(socket, &post.body[..post.body.len() - 1]);
+        }
+        HookPhase::Answering => {
+            world.send(socket, &post);
+            assert_eq!((world.counts()[0], world.hints().len()), (1, 1));
+            assert!(world.hinted_after_answer());
+            world.refuse();
+            assert_eq!(world.hints().len(), 0);
+        }
+        HookPhase::Closing => {
+            world.hold_settlement();
+            world.fault(socket, true);
+        }
+    }
+    let before = world.counts();
+    let queued = u64::from(matches!(phase, HookPhase::Answering));
+    assert_eq!(&before[..2], &[queued, queued], "{phase:?} before expiry");
+    assert_eq!(world.hints().len(), 0, "{phase:?} before expiry");
+    assert_eq!(before[2], 0, "{phase:?} before expiry");
+    world.advance_to(Time::from_nanos(seconds * 1_000_000_000 - 1));
+    assert_eq!(world.counts()[2] - before[2], 0, "{phase:?} before expiry");
+    world.advance_to(Time::from_nanos(seconds * 1_000_000_000));
+    let after = world.counts();
+    [after[0] - before[0], after[1] - before[1], after[2] - before[2], after[3]]
+}

@@ -491,3 +491,215 @@ fn keepalive(case: &str) -> Vec<u8> {
     result.extend_from_slice(&response[head_end..]);
     result
 }
+
+#[derive(Clone, Copy, Debug)]
+enum ClosePhase {
+    Checking,
+    Settings,
+    Waiting,
+    Connecting,
+    SendingBefore,
+    Sending,
+    Reading,
+    ReadingBody,
+    Resolving,
+    Idle,
+    Closed,
+    Stopped,
+}
+#[derive(Clone, Copy, Debug)]
+enum Delivery {
+    Before,
+    Accepted,
+    Refused,
+    Returned,
+}
+#[derive(Debug)]
+struct CloseRow {
+    phase: ClosePhase,
+    delivery: Delivery,
+    expected: [usize; 6],
+}
+
+#[test]
+fn owner_close_wins_or_follows_each_terminal() {
+    use ClosePhase::{
+        Checking, Closed, Connecting, Idle, Reading, ReadingBody, Resolving, Sending, SendingBefore, Settings, Stopped,
+        Waiting,
+    };
+    use Delivery::{Accepted, Before, Refused, Returned};
+    let mut rows = Vec::new();
+    for phase in [Checking, Settings, Connecting, SendingBefore, Sending, Reading, ReadingBody, Resolving] {
+        rows.push(CloseRow { phase, delivery: Before, expected: [0, 0, 0, 1, 0, 0] });
+        for delivery in [Accepted, Refused, Returned] {
+            // Start-stop terminals are accepted; refusal/return applies to call answers.
+            if matches!(phase, Checking | Settings) && !matches!(delivery, Accepted) {
+                continue;
+            }
+            let immediate = usize::from(matches!(phase, Checking | Settings));
+            rows.push(CloseRow { phase, delivery, expected: [1, 0, immediate, 1, 0, 0] });
+        }
+    }
+    rows.extend([
+        CloseRow { phase: Waiting, delivery: Before, expected: [0, 0, 1, 1, 0, 0] },
+        CloseRow { phase: Waiting, delivery: Accepted, expected: [1, 0, 1, 1, 0, 0] },
+        CloseRow { phase: Waiting, delivery: Refused, expected: [1, 0, 1, 1, 0, 0] },
+        CloseRow { phase: Waiting, delivery: Returned, expected: [1, 0, 1, 1, 0, 0] },
+        CloseRow { phase: Idle, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Closed, delivery: Before, expected: [0, 0, 1, 1, 0, 0] },
+        CloseRow { phase: Stopped, delivery: Before, expected: [0, 0, 1, 1, 0, 0] },
+    ]);
+    for row in rows {
+        assert_eq!(drive_close(&row), row.expected, "{row:?}");
+    }
+    for phase in ["head", "body", "answering", "closing", "hint"] {
+        let expected = if matches!(phase, "hint" | "answering") { [1, 0, 0, 1, 0, 0] } else { [0, 0, 0, 1, 0, 0] };
+        assert_eq!(drive_listener_close(phase), expected, "{phase}");
+    }
+}
+
+fn close_machine(row: &CloseRow) -> Machine {
+    use ClosePhase::{
+        Checking, Closed, Connecting, Idle, Reading, ReadingBody, Resolving, Sending, SendingBefore, Settings, Stopped,
+        Waiting,
+    };
+    let mut script = fixtures::locate_script();
+    if matches!(row.phase, Checking | Stopped) && !matches!(row.delivery, Delivery::Before)
+        || matches!(row.phase, Stopped)
+    {
+        script[0].response = Response::Bytes(fixtures::response(200, br#"{"id":8,"login":"other"}"#));
+        script.truncate(1);
+    } else if matches!(row.phase, Settings) && !matches!(row.delivery, Delivery::Before) {
+        script[1].response = Response::Bytes(fixtures::response(404, b""));
+        script.truncate(2);
+    }
+    if matches!(row.phase, Resolving) {
+        script.truncate(2);
+        script.extend([
+            Answer { request: "GET /api/v1/repositories/1", response: Response::Bytes(keepalive("repository-by-id")) },
+            Answer {
+                request: "GET /api/v1/repos/fixture/specimen/branches/main",
+                response: Response::Bytes(keepalive("branch")),
+            },
+        ]);
+    }
+    let mut world = Machine::new(7, script);
+    if matches!(row.phase, Waiting) {
+        world.connects(&[Connect::Refused; 32]);
+    }
+    if matches!(row.delivery, Delivery::Before) {
+        let pause = match row.phase {
+            Checking | Settings | Reading | Resolving => Some(machine::Pause::Reading(0)),
+            Connecting => Some(machine::Pause::Connecting),
+            SendingBefore => Some(machine::Pause::Writing(0)),
+            Sending => Some(machine::Pause::Writing(1)),
+            ReadingBody => Some(deadline_rows()[2].pause),
+            Waiting | Idle | Closed | Stopped => None,
+        };
+        if let Some(pause) = pause {
+            let at = match row.phase {
+                Checking => 0,
+                Settings => 1,
+                Waiting | Connecting | SendingBefore | Sending | Reading | ReadingBody | Resolving | Idle | Closed
+                | Stopped => 2,
+            };
+            if matches!(row.phase, Connecting) {
+                world.advance_to(skein_lib::Time::from_nanos(6_000_000_000));
+            }
+            world.pause_at(at, pause);
+        }
+    }
+    match row.phase {
+        Checking | Settings if !matches!(row.delivery, Delivery::Before) => {}
+        Checking | Settings | Waiting | Connecting | SendingBefore | Sending | Reading | ReadingBody => {
+            world.call(1, fixtures::REPO, fixtures::locate());
+        }
+        Resolving => world.call(1, fixtures::REPO, fixtures::branch()),
+        Idle | Closed | Stopped => {}
+    }
+    world.advance_to(if matches!(row.phase, Closed) {
+        skein_lib::Time::from_nanos(6_000_000_000)
+    } else if matches!(row.phase, Waiting) && !matches!(row.delivery, Delivery::Before) {
+        DEADLINE
+    } else if matches!(row.phase, Connecting) && matches!(row.delivery, Delivery::Before) {
+        skein_lib::Time::from_nanos(6_000_000_000)
+    } else {
+        skein_lib::Time::ZERO
+    });
+    world
+}
+
+fn drive_close(row: &CloseRow) -> [usize; 6] {
+    use skein_forge_connection::Request;
+    let mut world = close_machine(row);
+    let baseline = if matches!(row.phase, ClosePhase::Stopped) { world.event_order().len() } else { 0 };
+    if matches!(row.delivery, Delivery::Refused | Delivery::Returned) {
+        let answer = world.answered(1).expect("delivered answer").clone();
+        world.action(if matches!(row.delivery, Delivery::Refused) {
+            Request::Refused(answer)
+        } else {
+            Request::Returned(answer)
+        });
+    }
+    let terminals = world.event_order().len() - baseline;
+    world.hold_settlement();
+    world.action(Request::Close);
+    let before = world.closed_events();
+    world.action(Request::Offer);
+    let reoffers = world.event_order().iter().filter(|name| **name != "closed").count() - baseline - terminals;
+    world.release_settlement();
+    world.action(Request::Offer);
+    let order = world.event_order();
+    let after_closed = order.len() - order.iter().position(|name| *name == "closed").expect("Closed") - 1;
+    [
+        terminals,
+        reoffers,
+        usize::try_from(before).expect("small"),
+        usize::try_from(world.closed_events()).expect("small"),
+        world.addresses().len(),
+        after_closed,
+    ]
+}
+
+fn drive_listener_close(phase: &str) -> [usize; 6] {
+    use skein_forge_connection::Request;
+    use skein_forge_machine_world::hooks::{self, Listener};
+    let mut world = Listener::new(7, fixtures::hook_limits(), fixtures::hook_settings());
+    let socket = world.accept();
+    let post = hooks::push(b"main", 7);
+    world.hold_settlement();
+    match phase {
+        "head" => world.write(socket, &post.head[..post.head.len() - 1]),
+        "body" => {
+            world.write(socket, &post.head);
+            world.write(socket, &post.body[..post.body.len() - 1]);
+        }
+        "answering" => {
+            world.send(socket, &post);
+            assert_eq!((world.counts()[0], world.hints().len()), (1, 1));
+            assert!(world.hinted_after_answer());
+            world.refuse();
+            assert_eq!(world.hints().len(), 0);
+        }
+        "closing" => world.fault(socket, true),
+        "hint" => world.send(socket, &post),
+        _ => unreachable!("listed phase"),
+    }
+    let terminals = world.counts()[1];
+    world.request(Request::Close);
+    let before = world.counts()[4];
+    world.request(Request::Offer);
+    world.release_settlement();
+    world.request(Request::Offer);
+    let counts = world.counts();
+    let after_closed =
+        world.event_order().len() - world.event_order().iter().position(|name| *name == "closed").expect("Closed") - 1;
+    [
+        usize::try_from(terminals).expect("small"),
+        usize::try_from(counts[1] - terminals).expect("small"),
+        usize::try_from(before).expect("small"),
+        usize::try_from(counts[4]).expect("small"),
+        usize::try_from(counts[3]).expect("small"),
+        after_closed,
+    ]
+}

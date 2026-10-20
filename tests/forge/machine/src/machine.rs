@@ -85,6 +85,9 @@ pub struct Machine {
     held_response: Option<(Token, Vec<u8>)>,
     written: Vec<usize>,
     closed_events: u32,
+    hold_settlement: bool,
+    settling: Vec<Token>,
+    event_order: Vec<&'static str>,
 }
 impl std::fmt::Debug for Machine {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -138,6 +141,9 @@ impl Machine {
             held_response: None,
             written: Vec::new(),
             closed_events: 0,
+            hold_settlement: false,
+            settling: Vec::new(),
+            event_order: Vec::new(),
         };
         world.component.begin(&world.env, &mut world.above, &mut world.below);
         world
@@ -223,6 +229,24 @@ impl Machine {
     pub fn closed_events(&self) -> u32 {
         self.closed_events
     }
+    /// Defers io Closed acknowledgments, keeping each closing socket owned.
+    pub fn hold_settlement(&mut self) {
+        self.hold_settlement = true;
+    }
+    /// Completes every requested socket close, then drains bounded work.
+    pub fn release_settlement(&mut self) {
+        self.hold_settlement = false;
+        for owner in std::mem::take(&mut self.settling) {
+            self.peers.remove(&owner).expect("closing socket remains owned");
+            self.up(skein_io::Event::Closed { owner });
+        }
+        self.settle();
+    }
+    /// Component events in owner-delivery order, independently of answer storage.
+    #[must_use]
+    pub fn event_order(&self) -> &[&'static str] {
+        &self.event_order
+    }
     /// Request bytes accepted by io, including a request cut before its framing ends.
     #[must_use]
     pub fn written_bytes(&self) -> &[usize] {
@@ -251,6 +275,9 @@ impl Machine {
         }
         let owners: Vec<_> = self.peers.keys().copied().collect();
         for owner in owners {
+            if self.settling.contains(&owner) {
+                continue;
+            }
             let request = self.peers.get_mut(&owner).expect("peer").request();
             if let Some(request) = request {
                 self.respond(owner, request);
@@ -283,6 +310,14 @@ impl Machine {
     }
     fn events(&mut self) {
         while let Some(event) = self.above.pop() {
+            let name = match &event {
+                Event::Answered(_) => "answered",
+                Event::Stopped { .. } => "stopped",
+                Event::Hint(_) => "hint",
+                Event::ListenerLost => "lost",
+                Event::Closed => "closed",
+            };
+            self.event_order.push(name);
             match event {
                 Event::Answered(answer) => {
                     self.deliveries.push(answer.clone());
@@ -383,6 +418,12 @@ impl Machine {
         }
     }
     fn end(&mut self, owner: Token) {
+        if self.hold_settlement && self.peers.contains_key(&owner) {
+            assert!(!self.settling.contains(&owner), "one close request per socket");
+            self.settling.push(owner);
+            self.closes += 1;
+            return;
+        }
         if self.peers.remove(&owner).is_some() {
             self.closes += 1;
             self.up(skein_io::Event::Closed { owner });
