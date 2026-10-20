@@ -570,6 +570,7 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                 Plan::Reachable { .. }
                 | Plan::Manifest { .. }
                 | Plan::Convert { .. }
+                | Plan::Paste { .. }
                 | Plan::Install { .. }
                 | Plan::Accept { .. } => {
                     unreachable!("Forgejo writing plan table")
@@ -605,6 +606,7 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                     Plan::Reachable { .. }
                     | Plan::Manifest { .. }
                     | Plan::Convert { .. }
+                    | Plan::Paste { .. }
                     | Plan::Install { .. }
                     | Plan::Accept { .. } => {
                         unreachable!("Forgejo writing plan table")

@@ -69,6 +69,7 @@ pub struct HostWorld {
     pause_writes: bool,
     pending_writes: Vec<(Token, Item, Secret)>,
     pause_reads: bool,
+    pasted: Option<Secret>,
     pending_reads: Vec<(Token, Item)>,
     github_requests: Vec<GitHubRequest>,
 }
@@ -207,6 +208,7 @@ impl HostWorld {
             pause_writes: false,
             pending_writes: Vec::new(),
             pause_reads: false,
+            pasted: None,
             pending_reads: Vec::new(),
             github_requests: Vec::new(),
         }
@@ -249,6 +251,13 @@ impl HostWorld {
     pub fn needs(&self) -> &[Need] {
         &self.needs
     }
+    /// Ephemeral owner input, consumed by its single Pasted read (5.8).
+    pub fn paste(&mut self, pem: Secret) {
+        self.pasted = Some(pem);
+    }
+    fn read_item(&mut self, item: Item) -> Option<Secret> {
+        if item == Item::Pasted { self.pasted.take() } else { self.file(item).cloned() }
+    }
     pub fn pause_reads(&mut self) {
         self.pause_reads = true;
     }
@@ -261,12 +270,14 @@ impl HostWorld {
         let run = Token::new(run);
         let at = self.pending_reads.iter().position(|(token, _)| *token == run).expect("held read");
         let (_, item) = self.pending_reads.remove(at);
-        self.action(Request::Answer { run, answer: Answer::Read(self.file(item).cloned()) });
+        let value = self.read_item(item);
+        self.action(Request::Answer { run, answer: Answer::Read(value) });
     }
     pub fn resume_reads(&mut self) {
         self.pause_reads = false;
         for (run, item) in core::mem::take(&mut self.pending_reads) {
-            self.action(Request::Answer { run, answer: Answer::Read(self.file(item).cloned()) });
+            let value = self.read_item(item);
+            self.action(Request::Answer { run, answer: Answer::Read(value) });
         }
     }
     pub fn pause_writes(&mut self) {
@@ -428,7 +439,7 @@ impl HostWorld {
                                 self.pending_reads.push((run, item));
                                 continue;
                             }
-                            Answer::Read(self.file(item).cloned())
+                            Answer::Read(self.read_item(item))
                         }
                         Need::Write { item, bytes } => {
                             if self.pause_writes {

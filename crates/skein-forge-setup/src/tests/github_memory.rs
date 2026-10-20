@@ -8,6 +8,7 @@ use crate::{
         given::{Given, URL_BYTES},
         install::Install,
         manifest::{Manifest, Target},
+        paste::Paste,
         reconcile::Reconcile,
     },
     host::run::Machine,
@@ -144,6 +145,9 @@ impl Counted {
                     Accept::new(given, core::num::NonZeroU64::new(9).expect("nonzero")).expect("accept"),
                 ),
                 4 | 6 => Machine::GitHubReconcile(Box::new(Reconcile::new(given, WALL).expect("reconcile"))),
+                7 => Machine::Paste(Box::new(
+                    Paste::new(given, core::num::NonZeroU64::new(APP).expect("id")).expect("paste"),
+                )),
                 5 => Machine::Reachable(Reachable::github(given, 1, 1).expect("reachable")),
                 _ => panic!("named phase"),
             };
@@ -206,12 +210,6 @@ fn script(phase: u8) -> List<Event> {
     match phase {
         0 => add(&mut events, Event::Drawn(secret(&[1, 2, 3]))),
         1 => {
-            let key = der();
-            let pem = fixtures::pem(&key, b"\n", b"");
-            let mut padded = repeated(KEY * 2, b' ');
-            for (slot, byte) in padded.iter_mut().zip(pem.expose()) {
-                *slot = *byte;
-            }
             add(
                 &mut events,
                 document(Document::Conversion(Conversion {
@@ -219,7 +217,7 @@ fn script(phase: u8) -> List<Event> {
                     slug: repeated(NAME, b'k'),
                     owner: repeated(NAME, b'a'),
                     owner_id: 23,
-                    pem: secret(&padded),
+                    pem: pasted(),
                     webhook_secret: secret(b"sentinel-webhook"),
                 })),
             );
@@ -229,6 +227,7 @@ fn script(phase: u8) -> List<Event> {
                 add(&mut events, Event::Written);
             }
         }
+        7 => paste_events(&mut events),
         2 => add(&mut events, Event::Read(Some(secret(&repeated(NAME, b'k'))))),
         3 => {
             add(&mut events, Event::Read(Some(secret(&APP.to_le_bytes()))));
@@ -305,7 +304,7 @@ fn script(phase: u8) -> List<Event> {
 #[test]
 fn github_plans_and_states_fit_their_bound() {
     let given = maximum();
-    for phase in 0..7 {
+    for phase in 0..8 {
         // Templates belong to the harness and precede the meter's baseline.
         // A metered clone is the delivered reply; output payloads are handed away.
         let events = script(phase);
@@ -355,4 +354,25 @@ fn github_memory_admission_checks_overflow_and_capacity() {
         }
     }
     assert!(states.take(given.forge, Purpose::Accept, &first, Time::ZERO).is_err());
+}
+
+fn pasted() -> skein_lib::Secret {
+    let pem = fixtures::pem(&der(), b"\n", b"");
+    let mut padded = repeated(KEY * 2, b' ');
+    for (slot, byte) in padded.iter_mut().zip(pem.expose()) {
+        *slot = *byte;
+    }
+    secret(&padded)
+}
+fn paste_events(events: &mut List<Event>) {
+    add(events, Event::Read(Some(pasted())));
+    add(events, Event::Read(Some(secret(&APP.to_le_bytes()))));
+    add(events, Event::Read(Some(secret(&37u64.to_le_bytes()))));
+    add(events, document(Document::App(app())));
+    add(events, document(Document::BotUser(37)));
+    add(events, document(Document::HookConfig(Hook { url: b"wrong".as_slice().into() })));
+    add(events, document(Document::HookConfig(Hook { url: repeated(NAME, b'k') })));
+    for _ in 0_u8..4 {
+        add(events, Event::Written);
+    }
 }

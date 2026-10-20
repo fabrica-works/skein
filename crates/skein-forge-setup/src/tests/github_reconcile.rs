@@ -198,26 +198,71 @@ fn diagnostic(debug: &str) {
     }
 }
 
-#[test]
 #[expect(clippy::disallowed_macros, reason = "check all diagnostics for secret bytes and confirm state is released")]
-fn reconcile_drops_secrets_on_done_stop_and_halt() {
-    for phase in 0..=LAST_LIVE {
-        let mut stopped = at(phase);
-        let live = format!("{stopped:?}");
-        let stop = go(&mut stopped, Event::Drawn(secret(b"sentinel-drawn-secret")));
-        let stop_debug = format!("{stopped:?} {stop:?}");
-        released(&stop_debug);
-        let mut halted = at(phase);
-        let mut out = Queue::with_capacity(MAX_OUT);
-        assert!(out.room() >= MAX_OUT);
-        reconcile::halt(&mut halted, Why::Down, &mut out);
-        assert_eq!(out.len(), 1);
-        let halt_debug = format!("{halted:?} {:?}", out.pop().expect("halt"));
-        released(&halt_debug);
-        diagnostic(&format!("{live} {stop_debug} {halt_debug}"));
-        silent(&mut stopped);
-        silent(&mut halted);
-    }
+fn released_at(phase: usize) {
+    let mut stopped = at(phase);
+    let live = format!("{stopped:?}");
+    let stop = go(&mut stopped, Event::Drawn(secret(b"sentinel-drawn-secret")));
+    let stop_debug = format!("{stopped:?} {stop:?}");
+    released(&stop_debug);
+    let mut halted = at(phase);
+    let mut out = Queue::with_capacity(MAX_OUT);
+    assert!(out.room() >= MAX_OUT);
+    reconcile::halt(&mut halted, Why::Down, &mut out);
+    assert_eq!(out.len(), 1);
+    let halt_debug = format!("{halted:?} {:?}", out.pop().expect("halt"));
+    released(&halt_debug);
+    diagnostic(&format!("{live} {stop_debug} {halt_debug}"));
+    silent(&mut stopped);
+    silent(&mut halted);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_0() {
+    released_at(0);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_1() {
+    released_at(1);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_2() {
+    released_at(2);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_3() {
+    released_at(3);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_4() {
+    released_at(4);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_5() {
+    released_at(5);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_6() {
+    released_at(6);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_7() {
+    released_at(7);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_8() {
+    released_at(8);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_9() {
+    released_at(9);
+}
+#[test]
+fn reconcile_drops_secrets_at_phase_10() {
+    released_at(10);
+}
+#[test]
+#[expect(clippy::disallowed_macros, reason = "check completed diagnostics for secret bytes")]
+fn reconcile_drops_secrets_on_done() {
     let mut completed = at(LAST_LIVE);
     let need = go(&mut completed, Event::Reply(Reply::Empty));
     assert_eq!(need, done(Box::new([])));

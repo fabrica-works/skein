@@ -444,3 +444,63 @@ fn github_app_metadata_must_fit_in_the_hosts_documents() {
         assert_eq!(Host::new(&limits, fixtures::github_settings(), fixtures::crypto()).err(), expected);
     }
 }
+
+fn paste_plan(forge: u16) -> Plan {
+    Plan::Paste { forge, app: NonZeroU64::new(19).expect("id") }
+}
+#[test]
+fn paste_is_github_only_and_needs_no_callback_state() {
+    let mut world = ReconcileHost::new();
+    world.down(Request::Run { run: RECONCILE_RUN, plan: paste_plan(1) });
+    let Some(Event::Stop { failure, .. }) = world.up.pop() else { panic!("kind refusal") };
+    assert_eq!(failure.why, Why::Unexpected);
+    world.down(Request::Run { run: RECONCILE_RUN, plan: paste_plan(4) });
+    world.read(RECONCILE_RUN, Item::Pasted);
+    assert_eq!(
+        world.host.states.take(4, Purpose::Convert, b"absent", Time::ZERO).expect_err("no callback state").why,
+        Why::Unknown
+    );
+    world.close();
+}
+#[test]
+fn paste_occupies_the_writing_slot_beside_a_picker() {
+    let mut world = ReconcileHost::new();
+    world.down(Request::Run { run: RECONCILE_RUN, plan: paste_plan(4) });
+    world.read(RECONCILE_RUN, Item::Pasted);
+    world.down(Request::Run {
+        run: PICKER_RUN,
+        plan: Plan::Reachable { forge: 4, installation: Some(2), page: core::num::NonZeroU32::new(1).expect("page") },
+    });
+    world.read(PICKER_RUN, Item::Accepted);
+    world.down(Request::Run { run: OTHER_WRITER, plan: paste_plan(4) });
+    assert_eq!(
+        world.up.pop(),
+        Some(Event::Stop {
+            run: OTHER_WRITER,
+            failure: Failure { forge: 4, step: Stage::App, subject: b"paste".as_slice().into(), why: Why::Busy }
+        })
+    );
+    world.close();
+}
+#[test]
+fn paste_uses_its_forges_deadline_and_close_ends_once() {
+    let mut world = ReconcileHost::new();
+    world.down(Request::Run { run: RECONCILE_RUN, plan: paste_plan(4) });
+    world.read(RECONCILE_RUN, Item::Pasted);
+    assert_eq!(world.host.next_deadline(), Some(Time::ZERO.saturating_add(Duration::from_secs(7))));
+    world.fire(6);
+    assert!(world.up.is_empty());
+    world.fire(7);
+    assert_eq!(
+        world.up.pop(),
+        Some(Event::Stop {
+            run: RECONCILE_RUN,
+            failure: Failure { forge: 4, step: Stage::App, subject: b"key".as_slice().into(), why: Why::Down }
+        })
+    );
+    world.down(Request::Answer { run: RECONCILE_RUN, answer: Answer::Read(None) });
+    assert!(world.up.is_empty());
+    world.fire(30);
+    assert!(world.up.is_empty());
+    world.close();
+}

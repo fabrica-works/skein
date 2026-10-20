@@ -3,10 +3,11 @@ use super::{
     app,
     given::{self, Given, Place, Refused},
     key,
+    write::Write,
 };
 use crate::{
     call::Auth,
-    item::{self, Item},
+    item,
     reconcile::{self, Event, Need, Outcome, Reply, Stage, Why},
 };
 use alloc::boxed::Box;
@@ -23,10 +24,7 @@ enum State {
     Conversion,
     App,
     Bot,
-    AppId,
-    AppSlug,
-    AppKey,
-    User,
+    Writing(Write),
     Ended,
 }
 
@@ -42,7 +40,6 @@ pub struct Convert {
     key: Option<Secret>,
     id: u64,
     slug: Box<[u8]>,
-    bot: u64,
 }
 impl Convert {
     /// Checks the given values and a nonempty code of at most `URL_BYTES`
@@ -61,7 +58,6 @@ impl Convert {
             key: None,
             id: 0,
             slug: Box::new([]),
-            bot: 0,
         })
     }
     fn stop(&mut self, subject: &[u8], why: Why) -> Need {
@@ -74,9 +70,7 @@ impl Convert {
         match self.state {
             State::Begin | State::Conversion => bytes::copy_of(b"convert"),
             State::App => app::decimal(self.id),
-            State::Bot | State::AppId | State::AppSlug | State::AppKey | State::User | State::Ended => {
-                self.slug.clone()
-            }
+            State::Bot | State::Writing(_) | State::Ended => self.slug.clone(),
         }
     }
     fn converted(&mut self, conversion: Conversion) -> Need {
@@ -102,13 +96,20 @@ impl Convert {
         self.state = State::App;
         Need::Send { request: Request::App.into(), auth }
     }
-    fn write(&mut self, item: Item, bytes: Secret, state: State) -> Need {
-        self.state = state;
-        Need::Write { item, bytes }
+    fn writing(&mut self, mut write: Write, event: Event) -> Need {
+        match write.advance(event) {
+            Ok(Some(need)) => {
+                self.state = State::Writing(write);
+                need
+            }
+            Ok(None) => Need::Done(Outcome::Nothing),
+            Err(why) => self.stop(&self.slug.clone(), why),
+        }
     }
     fn advance(&mut self, event: Event) -> Need {
         let subject = self.subject();
-        match self.state {
+        let state = core::mem::replace(&mut self.state, State::Ended);
+        match state {
             State::Begin => match event {
                 Event::Begin => {
                     let code = self.code.take().expect("begin holds admitted code");
@@ -161,38 +162,17 @@ impl Convert {
             },
             State::Bot => match app::bot(event) {
                 Ok(id) => {
-                    self.bot = id.get();
-                    self.write(Item::AppId, Secret::new(bytes::copy_of(&self.id.to_le_bytes())), State::AppId)
+                    let write = Write::new(self.id, self.slug.clone(), self.key.take().expect("proved key"), id.get());
+                    self.writing(write, Event::Begin)
                 }
                 Err(why) => self.stop(&subject, why),
             },
-            State::AppId | State::AppSlug | State::AppKey | State::User => match event {
-                Event::Written => self.written(),
-                Event::Begin | Event::Read(_) | Event::Reply(_) | Event::Drawn(_) => {
-                    self.stop(&subject, Why::Unexpected)
-                }
-            },
+            State::Writing(write) => self.writing(write, event),
             State::Ended => unreachable!("ended conversion is not advanced"),
         }
     }
-    fn written(&mut self) -> Need {
-        match self.state {
-            State::AppId => self.write(Item::AppSlug, Secret::new(self.slug.clone()), State::AppSlug),
-            State::AppSlug => {
-                let key = self.key.take().expect("proved key retained until its write");
-                self.write(Item::AppKey, key, State::AppKey)
-            }
-            State::AppKey => self.write(Item::User, Secret::new(bytes::copy_of(&self.bot.to_le_bytes())), State::User),
-            State::User => {
-                self.state = State::Ended;
-                Need::Done(Outcome::Nothing)
-            }
-            State::Begin | State::Conversion | State::App | State::Bot | State::Ended => {
-                unreachable!("only writes await Written")
-            }
-        }
-    }
 }
+
 fn unsigned_unexpected(reply: Reply) -> Why {
     match reply {
         Reply::Unsigned => Why::Unexpected,
@@ -210,14 +190,7 @@ fn unsigned_unexpected(reply: Reply) -> Why {
 pub fn step(machine: &mut Convert, event: Event, out: &mut Queue<Need>) {
     match machine.state {
         State::Ended => (),
-        State::Begin
-        | State::Conversion
-        | State::App
-        | State::Bot
-        | State::AppId
-        | State::AppSlug
-        | State::AppKey
-        | State::User => {
+        State::Begin | State::Conversion | State::App | State::Bot | State::Writing(_) => {
             let need = machine.advance(event);
             out.push(need);
         }
@@ -227,14 +200,7 @@ pub fn step(machine: &mut Convert, event: Event, out: &mut Queue<Need>) {
 pub(crate) fn halt(machine: &mut Convert, why: Why, out: &mut Queue<Need>) {
     match machine.state {
         State::Ended => (),
-        State::Begin
-        | State::Conversion
-        | State::App
-        | State::Bot
-        | State::AppId
-        | State::AppSlug
-        | State::AppKey
-        | State::User => {
+        State::Begin | State::Conversion | State::App | State::Bot | State::Writing(_) => {
             let subject = machine.subject();
             let need = machine.stop(&subject, why);
             out.push(need);

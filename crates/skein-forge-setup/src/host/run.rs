@@ -12,6 +12,7 @@ use crate::{
         convert::{self, Convert},
         install::{self, Install},
         manifest::{self, Manifest},
+        paste::{self, Paste},
         reconcile as github_reconcile,
     },
     given::Given,
@@ -32,7 +33,11 @@ pub(crate) fn given_for(forge: &Given, adopted: &[u64]) -> Given {
 /// A Forgejo plan's machine; GitHub's plans are refused.
 fn forgejo_machine(forge: &Forge, given: &Given, plan: Plan, bounds: &Bounds) -> Result<Machine, Failure> {
     Ok(match plan {
-        Plan::Manifest { .. } | Plan::Convert { .. } | Plan::Install { .. } | Plan::Accept { .. } => {
+        Plan::Paste { .. }
+        | Plan::Manifest { .. }
+        | Plan::Convert { .. }
+        | Plan::Install { .. }
+        | Plan::Accept { .. } => {
             return Err(super::about(forge, &plan, Why::Unexpected));
         }
         Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
@@ -60,6 +65,7 @@ fn forgejo_machine(forge: &Forge, given: &Given, plan: Plan, bounds: &Bounds) ->
 pub(crate) enum Machine {
     Manifest(Manifest),
     Convert(Convert),
+    Paste(Box<Paste>),
     Install(Install),
     Accept(Accept),
     Reconcile(Box<Reconcile>),
@@ -74,6 +80,7 @@ impl Machine {
         match self {
             Self::Manifest(machine) => manifest::step(machine, event, out),
             Self::Convert(machine) => convert::step(machine, event, out),
+            Self::Paste(machine) => paste::step(machine, event, out),
             Self::Install(machine) => install::step(machine, event, out),
             Self::Accept(machine) => accept::step(machine, event, out),
             Self::Reconcile(machine) => reconcile::step(machine, event, out),
@@ -89,6 +96,7 @@ impl Machine {
         match self {
             Self::Reconcile(machine) => reconcile::halt(machine, why, out),
             Self::Convert(machine) => convert::halt(machine, why, out),
+            Self::Paste(machine) => paste::halt(machine, why, out),
             Self::GitHubReconcile(machine) => github_reconcile::halt(machine, why, out),
             Self::Manifest(_)
             | Self::Install(_)
@@ -190,6 +198,9 @@ impl Run {
                     };
                     // The owner answers the browser only after all four Written replies (5.2).
                     Machine::Convert(machine)
+                }
+                Plan::Paste { app, .. } => {
+                    Machine::Paste(Box::new(Paste::new(given, app).expect("host checks the given")))
                 }
                 Plan::Install { .. } => {
                     let state = issue_state(given, Purpose::Accept, now, crypto, states, b"install")?;

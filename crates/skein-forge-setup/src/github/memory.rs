@@ -1,10 +1,13 @@
 //! Checked heap admission for pure GitHub plans (forge-setup.md, 7).
 use super::{
     accept::Accept,
+    checks,
     convert::Convert,
     given::{self, Given},
+    hook,
     install::Install,
     manifest::Manifest,
+    paste::Paste,
     reconcile,
 };
 use crate::{
@@ -21,7 +24,9 @@ use skein_lib::{
 /// Heap for `runs` pure GitHub plan machines and the host's `states` table.
 /// Includes copied Given text, boxed reconcile machines, child scratch, maximum
 /// keys, conversion code/slug, Accepted and missing-access scratch, and pending
-/// App credential copies. Each run has room for one outgoing need.
+/// App credential copies. Paste includes PEM/DER overlap, checked identities,
+/// missing access, hook scratch and pending identity writes (5.8). Each run has
+/// room for one outgoing need.
 ///
 /// Excludes the outer host's run/connection tables, HTTP/io/JSON stack, signing,
 /// caller-owned item store and reply documents, and handed-out output payloads
@@ -33,6 +38,7 @@ pub fn worst_case(given: &Given, runs: u32, states: u32) -> Option<u64> {
     given::check(given).ok()?;
     let per_run = manifest(given)?
         .max(convert(given)?)
+        .max(paste(given)?)
         .max(install(given)?)
         .max(accept(given)?)
         .max(reconcile::worst_case(given)?)
@@ -77,6 +83,7 @@ fn convert(given: &Given) -> Option<u64> {
         .checked_add(u64::from(key))?
         .checked_add(u64::from(given.limits.name_bytes))?
         .checked_add(u64::from(given.limits.name_bytes))?
+        .checked_add(u64::from(given.limits.name_bytes))?
         .checked_add(40)
 }
 fn install(given: &Given) -> Option<u64> {
@@ -112,5 +119,21 @@ fn reachable(given: &Given) -> Option<u64> {
         .checked_add(List::<Reached>::worst_case(given.limits.reachable.min(skein_forge::github::pin::PAGE_CAP))?)?
         .checked_add(u64::from(given.limits.key_bytes))?
         .checked_add(u64::from(given.limits.key_bytes))?
+        .checked_add(40)
+}
+
+// PEM, compact base64 and DER overlap while decoding. Hook repair retains three
+// credential copies; comparison scratch and pending writes are bounded as 5.8.
+fn paste(given: &Given) -> Option<u64> {
+    let key = given.limits.key_bytes;
+    u64::try_from(size_of::<Paste>())
+        .ok()?
+        .checked_add(copied(given)?)?
+        .checked_add(u64::from(key).checked_mul(5)?)?
+        .checked_add(u64::from(base64::encoded_len(Alphabet::Standard, key)?))?
+        .checked_add(u64::from(given.limits.name_bytes).checked_mul(4)?)?
+        .checked_add(u64::try_from(b"https://.invalid/".len()).ok()?)?
+        .checked_add(checks::worst_case()?)?
+        .checked_add(Queue::<hook::Progress>::worst_case(MAX_OUT)?)?
         .checked_add(40)
 }

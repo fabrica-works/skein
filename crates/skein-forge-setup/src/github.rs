@@ -15,3 +15,6 @@ pub mod reconcile;
 
 mod memory;
 pub use memory::worst_case;
+
+pub mod paste;
+mod write;
