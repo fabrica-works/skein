@@ -12,7 +12,7 @@ use skein_io::{self as io, kernel};
 use skein_lib::stream::{Down, Up};
 use skein_lib::{Env, Queue, Time, Token, Wall};
 use skein_llm::Credential;
-use skein_world::Host;
+use skein_shell::Host;
 
 use crate::face::{self, Face, LISTENER};
 use crate::transport::{self, Wire};

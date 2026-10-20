@@ -28,7 +28,7 @@ pub use transport::Transport;
 /// A listening peer borrowed by a real loop (ui-web.md, section 14.2).
 /// The loop delivers a successful kernel listen completion and drives the
 /// host before reading its address; this trait does not poll readiness.
-pub trait Listening: skein_world::Host {
+pub trait Listening: skein_shell::Host {
     /// The bound address, read only after the host has processed listening.
     fn address(&self) -> std::net::SocketAddr;
     /// Ends admission once the peer's clients have settled. Drive the host

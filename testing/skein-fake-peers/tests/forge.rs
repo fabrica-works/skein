@@ -1,7 +1,7 @@
 //! Shared forge names, loopback admission and real byte settlement on Sim.
 use skein_fake_peers::{Error, forge};
 use skein_lib::Time;
-use skein_world::Host;
+use skein_shell::Host;
 
 #[path = "forge/fixtures.rs"]
 mod fixtures;

@@ -677,8 +677,8 @@ dependencies = [
  "skein-llm",
  "skein-llm-world",
  "skein-oauth",
+ "skein-shell",
  "skein-sim",
- "skein-world",
 ]
 
 [[package]]

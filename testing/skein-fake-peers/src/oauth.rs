@@ -14,7 +14,7 @@ use skein_io::{self as io, kernel};
 use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Decimal, Duration, Env, List, Queue, Time, Token, Wall, bytes};
 use skein_oauth::HttpRequest;
-use skein_world::Host;
+use skein_shell::Host;
 
 mod route;
 

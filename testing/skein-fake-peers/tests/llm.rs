@@ -7,7 +7,7 @@ use skein_fake_peers::{Limits, Transport, llm};
 use skein_io::kernel::{Done, Family, Op};
 use skein_lib::{Duration, Time};
 use skein_llm::{Credential, Endpoint, Provider, Scheme};
-use skein_world::Host;
+use skein_shell::Host;
 
 #[path = "llm/request.rs"]
 mod request;

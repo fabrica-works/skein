@@ -2,8 +2,8 @@
 use skein_fake_peers::llm::Peer;
 use skein_io::kernel::{Complete, Done, Family, Op, Submit};
 use skein_lib::{Queue, Token};
+use skein_shell::Host;
 use skein_sim::{Pid, Sim};
-use skein_world::Host;
 
 fn pass(sim: &mut Sim, server: Pid, peer: &mut Peer) {
     sim.reap(server, peer.completions());

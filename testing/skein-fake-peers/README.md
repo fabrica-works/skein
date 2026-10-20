@@ -1,6 +1,6 @@
 # Scripted peers on loopback
 
-`llm::Peer` and `oauth::Peer` implement `skein_world::Host`. They are
+`llm::Peer` and `oauth::Peer` implement `skein_shell::Host`. They are
 independent processes in the shared simulated or real harness; their only
 connection to a client is through io sockets. `address()` exposes the bound
 listener address after Listening. `shutdown()` sets an allocation-free flag

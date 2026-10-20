@@ -7,8 +7,8 @@ use skein_fake_peers::{
 };
 use skein_io::kernel::{Complete, Done, Family, Fd, Op, Submit};
 use skein_lib::{Duration, List, Queue, Secret, Time, Token, bytes};
+use skein_shell::Host;
 use skein_sim::{Pid, Sim};
-use skein_world::Host;
 use std::{
     cell::RefCell,
     net::{Ipv4Addr, SocketAddr},

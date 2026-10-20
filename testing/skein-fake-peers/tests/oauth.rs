@@ -3,7 +3,7 @@ use skein_fake_oauth as issuer;
 use skein_fake_peers::{Limits, Transport, oauth};
 use skein_io::kernel::{Done, Family, Op};
 use skein_lib::{Duration, bytes};
-use skein_world::Host;
+use skein_shell::Host;
 
 use std::net::{Ipv4Addr, SocketAddr};
 

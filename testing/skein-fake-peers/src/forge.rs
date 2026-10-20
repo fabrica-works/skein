@@ -6,7 +6,7 @@ use skein_fake_forge_protocol as protocol;
 use skein_io::{self as io, kernel};
 use skein_lib::stream::{Down, Up};
 use skein_lib::{Env, Queue, ReplyTo, Time, Token, Wall};
-use skein_world::Host;
+use skein_shell::Host;
 
 use crate::face::{Face, LISTENER};
 use crate::transport::Wire;
