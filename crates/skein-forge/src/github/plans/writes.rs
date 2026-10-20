@@ -346,13 +346,13 @@ impl Plan {
             | api::Write::DeleteBranch { .. } => return Err(api::Error::InvalidAnswer),
         };
         if pull.number != number || crate::github::id::write_commit(&pull.head_commit).is_none() {
-            return Err(api::Error::Unavailable);
+            return Err(self.invalid());
         }
         if u64::try_from(pull.reviewers.len()).ok().ok_or(api::Error::TooLarge)? > u64::from(bounds.rows) {
             return Err(api::Error::TooLarge);
         }
         let Ok(pull) = super::reading::pull(pull, api::Ci::None) else {
-            return Err(api::Error::Unavailable);
+            return Err(self.invalid());
         };
         if crate::measure::pull(&pull).ok_or(api::Error::TooLarge)? > u64::from(bounds.answer_bytes) {
             return Err(api::Error::TooLarge);
