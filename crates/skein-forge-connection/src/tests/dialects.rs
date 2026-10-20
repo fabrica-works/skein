@@ -160,12 +160,7 @@ fn github_empty_answers_are_discarded() {
         ("uninstall", Request::Uninstall { id: INSTALLATION }, 204, b"".as_slice()),
         (
             "undecoded read",
-            Request::Collaborators {
-                owner: Box::from(b"acme".as_slice()),
-                name: Box::from(b"tools".as_slice()),
-                page: PAGE,
-                per_page: PAGE,
-            },
+            Request::Ruleset { owner: Box::from(b"acme".as_slice()), name: Box::from(b"tools".as_slice()), id: 7 },
             200,
             b"discard even non-JSON bytes",
         ),
