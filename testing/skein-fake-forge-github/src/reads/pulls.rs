@@ -14,7 +14,7 @@ pub(super) fn document(row: a::Pull) -> Option<d::Pull> {
         number: row.number,
         closed: row.state == a::State::Closed,
         merged: row.merged.is_some(),
-        merge_commit: optional_commit(row.merged),
+        merge_commit: if row.queue_merged { None } else { optional_commit(row.merged) },
         mergeable: row.mergeable,
         head: row.head,
         base: row.base,
@@ -108,7 +108,12 @@ pub(super) fn graphql(answer: a::Answer, repository: u32, number: u64, limits: &
         Some(entry) => Some(entry.position),
         None => None,
     };
-    let row = d::PullGraphql { id, merge_commit: optional_commit(row.merged), queued, dequeued: None };
+    let dequeued = match row.dequeued {
+        Some(a::QueueRemoval::MergeConflict) => Some(skein_lib::bytes::copy_of(crate::texts::MERGE_CONFLICT)),
+        Some(a::QueueRemoval::CiFailure) => Some(skein_lib::bytes::copy_of(crate::texts::CI_FAILURE)),
+        None => None,
+    };
+    let row = d::PullGraphql { id, merge_commit: optional_commit(row.merged), queued, dequeued };
     answers::response(200, &Body::PullGraphql(&row), limits)
 }
 

@@ -3,11 +3,12 @@ use skein_fake_forge_domain::{self as fake, api as a};
 use skein_forge::github::{self, plans::tables::Method, request::Request};
 use skein_lib::Secret;
 
-fn harness(queue: bool) -> f::Harness {
-    protected(queue, 0, Box::from([]))
+pub(super) fn harness(queue: bool) -> f::Harness {
+    protected(queue, 0, if queue { Box::from([f::boxed(b"required")]) } else { Box::from([]) })
 }
 fn protected(queue: bool, approvals: u32, contexts: Box<[Box<[u8]>]>) -> f::Harness {
-    let config = r::harness().env.limits;
+    let mut config = r::harness().env.limits;
+    config.limits.name_bytes = 128;
     let mut h = f::Harness::with_protection(
         f::limits(),
         f::config(),
@@ -228,4 +229,128 @@ fn lost_enqueue_answer_recovery_and_a_repeated_merge_keep_one_admission() {
         Ok(skein_forge::api::Answer::Queued)
     );
     assert_eq!(h.domain.queue_entries(b"acme/widgets").unwrap(), [a::QueueEntry { number, head, position: 1 }]);
+}
+
+fn running_queue(green: bool) -> (f::Harness, u64, u64, Secret) {
+    let mut config = r::domain_config();
+    config.limits.name_bytes = 128;
+    // Base, pull head and group each retain their check run.
+    config.limits.statuses = 3;
+    let mut h = f::Harness::with_checks(
+        f::limits(),
+        f::config(),
+        config,
+        Some(a::Protection {
+            queue: true,
+            branch: f::boxed(b"trunk"),
+            contexts: Box::from([f::boxed(b"ci")]),
+            approvals: 0,
+            dismiss_stale: false,
+        }),
+        a::Checks {
+            contexts: Box::from([f::boxed(b"ci")]),
+            latency_min: skein_lib::Duration::from_secs(5),
+            latency_max: skein_lib::Duration::from_secs(5),
+            silent: 0,
+            passes: 0,
+            reruns: 0,
+            cue: Some(a::Cue { path: f::boxed(b"ci"), green: f::boxed(b"green") }),
+        },
+    );
+    fake::grant(&mut h.domain, b"acme/widgets", f::BOT, a::Permission::Write);
+    let head = fake::commit(
+        &mut h.domain,
+        &config,
+        h.first,
+        Box::from([a::File { path: f::boxed(b"ci"), content: f::boxed(if green { b"green" } else { b"red" }) }]),
+        b"feature",
+    )
+    .unwrap()
+    .unwrap();
+    r::call(&mut h, a::Op::Git(a::Git::Push { branch: f::boxed(b"feature"), commit: head, expected: None }));
+    let a::Answer::Created(number) = r::call(
+        &mut h,
+        a::Op::Write(a::Write::OpenPull {
+            title: f::boxed(b"queue"),
+            body: f::boxed(b"group checks"),
+            head: f::boxed(b"feature"),
+            base: f::boxed(b"trunk"),
+            opens_empty: false,
+        }),
+    ) else {
+        panic!("pull")
+    };
+    let token = r::token(&mut h);
+    h.drain_timers = false;
+    (h, number, head, token)
+}
+
+fn advance_queue(h: &mut f::Harness) {
+    let mut out = skein_lib::Queue::with_capacity(fake::MAX_OUT);
+    for _ in 0..128_u32 {
+        let Some(at) = h.domain.next_deadline() else {
+            break;
+        };
+        h.env.now = at;
+        fake::fire(&mut h.domain, &h.env, &mut out);
+        out.pop();
+        h.domain.reclaim();
+    }
+}
+
+#[test]
+fn merge_plan_queues_then_pull_plan_reads_the_landed_graphql_commit() {
+    let (mut h, number, head, token) = running_queue(true);
+    assert_eq!(
+        drive_merge(&mut h, &token, number, head, Admission::Answer, QUEUED),
+        Ok(skein_forge::api::Answer::Queued)
+    );
+    let a::Answer::Pull(admitted) =
+        h.domain.inspect(&h.env.limits, b"acme/widgets", &a::Read::Pull { number }).unwrap()
+    else {
+        panic!("pull")
+    };
+    let group = admitted.group.unwrap();
+    advance_queue(&mut h);
+    let rest = ask(&mut h, &token, &Request::Pull { owner: f::boxed(b"acme"), name: f::boxed(b"widgets"), number });
+    let (_, github::document::Document::Pull(rest)) = h.decode(github::document::Kind::Pull, &rest) else {
+        panic!("REST pull")
+    };
+    assert!(rest.merged);
+    assert_eq!(rest.merge_commit, None);
+    let skein_forge::api::Answer::Pull(pull) =
+        r::read(&mut h, &token, skein_forge::api::Read::Pull { number }).unwrap()
+    else {
+        panic!("plan pull")
+    };
+    assert_eq!(pull.state, skein_forge::api::State::Closed);
+    assert_eq!(pull.merged, Some(r::object(group)));
+    assert_eq!(pull.queued, None);
+    assert_eq!(pull.dequeued, None);
+    let skein_forge::api::Answer::Checks(checks) =
+        r::read(&mut h, &token, skein_forge::api::Read::Checks { commit: r::object(group) }).unwrap()
+    else {
+        panic!("group checks")
+    };
+    assert_eq!(checks.len(), 1);
+    assert_eq!(checks.first().unwrap().check, skein_forge::api::Check::Passed);
+}
+
+#[test]
+fn failed_group_leaves_pull_plan_open_with_ci_failure() {
+    let (mut h, number, head, token) = running_queue(false);
+    assert_eq!(
+        drive_merge(&mut h, &token, number, head, Admission::Answer, QUEUED),
+        Ok(skein_forge::api::Answer::Queued)
+    );
+    advance_queue(&mut h);
+    let skein_forge::api::Answer::Pull(pull) =
+        r::read(&mut h, &token, skein_forge::api::Read::Pull { number }).unwrap()
+    else {
+        panic!("plan pull")
+    };
+    assert_eq!(pull.state, skein_forge::api::State::Open);
+    assert_eq!(pull.queued, None);
+    assert_eq!(pull.merged, None);
+    assert_eq!(pull.dequeued.as_deref(), Some(b"CI_FAILURE".as_slice()));
 }

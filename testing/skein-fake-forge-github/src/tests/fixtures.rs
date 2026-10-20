@@ -95,6 +95,7 @@ pub struct Harness {
     pub hooks: u32,
     pub first: u64,
     pub jwt: Secret,
+    pub drain_timers: bool,
 }
 impl Harness {
     pub fn new() -> Self {
@@ -112,6 +113,29 @@ impl Harness {
         fake_config: fake::Config,
         protection: Option<a::Protection>,
     ) -> Self {
+        Self::with_checks(
+            limits,
+            config,
+            fake_config,
+            protection,
+            a::Checks {
+                contexts: Box::from([]),
+                latency_min: Duration::ZERO,
+                latency_max: Duration::ZERO,
+                silent: 0,
+                passes: 1000,
+                reruns: 0,
+                cue: None,
+            },
+        )
+    }
+    pub fn with_checks(
+        limits: Limits,
+        config: Config,
+        fake_config: fake::Config,
+        protection: Option<a::Protection>,
+        checks: a::Checks,
+    ) -> Self {
         let mut domain = fake::Domain::new(&fake_config, 5);
         let mut first = 0;
         for (id, name) in [(2, b"acme/widgets".as_slice()), (4, b"acme/tools")] {
@@ -124,15 +148,7 @@ impl Harness {
                     default: boxed(b"trunk"),
                     tree: Box::from([]),
                     labels: Box::from([]),
-                    checks: a::Checks {
-                        contexts: Box::from([]),
-                        latency_min: Duration::ZERO,
-                        latency_max: Duration::ZERO,
-                        silent: 0,
-                        passes: 1000,
-                        reruns: 0,
-                        cue: None,
-                    },
+                    checks: checks.clone(),
                     protection: if id == 2 { protection.clone() } else { None },
                     hooked: true,
                 },
@@ -156,6 +172,7 @@ impl Harness {
         assert!(store.suspend(3, true), "third installation exists");
         let jwt = authorization(app().key, 1000, 1600);
         Self {
+            drain_timers: true,
             service,
             domain,
             env: Env { now: Time::ZERO, wall: wall(1200), limits: fake_config },
@@ -250,6 +267,11 @@ impl Harness {
                 }
             }
             self.domain.reclaim();
+            if !self.drain_timers
+                && let Some(reply) = reply.take()
+            {
+                return reply;
+            }
             let Some(deadline) = self.domain.next_deadline() else {
                 return reply.expect("terminal reply");
             };

@@ -81,6 +81,13 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::Raw { owner, name, commit, path } => {
             Route::Token(Token::Read(reads::Read::Raw { owner, name, commit, path }))
         }
+        Request::CombinedStatus { owner, name, commit, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::Checks { owner, name, commit, page, per_page, runs: false }))
+        }
+        Request::CheckRuns { owner, name, commit, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::Checks { owner, name, commit, page, per_page, runs: true }))
+        }
+        Request::Job { owner, name, id } => Route::Token(Token::Read(reads::Read::Job { owner, name, id })),
         Request::User { id } => Route::Token(Token::User(id)),
         Request::Collaborators { owner, name, page, per_page } if page > 0 && per_page > 0 => {
             Route::Token(Token::Read(reads::Read::Collaborators { owner, name, page, per_page }))
@@ -143,7 +150,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::ReviewComments { .. }
         | Request::CombinedStatus { .. }
         | Request::CheckRuns { .. }
-        | Request::Job { .. }
         | Request::JobLog { .. }
         | Request::PullFiles { .. }
         | Request::Compare { .. }

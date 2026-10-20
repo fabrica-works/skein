@@ -47,3 +47,8 @@ pub(crate) const CHECK_EXPECTED: &[u8] = b"\" is expected.";
 pub(crate) const CHECK_PROGRESS: &[u8] = b"\" is in progress.";
 // o/github live 2026-10-20, for an Actions check; a commit status's is inferred.
 pub(crate) const CHECK_FAILING: &[u8] = b"\" is failing.";
+
+// unrecorded: GitHub's spelling as forge-github.md names it.
+pub(crate) const CI_FAILURE: &[u8] = b"CI_FAILURE";
+// unrecorded: GitHub's spelling as forge-github.md names it.
+pub(crate) const MERGE_CONFLICT: &[u8] = b"MERGE_CONFLICT";

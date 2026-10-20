@@ -16,6 +16,7 @@ use skein_forge::{
 };
 use skein_lib::{List, ReplyTo, Wall, bytes};
 
+mod checks;
 mod issues;
 pub(crate) mod people;
 mod pulls;
@@ -23,6 +24,8 @@ mod reviews;
 
 #[derive(Debug)]
 pub(crate) enum Read {
+    Checks { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, page: u32, per_page: u32, runs: bool },
+    Job { owner: Box<[u8]>, name: Box<[u8]>, id: u64 },
     Repository(u64),
     Enqueue { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit },
     PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
@@ -44,6 +47,8 @@ pub(crate) enum Read {
 }
 #[derive(Debug)]
 pub(crate) enum Pending {
+    Checks { repository: Box<[u8]>, commit: u64, page: u32, size: u32, target: Box<[u8]>, runs: bool },
+    Job { repository: Box<[u8]> },
     Repository(Row),
     Enqueue,
     PullGraphql { repository: u32, number: u64 },
@@ -65,7 +70,9 @@ pub(crate) enum Pending {
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::Enqueue { owner, name, .. }
+        Read::Checks { owner, name, .. }
+        | Read::Job { owner, name, .. }
+        | Read::Enqueue { owner, name, .. }
         | Read::PullGraphql { owner, name, .. }
         | Read::Reviews { owner, name, .. }
         | Read::ReviewComments { owner, name, .. }
@@ -94,7 +101,9 @@ fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
 fn writing(read: &Read) -> bool {
     match read {
         Read::Enqueue { .. } => true,
-        Read::Repository(_)
+        Read::Checks { .. }
+        | Read::Job { .. }
+        | Read::Repository(_)
         | Read::PullGraphql { .. }
         | Read::Reviews { .. }
         | Read::ReviewComments { .. }
@@ -114,6 +123,7 @@ fn writing(read: &Read) -> bool {
     }
 }
 
+#[expect(clippy::too_many_lines, reason = "each read variant translates to its domain call and retained identity")]
 pub(crate) fn call(
     service: &Service,
     read: Read,
@@ -138,6 +148,25 @@ pub(crate) fn call(
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::Checks { commit, page, per_page, runs, .. } => {
+            let Some(commit) = count(&commit) else {
+                return Outcome::Reply(answers::missing(&service.limits));
+            };
+            (
+                Pending::Checks {
+                    repository: bytes::copy_of(&repository),
+                    commit,
+                    page,
+                    size: per_page.min(service.limits.page),
+                    target: bytes::copy_of(target),
+                    runs,
+                },
+                Op::Read(a::Read::Checks { commit }),
+            )
+        }
+        Read::Job { id, .. } => {
+            (Pending::Job { repository: bytes::copy_of(&repository) }, Op::Read(a::Read::Job { job: id }))
+        }
         Read::Enqueue { number, head, .. } => {
             let Some(head) = count(&head) else {
                 return Outcome::Reply(enqueue_finish(Err(Error::Stale), &service.limits));
@@ -248,7 +277,12 @@ pub(crate) fn count(value: &api::Commit) -> Option<u64> {
     if commit(count) == *value { Some(count) } else { None }
 }
 
-pub(crate) fn finish(pending: Pending, result: Result<Answer, Error>, limits: &Limits) -> Response {
+pub(crate) fn finish(
+    pending: Pending,
+    result: Result<Answer, Error>,
+    limits: &Limits,
+    domain: &fake::Domain,
+) -> Response {
     let result = match &pending {
         Pending::Enqueue => return enqueue_finish(result, limits),
         Pending::PullsFor { .. } => match result {
@@ -257,7 +291,9 @@ pub(crate) fn finish(pending: Pending, result: Result<Answer, Error>, limits: &L
             }
             result => result,
         },
-        Pending::PullGraphql { .. }
+        Pending::Checks { .. }
+        | Pending::Job { .. }
+        | Pending::PullGraphql { .. }
         | Pending::Reviews { .. }
         | Pending::ReviewComments(_)
         | Pending::Collaborators { .. }
@@ -278,6 +314,10 @@ pub(crate) fn finish(pending: Pending, result: Result<Answer, Error>, limits: &L
         Err(error) => return refused(error, limits),
     };
     match pending {
+        Pending::Checks { repository, commit, page, size, target, runs } => {
+            checks::render(answer, &repository, commit, page, size, &target, runs, limits, domain)
+        }
+        Pending::Job { repository } => checks::job(answer, &repository, limits, domain),
         Pending::Enqueue => enqueue_finish(Ok(answer), limits),
         Pending::PullGraphql { repository, number } => pulls::graphql(answer, repository, number, limits),
         Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),

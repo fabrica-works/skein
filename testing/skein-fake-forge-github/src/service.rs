@@ -390,7 +390,7 @@ impl Service {
         domain: &fake::Domain,
     ) -> Outcome {
         match pending.kind {
-            PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, &self.limits)),
+            PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, &self.limits, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
         }
     }
@@ -625,6 +625,12 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     bytes = bytes
         .checked_add(List::<d::File>::worst_case(300)?)?
         .checked_add(List::<skein_forge::api::Commit>::worst_case(limits.page)?)?;
+    // A CI page holds one run or one classic context descriptor per row;
+    // the domain reply owns their texts, moved into these descriptors. Each
+    // run also owns the fourteen-byte github-actions app slug.
+    bytes = bytes
+        .checked_add(List::<d::Run>::worst_case(limits.page)?.max(List::<d::Context>::worst_case(limits.page)?))?
+        .checked_add(u64::from(limits.page).checked_mul(14)?)?;
     // The query reader retains at most 16 tokens and their decoded text
     // (bounded by its input), while its tokenizer and input intake coexist.
     bytes = bytes

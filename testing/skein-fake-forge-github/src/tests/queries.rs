@@ -172,7 +172,7 @@ fn envelope(json: &mut skein_json::writer::Encoder, variables: &[u8], limits: &s
 
 #[test]
 fn github_fake_graphql_pull_reads_the_domains_retained_admission() {
-    let mut h = r::harness();
+    let mut h = super::queue::harness(true);
     let (number, head) = r::pull(&mut h);
     let token = r::token(&mut h);
     let response = query(&mut h, &token, b"widgets", number);
@@ -196,7 +196,7 @@ fn enqueued(h: &f::Harness, response: &crate::service::Response) -> u32 {
 }
 #[test]
 fn github_fake_enqueue_is_idempotent_and_pull_reads_its_position() {
-    let mut h = r::harness();
+    let mut h = super::queue::harness(true);
     skein_fake_forge_domain::grant(&mut h.domain, b"acme/widgets", f::BOT, a::Permission::Write);
     let (number, head) = r::pull(&mut h);
     let token = r::token(&mut h);
