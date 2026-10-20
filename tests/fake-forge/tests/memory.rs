@@ -127,7 +127,7 @@ fn setup(index: u64) -> Setup {
             silent: 0,
             passes: 1000,
             reruns: 1000,
-            cue: Some(Cue { path: name(b'p', 0), green: text(LIMITS.content_bytes, b'g') }),
+            cue: Some(Cue::File { path: name(b'p', 0), green: text(LIMITS.content_bytes, b'g') }),
         },
         protection: Some(Protection {
             linear: true,

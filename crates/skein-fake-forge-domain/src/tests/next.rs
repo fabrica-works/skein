@@ -10,7 +10,7 @@ fn opened(h: &mut Harness, head: &[u8]) -> u64 {
 #[test]
 fn clean_update_keeps_two_parents_reports_hooks_and_checks_the_new_head() {
     let mut configured = setup();
-    configured.checks.cue = Some(Cue { path: copy_of(b"ci"), green: copy_of(b"green") });
+    configured.checks.cue = Some(Cue::File { path: copy_of(b"ci"), green: copy_of(b"green") });
     let mut h = Harness::with(CALM, configured);
     let work = h.commit(FIRST, &[(b"README", b"changed")]);
     h.push(ENGINE, b"work", work).unwrap();

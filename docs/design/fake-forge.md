@@ -109,9 +109,11 @@ Chances are per mille, in `Config`, and drawn from the domain's seed.
   repository (`Checks { contexts, latency_min, latency_max, silent, passes,
   reruns, cue }`), then a verdict after a drawn latency: passed with the
   `passes` chance, failed otherwise, never reported with the `silent`
-  chance. CI runs once per commit and repository. `Cue { path, green }`
+  chance. CI runs once per commit and repository. `Cue::File { path, green }`
   replaces the chance: a commit whose file at `path` holds `green` passes,
-  any other fails.
+  any other fails. `Cue::Message { fail }` instead fails a commit whose
+  message contains `fail`, and passes any other commit. With no cue the
+  configured chance decides; neither cue changes latency, silence or reruns.
 - **A rerun** happens once per context, with the `reruns` chance: pending
   again, then a new verdict, so a head's CI can move after it settled.
   People with write permission report statuses of their own.

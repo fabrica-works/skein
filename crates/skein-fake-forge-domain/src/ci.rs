@@ -2,7 +2,7 @@
 //! branch's or a pull request's head, each context of the repository's checks
 //! is pending at once, then passes or fails after a drawn latency, or never
 //! reports, by the repository's chances; or, where a cue is configured, as the
-//! commit's content says (testing.md, 4.2: the stand-in until CI
+//! commit's file content or message says (testing.md, 4.2: the stand-in until CI
 //! follows content for real). CI runs once per commit and repository; a
 //! context that reported may be run again once, by the repository's chance:
 //! pending again at once, then a verdict drawn again, so a head's CI can
@@ -17,7 +17,7 @@ use alloc::boxed::Box;
 use skein_lib::bytes::{copy_of, find};
 use skein_lib::{Env, Id, Map};
 
-use crate::api::{Answer, Check, Ended, Error, Permission, What};
+use crate::api::{Answer, Check, Cue, Ended, Error, Permission, What};
 use crate::domain::{self, Alarm, Config, Domain};
 use crate::faults;
 use crate::hooks::Hook;
@@ -73,20 +73,24 @@ pub(crate) fn start(domain: &mut Domain, env: &Env<Config>, id: Id<Repository>, 
 }
 
 /// A check's timer: CI reports the context `context` on `commit`, as cued
-/// by the commit's content, or by chance.
+/// by the commit's file content or message, or by chance.
 pub(crate) fn report(domain: &mut Domain, env: &Env<Config>, id: Id<Repository>, commit: u64, context: u32) {
     let Some(name) = name(domain, id, context) else {
         unreachable!("a check's context is one of its repository's");
     };
     let checks = &domain.repositories.get(id).expect("a repository of the forge").checks;
     let state = match &checks.cue {
-        Some(cue) => {
+        Some(Cue::File { path, green }) => {
             let tree = &domain.commits.get(&commit).expect("a commit of the store").tree;
-            let green = match tree.get(&*cue.path) {
-                Some(file) => find(file, &cue.green).is_some(),
+            let green = match tree.get(&**path) {
+                Some(file) => find(file, green).is_some(),
                 None => false,
             };
             if green { Check::Passed } else { Check::Failed }
+        }
+        Some(Cue::Message { fail }) => {
+            let message = &domain.commits.get(&commit).expect("a commit of the store").message;
+            if find(message, fail).is_some() { Check::Failed } else { Check::Passed }
         }
         None => {
             let passes = checks.passes;

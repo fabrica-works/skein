@@ -847,16 +847,17 @@ pub struct Checks {
     /// again at once, and a verdict drawn again after another latency, as a
     /// re-run job reports on Forgejo.
     pub reruns: u32,
-    /// When set, content decides instead of `passes`.
+    /// When set, the file or message cue decides instead of `passes`.
     pub cue: Option<Cue>,
 }
 
-/// A verdict cued by content: CI passes on a commit whose file at `path`
-/// holds `green`, and fails on any other.
+/// A verdict cued by a commit's file content or message.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Cue {
-    pub path: Box<[u8]>,
-    pub green: Box<[u8]>,
+pub enum Cue {
+    /// Passes when the file at `path` contains `green`, and fails otherwise.
+    File { path: Box<[u8]>, green: Box<[u8]> },
+    /// Fails when the commit message contains `fail`, and passes otherwise.
+    Message { fail: Box<[u8]> },
 }
 
 /// A protected branch: nothing is pushed to it, creates it or deletes it,

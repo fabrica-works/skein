@@ -1383,7 +1383,7 @@ fn a_pending_review_is_hidden_until_it_is_submitted_and_keeps_its_place() {
 fn ci_follows_content_where_a_cue_is_configured() {
     let mut setup = setup();
     setup.checks.passes = 0;
-    setup.checks.cue = Some(Cue { path: copy_of(b"ci"), green: copy_of(b"green") });
+    setup.checks.cue = Some(Cue::File { path: copy_of(b"ci"), green: copy_of(b"green") });
     let mut h = Harness::with(CALM, setup);
     let red = h.commit(FIRST, &[(b"ci", b"red")]);
     h.push(ENGINE, b"work", red).expect("pushed");
@@ -1394,6 +1394,35 @@ fn ci_follows_content_where_a_cue_is_configured() {
     h.push(ENGINE, b"work", repaired).expect("pushed");
     h.settle();
     assert_eq!(checks(&h.pull(1)).as_slice(), [Check::Passed], "a repair turns it green");
+}
+
+#[test]
+fn ci_follows_the_message_only_when_its_cue_is_chosen() {
+    for (message, expected) in [
+        (&b""[..], Check::Passed),
+        (&b"repair"[..], Check::Passed),
+        (&b"FAIL"[..], Check::Failed),
+        (&b"before FAIL after"[..], Check::Failed),
+        (&b"fail"[..], Check::Passed),
+    ] {
+        let mut configured = setup();
+        configured.checks.passes = 0;
+        configured.checks.cue = Some(Cue::Message { fail: copy_of(b"FAIL") });
+        let mut h = Harness::with(CALM, configured);
+        let commit = crate::commit_tree(
+            &mut h.domain,
+            &h.env.limits,
+            FIRST,
+            None,
+            Box::new([File { path: copy_of(b"ci"), content: copy_of(b"red FAIL") }]),
+            message,
+        )
+        .expect("a commit within the fixture's limits");
+        h.push(ENGINE, b"work", commit).expect("pushed");
+        h.open(b"work").expect("opened");
+        h.settle();
+        assert_eq!(checks(&h.pull(1)).as_slice(), [expected], "message {message:?}");
+    }
 }
 
 #[test]

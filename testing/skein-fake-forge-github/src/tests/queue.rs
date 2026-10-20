@@ -300,7 +300,7 @@ fn running_queue(green: bool) -> (f::Harness, u64, u64, Secret) {
             silent: 0,
             passes: 0,
             reruns: 0,
-            cue: Some(a::Cue { path: f::boxed(b"ci"), green: f::boxed(b"green") }),
+            cue: Some(a::Cue::File { path: f::boxed(b"ci"), green: f::boxed(b"green") }),
         },
     );
     fake::grant(&mut h.domain, b"acme/widgets", f::BOT, a::Permission::Write);

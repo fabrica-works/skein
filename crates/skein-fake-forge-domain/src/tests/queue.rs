@@ -80,7 +80,7 @@ fn admissions_are_bounded_by_the_repository_item_limit() {
 
 fn queue_harness(silent: bool) -> Harness {
     let mut configured = setup();
-    configured.checks.cue = Some(Cue { path: copy_of(b"ci"), green: copy_of(b"green") });
+    configured.checks.cue = Some(Cue::File { path: copy_of(b"ci"), green: copy_of(b"green") });
     configured.checks.silent = if silent { 1000 } else { 0 };
     configured.protection = Some(Protection {
         linear: false,

@@ -11,7 +11,7 @@ use alloc::boxed::Box;
 use skein_lib::bytes::copy_of;
 use skein_lib::{Duration, Env};
 
-use crate::api::{Error, File, Permission, Setup, What};
+use crate::api::{Cue, Error, File, Permission, Setup, What};
 use crate::domain::{Config, Domain};
 use crate::git::{self, Object};
 use crate::store::{Repository, fit_names, fit_numbers, fits};
@@ -33,8 +33,15 @@ pub fn repository(domain: &mut Domain, config: &Config, setup: Setup) -> u64 {
     fit_names(&checks.contexts, limits.contexts, limits).expect("contexts within the limits");
     assert!(checks.latency_min <= checks.latency_max, "CI's latency is a range");
     if let Some(cue) = &checks.cue {
-        fits(&cue.path, limits.name_bytes).expect("a path within the limits");
-        fits(&cue.green, limits.content_bytes).expect("content within the limits");
+        match cue {
+            Cue::File { path, green } => {
+                fits(path, limits.name_bytes).expect("a path within the limits");
+                fits(green, limits.content_bytes).expect("content within the limits");
+            }
+            Cue::Message { fail } => {
+                fits(fail, limits.content_bytes).expect("a cue within the limits");
+            }
+        }
     }
     if let Some(protection) = &protection {
         fit_numbers(&protection.bypassing_users, limits.bypassing_users).expect("bypassing users within the limits");
