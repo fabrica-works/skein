@@ -190,9 +190,11 @@ investigation's task names the question and what its report holds: the
 cause, the evidence that shows it (a measurement, a trace, a failing
 test), and the fix it proposes, in a few lines. Where the work gets
 hard (two tries without the cause, evidence that conflicts, a fix that
-would reach across a boundary), gpt-6-astra at xhigh advises, from the
-report and the evidence rather than the whole history, before the
-owner steps in. Claude (Sonnet 5.5 or Opus 5.5, through `claude -p` or
+would reach across a boundary), Opus 5.5 at xhigh advises (`claude -p`
+or a sub-agent), from the report and the evidence rather than the whole
+history. gpt-6-astra costs more than Opus: it advises in Opus's place
+only when Claude's budget runs low while Codex's has room, and
+sparingly. Claude (Sonnet 5.5 or Opus 5.5, through `claude -p` or
 a sub-agent) implements only when Codex is out, or when the task is
 mostly taste: an API's shape, a test suite's organization and names.
 
