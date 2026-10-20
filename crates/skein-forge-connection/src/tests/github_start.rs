@@ -473,7 +473,11 @@ fn github_mint_one_past_a_small_token_bound_is_too_large() {
             &h.forge,
             fixtures::USER_AGENT,
             Exchange::GitHub {
-                request,
+                exchange: skein_forge::github::plans::plan::Exchange {
+                    request,
+                    retention: None,
+                    comparison: skein_forge::github::plans::plan::Comparison::Full,
+                },
                 authorization: Some(skein_lib::Secret::new(Box::from(b"Bearer artificial-jwt".as_slice()))),
             },
         )

@@ -47,7 +47,19 @@ fn start(h: &mut ConnectionHarness, request: Request, token: Option<&[u8]>) {
         None => None,
     };
     h.connection
-        .start(&h.env, &h.forge, fixtures::USER_AGENT, Exchange::GitHub { request, authorization })
+        .start(
+            &h.env,
+            &h.forge,
+            fixtures::USER_AGENT,
+            Exchange::GitHub {
+                exchange: skein_forge::github::plans::plan::Exchange {
+                    request,
+                    retention: None,
+                    comparison: skein_forge::github::plans::plan::Comparison::Full,
+                },
+                authorization,
+            },
+        )
         .expect("valid GitHub request");
 }
 fn begun(request: Request) -> ConnectionHarness {

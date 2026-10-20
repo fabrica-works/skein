@@ -222,11 +222,8 @@ fn unseen_connect_failure_costs_zero_and_seen_reset_costs_one() {
     answered(&mut h, 1, Err(Error::Timeout));
 }
 #[test]
-fn narrowed_operations_are_refused_without_discovery_or_socket() {
+fn unsupported_operations_are_refused_without_discovery_or_socket() {
     for op in [
-        Op::Read(Read::File { head: [0; 32], path: Box::from(b"file".as_slice()), max_bytes: 8 }),
-        Op::Read(Read::Compare { before: [0; 32], after: [0; 32] }),
-        Op::Read(Read::PullFiles { number: 7, head: [0; 32], page: 1 }),
         Op::Write(Write::SetReviewers { number: 7, reviewers: Box::from([]) }),
         Op::Write(Write::Merge { number: 7, head: [0; 32] }),
     ] {

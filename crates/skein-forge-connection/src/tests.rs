@@ -3,6 +3,7 @@ mod contents;
 mod dialects;
 pub(crate) mod fixtures;
 mod github_calls;
+mod github_files;
 mod github_installation_loss;
 mod github_installations;
 pub(crate) mod github_renewal;
@@ -323,7 +324,10 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
     // (16 of them from the writes plan's SetReviewers state).
     // Discovery adds 2 * (72 candidate bytes + 56 record bytes + 1344
     // bytes for the probe/original read-plan overlap), for both active calls.
-    const FIXTURE_HEAP: u64 = 4_052_334;
+    // The boxed GitHub exchange adds 120 bytes on each of three connections,
+    // while the connection slab saves 8 bytes per slot: net +336 bytes retain
+    // request, retention and comparison together until released.
+    const FIXTURE_HEAP: u64 = 4_052_670;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(

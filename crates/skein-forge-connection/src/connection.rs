@@ -37,7 +37,7 @@ use skein_lib::{
 #[derive(Debug)]
 pub(crate) enum Exchange {
     Forgejo { request: request::Request, range: Option<Range>, authorization: Secret },
-    GitHub { request: github::request::Request, authorization: Option<Secret> },
+    GitHub { exchange: github::plans::plan::Exchange, authorization: Option<Secret> },
 }
 /// Exchange events belong to the connection's dialect.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -60,7 +60,7 @@ pub(crate) enum Failure {
 #[derive(Debug)]
 enum Request {
     Forgejo(request::Request),
-    GitHub(github::request::Request),
+    GitHub(Box<github::plans::plan::Exchange>),
 }
 #[derive(Debug)]
 enum Decoder {
@@ -206,9 +206,10 @@ impl Connection {
                 };
                 (Request::Forgejo(request), method, encoded.target, encoded.body, headers, range)
             }
-            Exchange::GitHub { request, authorization } => {
+            Exchange::GitHub { exchange, authorization } => {
+                let request = &exchange.request;
                 assert_eq!(self.kind, Kind::GitHub, "exchange belongs to its connection dialect");
-                let encoded = match github::request::encode(&request, &limits::github_documents(&env.limits)) {
+                let encoded = match github::request::encode(request, &limits::github_documents(&env.limits)) {
                     Ok(encoded) => encoded,
                     Err(error) => return Err(Refusal::GitHub(error)),
                 };
@@ -238,7 +239,7 @@ impl Connection {
                     github::request::Method::Patch => skein_http::Method::Patch,
                     github::request::Method::Delete => skein_http::Method::Delete,
                 };
-                (Request::GitHub(request), method, encoded.target, encoded.body, headers, None)
+                (Request::GitHub(Box::new(exchange)), method, encoded.target, encoded.body, headers, None)
             }
         };
         let body = match &upload {
@@ -506,7 +507,8 @@ impl Connection {
     fn response(&mut self, env: &Env<Limits>, response: http::Response) {
         match self.request.as_ref().expect("head belongs to a request") {
             Request::Forgejo(_) => self.forgejo_response(env, response),
-            Request::GitHub(request) => {
+            Request::GitHub(exchange) => {
+                let request = &exchange.request;
                 let mut l = limits::github_documents(&env.limits);
                 if github::decode::kind(request) == Some(github::document::Kind::Minted) && response.status == 201 {
                     l = limits::github_mint_documents(&env.limits);
@@ -517,21 +519,29 @@ impl Connection {
                     github::header::field(&mut head, &field.name, &field.value, &l);
                 }
                 self.heard.push(Heard::GitHub(github::plans::Heard::Head { status: response.status, head }));
-                let kind = if response.status >= 300 {
-                    Some(github::document::Kind::Error)
+                let decoder = if response.status >= 300 {
+                    Some(github::decode::decoder(github::document::Kind::Error, &l))
                 } else {
-                    github::decode::kind(request)
+                    exchange.decoder(&l)
                 };
-                match kind {
-                    Some(kind) => {
-                        self.receive = Receiving::Json(Decoder::GitHub(Box::new(github::decode::decoder(kind, &l))));
+                match decoder {
+                    Some(decoder) => {
+                        self.receive = Receiving::Json(Decoder::GitHub(Box::new(decoder)));
                         self.json = tokenizer::Tokenizer::new(&l.json);
                         self.json_down(env, tokenizer::Request::Next);
                     }
                     None => {
                         if github_raw_request(request) {
-                            self.raw_range = Range::Head(self.shared.answer_bytes);
-                            self.raw_cap = self.shared.answer_bytes;
+                            let retention = exchange
+                                .retention
+                                .unwrap_or(github::plans::plan::Retention::Head { bytes: self.shared.answer_bytes });
+                            let (range, cap) = match retention {
+                                github::plans::plan::Retention::Head { bytes }
+                                | github::plans::plan::Retention::Whole { bytes } => (Range::Head(bytes), bytes),
+                                github::plans::plan::Retention::Tail { bytes } => (Range::Tail(bytes), bytes),
+                            };
+                            self.raw_range = range;
+                            self.raw_cap = cap.min(self.shared.answer_bytes);
                             self.begin_raw(env, response.framing);
                         } else {
                             self.receive = Receiving::Empty;
@@ -731,6 +741,7 @@ impl Connection {
         self.finished(done);
     }
     fn finished(&mut self, done: Body) {
+        self.request = None;
         let heard = match done {
             Body::Forgejo(body) => Heard::Forgejo(plans::Heard::Done(body)),
             Body::GitHub(body) => Heard::GitHub(github::plans::Heard::Done(body)),
@@ -743,6 +754,7 @@ impl Connection {
         }
         self.phase = Phase::Closed;
         self.deadline = None;
+        self.request = None;
         let heard = match self.kind {
             Kind::Forgejo => Heard::Forgejo(plans::Heard::Failed(match failure {
                 Failure::Unseen => plans::Failure::Unseen,
@@ -771,6 +783,7 @@ impl Connection {
         }
         self.phase = Phase::Closed;
         self.deadline = None;
+        self.request = None;
         if let Some(socket) = self.socket {
             self.closing = true;
             io.push(if abort {
@@ -977,5 +990,20 @@ fn github_raw_request(request: &github::request::Request) -> bool {
         | Request::Close { .. }
         | Request::DeleteBranch { .. }
         | Request::User { .. } => false,
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+impl Connection {
+    pub(crate) fn test_github_handoff(&self) -> bool {
+        match &self.request {
+            Some(Request::GitHub(exchange)) => {
+                exchange.retention.is_some() || exchange.comparison == github::plans::plan::Comparison::MergeBase
+            }
+            Some(Request::Forgejo(_)) | None => false,
+        }
     }
 }

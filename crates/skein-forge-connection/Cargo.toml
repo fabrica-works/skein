@@ -17,6 +17,7 @@ skein-tls.workspace = true
 skein-json.workspace = true
 
 [dev-dependencies]
+skein-fake-forge-domain.workspace = true
 skein-fake-forge-github.workspace = true
 skein-world.workspace = true
 

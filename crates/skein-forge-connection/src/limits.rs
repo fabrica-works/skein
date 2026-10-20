@@ -588,6 +588,11 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         })?)?
         .checked_add(decoder)?
         .checked_add(raw)?
+        // One boxed GitHub exchange retains the request, retention and comparison
+        // together until completion, replacement, loss or close, on every connection.
+        // In the fixture this adds 3 * 120 bytes, less 3 * 8 saved in the
+        // connection slab by boxing the request: a net delta of +336 bytes.
+        .checked_add(u64::try_from(size_of::<skein_forge::github::plans::plan::Exchange>()).ok()?)?
         .checked_add(crate::connection::routing_bytes()?)?
         .checked_add(u64::from(l.tls.send.max(s.io.output)))?
         .checked_add(u64::from(l.body_bytes).checked_mul(6)?.checked_add(1024)?)?

@@ -352,7 +352,7 @@ impl Component {
             env,
             self.settings.forges.get(at).expect("forge"),
             &self.settings.user_agent,
-            Exchange::GitHub { request: exchange.request, authorization: Some(authorization) },
+            Exchange::GitHub { exchange, authorization: Some(authorization) },
         ) {
             Ok(()) => {}
             Err(connection::Refusal::GitHub(_)) => return Err(api::Error::Refused),
@@ -544,12 +544,11 @@ fn bounds(page_size: u32, env: &Env<Limits>, shared: &crate::Shared) -> Bounds {
 fn admitted(op: &api::Op) -> bool {
     match op {
         api::Op::Read(read) => match read {
+            api::Read::Protection { .. } | api::Read::Job { .. } => false,
             api::Read::File { .. }
             | api::Read::Compare { .. }
             | api::Read::PullFiles { .. }
-            | api::Read::Protection { .. }
-            | api::Read::Job { .. } => false,
-            api::Read::Locate { .. }
+            | api::Read::Locate { .. }
             | api::Read::Settings
             | api::Read::Branch { .. }
             | api::Read::Branches

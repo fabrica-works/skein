@@ -540,7 +540,7 @@ impl Component {
                     env,
                     forge,
                     &self.settings.user_agent,
-                    Exchange::GitHub { request: exchange.request, authorization: Some(authorization) },
+                    Exchange::GitHub { exchange, authorization: Some(authorization) },
                 )
                 .is_err()
                 {

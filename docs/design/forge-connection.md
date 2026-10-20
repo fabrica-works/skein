@@ -271,6 +271,9 @@ refusals are 5.1's.
   whose repository has no path kept resolves it (4.2), and one that
   needs a login not held looks it up (4.3). A locate, which finds a
   repository by owner and name, names repository 0 (forge.md, 3).
+- GitHub File keeps the requested head within the answer bound; Compare and
+  PullFiles keep whole file bodies to their bound, with PullFiles reading
+  each before side at the merge base.
 - **Cost** is the component's count, never a plan's (forge.md, 4.2): one
   for each request whose first byte was written, the requests that
   resolve a path or a login included. It goes up with the one terminal
@@ -724,6 +727,8 @@ It is the sum of:
   decoder and the answer as it is built (twice `answer_bytes`, for a
   body kept raw while it grows), TLS priced on every connection, since
   the check knows the forges' number, not their transports;
+- for each call or forge-owned connection: one boxed GitHub exchange,
+  retaining its request, raw retention and comparison selection together;
 - for each of `calls`: its record, plan and copy of the operation, and
   its held answer, at most `answer_bytes`;
 - both dialects' repository/user tables, full in the conservative bound:

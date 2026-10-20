@@ -932,3 +932,16 @@ fn initial(kind: crate::settings::Kind, next: skein_lib::Duration) -> Start {
         crate::settings::Kind::GitHub => Start::Listing { next },
     }
 }
+
+#[cfg(test)]
+impl Component {
+    pub(crate) fn test_github_handoffs(&self) -> u32 {
+        let mut count = 0_u32;
+        for (_, id) in &self.connections {
+            if self.connection_slab.get(*id).expect("indexed connection").test_github_handoff() {
+                count = count.checked_add(1).expect("bounded connections");
+            }
+        }
+        count
+    }
+}
