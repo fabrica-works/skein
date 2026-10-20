@@ -8,6 +8,7 @@ members = [
     "tests/forge/machine",
     "tests/forge/protocol",
     "tests/forge/conformance",
+    "tests/forge/github",
     "testing/skein-forge-conformance",
     "crates/*",
     "examples/ui/view",

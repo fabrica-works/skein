@@ -226,6 +226,21 @@ impl Peer {
     pub fn observations(&self) -> &[Observation] {
         &self.observations
     }
+    /// Reads a GitHub browser manifest retained by the hosted service.
+    #[must_use]
+    pub fn github_manifest(&self, state: &[u8]) -> Option<&skein_fake_forge_github::manifest::Manifest> {
+        match &self.service {
+            protocol::Service::Github(service) => service.manifest(state),
+            protocol::Service::Forgejo(_) => None,
+        }
+    }
+    /// A scenario renames an installed account through the service's existing store.
+    pub fn rename_github_installation(&mut self, id: u64, login: &[u8]) -> bool {
+        match &mut self.service {
+            protocol::Service::Github(service) => service.installations_mut().rename(id, login),
+            protocol::Service::Forgejo(_) => false,
+        }
+    }
     /// Lends Forgejo's setup store so an owner can seed accounts and tokens before serving.
     /// Panics for a GitHub face, which has no Forgejo setup store.
     pub fn setup_mut(&mut self) -> &mut forgejo::setup::Store {

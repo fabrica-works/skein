@@ -970,14 +970,15 @@ the fake.
 
 ## 11. GitHub's conformance
 
-`tests/forge/github` is a tool beside section 7's. It runs the same
+`tests/forge/github` is built as a tool beside section 7's. It runs the same
 cases against two targets and records each fact of forge-github.md,
 section 13, as `holds`, `fails` or `unchecked`. Its transcripts, facts,
 masking and refusal of leaked secrets are section 7's.
 
 - **The fake** (`--fake`, the default) is the GitHub layer in-process,
   hosted by the forge peer. It also runs as one test in the focused
-  suite, which fails on any fact that does not hold.
+  suite, which refuses failed facts and unexpected unchecked facts. Required
+  signatures remain unchecked because their enforcement is unbuilt in the fake.
 - **github.com** (`--live <directory>`) is opt-in. It runs from the
   owner's session alone, and only with the director's word. It is never
   run by a suite, a gate or an implementer, and never from CI.
@@ -1031,6 +1032,10 @@ masking and refusal of leaked secrets are section 7's.
 - **A run cleans up what it made:** rulesets, pull requests (closed),
   issues (closed), branches, the spare's grant, and minted tokens
   (revoked). Each thing made is first written to `made.txt` in `--out`,
-  and `--clean <out>` finishes a run that stopped partway.
+  and `--clean <out>` finishes a run that stopped partway. Minted tokens
+  stay in memory and are revoked on every controlled exit; after an
+  externally killed process, cleanup reports each unacknowledged mint's
+  installation and one-hour expiry in `facts.txt`, without recovering
+  or writing its value.
 - **Calls are few.** A full live run stays under 400 requests and about
   ten minutes, most of it waiting for the probe workflow's 45 seconds.

@@ -1,0 +1,929 @@
+//! One request path for both targets, with write-ahead mutations and controlled cleanup.
+use crate::{
+    Result,
+    fake::{self, World},
+    journal::{Journal, Made},
+    live::{Connector, Fixtures},
+    mask::Mask,
+    wire::{Request, Response},
+};
+use skein_forge::{
+    api,
+    github::{self, request::Method},
+};
+use skein_forge_conformance::{
+    facts::{Fact, Outcome},
+    json,
+    write::{self, SecretKind, Secrets},
+};
+use skein_lib::Wall;
+use std::{fmt::Write as _, fs, path::Path};
+#[derive(Debug)]
+pub struct Report {
+    pub facts: Vec<Fact>,
+    pub requests: usize,
+    pub leftover_mints: Vec<String>,
+}
+#[expect(clippy::large_enum_variant, reason = "the runner owns one target for its entire lifetime")]
+pub(crate) enum Target {
+    Fake(World),
+    Live(Connector),
+}
+pub(crate) struct Token {
+    installation: u64,
+    journal: usize,
+    value: String,
+}
+pub(crate) struct Runner<'a> {
+    pub target: Target,
+    pub fixtures: Fixtures,
+    pub secrets: Secrets,
+    pub mask: Mask,
+    pub journal: Journal,
+    pub out: &'a Path,
+    pub case: &'static str,
+    pub requests: usize,
+    pub case_limit: usize,
+    pub cleanup: bool,
+    pub jwt: String,
+    pub tokens: Vec<Token>,
+    pub facts: Vec<Fact>,
+    pub provenance: Vec<String>,
+    pub serial: usize,
+    tables: github::plans::tables::Tables,
+    repositories: std::collections::BTreeMap<String, u64>,
+    request_bytes: Vec<u8>,
+    response_bytes: Vec<u8>,
+    pub leftover_mints: Vec<String>,
+}
+impl<'a> Runner<'a> {
+    pub fn new(target: Target, fixtures: Fixtures, out: &'a Path) -> Result<Self> {
+        let secrets = fixtures.secrets();
+        let journal = Journal::create(out, matches!(&target, Target::Live(_)), &secrets)?;
+        if let Some(source) = &fixtures.source {
+            let text = source.to_str().ok_or("fixture path is not text")?;
+            write::check("fixture path", text.as_bytes(), b"", &secrets)?;
+            fs::write(out.join("fixture-path.txt"), text)?;
+        }
+        Ok(Self::with_journal(target, fixtures, out, journal))
+    }
+    pub fn resume(target: Target, fixtures: Fixtures, out: &'a Path) -> Result<Self> {
+        let (journal, live) = Journal::load(out)?;
+        if live != matches!(&target, Target::Live(_)) {
+            return Err("cleanup target differs from journal".into());
+        }
+        Ok(Self::with_journal(target, fixtures, out, journal))
+    }
+    fn with_journal(target: Target, fixtures: Fixtures, out: &'a Path, journal: Journal) -> Self {
+        let secrets = fixtures.secrets();
+        Self {
+            target,
+            fixtures,
+            secrets,
+            mask: Mask::new(0),
+            journal,
+            out,
+            case: "bootstrap",
+            requests: 0,
+            case_limit: 320,
+            cleanup: false,
+            jwt: String::new(),
+            tokens: vec![],
+            facts: vec![],
+            provenance: vec![],
+            serial: 0,
+            tables: github::plans::tables::Tables::new(16, 512),
+            repositories: std::collections::BTreeMap::new(),
+            request_bytes: vec![],
+            response_bytes: vec![],
+            leftover_mints: vec![],
+        }
+    }
+    pub fn fake(&self) -> bool {
+        matches!(self.target, Target::Fake(_))
+    }
+    pub fn now(&self) -> Wall {
+        match &self.target {
+            Target::Fake(w) => w.now(),
+            Target::Live(_) => skein_shell::Clock::new().now().wall,
+        }
+    }
+    pub fn wait(&mut self, seconds: u64) {
+        match &mut self.target {
+            Target::Fake(w) => w.wait(seconds),
+            Target::Live(_) => std::thread::sleep(std::time::Duration::from_secs(seconds)),
+        }
+    }
+    pub fn wait_ci(&mut self) {
+        self.wait(if self.fake() { 4 } else { 55 });
+    }
+    pub fn ask(&mut self, request: &Request) -> Result<Response> {
+        let restore: usize = self
+            .journal
+            .pending
+            .iter()
+            .map(|(_, made)| match made {
+                Made::Mint { .. } | Made::Branch { .. } | Made::Access { .. } => 1,
+                Made::Pull { .. } | Made::Issue { .. } | Made::Rules { .. } => 2,
+            })
+            .sum();
+        if self.requests >= 400
+            || !self.cleanup && (self.requests >= self.case_limit || self.requests + restore + 8 >= 400)
+        {
+            return Err("conformance request budget exhausted".into());
+        }
+        self.requests += 1;
+        let (wire, response) = match &mut self.target {
+            Target::Fake(w) => w.exchange(request)?,
+            Target::Live(c) => c.exchange(request)?,
+        };
+        let credentials = request.target.ends_with("/access_tokens") || request.target.ends_with("/conversions");
+        if credentials && response.status == 201 {
+            let j = response.json()?;
+            for (key, kind) in [
+                ("token", SecretKind::MintedToken),
+                ("pem", SecretKind::AppKey),
+                ("webhook_secret", SecretKind::HookSecret),
+            ] {
+                if let Some(value) = j.root().get(key).str() {
+                    crate::live::register(&mut self.secrets, kind, value);
+                }
+            }
+            if let Some(token) = j.root().get("token").str() {
+                let (id, installation) = self
+                    .journal
+                    .pending
+                    .iter()
+                    .rev()
+                    .find_map(|(id, m)| match m {
+                        Made::Mint { installation, .. } => Some((*id, *installation)),
+                        Made::Access { .. }
+                        | Made::Branch { .. }
+                        | Made::Pull { .. }
+                        | Made::Issue { .. }
+                        | Made::Rules { .. } => None,
+                    })
+                    .ok_or("mint has no write-ahead entry")?;
+                self.tokens.push(Token { installation, journal: id, value: token.into() });
+            }
+        }
+        let at = wire.windows(4).position(|b| b == b"\r\n\r\n").ok_or("request head absent")?;
+        let head = self.mask.headers(&wire[..at]);
+        let body = self.mask.body(&wire[at + 4..], false);
+        let masked_request = crate::wire::framed(&head, &body);
+        let head = self.mask.headers(&response.head);
+        let body = self.mask.body(&response.body, credentials);
+        let masked_response = crate::wire::framed(&head, &body);
+        write::check(self.case, &masked_request, &masked_response, &self.secrets)?;
+        self.request_bytes.extend_from_slice(&masked_request);
+        self.response_bytes.extend_from_slice(&masked_response);
+        Ok(response)
+    }
+    pub fn raw(&mut self, method: Method, target: impl Into<String>, token: &str, body: &[u8]) -> Result<Response> {
+        self.ask(&Request::new(method, target, (!token.is_empty()).then_some(token), body))
+    }
+    pub fn app(&mut self, method: Method, target: impl Into<String>, body: &[u8]) -> Result<Response> {
+        let token = self.jwt.clone();
+        self.raw(method, target, &token, body)
+    }
+    pub fn token(&self, index: usize) -> Result<String> {
+        let installation = self.fixtures.installations.get(index).ok_or("installation absent")?.id;
+        self.tokens
+            .iter()
+            .find(|t| t.installation == installation)
+            .map(|t| t.value.clone())
+            .ok_or("installation token absent".into())
+    }
+    pub fn person(&self, index: usize) -> Result<String> {
+        let owner = &self.fixtures.installations.get(index).ok_or("installation absent")?.owner;
+        self.fixtures.people.get(owner).cloned().ok_or("person token absent".into())
+    }
+    pub fn repo(&self, index: usize) -> Result<String> {
+        self.fixtures
+            .installations
+            .get(index)
+            .and_then(|i| i.repositories.first())
+            .cloned()
+            .ok_or("probe repository absent".into())
+    }
+    pub fn before(&mut self, made: Made) -> Result<usize> {
+        self.journal.before(made, &self.secrets)
+    }
+    pub fn mint(&mut self, index: usize, contents: bool) -> Result<String> {
+        let installation = self.fixtures.installations.get(index).ok_or("installation absent")?.id;
+        let at = self.now().as_nanos() / 1_000_000_000;
+        self.before(Made::Mint { installation, at })?;
+        let response = self.app(
+            Method::Post,
+            format!("/app/installations/{installation}/access_tokens"),
+            if contents { br#"{"permissions":{"contents":"write"}}"# } else { b"" },
+        )?;
+        if response.status != 201 {
+            return Err("mint was refused".into());
+        }
+        Ok(response.json()?.root().get("token").str().ok_or("mint token absent")?.into())
+    }
+    pub fn sign(&mut self) -> Result<()> {
+        let now = self.now();
+        let input =
+            github::jwt::signing_input(self.fixtures.app, now, Wall::from_nanos(now.as_nanos() + 600_000_000_000))
+                .ok_or("JWT window invalid")?;
+        let signature = skein_tls::sign_rs256(&self.fixtures.key, &input).ok_or("JWT signing failed")?;
+        let token = github::jwt::token(&input, &signature).ok_or("JWT encoding failed")?;
+        self.jwt = String::from_utf8(token.expose().to_vec())?;
+        crate::live::register(&mut self.secrets, SecretKind::Jwt, &self.jwt);
+        Ok(())
+    }
+    pub fn start(&mut self) -> Result<()> {
+        if self.fake() {
+            self.bootstrap()?;
+        }
+        self.sign()?;
+        self.provenance = vec![
+            format!("# target {}", if self.fake() { "fake" } else { "github.com" }),
+            format!("# api_version {}", self.fixtures.version),
+            format!("# app {}", self.fixtures.slug),
+        ];
+        for index in 0..self.fixtures.installations.len() {
+            self.mint(index, false)?;
+            let person = self.person(index)?;
+            let repo = self.repo(index)?;
+            let r = self.raw(Method::Get, format!("/repos/{repo}"), &person, b"")?;
+            if let Some(expires) = r.header("github-authentication-token-expiration") {
+                let rfc = expires.replace(' ', "T");
+                let date = format!("{}Z", rfc.get(..19).ok_or("expiration header invalid")?);
+                let expiry = skein_forge::forgejo::time::read(date.as_bytes()).ok_or("expiration header invalid")?;
+                if expiry.as_nanos() <= self.now().as_nanos() + 30 * 86400 * 1_000_000_000 {
+                    self.provenance.push(format!(
+                        "# person-{}.token expires within 30 days",
+                        self.fixtures.installations[index].owner
+                    ));
+                }
+            }
+        }
+        self.flush()?;
+        Ok(())
+    }
+    fn bootstrap(&mut self) -> Result<()> {
+        let manifest=br#"{"name":"example-app","url":"https://example-app.invalid/","redirect_url":"http://127.0.0.1/callback","setup_url":"http://127.0.0.1/setup","public":true,"hook_attributes":{"url":"https://example-app.invalid/","active":false},"default_permissions":{"contents":"write","issues":"write","pull_requests":"write","checks":"read","statuses":"write","administration":"write","actions":"read","metadata":"read"},"default_events":["push","pull_request","issues","issue_comment","pull_request_review","check_run","merge_group"]}"#;
+        let form = format!("manifest={}", percent(manifest));
+        let r = self.raw(Method::Post, "/settings/apps/new?state=example-state", "", form.as_bytes())?;
+        let at = r.body.windows(6).position(|b| b == b"?code=").ok_or("bootstrap code absent")? + 6;
+        let end = r.body[at..].iter().position(|b| *b == b'&').ok_or("bootstrap code end absent")? + at;
+        let code = std::str::from_utf8(&r.body[at..end])?.to_owned();
+        let r = self.raw(Method::Post, format!("/app-manifests/{code}/conversions"), "", b"")?;
+        if r.status != 201 {
+            return Err("bootstrap conversion refused".into());
+        }
+        self.fixtures.webhook = r.json()?.root().get("webhook_secret").str().ok_or("bootstrap webhook absent")?.into();
+        for (account, query) in [("acme", "&repository_ids=2"), ("globex", "")] {
+            let r = self.raw(
+                Method::Get,
+                format!("/apps/example-app/installations/new?state=install-state&account={account}{query}"),
+                "",
+                b"",
+            )?;
+            if r.status != 200 && r.status != 302 {
+                return Err("bootstrap installation refused".into());
+            }
+        }
+        Ok(())
+    }
+    pub fn flush(&mut self) -> Result<()> {
+        if !self.request_bytes.is_empty() || !self.out.join("transcripts").join(self.case).join("request").exists() {
+            write::case(self.out, self.case, &self.request_bytes, &self.response_bytes, &self.secrets)?;
+            self.request_bytes.clear();
+            self.response_bytes.clear();
+        }
+        Ok(())
+    }
+    pub fn next(&mut self, name: &'static str) -> Result<()> {
+        self.flush()?;
+        self.case = name;
+        Ok(())
+    }
+    pub fn fact(&mut self, name: &'static str, holds: bool, why: &str) {
+        self.facts.push(Fact { name, outcome: if holds { Outcome::Holds } else { Outcome::Fails(why.into()) } });
+    }
+    pub fn name(&mut self, kind: &str) -> String {
+        self.serial += 1;
+        format!("conformance-{kind}-{}", self.serial)
+    }
+    pub fn branch(
+        &mut self,
+        index: usize,
+        parent: &str,
+        message: &str,
+        files: Vec<skein_fake_forge_domain::api::File>,
+    ) -> Result<(String, String)> {
+        let repo = self.repo(index)?;
+        let branch = self.name("branch");
+        self.before(Made::Branch { repo: repo.clone(), name: branch.clone() })?;
+        let sha = match &mut self.target {
+            Target::Fake(w) => w.commit(&repo, parent, &branch, message, files)?,
+            Target::Live(_) => {
+                let person = self.person(index)?;
+                let parent_doc =
+                    self.raw(Method::Get, format!("/repos/{repo}/git/commits/{parent}"), &person, b"")?.json()?;
+                let parent_tree = parent_doc.root().get("tree").get("sha").str().ok_or("parent tree absent")?;
+                let entries = json::write(|out| {
+                    out.object_start();
+                    out.key(b"base_tree");
+                    out.string(parent_tree.as_bytes());
+                    out.key(b"tree");
+                    out.array_start();
+                    for file in &files {
+                        out.object_start();
+                        out.key(b"path");
+                        out.string(&file.path);
+                        out.key(b"mode");
+                        out.string(b"100644");
+                        out.key(b"type");
+                        out.string(b"blob");
+                        out.key(b"content");
+                        out.string(&file.content);
+                        out.object_end();
+                    }
+                    out.array_end();
+                    out.object_end();
+                })?;
+                let tree = self
+                    .raw(Method::Post, format!("/repos/{repo}/git/trees"), &person, &entries)?
+                    .json()?
+                    .root()
+                    .get("sha")
+                    .str()
+                    .ok_or("tree sha absent")?
+                    .to_owned();
+                let body = json::object(&[("message", &message), ("parents", &[parent]), ("tree", &tree)])?;
+                let r = self.raw(Method::Post, format!("/repos/{repo}/git/commits"), &person, &body)?;
+                let sha = r.json()?.root().get("sha").str().ok_or("commit sha absent")?.to_owned();
+                let body = json::object(&[("ref", &format!("refs/heads/{branch}")), ("sha", &sha)])?;
+                let r = self.raw(Method::Post, format!("/repos/{repo}/git/refs"), &person, &body)?;
+                if r.status != 201 {
+                    return Err("branch creation refused".into());
+                }
+                sha
+            }
+        };
+        Ok((branch, sha))
+    }
+    pub fn base(&mut self, index: usize) -> Result<String> {
+        let answer = self
+            .plan(index, api::Op::Read(api::Read::Branch { branch: fake::boxed(b"main") }))?
+            .map_err(|_| "default branch plan failed")?;
+        let api::Answer::Commit(commit) = answer else {
+            return Err("default branch plan answer invalid".into());
+        };
+        Ok(String::from_utf8(github::id::write_commit(&commit).ok_or("invalid branch oid")?.to_vec())?)
+    }
+    pub fn pull(&mut self, index: usize, head: &str, base: &str, person: bool) -> Result<u64> {
+        let repo = self.repo(index)?;
+        self.before(Made::Pull { repo, head: head.into(), base: base.into() })?;
+        let answer = self
+            .plan_as(
+                index,
+                api::Op::Write(api::Write::OpenPull {
+                    title: fake::boxed(b"conformance"),
+                    body: fake::boxed(b"conformance"),
+                    head: fake::boxed(head.as_bytes()),
+                    base: fake::boxed(base.as_bytes()),
+                }),
+                person,
+            )?
+            .map_err(|_| "pull plan failed")?;
+        let api::Answer::Created(number) = answer else {
+            return Err("pull plan answer invalid".into());
+        };
+        Ok(number)
+    }
+    pub fn issue(&mut self, index: usize) -> Result<u64> {
+        let repo = self.repo(index)?;
+        let title = self.name("issue");
+        self.before(Made::Issue { repo, title: title.clone() })?;
+        let answer = self
+            .plan(
+                index,
+                api::Op::Write(api::Write::CreateIssue {
+                    key: fake::boxed(title.as_bytes()),
+                    title: fake::boxed(title.as_bytes()),
+                    body: fake::boxed(title.as_bytes()),
+                }),
+            )?
+            .map_err(|_| "issue plan failed")?;
+        let api::Answer::Created(number) = answer else {
+            return Err("issue plan answer invalid".into());
+        };
+        Ok(number)
+    }
+    pub fn copy_branch(&mut self, index: usize, parent: &str) -> Result<String> {
+        let repo = self.repo(index)?;
+        let name = self.name("base");
+        self.before(Made::Branch { repo, name: name.clone() })?;
+        self.plan(
+            index,
+            api::Op::Write(api::Write::CreateBranch {
+                branch: fake::boxed(name.as_bytes()),
+                commit: github::id::commit(parent.as_bytes()).ok_or("invalid base oid")?,
+            }),
+        )?
+        .map_err(|_| "base branch plan failed")?;
+        Ok(name)
+    }
+    pub fn advance(
+        &mut self,
+        index: usize,
+        parent: &str,
+        branch: &str,
+        message: &str,
+        files: Vec<skein_fake_forge_domain::api::File>,
+    ) -> Result<String> {
+        let repo = self.repo(index)?;
+        if let Target::Fake(w) = &mut self.target {
+            return w.commit(&repo, parent, branch, message, files);
+        }
+        let (_, sha) = self.branch(index, parent, message, files)?;
+        let token = self.person(index)?;
+        let body = json::object(&[("sha", &sha)])?;
+        let r = self.raw(
+            Method::Patch,
+            format!("/repos/{repo}/git/refs/heads/{}", percent(branch.as_bytes())),
+            &token,
+            &body,
+        )?;
+        if r.status != 200 {
+            return Err("head advance refused".into());
+        }
+        Ok(sha)
+    }
+    pub fn plan(&mut self, index: usize, op: api::Op) -> Result<std::result::Result<api::Answer, api::Error>> {
+        self.plan_as(index, op, false)
+    }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the dialect plan driver keeps request, document and redirect handling together"
+    )]
+    pub fn plan_as(
+        &mut self,
+        index: usize,
+        op: api::Op,
+        person: bool,
+    ) -> Result<std::result::Result<api::Answer, api::Error>> {
+        use github::{
+            document::Kind,
+            plans::{
+                Body, Heard,
+                plan::{Bounds, Plan, Step},
+            },
+        };
+        let repo = self.repo(index)?;
+        let token = if person { self.person(index)? } else { self.token(index)? };
+        let located = if let Some(id) = self.repositories.get(&repo) {
+            *id
+        } else {
+            let id = self
+                .raw(Method::Get, format!("/repos/{repo}"), &token, b"")?
+                .json()?
+                .root()
+                .get("id")
+                .u64()
+                .ok_or("repository id absent")?;
+            self.repositories.insert(repo, id);
+            id
+        };
+        let mut plan = Plan::new(api::Repository { forge: 1, repository: u32::try_from(located)? }, op);
+        let bounds = Bounds { inner: 512, page_size: 100, rows: 512, answer_bytes: 1_048_576, body_bytes: 524_288 };
+        let mut step = plan
+            .begin(bounds, self.fixtures.slug.as_bytes(), &mut self.tables)
+            .map_err(|_| "dialect plan refused to begin")?;
+        for _ in 0..64 {
+            let events = match step {
+                Step::Done(result) => return Ok(result),
+                Step::Send(exchange) => {
+                    let encoded = github::request::encode(&exchange.request, &fake::bounds())
+                        .map_err(|_| "dialect request exceeds bounds")?;
+                    let mut request = Request::new(
+                        encoded.method,
+                        String::from_utf8(encoded.target.into_vec())?,
+                        Some(&token),
+                        encoded.body.as_deref().unwrap_or_default(),
+                    );
+                    if let Some(v) = encoded.validator {
+                        request.headers.push(("If-None-Match".into(), String::from_utf8(v.as_bytes().to_vec())?));
+                    }
+                    let r = self.ask(&request)?;
+                    let mut head = github::header::Head::new();
+                    for line in r.head.split(|b| *b == b'\n').skip(1) {
+                        if let Some(at) = line.iter().position(|b| *b == b':') {
+                            github::header::field(
+                                &mut head,
+                                &line[..at],
+                                line[at + 1..].strip_suffix(b"\r").unwrap_or(&line[at + 1..]).trim_ascii(),
+                                &fake::bounds(),
+                            );
+                        }
+                    }
+                    let mut events = vec![Heard::Head { status: r.status, head }];
+                    if r.status == 204 || r.status == 304 {
+                        events.push(Heard::Done(Body::Empty));
+                    } else if r.status != 302 {
+                        let kind = if r.status < 300 {
+                            github::decode::kind(&exchange.request).ok_or("dialect response kind absent")?
+                        } else {
+                            Kind::Error
+                        };
+                        let (rows, doc) = decode(&r.body, kind)?;
+                        events.extend(rows.into_iter().map(Heard::Row));
+                        events.push(Heard::Done(Body::Document(doc)));
+                    }
+                    events
+                }
+                Step::Redirect { redirect, retention } => {
+                    let host = std::str::from_utf8(&redirect.origin.host)?;
+                    let target = std::str::from_utf8(&redirect.target)?;
+                    let mut request = Request::new(
+                        Method::Get,
+                        if self.fake() { target.into() } else { format!("https://{host}{target}") },
+                        None,
+                        b"",
+                    );
+                    request.blob = true;
+                    let r = self.ask(&request)?;
+                    let github::plans::plan::Retention::Tail { bytes } = retention else {
+                        return Err("unexpected log retention".into());
+                    };
+                    let start = r.body.len().saturating_sub(usize::try_from(bytes)?);
+                    vec![
+                        Heard::Head { status: r.status, head: github::header::Head::new() },
+                        Heard::Done(Body::Raw { bytes: fake::boxed(&r.body[start..]), more: start != 0 }),
+                    ]
+                }
+            };
+            let mut next = None;
+            for event in events {
+                if let Some(s) = plan
+                    .heard(event, bounds, self.fixtures.slug.as_bytes(), &mut self.tables)
+                    .map_err(|_| "dialect plan rejected response")?
+                {
+                    next = Some(s);
+                    break;
+                }
+            }
+            step = next.ok_or("dialect plan did not advance")?;
+        }
+        Err("dialect plan progress bound".into())
+    }
+    pub fn remove_rules(&mut self) -> Result<()> {
+        for (id, made) in self.journal.pending.clone() {
+            if matches!(made, Made::Rules { .. }) {
+                self.undo(id, &made)?;
+            }
+        }
+        Ok(())
+    }
+    pub fn finish(&mut self) -> Result<()> {
+        self.cleanup = true;
+        let mut error = self.flush().err();
+        self.request_bytes.clear();
+        self.response_bytes.clear();
+        self.case = "cleanup";
+        // Revocation is independent of repository restoration and transcript failures.
+        for token in std::mem::take(&mut self.tokens) {
+            if !self.journal.pending.iter().any(|(id, _)| *id == token.journal) {
+                continue;
+            }
+            let result = self.raw(Method::Delete, "/installation/token", &token.value, b"");
+            match result {
+                Ok(r) if r.status == 204 || r.status == 401 => {
+                    if let Err(e) = self.journal.done(token.journal, &self.secrets)
+                        && error.is_none()
+                    {
+                        error = Some(e);
+                    }
+                }
+                Ok(_) => {
+                    self.tokens.push(token);
+                    if error.is_none() {
+                        error = Some("minted token revocation refused".into());
+                    }
+                }
+                Err(e) => {
+                    self.tokens.push(token);
+                    if error.is_none() {
+                        error = Some(e);
+                    }
+                }
+            }
+        }
+        for (id, made) in self.journal.pending.clone().into_iter().rev() {
+            let result = self.undo(id, &made);
+            if let Err(e) = result
+                && error.is_none()
+            {
+                error = Some(e);
+            }
+        }
+        self.flush()?;
+        if let Some(e) = error {
+            return Err(e);
+        }
+        Ok(())
+    }
+    #[expect(clippy::too_many_lines, reason = "each durable intention has its restoration beside the others")]
+    fn undo(&mut self, id: usize, made: &Made) -> Result<()> {
+        match made {
+            Made::Mint { installation, at } => {
+                if self.tokens.iter().any(|t| t.journal == id) {
+                    return Ok(());
+                }
+                let report =
+                    format!("minted token for installation {installation}: not revoked, expires by {}", at + 3600);
+                cleanup_report(self.out, std::slice::from_ref(&report), &self.secrets)?;
+                self.leftover_mints.push(report);
+            }
+            Made::Branch { repo, name } => {
+                let owner = repo.split_once('/').ok_or("invalid cleanup repository")?.0;
+                let token = self.fixtures.people.get(owner).ok_or("cleanup owner absent")?.clone();
+                let r = self.raw(
+                    Method::Delete,
+                    format!("/repos/{repo}/git/refs/heads/{}", percent(name.as_bytes()).replace("%2F", "/")),
+                    &token,
+                    b"",
+                )?;
+                if r.status != 204 && !r.is(422, "Reference does not exist") {
+                    return Err("branch cleanup refused".into());
+                }
+            }
+            Made::Pull { repo, head, base } => {
+                let owner = repo.split_once('/').ok_or("invalid cleanup repository")?.0;
+                let token = self.fixtures.people.get(owner).ok_or("cleanup owner absent")?.clone();
+                let r = self.raw(
+                    Method::Get,
+                    format!(
+                        "/repos/{repo}/pulls?state=open&head={owner}%3A{}&base={base}&per_page=1",
+                        percent(head.as_bytes())
+                    ),
+                    &token,
+                    b"",
+                )?;
+                if r.status != 200 {
+                    return Err("pull cleanup lookup refused".into());
+                }
+                for row in r.json()?.root().items() {
+                    if let Some(number) = row.get("number").u64() {
+                        let r = self.raw(
+                            Method::Patch,
+                            format!("/repos/{repo}/issues/{number}"),
+                            &token,
+                            br#"{"state":"closed"}"#,
+                        )?;
+                        if r.status != 200 {
+                            return Err("pull cleanup refused".into());
+                        }
+                    }
+                }
+            }
+            Made::Issue { repo, title } => {
+                let owner = repo.split_once('/').ok_or("invalid cleanup repository")?.0;
+                let token = self.fixtures.people.get(owner).ok_or("cleanup owner absent")?.clone();
+                let mut page = 1;
+                loop {
+                    let r = self.raw(
+                    Method::Get,
+                    format!("/repos/{repo}/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page={page}"),
+                    &token,
+                    b"",
+                )?;
+                    if r.status != 200 {
+                        return Err("issue cleanup lookup refused".into());
+                    }
+                    let more = r.header("link").is_some_and(|link| link.contains("rel=\"next\""));
+                    let mut found = false;
+                    for row in r.json()?.root().items() {
+                        if row.get("title").is(title)
+                            && let Some(number) = row.get("number").u64()
+                        {
+                            let r = self.raw(
+                                Method::Patch,
+                                format!("/repos/{repo}/issues/{number}"),
+                                &token,
+                                br#"{"state":"closed"}"#,
+                            )?;
+                            if r.status != 200 {
+                                return Err("issue cleanup refused".into());
+                            }
+                            found = true;
+                        }
+                    }
+                    if found || !more {
+                        break;
+                    }
+                    page += 1;
+                }
+            }
+            Made::Rules { repo, name } => {
+                let owner = repo.split_once('/').ok_or("invalid cleanup repository")?.0;
+                let token = self.fixtures.people.get(owner).ok_or("cleanup owner absent")?.clone();
+                let ids = if self.fake() {
+                    vec![12_345_678]
+                } else {
+                    let r = self.raw(Method::Get, format!("/repos/{repo}/rulesets?per_page=100"), &token, b"")?;
+                    if r.status != 200 {
+                        return Err("ruleset cleanup lookup refused".into());
+                    }
+                    r.json()?
+                        .root()
+                        .items()
+                        .iter()
+                        .filter(|row| row.get("name").is(name))
+                        .filter_map(|row| row.get("id").u64())
+                        .collect()
+                };
+                for rule in ids {
+                    let r = self.raw(Method::Delete, format!("/repos/{repo}/rulesets/{rule}"), &token, b"")?;
+                    if r.status != 204 && r.status != 404 {
+                        return Err("ruleset cleanup refused".into());
+                    }
+                }
+            }
+            Made::Access { installation, repository, owner, add } => {
+                let token = self.fixtures.people.get(owner).ok_or("cleanup person absent")?.clone();
+                let r = self.raw(
+                    if *add { Method::Put } else { Method::Delete },
+                    format!("/user/installations/{installation}/repositories/{repository}"),
+                    &token,
+                    b"",
+                )?;
+                if r.status != 204 {
+                    return Err("access restoration refused".into());
+                }
+            }
+        }
+        self.journal.done(id, &self.secrets)
+    }
+    pub fn complete(&mut self, run: Result<()>) -> Result<()> {
+        let cleanup = self.finish();
+        let setup = if run.is_ok() && cleanup.is_ok() { crate::cases::setup_lifecycle(self) } else { Ok(()) };
+        let report = self.report();
+        run?;
+        cleanup?;
+        setup?;
+        report
+    }
+    pub fn report(&self) -> Result<()> {
+        let mut text = self.provenance.join("\n");
+        text.push('\n');
+        for leftover in &self.leftover_mints {
+            text.push_str("# ");
+            text.push_str(leftover);
+            text.push('\n');
+        }
+        for fact in &self.facts {
+            text.push_str(&fact.line());
+        }
+        write::check("facts", text.as_bytes(), b"", &self.secrets)?;
+        fs::write(self.out.join("facts.txt"), text)?;
+        Ok(())
+    }
+}
+pub(crate) fn percent(bytes: &[u8]) -> String {
+    let mut result = String::new();
+    for byte in bytes {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(byte) {
+            result.push(char::from(*byte));
+        } else {
+            write!(result, "%{byte:02X}").expect("String accepts formatting");
+        }
+    }
+    result
+}
+fn decode(
+    bytes: &[u8],
+    kind: github::document::Kind,
+) -> Result<(Vec<github::document::Row>, github::document::Document)> {
+    use skein_json::tokenizer;
+    use skein_lib::{
+        Env, Intake, Queue, Time,
+        stream::{Down, Up},
+    };
+    let bounds = fake::bounds();
+    let mut decoder = github::decode::decoder(kind, &bounds);
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: bounds.json };
+    let mut tokenizer = tokenizer::Tokenizer::new(&bounds.json);
+    let mut above = Queue::with_capacity(1);
+    let mut below = Queue::with_capacity(1);
+    let mut intake = Intake::with_capacity(bounds.writer.length);
+    intake.append(bytes).map_err(|_| "dialect intake bound")?;
+    let mut rows = vec![];
+    tokenizer::down(&mut tokenizer, &env, tokenizer::Request::Next, &mut above, &mut below);
+    for _ in 0..bytes.len() * 8 + 64 {
+        if let Some(event) = above.pop() {
+            let (request, step) = decoder.step(event);
+            match step {
+                github::decode::Step::Demand => {}
+                github::decode::Step::Row(row) => rows.push(row),
+                github::decode::Step::Done(document) => return Ok((rows, document)),
+                github::decode::Step::Malformed(_) => return Err("dialect document malformed".into()),
+            }
+            tokenizer::down(&mut tokenizer, &env, request, &mut above, &mut below);
+        } else {
+            let Down::Demand { read, .. } = below.pop().ok_or("JSON demand absent")? else {
+                return Err("JSON demand invalid".into());
+            };
+            let up = intake.meet(read).map_or(Up::End, Up::Bytes);
+            tokenizer::up(&mut tokenizer, &env, up, &mut above, &mut below);
+        }
+    }
+    Err("dialect decoding progress bound".into())
+}
+/// Runs only the in-process hosted fake.
+/// # Errors
+/// Returns a fixture, request, transcript, leak or cleanup failure.
+pub fn run_fake(out: &Path) -> Result<Report> {
+    let world = World::new()?;
+    let fixtures = World::fixtures()?;
+    execute(Runner::new(Target::Fake(world), fixtures, out)?)
+}
+/// The fixture owner's opt-in entry point. Never called by a suite.
+/// # Errors
+/// Refuses insecure fixtures, disallowed mutations, leaks and budget excess.
+pub fn run_live(dir: &Path, out: &Path) -> Result<Report> {
+    let fixtures = Fixtures::load(dir)?;
+    let connector = Connector::new()?;
+    execute(Runner::new(Target::Live(connector), fixtures, out)?)
+}
+fn execute(mut runner: Runner<'_>) -> Result<Report> {
+    let run = runner.start().and_then(|()| crate::cases::run(&mut runner)).and_then(|()| {
+        let found: std::collections::BTreeSet<_> = runner.facts.iter().map(|f| f.name).collect();
+        if found.len() != runner.facts.len() || found != crate::cases::NAMES.iter().copied().collect() {
+            return Err("conformance case names differ from the contract".into());
+        }
+        Ok(())
+    });
+    let result = runner.complete(run);
+    let shutdown = match &mut runner.target {
+        Target::Fake(w) => w.shutdown(),
+        Target::Live(_) => Ok(()),
+    };
+    result?;
+    shutdown?;
+    Ok(Report { facts: runner.facts, requests: runner.requests, leftover_mints: runner.leftover_mints })
+}
+/// Finishes recorded repository intentions; unavailable minted values are reported by expiry.
+/// # Errors
+/// Refuses a malformed journal or missing/insecure live fixtures and cleanup failures.
+pub fn clean(out: &Path, live: Option<&Path>) -> Result<()> {
+    let (journal, is_live) = Journal::load(out)?;
+    if !is_live {
+        // No hosted state survives a fake process; only unavailable mint reports remain.
+        let fixtures = World::fixtures()?;
+        let secrets = fixtures.secrets();
+        let mut journal = journal;
+        let mut leftovers = vec![];
+        for (id, made) in journal.pending.clone() {
+            if let Made::Mint { installation, at } = made {
+                let report =
+                    format!("minted token for installation {installation}: not revoked, expires by {}", at + 3600);
+                cleanup_report(out, std::slice::from_ref(&report), &secrets)?;
+                leftovers.push(report);
+            }
+            journal.done(id, &secrets)?;
+        }
+        return cleanup_report(out, &leftovers, &secrets);
+    }
+    let fixtures = if let Some(dir) = live {
+        Fixtures::load(dir)?
+    } else {
+        let saved = fs::read_to_string(out.join("fixture-path.txt"))?;
+        Fixtures::load(Path::new(&saved))?
+    };
+    let target = Target::Live(Connector::new()?);
+    let mut r = Runner::resume(target, fixtures, out)?;
+    let result = r.finish();
+    cleanup_report(out, &r.leftover_mints, &r.secrets)?;
+    result?;
+    match &mut r.target {
+        Target::Fake(w) => w.shutdown(),
+        Target::Live(_) => Ok(()),
+    }
+}
+
+fn cleanup_report(out: &Path, leftovers: &[String], secrets: &Secrets) -> Result<()> {
+    let path = out.join("facts.txt");
+    let mut text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "# resumed cleanup\n".into(),
+        Err(e) => return Err(e.into()),
+    };
+    for leftover in leftovers {
+        let line = format!("# {leftover}");
+        if !text.lines().any(|existing| existing == line) {
+            writeln!(text, "{line}")?;
+        }
+    }
+    write::check("facts", text.as_bytes(), b"", secrets)?;
+    fs::write(&path, text)?;
+    fs::File::open(path)?.sync_all()?;
+    fs::File::open(out)?.sync_all()?;
+    Ok(())
+}

@@ -160,6 +160,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "github-conformance"
+version = "0.0.0"
+dependencies = [
+ "skein-fake-forge-domain",
+ "skein-fake-forge-github",
+ "skein-fake-peers",
+ "skein-forge",
+ "skein-forge-conformance",
+ "skein-http",
+ "skein-io",
+ "skein-json",
+ "skein-lib",
+ "skein-shell",
+ "skein-sim",
+ "skein-tls",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
