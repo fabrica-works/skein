@@ -698,8 +698,9 @@ below are tracked in STATUS.md.
   bot's user number, and the layer refuses beforehand what the token
   does not reach:
   - a repository outside the installation is `404`;
-  - a route beyond a contents-only token is `403` "Resource not
-    accessible by integration";
+  - issue creation succeeds even for a contents-only token, with `201`
+    and `x-accepted-github-permissions: issues=write`; editing its title
+    also succeeds, with `200`; the remaining contents-only route refusals are inferred `403` responses;
   - an expired token is `401`.
 
   `GET /app/installations` lists them and `GET /app/installations/<id>`
@@ -709,6 +710,8 @@ below are tracked in STATUS.md.
   Revocation and the scope matrix are built: every routed REST request and
   GraphQL document is checked against full, contents-only, expired, revoked,
   person and JWT credentials. Contents-only GraphQL refusals use `errors`.
+  The conformance case records the mint response permissions object and
+  the statuses of issue creation and its title PATCH with the same token.
   An installation's all-repositories selection stays within its account.
   A person's `PUT` or `DELETE /user/installations/<id>/repositories/<repo>`
   checks that user's domain admin permission and answers `204` when it changes
@@ -721,9 +724,12 @@ below are tracked in STATUS.md.
   replaces the domain's repository protection, requiring admin permission;
   `DELETE /repos/<o>/<n>/rulesets/<id>` removes it. The subset is strict:
   `name`, branch `target`, active `enforcement`, a single
-  `conditions.ref_name.include`, `bypass_actors`, and approvals, required
-  status checks and merge queue rules. Unknown and duplicate fields are
-  `422` "Validation Failed". The request shape is inferred from the docs.
+  `conditions.ref_name.include` with empty `exclude`, `bypass_actors`,
+  and approvals, required status checks and merge queue rules. Unknown and duplicate fields are
+  `422` "Validation Failed". The pull request rule requires the approval
+  count and all four booleans (false in this subset). A missing parameter
+  answers the observed 422 Invalid request message naming /rules/0 and
+  data matching no possible input. The accepted shape follows the docs.
   Creation answers `201` with the configured ruleset id and the existing
   server encoder's bypass field; only the id is recorded, other fields are
   inferred. Deletion's empty `204` is recorded. Installation tokens receive
@@ -774,8 +780,10 @@ below are tracked in STATUS.md.
 - **A job's log** is a `302` to the blob origin: a second listener of
   the peer, the origin `http://<blob>`. The target is a path signed for
   600 seconds on the forge's clock. The blob listener serves the job's
-  log, wants no credential, and ignores `Range`. The scenario may name a
-  third origin, one the component does not know, for the diagnostic's
+  log and wants no credential. The HTTP listener honours the one-byte
+  `Range: bytes=0-0` probe with `206` and `Content-Range`; other ranges
+  are ignored. The in-process blob call records header presence only.
+  The scenario may name a third origin, one the component does not know, for the diagnostic's
   stories. The HMAC-SHA-256 key is drawn from the seed; the signed input
   names the repository, job and attempt and includes the expiry. At the
   expiry instant the target is refused. A tampered or expired target is
@@ -791,13 +799,17 @@ below are tracked in STATUS.md.
   were present, never their values. `Limits::blob_records` bounds this
   FIFO, with the oldest request evicted when full; each path is bounded
   by `Limits::http.head`.
+- **Own approval.** A review of one's own pull answers 422 with message
+  `Unprocessable Entity` and string errors containing
+  `Review Can not approve your own pull request`.
 - **Mergeability, merges and the queue.** `mergeable` is null for a
   drawn `settle_min..=settle_max` after a push to the head or the base.
   The domain draws from its seed, carries `checking` separately from
   `mergeable`, and defaults both bounds to two seconds in fixtures.
   Forgejo continues to render false while checking.
   A merge then decides as the domain does:
-  - a stale head is `409`;
+  - a stale head is `409`, including an inferred different-sha repeat
+    on a merged pull; a same-sha repeat is `200` with the same merge sha;
   - a merge refused for its checks or its approvals is `405` with
     `Repository rule violations found\n\n`, then the unmet approval
     sentence, then the unmet context lines, each followed by `\n\n`;
@@ -835,7 +847,11 @@ below are tracked in STATUS.md.
   is `403` with `x-ratelimit-remaining: 0`. A crowded one is `403` "You
   have exceeded a secondary rate limit" with `Retry-After`. A request
   with an `If-None-Match` that matches the answer's `ETag` is `304`, and
-  not counted. GitHub's `Config` sets the quota and window. Admission
+  not counted. A repository ETag hashes the rendered metadata and settings.
+  Conditional repository reads check the domain's current settings before
+  reusing the identity's rate snapshot for a 304; a changed response goes
+  through normal admission. The snapshot map is bounded by `github.inner`.
+  GitHub's `Config` sets the quota and window. Admission
   charges the domain once per authenticated request, including local table
   reads; continuations keep the snapshot and skip further rate charges.
   Installation and domain-user windows have distinct keys in the same bounded
@@ -1015,7 +1031,9 @@ masking and refusal of leaked secrets are section 7's.
   before the first request. It copies none, and it masks
   `Authorization`, signed blob addresses, guids, node ids and ETags as
   well as section 7's. Numeric ids are masked by first appearance, since
-  github.com's do not come in a fixed order.
+  github.com's do not come in a fixed order. Request-path numbers use the
+  same map as body numbers. Every response keeps its status and headers;
+  transcript records are separated by CRLF so later status lines start a line.
 - **The App is read only, live.** The fixture installations are
   accepted by no setup state, so setup's reconcile would take them for
   strays (forge-setup.md, section 5). A live run therefore never sends
@@ -1032,7 +1050,13 @@ masking and refusal of leaked secrets are section 7's.
 - **A run cleans up what it made:** rulesets, pull requests (closed),
   issues (closed), branches, the spare's grant, and minted tokens
   (revoked). Each thing made is first written to `made.txt` in `--out`,
-  and `--clean <out>` finishes a run that stopped partway. Minted tokens
+  and `--clean <out>` finishes a run that stopped partway. Each successful
+  issue or pull creation also records its returned number durably; cleanup
+  addresses that number. A refused creation cancels its intention without
+  marking an object done. When a killed run retained only an intention,
+  cleanup follows every issues-list page, and reads pull details when
+  matching head and base. An unfound object remains pending. An item is
+  marked done only after a read shows it closed. Minted tokens
   stay in memory and are revoked on every controlled exit; after an
   externally killed process, cleanup reports each unacknowledged mint's
   installation and one-hour expiry in `facts.txt`, without recovering

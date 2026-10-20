@@ -181,8 +181,9 @@ looks for a branch it dropped (`Read::Branches`, 5.3's row).
 - **The raw read** is `GET R/contents/<path>?ref=<commit>` with `Accept:
   application/vnd.github.raw+json`, the path's slashes kept: a `200`
   that is not JSON is the file's bytes, a `404` an absent side.
-- **No `Range`.** GitHub's raw contents and its logs answer whole; a
-  file and a log are read through, and cut as they stream (section 6).
+- **No `Range`.** skein sends none: a file and a log are read through,
+  and cut as they stream (section 6). The signed job-log blob honours
+  Range; skein requests the whole body.
 - **The keep-up listing** is as Forgejo's (forge.md, 5.2), in GitHub's
   words: `sort=updated&direction=asc`. A new issue can be missing from
   the first listing after it (`new-issue-may-miss-listing`): the next
@@ -396,7 +397,8 @@ bound, revisions, markers and malformed answers; and GitHub's:
 | any other `4xx` | `Refused` on a write; `InvalidAnswer` on a read |
 
 - **The message is matched whole,** by line: GitHub's `message`, and a
-  `422`'s `errors[].message`, against the texts the conformance records
+  `422`'s string entries in `errors` or objects' `errors[].message`,
+  against the texts the conformance records
   (section 13). A rule violation's message is a first line,
   "Repository rule violations found", then one line per rule. An
   unknown message is `Refused` on a write, `InvalidAnswer` on a read.
@@ -407,6 +409,9 @@ bound, revisions, markers and malformed answers; and GitHub's:
 - **A `401` on the JSON Web Token** is the App's key refused (deleted,
   or a clock more than a minute off): `Forbidden`, which the component
   takes to stop the forge (forge-connection.md, section 5).
+- **Repeating a successful merge with the same sha** answers 200 with the
+  same merge sha and merged true. A different sha on that merged pull is
+  inferred to be 409; the fake keeps the stale-head check before mergeability.
 - **A `304`** is not a failure: it answers a conditional read (8.5).
 
 ## 8. The App's documents
@@ -439,8 +444,12 @@ bound, revisions, markers and malformed answers; and GitHub's:
   `Event::GitToken`.
 - **Its decoder** keeps `token`, as a `Secret` within `string_bytes`,
   and `expires_at`. Nothing else of it is read.
-- **A token narrower than its installation** is refused beyond it
-  (`token-narrowed-refused`): a `403`, `Forbidden`.
+- **A token minted for Contents still writes issues:** the observed answer
+  is `201`, with `x-accepted-github-permissions: issues=write`
+  (`token-narrowed-not-enforced`). Token narrowing is not a boundary skein
+  relies on; the dialect still mints the same tokens. The conformance case
+  records the mint response permissions object, the issue POST status and
+  accepted permissions header, and a title PATCH status with the same token.
 
 ### 8.3 Installations
 
@@ -474,7 +483,10 @@ and `login`. REST's `GET /user` is a `403` on that token
   printable ASCII, else none kept. A request sent with it
   (`If-None-Match`) is answered `304`, with no body, as
   `Answered.free`: GitHub does not count it (`etag-304-free`). The
-  validator is sent on the delivery log's first page alone (9.3).
+  fact uses an installation token's two reads of an unchanging repository,
+  with the first ETag on the second and the same remaining rate. A changing
+  delivery log may answer a new body instead. The dialect sends its
+  validator on the delivery log's first page alone (9.3).
 
 ## 9. Deliveries
 
@@ -564,7 +576,9 @@ subscribing; the others are temper's draft section 5's, and no more.
 
 - **`GET R/actions/jobs/<job>/logs`** answers `302` with `Location`, a
   signed address on another host, valid about ten minutes, which wants
-  no credential and ignores `Range` (`job-log-302-blob`).
+  no credential (`job-log-302-blob`). It honours `Range: bytes=0-0`
+  with `206` and `Content-Range` (`job-log-range-honoured`). Skein sends
+  no Range, and rejects an unsolicited 206 before the log body decoder.
 - **`github::Redirect { origin: { tls, host, port }, target }`,** parsed
   from `Location`: `https` over TLS, `http` in plaintext (the fake's,
   fake-forge.md, 10.1), with its host and port (443 or 80 when none),
@@ -641,14 +655,26 @@ github.com (fake-forge.md, section 11); the probe that found it in
 temper's draft section 11.
 
 - **Tokens and identity:** `token-expires-in-an-hour`,
-  `token-narrowed-refused` (P1); `rate-core-5000`, `jwt-calls-no-rate`
+  `token-narrowed-not-enforced` (P1); `rate-core-5000`, `jwt-calls-no-rate`
   (P1); `viewer-is-bot`, `user-on-installation-403`,
   `app-routes-401-on-installation-token` (P2); `jwt-iss-string`.
+  Contents narrowing still permits issue creation, 201, with the accepted
+  permissions header. The case records the mint response permissions object
+  and both write statuses; a title PATCH of that issue uses the same token
+  and expects 200.
 - **Pull requests and CI:** `mergeable-null-then-settles`,
   `combined-pending-with-no-status`, `job-log-302-blob`,
-  `job-log-range-ignored` (P4); `merge-stale-409`,
+  `job-log-range-honoured` (P4); `merge-stale-409`,
   `merge-after-move-405-not-mergeable`, `merge-unheld-by-ci`,
   `update-stale-422`, `update-202-later` (P5); `etag-304-free` (P6).
+  Mergeability is null in the create response or a read soon after a head
+  move, then boolean within the wait; the first read may already be boolean.
+  The Range fact expects 206 and Content-Range. The ETag fact reads an
+  unchanging repository with an installation token, and expects 304 with
+  the same remaining rate. `merge-repeat-idempotent` expects 200, merged
+  true and the same merge sha for a repeat with the same sha.
+  `merge-repeat-stale-409` is inferred: the fake answers 409 for a different
+  sha on a merged pull; its live expectation is unknown.
 - **The log:** `log-lists-failed-deliveries`, `log-cursor-in-link`,
   `log-ids-19-digits`, `log-delivery-whole`,
   `log-installation-events-unscoped` (P7);
@@ -658,7 +684,10 @@ temper's draft section 11.
   `enqueue-stale-unprocessable`, `queue-merged-no-merge-commit-sha`,
   `queue-dequeued-delivered` (P9); `signatures-push-gh013` (P10);
   `rules-branches-current-user-can-bypass`,
-  `classic-protection-404-under-rulesets` (P11).
+  `classic-protection-404-under-rulesets` (P11). Own approval is 422 with
+  message Unprocessable Entity and a string error, Review Can not approve
+  your own pull request. Pull request rules carry all five parameters:
+  the approval count and the four booleans false, with an empty ref exclusion.
 - **Repositories and issues:** `installation-repositories-at-once`
   (P12); `issues-list-pulls`, `new-issue-may-miss-listing` (P13).
 - **Not yet probed,** first held by the conformance:
@@ -666,7 +695,7 @@ temper's draft section 11.
   `user-by-id-reads`, `repository-allows-shown`,
   `pulls-422-no-commits`, `pulls-422-exists`, `refs-422-exists`,
   `refs-delete-missing-422`, `update-conflict-422`,
-  `merge-closed-405-not-mergeable`, `compare-files-capped-300`,
+  `compare-files-capped-300`,
   `comment-updated-at-on-edit`; for setup and the component
   (forge-setup.md and forge-connection.md cite them):
   `inactive-hook-visible`, and `manifest-hook-invalid-host-accepted`
@@ -710,8 +739,8 @@ component's worlds run it (fake-forge.md, sections 10 and 11).
 ## 15. Open questions
 
 - **Conditional reads beyond the log.** GitHub answers `304`, free, on a
-  pull request and its check runs too (`etag-304-free`); the client
-  would keep their validators. Default: the log alone.
+  stable repository (`etag-304-free`); broader use would keep validators
+  for other resources too. Default: the log alone.
 - **The update's head.** `Update { number }` carries none, so the plan
   reads it first; `Update { number, head }` would make it conditional on
   the head the client saw, as `Merge` is. Default: read first.
