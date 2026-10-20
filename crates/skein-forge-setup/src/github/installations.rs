@@ -89,6 +89,7 @@ impl Sweep {
                 Row::Log(_)
                 | Row::Reachable(_)
                 | Row::Branch(_)
+                | Row::SkippedBranch
                 | Row::Issue(_)
                 | Row::Comment(_)
                 | Row::Pull(_)

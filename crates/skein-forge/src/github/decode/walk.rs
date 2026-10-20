@@ -122,6 +122,7 @@ enum Read {
     Text,
     Body,
     LongBody,
+    LongText,
     Reason,
     Secret,
     Presence,
@@ -389,7 +390,8 @@ fn document_fields(node: Node) -> &'static [Field] {
         | Node::IssueUser
         | Node::CommentUser
         | Node::BotUser => const { &[field(b"id", Read::Number)] },
-        Node::Label | Node::BranchName => const { &[field(b"name", Read::Text)] },
+        Node::Label => const { &[field(b"name", Read::Text)] },
+        Node::BranchName => const { &[field(b"name", Read::LongText)] },
         Node::PullRequest => const { &[optional(b"merged_at", Read::Presence)] },
         Node::Comment => comment_fields(),
         Node::Installation => {
@@ -501,6 +503,7 @@ fn document_fields(node: Node) -> &'static [Field] {
         | Node::Errors => &[],
     }
 }
+#[expect(clippy::too_many_lines, reason = "one exhaustive table lists the element role of every document node")]
 fn element(role: Role) -> Option<Role> {
     let node = match role {
         Role::Document(node) => node,
@@ -850,7 +853,7 @@ impl Walk {
                         self.want = Want::Value(*field, bit);
                         return Ok(Move::Demand(match field.read {
                             Read::Reason => Request::Text(self.limits.json.string),
-                            Read::Text | Read::Secret => Request::Text(self.limits.string_bytes),
+                            Read::Text | Read::Secret | Read::LongText => Request::Text(self.limits.string_bytes),
                             Read::Body => Request::Text(self.limits.body_bytes.min(self.limits.string_bytes)),
                             Read::LongBody => Request::Text(self.limits.body_bytes),
                             Read::Presence => Request::Text(0),
@@ -878,6 +881,7 @@ impl Walk {
             | Event::Closed => Err(Malformed::Shape { field: b"" }),
         }
     }
+    #[expect(clippy::too_many_lines, reason = "the field parser exhaustively handles each read kind and token")]
     fn value(&mut self, field: Field, bit: u32, event: Event) -> Result<Move, Malformed> {
         if event == Event::Token(Token::Null) {
             self.want = Want::Key;
@@ -900,13 +904,20 @@ impl Walk {
                 self.unknown(&event, 0)?;
                 return Ok(scalar(node, field.key, Token::True));
             }
-            Read::Text | Read::Secret | Read::Body | Read::LongBody | Read::Reason | Read::Number | Read::Boolean => {}
+            Read::Text
+            | Read::Secret
+            | Read::Body
+            | Read::LongBody
+            | Read::LongText
+            | Read::Reason
+            | Read::Number
+            | Read::Boolean => {}
         }
         let wrong = Malformed::Shape { field: field.key };
         let token = match event {
             Event::Token(token) => token,
             Event::Long(length) => {
-                if field.read == Read::LongBody {
+                if field.read == Read::LongBody || field.read == Read::LongText {
                     self.want = Want::Key;
                     return Ok(Move::BodyLong(
                         match node {
@@ -925,7 +936,10 @@ impl Walk {
             Event::Skipped(_) | Event::Done | Event::Failed(_) | Event::Closed => return Err(wrong),
         };
         let valid = match (&field.read, &token) {
-            (Read::Text | Read::Secret | Read::Body | Read::LongBody | Read::Reason, Token::String(text)) => {
+            (
+                Read::Text | Read::Secret | Read::Body | Read::LongBody | Read::LongText | Read::Reason,
+                Token::String(text),
+            ) => {
                 if field.read != Read::LongBody
                     && field.read != Read::Reason
                     && text.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize")
@@ -951,6 +965,7 @@ impl Walk {
                 | Read::Presence
                 | Read::Body
                 | Read::LongBody
+                | Read::LongText
                 | Read::Reason
                 | Read::Number
                 | Read::Boolean

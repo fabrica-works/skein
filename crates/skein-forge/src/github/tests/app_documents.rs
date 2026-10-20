@@ -510,7 +510,8 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                     | Row::Remark(_)
                     | Row::Collaborator(_)
                     | Row::Rule(_)
-                    | Row::Branch(_) => {
+                    | Row::Branch(_)
+                    | Row::SkippedBranch => {
                         panic!("App row fixture")
                     }
                 }

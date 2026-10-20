@@ -568,6 +568,7 @@ impl Component {
                 | document::Row::Log(_)
                 | document::Row::Reachable(_)
                 | document::Row::Branch(_)
+                | document::Row::SkippedBranch
                 | document::Row::Issue(_)
                 | document::Row::Pull(_)
                 | document::Row::Context(_)

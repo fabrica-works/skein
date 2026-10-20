@@ -95,6 +95,8 @@ pub enum Row {
     Installation(Installation),
     Reachable(Reachable),
     Branch(Box<[u8]>),
+    /// A branch name past `string_bytes`, counted toward the page without retention.
+    SkippedBranch,
     Issue(Issue),
     Comment(Comment),
     /// One listed pull.

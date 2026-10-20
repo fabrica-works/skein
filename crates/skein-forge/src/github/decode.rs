@@ -48,6 +48,7 @@ pub struct Decoder {
     protection: protection::State,
     repository: document::Repository,
     branch: document::Branch,
+    branch_long: bool,
     message: Box<[u8]>,
     errors: List<Box<[u8]>>,
     error: Box<[u8]>,
@@ -85,6 +86,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
             rebase: false,
         },
         branch: document::Branch { name: Box::from([]), commit: [0; 32] },
+        branch_long: false,
         message: Box::from([]),
         errors: List::with_capacity(limits.inner),
         error: Box::from([]),
@@ -276,6 +278,7 @@ impl Decoder {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
             }
+            Move::BodyLong(Some(Node::BranchName), _) => self.branch_long = true,
             Move::BodyLong(Some(node), length) => {
                 self.issues.long(node, length);
                 self.reviews.long(node, length);
@@ -309,10 +312,13 @@ impl Decoder {
                 return Ok((tokenizer::Request::Next, Step::Row(Row::Collaborator(row))));
             }
             Move::End(Node::BranchName) => {
-                return Ok((
-                    tokenizer::Request::Next,
-                    Step::Row(Row::Branch(core::mem::replace(&mut self.branch.name, Box::from([])))),
-                ));
+                let name = core::mem::replace(&mut self.branch.name, Box::from([]));
+                let row = if core::mem::replace(&mut self.branch_long, false) {
+                    Row::SkippedBranch
+                } else {
+                    Row::Branch(name)
+                };
+                return Ok((tokenizer::Request::Next, Step::Row(row)));
             }
             Move::End(Node::ErrorEntry) => {
                 let error = core::mem::replace(&mut self.error, Box::from([]));

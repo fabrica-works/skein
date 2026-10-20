@@ -1094,3 +1094,92 @@ fn file_path_limits() {
         }
     }
 }
+
+fn branch_page(call: &mut Call, names: &[&[u8]], chunk: u32) -> Result<Option<Step>, api::Error> {
+    let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+    out.put(b"[").unwrap();
+    for (index, name) in names.iter().enumerate() {
+        if index != 0 {
+            out.put(b",").unwrap();
+        }
+        out.put(b"{\"name\":\"").unwrap();
+        out.put(name).unwrap();
+        out.put(b"\"}").unwrap();
+    }
+    out.put(b"]").unwrap();
+    let (rows, document) = decode(Kind::BranchRows, &bytes(out), chunk, &limits());
+    for row in rows.into_boxed() {
+        if let Some(step) = call.heard(Heard::Row(row))? {
+            return Ok(Some(step));
+        }
+    }
+    call.heard(Heard::Done(match document {
+        Ok(document) => Body::Document(document),
+        Err(error) => Body::Malformed(error),
+    }))
+}
+#[test]
+fn branches_skip_a_long_middle_name_and_keep_both_neighbors() {
+    let long = fixtures::filled(usize::try_from(limits().string_bytes).unwrap() + 1, b'x');
+    for chunk in [1, 7, ROOM] {
+        let mut call = started(api::Read::Branches, bounds());
+        assert_eq!(
+            branch_page(&mut call, &[b"before", &long, b"after"], chunk),
+            ended(Ok(api::Answer::Branches(Box::from([Box::from(*b"before"), Box::from(*b"after")]))))
+        );
+    }
+}
+#[test]
+fn branches_keep_a_name_at_the_string_bound() {
+    let name = fixtures::filled(usize::try_from(limits().string_bytes).unwrap(), b'x');
+    let mut call = started(api::Read::Branches, bounds());
+    assert_eq!(branch_page(&mut call, &[&name], 1), ended(Ok(api::Answer::Branches(Box::from([name])))));
+}
+#[test]
+fn branches_skip_a_queue_name_and_keep_its_base() {
+    // The prefix, one-digit queue number and SHA surround the base name.
+    const QUEUE_OVERHEAD: usize = b"gh-readonly-queue/".len() + b"/pr-1-".len() + fixtures::SHA.len();
+    let cap = usize::try_from(limits().string_bytes).unwrap();
+    let base = fixtures::filled(cap + 1 - QUEUE_OVERHEAD, b'b');
+    let mut queue = Writer::new(cap + 1);
+    queue.put(b"gh-readonly-queue/").unwrap();
+    queue.put(&base).unwrap();
+    queue.put(b"/pr-1-").unwrap();
+    queue.put(fixtures::SHA).unwrap();
+    let queue = queue.finish();
+    assert_eq!(queue.len(), cap + 1);
+    let mut call = started(api::Read::Branches, bounds());
+    assert_eq!(branch_page(&mut call, &[&base, &queue], 1), ended(Ok(api::Answer::Branches(Box::from([base])))));
+}
+#[test]
+fn branch_read_still_refuses_a_name_past_the_bound() {
+    let name = fixtures::filled(usize::try_from(limits().string_bytes).unwrap() + 1, b'x');
+    let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+    out.put(b"{\"name\":\"").unwrap();
+    out.put(&name).unwrap();
+    out.put(b"\",\"commit\":{\"sha\":\"").unwrap();
+    out.put(fixtures::SHA).unwrap();
+    out.put(b"\"}}").unwrap();
+    let (_, document) = decode(Kind::Branch, &bytes(out), 1, &limits());
+    let mut call = started(api::Read::Branch { branch: Box::from(*b"main") }, bounds());
+    assert_eq!(call.heard(Heard::Done(Body::Malformed(document.unwrap_err()))), ended(Err(api::Error::InvalidAnswer)));
+}
+#[test]
+fn skipped_branches_count_toward_per_page_and_paging_continues() {
+    let long = fixtures::filled(usize::try_from(limits().string_bytes).unwrap() + 1, b'x');
+    let mut call = Call::new(api::Read::Branches, Bounds { page_size: 2, ..bounds() }, true);
+    call.begin().unwrap();
+    call.head(true);
+    assert_eq!(
+        branch_page(&mut call, &[b"before", &long], 1),
+        Ok(Some(Step::send(Request::Branches { owner: owner(), name: name(), page: 2, per_page: 2 })))
+    );
+    call.head(false);
+    assert_eq!(
+        branch_page(&mut call, &[b"after"], 1),
+        ended(Ok(api::Answer::Branches(Box::from([Box::from(*b"before"), Box::from(*b"after")]))))
+    );
+
+    let mut call = started(api::Read::Branches, Bounds { page_size: 2, ..bounds() });
+    assert_eq!(branch_page(&mut call, &[b"before", &long, b"after"], 1), ended(Err(api::Error::TooLarge)));
+}

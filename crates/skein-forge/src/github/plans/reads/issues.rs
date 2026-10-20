@@ -63,6 +63,7 @@ impl Plan {
         }
         Ok(())
     }
+    #[expect(clippy::too_many_lines, reason = "the row dispatcher exhaustively handles each document kind")]
     pub(super) fn issue_row(&mut self, row: document::Row, bounds: Bounds, word: &[u8]) -> Result<(), api::Error> {
         if self.stage != Stage::Read && self.stage != Stage::Comments {
             return Err(api::Error::InvalidAnswer);
@@ -161,7 +162,8 @@ impl Plan {
                 | document::Row::Pull(_)
                 | document::Row::Context(_)
                 | document::Row::Run(_)
-                | document::Row::Branch(_),
+                | document::Row::Branch(_)
+                | document::Row::SkippedBranch,
             ) => return Err(api::Error::InvalidAnswer),
         }
         Ok(())

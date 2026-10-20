@@ -54,6 +54,7 @@ impl Reachable {
                     | document::Row::Log(_)
                     | document::Row::Installation(_)
                     | document::Row::Branch(_)
+                    | document::Row::SkippedBranch
                     | document::Row::Issue(_)
                     | document::Row::Pull(_)
                     | document::Row::Context(_)

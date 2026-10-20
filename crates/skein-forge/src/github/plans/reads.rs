@@ -491,11 +491,15 @@ impl Plan {
             return Err(api::Error::InvalidAnswer);
         }
         self.count = self.count.checked_add(1).ok_or(api::Error::TooLarge)?;
-        if self.count > self.limit || self.rows.len() >= bounds.rows {
+        if self.count > self.limit {
             return Err(api::Error::TooLarge);
         }
         match row {
+            document::Row::SkippedBranch => Ok(()),
             document::Row::Branch(name) => {
+                if self.rows.len() >= bounds.rows {
+                    return Err(api::Error::TooLarge);
+                }
                 self.size = size::add(self.size, &name, bounds)?;
                 match self.rows.push(name) {
                     Ok(()) => Ok(()),

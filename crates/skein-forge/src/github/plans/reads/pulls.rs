@@ -139,6 +139,7 @@ impl Plan {
             | document::Row::Issue(_)
             | document::Row::Comment(_)
             | document::Row::Branch(_)
+            | document::Row::SkippedBranch
             | document::Row::Log(_)
             | document::Row::Installation(_)
             | document::Row::Commit(_)

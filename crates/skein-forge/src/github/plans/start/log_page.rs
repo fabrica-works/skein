@@ -86,6 +86,7 @@ impl LogPage {
                     | document::Row::Installation(_)
                     | document::Row::Reachable(_)
                     | document::Row::Branch(_)
+                    | document::Row::SkippedBranch
                     | document::Row::Issue(_)
                     | document::Row::Comment(_)
                     | document::Row::Pull(_)

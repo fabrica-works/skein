@@ -220,6 +220,7 @@ fn keep_installation(
         | Row::Rule(_)
         | Row::Reachable(_)
         | Row::Branch(_)
+        | Row::SkippedBranch
         | Row::Issue(_)
         | Row::Pull(_)
         | Row::Context(_)

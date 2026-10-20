@@ -164,6 +164,7 @@ impl Plan {
             | crate::github::document::Row::Log(_)
             | crate::github::document::Row::Reachable(_)
             | crate::github::document::Row::Branch(_)
+            | crate::github::document::Row::SkippedBranch
             | crate::github::document::Row::Issue(_)
             | crate::github::document::Row::Comment(_)
             | crate::github::document::Row::Pull(_)
