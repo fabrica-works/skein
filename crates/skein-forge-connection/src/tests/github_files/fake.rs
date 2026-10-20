@@ -316,10 +316,12 @@ fn github_service(page: u32) -> service::Service {
         page,
         body: f::BODY_ROOM,
         response: 8192,
+        blob_records: 16,
     };
     service::Service::new(
         service::Config {
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
+            blob: Box::from(b"http://logs.example.test".as_slice()),
             app: App {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),

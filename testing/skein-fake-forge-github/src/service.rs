@@ -57,6 +57,8 @@ pub enum Shown {
 pub struct Config {
     /// Origin used by pagination links; a socket host sets its bound origin before serving.
     pub base: Box<[u8]>,
+    /// Blob origin; a peer replaces it with its bound second listener.
+    pub blob: Box<[u8]>,
     /// App identity and test signing key.
     pub app: App,
     /// Grants at conversion and fields shown by GET /app.
@@ -96,6 +98,8 @@ pub struct Limits {
     pub body: u32,
     /// Maximum response body and, separately, Link value (at least 128 bytes).
     pub response: u32,
+    /// Recent blob requests retained in a bounded ring.
+    pub blob_records: u32,
 }
 /// An unusable limit or an invalid scenario table.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -137,6 +141,7 @@ pub enum ContentType {
     Json,
     Octets,
     Html,
+    Plaintext,
 }
 impl ContentType {
     #[must_use]
@@ -145,6 +150,7 @@ impl ContentType {
             Self::Json => b"application/json",
             Self::Octets => b"application/octet-stream",
             Self::Html => b"text/html",
+            Self::Plaintext => b"text/plain",
         }
     }
 }
@@ -156,6 +162,8 @@ pub struct Response {
     pub content_type: ContentType,
     /// Optional absolute next and last links.
     pub link: Option<Box<[u8]>>,
+    /// Redirect target, framed through the same Location path as browser pages.
+    pub location: Option<Box<[u8]>>,
     /// JSON document, raw file bytes, or empty on 204.
     pub body: Box<[u8]>,
 }
@@ -165,6 +173,7 @@ impl core::fmt::Debug for Response {
             .field("status", &self.status)
             .field("content_type", &self.content_type)
             .field("link", &self.link)
+            .field("redirect", &self.location.is_some())
             .field("body_bytes", &self.body.len())
             .finish()
     }
@@ -188,11 +197,13 @@ pub struct Pending {
 pub(crate) enum PendingKind {
     Read(reads::Pending),
     Write(writes::Pending),
+    Blob,
 }
 /// GitHub's own state, with no clock, socket or HTTP parser.
 #[derive(Debug)]
 pub struct Service {
     pub(crate) base: Box<[u8]>,
+    pub(crate) logs: crate::logs::Store,
     pub(crate) app: App,
     pub(crate) app_facts: AppFacts,
     pub(crate) bot: u64,
@@ -217,6 +228,7 @@ impl Service {
         let string = usize::try_from(limits.github.string_bytes).or(Err(Problem::Limits))?;
         if config.ruleset_id == 0
             || !valid_origin(&config.base, limits.github.target_bytes)
+            || !crate::logs::origin_fits(&config.blob, limits)
             || config.bot == 0
             || config.bot == config.app.id
             || config.app.id == 0
@@ -293,6 +305,7 @@ impl Service {
             }
         }
         Ok(Self {
+            logs: crate::logs::Store::new(config.blob, limits.blob_records, seed),
             base: config.base,
             app: config.app,
             app_facts: config.app_facts,
@@ -403,7 +416,7 @@ impl Service {
                     routes::Token::Graphql => self.graphql(request, &grant, reply_to),
                     routes::Token::Write(route) => writes::call(self, route, &grant, request.body, reply_to),
                     routes::Token::Read(read) => {
-                        reads::call(self, read, &grant, request.target, self.body_fits(request.body), reply_to)
+                        reads::call(self, read, &grant, request.target, self.body_fits(request.body), now, reply_to)
                     }
                 }
             }
@@ -427,6 +440,7 @@ impl Service {
                 grant,
                 request.target,
                 self.body_fits(request.body),
+                Wall::EPOCH,
                 reply_to,
             ),
             None => Outcome::Reply(answers::response(200, &Body::Graphql, limits)),
@@ -446,6 +460,7 @@ impl Service {
         let outcome = match pending.kind {
             PendingKind::Read(pending) => Outcome::Reply(reads::finish(pending, result, self, domain)),
             PendingKind::Write(pending) => writes::finish(self, pending, result, reply_to, domain),
+            PendingKind::Blob => Outcome::Reply(crate::logs::finish(result, &self.limits)),
         };
         self.local_links(outcome)
     }
@@ -515,7 +530,13 @@ impl Service {
             routes::App::Mint(id) => self.mint(id, request.body, now),
             routes::App::Uninstall(id) => {
                 if self.installations.remove(id) {
-                    Response { content_type: ContentType::Json, status: 204, link: None, body: Box::from([]) }
+                    Response {
+                        content_type: ContentType::Json,
+                        status: 204,
+                        link: None,
+                        location: None,
+                        body: Box::from([]),
+                    }
                 } else {
                     answers::missing(&self.limits)
                 }
@@ -683,12 +704,14 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         || limits.pages.states == 0
         || limits.pages.manifest_bytes == 0
         || limits.response < 128
+        || limits.blob_records == 0
     {
         return None;
     }
     let mut bytes = crate::server::worst_case(limits)?
         .checked_add(u64::from(limits.github.target_bytes))?
         .checked_add(pages::worst_case(limits)?)?
+        .checked_add(crate::logs::worst_case(limits)?)?
         .checked_add(List::<Account>::worst_case(config.accounts.capacity())?)?;
     for account in &config.accounts {
         bytes = bytes.checked_add(u64::try_from(account.login.len()).ok()?)?;
@@ -757,7 +780,7 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         .checked_add(u64::from(limits.github.string_bytes).checked_mul(8)?)
 }
 
-fn valid_origin(base: &[u8], cap: u32) -> bool {
+pub(crate) fn valid_origin(base: &[u8], cap: u32) -> bool {
     let Ok(length) = u32::try_from(base.len()) else { return false };
     if length > cap {
         return false;

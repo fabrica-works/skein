@@ -1,8 +1,9 @@
 mod app;
-mod checks;
 mod app_facts;
+mod checks;
 pub(crate) mod fixtures;
 mod installations;
+mod job_logs;
 mod keys;
 mod pages_conversion;
 mod pages_install;

@@ -154,6 +154,27 @@ pub fn shared() -> Rc<RefCell<Forge>> {
     configured_forge(SEED, fake_config(), false)
 }
 pub(super) fn configured_forge(seed: u64, config: domain::Config, hooked: bool) -> Rc<RefCell<Forge>> {
+    configured_checks_forge(
+        seed,
+        config,
+        hooked,
+        api::Checks {
+            contexts: Box::new([]),
+            latency_min: Duration::ZERO,
+            latency_max: Duration::ZERO,
+            silent: 0,
+            passes: 0,
+            reruns: 0,
+            cue: None,
+        },
+    )
+}
+pub(super) fn configured_checks_forge(
+    seed: u64,
+    config: domain::Config,
+    hooked: bool,
+    checks: api::Checks,
+) -> Rc<RefCell<Forge>> {
     let mut domain = domain::Domain::new(&config, seed);
     domain::repository(
         &mut domain,
@@ -164,15 +185,7 @@ pub(super) fn configured_forge(seed: u64, config: domain::Config, hooked: bool) 
             default: boxed(b"main"),
             tree: Box::new([]),
             labels: Box::new([]),
-            checks: api::Checks {
-                contexts: Box::new([]),
-                latency_min: Duration::ZERO,
-                latency_max: Duration::ZERO,
-                silent: 0,
-                passes: 0,
-                reruns: 0,
-                cue: None,
-            },
+            checks,
             protection: None,
             hooked,
         },

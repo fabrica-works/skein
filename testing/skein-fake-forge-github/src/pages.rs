@@ -294,7 +294,7 @@ pub(crate) fn convert(service: &mut Service, code: &[u8], body: &[u8], now: Wall
         return answers::failed();
     };
     record.used = true;
-    Response { content_type: crate::service::ContentType::Json, status: 201, link: None, body }
+    Response { content_type: crate::service::ContentType::Json, status: 201, link: None, location: None, body }
 }
 #[derive(Debug)]
 struct Grants {

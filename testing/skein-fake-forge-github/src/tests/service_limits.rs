@@ -131,10 +131,10 @@ fn github_fake_body_and_response_bounds() {
     refusal(&h, &response, 413, b"Payload Too Large");
     assert_eq!(h.calls, 0, "oversized bodies are refused before domain calls");
     let mut limits = f::limits();
-    limits.response = 128;
+    limits.response = 192;
     let mut h = Harness::with(limits, f::config());
     let token = bearer(h.mint(1, false).token.expose());
     let response = h.ask(Method::Get, b"/repositories/2", Some(token.expose()), b"");
     refusal(&h, &response, 500, b"Server Error");
-    assert!(response.body.len() <= 128, "bounded fallback");
+    assert!(response.body.len() <= 192, "bounded fallback");
 }

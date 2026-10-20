@@ -34,6 +34,7 @@ pub enum Event {
 #[expect(missing_debug_implementations, reason = "HTTP heads and body intake can contain credentials")]
 pub struct Server {
     owner: Token,
+    blob: bool,
     state: State,
     http: http::Server,
     events: Queue<http::Event>,
@@ -50,6 +51,7 @@ impl Server {
         worst_case(limits).ok_or(Problem::Limits)?;
         Ok(Self {
             owner,
+            blob: false,
             state: State::New,
             http: http::Server::new(&limits.http),
             events: Queue::with_capacity(4),
@@ -61,6 +63,12 @@ impl Server {
             reply: None,
             offset: 0,
         })
+    }
+    /// A connection on the peer's credential-free blob listener.
+    pub fn blob(owner: Token, limits: &Limits) -> Result<Self, Problem> {
+        let mut server = Self::new(owner, limits)?;
+        server.blob = true;
+        Ok(server)
     }
     /// Takes the head with every Authorization value removed.
     pub fn take_head(&mut self) -> Option<http::Call> {
@@ -321,6 +329,19 @@ fn event_up(
 }
 fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above: &mut Queue<Event>) {
     let call = server.call.take().expect("accepted head");
+    if server.blob {
+        let method = if call.method == HttpMethod::Get { Method::Get } else { Method::Post };
+        let outcome = service.blob(
+            method,
+            &call.target,
+            call.header(b"authorization").is_some(),
+            call.header(b"range").is_some(),
+            env.wall,
+            ReplyTo::new(server.owner),
+        );
+        answer(server, &env.limits, outcome, above);
+        return;
+    }
     let method = match call.method {
         HttpMethod::Get => Method::Get,
         HttpMethod::Post => Method::Post,
@@ -356,7 +377,7 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
         respond(
             server,
             &env.limits,
-            Response { status: page.status, link: None, body: page.body, content_type },
+            Response { status: page.status, link: None, location: None, body: page.body, content_type },
             page.location,
         );
     } else {
@@ -386,6 +407,9 @@ fn answer(server: &mut Server, limits: &Limits, outcome: Outcome, above: &mut Qu
     }
 }
 fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut location: Option<Box<[u8]>>) {
+    if location.is_none() {
+        location = reply.location.take();
+    }
     let location_bytes = match &location {
         Some(value) => value.len(),
         None => 0,

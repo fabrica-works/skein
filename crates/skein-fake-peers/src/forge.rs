@@ -13,6 +13,8 @@ use crate::face::{Face, LISTENER};
 use crate::transport::Wire;
 use crate::{Error, Limits, Transport};
 
+const BLOB_LISTENER: Token = Token::new(u64::MAX - 1);
+
 mod delivery;
 mod layer;
 mod observe;
@@ -91,6 +93,8 @@ struct Call {
 /// Hosted admission, HTTP routing and settlement over the owner's shared forge.
 pub struct Peer {
     face: Face,
+    blob_listener: Option<Token>,
+    blob_address: Option<SocketAddr>,
     forge: Rc<RefCell<Forge>>,
     service: protocol::Service,
     protocol: protocol::Limits,
@@ -121,9 +125,10 @@ impl Peer {
         Self::host(address, limits, protocol::Limits::Forgejo(protocol), service, protocol_bound, forge)
     }
     /// GitHub's API and browser pages share this listener and the owner's forge.
-    /// Blob hosting and GitHub hook delivery are later work; this face serves neither (fake-forge.md, 10.3–10.5).
+    /// Its second listener serves signed, credential-free job logs (fake-forge.md, 10.5).
     pub fn github(
         address: SocketAddr,
+        blob: SocketAddr,
         limits: Limits,
         config: skein_fake_forge_github::Config,
         protocol: skein_fake_forge_github::Limits,
@@ -132,14 +137,21 @@ impl Peer {
     ) -> Result<Self, Error> {
         // Port 0 may bind any u16 port; reserve its longest spelling at admission.
         let origin = format!("http://{}", SocketAddr::new(address.ip(), u16::MAX));
-        if origin.len() > usize::try_from(protocol.github.target_bytes).map_err(|_| Error::Limits)? {
+        let blob_origin = format!("http://{}", SocketAddr::new(blob.ip(), u16::MAX));
+        if !blob.ip().is_loopback()
+            || blob_origin.len().checked_add(160).ok_or(Error::Limits)?
+                > usize::try_from(protocol.github.target_bytes.min(protocol.response)).map_err(|_| Error::Limits)?
+            || origin.len() > usize::try_from(protocol.github.target_bytes).map_err(|_| Error::Limits)?
+        {
             return Err(Error::Limits);
         }
         let protocol_bound = skein_fake_forge_github::worst_case(&protocol, &config).ok_or(Error::Limits)?;
         let service = protocol::Service::Github(
             skein_fake_forge_github::Service::new(config, &protocol, seed).map_err(|_| Error::Limits)?,
         );
-        Self::host(address, limits, protocol::Limits::Github(protocol), service, protocol_bound, forge)
+        let mut peer = Self::host(address, limits, protocol::Limits::Github(protocol), service, protocol_bound, forge)?;
+        peer.face.requests.push(io::Request::Listen { owner: BLOB_LISTENER, addr: io::Addr::Ip(blob) });
+        Ok(peer)
     }
     fn host(
         address: SocketAddr,
@@ -153,6 +165,8 @@ impl Peer {
         let call_capacity = call_capacity(&protocol, &forge.borrow(), limits.connections).ok_or(Error::Limits)?;
         Ok(Self {
             face: Face::new(address, limits)?,
+            blob_listener: None,
+            blob_address: None,
             forge,
             service,
             protocol,
@@ -172,6 +186,18 @@ impl Peer {
         self.face.address
     }
     #[must_use]
+    pub fn blob_address(&self) -> Option<SocketAddr> {
+        self.blob_address
+    }
+    /// Recent blob paths and header presence; credential values are never retained.
+    #[must_use]
+    pub fn blob_records(&self) -> Option<&Queue<skein_fake_forge_github::logs::Record>> {
+        match &self.service {
+            protocol::Service::Github(service) => Some(service.blob_records()),
+            protocol::Service::Forgejo(_) => None,
+        }
+    }
+    #[must_use]
     pub fn observations(&self) -> &[Observation] {
         &self.observations
     }
@@ -184,6 +210,15 @@ impl Peer {
         let env = Env { now, wall, limits: self.protocol };
         match event {
             io::Event::Listening { owner, listener, addr } => {
+                if owner == BLOB_LISTENER {
+                    self.blob_listener = Some(listener);
+                    self.blob_address = Some(addr.socket().expect("loopback socket address"));
+                    if let protocol::Service::Github(service) = &mut self.service {
+                        let origin = format!("http://{}", self.blob_address.expect("bound blob address"));
+                        service.set_blob_origin(origin.into_bytes().into_boxed_slice()).expect("bounded local origin");
+                    }
+                    return;
+                }
                 assert_eq!(owner, LISTENER);
                 self.face.listener = Some(listener);
                 self.face.address = Some(addr.socket().expect("loopback socket address"));
@@ -194,7 +229,8 @@ impl Peer {
                 }
             }
             io::Event::Accepted { owner, socket, .. } => {
-                assert_eq!(owner, LISTENER);
+                assert!(owner == LISTENER || owner == BLOB_LISTENER);
+                let blob = owner == BLOB_LISTENER;
                 if self.face.stopping
                     || self.connections.len() == usize::try_from(self.face.limits.connections).expect("u32 fits")
                 {
@@ -209,7 +245,12 @@ impl Peer {
                 let mut connection = Connection {
                     owner,
                     wire: Wire::new(socket, Transport::Plaintext, limits),
-                    server: protocol::Server::new(owner, &self.protocol).expect("validated limits"),
+                    server: if blob {
+                        protocol::Server::blob(owner, &self.protocol)
+                    } else {
+                        protocol::Server::new(owner, &self.protocol)
+                    }
+                    .expect("validated limits"),
                     above: Queue::with_capacity(limits.queue),
                     below: Queue::with_capacity(limits.queue),
                     plain: Queue::with_capacity(limits.queue),
@@ -252,7 +293,7 @@ impl Peer {
                 }
             }
             io::Event::Failed { owner, .. } => {
-                assert_ne!(owner, LISTENER, "the loopback listener binds");
+                assert!(owner != LISTENER && owner != BLOB_LISTENER, "the loopback listeners bind");
                 if let Some(connection) = self.connections.iter_mut().find(|connection| connection.owner == owner) {
                     connection.wire.close(&mut self.face.requests);
                 }
@@ -390,6 +431,12 @@ impl Host for Peer {
             self.event(event, now, wall);
         }
         self.face.close_listener();
+        if self.face.stopping
+            && self.face.requests.room() > 0
+            && let Some(listener) = self.blob_listener.take()
+        {
+            self.face.requests.push(io::Request::Close { entity: listener });
+        }
         self.progress(now, wall);
         self.face.down(now, wall);
     }
@@ -401,6 +448,7 @@ impl Host for Peer {
     }
     fn work_pending(&self, now: Time) -> bool {
         self.face.work_pending()
+            || (self.face.stopping && self.blob_listener.is_some())
             || self.forge.borrow().domain.is_due(now)
             || self.connections.iter().any(|connection| {
                 connection.server.has_work()
@@ -418,6 +466,7 @@ impl Host for Peer {
     }
     fn is_empty(&self) -> bool {
         self.face.is_empty()
+            && self.blob_listener.is_none()
             && self.connections.is_empty()
             && self.calls.is_empty()
             && self.deliveries.is_empty()

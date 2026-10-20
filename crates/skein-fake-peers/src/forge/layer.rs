@@ -96,6 +96,14 @@ impl Server {
             }
         }
     }
+    pub fn blob(owner: Token, limits: &Limits) -> Result<Self, crate::Error> {
+        match limits {
+            Limits::Github(limits) => {
+                github::Server::blob(owner, limits).map(Self::Github).map_err(|_| crate::Error::Limits)
+            }
+            Limits::Forgejo(_) => Err(crate::Error::Limits),
+        }
+    }
     pub fn take_head(&mut self) -> Option<skein_http::server::Call> {
         match self {
             Self::Forgejo(server) => server.take_head(),

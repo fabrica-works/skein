@@ -25,7 +25,11 @@ impl Forge {
 pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound: u64, forge: &Forge) -> Option<u64> {
     let config = &forge.config;
     let domain = &config.limits;
-    if limits.io.sockets < limits.connections.checked_mul(2)?.checked_add(1)?
+    let listeners = match protocol {
+        protocol::Limits::Github(_) => 2,
+        protocol::Limits::Forgejo(_) => 1,
+    };
+    if limits.io.sockets < limits.connections.checked_mul(2)?.checked_add(listeners)?
         || limits.connections > protocol.connections(limits.connections)
         || protocol.calls(limits.connections) >= (7 << 28)
         || limits.plaintext < protocol.http().head.max(protocol.http().read)

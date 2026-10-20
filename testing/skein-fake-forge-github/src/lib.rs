@@ -8,6 +8,7 @@ mod answers;
 pub mod app;
 pub mod installations;
 pub mod keys;
+pub mod logs;
 pub mod manifest;
 pub mod pages;
 mod reads;

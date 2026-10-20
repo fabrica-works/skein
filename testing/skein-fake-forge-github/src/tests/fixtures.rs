@@ -47,6 +47,7 @@ pub fn config() -> Config {
     }
     Config {
         base: boxed(b"http://127.0.0.1:3000"),
+        blob: boxed(b"http://logs.example.test"),
         app: app(),
         app_facts: service::AppFacts::Complete,
         shown: service::Shown::Ruleset,
@@ -83,6 +84,7 @@ pub fn limits() -> Limits {
         page: 2,
         body: 4096,
         response: 8192,
+        blob_records: 16,
     }
 }
 pub fn authorization(key: &[u8], issued: u64, expires: u64) -> Secret {
@@ -467,7 +469,13 @@ pub fn page_refusal(h: &Harness, answer: crate::pages::Answer, status: u16, mess
     assert_eq!(answer.media, crate::pages::Media::None);
     refusal(
         h,
-        &Response { content_type: service::ContentType::Json, status: answer.status, body: answer.body, link: None },
+        &Response {
+            content_type: service::ContentType::Json,
+            status: answer.status,
+            body: answer.body,
+            link: None,
+            location: None,
+        },
         status,
         message,
     );

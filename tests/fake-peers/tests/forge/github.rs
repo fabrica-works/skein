@@ -67,6 +67,7 @@ fn limits() -> fake::Limits {
         page: 1,
         body: BODY_BYTES,
         response: RESPONSE_BYTES,
+        blob_records: 16,
     }
 }
 fn config() -> fake::Config {
@@ -88,6 +89,7 @@ fn config() -> fake::Config {
     }
     fake::Config {
         base: f::boxed(b"http://127.0.0.1:1"),
+        blob: f::boxed(b"http://logs.example.test"),
         app: fake::app::App {
             id: APP,
             slug: f::boxed(SLUG),
@@ -180,18 +182,39 @@ struct World {
 }
 impl World {
     fn new(seed: u64) -> Self {
-        let forge = f::configured_forge(seed, f::fake_config(), false);
+        Self::with_checks(
+            seed,
+            da::Checks {
+                contexts: Box::new([]),
+                latency_min: skein_lib::Duration::ZERO,
+                latency_max: skein_lib::Duration::ZERO,
+                silent: 0,
+                passes: 0,
+                reruns: 0,
+                cue: None,
+            },
+        )
+    }
+    fn with_checks(seed: u64, checks: da::Checks) -> Self {
+        let forge = f::configured_checks_forge(seed, f::fake_config(), false, checks);
         domain::grant(&mut forge.borrow_mut().domain, f::REPOSITORY, BOT, da::Permission::Write);
-        let peer_limits =
-            skein_fake_peers::Limits { observations: RECORDS, observation_bytes: RECORD_BYTES, ..f::limits() };
-        let github = Peer::github(f::address(), peer_limits, config(), limits(), Rc::clone(&forge), seed)
+        let peer_limits = skein_fake_peers::Limits {
+            io: skein_io::Limits { sockets: 6, ..f::limits().io },
+            observations: RECORDS,
+            observation_bytes: RECORD_BYTES,
+            ..f::limits()
+        };
+        let github = Peer::github(f::address(), f::address(), peer_limits, config(), limits(), Rc::clone(&forge), seed)
             .expect("bounded GitHub peer");
         let forgejo = Peer::new(f::address(), peer_limits, f::config(), f::protocol_limits(), Rc::clone(&forge), seed)
             .expect("bounded Forgejo peer");
         let mut sim = Sim::new(seed, skein_sim::Config::calm());
         let (github_pid, forgejo_pid, client_pid) = (sim.spawn_process(), sim.spawn_process(), sim.spawn_process());
         let mut world = Self { github, forgejo, forge, sim, github_pid, forgejo_pid, client_pid, serial: 0, passes: 0 };
-        while world.github.address().is_none() || world.forgejo.address().is_none() {
+        while world.github.address().is_none()
+            || world.github.blob_address().is_none()
+            || world.forgejo.address().is_none()
+        {
             world.pass();
         }
         world
@@ -265,6 +288,18 @@ impl World {
         self.send(fd, &request(method, target, body, auth));
         self.receive(fd)
     }
+    fn fetch_blob(&mut self, target: &[u8]) -> Reply {
+        let Done::Fd(fd) = support::call(&mut self.sim, self.client_pid, 1, Op::Socket { family: Family::Ipv4 }) else {
+            panic!("blob client socket")
+        };
+        let address = self.github.blob_address().expect("bound blob address");
+        support::call(&mut self.sim, self.client_pid, 2, Op::Connect { fd, addr: address });
+        let mut wire = b"GET ".to_vec();
+        wire.extend_from_slice(target);
+        wire.extend_from_slice(b" HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=0-0\r\nConnection: close\r\n\r\n");
+        self.send(fd, &wire);
+        self.receive(fd)
+    }
     fn manifest(&mut self) -> Reply {
         let mut form = b"manifest=".to_vec();
         for byte in MANIFEST {
@@ -307,28 +342,52 @@ impl World {
         let mut tables = Tables::new(4, 8);
         let mut step = plan.begin(bounds, SLUG, &mut tables).expect("plan begins");
         for _ in 0..32 {
-            let exchange = match step {
+            let events = match step {
                 Step::Done(result) => return result,
-                Step::Send(exchange) => exchange,
-                Step::Redirect { .. } => panic!("this plan uses only API exchanges"),
+                Step::Send(exchange) => {
+                    let encoded =
+                        github::request::encode(&exchange.request, &limits().github).expect("bounded request encoding");
+                    let response = self.fetch(
+                        encoded.method,
+                        &encoded.target,
+                        encoded.body.as_deref().unwrap_or(b""),
+                        Some(token),
+                    );
+                    let mut head = github::header::Head::new();
+                    for (name, value) in &response.headers {
+                        github::header::field(&mut head, name, value, &limits().github);
+                    }
+                    let mut events = vec![Heard::Head { status: response.status, head }];
+                    if response.status != 302 {
+                        let kind = if response.status < 300 {
+                            github::decode::kind(&exchange.request).expect("request document kind")
+                        } else {
+                            Kind::Error
+                        };
+                        let (rows, document) = response.decode(kind);
+                        events.extend(rows.into_iter().map(Heard::Row));
+                        events.push(Heard::Done(Body::Document(document)));
+                    }
+                    events
+                }
+                Step::Redirect { redirect, retention } => {
+                    let address = self.github.blob_address().expect("bound blob origin");
+                    assert_eq!(redirect.origin.port, address.port());
+                    assert!(!redirect.origin.tls);
+                    assert_eq!(redirect.origin.host.as_ref(), address.ip().to_string().as_bytes());
+                    let response = self.fetch_blob(&redirect.target);
+                    assert_eq!(response.status, 200);
+                    let github::plans::plan::Retention::Tail { bytes } = retention else {
+                        panic!("job log retains tail")
+                    };
+                    let cap = usize::try_from(bytes).expect("u32 fits usize");
+                    let start = response.body.len().saturating_sub(cap);
+                    vec![
+                        Heard::Head { status: response.status, head: github::header::Head::new() },
+                        Heard::Done(Body::Raw { bytes: f::boxed(&response.body[start..]), more: start != 0 }),
+                    ]
+                }
             };
-            let encoded =
-                github::request::encode(&exchange.request, &limits().github).expect("bounded request encoding");
-            let response =
-                self.fetch(encoded.method, &encoded.target, encoded.body.as_deref().unwrap_or(b""), Some(token));
-            let mut head = github::header::Head::new();
-            for (name, value) in &response.headers {
-                github::header::field(&mut head, name, value, &limits().github);
-            }
-            let kind = if response.status < 300 {
-                github::decode::kind(&exchange.request).expect("request document kind")
-            } else {
-                Kind::Error
-            };
-            let (rows, document) = response.decode(kind);
-            let mut events = vec![Heard::Head { status: response.status, head }];
-            events.extend(rows.into_iter().map(Heard::Row));
-            events.push(Heard::Done(Body::Document(document)));
             let mut next = None;
             for event in events {
                 if let Some(advance) = plan.heard(event, bounds, SLUG, &mut tables).expect("plan accepts response") {
@@ -624,5 +683,52 @@ fn github_peer_keeps_a_continuation_until_the_followup_reply() {
     assert!(matches!(calls[0].1, da::Op::Read(da::Read::Item { number: 1, .. })));
     assert!(matches!(calls[1].1, da::Op::Write(da::Write::Review { number: 1, .. })));
     assert_eq!(calls[0].0, calls[1].0);
+    world.settle();
+}
+
+fn commit_id(number: u64) -> api::Commit {
+    let mut id = [0; 32];
+    id[..8].copy_from_slice(&number.to_be_bytes());
+    id
+}
+#[test]
+fn github_peer_runs_the_dialects_job_log_redirect_plan_through_the_blob_face() {
+    let mut world = World::with_checks(
+        f::SEED,
+        da::Checks {
+            contexts: Box::new([f::boxed(b"ci")]),
+            latency_min: skein_lib::Duration::ZERO,
+            latency_max: skein_lib::Duration::ZERO,
+            silent: 0,
+            passes: 0,
+            reruns: 0,
+            cue: None,
+        },
+    );
+    let token = world.token();
+    world
+        .plan(&token, api::Op::Write(api::Write::CreateBranch { branch: f::boxed(b"feature"), commit: commit_id(1) }))
+        .expect("branch starts CI");
+    let api::Answer::Checks(checks) =
+        world.plan(&token, api::Op::Read(api::Read::Checks { commit: commit_id(1) })).expect("checks")
+    else {
+        panic!("checks answer")
+    };
+    let attempt = checks[0].job.expect("failed CI attempt");
+    let expected =
+        b"set up ci\nfailing check ci 0\nfailing check ci 1\nfailing check ci 2\nfailing check ci 3\njob ci failed\n";
+    for max_bytes in [4096, 8] {
+        let api::Answer::Job { log, truncated, .. } =
+            world.plan(&token, api::Op::Read(api::Read::Job { attempt, max_bytes })).expect("job plan follows one 302")
+        else {
+            panic!("job answer")
+        };
+        let cap = usize::try_from(max_bytes).expect("test cap");
+        assert_eq!(log.as_ref(), &expected[expected.len().saturating_sub(cap)..]);
+        assert_eq!(truncated, cap < expected.len());
+        let record = world.github.blob_records().expect("GitHub records").iter().last().expect("blob request");
+        assert!(!record.authorization);
+        assert!(record.range);
+    }
     world.settle();
 }

@@ -117,7 +117,9 @@ pub(crate) fn response(status: u16, body: &Body<'_>, limits: &Limits) -> Respons
         return failed();
     }
     match finish(out) {
-        Some(body) => Response { content_type: crate::service::ContentType::Json, status, link: None, body },
+        Some(body) => {
+            Response { content_type: crate::service::ContentType::Json, status, link: None, location: None, body }
+        }
         None => failed(),
     }
 }
@@ -136,6 +138,7 @@ pub(crate) fn failed() -> Response {
         content_type: crate::service::ContentType::Json,
         status: 500,
         link: None,
+        location: None,
         body: bytes::copy_of(br#"{"message":"Server Error","errors":[]}"#),
     }
 }

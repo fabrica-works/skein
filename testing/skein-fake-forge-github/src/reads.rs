@@ -26,6 +26,7 @@ mod reviews;
 #[derive(Debug)]
 pub(crate) enum Read {
     Checks { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, page: u32, per_page: u32, runs: bool },
+    JobLog { owner: Box<[u8]>, name: Box<[u8]>, id: u64 },
     Job { owner: Box<[u8]>, name: Box<[u8]>, id: u64 },
     Protection { owner: Box<[u8]>, name: Box<[u8]>, query: protection::Read },
     Repository(u64),
@@ -50,6 +51,7 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Checks { repository: Box<[u8]>, commit: u64, page: u32, size: u32, target: Box<[u8]>, runs: bool },
+    JobLog { repository: u32, now: Wall },
     Job { repository: Box<[u8]> },
     Protection { repository: Box<[u8]>, query: protection::Read },
     Repository(Row),
@@ -75,6 +77,7 @@ fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
         Read::Checks { owner, name, .. }
         | Read::Job { owner, name, .. }
+        | Read::JobLog { owner, name, .. }
         | Read::Protection { owner, name, .. }
         | Read::Enqueue { owner, name, .. }
         | Read::PullGraphql { owner, name, .. }
@@ -107,6 +110,7 @@ fn writing(read: &Read) -> bool {
         Read::Enqueue { .. } => true,
         Read::Checks { .. }
         | Read::Job { .. }
+        | Read::JobLog { .. }
         | Read::Protection { .. }
         | Read::Repository(_)
         | Read::PullGraphql { .. }
@@ -135,6 +139,7 @@ pub(crate) fn call(
     grant: &Grant,
     target: &[u8],
     body_fits: bool,
+    now: Wall,
     reply_to: ReplyTo,
 ) -> Outcome {
     let Some(row) = row(service, &read) else {
@@ -169,6 +174,7 @@ pub(crate) fn call(
                 Op::Read(a::Read::Checks { commit }),
             )
         }
+        Read::JobLog { id, .. } => (Pending::JobLog { repository: row.id, now }, Op::Read(a::Read::Job { job: id })),
         Read::Job { id, .. } => {
             (Pending::Job { repository: bytes::copy_of(&repository) }, Op::Read(a::Read::Job { job: id }))
         }
@@ -309,6 +315,7 @@ pub(crate) fn finish(
         },
         Pending::Checks { .. }
         | Pending::Job { .. }
+        | Pending::JobLog { .. }
         | Pending::Protection { .. }
         | Pending::PullGraphql { .. }
         | Pending::Reviews { .. }
@@ -334,6 +341,7 @@ pub(crate) fn finish(
         Pending::Checks { repository, commit, page, size, target, runs } => {
             checks::render(answer, &repository, commit, page, size, &target, runs, limits, domain)
         }
+        Pending::JobLog { repository, now } => crate::logs::redirect(service, repository, answer, now),
         Pending::Job { repository } => checks::job(answer, &repository, limits, domain),
         Pending::Protection { repository, query } => {
             let Answer::Settings(_) = answer else {
@@ -363,7 +371,7 @@ pub(crate) fn finish(
             if body.len() > usize::try_from(limits.response).expect("response bound") {
                 return answers::failed();
             }
-            Response { content_type: service::ContentType::Octets, status: 200, link: None, body }
+            Response { content_type: service::ContentType::Octets, status: 200, link: None, location: None, body }
         }
         Pending::Issues { target, page, size } => issues::items(answer, &target, page, size, limits),
         Pending::Issue => issues::item(answer, limits),
@@ -536,6 +544,7 @@ pub(crate) fn enqueue(service: &Service, id: &[u8], head: api::Commit, grant: &G
         grant,
         b"/graphql",
         true,
+        Wall::EPOCH,
         reply_to,
     )
 }
