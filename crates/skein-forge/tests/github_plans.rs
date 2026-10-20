@@ -353,7 +353,6 @@ fn github_plans_malformed_body() {
 fn github_plans_writes_refused() {
     let mut tables = Tables::new(2, 2);
     for write in [
-        api::Write::CreateIssue { key: Box::from([]), title: Box::from([]), body: Box::from([]) },
         api::Write::Post { number: 1, key: Box::from([]), body: Box::from([]) },
         api::Write::Review { number: 1, key: Box::from([]), verdict: api::Verdict::Approve, body: Box::from([]) },
         api::Write::SetReviewers { number: 1, reviewers: Box::from([]) },

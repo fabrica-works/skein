@@ -67,6 +67,7 @@ pub enum Request {
     Edit { owner: Box<[u8]>, name: Box<[u8]>, number: u64, title: Option<Box<[u8]>>, body: Option<Box<[u8]>> },
     Status { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, context: Box<[u8]>, check: api::Check },
     CreateBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]>, commit: api::Commit },
+    CreateIssue { owner: Box<[u8]>, name: Box<[u8]>, title: Box<[u8]>, body: Box<[u8]> },
     OpenPull { owner: Box<[u8]>, name: Box<[u8]>, title: Box<[u8]>, body: Box<[u8]>, head: Box<[u8]>, base: Box<[u8]> },
     Close { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     DeleteBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
@@ -143,6 +144,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
         | Request::User { .. } => Accept::Json,
     };
@@ -268,6 +270,10 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.repo(owner, name)?;
             out.put(b"/statuses/");
             out.commit(commit)?;
+        }
+        Request::CreateIssue { owner, name, .. } => {
+            out.repo(owner, name)?;
+            out.put(b"/issues");
         }
         Request::OpenPull { owner, name, .. } => {
             out.repo(owner, name)?;
@@ -460,6 +466,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
         | Request::User { .. } => unreachable!("item target dispatch"),
     }
@@ -506,9 +513,11 @@ fn selection(request: &Request) -> (Method, Auth) {
         Request::Uninstall { .. } => (Method::Delete, Auth::App),
         Request::Conversion { .. } => (Method::Post, Auth::None),
         Request::BotUser { .. } => (Method::Get, Auth::None),
-        Request::OpenPull { .. } | Request::CreateBranch { .. } | Request::Status { .. } | Request::Viewer => {
-            (Method::Post, Auth::Installation)
-        }
+        Request::CreateIssue { .. }
+        | Request::OpenPull { .. }
+        | Request::CreateBranch { .. }
+        | Request::Status { .. }
+        | Request::Viewer => (Method::Post, Auth::Installation),
         Request::Reachable { .. }
         | Request::Repository { .. }
         | Request::Locate { .. }
@@ -538,7 +547,8 @@ fn selection(request: &Request) -> (Method, Auth) {
 }
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
-        Request::OpenPull { .. }
+        Request::CreateIssue { .. }
+        | Request::OpenPull { .. }
         | Request::CreateBranch { .. }
         | Request::Status { .. }
         | Request::Mint { scope: Scope::Contents, .. }
@@ -598,9 +608,16 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
     body_json(request, &mut out)?;
     Ok(Some(out.finish()))
 }
+#[expect(clippy::too_many_lines, reason = "body encoding exhaustively dispatches each request")]
 fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Result<(), Refusal> {
     json.object_start();
     match request {
+        Request::CreateIssue { title, body, .. } => {
+            json.key(b"title");
+            json.string(title);
+            json.key(b"body");
+            json.string(body);
+        }
         Request::OpenPull { title, body, head, base, .. } => {
             json.key(b"title");
             json.string(title);
@@ -764,6 +781,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
         | Request::User { .. } => unreachable!("App target dispatch"),
     }
@@ -779,6 +797,10 @@ fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
 
 fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
     match request {
+        Request::CreateIssue { title, body, .. } => {
+            bounded(title, limits.string_bytes)?;
+            bounded(body, limits.body_bytes)?;
+        }
         Request::OpenPull { title, body, head, base, .. } => {
             bounded(title, limits.string_bytes)?;
             bounded(body, limits.body_bytes)?;

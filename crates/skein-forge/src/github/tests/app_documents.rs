@@ -427,6 +427,7 @@ fn github_app_server_round_trip() {
                 | Request::Edit { .. }
                 | Request::Status { .. }
                 | Request::CreateBranch { .. }
+                | Request::CreateIssue { .. }
                 | Request::OpenPull { .. }
                 | Request::Close { .. }
                 | Request::DeleteBranch { .. }

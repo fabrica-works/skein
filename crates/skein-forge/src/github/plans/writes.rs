@@ -13,6 +13,7 @@ use crate::{
         request::Request,
     },
 };
+use alloc::boxed::Box;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Stage {
@@ -42,7 +43,7 @@ impl Plan {
     pub fn new(repository: api::Repository, write: api::Write) -> Self {
         Self { repository, write, stage: Stage::New, response: Response::None, row: None, pending: None }
     }
-    pub fn begin(&mut self, _bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
+    pub fn begin(&mut self, bounds: Bounds, word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
         if self.stage != Stage::New {
             return Err(api::Error::InvalidAnswer);
         }
@@ -53,9 +54,9 @@ impl Plan {
             | api::Write::Edit { .. }
             | api::Write::Status { .. }
             | api::Write::CreateBranch { .. }
-            | api::Write::OpenPull { .. } => {}
-            api::Write::CreateIssue { .. }
-            | api::Write::Post { .. }
+            | api::Write::OpenPull { .. }
+            | api::Write::CreateIssue { .. } => {}
+            api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
@@ -66,7 +67,7 @@ impl Plan {
             self.stage = Stage::Resolve;
             return Ok(self.send(Request::Repository { id: u64::from(self.repository.repository) }));
         }
-        self.mutation()
+        self.mutation(bounds, word)
     }
     pub fn pending(&mut self) -> Option<Exchange> {
         self.pending.take()
@@ -78,11 +79,14 @@ impl Plan {
         self.response = Response::Head;
         Step::send(request)
     }
-    fn mutation(&mut self) -> Result<Step, api::Error> {
+    fn mutation(&mut self, bounds: Bounds, word: &[u8]) -> Result<Step, api::Error> {
         let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::CreateIssue { key, title, body } => {
+                Request::CreateIssue { owner, name, title: title.clone(), body: marked(word, key, body, bounds)? }
+            }
             api::Write::OpenPull { title, body, head, base } => Request::OpenPull {
                 owner,
                 name,
@@ -103,8 +107,7 @@ impl Plan {
             api::Write::Reopen { number } => Request::Reopen { owner, name, number: *number },
             api::Write::Close { number } => Request::Close { owner, name, number: *number },
             api::Write::DeleteBranch { branch } => Request::DeleteBranch { owner, name, branch: branch.clone() },
-            api::Write::CreateIssue { .. }
-            | api::Write::Post { .. }
+            api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
@@ -117,9 +120,8 @@ impl Plan {
         use crate::github::document::Kind;
         match self.write {
             api::Write::DeleteBranch { .. } => None,
-            api::Write::OpenPull { .. } => Some(Kind::Number),
-            api::Write::CreateIssue { .. }
-            | api::Write::Post { .. }
+            api::Write::CreateIssue { .. } | api::Write::OpenPull { .. } => Some(Kind::Number),
+            api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
@@ -134,9 +136,11 @@ impl Plan {
     fn status(&self) -> u16 {
         match self.write {
             api::Write::DeleteBranch { .. } => 204,
-            api::Write::OpenPull { .. } | api::Write::Status { .. } | api::Write::CreateBranch { .. } => 201,
             api::Write::CreateIssue { .. }
-            | api::Write::Post { .. }
+            | api::Write::OpenPull { .. }
+            | api::Write::Status { .. }
+            | api::Write::CreateBranch { .. } => 201,
+            api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
@@ -148,14 +152,14 @@ impl Plan {
     }
     fn asked(&self) -> Asked {
         match &self.write {
+            api::Write::CreateIssue { title, body, .. } => Asked::Write { empty: title.is_empty() || body.is_empty() },
             api::Write::OpenPull { title, body, .. } => Asked::OpenPull { empty: title.is_empty() || body.is_empty() },
             api::Write::DeleteBranch { .. } => Asked::DeleteBranch,
             api::Write::CreateBranch { .. } => Asked::CreateBranch,
             api::Write::Edit { title, body, .. } => {
                 Asked::Write { empty: empty(title.as_deref()) || empty(body.as_deref()) }
             }
-            api::Write::CreateIssue { .. }
-            | api::Write::Post { .. }
+            api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Close { .. }
@@ -169,7 +173,7 @@ impl Plan {
         &mut self,
         heard: Heard,
         bounds: Bounds,
-        _word: &[u8],
+        word: &[u8],
         tables: &mut Tables,
     ) -> Result<Option<Step>, api::Error> {
         if self.stage == Stage::New || self.stage == Stage::Done {
@@ -183,7 +187,7 @@ impl Plan {
             | (Heard::Done(_) | Heard::Row(_), Response::None | Response::Head)
             | (Heard::Failed(_), Response::None) => return Err(api::Error::InvalidAnswer),
         }
-        match self.advance(heard, bounds, tables) {
+        match self.advance(heard, bounds, word, tables) {
             Ok(step) => Ok(step),
             Err(error) => {
                 self.stage = Stage::Done;
@@ -245,7 +249,13 @@ impl Plan {
             Response::None | Response::Head | Response::Body => None,
         }
     }
-    fn advance(&mut self, heard: Heard, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
+    fn advance(
+        &mut self,
+        heard: Heard,
+        bounds: Bounds,
+        word: &[u8],
+        tables: &mut Tables,
+    ) -> Result<Option<Step>, api::Error> {
         match heard {
             Heard::Head { status, head } => {
                 let expected = if self.stage == Stage::Mutate { self.status() } else { 200 };
@@ -276,10 +286,16 @@ impl Plan {
                     api::Error::Unavailable
                 })
             }
-            Heard::Done(body) => self.done(body, bounds, tables),
+            Heard::Done(body) => self.done(body, bounds, word, tables),
         }
     }
-    fn done(&mut self, body: Body, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
+    fn done(
+        &mut self,
+        body: Body,
+        bounds: Bounds,
+        word: &[u8],
+        tables: &mut Tables,
+    ) -> Result<Option<Step>, api::Error> {
         if let Some((status, head)) = self.refusal_head() {
             let refusal = match &body {
                 Body::Document(Document::Error(refusal)) => Some(refusal),
@@ -323,7 +339,7 @@ impl Plan {
                 tables.keep_repository(self.repository, row.clone());
                 tables.keep_user(self.repository.forge, repository.owner_id, repository.owner);
                 self.row = Some(row);
-                return Ok(Some(self.mutation()?));
+                return Ok(Some(self.mutation(bounds, word)?));
             }
             Body::Document(Document::Number(number))
                 if self.stage == Stage::Mutate && self.result_kind() == Some(crate::github::document::Kind::Number) =>
@@ -373,4 +389,11 @@ fn empty(text: Option<&[u8]>) -> bool {
         Some(text) => text.is_empty(),
         None => false,
     }
+}
+
+fn marked(word: &[u8], key: &[u8], body: &[u8], bounds: Bounds) -> Result<Box<[u8]>, api::Error> {
+    if !crate::marker::valid_word(word) {
+        return Err(api::Error::Refused);
+    }
+    crate::marker::encode(word, key, body, bounds.body_bytes).ok_or(api::Error::TooLarge)
 }

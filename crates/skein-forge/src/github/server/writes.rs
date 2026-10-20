@@ -211,6 +211,22 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::CreateIssue { owner, name, .. } => {
+            let fields = parse(
+                body,
+                &[
+                    Field { key: b"title", body: false, required: true },
+                    Field { key: b"body", body: true, required: true },
+                ],
+                limits,
+            )?;
+            Some(Request::CreateIssue {
+                owner,
+                name,
+                title: Box::from(fields.get(b"title")?),
+                body: Box::from(fields.get(b"body")?),
+            })
+        }
         Request::OpenPull { owner, name, .. } => {
             let fields = parse(
                 body,

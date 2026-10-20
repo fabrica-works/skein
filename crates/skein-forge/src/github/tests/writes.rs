@@ -620,3 +620,91 @@ fn github_open_pull_lost_find() {
         })))
     );
 }
+
+fn create_issue(body: &[u8]) -> api::Write {
+    api::Write::CreateIssue { key: Box::from([0, 255]), title: Box::from(*b"alice"), body: Box::from(body) }
+}
+#[test]
+fn github_create_issue_marker_and_number() {
+    let mut tables = cached_tables();
+    let mut plan = write_plan(create_issue(b"text\n\""));
+    let request = begin(&mut plan, &mut tables);
+    golden(
+        &request,
+        Method::Post,
+        b"/repos/acme/widgets/issues",
+        Some(br#"{"title":"alice","body":"<!-- example-app:key 00ff -->\ntext\n\""}"#),
+        Some(Kind::Number),
+    );
+    roundtrip_body(&request);
+    encoded_body_bounds(&request);
+    head(&mut plan, 201, &mut tables);
+    assert_eq!(
+        finish(&mut plan, Body::Document(Document::Number(NUMBER)), &mut tables),
+        ended(Ok(api::Answer::Created(NUMBER)))
+    );
+    for source in [b"".as_slice(), b"text"] {
+        let mut plan = write_plan(create_issue(source));
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 422, &mut tables);
+        assert_eq!(
+            finish(&mut plan, refusal(b"unknown"), &mut tables),
+            ended(Err(if source.is_empty() { api::Error::Empty } else { api::Error::Refused }))
+        );
+    }
+}
+#[test]
+fn github_create_issue_marker_bounds() {
+    let size = crate::marker::length(WORD, 2).unwrap() + 1;
+    for (body_bytes, ok) in [(size, true), (size - 1, false)] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(create_issue(b"\""));
+        let result = plan.begin(Bounds { body_bytes, ..bounds() }, WORD, &mut tables);
+        assert_eq!(result.is_ok(), ok);
+        if let Ok(Step::Send(exchange)) = result {
+            encoded_body_bounds(&exchange.request);
+        }
+    }
+    let mut tables = cached_tables();
+    let mut plan = write_plan(create_issue(b""));
+    let request = begin(&mut plan, &mut tables);
+    assert!(
+        crate::github::server::write_body(request.clone(), br#"{"title":"alice","body":"x","body":"y"}"#, &limits())
+            .is_none()
+    );
+    for body in [b"{}".as_slice(), br#"{"title":1,"body":"x"}"#, br#"{"title":"alice"}"#] {
+        assert!(crate::github::server::write_body(request.clone(), body, &limits()).is_none());
+    }
+    head(&mut plan, 201, &mut tables);
+    assert_eq!(finish(&mut plan, Body::Empty, &mut tables), ended(Err(api::Error::Timeout)));
+}
+#[test]
+fn github_create_issue_lost_find() {
+    let mut tables = cached_tables();
+    let mut write = write_plan(create_issue(b"text"));
+    begin(&mut write, &mut tables);
+    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), ended(Err(api::Error::Timeout)));
+    for (word, writer, found) in [(WORD, NUMBER, true), (b"alice".as_slice(), NUMBER, false), (WORD, 1, false)] {
+        let mut find = Plan::new(
+            KEY,
+            api::Op::Read(api::Read::Items { since: skein_lib::Time::ZERO, page: 1, kind: Some(api::Kind::Issue) }),
+        );
+        let request = begin(&mut find, &mut tables);
+        assert_eq!(decoding::kind(&request), Some(Kind::IssueRows));
+        let mut response = Head::new();
+        response.date = Some(super::fixtures::wall());
+        assert_eq!(find.heard(Heard::Head { status: 200, head: response }, bounds(), word, &mut tables), Ok(None));
+        let (rows, result) = decode(Kind::IssueRows, br#"[{"number":9007199254740993,"state":"open","user":{"id":9007199254740993},"updated_at":"2026-10-20T08:00:00Z","title":"alice","body":"<!-- example-app:key 00ff -->\ntext"}]"#, 1, &limits());
+        for row in &rows {
+            assert_eq!(find.heard(Heard::Row(row.clone()), bounds(), word, &mut tables), Ok(None));
+        }
+        let answer = find.heard(Heard::Done(Body::Document(result.unwrap())), bounds(), word, &mut tables).unwrap();
+        let Some(Step::Done(Ok(api::Answer::Items { items, more, .. }))) = answer else { panic!("items") };
+        assert!(!more);
+        let mut observed = false;
+        for item in &items {
+            observed |= item.key.as_deref() == Some(&[0, 255]) && item.author == writer;
+        }
+        assert_eq!(observed, found);
+    }
+}

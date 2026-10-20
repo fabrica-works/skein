@@ -21,6 +21,10 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::Installation { id: 3 }, Kind::Installation),
         (Request::Mint { installation: 3, scope: Scope::Contents }, Kind::Minted),
         (Request::Reachable { page: 1, per_page: 100 }, Kind::ReachableRows),
+        (
+            Request::CreateIssue { owner: owner(), name: name(), title: Box::from([]), body: Box::from([]) },
+            Kind::Number,
+        ),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
         (
