@@ -291,8 +291,13 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 
 #[test]
 fn the_worst_case_counts_answers_and_refuses_overflow() {
-    // Complete fixture heap (7.5), including both dialects' routing and decoder state.
-    const FIXTURE_HEAP: u64 = 3_592_558;
+    // Complete fixture heap (forge-connection.md, 7.5), including both dialects.
+    // Three connection and four webhook decoders each include 352 bytes of
+    // people/review/file builders; two own-plan slots each include 16 bytes
+    // of exchange retention/comparison fields. Rows/documents fit the routing
+    // maxima and decoder payload envelopes (forge.md, 3.7 and 5.3;
+    // forge-github.md, 6).
+    const FIXTURE_HEAP: u64 = 3_595_054;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(
