@@ -100,8 +100,7 @@ fn an_endpoint_set_after_binding_delivers_the_next_hook() {
         world.bind();
         world.forge.borrow_mut().hooks = host.map(|host| fixtures::endpoint(host, secret));
         world.create_issue_and_settle();
-        let expected = if host.is_some() { vec![&forge::Delivery::NoAddress] } else { vec![] };
-        assert_eq!(world.delivery_outcomes(), expected, "{name}");
+        assert_eq!(world.delivery_outcomes(), [&forge::Delivery::NoAddress], "{name}");
         assert_eq!(world.connects, fixtures::NO_POSTS, "{name}");
         assert_eq!(world.received_posts(), fixtures::NO_POSTS, "{name}");
     }

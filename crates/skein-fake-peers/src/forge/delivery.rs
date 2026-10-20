@@ -26,8 +26,9 @@ impl Peer {
             self.delivery_observation(None, Delivery::NoAddress);
             return;
         }
+        // Each domain hook leaves one record at least: a hook no address takes is NoAddress.
         let posts = self.service.deliveries(hook, &self.protocol);
-        if posts.is_empty() && self.endpoint.is_some() {
+        if posts.is_empty() {
             let post = self.service.delivery(hook, &self.protocol);
             self.delivery_observation(post, Delivery::NoAddress);
         }
