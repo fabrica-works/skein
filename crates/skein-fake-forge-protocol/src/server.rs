@@ -134,6 +134,29 @@ pub fn up(
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) {
+    up_on(server, service, None, env, event, above, below);
+}
+/// Serves bytes with setup collaborator grants applied to the lent domain before replying.
+pub fn up_with_domain(
+    server: &mut Server,
+    service: &mut Service,
+    domain: &mut domain::Domain,
+    env: &Env<Limits>,
+    event: Up,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    up_on(server, service, Some(domain), env, event, above, below);
+}
+fn up_on(
+    server: &mut Server,
+    service: &mut Service,
+    domain: Option<&mut domain::Domain>,
+    env: &Env<Limits>,
+    event: Up,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
     match server.state {
         State::New | State::Closing | State::Closed => return,
         State::Reading | State::Receiving | State::Body | State::Waiting | State::Streaming => {}
@@ -150,7 +173,7 @@ pub fn up(
         &mut server.events,
         below,
     );
-    resume(server, service, env, above, below);
+    resume_on(server, service, domain, env, above, below);
 }
 pub fn down(
     server: &mut Server,
@@ -261,12 +284,33 @@ pub fn resume(
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) {
+    resume_on(server, service, None, env, above, below);
+}
+/// Resumes a pass with the same setup grant crossing as `up_with_domain`.
+pub fn resume_with_domain(
+    server: &mut Server,
+    service: &mut Service,
+    domain: &mut domain::Domain,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    resume_on(server, service, Some(domain), env, above, below);
+}
+fn resume_on(
+    server: &mut Server,
+    service: &mut Service,
+    mut domain: Option<&mut domain::Domain>,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
     for _ in 0..8u32 {
         if above.room() < 2 || below.room() < 2 {
             break;
         }
         if let Some(event) = server.events.pop() {
-            http_event(server, service, env, event, above, below);
+            http_event(server, service, domain.as_deref_mut(), env, event, above, below);
         } else if let Some(event) = server.json_events.pop() {
             let Some(decoder) = &mut server.decoder else {
                 continue;
@@ -275,7 +319,7 @@ pub fn resume(
                 documents::BodyStep::Demand(request) => json_down(server, env, request),
                 documents::BodyStep::Decoded(request) => {
                     server.decoder = None;
-                    decoded(server, service, env, request, above);
+                    decoded(server, service, domain.as_deref_mut(), env, request, above);
                 }
                 documents::BodyStep::Malformed(_) => {
                     server.decoder = None;
@@ -384,13 +428,14 @@ fn json_down(server: &mut Server, env: &Env<Limits>, request: json::Request) {
 fn http_event(
     server: &mut Server,
     service: &mut Service,
+    domain: Option<&mut domain::Domain>,
     env: &Env<Limits>,
     event: http::Event,
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
 ) {
     match event {
-        http::Event::Call(call) => entrance(server, service, env, call, above),
+        http::Event::Call(call) => entrance(server, service, domain, env, call, above),
         http::Event::Body(up) => {
             if server.state == State::Body {
                 json::up(
@@ -432,7 +477,14 @@ fn http_event(
         http::Event::Closed => {}
     }
 }
-fn entrance(server: &mut Server, service: &mut Service, env: &Env<Limits>, call: http::Call, above: &mut Queue<Event>) {
+fn entrance(
+    server: &mut Server,
+    service: &mut Service,
+    domain: Option<&mut domain::Domain>,
+    env: &Env<Limits>,
+    call: http::Call,
+    above: &mut Queue<Event>,
+) {
     assert!(server.head.is_none(), "the owner drains each captured head before reuse");
     let mut snapshot = call.clone();
     for header in &mut snapshot.headers {
@@ -469,7 +521,7 @@ fn entrance(server: &mut Server, service: &mut Service, env: &Env<Limits>, call:
     match documents::route(method, &call.target, &env.limits.documents) {
         Ok(documents::Route::Ready(request)) => {
             server.requests.push(http::Request::Discard);
-            decoded(server, service, env, request, above);
+            decoded(server, service, domain, env, request, above);
         }
         Ok(documents::Route::Body(decoder)) => {
             server.state = State::Body;
@@ -495,7 +547,14 @@ fn entrance(server: &mut Server, service: &mut Service, env: &Env<Limits>, call:
         }
     }
 }
-fn decoded(server: &mut Server, service: &mut Service, env: &Env<Limits>, request: Request, above: &mut Queue<Event>) {
+fn decoded(
+    server: &mut Server,
+    service: &mut Service,
+    domain: Option<&mut domain::Domain>,
+    env: &Env<Limits>,
+    request: Request,
+    above: &mut Queue<Event>,
+) {
     let route = crate::route(&request);
     service.tally.unrouted = service.tally.unrouted.saturating_sub(1);
     let count = service.tally.routes.get(&route).copied().unwrap_or(0).saturating_add(1);
@@ -515,7 +574,7 @@ fn decoded(server: &mut Server, service: &mut Service, env: &Env<Limits>, reques
         fail(server, &env.limits, 403);
         return;
     }
-    if let Some(reply) = service.setup.answer(&request, server.user, &service.config, &env.limits) {
+    if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &service.config, &env.limits, domain) {
         respond(server, reply);
         return;
     }

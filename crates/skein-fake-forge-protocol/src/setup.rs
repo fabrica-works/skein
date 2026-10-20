@@ -44,7 +44,7 @@ pub struct Store {
     teams: List<Team>,
     hooks: List<Subscription>,
     private: List<u64>,
-    /// Setup grants are separate from the domain's permissions.
+    /// Setup grants, mirrored into a domain when the owner lends it for the call.
     collaborators: List<collaborators::Collaborator>,
     /// Repository hooks made by setup are stored and route nothing.
     repo_hooks: List<RepositoryHook>,

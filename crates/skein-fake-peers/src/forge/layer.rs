@@ -126,13 +126,13 @@ impl Server {
 // Each adapter drains at most MAX_UP translated records. shared::bound counts
 // the scratch queue's fixed allocation beside the hosted layer.
 macro_rules! entry {
-    ($name:ident $(, $arg:ident : $ty:ty)*) => {
-        pub(super) fn $name(server: &mut Server, service: &mut Service, env: &Env<Limits>, $($arg: $ty,)* above: &mut Queue<Event>, below: &mut Queue<Down>) {
+    ($name:ident => $forgejo:ident, $github:ident $(; $domain:ident : $domain_ty:ty)? $(, $arg:ident : $ty:ty)*) => {
+        pub(super) fn $name(server: &mut Server, service: &mut Service, $($domain: $domain_ty,)? env: &Env<Limits>, $($arg: $ty,)* above: &mut Queue<Event>, below: &mut Queue<Down>) {
             match (server, service, &env.limits) {
-                (Server::Forgejo(server), Service::Forgejo(service), Limits::Forgejo(limits)) => forgejo::$name(server, service, &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* above, below),
+                (Server::Forgejo(server), Service::Forgejo(service), Limits::Forgejo(limits)) => forgejo::$forgejo(server, service, $($domain,)? &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* above, below),
                 (Server::Github(server), Service::Github(service), Limits::Github(limits)) => {
                     let mut events = Queue::with_capacity(github::MAX_UP);
-                    github::$name(server, service, &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* &mut events, below);
+                    github::$github(server, service, &Env { now: env.now, wall: env.wall, limits: *limits }, $($arg,)* &mut events, below);
                     translate(&mut events, above);
                 }
                 (Server::Forgejo(_), Service::Forgejo(_) | Service::Github(_), Limits::Github(_))
@@ -143,11 +143,11 @@ macro_rules! entry {
         }
     }
 }
-entry!(start);
-entry!(up, event: Up);
-entry!(resume);
-entry!(close);
-entry!(closed);
+entry!(start => start, start);
+entry!(up_with_domain => up_with_domain, up; domain: &mut domain::Domain, event: Up);
+entry!(resume_with_domain => resume_with_domain, resume; domain: &mut domain::Domain);
+entry!(close => close, close);
+entry!(closed => closed, closed);
 pub(super) fn down(
     server: &mut Server,
     service: &mut Service,

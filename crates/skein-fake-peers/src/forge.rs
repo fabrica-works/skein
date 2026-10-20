@@ -370,9 +370,10 @@ impl Peer {
             let mut connection = self.connections.remove(index);
             if connection.above.room() >= protocol::MAX_UP && connection.below.room() >= protocol::MAX_DOWN {
                 if let Some(up) = connection.plain.pop() {
-                    protocol::up(
+                    protocol::up_with_domain(
                         &mut connection.server,
                         &mut self.service,
+                        &mut forge.domain,
                         &env,
                         up,
                         &mut connection.above,
@@ -380,9 +381,10 @@ impl Peer {
                     );
                     self.capture(&mut connection);
                 } else if connection.server.has_work() {
-                    protocol::resume(
+                    protocol::resume_with_domain(
                         &mut connection.server,
                         &mut self.service,
+                        &mut forge.domain,
                         &env,
                         &mut connection.above,
                         &mut connection.below,

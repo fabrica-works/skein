@@ -102,3 +102,66 @@ pub(super) fn worst_case(limits: &Limits) -> Option<u64> {
     List::<Collaborator>::worst_case(cap)?
         .checked_add(u64::from(cap).checked_mul(u64::from(limits.documents.string_bytes))?)
 }
+
+/// Setup `Read`, `Write` and `Admin` grant domain `Read`, `Write` and `Admin`, respectively.
+const fn domain_permission(grant: Grant) -> skein_fake_forge_domain::api::Permission {
+    use skein_fake_forge_domain::api::Permission;
+    match grant {
+        Grant::Read => Permission::Read,
+        Grant::Write => Permission::Write,
+        Grant::Admin => Permission::Admin,
+    }
+}
+
+impl Store {
+    pub(crate) fn answer_with_domain(
+        &mut self,
+        request: &skein_forge::forgejo::request::Request,
+        user: u64,
+        config: &Config,
+        limits: &Limits,
+        domain: Option<&mut skein_fake_forge_domain::Domain>,
+    ) -> Option<Reply> {
+        use skein_forge::forgejo::request::Request;
+        let Some(domain) = domain else { return self.answer(request, user, config, limits) };
+        let Request::AddCollaborator { at, login, permission } = request else {
+            return self.answer(request, user, config, limits);
+        };
+        let admin = match self.user(user) {
+            Some(caller) => caller.is_admin,
+            None => false,
+        };
+        if !admin {
+            return self.answer(request, user, config, limits);
+        }
+        let Some(id) = repository(config, at) else { return self.answer(request, user, config, limits) };
+        let mut repository = None;
+        for known in &config.repositories {
+            if known.id == id {
+                repository = Some(known);
+            }
+        }
+        let repository = repository.expect("resolved scenario repository");
+        let mut account = None;
+        if let Some(known) = self.find(login) {
+            account = Some(known.id);
+        }
+        if account.is_none() {
+            for (id, name) in &config.users {
+                if name.as_ref() == login.as_ref() {
+                    account = Some(*id);
+                }
+            }
+        }
+        let Some(account) = account else { return self.answer(request, user, config, limits) };
+        let room = domain.can_grant(&repository.full, account);
+        if room == Ok(false) {
+            return Some(full(limits));
+        }
+        let reply = self.answer(request, user, config, limits)?;
+        if reply.status == 204 && room == Ok(true) {
+            skein_fake_forge_domain::grant(domain, &repository.full, account, domain_permission(*permission));
+        }
+        Some(reply)
+    }
+}

@@ -303,6 +303,15 @@ impl World {
             self.pass();
         }
     }
+    pub fn exchange(&mut self, method: &str, target: &str, token: &[u8], body: &[u8]) -> Vec<u8> {
+        let request = format!("{method} {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: token {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", std::str::from_utf8(token).expect("fixture token"), body.len());
+        let fd = self.open();
+        self.send(fd, request.as_bytes());
+        self.send(fd, body);
+        let response = self.response(fd);
+        self.close(fd);
+        response
+    }
     pub fn send(&mut self, fd: Fd, bytes: &[u8]) {
         let mut from = 0;
         while usize::try_from(from).expect("request length") < bytes.len() {

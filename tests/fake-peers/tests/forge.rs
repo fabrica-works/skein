@@ -218,9 +218,19 @@ fn without_records_omits_the_observation_bound() {
     let mut world = World::new();
     let before = world.peer.worst_case();
     world.peer = world.peer.without_records();
-    skein_fake_peers_tests::assert_record_bound::<forge::Observation>(before, world.peer.worst_case(), limits().observations, limits().observation_bytes);
+    skein_fake_peers_tests::assert_record_bound::<forge::Observation>(
+        before,
+        world.peer.worst_case(),
+        limits().observations,
+        limits().observation_bytes,
+    );
     world.pass();
-    skein_fake_peers_tests::assert_record_bound::<forge::Observation>(before, world.peer.worst_case(), limits().observations, limits().observation_bytes);
+    skein_fake_peers_tests::assert_record_bound::<forge::Observation>(
+        before,
+        world.peer.worst_case(),
+        limits().observations,
+        limits().observation_bytes,
+    );
 }
 
 #[test]
@@ -231,12 +241,36 @@ fn an_owner_seeds_the_setup_admin_and_token_before_serving() {
     let token = b"owner-seeded-admin-token";
     store.token(admin, b"owner", &[b"all"], skein_lib::Secret::new(fixtures::boxed(token)));
     let fd = world.open();
-    let request = format!("GET /api/v1/user HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: token {}\r\nConnection: close\r\n\r\n", std::str::from_utf8(token).unwrap());
+    let request = format!(
+        "GET /api/v1/user HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: token {}\r\nConnection: close\r\n\r\n",
+        std::str::from_utf8(token).unwrap()
+    );
     world.send(fd, request.as_bytes());
     let response = world.response(fd);
     assert!(response.starts_with(b"HTTP/1.1 200"));
     let expected = format!(r#"{{"id":{admin},"login":"site-admin","is_admin":true,"full_name":"Site Administrator"}}"#);
     assert!(response.ends_with(expected.as_bytes()), "{}", String::from_utf8_lossy(&response));
     world.close(fd);
+    world.settle();
+}
+
+#[test]
+fn a_setup_grant_lets_a_forbidden_bot_write_over_loopback() {
+    let mut world = World::new();
+    let store = world.peer.setup_mut();
+    store.account(b"site-admin", true, b"");
+    store.account(b"person", false, b"");
+    let bot = store.account(b"bot", false, b"");
+    let token = b"bot-token";
+    store.token(bot, b"bot", &[b"all"], skein_lib::Secret::new(fixtures::boxed(token)));
+    let target = "/api/v1/repos/org/repo/branches";
+    let body = br#"{"new_branch_name":"bot-work","old_ref_name":"0000000000000001000000000000000000000000"}"#;
+    let refused = world.exchange("POST", target, token, body);
+    assert!(refused.starts_with(b"HTTP/1.1 403"), "{}", String::from_utf8_lossy(&refused));
+    let granted = world.exchange("PUT", "/api/v1/repos/org/repo/collaborators/bot", fixtures::TOKEN, br#"{"permission":"write"}"#);
+    assert!(granted.starts_with(b"HTTP/1.1 204"));
+    let accepted = world.exchange("POST", target, token, body);
+    assert!(accepted.starts_with(b"HTTP/1.1 201"), "{}", String::from_utf8_lossy(&accepted));
+    assert_eq!(world.forge.borrow().domain.permission(fixtures::REPOSITORY, bot), Ok(skein_fake_forge_domain::api::Permission::Write));
     world.settle();
 }

@@ -156,7 +156,14 @@ impl Harness {
             self.fake_env.now = self.fake_env.now.saturating_add(tick);
             self.env.now = fake::time(&self.fake_env.limits, self.fake_env.now);
             self.env.wall = Wall::from_nanos(self.env.now.as_nanos());
-            crate::resume(&mut self.server, &mut self.service, &self.env, &mut self.above, &mut self.below);
+            crate::resume_with_domain(
+                &mut self.server,
+                &mut self.service,
+                &mut self.domain,
+                &self.env,
+                &mut self.above,
+                &mut self.below,
+            );
             self.capture_head();
             while let Some(down) = self.below.pop() {
                 match down {
@@ -184,7 +191,15 @@ impl Harness {
                 };
                 if let Some(up) = up {
                     self.demand = None;
-                    crate::up(&mut self.server, &mut self.service, &self.env, up, &mut self.above, &mut self.below);
+                    crate::up_with_domain(
+                        &mut self.server,
+                        &mut self.service,
+                        &mut self.domain,
+                        &self.env,
+                        up,
+                        &mut self.above,
+                        &mut self.below,
+                    );
                 }
             }
             self.capture_head();

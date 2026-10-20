@@ -265,3 +265,108 @@ fn old_store_worst_case(limits: &crate::Limits) -> u64 {
         + count * (text * (count + 2) + u64::from(limits.http.head) + List::<Box<[u8]>>::worst_case(cap).unwrap());
     accounts * 2 + issued * 2 + (organizations + teams) * 2 + hooks * 2 + List::<u64>::worst_case(cap).unwrap()
 }
+
+use skein_fake_forge_domain::{
+    self as domain,
+    api::{Error, Permission, What},
+};
+struct GrantCrossing {
+    name: &'static str,
+    grant: Grant,
+    prior: Option<Grant>,
+    missing: bool,
+    full: bool,
+    status: u16,
+    store: Option<Grant>,
+    permission: Result<Permission, Error>,
+}
+fn grant_crossings() -> [GrantCrossing; 6] {
+    [
+        GrantCrossing {
+            name: "read",
+            grant: Grant::Read,
+            prior: None,
+            missing: false,
+            full: false,
+            status: 204,
+            store: Some(Grant::Read),
+            permission: Ok(Permission::Read),
+        },
+        GrantCrossing {
+            name: "write",
+            grant: Grant::Write,
+            prior: None,
+            missing: false,
+            full: false,
+            status: 204,
+            store: Some(Grant::Write),
+            permission: Ok(Permission::Write),
+        },
+        GrantCrossing {
+            name: "admin",
+            grant: Grant::Admin,
+            prior: None,
+            missing: false,
+            full: false,
+            status: 204,
+            store: Some(Grant::Admin),
+            permission: Ok(Permission::Admin),
+        },
+        GrantCrossing {
+            name: "replace in full domain",
+            grant: Grant::Admin,
+            prior: Some(Grant::Read),
+            missing: false,
+            full: false,
+            status: 204,
+            store: Some(Grant::Admin),
+            permission: Ok(Permission::Admin),
+        },
+        GrantCrossing {
+            name: "store-only repository",
+            grant: Grant::Write,
+            prior: None,
+            missing: true,
+            full: false,
+            status: 204,
+            store: Some(Grant::Write),
+            permission: Err(Error::Missing(What::Repository)),
+        },
+        GrantCrossing {
+            name: "domain full preserves both",
+            grant: Grant::Write,
+            prior: Some(Grant::Read),
+            missing: false,
+            full: true,
+            status: 503,
+            store: Some(Grant::Read),
+            permission: Ok(Permission::None),
+        },
+    ]
+}
+
+#[test]
+fn setup_grants_cross_into_the_lent_domain_atomically() {
+    for row in grant_crossings() {
+        let mut h = fixtures::setup_harness();
+        h.service.setup_mut().account(b"spare", false, b"");
+        let bot = h.service.setup_mut().account(b"bot", false, b"");
+        if row.missing {
+            h.domain = domain::Domain::new(&h.fake_env.limits, 3);
+        }
+        if let Some(prior) = row.prior {
+            h.service.setup_mut().grant(REPOSITORY, b"bot", prior).unwrap();
+            if !row.full {
+                domain::grant(&mut h.domain, b"org/repo", bot, Permission::Read);
+            }
+        }
+        if row.full {
+            domain::grant(&mut h.domain, b"org/repo", 3, Permission::Read);
+        }
+        h.send(&Request::AddCollaborator { at: fixtures::at(), login: boxed(b"bot"), permission: row.grant });
+        assert_eq!(h.status(), row.status, "{}", row.name);
+        assert_eq!(h.service.setup().collaborator(REPOSITORY, b"bot"), row.store, "{}", row.name);
+        assert_eq!(h.domain.permission(b"org/repo", bot), row.permission, "{}", row.name);
+        assert_eq!(h.calls, 0, "only the grant crosses");
+    }
+}

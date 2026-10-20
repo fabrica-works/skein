@@ -378,6 +378,16 @@ impl Domain {
         Ok(self.repositories.get(id).expect("live repository name").permission(user))
     }
 
+    /// Whether a grant fits, including replacement of an existing user's permission.
+    /// Returns `Missing(Repository)` for a repository outside this domain.
+    pub fn can_grant(&self, repository: &[u8], user: u64) -> Result<bool, Error> {
+        let Some(&id) = self.names.get(repository) else {
+            return Err(Error::Missing(What::Repository));
+        };
+        let permissions = &self.repositories.get(id).expect("live repository name").permissions;
+        Ok(permissions.contains_key(&user) || permissions.len() < permissions.capacity())
+    }
+
     /// The next observation, oldest first.
     pub fn pop_observation(&mut self) -> Option<Observation> {
         self.observations.pop()

@@ -33,7 +33,6 @@ pub fn assert_panic<T: std::fmt::Debug>(result: std::thread::Result<T>, expected
 pub fn assert_record_bound<T>(before: u64, after: u64, count: u32, bytes: u32) {
     assert_eq!(
         before - after,
-        u64::from(count) * u64::try_from(std::mem::size_of::<T>()).expect("record size fits")
-            + u64::from(bytes)
+        u64::from(count) * u64::try_from(std::mem::size_of::<T>()).expect("record size fits") + u64::from(bytes)
     );
 }

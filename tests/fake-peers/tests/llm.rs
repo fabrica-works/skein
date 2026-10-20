@@ -572,5 +572,10 @@ fn without_records_omits_the_observation_bound() {
     let peer = make((Ipv4Addr::LOCALHOST, 0).into(), Transport::Plaintext).unwrap();
     let before = peer.worst_case();
     let peer = peer.without_records();
-    support::assert_record_bound::<llm::Observation>(before, peer.worst_case(), limits().observations, limits().observation_bytes);
+    support::assert_record_bound::<llm::Observation>(
+        before,
+        peer.worst_case(),
+        limits().observations,
+        limits().observation_bytes,
+    );
 }
