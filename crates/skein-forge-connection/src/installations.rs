@@ -11,6 +11,10 @@ use skein_lib::{Duration, Map, Secret, Set, Time, Wall};
 pub(crate) struct Row {
     pub state: Tokens,
     pub revision: u64,
+    pub token_revision: u64,
+    pub refused_revision: Option<u64>,
+    pub full: Clock,
+    pub contents: Clock,
     pub account: Account,
     pub suspended: bool,
     pub accepted: bool,
@@ -22,6 +26,10 @@ impl Row {
     pub fn unminted(&mut self) {
         self.state = Tokens::Unminted;
         self.revision = self.revision.wrapping_add(1);
+        self.full.due = None;
+        self.full.pending = true;
+        self.contents.due = None;
+        self.contents.pending = true;
     }
     pub fn forget(&mut self) {
         self.state = Tokens::Gone;
@@ -29,9 +37,73 @@ impl Row {
         self.api = None;
         self.api_expires = Wall::EPOCH;
         self.git_expires = Wall::EPOCH;
+        self.full = Clock::empty();
+        self.contents = Clock::empty();
+        self.refused_revision = None;
+    }
+    /// Eligibility survives expiry; a caller waits when this returns no value.
+    pub fn credential(&self, now: Time) -> Option<&Secret> {
+        if self.accepted && !self.suspended && self.full.expiry > now { self.api.as_ref() } else { None }
+    }
+    pub fn scope(&self) -> Option<Scope> {
+        match self.state {
+            Tokens::Minting { scope } => Some(scope),
+            Tokens::Unminted | Tokens::Current => {
+                if self.full.pending {
+                    Some(Scope::Full)
+                } else if self.contents.pending {
+                    Some(Scope::Contents)
+                } else {
+                    None
+                }
+            }
+            Tokens::Waiting | Tokens::Gone => None,
+        }
+    }
+    pub fn clock(&mut self, scope: Scope) -> &mut Clock {
+        match scope {
+            Scope::Full => &mut self.full,
+            Scope::Contents => &mut self.contents,
+        }
     }
 }
-/// Eligibility, scopes and waits are explicit; Current has no renewal timer here.
+/// The monotonic times are fixed by one validated mint, independently per scope.
+pub(crate) fn token_times(expires: Wall, now: Time, wall: Wall, renew_before: Duration) -> (Time, Time) {
+    let life = Duration::from_nanos(expires.as_nanos().saturating_sub(wall.as_nanos()));
+    let expiry = now.saturating_add(life);
+    (expiry, Time::from_nanos(expiry.as_nanos().saturating_sub(renew_before.as_nanos())))
+}
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Clock {
+    pub expiry: Time,
+    pub due: Option<Time>,
+    pub pending: bool,
+}
+impl Clock {
+    pub fn empty() -> Self {
+        Self { expiry: Time::ZERO, due: None, pending: false }
+    }
+    pub fn pending() -> Self {
+        Self { pending: true, ..Self::empty() }
+    }
+    pub fn minted(expires: Wall, env: &skein_lib::Env<crate::Limits>) -> Self {
+        let (expiry, due) = token_times(expires, env.now, env.wall, env.limits.renew_before);
+        Self { expiry, due: Some(due), pending: false }
+    }
+    fn fire(&mut self, now: Time) {
+        if let Some(due) = self.due
+            && due <= now
+        {
+            self.due = None;
+            self.pending = true;
+        }
+    }
+    pub fn take(&mut self) {
+        self.pending = false;
+        self.due = None;
+    }
+}
+/// Eligibility, active scopes and private waits are independent of API usability.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Tokens {
     Unminted,
@@ -508,6 +580,18 @@ impl GitHub {
                                         Tokens::Gone
                                     },
                                     revision: 0,
+                                    token_revision: 0,
+                                    refused_revision: None,
+                                    full: if self.accepted.contains(&id) && !metadata.suspended {
+                                        Clock::pending()
+                                    } else {
+                                        Clock::empty()
+                                    },
+                                    contents: if self.accepted.contains(&id) && !metadata.suspended {
+                                        Clock::pending()
+                                    } else {
+                                        Clock::empty()
+                                    },
                                     account: metadata.account,
                                     suspended: metadata.suspended,
                                     accepted: self.accepted.contains(&id),
@@ -538,19 +622,39 @@ impl GitHub {
         }
     }
     pub fn deadline(&self) -> Option<Time> {
-        let read = match self.read {
+        let mut earliest = match self.read {
             Read::Waiting { until, .. } => Some(until),
             Read::Idle | Read::Reading(_) | Read::Changes(_) => None,
         };
         match self.work {
             Work::Waiting { until, .. } => {
-                if let Some(read) = read {
-                    Some(read.min(until))
-                } else {
-                    Some(until)
-                }
+                earliest = Some(earliest.unwrap_or(until).min(until));
             }
-            Work::Idle | Work::Minting { .. } | Work::Identity { .. } => read,
+            Work::Idle | Work::Minting { .. } | Work::Identity { .. } => {}
+        }
+        for (_, row) in &self.rows {
+            for time in [row.full.due, row.contents.due, if row.api.is_some() { Some(row.full.expiry) } else { None }]
+                .into_iter()
+                .flatten()
+            {
+                earliest = Some(earliest.unwrap_or(time).min(time));
+            }
+        }
+        earliest
+    }
+    /// Consume local timers even while output, a socket or private backoff holds work.
+    pub fn fire(&mut self, now: Time) {
+        let mut ids = skein_lib::List::with_capacity(self.rows.capacity());
+        for (id, _) in &self.rows {
+            ids.push(*id).expect("bounded rows");
+        }
+        for id in ids.into_boxed() {
+            let row = self.rows.get_mut(&id).expect("row");
+            row.full.fire(now);
+            row.contents.fire(now);
+            if row.full.expiry <= now {
+                row.api = None;
+            }
         }
     }
 }

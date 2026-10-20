@@ -112,7 +112,7 @@ fn refresh(h: &mut Harness, body: &[u8]) {
     h.answer(FORGE, &fixtures::ok(body));
     h.run(Duration::ZERO);
 }
-fn row(id: u64, suspended: bool) -> document::Installation {
+pub(super) fn row(id: u64, suspended: bool) -> document::Installation {
     document::Installation {
         id,
         account: 22,
@@ -124,7 +124,7 @@ fn row(id: u64, suspended: bool) -> document::Installation {
 }
 // Feed the committed reconciliation transition directly to cross a written job
 // with loss; socket serialization itself is checked by the wire stories.
-fn commit(h: &mut Harness, rows: Box<[document::Installation]>) {
+pub(super) fn commit(h: &mut Harness, rows: Box<[document::Installation]>) {
     let gh = h.component.test_github_mut();
     let mut reading = crate::installations::Reading::new(gh.rows.capacity(), gh.generation, SECOND);
     reading.page(rows, &gh.rows, &gh.accepted, fixtures::shared().name_bytes).expect("fixture read");
@@ -144,11 +144,11 @@ fn forgotten(h: &Harness, id: u64) {
         assert_eq!((row.api_expires, row.git_expires, row.state), (Wall::EPOCH, Wall::EPOCH, Tokens::Gone));
     }
 }
-fn public_ready(h: &Harness) {
+pub(super) fn public_ready(h: &Harness) {
     assert_eq!(h.start(FORGE), Start::Ready { cap: 100 });
     assert_eq!(h.connected_count, 1);
 }
-fn requests(h: &Harness) -> u32 {
+pub(super) fn requests(h: &Harness) -> u32 {
     let wire = h.all_request_bytes(FORGE);
     let mut count = 0_u32;
     for piece in wire.windows(b" HTTP/1.1\r\n".len()) {
@@ -366,7 +366,7 @@ fn transient_deferred_identity_retries_once_due() {
 fn expired_identity_candidate_restarts_mints() {
     let mut h = at(Stage::Viewer);
     h.answer(FORGE, &fixtures::status(503));
-    h.env.wall = EXPIRY;
+    h.env.now = Time::from_nanos(EXPIRY.as_nanos());
     h.run(SECOND);
     h.connected(FORGE);
     assert_eq!(h.component.test_github().mint, Some((1, Scope::Full)));

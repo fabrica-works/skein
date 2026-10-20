@@ -528,7 +528,8 @@ pub(crate) fn installation_bounds(l: &Limits, s: &Shared) -> Option<skein_forge:
     })
 }
 // Both metadata tables, live credentials, accepted bookkeeping and page/event handoffs.
-// Retry candidates and held Contents coexist with mint/authorization handoffs.
+// Per-scope clocks, pending work and both revisions are in Row's container cost.
+// Retry candidates, held Contents and old/new Full coexist with mint/authorization handoffs.
 fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
     use crate::installations::{Accepted, Metadata, Row};
     use skein_lib::{List, Map, Set};
@@ -546,7 +547,7 @@ fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
             u64::from(cap)
                 .checked_mul(u64::from(s.name_bytes).checked_mul(6)?.checked_add(u64::from(l.token_bytes))?)?,
         )?
-        .checked_add(u64::from(l.token_bytes).checked_mul(6)?)?
+        .checked_add(u64::from(l.token_bytes).checked_mul(7)?)?
         .checked_add(u64::try_from(size_of::<crate::Event>()).ok()?)?
         .checked_add(u64::from(s.name_bytes).checked_mul(3)?)
 }

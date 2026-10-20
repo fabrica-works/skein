@@ -1,6 +1,7 @@
 use super::{Listing, Shared, Unusable, check, largest_row, page_size};
 use crate::tests::fixtures;
 use alloc::boxed::Box;
+use core::mem::size_of;
 use skein_forge::api;
 use skein_lib::{List, Time};
 
@@ -312,7 +313,7 @@ fn installation_heap_covers_simultaneous_tables_and_page_payloads() {
     const ROWS: u32 = 3;
     const NAME: u32 = 128;
     const TOKEN: u32 = 64;
-    const PEAK_PAYLOADS: u64 = 3 * (6 * 128 + 64) + 2 * 100 * 128 + 3 * 128 + 6 * 64;
+    const PEAK_PAYLOADS: u64 = 3 * (6 * 128 + 64) + 2 * 100 * 128 + 3 * 128 + 7 * 64;
     let l = super::Limits { installations: ROWS, token_bytes: TOKEN, ..fixtures::limits() };
     let s = Shared { name_bytes: NAME, ..fixtures::shared() };
     let empty = super::installation_heap(&super::Limits { token_bytes: 0, ..l }, &Shared { name_bytes: 0, ..s })
@@ -340,7 +341,7 @@ fn ready_candidate_and_held_token_fit_at_simultaneous_peak() {
     const TOKEN: u32 = 64;
     const NAME: u32 = 128;
     // Live Full tokens, decoder/authorization handoffs, retry candidate and held Contents.
-    const TOKEN_COPIES: u64 = 3 + 6;
+    const TOKEN_COPIES: u64 = 3 + 7;
     // Six bounded table accounts per row, two page buffers and three event accounts.
     const NAME_COPIES: u64 = 3 * 6 + 2 * 100 + 3;
     let l = super::Limits { installations: ROWS, token_bytes: TOKEN, ..fixtures::limits() };
@@ -352,4 +353,27 @@ fn ready_candidate_and_held_token_fit_at_simultaneous_peak() {
     assert!(
         scalar >= skein_lib::Map::<u64, crate::installations::Row>::worst_case(ROWS).expect("states and revisions")
     );
+}
+
+#[test]
+fn renewal_clocks_and_handoff_fit_at_peak() {
+    use crate::installations::{Clock, Row};
+    const ROWS: u32 = 3;
+    // One retained Full per row and seven handoff/candidate/held copies per forge.
+    const COPIES: u64 = 10;
+    let l = super::Limits { installations: ROWS, token_bytes: 0, ..fixtures::limits() };
+    let s = fixtures::shared();
+    let scalar = super::installation_heap(&l, &s).expect("scalar storage");
+    let payload = super::installation_heap(&super::Limits { token_bytes: 64, ..l }, &s).expect("handoff storage");
+    assert_eq!(payload - scalar, COPIES * 64);
+    assert!(size_of::<Row>() >= size_of::<Clock>() * 2 + 16);
+    assert!(scalar >= skein_lib::Map::<u64, Row>::worst_case(ROWS).expect("row clocks and revisions"));
+}
+#[test]
+fn renewal_handoff_checked_add_refuses_overflow() {
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    let base = super::worst_case(&l, &s, 1, 0).expect("bounded renewal storage");
+    assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base), Some(u64::MAX));
+    assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base + 1), None);
 }

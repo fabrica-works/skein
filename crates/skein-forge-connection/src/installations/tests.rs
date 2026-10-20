@@ -262,3 +262,67 @@ fn committed_cursor_keeps_its_accepted_generation() {
         [expected(LIVE, NAME, Change::Suspended), expected(STRAY, NAME, Change::Created)]
     );
 }
+
+#[test]
+fn mint_fixes_due_on_the_monotonic_clock() {
+    let mut env = skein_lib::Env {
+        now: Time::from_nanos(100),
+        wall: Wall::from_nanos(1000),
+        limits: crate::Limits { renew_before: Duration::from_nanos(200), ..fixtures::limits() },
+    };
+    let mut clock = Clock::minted(Wall::from_nanos(1600), &env);
+    assert_eq!((clock.expiry, clock.due), (Time::from_nanos(700), Some(Time::from_nanos(500))));
+    for wall in [Wall::from_nanos(9000), Wall::EPOCH] {
+        env.wall = wall;
+        env.now = Time::from_nanos(400);
+        clock.fire(env.now);
+        assert_eq!((clock.expiry, clock.due), (Time::from_nanos(700), Some(Time::from_nanos(500))));
+    }
+}
+#[test]
+fn token_times_saturate_at_the_end_of_time() {
+    assert_eq!(
+        token_times(Wall::from_nanos(1000), Time::from_nanos(u64::MAX - 10), Wall::EPOCH, Duration::from_nanos(20)),
+        (Time::from_nanos(u64::MAX), Time::from_nanos(u64::MAX - 20))
+    );
+}
+#[test]
+fn short_life_due_saturates_at_the_clock_origin() {
+    assert_eq!(
+        token_times(Wall::from_nanos(1010), Time::from_nanos(100), Wall::from_nanos(1000), Duration::from_nanos(200)),
+        (Time::from_nanos(110), Time::ZERO)
+    );
+}
+#[test]
+fn elapsed_wall_life_saturates_to_zero() {
+    assert_eq!(
+        token_times(Wall::EPOCH, Time::from_nanos(100), Wall::from_nanos(1000), Duration::from_nanos(20)),
+        (Time::from_nanos(100), Time::from_nanos(80))
+    );
+}
+#[test]
+fn due_is_consumed_once_into_pending_work() {
+    let mut clock = Clock { expiry: Time::from_nanos(100), due: Some(Time::from_nanos(80)), pending: false };
+    clock.fire(Time::from_nanos(79));
+    assert!(!clock.pending);
+    clock.fire(Time::from_nanos(80));
+    assert!(clock.pending);
+    assert_eq!(clock.due, None);
+    clock.take();
+    clock.fire(Time::from_nanos(200));
+    assert!(!clock.pending);
+}
+#[test]
+fn selection_orders_installations_then_full_before_contents() {
+    let mut gh = GitHub::new(CAP);
+    gh.accept(&[STRAY, LIVE]);
+    read(&mut gh, Box::from([row(STRAY, NAME, false), row(LIVE, NAME, false)]));
+    let first = gh.rows.first().expect("id order");
+    assert_eq!((*first.0, first.1.scope()), (LIVE, Some(Scope::Full)));
+    let first = gh.rows.get_mut(&LIVE).expect("first");
+    first.full.take();
+    first.state = Tokens::Current;
+    assert_eq!(first.scope(), Some(Scope::Contents));
+    first.contents.take();
+    assert_eq!(first.scope(), None);
+}

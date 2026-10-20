@@ -3,7 +3,7 @@ use super::{Component, OwnPlan, backoff};
 use crate::{
     Event, Limits, StartRead, Stopped, Value,
     connection::{self, Exchange, Phase},
-    installations::{HeldToken, Read, Resume, Selected, Tokens, Work},
+    installations::{Clock, HeldToken, Read, Resume, Selected, Tokens, Work},
     start::Start,
 };
 use skein_forge::{
@@ -28,6 +28,45 @@ enum Progress {
     Identified(Result<document::Viewer, api::Error>),
 }
 impl Component {
+    #[cfg_attr(not(test), expect(dead_code, reason = "task 27 wires the call-token refusal seam"))]
+    pub(super) fn github_token_refused(&mut self, at: u32, installation: u64, token_revision: u64, env: &Env<Limits>) {
+        if self.closed || !super::ready(*self.starts.get(at).expect("forge start")) {
+            return;
+        }
+        let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
+        if !gh.identity_checked {
+            return;
+        }
+        let Some(row) = gh.rows.get_mut(&installation) else {
+            return;
+        };
+        if !row.accepted
+            || row.suspended
+            || row.state == Tokens::Gone
+            || row.token_revision != token_revision
+            || row.refused_revision == Some(token_revision)
+        {
+            return;
+        }
+        row.refused_revision = Some(token_revision);
+        let active = if let Some(selected) = gh.selected {
+            selected.id == installation
+                && selected.connect == gh.connect
+                && selected.revision == row.revision
+                && !gh.stale
+        } else {
+            false
+        };
+        for scope in [Scope::Full, Scope::Contents] {
+            let running = active && gh.mint == Some((installation, scope));
+            let clock = row.clock(scope);
+            clock.due = None;
+            if !running {
+                clock.pending = true;
+            }
+        }
+        self.wake = Some(env.now);
+    }
     fn github_bounds(&self, l: &Limits) -> Bounds {
         crate::limits::installation_bounds(l, &self.shared).expect("checked installation bounds")
     }
@@ -132,7 +171,7 @@ impl Component {
         *self.starts.get_mut(at).expect("forge start") = Start::Stopped(why);
         up.push(Event::Stopped { forge: forge.number, why });
     }
-    fn github_select(&mut self, at: u32, next: Duration, up: &mut Queue<Event>) {
+    fn github_select(&mut self, at: u32, next: Duration, env: &Env<Limits>, up: &mut Queue<Event>) {
         let gh = self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state");
         gh.mint = None;
         gh.selected = None;
@@ -140,11 +179,7 @@ impl Component {
         let mut chosen = None;
         for (id, row) in &gh.rows {
             if row.accepted && !row.suspended {
-                let scope = match row.state {
-                    Tokens::Unminted => Some(Scope::Full),
-                    Tokens::Minting { scope } => Some(scope),
-                    Tokens::Current | Tokens::Waiting | Tokens::Gone => None,
-                };
+                let scope = row.scope();
                 if let Some(scope) = scope {
                     chosen = Some((*id, scope));
                     break;
@@ -154,6 +189,7 @@ impl Component {
         if let Some((id, scope)) = chosen {
             let row = gh.rows.get_mut(&id).expect("eligible row");
             row.state = Tokens::Minting { scope };
+            row.clock(scope).take();
             gh.selected = Some(Selected { id, connect: gh.connect, revision: row.revision });
             gh.mint = Some((id, scope));
             self.github_phase(at, Start::Minting { next });
@@ -164,13 +200,13 @@ impl Component {
             && let Some(row) = gh.rows.get(&id)
             && row.accepted
             && !row.suspended
-            && row.api.is_some()
+            && row.credential(env.now).is_some()
         {
             recent = Some(id);
         }
         if recent.is_none() {
             for (id, row) in &gh.rows {
-                if row.accepted && !row.suspended && row.api.is_some() {
+                if row.accepted && !row.suspended && row.credential(env.now).is_some() {
                     recent = Some(*id);
                 }
             }
@@ -254,11 +290,12 @@ impl Component {
             }
         }
         *self.own_plans.get_mut(at).expect("forge plan") = None;
-        let next = active_next(state);
+        let gh = self.github.get(at).expect("forge slot").as_ref().expect("GitHub state");
+        let next = if gh.connected { env.limits.start_backoff } else { active_next(state) };
         if self.github.get(at).expect("forge slot").as_ref().expect("GitHub state").reread {
             self.github_phase(at, Start::Listing { next });
         } else {
-            self.github_select(at, next, up);
+            self.github_select(at, next, env, up);
         }
     }
     fn github_identified(
@@ -314,11 +351,15 @@ impl Component {
                         Scope::Full => {
                             row.api = Some(minted.token);
                             row.api_expires = minted.expires;
-                            row.state = Tokens::Minting { scope: Scope::Contents };
+                            row.full = Clock::minted(minted.expires, env);
+                            row.token_revision = row.token_revision.checked_add(1).expect("Full token revision space");
+                            row.refused_revision = None;
+                            row.state = Tokens::Current;
                             gh.recent = Some(id);
                         }
                         Scope::Contents => {
                             row.git_expires = minted.expires;
+                            row.contents = Clock::minted(minted.expires, env);
                             row.state = Tokens::Current;
                             gh.held = Some(HeldToken {
                                 selected: gh.selected.expect("selected Contents"),
@@ -444,7 +485,7 @@ impl Component {
             };
             if selected && !gh.selected_valid() {
                 *self.own_plans.get_mut(at).expect("forge plan") = None;
-                self.github_select(at, active_next(state), up);
+                self.github_select(at, active_next(state), env, up);
                 return false;
             }
             let pending = match self.own_plans.get_mut(at).expect("forge plan").as_mut().expect("GitHub plan") {
@@ -461,7 +502,7 @@ impl Component {
                 let secret = match state {
                     Start::Identity { .. } => {
                         let row = gh.rows.get(&gh.recent.expect("identity row")).expect("identity row");
-                        if !row.accepted || row.suspended || row.api.is_none() || row.api_expires <= env.wall {
+                        if row.credential(env.now).is_none() {
                             *self.own_plans.get_mut(at).expect("forge plan") = None;
                             let row = gh.rows.get_mut(&gh.recent.expect("identity row")).expect("identity row");
                             row.forget();
@@ -469,7 +510,7 @@ impl Component {
                                 row.unminted();
                             }
                             let next = active_next(state);
-                            self.github_select(at, next, up);
+                            self.github_select(at, next, env, up);
                             return false;
                         }
                         row.api.clone()
@@ -580,10 +621,10 @@ impl Component {
                         return true;
                     }
                     match state {
-                        Start::Listing { next } => self.github_select(at, next, up),
+                        Start::Listing { next } => self.github_select(at, next, env, up),
                         Start::Ready { .. } => {
                             let next = gh.read_next;
-                            self.github_select(at, next, up);
+                            self.github_select(at, next, env, up);
                         }
                         Start::Unconnected
                         | Start::Checking { .. }
@@ -685,7 +726,7 @@ impl Component {
             Work::Waiting { until, next, resume } => {
                 if !gh.selected_valid() {
                     gh.work = Work::Idle;
-                    self.github_select(at, next, up);
+                    self.github_select(at, next, env, up);
                     return true;
                 }
                 if until > env.now {
@@ -700,12 +741,12 @@ impl Component {
                         gh.work = Work::Minting { next };
                     }
                     Resume::Identity => {
-                        if row.api_expires <= env.wall {
+                        if row.credential(env.now).is_none() {
                             row.forget();
                             row.unminted();
                             gh.held = None;
                             gh.work = Work::Idle;
-                            self.github_select(at, next, up);
+                            self.github_select(at, next, env, up);
                         } else {
                             gh.work = Work::Identity { next };
                         }
@@ -714,7 +755,7 @@ impl Component {
                 true
             }
             Work::Idle => {
-                self.github_select(at, env.limits.start_backoff, up);
+                self.github_select(at, env.limits.start_backoff, env, up);
                 github_active(self.github_state(at))
             }
             Work::Minting { .. } | Work::Identity { .. } => false,
@@ -724,6 +765,7 @@ impl Component {
         &mut self,
         at: u32,
         id: skein_lib::Id<connection::Connection>,
+        env: &Env<Limits>,
         up: &mut Queue<Event>,
         io: &mut Queue<skein_io::Request>,
     ) -> bool {
@@ -737,7 +779,7 @@ impl Component {
             c.close(false, io);
             *self.own_plans.get_mut(at).expect("forge plan") = None;
             let next = active_next(self.github_state(at));
-            self.github_select(at, next, up);
+            self.github_select(at, next, env, up);
             return true;
         }
         false
@@ -750,6 +792,7 @@ impl Component {
         io: &mut Queue<skein_io::Request>,
         budget: (u32, u32),
     ) {
+        self.github.get_mut(at).expect("forge slot").as_mut().expect("GitHub state").fire(env.now);
         let above = up.len();
         let below = io.len();
         if let Some((until, next)) = backoff(*self.starts.get(at).expect("forge start"))
@@ -807,12 +850,13 @@ impl Component {
             if c.closing {
                 break;
             }
-            if let Some(deadline) = c.deadline
+            if c.phase != Phase::Idle
+                && let Some(deadline) = c.deadline
                 && deadline <= env.now
             {
                 c.timeout();
             }
-            if self.github_retire_unsent(at, id, up, io) {
+            if self.github_retire_unsent(at, id, env, up, io) {
                 continue;
             }
             if !self.github_send(at, id, env, up) {
@@ -895,6 +939,10 @@ mod tests {
                     Row {
                         state: Tokens::Gone,
                         revision: 0,
+                        token_revision: 0,
+                        refused_revision: None,
+                        full: Clock::empty(),
+                        contents: Clock::empty(),
                         account: Account { id: 22, login: Box::from(b"acme".as_slice()) },
                         suspended: false,
                         accepted: false,
@@ -1130,6 +1178,10 @@ mod tests {
                     Row {
                         state: Tokens::Current,
                         revision: 0,
+                        token_revision: 0,
+                        refused_revision: None,
+                        full: Clock { expiry: Time::from_nanos(expiry.as_nanos()), due: None, pending: false },
+                        contents: Clock::empty(),
                         account: Account { id: 22, login: Box::from(b"acme".as_slice()) },
                         suspended: false,
                         accepted: true,

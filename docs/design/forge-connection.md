@@ -735,10 +735,11 @@ It is the sum of:
   bounded metadata tables, old-row seen flags and accepted/missing-id
   bookkeeping with known accounts; a 100-row page and its handoff
   overlap, one overflow fact and the diff cursor's held account; private
-  row states and eligibility revisions, selected work and retry state,
+  row states, eligibility and Full-token revisions, each scope's monotonic
+  expiry and due time, pending work, selected work and retry state,
   a deferred Identity candidate and one held git token at `token_bytes`
-  with its account, all at simultaneous peak; its log
-  origins, each a host of 253 bytes and an address; and its puller, its
+  with its account and the old/new API token handoff, all at simultaneous
+  peak; its log origins, each a host of 253 bytes and an address; and its puller, its
   validator, a guid, the delivery's decoder and the hint it holds.
 
 A long thread or a large payload costs time, not memory. The owner
