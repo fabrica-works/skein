@@ -50,7 +50,8 @@ impl Plan {
             api::Write::DeleteBranch { .. }
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
-            | api::Write::Edit { .. } => {}
+            | api::Write::Edit { .. }
+            | api::Write::Status { .. } => {}
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
@@ -58,7 +59,6 @@ impl Plan {
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
-            | api::Write::Status { .. }
             | api::Write::CreateBranch { .. } => return Err(api::Error::Refused),
         }
         self.row = tables.repository(self.repository).cloned();
@@ -83,6 +83,9 @@ impl Plan {
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::Status { commit, context, check } => {
+                Request::Status { owner, name, commit: *commit, context: context.clone(), check: *check }
+            }
             api::Write::Edit { number, title, body } => {
                 Request::Edit { owner, name, number: *number, title: title.clone(), body: body.clone() }
             }
@@ -96,14 +99,27 @@ impl Plan {
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
-            | api::Write::Status { .. }
             | api::Write::CreateBranch { .. } => return Err(api::Error::Refused),
         };
         self.stage = Stage::Mutate;
         Ok(self.send(request))
     }
     fn status(&self) -> u16 {
-        if self.asked() == Asked::DeleteBranch { 204 } else { 200 }
+        match self.write {
+            api::Write::DeleteBranch { .. } => 204,
+            api::Write::Status { .. } => 201,
+            api::Write::CreateIssue { .. }
+            | api::Write::OpenPull { .. }
+            | api::Write::Post { .. }
+            | api::Write::Review { .. }
+            | api::Write::Edit { .. }
+            | api::Write::SetReviewers { .. }
+            | api::Write::Close { .. }
+            | api::Write::Reopen { .. }
+            | api::Write::Merge { .. }
+            | api::Write::Update { .. }
+            | api::Write::CreateBranch { .. } => 200,
+        }
     }
     fn asked(&self) -> Asked {
         match &self.write {

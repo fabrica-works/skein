@@ -391,3 +391,73 @@ fn github_edit_empty_and_replay() {
         assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
     }
 }
+fn commit() -> api::Commit {
+    crate::github::id::commit(super::fixtures::SHA).unwrap()
+}
+fn status(check: api::Check) -> api::Write {
+    api::Write::Status { commit: commit(), context: Box::from(*b"alice"), check }
+}
+#[test]
+fn github_status_states_and_request() {
+    for (check, body) in [
+        (api::Check::Pending, br#"{"state":"pending","context":"alice"}"#.as_slice()),
+        (api::Check::Passed, br#"{"state":"success","context":"alice"}"#),
+        (api::Check::Failed, br#"{"state":"failure","context":"alice"}"#),
+    ] {
+        let mut tables = tables();
+        let mut plan = write_plan(status(check));
+        let request = begin(&mut plan, &mut tables);
+        golden(
+            &request,
+            Method::Post,
+            b"/repos/acme/widgets/statuses/0123456789abcdef0123456789abcdef01234567",
+            Some(body),
+            Some(Kind::Done),
+        );
+        roundtrip_body(&request);
+        head(&mut plan, 201, &mut tables);
+        assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+    }
+}
+#[test]
+fn github_status_integration_forbidden() {
+    let mut tables = tables();
+    let mut plan = write_plan(status(api::Check::Pending));
+    begin(&mut plan, &mut tables);
+    head(&mut plan, 403, &mut tables);
+    assert_eq!(
+        finish(&mut plan, refusal(crate::github::failure::INTEGRATION), &mut tables),
+        ended(Err(api::Error::Forbidden))
+    );
+}
+#[test]
+fn github_status_replay_and_bounds() {
+    for _attempt in 0_u32..2 {
+        let mut tables = tables();
+        let mut plan = write_plan(status(api::Check::Passed));
+        let request = begin(&mut plan, &mut tables);
+        encoded_body_bounds(&request);
+        head(&mut plan, 201, &mut tables);
+        assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+    }
+    let mut tables = tables();
+    let mut plan = write_plan(status(api::Check::Pending));
+    let mut request = begin(&mut plan, &mut tables);
+    if let Request::Status { commit, .. } = &mut request {
+        *commit = [255; 32];
+    }
+    assert_eq!(request::encode(&request, &limits()), Err(request::Refusal::Text));
+    for (context, ok) in [(Box::<[u8]>::from([b'a'; 128]), true), (Box::from([b'a'; 129]), false)] {
+        let request = Request::Status {
+            owner: Box::from(*b"acme"),
+            name: Box::from(*b"widgets"),
+            commit: commit(),
+            context,
+            check: api::Check::Pending,
+        };
+        assert_eq!(
+            request::encode(&request, &crate::github::limits::Limits { body_bytes: 256, ..limits() }).is_ok(),
+            ok
+        );
+    }
+}

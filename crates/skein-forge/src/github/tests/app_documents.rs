@@ -424,6 +424,7 @@ fn github_app_server_round_trip() {
                 | Request::Permission { .. }
                 | Request::Reopen { .. }
                 | Request::Edit { .. }
+                | Request::Status { .. }
                 | Request::Close { .. }
                 | Request::DeleteBranch { .. }
                 | Request::User { .. } => {}

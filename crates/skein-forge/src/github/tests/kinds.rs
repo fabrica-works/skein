@@ -23,6 +23,16 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::Reachable { page: 1, per_page: 100 }, Kind::ReachableRows),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
+        (
+            Request::Status {
+                owner: owner(),
+                name: name(),
+                commit,
+                context: Box::from(*b"alice"),
+                check: crate::api::Check::Pending,
+            },
+            Kind::Done,
+        ),
         (Request::Edit { owner: owner(), name: name(), number: 9, title: None, body: None }, Kind::Done),
         (Request::Reopen { owner: owner(), name: name(), number: 9 }, Kind::Done),
         (Request::Close { owner: owner(), name: name(), number: 9 }, Kind::Done),

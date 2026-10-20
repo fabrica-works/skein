@@ -65,6 +65,7 @@ pub enum Request {
     User { id: u64 },
     Reopen { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     Edit { owner: Box<[u8]>, name: Box<[u8]>, number: u64, title: Option<Box<[u8]>>, body: Option<Box<[u8]>> },
+    Status { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, context: Box<[u8]>, check: api::Check },
     Close { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     DeleteBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
 }
@@ -138,6 +139,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Reopen { .. }
         | Request::Close { .. }
         | Request::Edit { .. }
+        | Request::Status { .. }
         | Request::User { .. } => Accept::Json,
     };
     let (method, auth) = selection(request);
@@ -257,6 +259,11 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.repo(owner, name)?;
             out.put(b"/issues/");
             out.number(*number);
+        }
+        Request::Status { owner, name, commit, .. } => {
+            out.repo(owner, name)?;
+            out.put(b"/statuses/");
+            out.commit(commit)?;
         }
         Request::DeleteBranch { owner, name, branch } => {
             out.repo(owner, name)?;
@@ -438,6 +445,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Reopen { .. }
         | Request::Close { .. }
         | Request::Edit { .. }
+        | Request::Status { .. }
         | Request::User { .. } => unreachable!("item target dispatch"),
     }
     Ok(())
@@ -483,7 +491,7 @@ fn selection(request: &Request) -> (Method, Auth) {
         Request::Uninstall { .. } => (Method::Delete, Auth::App),
         Request::Conversion { .. } => (Method::Post, Auth::None),
         Request::BotUser { .. } => (Method::Get, Auth::None),
-        Request::Viewer => (Method::Post, Auth::Installation),
+        Request::Status { .. } | Request::Viewer => (Method::Post, Auth::Installation),
         Request::Reachable { .. }
         | Request::Repository { .. }
         | Request::Locate { .. }
@@ -513,7 +521,8 @@ fn selection(request: &Request) -> (Method, Auth) {
 }
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
-        Request::Mint { scope: Scope::Contents, .. }
+        Request::Status { .. }
+        | Request::Mint { scope: Scope::Contents, .. }
         | Request::Viewer
         | Request::SetHook { .. }
         | Request::Reopen { .. }
@@ -573,6 +582,16 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
 fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) {
     json.object_start();
     match request {
+        Request::Status { context, check, .. } => {
+            json.key(b"state");
+            json.string(match check {
+                api::Check::Pending => b"pending",
+                api::Check::Passed => b"success",
+                api::Check::Failed => b"failure",
+            });
+            json.key(b"context");
+            json.string(context);
+        }
         Request::Edit { title, body, .. } => {
             if let Some(title) = title {
                 json.key(b"title");
@@ -706,6 +725,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Reopen { .. }
         | Request::Close { .. }
         | Request::Edit { .. }
+        | Request::Status { .. }
         | Request::User { .. } => unreachable!("App target dispatch"),
     }
     Ok(())
@@ -720,6 +740,7 @@ fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
 
 fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
     match request {
+        Request::Status { context, .. } => bounded(context, limits.string_bytes)?,
         Request::Edit { title, body, .. } => {
             if let Some(title) = title {
                 bounded(title, limits.string_bytes)?;

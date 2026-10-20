@@ -963,6 +963,7 @@ fn github_raw_request(request: &github::request::Request) -> bool {
         | Request::Permission { .. }
         | Request::Reopen { .. }
         | Request::Edit { .. }
+        | Request::Status { .. }
         | Request::Close { .. }
         | Request::DeleteBranch { .. }
         | Request::User { .. } => false,

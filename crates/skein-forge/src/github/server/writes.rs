@@ -210,6 +210,23 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[must_use]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Status { owner, name, commit, .. } => {
+            let fields = parse(
+                body,
+                &[
+                    Field { key: b"state", body: false, required: true },
+                    Field { key: b"context", body: false, required: true },
+                ],
+                limits,
+            )?;
+            let check = match fields.get(b"state")? {
+                b"pending" => crate::api::Check::Pending,
+                b"success" => crate::api::Check::Passed,
+                b"failure" => crate::api::Check::Failed,
+                _ => return None,
+            };
+            Some(Request::Status { owner, name, commit, context: Box::from(fields.get(b"context")?), check })
+        }
         Request::Edit { owner, name, number, .. } => {
             let fields = parse(
                 body,
