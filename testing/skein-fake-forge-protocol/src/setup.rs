@@ -10,6 +10,7 @@ use skein_lib::{List, Secret, Writer, bytes};
 mod accounts;
 mod collaborators;
 mod hooks;
+mod reads;
 mod repo_hooks;
 pub use repo_hooks::{RepositoryHook, RepositoryHooks};
 mod orgs;
@@ -43,7 +44,7 @@ pub struct Store {
     teams: List<Team>,
     hooks: List<Subscription>,
     private: List<u64>,
-    /// Setup grants are separate from the domain's permissions; collaborator reads do not see them.
+    /// Setup grants are separate from the domain's permissions.
     collaborators: List<collaborators::Collaborator>,
     /// Repository hooks made by setup are stored and route nothing.
     repo_hooks: List<RepositoryHook>,
@@ -154,6 +155,14 @@ impl Store {
     pub(crate) fn answer(&mut self, request: &Request, user: u64, config: &Config, limits: &Limits) -> Option<Reply> {
         match request {
             Request::RepoSearch { page } => Some(self.search(config, user, *page, limits)),
+            Request::RepositoryById { id } => {
+                let caller = self.user(user)?;
+                Some(self.repository_by_id(*id, &caller, config, limits))
+            }
+            Request::Permission { at, login } => {
+                let caller = self.user(user)?;
+                Some(self.read_permission(at, login, &caller, config, limits))
+            }
             Request::User => {
                 let user = self.user(user)?;
                 Some(encoded(200, Answer::User(user), limits))
@@ -193,7 +202,6 @@ impl Store {
                 })
             }
             Request::ApiSettings
-            | Request::RepositoryById { .. }
             | Request::Repository { .. }
             | Request::UserRepos { .. }
             | Request::UserSearch { .. }
@@ -210,7 +218,6 @@ impl Store {
             | Request::Protection { .. }
             | Request::Protections { .. }
             | Request::Collaborators { .. }
-            | Request::Permission { .. }
             | Request::Pulls { .. }
             | Request::PullFiles { .. }
             | Request::Compare { .. }

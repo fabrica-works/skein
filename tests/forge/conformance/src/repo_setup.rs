@@ -11,6 +11,9 @@ use skein_throwaway_forgejo::{Token, fresh_secret};
 use std::{collections::BTreeSet, path::Path};
 const ROUTE: &str = "/api/v1/repos/acme/widgets/hooks";
 const COLLABORATOR: &str = "/api/v1/repos/bob/widgets/collaborators/alice";
+const REPOSITORY_FACT: &str = "setup-repository-by-id-reads-its-path-for-an-admin";
+const REPOSITORY_CASES: &[(&str, &str)] =
+    &[("setup-repository-by-id", "specimen"), ("setup-private-repository-by-id", "private")];
 const SCOPE_FACT: &str = "setup-admin-token-without-write-repository-is-refused-the-repository-routes";
 const SCOPE_CASES: &[&str] = &[
     "setup-scope-repository-by-id",
@@ -70,6 +73,9 @@ fn body(port: u16, path: &str, secret: &str, active: bool, create: bool) -> Resu
 }
 /// Provisions collaborator access and duplicate repository hooks for recorded evaluation.
 pub(crate) fn record(r: &mut Recorder<'_>, admin: &Token) -> Result<()> {
+    for (name, id) in [("setup-repository-by-id", r.f.repository), ("setup-private-repository-by-id", r.f.private)] {
+        r.send(name, "GET", &format!("/api/v1/repositories/{id}"), None, Some(admin), None)?;
+    }
     record_without_repository_scope(r)?;
     r.send("setup-collaborator-put", "PUT", COLLABORATOR, Some(r#"{"permission":"write"}"#), Some(admin), None)?;
     r.send("setup-collaborator-permission", "GET", &format!("{COLLABORATOR}/permission"), None, Some(admin), None)?;
@@ -129,12 +135,23 @@ fn repository_scope_fact(out: &Path, facts: &mut Vec<Fact>) -> Result<()> {
     add(facts, SCOPE_FACT, refused, "a repository route did not refuse the token with HTTP 403");
     Ok(())
 }
+fn repository_read_fact(out: &Path, owner: &str, facts: &mut Vec<Fact>) -> Result<()> {
+    let mut readable = true;
+    for (case_name, name) in REPOSITORY_CASES {
+        let answer = case(out, case_name)?;
+        readable &= answer.status == 200
+            && answer.body.root().get("owner").get("login").is(owner)
+            && answer.body.root().get("name").is(name);
+    }
+    add(facts, REPOSITORY_FACT, readable, "an admin's repository read did not answer HTTP 200 with its path");
+    Ok(())
+}
 fn event_set(value: At<'_>) -> Option<BTreeSet<&str>> {
     value.array().map(|rows| rows.iter().filter_map(|row| row.str()).collect())
 }
 /// Evaluates each repository setup contract using captured answers only.
 #[expect(clippy::too_many_lines, reason = "the named facts share the same captured repository setup snapshots")]
-pub(crate) fn facts(out: &Path) -> Result<Vec<Fact>> {
+pub(crate) fn facts(out: &Path, owner: &str) -> Result<Vec<Fact>> {
     let put = case(out, "setup-collaborator-put")?;
     let permission = case(out, "setup-collaborator-permission")?;
     let made = case(out, "setup-repository-hook-made")?;
@@ -239,13 +256,17 @@ pub(crate) fn facts(out: &Path) -> Result<Vec<Fact>> {
     ] {
         add(&mut facts, name, holds, "captured repository setup answer differs");
     }
+    repository_read_fact(out, owner, &mut facts)?;
     repository_scope_fact(out, &mut facts)?;
     Ok(facts)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EVENTS, SCOPE_CASES, SCOPE_FACT, facts, json, repository_scope_fact};
+    use super::{
+        EVENTS, REPOSITORY_CASES, REPOSITORY_FACT, SCOPE_CASES, SCOPE_FACT, facts, json, repository_read_fact,
+        repository_scope_fact,
+    };
     use crate::facts::Outcome;
     use std::path::Path;
     fn hook(id: u64, path: &str, active: bool) -> String {
@@ -297,6 +318,9 @@ mod tests {
         for name in SCOPE_CASES {
             response(&out, name, 403, "{}");
         }
+        for (case, name) in REPOSITORY_CASES {
+            response(&out, case, 200, &format!(r#"{{"owner":{{"login":"acme"}},"name":"{name}"}}"#));
+        }
         out
     }
     fn response(out: &Path, name: &str, status: u16, body: &str) {
@@ -308,8 +332,8 @@ mod tests {
     #[test]
     fn repository_setup_facts_hold_for_canned_answers() {
         let out = canned("holds");
-        let facts = facts(&out).expect("facts");
-        assert_eq!(facts.len(), 10);
+        let facts = facts(&out, "acme").expect("facts");
+        assert_eq!(facts.len(), 11);
         for fact in facts {
             assert_eq!(fact.outcome, Outcome::Holds, "{}", fact.name);
         }
@@ -378,7 +402,7 @@ mod tests {
         ] {
             let out = canned(&format!("changed-{index}"));
             response(&out, case, status, &body);
-            let facts = facts(&out).expect("facts");
+            let facts = facts(&out, "acme").expect("facts");
             assert!(facts.iter().any(|row| row.name == fact && matches!(row.outcome, Outcome::Fails(_))), "{fact}");
             std::fs::remove_dir_all(out).expect("remove canned answers");
         }
@@ -392,6 +416,26 @@ mod tests {
             repository_scope_fact(&out, &mut facts).expect("scope fact");
             assert!(facts.iter().any(|fact| fact.name == SCOPE_FACT && matches!(fact.outcome, Outcome::Fails(_))));
             std::fs::remove_dir_all(out).expect("remove canned answers");
+        }
+    }
+    #[test]
+    fn repository_read_fact_detects_status_and_each_path_field() {
+        for (case_index, (name, expected_name)) in REPOSITORY_CASES.iter().enumerate() {
+            for (field, status, owner, repository) in [
+                ("status", 404, "acme", *expected_name),
+                ("owner", 200, "bob", *expected_name),
+                ("name", 200, "acme", "widgets"),
+            ] {
+                let out = canned(&format!("repository-{case_index}-{field}"));
+                let body = format!(r#"{{"owner":{{"login":"{owner}"}},"name":"{repository}"}}"#);
+                response(&out, name, status, &body);
+                let mut facts = Vec::new();
+                repository_read_fact(&out, "acme", &mut facts).expect("repository fact");
+                assert!(
+                    facts.iter().any(|fact| fact.name == REPOSITORY_FACT && matches!(fact.outcome, Outcome::Fails(_)))
+                );
+                std::fs::remove_dir_all(out).expect("remove canned answers");
+            }
         }
     }
 }

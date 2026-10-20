@@ -103,6 +103,7 @@ holds setup-a-git-token-of-write-repository-and-read-user-answers-user-as-the-bo
 holds setup-token-delete-answers-204-and-ends-the-token
 holds setup-token-delete-of-a-missing-id-is-404
 holds setup-admin-token-without-write-admin-is-refused-the-token-routes
+unchecked setup-repository-by-id-reads-its-path-for-an-admin: declared; recording requires the director's run
 unchecked setup-admin-token-without-write-repository-is-refused-the-repository-routes: declared; recording requires the director's run
 holds setup-admin-token-without-a-user-scope-is-refused-user
 holds setup-admin-token-with-read-user-in-place-of-write-user-reads-user

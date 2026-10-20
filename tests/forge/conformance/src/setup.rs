@@ -41,6 +41,6 @@ pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
     facts.extend(crate::hooks::facts(f, out)?);
     facts.extend(crate::repos::facts(out)?);
     facts.extend(crate::search::facts(out)?);
-    facts.extend(crate::repo_setup::facts(out)?);
+    facts.extend(crate::repo_setup::facts(out, &f.owner.login)?);
     Ok(facts)
 }

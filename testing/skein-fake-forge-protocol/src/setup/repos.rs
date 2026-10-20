@@ -50,12 +50,9 @@ impl Store {
         }
         None
     }
-    fn effective(&self, owner: &[u8], user: u64, login: &[u8], direct: Permission) -> Permission {
+    pub(super) fn effective(&self, owner: &[u8], user: u64, login: &[u8], direct: Permission) -> Permission {
         let mut permission = direct;
-        if let Some(org) = self.organization(owner) {
-            if org.owner.as_ref() == login {
-                permission = Permission::Admin;
-            }
+        if self.organization(owner).is_some() {
             for team in &self.teams {
                 // forge-setup.md 4.8: teams without all repositories grant nothing without a team-to-repository table.
                 if team.org.as_ref() == owner
@@ -71,10 +68,17 @@ impl Store {
                     permission = permission.max(grant);
                 }
             }
-        } else if owner == login {
+        }
+        if self.owns(owner, login) {
             permission = Permission::Admin;
         }
         permission
+    }
+    pub(super) fn owns(&self, owner: &[u8], login: &[u8]) -> bool {
+        match self.organization(owner) {
+            Some(org) => org.owner.as_ref() == login,
+            None => owner == login,
+        }
     }
 }
 #[derive(Debug)]

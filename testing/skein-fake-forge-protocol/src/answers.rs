@@ -142,15 +142,29 @@ fn compared(request: &Request, values: &[a::ChangedFile]) -> Box<[d::ChangedFile
 }
 fn repository(config: &Config, request: &Request, settings: &a::Settings) -> Result<Answer, a::Error> {
     let full = routes::repository(config, request).ok_or(a::Error::Missing(a::What::Repository))?;
-    let slash = bytes::find(&full, b"/").ok_or(a::Error::Missing(a::What::Repository))?;
+    repository_document(
+        config,
+        repository_id(config, request).ok_or(a::Error::Missing(a::What::Repository))?,
+        &full,
+        settings,
+    )
+}
+/// Repository identity and URL are shared by domain and setup reads.
+pub(crate) fn repository_document(
+    config: &Config,
+    id: u64,
+    full: &[u8],
+    settings: &a::Settings,
+) -> Result<Answer, a::Error> {
+    let slash = bytes::find(full, b"/").ok_or(a::Error::Missing(a::What::Repository))?;
     let owner = full.get(..slash).ok_or(a::Error::Refused)?;
     let name = full.get(slash.saturating_add(1)..).ok_or(a::Error::Refused)?;
     let mut html = Writer::new(config.base.len().saturating_add(full.len()).saturating_add(1));
     html.put(&config.base).expect("sized html URL");
     html.put(b"/").expect("sized html URL");
-    html.put(&full).expect("sized html URL");
+    html.put(full).expect("sized html URL");
     Ok(Answer::Repository(d::Repository {
-        id: repository_id(config, request).ok_or(a::Error::Missing(a::What::Repository))?,
+        id,
         owner: d::User { id: 0, login: bytes::copy_of(owner), is_admin: false, full_name: Box::from([]) },
         name: bytes::copy_of(name),
         object_format: ObjectFormat::Sha1,

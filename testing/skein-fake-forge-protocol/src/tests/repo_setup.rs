@@ -7,10 +7,10 @@ use skein_forge::forgejo::{
 use skein_lib::{List, Secret};
 const REPOSITORY: u32 = 2;
 const OTHER: u32 = 3;
-fn repo() -> Repo {
+pub(super) fn repo() -> Repo {
     Repo { owner: boxed(b"acme"), name: boxed(b"widgets") }
 }
-fn other() -> Repo {
+pub(super) fn other() -> Repo {
     Repo { owner: boxed(b"bob"), name: boxed(b"widgets") }
 }
 fn config() -> Config {
@@ -23,7 +23,7 @@ fn config() -> Config {
     config.users.push((2, boxed(b"bob"))).unwrap();
     config
 }
-fn harness() -> Harness {
+pub(super) fn harness() -> Harness {
     let mut h = Harness::new(config());
     let admin = h.service.setup_mut().account(b"alice", true, b"");
     h.service.setup_mut().account(b"bob", false, b"");

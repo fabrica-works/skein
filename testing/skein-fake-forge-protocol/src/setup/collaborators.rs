@@ -1,5 +1,5 @@
 use super::{Store, absent, empty, full};
-use crate::{Config, Limits, response::Reply};
+use crate::{Config, Error, Limits, response::Reply};
 use alloc::boxed::Box;
 use skein_forge::forgejo::request::{Grant, Repo};
 use skein_lib::List;
@@ -51,22 +51,32 @@ impl Store {
         if !known {
             return absent(limits);
         }
+        match self.grant(repository, login, permission) {
+            Ok(()) => empty(),
+            Err(Error::Limits) => full(limits),
+        }
+    }
+    /// Sets or replaces a bounded scenario grant without an HTTP exchange.
+    pub fn grant(&mut self, repository: u32, login: &[u8], permission: Grant) -> Result<(), Error> {
+        if login.len() > self.string_bytes {
+            return Err(Error::Limits);
+        }
         for index in 0..self.collaborators.len() {
             if let Some(row) = self.collaborators.get_mut(index)
                 && row.repository == repository
                 && row.login.as_ref() == login
             {
                 row.permission = permission;
-                return empty();
+                return Ok(());
             }
         }
         if self.collaborators.room() == 0 {
-            return full(limits);
+            return Err(Error::Limits);
         }
         if self.collaborators.push(Collaborator { repository, login: login.into(), permission }).is_err() {
-            return full(limits);
+            return Err(Error::Limits);
         }
-        empty()
+        Ok(())
     }
 }
 pub(super) fn worst_case(limits: &Limits) -> Option<u64> {
