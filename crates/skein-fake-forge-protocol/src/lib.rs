@@ -7,6 +7,7 @@ pub mod delivery;
 use alloc::boxed::Box;
 use skein_lib::{List, Secret};
 pub mod errors;
+pub mod git;
 pub mod observations;
 pub mod response;
 pub mod routes;
