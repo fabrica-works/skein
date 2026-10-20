@@ -41,7 +41,14 @@ impl Plan {
                 self.limit = size::page_size(bounds, capacity)?;
                 self.issues.comments = List::with_capacity(capacity);
             }
-            Read::Locate { .. } | Read::Settings | Read::Branch { .. } | Read::Branches | Read::Refused => {
+            Read::Locate { .. }
+            | Read::Settings
+            | Read::Branch { .. }
+            | Read::Branches
+            | Read::Pull { .. }
+            | Read::PullFor { .. }
+            | Read::Statuses { .. }
+            | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }
         }
@@ -118,11 +125,17 @@ impl Plan {
                 | Read::Settings
                 | Read::Branch { .. }
                 | Read::Branches
+                | Read::Pull { .. }
+                | Read::PullFor { .. }
+                | Read::Statuses { .. }
                 | Read::Refused,
                 document::Row::Issue(_)
                 | document::Row::Comment(_)
                 | document::Row::Installation(_)
                 | document::Row::Reachable(_)
+                | document::Row::Pull(_)
+                | document::Row::Context(_)
+                | document::Row::Run(_)
                 | document::Row::Branch(_),
             ) => return Err(api::Error::InvalidAnswer),
         }
@@ -142,6 +155,9 @@ impl Plan {
             | Read::Settings
             | Read::Branch { .. }
             | Read::Branches
+            | Read::Pull { .. }
+            | Read::PullFor { .. }
+            | Read::Statuses { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         if issue.number != number {
@@ -165,6 +181,9 @@ impl Plan {
             | Read::Settings
             | Read::Branch { .. }
             | Read::Branches
+            | Read::Pull { .. }
+            | Read::PullFor { .. }
+            | Read::Statuses { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(Some(self.send(Request::Comments {
@@ -202,6 +221,9 @@ impl Plan {
             | Read::Settings
             | Read::Branch { .. }
             | Read::Branches
+            | Read::Pull { .. }
+            | Read::PullFor { .. }
+            | Read::Statuses { .. }
             | Read::Refused => Err(api::Error::InvalidAnswer),
         }
     }

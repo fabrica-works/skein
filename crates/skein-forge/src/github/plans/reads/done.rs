@@ -24,12 +24,18 @@ impl Plan {
                     | Read::Locate { .. }
                     | Read::Settings
                     | Read::Branches
+                    | Read::Pull { .. }
+                    | Read::PullFor { .. }
+                    | Read::Statuses { .. }
                     | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
+            document::Document::Pull(pull) => self.pull_done(pull, bounds),
+            document::Document::Combined(combined) => self.combined_done(combined, bounds),
             document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
             document::Document::Rows => match self.read {
                 Read::Items { .. } | Read::Item { .. } => self.issue_rows_done(bounds),
+                Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_rows_done(bounds),
                 Read::Locate { .. } | Read::Settings | Read::Branch { .. } | Read::Branches | Read::Refused => {
                     self.branches_done(bounds)
                 }
@@ -65,12 +71,25 @@ impl Plan {
                 squash: repository.squash,
                 rebase: repository.rebase,
             })),
-            Read::Items { .. } | Read::Item { .. } | Read::Branch { .. } | Read::Branches
+            Read::Items { .. }
+            | Read::Item { .. }
+            | Read::Branch { .. }
+            | Read::Branches
+            | Read::Pull { .. }
+            | Read::PullFor { .. }
+            | Read::Statuses { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
             }
-            Read::Items { .. } | Read::Item { .. } | Read::Branch { .. } | Read::Branches | Read::Refused => {
+            Read::Items { .. }
+            | Read::Item { .. }
+            | Read::Branch { .. }
+            | Read::Branches
+            | Read::Pull { .. }
+            | Read::PullFor { .. }
+            | Read::Statuses { .. }
+            | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }
         };

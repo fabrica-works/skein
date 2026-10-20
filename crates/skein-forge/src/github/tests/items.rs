@@ -14,13 +14,25 @@ const COMMENT: &str = r#"{"id":7,"user":{"id":9},"created_at":"2026-10-20T08:00:
 fn issue(row: &Row) -> &crate::github::document::Issue {
     match row {
         Row::Issue(issue) => issue,
-        Row::Comment(_) | Row::Branch(_) | Row::Installation(_) | Row::Reachable(_) => panic!("issue row"),
+        Row::Comment(_)
+        | Row::Branch(_)
+        | Row::Installation(_)
+        | Row::Reachable(_)
+        | Row::Pull(_)
+        | Row::Context(_)
+        | Row::Run(_) => panic!("issue row"),
     }
 }
 fn comment(row: &Row) -> &crate::github::document::Comment {
     match row {
         Row::Comment(comment) => comment,
-        Row::Issue(_) | Row::Branch(_) | Row::Installation(_) | Row::Reachable(_) => panic!("comment row"),
+        Row::Issue(_)
+        | Row::Branch(_)
+        | Row::Installation(_)
+        | Row::Reachable(_)
+        | Row::Pull(_)
+        | Row::Context(_)
+        | Row::Run(_) => panic!("comment row"),
     }
 }
 #[test]
@@ -166,7 +178,12 @@ fn github_item_long_body() {
             let body = match rows.get(0).unwrap() {
                 Row::Issue(issue) => &issue.body,
                 Row::Comment(comment) => &comment.body,
-                Row::Branch(_) | Row::Installation(_) | Row::Reachable(_) => panic!("body row"),
+                Row::Branch(_)
+                | Row::Installation(_)
+                | Row::Reachable(_)
+                | Row::Pull(_)
+                | Row::Context(_)
+                | Row::Run(_) => panic!("body row"),
             };
             assert_eq!(body, &expected);
         }

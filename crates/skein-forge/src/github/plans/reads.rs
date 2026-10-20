@@ -13,6 +13,7 @@ use skein_lib::List;
 
 mod done;
 mod issues;
+mod pulls;
 mod size;
 
 /// Only these reads have stages; all others are refused at admission.
@@ -24,6 +25,9 @@ enum Read {
     Branches,
     Items { since: skein_lib::Time, page: u32, kind: Option<api::Kind> },
     Item { number: u64, after: u64 },
+    Pull { number: u64 },
+    PullFor { head: Box<[u8]>, base: Box<[u8]> },
+    Statuses { commit: api::Commit, page: u32 },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -32,6 +36,9 @@ enum Stage {
     Resolve,
     Read,
     Comments,
+    Listing,
+    Combined,
+    Runs,
     Done,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -55,6 +62,7 @@ pub struct Plan {
     page: u32,
     limit: u32,
     issues: issues::State,
+    pulls: pulls::State,
 }
 impl Plan {
     #[must_use]
@@ -66,10 +74,10 @@ impl Plan {
             api::Read::Branches => Read::Branches,
             api::Read::Items { since, page, kind } => Read::Items { since, page, kind },
             api::Read::Item { number, after } => Read::Item { number, after },
-            api::Read::Pull { .. }
-            | api::Read::PullFor { .. }
-            | api::Read::Reviews { .. }
-            | api::Read::Statuses { .. }
+            api::Read::Pull { number } => Read::Pull { number },
+            api::Read::PullFor { head, base } => Read::PullFor { head, base },
+            api::Read::Statuses { commit, page } => Read::Statuses { commit, page },
+            api::Read::Reviews { .. }
             | api::Read::Remarks { .. }
             | api::Read::PullFiles { .. }
             | api::Read::Compare { .. }
@@ -93,6 +101,7 @@ impl Plan {
             page: 1,
             limit: 0,
             issues: issues::State::new(),
+            pulls: pulls::State::new(),
         }
     }
     pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
@@ -114,6 +123,7 @@ impl Plan {
                 self.rows = List::with_capacity(capacity);
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
+            Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
             Read::Branch { .. } => {}
             // Later tasks plan every other read.
             Read::Refused => return Err(api::Error::Refused),
@@ -137,6 +147,16 @@ impl Plan {
         Step::send(request)
     }
     fn initial(&mut self) -> Result<Step, api::Error> {
+        match self.read {
+            Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => return self.pull_initial(),
+            Read::Locate { .. }
+            | Read::Settings
+            | Read::Branch { .. }
+            | Read::Branches
+            | Read::Items { .. }
+            | Read::Item { .. }
+            | Read::Refused => {}
+        }
         let row = self.row.as_ref().ok_or(api::Error::InvalidAnswer)?;
         let owner = row.owner.clone();
         let name = row.name.clone();
@@ -151,7 +171,12 @@ impl Plan {
                 per_page: self.limit,
             },
             Read::Item { number, .. } => Request::Issue { owner, name, number: *number },
-            Read::Locate { .. } | Read::Settings | Read::Refused => return Err(api::Error::InvalidAnswer),
+            Read::Pull { .. }
+            | Read::PullFor { .. }
+            | Read::Statuses { .. }
+            | Read::Locate { .. }
+            | Read::Settings
+            | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
         Ok(self.send(request))
@@ -206,6 +231,9 @@ impl Plan {
                         | Read::Settings
                         | Read::Branch { .. }
                         | Read::Branches
+                        | Read::Pull { .. }
+                        | Read::PullFor { .. }
+                        | Read::Statuses { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
@@ -237,6 +265,8 @@ impl Plan {
                                 document::Document::Repository(_)
                                 | document::Document::Branch(_)
                                 | document::Document::Issue(_)
+                                | document::Document::Pull(_)
+                                | document::Document::Combined(_)
                                 | document::Document::Rows
                                 | document::Document::Installation(_)
                                 | document::Document::Minted(_)
@@ -271,6 +301,7 @@ impl Plan {
     fn keep_row(&mut self, row: document::Row, bounds: Bounds, word: &[u8]) -> Result<(), api::Error> {
         match self.read {
             Read::Items { .. } | Read::Item { .. } => return self.issue_row(row, bounds, word),
+            Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => return self.pull_row(row, bounds),
             Read::Locate { .. } | Read::Settings | Read::Branch { .. } | Read::Branches | Read::Refused => {}
         }
         if self.stage != Stage::Read || self.read != Read::Branches {
@@ -291,6 +322,9 @@ impl Plan {
             document::Row::Issue(_)
             | document::Row::Comment(_)
             | document::Row::Installation(_)
+            | document::Row::Pull(_)
+            | document::Row::Context(_)
+            | document::Row::Run(_)
             | document::Row::Reachable(_) => Err(api::Error::InvalidAnswer),
         }
     }

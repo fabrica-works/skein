@@ -101,6 +101,17 @@ impl State {
             | Node::CommentRows
             | Node::Comment
             | Node::CommentUser
+            | Node::PullRows
+            | Node::PullObject
+            | Node::PullRef { .. }
+            | Node::Reviewers
+            | Node::Reviewer
+            | Node::CombinedObject
+            | Node::Contexts
+            | Node::Context
+            | Node::RunsObject
+            | Node::Runs
+            | Node::RunItem
             | Node::ErrorEntry => unreachable!("App container dispatch"),
         }
         Ok(None)
@@ -129,9 +140,17 @@ impl State {
             | Kind::IssueRows
             | Kind::Issue
             | Kind::CommentRows
+            | Kind::Pull
+            | Kind::PullRows
+            | Kind::CombinedStatus
+            | Kind::CheckRuns
             | Kind::Error => unreachable!("App document dispatch"),
         })
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the field dispatcher includes every document node in its unreachable arm"
+    )]
     pub(super) fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
             (Node::Installation, b"id", Token::Number(text)) => self.installation.id = unsigned(&text),
@@ -214,6 +233,17 @@ impl State {
                 | Node::CommentRows
                 | Node::Comment
                 | Node::CommentUser
+                | Node::PullRows
+                | Node::PullObject
+                | Node::PullRef { .. }
+                | Node::Reviewers
+                | Node::Reviewer
+                | Node::CombinedObject
+                | Node::Contexts
+                | Node::Context
+                | Node::RunsObject
+                | Node::Runs
+                | Node::RunItem
                 | Node::ErrorEntry,
                 _,
                 Token::ObjectStart

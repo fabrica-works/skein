@@ -164,6 +164,8 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
             | Document::BotUser(_)
             | Document::Repository(_)
             | Document::Branch(_)
+            | Document::Pull(_)
+            | Document::Combined(_)
             | Document::Issue(_)
             | Document::Rows,
         )

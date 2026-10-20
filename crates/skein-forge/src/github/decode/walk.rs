@@ -48,6 +48,17 @@ pub(super) enum Node {
     CommentRows,
     Comment,
     CommentUser,
+    PullRows,
+    PullObject,
+    PullRef { head: bool },
+    Reviewers,
+    Reviewer,
+    CombinedObject,
+    Contexts,
+    Context,
+    RunsObject,
+    Runs,
+    RunItem,
 }
 /// Payload roles share the walker without extending the document-only Node vocabulary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -116,10 +127,48 @@ fn comment_fields() -> &'static [Field] {
         ]
     }
 }
+#[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::PullObject => {
+            const {
+                &[
+                    field(b"number", Read::Number),
+                    field(b"state", Read::Text),
+                    optional(b"merged", Read::Boolean),
+                    optional(b"merge_commit_sha", Read::Text),
+                    optional(b"mergeable", Read::Boolean),
+                    field(b"head", Read::Container(Role::Document(Node::PullRef { head: true }))),
+                    field(b"base", Read::Container(Role::Document(Node::PullRef { head: false }))),
+                    optional(b"requested_reviewers", Read::Container(Role::Document(Node::Reviewers))),
+                ]
+            }
+        }
+        Node::PullRef { .. } => const { &[field(b"ref", Read::Text), field(b"sha", Read::Text)] },
+        Node::CombinedObject => {
+            const {
+                &[
+                    field(b"state", Read::Text),
+                    field(b"total_count", Read::Number),
+                    optional(b"statuses", Read::Container(Role::Document(Node::Contexts))),
+                ]
+            }
+        }
+        Node::Context => {
+            const {
+                &[
+                    optional(b"updated_at", Read::Text),
+                    field(b"context", Read::Text),
+                    field(b"state", Read::Text),
+                    optional(b"description", Read::Text),
+                    optional(b"target_url", Read::Text),
+                ]
+            }
+        }
+        Node::RunsObject => const { &[field(b"check_runs", Read::Container(Role::Document(Node::Runs)))] },
+        Node::RunItem => const { &[field(b"status", Read::Text), optional(b"conclusion", Read::Text)] },
         Node::Issue => issue_fields(),
-        Node::IssueUser | Node::CommentUser | Node::BotUser => const { &[field(b"id", Read::Number)] },
+        Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => const { &[field(b"id", Read::Number)] },
         Node::Label | Node::BranchName => const { &[field(b"name", Read::Text)] },
         Node::PullRequest => const { &[optional(b"merged_at", Read::Presence)] },
         Node::Comment => comment_fields(),
@@ -203,7 +252,11 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::IssueRows
+        Node::PullRows
+        | Node::Reviewers
+        | Node::Contexts
+        | Node::Runs
+        | Node::IssueRows
         | Node::CommentRows
         | Node::Labels
         | Node::InstallationRows
@@ -219,6 +272,10 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::PullRows => Some(Role::Document(Node::PullObject)),
+        Node::Reviewers => Some(Role::Document(Node::Reviewer)),
+        Node::Contexts => Some(Role::Document(Node::Context)),
+        Node::Runs => Some(Role::Document(Node::RunItem)),
         Node::IssueRows => Some(Role::Document(Node::Issue)),
         Node::CommentRows => Some(Role::Document(Node::Comment)),
         Node::Labels => Some(Role::Document(Node::Label)),
@@ -227,7 +284,14 @@ fn element(role: Role) -> Option<Role> {
         Node::GraphqlErrors => Some(Role::Document(Node::GraphqlError)),
         Node::BranchRows => Some(Role::Document(Node::BranchName)),
         Node::Errors => Some(Role::Document(Node::ErrorEntry)),
-        Node::Issue
+        Node::PullObject
+        | Node::PullRef { .. }
+        | Node::Reviewer
+        | Node::CombinedObject
+        | Node::Context
+        | Node::RunsObject
+        | Node::RunItem
+        | Node::Issue
         | Node::IssueUser
         | Node::Label
         | Node::PullRequest
@@ -308,6 +372,10 @@ impl Walk {
             document::Kind::IssueRows => Node::IssueRows,
             document::Kind::Issue => Node::Issue,
             document::Kind::CommentRows => Node::CommentRows,
+            document::Kind::Pull => Node::PullObject,
+            document::Kind::PullRows => Node::PullRows,
+            document::Kind::CombinedStatus => Node::CombinedObject,
+            document::Kind::CheckRuns => Node::RunsObject,
             document::Kind::Error => Node::Error,
         };
         Self::root(Role::Document(node), limits)

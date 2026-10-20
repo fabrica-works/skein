@@ -49,6 +49,9 @@ impl Reachable {
                     document::Row::Installation(_)
                     | document::Row::Branch(_)
                     | document::Row::Issue(_)
+                    | document::Row::Pull(_)
+                    | document::Row::Context(_)
+                    | document::Row::Run(_)
                     | document::Row::Comment(_) => return Err(api::Error::InvalidAnswer),
                 };
                 if self.rows.len() >= self.per_page || self.rows.len() >= bounds.rows {
@@ -75,6 +78,8 @@ impl Reachable {
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)
                 | document::Document::Branch(_)
+                | document::Document::Pull(_)
+                | document::Document::Combined(_)
                 | document::Document::Issue(_)
                 | document::Document::Error(_) => Err(api::Error::InvalidAnswer),
             },

@@ -60,3 +60,45 @@ pub(super) fn comment(word: &[u8], value: document::Comment) -> Result<api::Comm
     let (key, body) = body(word, value.body);
     Ok(api::Comment { id: value.id, provenance, author: value.author, created, revision, key, body })
 }
+
+/// Failure wins over pending, then any present check wins over no CI.
+pub(super) fn ci(failed: bool, pending: bool, present: bool) -> api::Ci {
+    if failed {
+        api::Ci::Failed
+    } else if pending {
+        api::Ci::Pending
+    } else if present {
+        api::Ci::Passed
+    } else {
+        api::Ci::None
+    }
+}
+pub(super) fn pull(value: document::Pull, ci: api::Ci) -> Result<api::Pull, api::Error> {
+    let merged = if value.merged { Some(value.merge_commit.ok_or(api::Error::InvalidAnswer)?) } else { None };
+    Ok(api::Pull {
+        reviewers: value.reviewers,
+        number: value.number,
+        state: if value.closed || value.merged { api::State::Closed } else { api::State::Open },
+        head: value.head,
+        base: value.base,
+        commit: value.head_commit,
+        base_commit: Some(value.base_commit),
+        merged,
+        mergeable: value.mergeable,
+        ci,
+    })
+}
+pub(super) fn status(value: document::Context) -> api::Status {
+    let at = match value.updated {
+        Some(wall) => Time::from_nanos(wall.as_nanos()),
+        None => Time::ZERO,
+    };
+    api::Status {
+        at,
+        context: value.context,
+        check: value.check,
+        description: value.description,
+        url: value.url,
+        job: None,
+    }
+}

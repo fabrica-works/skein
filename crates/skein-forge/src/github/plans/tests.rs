@@ -89,3 +89,19 @@ fn github_plans_row_from_document() {
         );
     }
 }
+
+#[test]
+fn github_pull_ci_fold_flags() {
+    for (failed, pending, present, expected) in [
+        (false, false, false, api::Ci::None),
+        (false, false, true, api::Ci::Passed),
+        (false, true, false, api::Ci::Pending),
+        (false, true, true, api::Ci::Pending),
+        (true, false, false, api::Ci::Failed),
+        (true, false, true, api::Ci::Failed),
+        (true, true, false, api::Ci::Failed),
+        (true, true, true, api::Ci::Failed),
+    ] {
+        assert_eq!(super::reading::ci(failed, pending, present), expected);
+    }
+}

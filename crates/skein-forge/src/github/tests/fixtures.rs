@@ -185,3 +185,27 @@ pub fn delivery_decode(
     }
     panic!("delivery did not settle within input's step bound")
 }
+
+pub fn pull(number: u64) -> super::super::document::Pull {
+    super::super::document::Pull {
+        number,
+        closed: false,
+        merged: false,
+        merge_commit: None,
+        mergeable: true,
+        head: Box::from(*b"feature"),
+        base: Box::from(*b"main"),
+        head_commit: super::super::id::commit(SHA).unwrap(),
+        base_commit: super::super::id::commit(OTHER_SHA).unwrap(),
+        reviewers: Box::from([9, 10]),
+    }
+}
+pub fn context(check: crate::api::Check) -> super::super::document::Context {
+    super::super::document::Context {
+        updated: Some(wall()),
+        context: Box::from(*b"build"),
+        check,
+        description: Box::from(*b"widgets built"),
+        url: Box::from(*b"https://example.invalid/build/1"),
+    }
+}

@@ -22,6 +22,14 @@ pub enum Kind {
     IssueRows,
     Issue,
     CommentRows,
+    /// One pull object.
+    Pull,
+    /// Pull objects streamed from a listing.
+    PullRows,
+    /// Combined status envelope and streamed contexts.
+    CombinedStatus,
+    /// Check runs streamed from their envelope.
+    CheckRuns,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -53,6 +61,12 @@ pub enum Row {
     Branch(Box<[u8]>),
     Issue(Issue),
     Comment(Comment),
+    /// One listed pull.
+    Pull(Pull),
+    /// One commit status context.
+    Context(Context),
+    /// One check run.
+    Run(Run),
 }
 /// GitHub's message and bounded error messages.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -74,6 +88,10 @@ pub enum Document {
     Repository(Repository),
     Branch(Branch),
     Issue(Issue),
+    /// One whole pull.
+    Pull(Pull),
+    /// The combined status after its contexts.
+    Combined(Combined),
     Rows,
     Error(Refusal),
 }
@@ -172,4 +190,39 @@ pub struct Comment {
     pub created_at: Option<Wall>,
     pub updated_at: Option<Wall>,
     pub body: crate::forgejo::document::Body,
+}
+
+/// A pull's branches, commits, merge state and requested reviewers.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Pull {
+    pub number: u64,
+    pub closed: bool,
+    pub merged: bool,
+    pub merge_commit: Option<api::Commit>,
+    pub mergeable: bool,
+    pub head: Box<[u8]>,
+    pub base: Box<[u8]>,
+    pub head_commit: api::Commit,
+    pub base_commit: api::Commit,
+    pub reviewers: Box<[u64]>,
+}
+/// One context in a combined status page.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Context {
+    pub updated: Option<Wall>,
+    pub context: Box<[u8]>,
+    pub check: api::Check,
+    pub description: Box<[u8]>,
+    pub url: Box<[u8]>,
+}
+/// The combined check and the number of contexts across all pages.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Combined {
+    pub check: api::Check,
+    pub total: u64,
+}
+/// The check needed to fold a run into a pull's CI.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Run {
+    pub check: api::Check,
 }

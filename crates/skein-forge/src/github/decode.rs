@@ -10,6 +10,7 @@ use skein_lib::List;
 mod app;
 pub(crate) mod delivery;
 mod issues;
+mod pulls;
 mod walk;
 use walk::{Move, Node, Walk};
 /// The result of one event, with its next demand returned beside it.
@@ -27,6 +28,7 @@ pub struct Decoder {
     kind: Kind,
     app: app::State,
     issues: issues::State,
+    pulls: pulls::State,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -42,6 +44,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         kind,
         app: app::State::new(kind),
         issues: issues::State::new(limits.inner),
+        pulls: pulls::State::new(limits.inner),
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -79,6 +82,7 @@ impl Decoder {
             }
         }
     }
+    #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes each document node at its end")]
     fn movement(&mut self, movement: Move) -> Result<(tokenizer::Request, Step), Malformed> {
         match movement {
             Move::Demand(demand) => return Ok((demand, Step::Demand)),
@@ -121,6 +125,23 @@ impl Decoder {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
             }
+            Move::End(
+                node @ (Node::PullRows
+                | Node::PullObject
+                | Node::PullRef { .. }
+                | Node::Reviewers
+                | Node::Reviewer
+                | Node::CombinedObject
+                | Node::Contexts
+                | Node::Context
+                | Node::RunsObject
+                | Node::Runs
+                | Node::RunItem),
+            ) => {
+                if let Some(row) = self.pulls.end(node, self.kind)? {
+                    return Ok((tokenizer::Request::Next, Step::Row(row)));
+                }
+            }
             Move::BodyLong(Some(node), length) => self.issues.long(node, length),
             Move::End(Node::BranchName) => {
                 return Ok((
@@ -158,9 +179,13 @@ impl Decoder {
                     | Kind::HookConfig
                     | Kind::Conversion
                     | Kind::BotUser => self.app.document()?,
+                    Kind::Pull => Document::Pull(self.pulls.pull()),
+                    Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
-                    Kind::BranchRows | Kind::IssueRows | Kind::CommentRows => Document::Rows,
+                    Kind::PullRows | Kind::CheckRuns | Kind::BranchRows | Kind::IssueRows | Kind::CommentRows => {
+                        Document::Rows
+                    }
                     Kind::Issue => Document::Issue(self.issues.document()),
                     Kind::Error => Document::Error(document::Refusal {
                         message: core::mem::replace(&mut self.message, Box::from([])),
@@ -174,6 +199,21 @@ impl Decoder {
     }
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (
+                node @ (Node::PullRows
+                | Node::PullObject
+                | Node::PullRef { .. }
+                | Node::Reviewers
+                | Node::Reviewer
+                | Node::CombinedObject
+                | Node::Contexts
+                | Node::Context
+                | Node::RunsObject
+                | Node::Runs
+                | Node::RunItem),
+                key,
+                token,
+            ) => return self.pulls.scalar(node, key, token),
             (
                 node @ (Node::IssueRows
                 | Node::Issue

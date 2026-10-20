@@ -58,6 +58,9 @@ impl Listing {
                     document::Row::Reachable(_)
                     | document::Row::Branch(_)
                     | document::Row::Issue(_)
+                    | document::Row::Pull(_)
+                    | document::Row::Context(_)
+                    | document::Row::Run(_)
                     | document::Row::Comment(_) => return Err(api::Error::InvalidAnswer),
                 };
                 self.count = self.count.checked_add(1).ok_or(api::Error::TooLarge)?;
@@ -89,6 +92,8 @@ impl Listing {
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)
                 | document::Document::Branch(_)
+                | document::Document::Pull(_)
+                | document::Document::Combined(_)
                 | document::Document::Issue(_)
                 | document::Document::Error(_) => Err(api::Error::InvalidAnswer),
             },
