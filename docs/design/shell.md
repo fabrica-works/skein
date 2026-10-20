@@ -429,6 +429,9 @@ and changes no code above io:
   writable directory, an absent path, a file, a directory without write
   permission for the user, each answered as such, and nothing created
   or changed by any of them.
+- **A command's settings** (the crate's own tests, no kernel): flag and
+  variable precedence, empty variables, literal and XDG defaults, refusals,
+  argument order and `--`, byte values, and help agreeing with refusals.
 - **Terminal modes,** end to end under a pseudo-terminal
   (testing-strategy.md, 2.9): input read a key at a time, the modes found
   again once the binary exits, and a size change heard.

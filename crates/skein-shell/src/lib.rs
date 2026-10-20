@@ -10,6 +10,7 @@
 //! - [`directory_access`]: the kernel's startup answer on writing and searching a directory.
 //! - [`process_id`]: the startup process ID for the service's report.
 //! - [`read_file`] and [`read_trust_roots`]: startup reads within configured bounds.
+//! - [`resolve`] and [`help`]: a command's settings, their sources and help (shell.md, 6.5).
 //! - [`open_termination_signals`]: the blocked SIGINT/SIGTERM source io adopts.
 //! - [`Clock`]: monotonic and wall time, read together once per iteration.
 //! - [`seed`]: the random seed, from `getrandom`, once at startup.
@@ -25,6 +26,7 @@ mod clock;
 mod drive;
 mod ring;
 mod seed;
+mod settings;
 mod startup;
 mod terminal;
 #[cfg(test)]
@@ -40,6 +42,9 @@ pub use ring::{
     wait_cgroup_change, write_service_signal,
 };
 pub use seed::{crypto_seed, seed};
+pub use settings::{
+    Base, Fallback, Origin, Reason, Refusal, Resolved, Setting, Settings, Value, arguments, environment, help, resolve,
+};
 pub use startup::{RootBounds, Roots, RootsRefusal, Trust, Unread, read_file, read_private_file, read_trust_roots};
 
 pub use terminal::{Input, Kept, Keys, Modes, Watch, open_signals, raw_input, resize_terminal, terminal_modes};
