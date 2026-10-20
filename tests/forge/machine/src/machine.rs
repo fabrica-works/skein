@@ -97,6 +97,8 @@ pub struct Machine {
     git_tokens: Vec<Event>,
     installation_events: Vec<Event>,
     facts: Vec<Event>,
+    hints: Vec<skein_forge_connection::hooks::Hinted>,
+    log_script: VecDeque<String>,
     access_generations: BTreeMap<u16, Option<AccessGeneration>>,
     forge_addresses: Vec<(skein_io::Addr, u16)>,
     connection_generations: BTreeMap<Token, (u16, u64)>,
@@ -198,6 +200,8 @@ impl Machine {
             git_tokens: Vec::new(),
             installation_events: Vec::new(),
             facts: Vec::new(),
+            hints: Vec::new(),
+            log_script: VecDeque::new(),
             access_generations,
             forge_addresses,
             connection_generations: BTreeMap::new(),
@@ -227,6 +231,16 @@ impl Machine {
         world.component.begin(&world.env, &mut world.above, &mut world.below);
         world
     }
+    /// Expected fake log reads, whose opaque ids and cursors are drawn by the fake.
+    pub fn log_requests(&mut self, requests: Vec<String>) {
+        self.log_script.extend(requests);
+    }
+
+    #[must_use]
+    pub fn hints(&self) -> &[skein_forge_connection::hooks::Hinted] {
+        &self.hints
+    }
+
     /// Scenario access to the world's GitHub peer before its queued startup runs.
     pub fn github_fake_mut(&mut self) -> &mut github::Fake {
         self.fake.as_mut().expect("GitHub fixture")
@@ -557,7 +571,11 @@ impl Machine {
                     self.stopped.push((forge, why));
                 }
                 Event::Connected { .. } => unreachable!("connected taken"),
-                Event::Hint(_) | Event::ListenerLost => panic!("webhooks absent"),
+                Event::Hint(hint) => {
+                    assert!(self.fake.is_some(), "GitHub log fixture");
+                    self.hints.push(hint);
+                }
+                Event::ListenerLost => panic!("webhooks absent"),
                 Event::Closed => {
                     assert!(!self.closed, "one close");
                     self.closed = true;
@@ -687,19 +705,26 @@ impl Machine {
         }
     }
     fn respond(&mut self, owner: Token, request: Vec<u8>) {
-        let answer = self.script.pop_front().expect("a scripted answer for each request");
+        let log_request;
+        let (expected, response) = if let Some(answer) = self.script.pop_front() {
+            (answer.request, answer.response)
+        } else {
+            log_request = self.log_script.pop_front().expect("a scripted answer for each request");
+            assert!(log_request.starts_with("GET /app/"), "forge log or installation read");
+            (log_request.as_str(), Response::Served)
+        };
         let line = request.split(|byte| *byte == b'\r').next().expect("request line");
         let asked = line.strip_suffix(b" HTTP/1.1").expect("HTTP version");
         let blob = self.fake.is_some()
             && self.peers.get(&owner).expect("peer").address == skein_io::Addr::Ip(github::BLOB_ADDRESS);
         // The fake checks the signed query; the script names the stable log path.
         let script_path = if blob { asked.split(|byte| *byte == b'?').next().expect("blob path") } else { asked };
-        assert_eq!(script_path, answer.request.as_bytes(), "script request");
+        assert_eq!(script_path, expected.as_bytes(), "script request");
         let ordinal = self.requests.len();
         self.requests.push(request);
         let peer = self.peers.get_mut(&owner).expect("peer");
         peer.responding();
-        let response = match answer.response {
+        let response = match response {
             Response::Case(case) => Response::Bytes(case_bytes(case)),
             Response::Served => {
                 let fake = self.fake.as_mut().expect("Answer::served needs Machine::github");
@@ -792,7 +817,7 @@ impl Machine {
     /// Whether every scripted answer was assigned to a request.
     #[must_use]
     pub fn script_done(&self) -> bool {
-        self.script.is_empty()
+        self.script.is_empty() && self.log_script.is_empty()
     }
     /// Closes the component, allowing at most 1,000 ticks for its terminal.
     pub fn close(&mut self) -> bool {

@@ -30,6 +30,7 @@ pub struct Fake {
     service: Service,
     domain: fake::Domain,
     config: fake::Config,
+    statuses: Vec<u16>,
 }
 impl Fake {
     /// Uses the GitHub fake's fixture App, accounts, repositories and installations.
@@ -149,7 +150,7 @@ impl Fake {
         );
         assert!(store.suspend(3, true), "third installation exists");
         let (domain, config) = fixture_domain(seed, has_logs);
-        Self { service, domain, config }
+        Self { service, domain, config, statuses: Vec::new() }
     }
 
     pub(crate) fn into_service(self) -> Service {
@@ -159,6 +160,31 @@ impl Fake {
     /// Scenario access to the fake's installation store.
     pub fn installations_mut(&mut self) -> &mut Installations {
         self.service.installations_mut()
+    }
+
+    /// Statuses of the fake's HTTP responses, in request order.
+    #[must_use]
+    pub fn statuses(&self) -> &[u16] {
+        &self.statuses
+    }
+
+    /// Scenario releases use the fake's configured visibility delay and failed endpoint.
+    pub fn release(&mut self, payload: github::delivery::Delivery, wall: Wall) -> u64 {
+        let (id, post) = self.service.release(payload, Some(1), wall).expect("fixture delivery fits");
+        assert!(post.is_none(), "no hook endpoint");
+        id
+    }
+
+    /// A redelivery retains its guid and gets a newer log id.
+    pub fn redeliver(&mut self, id: u64, wall: Wall) -> u64 {
+        let (id, post) = self.service.redeliver(id, wall).expect("retained delivery");
+        assert!(post.is_none(), "no hook endpoint");
+        id
+    }
+
+    /// Later App requests are refused by the fake.
+    pub fn revoke_key(&mut self) {
+        self.service.revoke_key();
     }
 
     /// Scenario inspection without issuing an API request.
@@ -216,6 +242,7 @@ impl Fake {
                 }
             };
         };
+        self.statuses.push(response.status);
         let media = match response.content_type {
             skein_fake_forge_github::service::ContentType::Json => "application/json; charset=utf-8",
             skein_fake_forge_github::service::ContentType::Plaintext => "text/plain; charset=utf-8",
@@ -328,6 +355,7 @@ fn parse(request: &[u8]) -> Request<'_> {
     let mut authorization = None;
     let mut version = None;
     let mut agent = false;
+    let mut validator = None;
     for line in lines {
         let colon = line.iter().position(|byte| *byte == b':').expect("header colon");
         let name = &line[..colon];
@@ -336,11 +364,13 @@ fn parse(request: &[u8]) -> Request<'_> {
             authorization = Some(value);
         } else if name.eq_ignore_ascii_case(b"X-GitHub-Api-Version") {
             version = Some(value);
+        } else if name.eq_ignore_ascii_case(b"If-None-Match") {
+            validator = Some(value);
         } else if name.eq_ignore_ascii_case(b"User-Agent") {
             agent = true;
         }
     }
-    Request { validator: None, method, target, authorization, version, agent, body: &request[end + 4..] }
+    Request { validator, method, target, authorization, version, agent, body: &request[end + 4..] }
 }
 
 fn response_head(status: u16, wall: Wall, media: Option<&str>) -> Vec<u8> {

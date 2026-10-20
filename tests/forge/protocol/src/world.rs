@@ -95,7 +95,7 @@ impl World {
                 let config = match shape {
                     Shape::Plain => machine::protocol_config(),
                     Shape::Hooked => machine::hooked_protocol_config(),
-                    Shape::Github => unreachable!("Forgejo fixture branch"),
+                    Shape::Github { .. } => unreachable!("Forgejo fixture branch"),
                 };
                 Driver::Forgejo(Box::new(Joint::with(
                     seed,
@@ -107,7 +107,9 @@ impl World {
                     joint::checks(1000),
                 )))
             }
-            Shape::Github => Driver::Github(Box::new(crate::github::Github::new(seed, cut_chance))),
+            Shape::Github { log_poll } => {
+                Driver::Github(Box::new(crate::github::Github::new(seed, cut_chance, log_poll)))
+            }
         };
         let mut world = Self {
             referee,
@@ -137,7 +139,7 @@ impl World {
             slow_creation: false,
             seed,
         };
-        if let Shape::Github = shape {
+        if let Shape::Github { .. } = shape {
             let access = crate::github_fixture::access(crate::github_fixture::key());
             world.referee.access(&access);
             let request = skein_forge_connection::Request::Connect { forge: 1, access };
@@ -151,7 +153,13 @@ impl World {
     /// One GitHub forge, with its App access handed at runtime.
     #[must_use]
     pub fn github(seed: u64, cut_chance: u32) -> Self {
-        Self::with(seed, cut_chance, Shape::Github)
+        Self::github_with_log_poll(seed, cut_chance, fixtures::limits().log_poll)
+    }
+
+    /// A scenario's log interval, retained across component restarts.
+    #[must_use]
+    pub fn github_with_log_poll(seed: u64, cut_chance: u32, log_poll: Duration) -> Self {
+        Self::with(seed, cut_chance, Shape::Github { log_poll })
     }
 
     /// Replace the fake App's key and the component's access while calls run.
@@ -178,6 +186,12 @@ impl World {
         self.referee.access(&access);
         self.referee.fact(format!("{:?}", skein_forge_connection::Request::Connect { forge: 1, access }));
         self.joint.rotate(key);
+    }
+
+    /// Delivery-log request lines observed independently of call costs.
+    #[must_use]
+    pub fn github_log_reads(&self) -> usize {
+        self.joint.lines().iter().filter(|line| line.starts_with(b"GET /app/hook/deliveries")).count()
     }
 
     #[must_use]

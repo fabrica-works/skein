@@ -157,6 +157,50 @@ fn github_unconfigured_log_origin_is_reported_once_per_connect() {
 }
 
 #[test]
+fn github_unconfigured_log_origin_is_reported_again_after_connect() {
+    // Five start reads recur at connect; locate stays cached for this repository.
+    const RECONNECT_REQUESTS: usize = 5;
+    const RECONNECT: &[&str] = &[
+        JOB,
+        LOG,
+        JOB,
+        LOG,
+        "GET /app/installations?per_page=100&page=1",
+        "GET /app/installations?per_page=100&page=2",
+        "POST /app/installations/1/access_tokens",
+        "POST /app/installations/1/access_tokens",
+        "POST /graphql",
+        JOB,
+        LOG,
+        JOB,
+        LOG,
+    ];
+    // The new access generation starts with a refusal, then the same fixture App.
+    let mut w = world(Some(THIRD), None, RECONNECT);
+    for call in [2, 3] {
+        read(&mut w, call, TAIL_BYTES);
+        terminal(&w, call, REFUSED_COST, &Err(Error::Unavailable));
+    }
+    let mut invalid = fixtures::github_access();
+    invalid.credential = skein_forge::credential::Credential::App { id: 7, key: Secret::new(Box::from([])) };
+    w.action(Request::Connect { forge: FORGE, access: invalid });
+    w.action(Request::Connect { forge: FORGE, access: fixtures::github_access() });
+    w.run_for(SECOND);
+    for call in [4, 5] {
+        read(&mut w, call, TAIL_BYTES);
+        terminal(&w, call, REFUSED_COST, &Err(Error::Unavailable));
+    }
+    assert_eq!(w.connected_forges(), &[FORGE, FORGE]);
+    assert_eq!(w.facts().len(), 2);
+    for fact in w.facts() {
+        assert!(matches!(fact, Event::Fact { forge: FORGE, fact: Fact::Origin { origin: reported } }
+            if *reported == origin(b"third.example.test", 3002)));
+    }
+    assert!(w.blob_records().is_empty());
+    finish(&mut w, READY_REQUESTS + RECONNECT_REQUESTS + 4 * usize::try_from(REFUSED_COST).unwrap());
+}
+
+#[test]
 fn github_blob_redirect_is_unavailable_without_another_follow() {
     // A redirect back to the configured blob origin makes an accidental follow observable.
     let mut w = world(None, Some(github::BLOB_ORIGIN), &[JOB, LOG, BLOB]);

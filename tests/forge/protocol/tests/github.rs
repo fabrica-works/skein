@@ -72,3 +72,42 @@ fn github_listings_follow_another_partys_changes_across_pages() {
     fixtures::github_close(&mut world, a);
     invariants(&mut world);
 }
+
+#[test]
+fn github_delivery_log_reaches_owner_before_client_polling() {
+    use skein_forge_client::{Event, Resource, Watch, What};
+    use skein_forge_machine_world::joint::REPO;
+    use skein_lib::Token;
+
+    // Baseline after the fake's 2.2-second visibility delay.
+    const LOG_CHANGE: Duration = Duration::from_secs(4);
+    const KEEP_READ: Duration = Duration::from_millis(100);
+    // Visibility (2.2s), the log poll (1s) and the client's hinted delay (1s)
+    // fit in 4.5s. Short turns route the hint while its read can still finish.
+    const HINT_TURNS: u64 = 45;
+    const TURN: Duration = Duration::from_millis(100);
+
+    let mut world = World::github_with_log_poll(7, 0, Duration::from_secs(1));
+    world.run_for(Duration::from_secs(1));
+    let number = world.person_issue(b"before");
+    world.run_for(LOG_CHANGE);
+    let resource = Resource { repository: REPO, what: What::Issue(number) };
+    world.event(Event::Keep {
+        owner: Token::new(1),
+        watches: Box::new([Watch { resource: resource.clone(), participating: false }]),
+    });
+    world.run_for(KEEP_READ);
+    let Some(Answer::Item { item, .. }) = world.changed(&resource) else { panic!("kept issue read") };
+    assert_eq!(item.title.as_ref(), b"before");
+    let before = world.hints();
+    world.person_edit(number, b"after");
+    assert!(KEEP_READ.saturating_add(TURN.saturating_mul(HINT_TURNS)) < fixtures::LIMITS.poll);
+    for _ in 0..HINT_TURNS {
+        world.run_for(TURN);
+    }
+    let Some(Answer::Item { item, .. }) = world.changed(&resource) else { panic!("hinted issue read") };
+    assert_eq!(world.hints(), before + 1, "log delivery reached the client");
+    assert_eq!(item.title.as_ref(), b"after");
+    world.event(Event::Keep { owner: Token::new(1), watches: Box::from([]) });
+    invariants(&mut world);
+}

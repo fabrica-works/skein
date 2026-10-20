@@ -8,7 +8,11 @@ use skein_fake_forge_github::{
 use skein_forge::credential::Credential;
 use skein_forge_connection::{Access, Settings, settings::Kind as Dialect};
 use skein_forge_machine_world::{fixtures, github};
-use skein_lib::{List, Secret, Wall};
+use skein_lib::{Duration, List, Secret, Wall};
+
+pub(crate) fn limits(log_poll: Duration) -> skein_forge_connection::Limits {
+    skein_forge_connection::Limits { log_poll, ..crate::fixtures::limits() }
+}
 
 pub(crate) const PATH: &[u8] = b"acme/widgets";
 pub(crate) const USER: u64 = 9;

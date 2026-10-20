@@ -75,7 +75,7 @@ impl Driver {
     pub fn hints(&mut self) -> Vec<skein_forge_connection::hooks::Hinted> {
         match self {
             Self::Forgejo(w) => w.hints.drain(..).collect(),
-            Self::Github(_) => Vec::new(),
+            Self::Github(w) => w.hints.drain(..).collect(),
         }
     }
     pub fn path(&self) -> &[u8] {

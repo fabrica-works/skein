@@ -120,6 +120,7 @@ pub(crate) struct Github {
     pub domain: fake::Domain,
     pub answers: BTreeMap<u64, skein_forge_connection::Answered>,
     pub observations: Vec<fake::Observation>,
+    pub hints: Vec<skein_forge_connection::hooks::Hinted>,
     pub events: Vec<String>,
     pub connected: u64,
     pub closed: bool,
@@ -136,7 +137,7 @@ pub(crate) struct Github {
     key: &'static [u8],
 }
 impl Github {
-    pub fn new(seed: u64, cut_chance: u32) -> Self {
+    pub fn new(seed: u64, cut_chance: u32, log_poll: Duration) -> Self {
         let mut config = machine::fake_config();
         config.latency_min = Duration::ZERO;
         config.latency_max = Duration::ZERO;
@@ -154,12 +155,12 @@ impl Github {
                 labels: Box::from([]),
                 checks: skein_forge_machine_world::joint::checks(1000),
                 protection: None,
-                hooked: false,
+                hooked: true,
             },
         );
         fake::grant(&mut domain, fixture::PATH, fixture::USER, raw::Permission::Admin);
         fake::grant(&mut domain, fixture::PATH, 2, raw::Permission::Write);
-        let limits = fixtures::limits();
+        let limits = fixture::limits(log_poll);
         let mut world = Self {
             component: Component::new(fixture::settings(), &limits, &fixtures::shared()).expect("GitHub component"),
             env: Env { now: Time::ZERO, wall: WALL_BASE, limits },
@@ -169,6 +170,7 @@ impl Github {
             domain,
             answers: BTreeMap::new(),
             observations: Vec::new(),
+            hints: Vec::new(),
             events: Vec::new(),
             connected: 0,
             closed: false,
@@ -217,7 +219,21 @@ impl Github {
     fn http_env(&self) -> Env<http::Limits> {
         Env { now: self.env.now, wall: self.env.wall, limits: machine::fake_limits().http }
     }
+    fn release_hooks(&mut self) {
+        // The bounded domain may have several zero-latency hooks before its next call.
+        while self.domain.next_deadline().is_some_and(|at| at <= self.fake_env.now) {
+            let mut out = Queue::with_capacity(fake::MAX_OUT);
+            fake::fire(&mut self.domain, &self.fake_env, &mut out);
+            while let Some(hook) = out.pop() {
+                assert!(matches!(hook, fake::Request::Hook { .. }), "direct calls settle synchronously");
+                let post = self.service.hook(&hook, self.env.wall).expect("fixture hook fits");
+                assert!(post.is_none(), "App hook has no endpoint");
+            }
+        }
+        self.service.poll(self.env.wall);
+    }
     pub fn tick(&mut self) {
+        self.release_hooks();
         while let Some(request) = self.below.pop() {
             self.io(request);
         }
@@ -254,7 +270,8 @@ impl Github {
                 Event::Closed => self.closed = true,
                 Event::Installation { .. } | Event::GitToken { .. } | Event::Fact { .. } => {}
                 Event::Stopped { why, .. } => panic!("GitHub stopped: {why:?}, seed {}", self.seed),
-                Event::Hint(_) | Event::ListenerLost => panic!("GitHub has no listener or delivery log in this world"),
+                Event::Hint(hint) => self.hints.push(hint),
+                Event::ListenerLost => panic!("GitHub has no listener"),
             }
         }
         while let Some(observation) = self.domain.pop_observation() {
@@ -394,6 +411,7 @@ impl Github {
         self.service.finish(pending, result, ReplyTo::new(Token::new(77)), &self.domain)
     }
     fn domain_call(&mut self, event: fake::Event) -> Result<raw::Answer, raw::Error> {
+        self.release_hooks();
         let mut out = Queue::with_capacity(fake::MAX_OUT);
         fake::step_admitted(&mut self.domain, &self.fake_env, event, &mut out);
         for _ in 0..64 {

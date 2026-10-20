@@ -6,9 +6,11 @@ use skein_lib::{Duration, Time, Token};
 
 #[test]
 fn github_calls_costs_and_credentials_survive_cuts_renewal_and_replacement() {
+    // Minute polls exercise the log throughout the shipped one-hour token life.
+    const LOG_POLL: Duration = Duration::from_secs(60);
     let mut cuts = 0;
     for seed in 0..8 {
-        let mut world = World::github(seed, 300);
+        let mut world = World::github_with_log_poll(seed, 300, LOG_POLL);
         world.run_for(Duration::from_secs(20));
         let number = world.person_issue(b"before");
         let _ = world.read(Read::Items { since: Time::ZERO, page: 1, kind: None });
@@ -30,6 +32,7 @@ fn github_calls_costs_and_credentials_survive_cuts_renewal_and_replacement() {
         assert!(calls > 0, "seed {seed}");
         assert_eq!(calls, answers, "seed {seed}");
         assert_eq!(world.owner_counts(), (0, 0), "seed {seed}");
+        assert!(world.github_log_reads() > 0, "puller reads exercised, seed {seed}");
         let a = world.accounting();
         assert_eq!(a.reported, a.written, "seed {seed}: {a:?}");
         assert_eq!(a.served + a.cut_in_head, a.written, "seed {seed}: {a:?}");

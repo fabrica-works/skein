@@ -11,7 +11,7 @@ pub const LIMITS: skein_forge_client::Limits = skein_forge_client_world::LIMITS;
 #[derive(Clone, Copy)]
 pub(crate) enum Shape {
     Plain,
-    Github,
+    Github { log_poll: Duration },
     Hooked,
 }
 
@@ -19,13 +19,14 @@ impl Shape {
     pub(crate) fn author(self) -> u64 {
         match self {
             Self::Plain | Self::Hooked => 1,
-            Self::Github => crate::github_fixture::USER,
+            Self::Github { .. } => crate::github_fixture::USER,
         }
     }
 
     pub(crate) fn limits(self) -> Limits {
         match self {
-            Self::Plain | Self::Github => limits(),
+            Self::Plain => limits(),
+            Self::Github { log_poll } => crate::github_fixture::limits(log_poll),
             Self::Hooked => Limits { repositories: 1, ..fixtures::hook_limits() },
         }
     }
@@ -33,7 +34,7 @@ impl Shape {
     pub(crate) fn settings(self) -> Settings {
         let mut settings = match self {
             Self::Plain => settings(),
-            Self::Github => return crate::github_fixture::settings(),
+            Self::Github { .. } => return crate::github_fixture::settings(),
             Self::Hooked => fixtures::hook_settings(),
         };
         settings.forges.get_mut(0).expect("fixture forge").access.as_mut().expect("fixture access").user = 1;
