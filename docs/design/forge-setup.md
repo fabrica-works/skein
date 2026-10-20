@@ -27,12 +27,13 @@ checked. Its host component runs the plans in the owner's loop.
   and at most one need out, with six steps in a fixed order. Each reads
   first and writes only where the forge differs. Beside it: access to
   one repository at its adoption (4.5), connected's tokens checked
-  (4.6), an owned forge's admin's token taken over (4.7), and the
-  repositories its admin can see, for a picker (4.8).
+  (4.6), an owned forge's admin's token taken over (4.7), and a page of
+  the repositories it reaches, for a picker (4.8).
 - **GitHub's plans** (section 5): the App's manifest as a pure function,
   its conversion kept before the browser is answered, the bot's id, an
-  installation accepted by its state, the App's hook and checks, and an
-  App a person made, pasted. Each state is one-time (5.7).
+  installation accepted by its state, the App's hook and checks, an App
+  a person made, pasted, and a page of an installation's repositories
+  (5.9). Each state is one-time (5.7).
 - **Given values, not configuration.** The owner gives the bot's login
   and email, the tokens' names, an owned forge's orgs and their owner,
   the admin's name for a failure, the listeners' addresses, the word and
@@ -180,18 +181,19 @@ has this shape.
 - **A request carries no credential.** Its `auth` travels beside it, and
   the host puts it in the header: `Token(secret)`, a Forgejo token sent
   as `token <value>`; `App { id, key }`, an App's JWT, which the host
-  signs afresh for each request (5.3) and sends as `Bearer <jwt>`; or
-  `None`. A key the host cannot sign with answers `Unsigned`, and the
-  request is never sent.
+  signs afresh for each request (5.3) and sends as `Bearer <jwt>`;
+  `Bearer(secret)`, an installation's token sent as `Bearer <value>`
+  (5.9); or `None`. A key the host cannot sign with answers `Unsigned`,
+  and the request is never sent.
 - **The host decodes a reply** with `skein-forge`'s decoders (forge.md,
   section 5; forge-github.md, sections 8 and 11): 2xx with a document,
   `Document`; with a listing, `Rows`, one page; 2xx with no body,
   `Empty`; any other status, `Status(code)`; no answer or a body that
   does not decode, `Down`.
 - **The outcome** is `Done` for most plans, and carries what the owner
-  serves or shows: the manifest's page (5.1), the install link (5.4),
-  what an App lacks (5.6), or a page of the repositories an admin can
-  see (4.8).
+  serves or shows: the manifest's state and page (5.1), the install
+  link (5.4), what an App lacks (5.6), or a page of the repositories a
+  picker shows (4.8).
 
 ### 4.3 The steps
 
@@ -266,11 +268,11 @@ forge differs.
 - **A failure** is `{forge, step, subject, why}`, and shows no secret
   (lib.md, section 6). The step is `Admin`, `Bot` (its id included),
   `Token`, `Org`, `Repository` (its collaborator and hook), and for
-  GitHub's plans `App`, `Installation` and `State` (section 5). The
-  subject is the admin's given name, the bot's login, the token's name
-  (`api` or `git` when connected, 4.6), the org's name, the
-  repository's path, or its id in decimal before its path is read, the
-  App's slug or id, an installation's id, or the plan whose state it
+  GitHub's plans `App`, `Installation` (a picker's too, 4.8) and `State`
+  (section 5). The subject is the admin's given name, the bot's login,
+  the token's name (`api` or `git` when connected, 4.6), the org's name,
+  the repository's path, or its id in decimal before its path is read,
+  the App's slug or id, an installation's id, or the plan whose state it
   is. The why is `Missing`, `Refused(status)`, `NotAdmin`, `BotIsAdmin`,
   `Unmarked`, `OtherUser`, `OtherApp`, `KeyForm`, `Unknown`, `Busy`,
   `Down` or `Unexpected`. It stops the run and leaves each value written
@@ -354,31 +356,49 @@ The owner removes the file after `Done`, never before, and then runs
 reconcile as for a managed forge. Each preparation makes a new token;
 a start with no file reads the token kept.
 
-### 4.8 The repositories the admin can see
+### 4.8 The repositories a picker shows
 
-`Reachable { forge, page }` reads one page of the repositories a managed
-or an owned Forgejo's admin can see, for the owner's picker: the person
-picks among them the ones to adopt (4.5). It writes nothing, to the
-forge or to its host, so it runs beside the forge's one writing plan
-(6.3).
+`Reachable { forge, installation, page }` reads one page of the
+repositories a forge reaches, for the owner's picker: the person picks
+among them the ones to adopt (4.5). It writes nothing, to the forge or
+to its host, so it runs beside the forge's one writing plan (6.3).
+Every picker's read is this plan's; the forge client has none.
 
-1. **The admin's token,** as step 1 (4.3): `Missing` or `NotAdmin`.
+- **`installation`** is an installation's id on GitHub (5.9), and none
+  on Forgejo. One given where the forge's kind takes none, or none where
+  it takes one, stops the run at once, `Installation`, `Unexpected`,
+  and sends nothing; the subject is the id given, or `none`.
+- **On Forgejo, the token kept decides the listing:** the admin's
+  token, when one is kept (managed or owned); else the API token that
+  4.6 checked (connected). Forgetting the admin's token makes the forge
+  connected (section 3), and its picker with it.
+
+1. **The token.** The admin's token, read first, checked as step 1
+   (4.3): `NotAdmin`. When none is kept, the API token; none of either
+   is `Missing` (`Token`, `api`).
 2. **The page cap,** read from `GET /api/v1/settings/api` as 4.4 says.
-3. **One page:**
-   `GET /api/v1/repos/search?sort=id&order=asc&page=<page>&limit=<n>`,
-   `n` being the least of `reachable` and the cap. The answer is
-   `{"ok": true, "data": [...]}`, the rows in `data`; one whose `ok` is
-   not true is `Unexpected`. An admin's search finds every owner's
-   repositories, the private ones too.
+3. **One page,** `n` being the least of `reachable` and the cap:
+   - with the admin's token,
+     `GET /api/v1/repos/search?sort=id&order=asc&page=<page>&limit=<n>`.
+     The answer is `{"ok": true, "data": [...]}`, the rows in `data`;
+     one whose `ok` is not true is `Unexpected`. An admin's search finds
+     every owner's repositories, the private ones too;
+   - with the API token, `GET /api/v1/user/repos?page=<page>&limit=<n>`:
+     the repositories its user owns or reaches as a collaborator or
+     through an org's team, the private ones too, as section 8 records,
+     each with its `permissions`. A row is kept only when
+     `permissions.push` is true: the service works only where it can
+     write.
 4. **The outcome,** `Done(Reachable { rows, more })`: each row the
    repository's id, its owner's id and login, its name, and whether it
-   is private; `more` when the page holds `n` rows.
+   is private; `more` when the page held `n` rows before any was
+   dropped, so a connected forge's page may hold fewer and have more.
 
-- **Paged by number,** from 1, since Forgejo's search has no keyset: the
-  owner asks for `page + 1` while `more`. In id order a repository made
-  while the person pages lands on the last page; one deleted moves the
-  later rows back by one, so the next page may pass one over, and the
-  next listing finds it.
+- **Paged by number,** from 1, since neither listing has a keyset: the
+  owner asks for `page + 1` while `more`. In a stable order a repository
+  made while the person pages lands on the last page; one deleted moves
+  the later rows back by one, so the next page may pass one over, and
+  the next listing finds it.
 - **Bounded** by `reachable`, at least 1, the rows of one page, held in
   memory with the outcome.
 
@@ -411,8 +431,10 @@ browser to GitHub to make the App. `target` is `Personal` or `Org(login)`.
 - **The page:** a form that posts the manifest, as a field, to
   `<web>/settings/apps/new?state=<state>`, or for an org
   `<web>/organizations/<login>/settings/apps/new?state=<state>`,
-  at most `page_bytes`. `Done` carries it; the owner serves it at its
-  own address for that state, while the state lives.
+  at most `page_bytes`. `Done(Manifest { state, page })` carries it
+  and the state it was made for; the owner serves the page at its own
+  address for that state, and keeps it no longer than the state lives
+  (5.7).
 
 The person may rename the App on GitHub's page: the slug the conversion
 answers is the App's, whatever the manifest said.
@@ -521,6 +543,8 @@ A second run with nothing changed writes nothing.
 - **It lives `state_life`,** at most an hour, the conversion code's
   life, in the host's memory alone: at most `states`, the oldest going
   first when full. A restart forgets them; the person starts again.
+  The owner keeps a manifest's page (5.1) only while its state lives,
+  so at most `states` pages of `page_bytes` each.
 - **Taken once:** `Convert` or `Accept` with a state that is unknown,
   used, expired, of another forge or of the other plan stops at once,
   `State`, `Unknown`, and sends nothing. The state is used when its plan
@@ -545,6 +569,35 @@ and private key pasted. The owner serves the pasted key as `Pasted`
 
 The person installs it through `Install` (5.4). Replacing the key is the
 same plan, with the id kept.
+
+### 5.9 The repositories an installation reaches
+
+`Reachable { forge, installation: Some(id), page }` (4.8) reads one page
+of the repositories an installation of the App reaches, for the owner's
+picker.
+
+1. **The App:** its id and key, as 5.3, and `Accepted`. An id not in
+   `Accepted` stops the run `Installation`, `Missing`: a picker shows
+   only an installation the service accepted (5.4).
+2. **The installation's token,** minted on the JWT, full
+   (forge-github.md, 8.2). A `404` is `Missing`; another status is
+   `Refused(status)`.
+3. **One page:**
+   `GET /installation/repositories?per_page=<n>&page=<page>`, on that
+   token as `Bearer(secret)` (4.2), `n` being the least of `reachable`
+   and 100: each row's `id`, `owner.id`, `owner.login`, `name` and
+   `private` (`github::Reachable`, forge-github.md, 8.3).
+4. **The outcome,** `Done(Reachable { rows, more })`, as 4.8's; `more`
+   when the page holds `n` rows.
+
+- **The token is dropped** when the page answers: never an item, never
+  in an outcome, a failure or the trace, never kept past the run nor
+  handed out. The next page mints again: one mint per page, accepted,
+  since a picker is rare.
+- **Paged and bounded** as 4.8 says, from page 1, by `reachable`.
+- **Live,** no plan of this section runs (section 7): the dialect's
+  conformance reads an installation's repositories on the probe App
+  (section 10), and revokes each token it mints.
 
 ## 6. The crate, and its host
 
@@ -621,8 +674,9 @@ end.
   `Manifest { forge, target }`, `Convert { forge, code, state }`,
   `Install { forge }`, `Accept { forge, installation, state }`,
   `Reconcile { forge }` (GitHub's) or `Paste { forge, app }`, each of
-  the forge's kind, or `Reachable { forge, page }` (4.8). A forge has at
-  most one writing run at once and one `Reachable` beside it: another of
+  the forge's kind, or `Reachable { forge, installation, page }` (4.8,
+  5.9). A forge has at most one writing run at once and one
+  `Reachable` beside it: another of
   either stops at once, `Busy`, and so does one past `runs`, which
   counts both.
 - **It does the needs** of 4.2 but the items: a `Send` on a connection of
@@ -681,12 +735,17 @@ The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
   patched; an event out of order; the hook's URL for loopback addresses
   alone; the limits' relation at its bound and one past; the admin's
   search, a full page with `more`, a short last page, and a non-admin
-  refused. For GitHub: the manifest's contents, field by field, for each
-  target; the conversion's writes before `Done`; a key of another form
-  refused; an id other than the kept one refused; each permission or
-  event lacking named; a stray installation uninstalled and a young one
-  left; each item's decoder at its bounds. The documents are tested with
-  `skein-forge` (forge.md, section 11; forge-github.md, section 14).
+  refused; connected's listing on the API token, its rows lacking `push`
+  dropped and `more` read before the drop; an installation given to a
+  Forgejo, or none to GitHub, stopped sending nothing. For GitHub: the
+  manifest's contents, field by field, for each target; the conversion's
+  writes before `Done`; a key of another form refused; an id other than
+  the kept one refused; each permission or event lacking named; a stray
+  installation uninstalled and a young one left; a picker's installation
+  not accepted, and a mint's `404`, each `Missing`, and the minted token
+  in no item, outcome or failure; each item's decoder at its bounds. The
+  documents are tested with `skein-forge` (forge.md, section 11;
+  forge-github.md, section 14).
 - **The setup world** (testing-strategy.md, 2.4), in skein's
   `tests/forge/setup`, plays the host component over a store of items
   and the fake forge's setup routes and GitHub layer (fake-forge.md,
@@ -713,7 +772,8 @@ The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
     an admin's token taken over and its older tokens deleted;
   - the repositories the admin can see, listed page by page to the end,
     another owner's private one among them, while a writing run goes on
-    for the same forge;
+    for the same forge; a connected user's, those it can write to alone;
+    and an installation's, page by page, one mint each;
   - on GitHub: the conversion's answer kept before `Done`; a state used
     twice, or unknown, refused; an installation accepted, and a stray
     one uninstalled; the hook's address set; a pasted App lacking a
@@ -798,6 +858,13 @@ pin (forge.md, section 4.3), and named by the fact's name.
   `setup-search-by-an-admin-lists-every-owners-private-repositories`,
   `setup-search-answers-ok-and-data`,
   `setup-search-sorted-by-id-pages-by-page-and-limit`.
+- **A user's repositories** (4.8, connected): `GET /user/repos` on a
+  user's token lists the repositories it owns, and those it reaches as a
+  collaborator or through an org's team, private ones too, each with
+  `permissions.push`; and pages by `page` and `limit` in a stable order:
+  `setup-user-repos-lists-owned-collaborating-and-team-repositories`,
+  `setup-user-repos-rows-carry-permissions-push`,
+  `setup-user-repos-pages-by-page-and-limit`.
 - **Paging:** the page cap is 50 by default
   (`api-default-page-cap-50-and-30`).
 - **Order:** reconcile relies on none after a delivery.
@@ -850,6 +917,11 @@ probe making the probe App.
 - **The bot:** `GET /users/<slug>%5Bbot%5D` answers its id with no
   credential; GraphQL's `viewer` on an installation's token answers the
   same.
+- **An installation's repositories** (5.9): a full token minted on the
+  JWT lists them by `per_page` and `page` at
+  `GET /installation/repositories`, the private ones too, each with its
+  id, its owner's id and login, its name and `private`; a mint for an
+  id the App lacks is a `404`; a revoked token is refused.
 - **Installing,** `unchecked` live, since it takes a person's browser:
   the install link with a state brings the person back to the setup
   address with the installation's id and the state.

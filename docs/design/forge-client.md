@@ -363,7 +363,8 @@ it by its key, believed, alone.
    review by its key, the merge by its pull request merged at the entry's
    head and base, the update by a comparison showing the head holds the
    base. A merge not so proved is `Raced { Merged, Stale }`; an update
-   not so proved is not found (section 7.5).
+   not so proved is not found (section 7.5). A merge answered `Queued` is
+   the queue's (7.7).
 5. **A lost answer.** `Timeout` or `InvalidAnswer` on a write may have
    reached the forge: the entry counts a failure, emits `Progress` and
    `Outcome::Uncertain`, and is looked for (section 7.5). `Exists` is
@@ -412,6 +413,31 @@ has version 1 and the owner's namespace. A keyed write waits for room in
 the ledger, and its landing brings the item's next read forward to
 `hinted`.
 
+### 7.7 A merge queue
+
+A merge answered `Queued` (forge.md, section 3.3) is the queue's: it
+was neither made nor refused, and it lands, or not, later.
+
+- **Kept.** The client sets the entry's `queued`, emits `Progress` and
+  `Outcome::Queued`, which, like `Uncertain`, settles nothing. The
+  entry is never sent again, cannot be withdrawn, keeps no deadline (the
+  queue's own timeout ejects it) and counts against `entries`.
+- **Its lane.** A queued entry holds its lane until the queue decides
+  (7.2's rule: a later write must not overtake a merge that may still
+  land). So a comment or a review on a queued pull request waits until
+  the queue decides; the owner knows this from `Outcome::Queued`.
+- **Looked at.** A fresh `Read::Pull`, budgeted as a find (7.5), on each
+  hint naming the pull request and at each `poll` while the entry is
+  queued, on the timers the client already keeps.
+- **Decided.** Merged at the entry's head: `Made { Merged(commit) }`.
+  Merged at another head: `Raced { Merged, Stale }`. Closed unmerged:
+  `Failed(Closed)`. Open with `queued`: still kept. Open and out of the
+  queue: `Failed(Stale)` where its head moved, `Failed(Conflict)` where
+  it is not mergeable, else `Failed(Refused)`; the pull's `dequeued`
+  holds the queue's own words, for the owner to read. The owner repairs
+  and commits a new merge entry; the client never queues a pull again by
+  itself.
+
 ## 8. Restart
 
 After a restart the owner gives the client its rows, then has it read
@@ -435,8 +461,9 @@ before it writes.
    stored mark, inclusive, and each live resource, all as `Fresh`, so what
    changed while it was down is read once. `ReadAfreshDone` ends it.
 5. **Settle.** `SettleOutbox` lets the entries run. Each with an attempt
-   is found, or waits for its saved deadline (section 7.5); `OutboxDone`
-   comes when each has been looked for once.
+   is found, or waits for its saved deadline (section 7.5); a queued one
+   is restored queued and its pull read at once, within the same bounds
+   (7.7). `OutboxDone` comes when each has been looked for once.
 
 ## 9. What it never knows
 
@@ -458,7 +485,10 @@ before it writes.
   and `Read`; a write rate-refused, then sent under a new attempt; a
   `304` charged nothing; a forge's window below the budget's, and its
   reset holding every class; a writer given at runtime, given again,
-  given as another author, and restored; a write meeting `NotConnected`.
+  given as another author, and restored; a write meeting `NotConnected`;
+  a merge queued, then merged, merged at another head, closed and
+  ejected, a later comment on its pull waiting, and a queued entry
+  restored.
 - **The client world** (testing-strategy.md, section 2.2) runs the client
   alone under a durable scripted parent that commits a decision whole
   before it releases any call, over skein's fake forge domain
@@ -467,7 +497,8 @@ before it writes.
   resets. Its stories: creations survive faults, late landings and
   restart; an uncertain write is found without a second; a created
   branch deleted before its find is held after its deadline; a
-  conditional merge lands once; a late set reaches its final state; an
+  conditional merge lands once; a queued merge settles once, landed or
+  ejected; a late set reaches its final state; an
   effect committed before its forge's writer is given, refused, and one
   restored after the writer was kept, made; a
   branch name taken by another writer is reported, not overwritten;

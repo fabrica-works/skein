@@ -78,8 +78,8 @@ cost and result; a **hint**, after its delivery's response is queued
 (6.2) or as its log's row is read (6.5); **listener lost** (6.4);
 **connected**, a forge's start done (3.3); **stopped**, a forge's access
 refused, at most once per connect; an **installation**'s change (4.4); a
-**git token**, an installation's for git (5.3); and **closed**, the last
-event (8.5).
+**git token**, an installation's for git (5.3); a **fact**, a
+diagnostic for the owner's log; and **closed**, the last event (8.5).
 
 | Down | Up |
 |---|---|
@@ -87,10 +87,16 @@ event (8.5).
 | `Request::Installations { forge, accepted }` | `Event::Stopped { forge, why }` |
 | | `Event::Installation { forge, installation, account, change }` |
 | | `Event::GitToken { forge, installation, account, token, expires }` |
+| | `Event::Fact { forge, fact }` |
 
 An `account` is its id and login. `change` is `Created`, `Deleted`,
 `Repositories`, `Suspended`, `Unsuspended` or `Renamed`, and `expires` is
-the token's expiry in wall seconds, as the forge said it.
+the token's expiry in wall seconds, as the forge said it. A `fact` is
+`Origin { origin }`, a job log's origin not configured (4.5);
+`Unkept { installation }`, an installation the table has no room for
+(4.4); or `Gap`, a delivery log read short of its cursor (6.5). A fact
+is a diagnostic: the owner logs it, and no decision, the component's or
+the owner's, rests on it.
 
 An entry point emits at most 16 events up and 16 requests to io, and the
 owner leaves room for them before it.
@@ -288,8 +294,8 @@ and, on GitHub, its owner's account id, which chooses its installation
 
 - **Filled** by the read of the repository by id, counted in the call
   that needed it; by a locate; by a read of its settings; and, on
-  GitHub, by each row of an installation's repositories' listing and by
-  each delivery read whole (6.5), whose repository carries its owner.
+  GitHub, by each delivery read whole (6.5), whose repository carries
+  its owner.
 - **Dropped** when a call by its path ends on a `404` or is answered a
   redirect, or a merge is refused its style (forge.md, 5.4); the next
   call resolves the id again. A `404` that is an answer (forge.md, 5.2)
@@ -340,9 +346,9 @@ it changes.
   one answers. That is at most `installations` reads, each counted in
   the call. The first that answers fills the row, and the call goes on
   with the owner's installation. If every one answers `404`, the call
-  fails `Missing`. Rows come from the call's own reads, the listings and
-  the deliveries (4.2), so this path runs only for an id first named
-  after a start, or one whose row the table dropped.
+  fails `Missing`. Rows come from the calls' own reads and the
+  deliveries (4.2), so this path runs only for an id first named after
+  a start, or one whose row the table dropped.
 - **Changes go up** as `installation` events, each found by comparing
   the table read with the one it replaces: `Created` for a new id,
   `Deleted` for one gone, `Suspended` and `Unsuspended`, and `Renamed`
@@ -350,9 +356,10 @@ it changes.
   repository untouched, since they choose by account id. A log row that
   says an installation's repositories changed sends `Repositories` up
   for that installation, without names: the owner lists them afresh
-  with the client's read of the installation's repositories, a call as
-  any other. A row the table has no room for is said once, as a
-  diagnostic, and goes no further.
+  with its setup host's `Reachable` (forge-setup.md, 4.8 and 5.9),
+  which the component takes no part in. A row the table has no room for
+  is said once, as `Fact::Unkept { installation }`, and goes no
+  further.
 
 ### 4.5 A job log's redirect
 
@@ -367,9 +374,13 @@ and port of `Location`, and its target is the path and query.
   since io connects to addresses alone and resolves no name at runtime
   (io.md, section 4). The configured origins are at most `log_origins`.
   An empty list, the default, reads no job log.
-- **To another host,** the call fails `Unavailable` at once. A
-  diagnostic names the host, once for each host, so the operator can add
-  it.
+- **To another host,** the call fails `Unavailable` at once, and
+  `Fact::Origin { origin }` names the origin, as `Redirect`'s, so the
+  operator can add it. It is said once for each origin from each
+  connect: the component remembers at most `log_origins` origins said,
+  the oldest forgotten first when full, and forgets them all at the
+  forge's next connect. A fact is a diagnostic: no decision rests on it,
+  and a call fails alike whether its origin was said or not.
 - **The request** carries no credential and no `Range`, which that host
   ignores. It runs on a connection of the pool to the origin's address,
   as a call's do, with TLS to the origin's host and the forge's trust,
@@ -552,7 +563,7 @@ in no call's cost, one at a time.
   section 8). A later start of the forge, after a connect or a stop,
   reads back to the guid kept, within `log_catch_up` and `log_pages`.
 - **A gap,** a poll that ends on `log_catch_up` or `log_pages` before it
-  meets the guid kept, is said once as a diagnostic, and the
+  meets the guid kept, is said once as `Fact::Gap`, and the
   installations are read again (4.4). The client's polling finds the
   rest (section 6).
 - **A row's event decides what it costs:**
@@ -596,8 +607,9 @@ The component's own; their values are the owner's.
 - **Forges and tables:** `forges`; `token_bytes`, the largest token, an
   installation's too; `key_bytes`, the largest App key; `repositories`
   and `users`, the two tables' rows; `installations`, a GitHub forge's
-  installations' rows (4.4); `log_origins`, a GitHub forge's job log
-  origins (4.5).
+  installations' rows (4.4); `log_origins`, at least 1, a GitHub forge's
+  job log origins, and the most origins not configured it remembers
+  having said (4.5).
 - **Connections:** `connections`, equal to the owner's `calls`, so no
   call waits for one and the component never says `Busy`; an idle
   connection of one forge closes for a call to another when none is
@@ -849,7 +861,7 @@ The owner's domain owes:
   its repository's account, a repository with no row found by trying
   the installations in turn, the puller's catch-up, cursor, gap and
   `304`s, and a job log's redirect followed to its configured origin
-  alone.
+  alone, another origin said once per connect as a fact.
 - **The listener,** against scripted deliveries: a good delivery hinted,
   its `204` queued before its hint goes up; each answer of 6.3; an event
   the dialect does not hint; a hint held while the owner has no room,
