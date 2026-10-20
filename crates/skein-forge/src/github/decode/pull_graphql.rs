@@ -6,6 +6,9 @@ use skein_json::Token;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Node {
+    EnqueueEnvelope,
+    EnqueueData,
+    Enqueue,
     Envelope,
     Data,
     Repository,
@@ -59,7 +62,10 @@ impl State {
                     Some(skein_lib::bytes::copy_of(text.get(..end).ok_or(Malformed::Range { field: key })?));
             }
             (
-                Node::Envelope
+                Node::EnqueueEnvelope
+                | Node::EnqueueData
+                | Node::Enqueue
+                | Node::Envelope
                 | Node::Data
                 | Node::Repository
                 | Node::Pull
@@ -91,7 +97,10 @@ impl State {
                     return Err(Malformed::Bound { field: b"nodes" });
                 }
             }
-            Node::Envelope
+            Node::EnqueueEnvelope
+            | Node::EnqueueData
+            | Node::Enqueue
+            | Node::Envelope
             | Node::Data
             | Node::Repository
             | Node::Commit
@@ -100,6 +109,9 @@ impl State {
             | Node::Nodes => {}
         }
         Ok(())
+    }
+    pub(super) fn enqueued(&self) -> Result<document::Document, Malformed> {
+        Ok(document::Document::Enqueued(self.pull.queued.ok_or(Malformed::Missing { field: b"mergeQueueEntry" })?))
     }
     pub(super) fn document(&self) -> Result<document::Document, Malformed> {
         if !self.present {

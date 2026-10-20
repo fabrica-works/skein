@@ -140,6 +140,14 @@ const fn pull_node(key: &'static [u8], node: PullNode) -> Field {
 }
 fn pull_fields(node: PullNode) -> &'static [Field] {
     match node {
+        PullNode::EnqueueEnvelope => {
+            const {
+                &[
+                    optional(b"data", Read::Container(Role::Document(Node::PullGraphql(PullNode::EnqueueData)))),
+                    optional(b"errors", Read::Container(Role::Document(Node::GraphqlErrors))),
+                ]
+            }
+        }
         PullNode::Envelope => {
             const {
                 &[
@@ -147,6 +155,17 @@ fn pull_fields(node: PullNode) -> &'static [Field] {
                     optional(b"errors", Read::Container(Role::Document(Node::GraphqlErrors))),
                 ]
             }
+        }
+        PullNode::EnqueueData => {
+            const {
+                &[optional(
+                    b"enqueuePullRequest",
+                    Read::Container(Role::Document(Node::PullGraphql(PullNode::Enqueue))),
+                )]
+            }
+        }
+        PullNode::Enqueue => {
+            const { &[optional(b"mergeQueueEntry", Read::Container(Role::Document(Node::PullGraphql(PullNode::Queue))))] }
         }
         PullNode::Data => {
             const { &[optional(b"repository", Read::Container(Role::Document(Node::PullGraphql(PullNode::Repository))))] }
@@ -464,7 +483,10 @@ fn element(role: Role) -> Option<Role> {
         Node::BranchRows => Some(Role::Document(Node::BranchName)),
         Node::Errors => Some(Role::Document(Node::ErrorEntry)),
         Node::PullGraphql(
-            PullNode::Envelope
+            PullNode::EnqueueEnvelope
+            | PullNode::EnqueueData
+            | PullNode::Enqueue
+            | PullNode::Envelope
             | PullNode::Data
             | PullNode::Repository
             | PullNode::Pull
@@ -563,10 +585,13 @@ pub(super) struct Walk {
     open: Stack<Frame>,
     want: Want,
     limits: Limits,
+    enqueue: bool,
 }
 impl Walk {
     pub(super) fn new(kind: document::Kind, limits: &Limits) -> Self {
         let node = match kind {
+            document::Kind::Merge => Node::Commit,
+            document::Kind::Enqueue => Node::PullGraphql(PullNode::EnqueueEnvelope),
             document::Kind::Id => Node::IdResult,
             document::Kind::Number => Node::NumberResult,
             document::Kind::Done => Node::Done,
@@ -600,7 +625,9 @@ impl Walk {
             document::Kind::Job => Node::Job,
             document::Kind::Error => Node::Error,
         };
-        Self::root(Role::Document(node), limits)
+        let mut walk = Self::root(Role::Document(node), limits);
+        walk.enqueue = kind == document::Kind::Enqueue;
+        walk
     }
     pub(super) fn merge_base(limits: &Limits) -> Self {
         Self::root(Role::Document(Node::MergeBaseOnly), limits)
@@ -610,7 +637,7 @@ impl Walk {
         Self::root(Role::Payload(Payload::Root(event)), limits)
     }
     fn root(role: Role, limits: &Limits) -> Self {
-        Self { open: Stack::with_capacity(DEPTH), want: Want::Start(role), limits: *limits }
+        Self { open: Stack::with_capacity(DEPTH), want: Want::Start(role), limits: *limits, enqueue: false }
     }
     pub(super) fn step(&mut self, event: Event) -> Result<Move, Malformed> {
         if let Event::Failed(error) = event {
@@ -626,7 +653,7 @@ impl Walk {
                     self.end()
                 } else {
                     let frame = self.open.top_mut().expect("array");
-                    if frame.node == Role::Document(Node::GraphqlErrors) && frame.seen != 0 {
+                    if frame.node == Role::Document(Node::GraphqlErrors) && frame.seen != 0 && !self.enqueue {
                         return self.unknown(&event, 0);
                     }
                     if frame.node == Role::Document(Node::AppEvents) {
@@ -637,7 +664,13 @@ impl Walk {
                         self.want = Want::Element;
                         return Ok(Move::Scalar(Node::AppEvents, b"events", self.app_text(event, b"events")?));
                     }
-                    frame.seen = 1;
+                    frame.seen = frame.seen.checked_add(1).ok_or(Malformed::Bound { field: b"errors" })?;
+                    if self.enqueue
+                        && frame.node == Role::Document(Node::GraphqlErrors)
+                        && frame.seen > self.limits.inner
+                    {
+                        return Err(Malformed::Bound { field: b"errors" });
+                    }
                     let node = element(frame.node).expect("array role");
                     self.start(node, &event)
                 }

@@ -933,6 +933,8 @@ fn github_raw_request(request: &github::request::Request) -> bool {
         | Request::Installation { .. }
         | Request::Mint { .. }
         | Request::Reachable { .. }
+        | Request::Enqueue { .. }
+        | Request::Merge { .. }
         | Request::PullGraphql { .. }
         | Request::Viewer
         | Request::App

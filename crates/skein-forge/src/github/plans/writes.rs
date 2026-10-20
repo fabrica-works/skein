@@ -15,6 +15,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 
+mod merge;
 mod reviewers;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -23,6 +24,8 @@ enum Stage {
     Resolve,
     Pull,
     ResolveUser,
+    PullGraphql,
+    Enqueue,
     Mutate,
     Done,
 }
@@ -61,23 +64,6 @@ impl Plan {
     pub fn begin(&mut self, bounds: Bounds, word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
         if self.stage != Stage::New {
             return Err(api::Error::InvalidAnswer);
-        }
-        match self.write {
-            api::Write::DeleteBranch { .. }
-            | api::Write::Close { .. }
-            | api::Write::Reopen { .. }
-            | api::Write::Edit { .. }
-            | api::Write::Status { .. }
-            | api::Write::CreateBranch { .. }
-            | api::Write::OpenPull { .. }
-            | api::Write::CreateIssue { .. }
-            | api::Write::Post { .. }
-            | api::Write::Review { .. }
-            | api::Write::Update { .. }
-            | api::Write::SetReviewers { .. } => {}
-            api::Write::Merge { .. } => {
-                return Err(api::Error::Refused);
-            }
         }
         self.reviewers_check(bounds)?;
         self.row = tables.repository(self.repository).cloned();
@@ -162,9 +148,13 @@ impl Plan {
             api::Write::SetReviewers { number, .. } => {
                 return self.reviewers_mutation(*number);
             }
-            api::Write::Merge { .. } => {
-                return Err(api::Error::Refused);
-            }
+            api::Write::Merge { number, head } => Request::Merge {
+                owner,
+                name,
+                number: *number,
+                head: *head,
+                method: row.merge.ok_or(api::Error::Refused)?,
+            },
         };
         self.stage = Stage::Mutate;
         Ok(self.send(request))
@@ -172,6 +162,7 @@ impl Plan {
     fn result_kind(&self) -> Option<crate::github::document::Kind> {
         use crate::github::document::Kind;
         match self.write {
+            api::Write::Merge { .. } => Some(Kind::Merge),
             api::Write::Review { .. } | api::Write::Post { .. } => Some(Kind::Id),
             api::Write::DeleteBranch { .. } => None,
             api::Write::CreateIssue { .. } | api::Write::OpenPull { .. } => Some(Kind::Number),
@@ -179,7 +170,6 @@ impl Plan {
             | api::Write::SetReviewers { .. }
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
-            | api::Write::Merge { .. }
             | api::Write::Update { .. }
             | api::Write::Status { .. }
             | api::Write::CreateBranch { .. } => Some(Kind::Done),
@@ -205,8 +195,15 @@ impl Plan {
             | api::Write::Merge { .. } => 200,
         }
     }
+    fn mutating(&self) -> bool {
+        self.stage == Stage::Mutate || self.stage == Stage::Enqueue
+    }
     fn asked(&self) -> Asked {
+        if self.stage == Stage::Enqueue {
+            return Asked::Enqueue;
+        }
         match &self.write {
+            api::Write::Merge { .. } => Asked::Merge,
             api::Write::Update { .. } => Asked::Update,
             api::Write::Review { body, .. } => Asked::Review { empty: body.is_empty() },
             api::Write::Post { body, .. } => Asked::Write { empty: body.is_empty() },
@@ -220,7 +217,6 @@ impl Plan {
             api::Write::SetReviewers { .. }
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
-            | api::Write::Merge { .. }
             | api::Write::Status { .. } => Asked::Write { empty: false },
         }
     }
@@ -252,7 +248,7 @@ impl Plan {
         }
     }
     fn malformed(&self, error: crate::github::decode::Malformed) -> api::Error {
-        if self.stage == Stage::Mutate {
+        if self.mutating() {
             return api::Error::Timeout;
         }
         if read_failure::malformed(error) == api::Error::TooLarge {
@@ -263,7 +259,7 @@ impl Plan {
     }
 
     fn invalid(&self) -> api::Error {
-        if self.stage == Stage::Mutate { api::Error::Timeout } else { api::Error::Unavailable }
+        if self.mutating() { api::Error::Timeout } else { api::Error::Unavailable }
     }
     fn terminal(&mut self, answer: api::Answer, bounds: Bounds) -> Result<Option<Step>, api::Error> {
         let size = crate::measure::answer(&answer).ok_or(self.invalid())?;
@@ -281,7 +277,7 @@ impl Plan {
         body: Option<&crate::github::document::Refusal>,
         tables: &mut Tables,
     ) -> Result<api::Answer, api::Error> {
-        let asked = if self.stage == Stage::Mutate { self.asked() } else { Asked::Read };
+        let asked = if self.mutating() { self.asked() } else { Asked::Read };
         match failure::classify(asked, status, head, body) {
             Verdict::Fail(error, drop) => {
                 match drop {
@@ -290,7 +286,7 @@ impl Plan {
                 }
                 Err(if self.added() && (error == api::Error::Unavailable || matches_rate(error)) {
                     api::Error::Timeout
-                } else if self.stage != Stage::Mutate && error == api::Error::Timeout {
+                } else if !self.mutating() && error == api::Error::Timeout {
                     api::Error::Unavailable
                 } else {
                     error
@@ -315,7 +311,7 @@ impl Plan {
     ) -> Result<Option<Step>, api::Error> {
         match heard {
             Heard::Head { status, head } => {
-                let expected = if self.stage == Stage::Mutate { self.status() } else { 200 };
+                let expected = if self.mutating() { self.status() } else { 200 };
                 if status == expected {
                     self.response = Response::Body;
                 } else if (200..300).contains(&status) {
@@ -334,7 +330,7 @@ impl Plan {
                     let answer = self.refusal(status, head, None, tables)?;
                     return self.terminal(answer, bounds);
                 }
-                Err(if self.stage == Stage::Mutate {
+                Err(if self.mutating() {
                     match failed {
                         Failure::Unseen => {
                             if self.added() {
@@ -423,6 +419,8 @@ impl Plan {
                     Document::Installation(_)
                     | Document::Minted(_)
                     | Document::Viewer(_)
+                    | Document::Merge(_)
+                    | Document::Enqueued(_)
                     | Document::PullGraphql(_)
                     | Document::Graphql(_)
                     | Document::App(_)
@@ -447,10 +445,37 @@ impl Plan {
                 | Body::Empty
                 | Body::Malformed(_) => None,
             };
+            if self.stage == Stage::Mutate
+                && self.asked() == Asked::Merge
+                && failure::classify(Asked::Merge, status, head, refusal) == Verdict::Enqueue
+            {
+                return Ok(Some(self.merge_pull()?));
+            }
             let answer = self.refusal(status, head, refusal, tables)?;
             return self.terminal(answer, bounds);
         }
         match body {
+            Body::Document(Document::PullGraphql(pull)) if self.stage == Stage::PullGraphql => {
+                return Ok(Some(self.enqueue(pull)?));
+            }
+            Body::Document(Document::Graphql(refusal))
+                if self.stage == Stage::PullGraphql || self.stage == Stage::Enqueue =>
+            {
+                return Err(if self.stage == Stage::Enqueue {
+                    failure::graphql(&refusal.kind, &refusal.message)
+                } else {
+                    api::Error::Unavailable
+                });
+            }
+            Body::Document(Document::Enqueued(_)) if self.stage == Stage::Enqueue => {
+                return self.terminal(api::Answer::Queued, bounds);
+            }
+            Body::Document(Document::Merge(commit)) if self.stage == Stage::Mutate && self.asked() == Asked::Merge => {
+                if crate::github::id::write_commit(&commit).is_none() {
+                    return Err(self.invalid());
+                }
+                return self.terminal(api::Answer::Merged(commit), bounds);
+            }
             Body::Malformed(error) => return Err(self.malformed(error)),
             Body::Document(Document::Repository(repository)) if self.stage == Stage::Resolve => {
                 let id = crate::github::id::repository(repository.id)?;
@@ -493,6 +518,8 @@ impl Plan {
                 Document::Installation(_)
                 | Document::Minted(_)
                 | Document::Viewer(_)
+                | Document::Merge(_)
+                | Document::Enqueued(_)
                 | Document::PullGraphql(_)
                 | Document::Graphql(_)
                 | Document::App(_)

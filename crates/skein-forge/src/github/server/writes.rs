@@ -56,6 +56,7 @@ enum Want {
     Start,
     Key,
     Value(&'static [u8], u32),
+    VariablesStart,
     ListStart,
     ListItem,
     Unknown(u32),
@@ -66,6 +67,8 @@ enum Want {
 struct Parser {
     want: Want,
     fields: Fields,
+    variables: bool,
+    has_variables: bool,
 }
 impl Parser {
     #[expect(clippy::too_many_lines, reason = "the bounded tokenizer states exhaustively handle every event")]
@@ -80,6 +83,14 @@ impl Parser {
             }
             Want::Key => match event {
                 Event::Token(Token::ObjectEnd) => {
+                    if self.variables {
+                        self.variables = false;
+                        self.want = Want::Key;
+                        return Some(tokenizer::Request::Next);
+                    }
+                    if specs.first()?.key == b"query" && !self.has_variables {
+                        return None;
+                    }
                     for field in specs {
                         if field.required
                             && self.fields.get(field.key).is_none()
@@ -91,8 +102,19 @@ impl Parser {
                     self.want = Want::End;
                 }
                 Event::Token(Token::Key(key)) => {
+                    if specs.first()?.key == b"query" && key.as_ref() == b"variables" {
+                        if self.has_variables || self.variables {
+                            return None;
+                        }
+                        self.has_variables = true;
+                        self.want = Want::VariablesStart;
+                        return Some(tokenizer::Request::Next);
+                    }
                     for field in specs {
                         if field.key == key.as_ref() {
+                            if specs.first()?.key == b"query" && (field.key != b"query") != self.variables {
+                                return None;
+                            }
                             if self.fields.get(field.key).is_some()
                                 || (field.key == b"reviewers" && self.fields.logins.is_some())
                             {
@@ -150,6 +172,13 @@ impl Parser {
                     return None;
                 }
                 self.fields.values.push(Value { key, text }).ok()?;
+                self.want = Want::Key;
+            }
+            Want::VariablesStart => {
+                if event != Event::Token(Token::ObjectStart) {
+                    return None;
+                }
+                self.variables = true;
                 self.want = Want::Key;
             }
             Want::ListStart => {
@@ -225,6 +254,8 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
     let mut tokenizer = tokenizer::Tokenizer::new(&limits.json);
     let mut parser = Parser {
         want: Want::Start,
+        variables: false,
+        has_variables: false,
         fields: Fields { values: List::with_capacity(u32::try_from(specs.len()).ok()?), logins: None },
     };
     let mut above = Queue::with_capacity(1);
@@ -259,6 +290,38 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Merge { owner, name, number, .. } => {
+            let fields = parse(
+                body,
+                &[
+                    Field { key: b"sha", body: true, required: true },
+                    Field { key: b"merge_method", body: true, required: true },
+                ],
+                limits,
+            )?;
+            let method = match fields.get(b"merge_method")? {
+                b"merge" => crate::github::plans::tables::Method::Merge,
+                b"squash" => crate::github::plans::tables::Method::Squash,
+                b"rebase" => crate::github::plans::tables::Method::Rebase,
+                _ => return None,
+            };
+            Some(Request::Merge { owner, name, number, head: super::id::commit(fields.get(b"sha")?)?, method })
+        }
+        Request::Enqueue { .. } => {
+            let fields = parse(
+                body,
+                &[
+                    Field { key: b"query", body: true, required: true },
+                    Field { key: b"id", body: false, required: true },
+                    Field { key: b"head", body: true, required: true },
+                ],
+                limits,
+            )?;
+            if fields.get(b"query")? != super::document::ENQUEUE {
+                return None;
+            }
+            Some(Request::Enqueue { id: Box::from(fields.get(b"id")?), head: super::id::commit(fields.get(b"head")?)? })
+        }
         Request::Reviewers { owner, name, number, add, .. } => {
             let fields = parse(body, &[Field { key: b"reviewers", body: false, required: true }], limits)?;
             Some(Request::Reviewers { owner, name, number, add, logins: fields.logins?.into_boxed() })

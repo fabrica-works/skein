@@ -332,6 +332,8 @@ fn github_app_secrets_hidden() {
             Document::Conversion(row) => assert_redacted(&alloc::fmt::format(format_args!("{row:?}"))),
             Document::Installation(_)
             | Document::Viewer(_)
+            | Document::Merge(_)
+            | Document::Enqueued(_)
             | Document::PullGraphql(_)
             | Document::Graphql(_)
             | Document::App(_)
@@ -438,6 +440,8 @@ fn github_app_server_round_trip() {
                 | Request::OpenPull { .. }
                 | Request::Close { .. }
                 | Request::DeleteBranch { .. }
+                | Request::Merge { .. }
+                | Request::Enqueue { .. }
                 | Request::User { .. } => {}
             }
             routed
@@ -509,7 +513,9 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                 server::reachable(reachable.as_slice(), 10, out)
             }
         }
-        Document::Pull(_)
+        Document::Merge(_)
+        | Document::Enqueued(_)
+        | Document::Pull(_)
         | Document::Job(_)
         | Document::Combined(_)
         | Document::Repository(_)

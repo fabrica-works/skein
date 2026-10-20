@@ -103,6 +103,8 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::Installation { .. } => Kind::Installation,
         Request::Mint { .. } => Kind::Minted,
         Request::Reachable { .. } => Kind::ReachableRows,
+        Request::Merge { .. } => Kind::Merge,
+        Request::Enqueue { .. } => Kind::Enqueue,
         Request::PullGraphql { .. } => Kind::PullGraphql,
         Request::Viewer => Kind::Viewer,
         Request::App => Kind::App,
@@ -309,6 +311,11 @@ impl Decoder {
                     Kind::PullGraphql => match self.app.graphql() {
                         Some(refusal) => Document::Graphql(refusal.clone()),
                         None => self.pull_graphql.document()?,
+                    },
+                    Kind::Merge => Document::Merge(self.branch.commit),
+                    Kind::Enqueue => match self.app.graphql() {
+                        Some(refusal) => Document::Graphql(refusal.clone()),
+                        None => self.pull_graphql.enqueued()?,
                     },
                     Kind::Job => Document::Job(self.checks.job()),
                     Kind::Compare => Document::Compare(self.files.document()),

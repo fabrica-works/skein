@@ -33,6 +33,8 @@ pub enum Request {
     Mint { installation: u64, scope: Scope },
     Reachable { page: u32, per_page: u32 },
     Viewer,
+    Merge { owner: Box<[u8]>, name: Box<[u8]>, number: u64, head: api::Commit, method: super::plans::tables::Method },
+    Enqueue { id: Box<[u8]>, head: api::Commit },
     PullGraphql { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     App,
     HookConfig,
@@ -115,6 +117,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Mint { .. }
         | Request::Reachable { .. }
         | Request::Viewer
+        | Request::Enqueue { .. }
         | Request::PullGraphql { .. }
         | Request::App
         | Request::HookConfig
@@ -151,6 +154,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Status { .. }
         | Request::CreateBranch { .. }
         | Request::Reviewers { .. }
+        | Request::Merge { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
@@ -254,6 +258,7 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Mint { .. }
         | Request::Reachable { .. }
         | Request::Viewer
+        | Request::Enqueue { .. }
         | Request::PullGraphql { .. }
         | Request::App
         | Request::HookConfig
@@ -287,6 +292,12 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.put(b"/pulls/");
             out.number(*number);
             out.put(b"/requested_reviewers");
+        }
+        Request::Merge { owner, name, number, .. } => {
+            out.repo(owner, name)?;
+            out.put(b"/pulls/");
+            out.number(*number);
+            out.put(b"/merge");
         }
         Request::Update { owner, name, number, .. } => {
             out.repo(owner, name)?;
@@ -475,6 +486,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Mint { .. }
         | Request::Reachable { .. }
         | Request::Viewer
+        | Request::Enqueue { .. }
         | Request::PullGraphql { .. }
         | Request::App
         | Request::HookConfig
@@ -503,6 +515,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Status { .. }
         | Request::CreateBranch { .. }
         | Request::Reviewers { .. }
+        | Request::Merge { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
@@ -544,7 +557,7 @@ fn escape_digit(byte: u8) -> Option<u8> {
 fn selection(request: &Request) -> (Method, Auth) {
     match request {
         Request::Reviewers { add, .. } => (if *add { Method::Post } else { Method::Delete }, Auth::Installation),
-        Request::Update { .. } => (Method::Put, Auth::Installation),
+        Request::Merge { .. } | Request::Update { .. } => (Method::Put, Auth::Installation),
         Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => (Method::Patch, Auth::Installation),
         Request::DeleteBranch { .. } => (Method::Delete, Auth::Installation),
         Request::Installations { .. } | Request::Installation { .. } | Request::App | Request::HookConfig => {
@@ -562,6 +575,7 @@ fn selection(request: &Request) -> (Method, Auth) {
         | Request::CreateBranch { .. }
         | Request::Status { .. }
         | Request::Viewer
+        | Request::Enqueue { .. }
         | Request::PullGraphql { .. } => (Method::Post, Auth::Installation),
         Request::Reachable { .. }
         | Request::Repository { .. }
@@ -593,6 +607,7 @@ fn selection(request: &Request) -> (Method, Auth) {
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
         Request::Reviewers { .. }
+        | Request::Merge { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
@@ -602,6 +617,7 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
         | Request::Status { .. }
         | Request::Mint { scope: Scope::Contents, .. }
         | Request::Viewer
+        | Request::Enqueue { .. }
         | Request::PullGraphql { .. }
         | Request::SetHook { .. }
         | Request::Reopen { .. }
@@ -663,6 +679,27 @@ fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Resul
     json.object_start();
     match request {
         Request::Reviewers { logins, .. } => reviewers_json(logins, json),
+        Request::Merge { head, method, .. } => {
+            json.key(b"sha");
+            json.string(&id::write_commit(head).ok_or(Refusal::Text)?);
+            json.key(b"merge_method");
+            json.string(match method {
+                super::plans::tables::Method::Merge => b"merge",
+                super::plans::tables::Method::Squash => b"squash",
+                super::plans::tables::Method::Rebase => b"rebase",
+            });
+        }
+        Request::Enqueue { id: node, head } => {
+            json.key(b"query");
+            json.string(super::document::ENQUEUE);
+            json.key(b"variables");
+            json.object_start();
+            json.key(b"id");
+            json.string(node);
+            json.key(b"head");
+            json.string(&id::write_commit(head).ok_or(Refusal::Text)?);
+            json.object_end();
+        }
         Request::Update { head, .. } => {
             json.key(b"expected_head_sha");
             json.string(&id::write_commit(head).ok_or(Refusal::Text)?);
@@ -821,7 +858,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.put(b"/installation/repositories");
             out.page(*page, *per_page, false);
         }
-        Request::Viewer | Request::PullGraphql { .. } => out.put(b"/graphql"),
+        Request::Viewer | Request::Enqueue { .. } | Request::PullGraphql { .. } => out.put(b"/graphql"),
         Request::App => out.put(b"/app"),
         Request::HookConfig | Request::SetHook { .. } => out.put(b"/app/hook/config"),
         Request::Conversion { code } => {
@@ -864,6 +901,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Status { .. }
         | Request::CreateBranch { .. }
         | Request::Reviewers { .. }
+        | Request::Merge { .. }
         | Request::Update { .. }
         | Request::Review { .. }
         | Request::Post { .. }
@@ -883,6 +921,7 @@ fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
 
 fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
     match request {
+        Request::Enqueue { id, .. } => bounded(id, limits.string_bytes)?,
         Request::PullGraphql { owner, name, number } => {
             bounded(owner, limits.string_bytes)?;
             bounded(name, limits.string_bytes)?;
@@ -925,7 +964,8 @@ fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
         {
             return Err(Refusal::TooLong);
         }
-        Request::Update { .. }
+        Request::Merge { .. }
+        | Request::Update { .. }
         | Request::DeleteBranch { .. }
         | Request::Raw { .. }
         | Request::Installations { .. }

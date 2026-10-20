@@ -13,6 +13,7 @@ pub(super) struct State {
     reachable: document::Reachable,
     viewer: document::Viewer,
     graphql: document::GraphqlRefusal,
+    graphql_error: document::GraphqlRefusal,
     app: document::App,
     permissions: List<document::Permission>,
     events: List<Box<[u8]>>,
@@ -46,6 +47,7 @@ impl State {
             reachable: reachable(),
             viewer: document::Viewer { id: 0, login: Box::from([]) },
             graphql: document::GraphqlRefusal { kind: Box::from([]), message: Box::from([]) },
+            graphql_error: document::GraphqlRefusal { kind: Box::from([]), message: Box::from([]) },
             app: document::App { id: 0, slug: Box::from([]), permissions: Box::from([]), events: Box::from([]) },
             permissions: List::with_capacity(capacity),
             events: List::with_capacity(capacity),
@@ -73,7 +75,19 @@ impl State {
             }
             Node::Reachable => return Ok(Some(Row::Reachable(core::mem::replace(&mut self.reachable, reachable())))),
             Node::Viewer => self.has_viewer = true,
-            Node::GraphqlError => self.has_graphql = true,
+            Node::GraphqlError => {
+                let error = core::mem::replace(
+                    &mut self.graphql_error,
+                    document::GraphqlRefusal { kind: Box::from([]), message: Box::from([]) },
+                );
+                if !self.has_graphql
+                    || super::super::failure::graphql(&self.graphql.kind, &self.graphql.message)
+                        == crate::api::Error::Stale
+                {
+                    self.graphql = error;
+                }
+                self.has_graphql = true;
+            }
             Node::GraphqlErrors => {
                 if !self.has_graphql {
                     return Err(Malformed::Missing { field: b"type" });
@@ -177,7 +191,9 @@ impl State {
             Kind::HookConfig => Document::HookConfig(self.hook.clone()),
             Kind::Conversion => Document::Conversion(self.conversion.clone()),
             Kind::BotUser => Document::BotUser(self.bot),
-            Kind::PullGraphql
+            Kind::Merge
+            | Kind::Enqueue
+            | Kind::PullGraphql
             | Kind::User
             | Kind::Compare
             | Kind::FileRows
@@ -241,8 +257,8 @@ impl State {
             }
             (Node::Viewer, b"databaseId", Token::Number(text)) => self.viewer.id = unsigned(&text),
             (Node::Viewer, b"login", Token::String(text)) => self.viewer.login = text,
-            (Node::GraphqlError, b"type", Token::String(text)) => self.graphql.kind = text,
-            (Node::GraphqlError, b"message", Token::String(text)) => self.graphql.message = text,
+            (Node::GraphqlError, b"type", Token::String(text)) => self.graphql_error.kind = text,
+            (Node::GraphqlError, b"message", Token::String(text)) => self.graphql_error.message = text,
             (Node::AppPermissions, b"name", Token::String(text)) => self.permission_name = text,
             (Node::AppPermissions, b"access", Token::String(text)) => {
                 let access = document::Access::read(&text).ok_or(Malformed::Value { field: b"permissions" })?;

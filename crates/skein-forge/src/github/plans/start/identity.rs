@@ -35,7 +35,9 @@ impl Identity {
             Some(Event::Done { document, .. }) => match document {
                 document::Document::Viewer(viewer) => Ok(Some(Step::terminal(&mut self.state, Ok(viewer)))),
                 // Sections 4.3 and 7 give no viewer-specific GraphQL error map.
-                document::Document::PullGraphql(_)
+                document::Document::Merge(_)
+                | document::Document::Enqueued(_)
+                | document::Document::PullGraphql(_)
                 | document::Document::Graphql(_)
                 | document::Document::Installation(_)
                 | document::Document::Minted(_)

@@ -350,13 +350,8 @@ fn github_plans_malformed_body() {
 }
 
 #[test]
-fn github_plans_writes_refused() {
+fn github_plans_remaining_reads_refused() {
     let mut tables = Tables::new(2, 2);
-    let write = api::Write::Merge { number: 1, head: [0; 32] };
-    assert_eq!(
-        Plan::new(KEY, api::Op::Write(write)).begin(bounds(), b"example-app", &mut tables),
-        Err(api::Error::Refused)
-    );
     for read in [
         api::Read::Job { attempt: api::JobAttempt { head: [0; 32], run: 1, job: 1, attempt: 1 }, max_bytes: 1 },
         api::Read::Protection { branch: Box::from(*b"b") },

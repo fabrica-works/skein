@@ -167,6 +167,8 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
             Document::Installation(_)
             | Document::Minted(_)
             | Document::Viewer(_)
+            | Document::Merge(_)
+            | Document::Enqueued(_)
             | Document::PullGraphql(_)
             | Document::Graphql(_)
             | Document::App(_)

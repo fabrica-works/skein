@@ -93,6 +93,8 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::OpenPull { .. }
         | Request::Close { .. }
         | Request::DeleteBranch { .. }
+        | Request::Enqueue { .. }
+        | Request::Merge { .. }
         | Request::PullGraphql { .. }
         | Request::User { .. } => return None,
     })

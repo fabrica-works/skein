@@ -99,6 +99,8 @@ impl Plan {
             | document::Document::Id(_)
             | document::Document::Number(_)
             | document::Document::Done
+            | document::Document::Merge(_)
+            | document::Document::Enqueued(_)
             | document::Document::BotUser(_) => Err(api::Error::InvalidAnswer),
         }
     }

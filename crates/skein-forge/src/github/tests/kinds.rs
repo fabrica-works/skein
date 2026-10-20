@@ -16,6 +16,7 @@ fn name() -> Box<[u8]> {
 #[test]
 fn github_decode_kind_names_each_documented_answer() {
     let commit = [7; 32];
+    let method = crate::github::plans::tables::Method::Merge;
     for (request, kind) in [
         (Request::Installations { page: 1 }, Kind::InstallationRows),
         (Request::Installation { id: 3 }, Kind::Installation),
@@ -39,6 +40,8 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::Reviewers { owner: owner(), name: name(), number: 9, add: true, logins: Box::from([]) }, Kind::Done),
         (Request::Reviewers { owner: owner(), name: name(), number: 9, add: false, logins: Box::from([]) }, Kind::Done),
         (Request::Update { owner: owner(), name: name(), number: 9, head: commit }, Kind::Done),
+        (Request::Merge { owner: owner(), name: name(), number: 9, head: commit, method }, Kind::Merge),
+        (Request::Enqueue { id: Box::from(*b"opaque"), head: commit }, Kind::Enqueue),
         (Request::Viewer, Kind::Viewer),
         (Request::PullGraphql { owner: owner(), name: name(), number: 5 }, Kind::PullGraphql),
         (Request::App, Kind::App),

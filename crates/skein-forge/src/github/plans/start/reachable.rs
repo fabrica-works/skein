@@ -76,6 +76,8 @@ impl Reachable {
                 document::Document::Installation(_)
                 | document::Document::Minted(_)
                 | document::Document::Viewer(_)
+                | document::Document::Merge(_)
+                | document::Document::Enqueued(_)
                 | document::Document::PullGraphql(_)
                 | document::Document::Graphql(_)
                 | document::Document::App(_)

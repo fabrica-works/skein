@@ -6,12 +6,22 @@ use skein_lib::{Overflow, Writer};
 
 #[derive(Debug)]
 enum Answer<'a> {
+    Merge(&'a api::Commit),
+    Enqueued(u32),
     Pull(&'a document::Pull),
     PullGraphql(&'a document::PullGraphql),
     Pulls(&'a [document::Pull]),
     Combined(&'a document::Combined, &'a [document::Context]),
     Runs(&'a [document::Run]),
     Job(&'a document::Job),
+}
+/// Writes the REST merge's landed commit.
+pub fn merged(commit: &api::Commit, out: &mut Writer) -> Result<(), Overflow> {
+    encode(&Answer::Merge(commit), out)
+}
+/// Writes a nonnull enqueue entry and its position.
+pub fn enqueued(position: u32, out: &mut Writer) -> Result<(), Overflow> {
+    encode(&Answer::Enqueued(position), out)
 }
 /// Writes one pull including its merged flag.
 pub fn pull(row: &document::Pull, out: &mut Writer) -> Result<(), Overflow> {
@@ -50,6 +60,27 @@ fn encode(answer: &Answer<'_>, out: &mut Writer) -> Result<(), Overflow> {
 }
 fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> {
     match answer {
+        Answer::Merge(commit) => {
+            json.object_start();
+            json.key(b"sha");
+            json.string(&id::write_commit(commit).ok_or(Overflow)?);
+            json.object_end();
+        }
+        Answer::Enqueued(position) => {
+            json.object_start();
+            json.key(b"data");
+            json.object_start();
+            json.key(b"enqueuePullRequest");
+            json.object_start();
+            json.key(b"mergeQueueEntry");
+            json.object_start();
+            json.key(b"position");
+            json.unsigned(u64::from(*position));
+            json.object_end();
+            json.object_end();
+            json.object_end();
+            json.object_end();
+        }
         Answer::PullGraphql(row) => pull_graphql_json(row, json)?,
         Answer::Job(row) => {
             json.object_start();

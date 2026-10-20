@@ -6,9 +6,15 @@ use skein_lib::{Secret, Wall};
 pub const VIEWER: &[u8] = b"query { viewer { login databaseId } }";
 /// Pull identity, landed commit and merge queue facts (forge-github.md, 4.3).
 pub const PULL: &[u8] = b"query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id mergeCommit { oid } mergeQueueEntry { position } timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes { ... on RemovedFromMergeQueueEvent { reason } } } } } }";
+/// Expected-head queue admission (forge-github.md, 4.3).
+pub const ENQUEUE: &[u8] = b"mutation($id: ID!, $head: GitObjectID!) { enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $head}) { mergeQueueEntry { position } } }";
 /// The document a decoder expects.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Kind {
+    /// The REST merge's landed commit.
+    Merge,
+    /// Queue admission, including every GraphQL error.
+    Enqueue,
     Id,
     Number,
     /// A bounded object whose fields are discarded.
@@ -105,6 +111,10 @@ pub struct Refusal {
 /// A whole document, or the end of a streamed listing.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Document {
+    /// The REST merge's landed commit.
+    Merge(api::Commit),
+    /// A nonnull queue entry with its checked position.
+    Enqueued(u32),
     Id(u64),
     Number(u64),
     Done,
@@ -174,7 +184,7 @@ pub struct Viewer {
     pub login: Box<[u8]>,
 }
 
-/// The first GraphQL error's type and message.
+/// A GraphQL error's type and message; enqueue keeps a non-stale error when present.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct GraphqlRefusal {
     pub kind: Box<[u8]>,
