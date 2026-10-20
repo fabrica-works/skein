@@ -38,7 +38,8 @@ impl Minting {
             Some(Event::Row(_)) => Err(api::Error::InvalidAnswer),
             Some(Event::Done { document, .. }) => match document {
                 document::Document::Minted(minted) => Ok(Some(Step::terminal(&mut self.state, Ok(minted)))),
-                document::Document::Installation(_)
+                document::Document::Delivery(_)
+                | document::Document::Installation(_)
                 | document::Document::Viewer(_)
                 | document::Document::Merge(_)
                 | document::Document::Enqueued(_)

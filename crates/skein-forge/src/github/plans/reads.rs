@@ -385,6 +385,7 @@ impl Plan {
                                 | document::Document::Job(_)
                                 | document::Document::Combined(_)
                                 | document::Document::Rows
+                                | document::Document::Delivery(_)
                                 | document::Document::Installation(_)
                                 | document::Document::Minted(_)
                                 | document::Document::Viewer(_)
@@ -475,6 +476,7 @@ impl Plan {
             }
             document::Row::Issue(_)
             | document::Row::Comment(_)
+            | document::Row::Log(_)
             | document::Row::Installation(_)
             | document::Row::Pull(_)
             | document::Row::Context(_)

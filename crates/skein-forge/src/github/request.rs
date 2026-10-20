@@ -28,6 +28,8 @@ pub enum Accept {
 /// One request at GitHub's pin, with repository path bytes from its row.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Request {
+    LogPage { ask: super::log::Ask, per_page: u32 },
+    LogDelivery { id: u64 },
     Installations { page: u32 },
     Installation { id: u64 },
     Mint { installation: u64, scope: Scope },
@@ -93,6 +95,7 @@ pub struct Encoded {
     pub body: Option<Box<[u8]>>,
     pub accept: Accept,
     pub auth: Auth,
+    pub validator: Option<api::Validator>,
 }
 /// An input that cannot be encoded within the target or body's bound.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -110,9 +113,18 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
     }
     let mut out = Target { length: 0, writer: Some(Writer::new(out.length)) };
     target(request, &mut out)?;
+    let mut validator = None;
     let accept = match request {
+        Request::LogPage { ask, .. } => {
+            validator = match ask {
+                super::log::Ask::First { validator } => validator.clone(),
+                super::log::Ask::Next { .. } => None,
+            };
+            Accept::Json
+        }
         Request::Raw { .. } => Accept::Raw,
-        Request::Installations { .. }
+        Request::LogDelivery { .. }
+        | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Mint { .. }
         | Request::Reachable { .. }
@@ -169,16 +181,21 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         body: body(request, limits)?,
         accept,
         auth,
+        validator,
     })
 }
 /// Accept and the API pin, beside the component's Host, User-Agent and Authorization.
 #[must_use]
-pub fn fields(encoded: &Encoded) -> [(&'static [u8], &'static [u8]); 2] {
+pub fn fields(encoded: &Encoded) -> Box<[(&[u8], &[u8])]> {
     let accept: &[u8] = match encoded.accept {
         Accept::Json => b"application/vnd.github+json",
         Accept::Raw => b"application/vnd.github.raw+json",
     };
-    [(b"Accept", accept), (b"X-GitHub-Api-Version", super::pin::API_VERSION.as_bytes())]
+    let pin: (&[u8], &[u8]) = (b"X-GitHub-Api-Version", super::pin::API_VERSION.as_bytes());
+    match &encoded.validator {
+        Some(validator) => Box::from([(b"Accept".as_slice(), accept), pin, (b"If-None-Match", validator.as_bytes())]),
+        None => Box::from([(b"Accept".as_slice(), accept), pin]),
+    }
 }
 #[derive(Debug)]
 struct Target {
@@ -253,7 +270,9 @@ pub(crate) fn valid_text(text: &[u8]) -> bool {
 #[expect(clippy::too_many_lines, reason = "exhaustive target dispatch includes read and write requests")]
 fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
     match request {
-        Request::Installations { .. }
+        Request::LogPage { .. }
+        | Request::LogDelivery { .. }
+        | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Mint { .. }
         | Request::Reachable { .. }
@@ -481,7 +500,9 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.put(b"/branches");
             out.page(*page, *per_page, false);
         }
-        Request::Installations { .. }
+        Request::LogPage { .. }
+        | Request::LogDelivery { .. }
+        | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Mint { .. }
         | Request::Reachable { .. }
@@ -560,9 +581,12 @@ fn selection(request: &Request) -> (Method, Auth) {
         Request::Merge { .. } | Request::Update { .. } => (Method::Put, Auth::Installation),
         Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => (Method::Patch, Auth::Installation),
         Request::DeleteBranch { .. } => (Method::Delete, Auth::Installation),
-        Request::Installations { .. } | Request::Installation { .. } | Request::App | Request::HookConfig => {
-            (Method::Get, Auth::App)
-        }
+        Request::LogPage { .. }
+        | Request::LogDelivery { .. }
+        | Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::App
+        | Request::HookConfig => (Method::Get, Auth::App),
         Request::Mint { .. } => (Method::Post, Auth::App),
         Request::SetHook { .. } => (Method::Patch, Auth::App),
         Request::Uninstall { .. } => (Method::Delete, Auth::App),
@@ -624,6 +648,8 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
         | Request::Close { .. }
         | Request::Edit { .. } => {}
         Request::Mint { scope: Scope::Full, .. }
+        | Request::LogPage { .. }
+        | Request::LogDelivery { .. }
         | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Reachable { .. }
@@ -798,7 +824,9 @@ fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Resul
             json.key(b"url");
             json.string(url);
         }
-        Request::Installations { .. }
+        Request::LogPage { .. }
+        | Request::LogDelivery { .. }
+        | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Reachable { .. }
         | Request::App
@@ -838,6 +866,24 @@ fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Resul
 
 fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
     match request {
+        Request::LogPage { ask, per_page } => {
+            if !(1..=super::pin::PAGE_CAP).contains(per_page) {
+                return Err(Refusal::Text);
+            }
+            out.put(b"/app/hook/deliveries?per_page=");
+            out.number(u64::from(*per_page));
+            match ask {
+                super::log::Ask::First { .. } => {}
+                super::log::Ask::Next { cursor } => {
+                    out.put(b"&cursor=");
+                    out.segment(cursor.as_bytes())?;
+                }
+            }
+        }
+        Request::LogDelivery { id } => {
+            out.put(b"/app/hook/deliveries/");
+            out.number(*id);
+        }
         Request::Installations { page } => {
             out.put(b"/app/installations");
             out.page(*page, super::pin::PAGE_CAP, false);
@@ -968,6 +1014,8 @@ fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
         | Request::Update { .. }
         | Request::DeleteBranch { .. }
         | Request::Raw { .. }
+        | Request::LogPage { .. }
+        | Request::LogDelivery { .. }
         | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Mint { .. }

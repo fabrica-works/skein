@@ -11,6 +11,7 @@ pub mod header;
 pub mod id;
 pub mod jwt;
 pub mod limits;
+pub mod log;
 pub mod pin;
 pub mod plans;
 pub mod redirect;

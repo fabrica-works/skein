@@ -39,6 +39,7 @@ impl Identity {
                 | document::Document::Enqueued(_)
                 | document::Document::PullGraphql(_)
                 | document::Document::Graphql(_)
+                | document::Document::Delivery(_)
                 | document::Document::Installation(_)
                 | document::Document::Minted(_)
                 | document::Document::App(_)

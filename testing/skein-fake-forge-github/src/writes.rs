@@ -304,6 +304,8 @@ fn operation(service: &Service, request: Request) -> Result<(Stage, Op), Respons
         | Request::Reachable { .. }
         | Request::Viewer
         | Request::Enqueue { .. }
+        | Request::LogPage { .. }
+        | Request::LogDelivery { .. }
         | Request::PullGraphql { .. }
         | Request::App
         | Request::HookConfig

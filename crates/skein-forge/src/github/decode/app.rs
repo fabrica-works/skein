@@ -66,6 +66,7 @@ impl State {
             has_graphql: false,
         }
     }
+    #[expect(clippy::too_many_lines, reason = "App container dispatch exhaustively rejects the other document nodes")]
     pub(super) fn end(&mut self, node: Node) -> Result<Option<Row>, Malformed> {
         match node {
             Node::Installation => {
@@ -162,6 +163,11 @@ impl State {
             | Node::IdResult
             | Node::NumberResult
             | Node::Done
+            | Node::LogRows
+            | Node::LogRow
+            | Node::LogDelivery
+            | Node::LogRequest
+            | Node::LogHeaders
             | Node::ErrorEntry => unreachable!("App container dispatch"),
         }
         Ok(None)
@@ -205,6 +211,8 @@ impl State {
             | Kind::Repository
             | Kind::Branch
             | Kind::BranchRows
+            | Kind::LogRows
+            | Kind::LogDelivery
             | Kind::IssueRows
             | Kind::Issue
             | Kind::CommentRows
@@ -359,7 +367,12 @@ impl State {
                 | Node::IdResult
                 | Node::NumberResult
                 | Node::Done
-                | Node::ErrorEntry,
+                | Node::ErrorEntry
+                | Node::LogRows
+                | Node::LogRow
+                | Node::LogDelivery
+                | Node::LogRequest
+                | Node::LogHeaders,
                 _,
                 Token::ObjectStart
                 | Token::ObjectEnd
@@ -379,6 +392,6 @@ impl State {
 fn unsigned(text: &[u8]) -> u64 {
     crate::forgejo::id::unsigned(text).expect("walker checked integer")
 }
-fn time(text: &[u8], field: &'static [u8]) -> Result<Wall, Malformed> {
+pub(super) fn time(text: &[u8], field: &'static [u8]) -> Result<Wall, Malformed> {
     crate::forgejo::time::read(text).ok_or(Malformed::Time { field })
 }

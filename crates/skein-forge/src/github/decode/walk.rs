@@ -16,6 +16,11 @@ use super::protection::Node as P;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Node {
     Protection(P),
+    LogRows,
+    LogRow,
+    LogDelivery,
+    LogRequest,
+    LogHeaders,
     IdResult,
     NumberResult,
     Done,
@@ -121,6 +126,7 @@ enum Read {
     Number,
     Boolean,
     Container(Role),
+    Payload,
 }
 #[derive(Clone, Copy, Debug)]
 struct Field {
@@ -222,6 +228,33 @@ fn comment_fields() -> &'static [Field] {
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
         Node::Protection(node) => protection::fields(node),
+        Node::LogRow => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"guid", Read::Text),
+                    field(b"event", Read::Text),
+                    optional(b"action", Read::Text),
+                    optional(b"installation_id", Read::Number),
+                    optional(b"repository_id", Read::Number),
+                    field(b"status_code", Read::Number),
+                    field(b"delivered_at", Read::Text),
+                    field(b"redelivery", Read::Boolean),
+                ]
+            }
+        }
+        Node::LogDelivery => {
+            const { &[field(b"event", Read::Text), field(b"request", Read::Container(Role::Document(Node::LogRequest)))] }
+        }
+        Node::LogRequest => {
+            const {
+                &[
+                    field(b"headers", Read::Container(Role::Document(Node::LogHeaders))),
+                    field(b"payload", Read::Payload),
+                ]
+            }
+        }
+        Node::LogHeaders => const { &[field(b"X-GitHub-Event", Read::Text), field(b"X-GitHub-Delivery", Read::Text)] },
         Node::PullGraphql(node) => pull_fields(node),
         Node::Compare => {
             const {
@@ -437,7 +470,8 @@ fn document_fields(node: Node) -> &'static [Field] {
             const { &[field(b"message", Read::Body), optional(b"errors", Read::Container(Role::Document(Node::Errors)))] }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::AppPermissions
+        Node::LogRows
+        | Node::AppPermissions
         | Node::AppEvents
         | Node::FileRows
         | Node::CompareCommits
@@ -467,6 +501,7 @@ fn element(role: Role) -> Option<Role> {
     };
     match node {
         Node::Protection(node) => protection::element(node),
+        Node::LogRows => Some(Role::Document(Node::LogRow)),
         Node::AppEvents => Some(Role::Document(Node::AppEvents)),
         Node::FileRows => Some(Role::Document(Node::FileRow)),
         Node::CompareCommits => Some(Role::Document(Node::CompareCommit)),
@@ -500,6 +535,10 @@ fn element(role: Role) -> Option<Role> {
             | PullNode::Timeline
             | PullNode::Removal,
         )
+        | Node::LogRow
+        | Node::LogDelivery
+        | Node::LogRequest
+        | Node::LogHeaders
         | Node::IdResult
         | Node::NumberResult
         | Node::Done
@@ -576,6 +615,7 @@ enum Want {
 /// One field or container completion, with the next tokenizer demand.
 #[derive(Debug)]
 pub(super) enum Move {
+    PayloadStart(Token),
     Demand(Request),
     Scalar(Node, &'static [u8], Token),
     End(Node),
@@ -598,6 +638,8 @@ impl Walk {
             document::Kind::RuleRows => Node::Protection(P::Rows),
             document::Kind::Ruleset => Node::Protection(P::Ruleset),
             document::Kind::ClassicProtection => Node::Protection(P::Classic),
+            document::Kind::LogRows => Node::LogRows,
+            document::Kind::LogDelivery => Node::LogDelivery,
             document::Kind::Merge => Node::Commit,
             document::Kind::Enqueue => Node::PullGraphql(PullNode::EnqueueEnvelope),
             document::Kind::Id => Node::IdResult,
@@ -685,6 +727,9 @@ impl Walk {
                         return Ok(Move::Scalar(Node::AppEvents, b"events", self.app_text(event, b"events")?));
                     }
                     frame.seen = frame.seen.checked_add(1).ok_or(Malformed::Bound { field: b"errors" })?;
+                    if frame.node == Role::Document(Node::LogRows) && frame.seen > self.limits.inner {
+                        return Err(Malformed::Bound { field: b"deliveries" });
+                    }
                     if self.enqueue
                         && frame.node == Role::Document(Node::GraphqlErrors)
                         && frame.seen > self.limits.inner
@@ -796,7 +841,7 @@ impl Walk {
                             Read::Body => Request::Text(self.limits.body_bytes.min(self.limits.string_bytes)),
                             Read::LongBody => Request::Text(self.limits.body_bytes),
                             Read::Presence => Request::Text(0),
-                            Read::Number | Read::Boolean | Read::Container(_) => Request::Next,
+                            Read::Payload | Read::Number | Read::Boolean | Read::Container(_) => Request::Next,
                         }));
                     }
                 }
@@ -829,6 +874,14 @@ impl Walk {
         frame.seen |= bit;
         let node = frame.node;
         match field.read {
+            Read::Payload => {
+                self.want = Want::Key;
+                return if event == Event::Token(Token::ObjectStart) {
+                    Ok(Move::PayloadStart(Token::ObjectStart))
+                } else {
+                    Err(Malformed::Shape { field: field.key })
+                };
+            }
             Read::Container(child) => return self.start(child, &event),
             Read::Presence => {
                 self.unknown(&event, 0)?;
@@ -888,6 +941,7 @@ impl Walk {
                 | Read::Reason
                 | Read::Number
                 | Read::Boolean
+                | Read::Payload
                 | Read::Container(_),
                 Token::ObjectStart
                 | Token::ObjectEnd

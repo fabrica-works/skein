@@ -86,7 +86,8 @@ impl Sweep {
         for row in rows {
             let row = match row {
                 Row::Installation(row) => row,
-                Row::Reachable(_)
+                Row::Log(_)
+                | Row::Reachable(_)
                 | Row::Branch(_)
                 | Row::Issue(_)
                 | Row::Comment(_)

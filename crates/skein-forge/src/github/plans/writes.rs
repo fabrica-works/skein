@@ -416,7 +416,8 @@ impl Plan {
             let refusal = match &body {
                 Body::Document(Document::Error(refusal)) => Some(refusal),
                 Body::Document(
-                    Document::Installation(_)
+                    Document::Delivery(_)
+                    | Document::Installation(_)
                     | Document::Minted(_)
                     | Document::Viewer(_)
                     | Document::Merge(_)
@@ -517,7 +518,8 @@ impl Plan {
             Body::Document(Document::Done)
                 if self.stage == Stage::Mutate && self.result_kind() == Some(crate::github::document::Kind::Done) => {}
             Body::Document(
-                Document::Installation(_)
+                Document::Delivery(_)
+                | Document::Installation(_)
                 | Document::Minted(_)
                 | Document::Viewer(_)
                 | Document::Merge(_)

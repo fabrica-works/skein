@@ -549,7 +549,9 @@ pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Requ
                 None
             }
         }
-        Request::Installations { .. }
+        Request::LogPage { .. }
+        | Request::LogDelivery { .. }
+        | Request::Installations { .. }
         | Request::Installation { .. }
         | Request::Mint { .. }
         | Request::Reachable { .. }

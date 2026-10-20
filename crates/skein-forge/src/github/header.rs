@@ -68,11 +68,17 @@ fn printable(bytes: &[u8]) -> bool {
     clippy::partial_pub_fields,
     reason = "incomplete rate fields and an HTTP-date retry are retained until their companion headers arrive"
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "next, cursor validity, JSON media and connection close are independent header facts"
+)]
 pub struct Head {
     pub date: Option<Wall>,
     pub retry_after: Option<Duration>,
     pub next: bool,
     pub cursor: Option<Cursor>,
+    /// A log page cannot treat a malformed next cursor as the end of the log.
+    pub(crate) cursor_invalid: bool,
     pub etag: Option<Etag>,
     pub location: Option<Box<[u8]>>,
     pub json: bool,
@@ -97,6 +103,7 @@ impl Head {
             retry_after: None,
             next: false,
             cursor: None,
+            cursor_invalid: false,
             etag: None,
             location: None,
             json: false,
@@ -154,8 +161,11 @@ pub fn field(head: &mut Head, name: &[u8], value: &[u8], limits: &Limits) {
         if let Some((next, cursor)) = link_next(value) {
             head.next |= next;
             if next {
+                head.cursor_invalid |= cursor.is_none();
                 head.cursor = cursor;
             }
+        } else {
+            head.cursor_invalid = true;
         }
     } else if name.eq_ignore_ascii_case(b"ETag") {
         head.etag = Etag::new(raw_value);

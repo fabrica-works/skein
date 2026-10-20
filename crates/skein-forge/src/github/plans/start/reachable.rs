@@ -51,6 +51,7 @@ impl Reachable {
                     | document::Row::Review(_)
                     | document::Row::Remark(_)
                     | document::Row::Collaborator(_)
+                    | document::Row::Log(_)
                     | document::Row::Installation(_)
                     | document::Row::Branch(_)
                     | document::Row::Issue(_)
@@ -74,7 +75,8 @@ impl Reachable {
                     let rows = core::mem::replace(&mut self.rows, List::with_capacity(0));
                     Ok(Some(Step::terminal(&mut self.state, Ok(Page { rows: rows.into_boxed(), next }))))
                 }
-                document::Document::Installation(_)
+                document::Document::Delivery(_)
+                | document::Document::Installation(_)
                 | document::Document::Minted(_)
                 | document::Document::Viewer(_)
                 | document::Document::Merge(_)

@@ -173,6 +173,8 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::RulesForBranch { .. }
         | Request::Collaborators { .. }
         | Request::Enqueue { .. }
+        | Request::LogPage { .. }
+        | Request::LogDelivery { .. }
         | Request::PullGraphql { .. } => return None,
     })
 }

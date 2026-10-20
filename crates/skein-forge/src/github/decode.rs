@@ -13,6 +13,7 @@ mod checks;
 pub(crate) mod delivery;
 mod files;
 mod issues;
+mod log;
 mod people;
 mod protection;
 mod pull_graphql;
@@ -34,6 +35,7 @@ pub struct Decoder {
     walk: Walk,
     kind: Kind,
     app: app::State,
+    log: log::State,
     issues: issues::State,
     pulls: pulls::State,
     pull_graphql: pull_graphql::State,
@@ -59,6 +61,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         walk: Walk::new(kind, limits),
         kind,
         app: app::State::new(kind, limits.inner),
+        log: log::State::new(limits),
         issues: issues::State::new(limits.inner),
         pulls: pulls::State::new(limits.inner),
         pull_graphql: pull_graphql::State::new(limits.inner),
@@ -102,6 +105,8 @@ pub fn merge_base_decoder(limits: &Limits) -> Decoder {
 #[must_use]
 pub fn kind(request: &Request) -> Option<Kind> {
     Some(match request {
+        Request::LogPage { .. } => Kind::LogRows,
+        Request::LogDelivery { .. } => Kind::LogDelivery,
         Request::Installations { .. } => Kind::InstallationRows,
         Request::Installation { .. } => Kind::Installation,
         Request::Mint { .. } => Kind::Minted,
@@ -156,13 +161,35 @@ impl Decoder {
         if self.terminal {
             return (tokenizer::Request::Close, Step::Malformed(Malformed::Shape { field: b"" }));
         }
-        let result = match self.walk.step(event) {
-            Ok(movement) => self.movement(movement),
-            Err(error) => Err(error),
+        let result = if self.log.active() {
+            match self.log.payload(event) {
+                Ok(demand) => Ok((demand, Step::Demand)),
+                Err(error) => Err(error),
+            }
+        } else {
+            match self.walk.step(event) {
+                Ok(movement) => self.movement(movement),
+                Err(error) => Err(error),
+            }
         };
         match result {
             Ok((demand, step)) => (demand, step),
             Err(error) => {
+                let error = if self.kind == Kind::LogRows || self.kind == Kind::LogDelivery {
+                    match error {
+                        Malformed::Json(error) => log::json_error(error),
+                        Malformed::TooLong { field } => Malformed::Bound { field },
+                        Malformed::Bound { .. }
+                        | Malformed::Shape { .. }
+                        | Malformed::Missing { .. }
+                        | Malformed::Range { .. }
+                        | Malformed::Id { .. }
+                        | Malformed::Time { .. }
+                        | Malformed::Value { .. } => error,
+                    }
+                } else {
+                    error
+                };
                 self.terminal = true;
                 (tokenizer::Request::Close, Step::Malformed(error))
             }
@@ -171,6 +198,8 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes each document node at its end")]
     fn movement(&mut self, movement: Move) -> Result<(tokenizer::Request, Step), Malformed> {
         match movement {
+            Move::PayloadStart(token) => return Ok((self.log.start(token)?, Step::Demand)),
+            Move::End(Node::LogRow) => return Ok((tokenizer::Request::Next, Step::Row(Row::Log(self.log.row())))),
             Move::End(Node::PullGraphql(node)) => self.pull_graphql.end(node)?,
             Move::Demand(demand) => return Ok((demand, Step::Demand)),
             Move::Scalar(node, key, token) => self.scalar(node, key, token)?,
@@ -287,7 +316,11 @@ impl Decoder {
                 }
             }
             Move::End(
-                Node::RunOutput
+                Node::LogRows
+                | Node::LogDelivery
+                | Node::LogRequest
+                | Node::LogHeaders
+                | Node::RunOutput
                 | Node::RunApp
                 | Node::Job
                 | Node::CollaboratorRows
@@ -310,6 +343,7 @@ impl Decoder {
             Move::Done => {
                 self.terminal = true;
                 let document = match self.kind {
+                    Kind::LogDelivery => Document::Delivery(self.log.document()?),
                     Kind::Installation
                     | Kind::InstallationRows
                     | Kind::Minted
@@ -342,6 +376,7 @@ impl Decoder {
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
                     Kind::RuleRows
+                    | Kind::LogRows
                     | Kind::FileRows
                     | Kind::ReviewRows
                     | Kind::RemarkRows
@@ -366,6 +401,11 @@ impl Decoder {
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
             (Node::Protection(node), key, token) => return self.protection.scalar(node, key, token),
+            (
+                node @ (Node::LogRows | Node::LogRow | Node::LogDelivery | Node::LogRequest | Node::LogHeaders),
+                key,
+                token,
+            ) => return self.log.scalar(node, key, token),
             (Node::PullGraphql(node), key, token) => return self.pull_graphql.scalar(node, key, token),
             (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job), key, token) => {
                 return self.checks.scalar(node, key, token);

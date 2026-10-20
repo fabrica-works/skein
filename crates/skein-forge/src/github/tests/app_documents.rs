@@ -330,7 +330,8 @@ fn github_app_secrets_hidden() {
         match document {
             Document::Minted(row) => assert_redacted(&alloc::fmt::format(format_args!("{row:?}"))),
             Document::Conversion(row) => assert_redacted(&alloc::fmt::format(format_args!("{row:?}"))),
-            Document::Installation(_)
+            Document::Delivery(_)
+            | Document::Installation(_)
             | Document::Viewer(_)
             | Document::Merge(_)
             | Document::Enqueued(_)
@@ -397,7 +398,9 @@ fn github_app_server_round_trip() {
             match &mut routed {
                 Request::Mint { scope, .. } => *scope = server::mint_scope(body).unwrap(),
                 Request::SetHook { url } => *url = server::hook_url(body, &good).unwrap(),
-                Request::Installations { .. }
+                Request::LogPage { .. }
+                | Request::LogDelivery { .. }
+                | Request::Installations { .. }
                 | Request::Installation { .. }
                 | Request::Reachable { .. }
                 | Request::PullGraphql { .. }
@@ -494,7 +497,8 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                 match row {
                     Row::Installation(row) => installations.push(row.clone()).unwrap(),
                     Row::Reachable(row) => reachable.push(row.clone()).unwrap(),
-                    Row::Pull(_)
+                    Row::Log(_)
+                    | Row::Pull(_)
                     | Row::Context(_)
                     | Row::Run(_)
                     | Row::Issue(_)
@@ -516,7 +520,8 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                 server::reachable(reachable.as_slice(), 10, out)
             }
         }
-        Document::Merge(_)
+        Document::Delivery(_)
+        | Document::Merge(_)
         | Document::Enqueued(_)
         | Document::Pull(_)
         | Document::Job(_)

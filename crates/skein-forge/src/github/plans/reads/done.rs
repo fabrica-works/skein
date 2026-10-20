@@ -94,6 +94,7 @@ impl Plan {
                 | Read::Refused => self.branches_done(bounds),
             },
             document::Document::Error(_)
+            | document::Document::Delivery(_)
             | document::Document::Installation(_)
             | document::Document::Minted(_)
             | document::Document::Viewer(_)

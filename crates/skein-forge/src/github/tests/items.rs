@@ -16,6 +16,7 @@ fn issue(row: &Row) -> &crate::github::document::Issue {
         Row::Issue(issue) => issue,
         Row::Comment(_)
         | Row::Branch(_)
+        | Row::Log(_)
         | Row::Installation(_)
         | Row::Commit(_)
         | Row::File(_)
@@ -34,6 +35,7 @@ fn comment(row: &Row) -> &crate::github::document::Comment {
         Row::Comment(comment) => comment,
         Row::Issue(_)
         | Row::Branch(_)
+        | Row::Log(_)
         | Row::Installation(_)
         | Row::Commit(_)
         | Row::File(_)
@@ -191,6 +193,7 @@ fn github_item_long_body() {
                 Row::Issue(issue) => &issue.body,
                 Row::Comment(comment) => &comment.body,
                 Row::Branch(_)
+                | Row::Log(_)
                 | Row::Installation(_)
                 | Row::Commit(_)
                 | Row::File(_)

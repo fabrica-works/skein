@@ -65,7 +65,8 @@ impl Listing {
                     let rows = core::mem::replace(&mut self.rows, List::with_capacity(0));
                     Ok(Some(Step::terminal(&mut self.state, Ok(rows.into_boxed()))))
                 }
-                document::Document::Installation(_)
+                document::Document::Delivery(_)
+                | document::Document::Installation(_)
                 | document::Document::Minted(_)
                 | document::Document::Viewer(_)
                 | document::Document::Merge(_)

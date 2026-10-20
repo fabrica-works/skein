@@ -61,7 +61,7 @@ fn wire(request: &Request, method: Method, target: &[u8], body: &[u8], kind: Kin
     assert_eq!(encoded.body.as_deref(), Some(body));
     assert_eq!(encoded.auth, Auth::Installation);
     assert_eq!(
-        request::fields(&encoded),
+        request::fields(&encoded).as_ref(),
         [
             (b"Accept".as_slice(), b"application/vnd.github+json".as_slice()),
             (b"X-GitHub-Api-Version", crate::github::pin::API_VERSION.as_bytes())

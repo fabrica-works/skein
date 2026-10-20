@@ -98,7 +98,9 @@ impl Decoder {
             Move::PayloadScalar(node, key, token) => self.scalar(node, key, token)?,
             Move::BodyLong(None, length) => self.body = Body::Long(length),
             Move::PayloadEnd => {}
-            Move::BodyLong(Some(_), _) | Move::Scalar(..) | Move::End(_) => unreachable!("delivery walker root"),
+            Move::PayloadStart(_) | Move::BodyLong(Some(_), _) | Move::Scalar(..) | Move::End(_) => {
+                unreachable!("delivery walker root")
+            }
             Move::Done => {
                 self.terminal = true;
                 return Ok(Step::Done(self.finish()?));

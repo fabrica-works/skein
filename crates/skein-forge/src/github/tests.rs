@@ -5,6 +5,7 @@ mod checks;
 mod delivery;
 mod items;
 mod kinds;
+mod log;
 mod protection;
 mod pulls;
 mod pulls_decode;
@@ -151,9 +152,10 @@ fn github_request_fields() {
             body: None,
             accept,
             auth: Auth::Installation,
+            validator: None,
         };
         assert_eq!(
-            request::fields(&encoded),
+            request::fields(&encoded).as_ref(),
             [(b"Accept".as_slice(), value), (b"X-GitHub-Api-Version".as_slice(), b"2026-03-10".as_slice())]
         );
     }

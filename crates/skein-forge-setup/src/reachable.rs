@@ -331,7 +331,8 @@ impl Reachable {
         for row in rows {
             let row = match row {
                 github_document::Row::Reachable(row) => row,
-                github_document::Row::Installation(_)
+                github_document::Row::Log(_)
+                | github_document::Row::Installation(_)
                 | github_document::Row::Branch(_)
                 | github_document::Row::Issue(_)
                 | github_document::Row::Comment(_)

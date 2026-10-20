@@ -16,11 +16,15 @@ use skein_lib::List;
 mod identity;
 mod installations;
 mod listing;
+mod log_delivery;
+mod log_page;
 mod minting;
 mod reachable;
 pub use identity::Identity;
 pub use installations::Installations;
 pub use listing::Listing;
+pub use log_delivery::LogDelivery;
+pub use log_page::LogPage;
 pub use minting::Minting;
 pub use reachable::Reachable;
 
@@ -164,7 +168,8 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
     match body {
         Body::Document(Document::Error(refusal)) => Some(refusal),
         Body::Document(
-            Document::Installation(_)
+            Document::Delivery(_)
+            | Document::Installation(_)
             | Document::Minted(_)
             | Document::Viewer(_)
             | Document::Merge(_)
@@ -206,7 +211,8 @@ fn keep_installation(
 ) -> Result<(), api::Error> {
     let row = match row {
         Row::Installation(row) => row,
-        Row::Commit(_)
+        Row::Log(_)
+        | Row::Commit(_)
         | Row::File(_)
         | Row::Review(_)
         | Row::Remark(_)

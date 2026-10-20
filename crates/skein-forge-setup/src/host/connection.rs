@@ -471,6 +471,8 @@ pub(crate) fn kind_of(request: &dialect::request::Request) -> Result<Option<dial
         | Request::DeleteBranch { .. }
         | Request::Reviewers { .. }
         | Request::Merge { .. }
+        | Request::LogPage { .. }
+        | Request::LogDelivery { .. }
         | Request::Enqueue { .. } => return Err(Refused::Unexpected),
     }))
 }

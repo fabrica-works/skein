@@ -66,7 +66,7 @@ fn golden(request: &Request, method: Method, target: &[u8], body: Option<&[u8]>,
     assert_eq!(encoded.body.as_deref(), body);
     assert_eq!(encoded.auth, Auth::Installation);
     assert_eq!(
-        request::fields(&encoded),
+        request::fields(&encoded).as_ref(),
         [
             (b"Accept".as_slice(), b"application/vnd.github+json".as_slice()),
             (b"X-GitHub-Api-Version".as_slice(), b"2026-03-10".as_slice())

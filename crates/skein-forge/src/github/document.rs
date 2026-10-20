@@ -14,6 +14,8 @@ pub enum Kind {
     RuleRows,
     Ruleset,
     ClassicProtection,
+    LogRows,
+    LogDelivery,
     /// The REST merge's landed commit.
     Merge,
     /// Queue admission, including every GraphQL error.
@@ -89,6 +91,7 @@ pub struct Branch {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Row {
     Rule(Rule),
+    Log(super::log::Row),
     Installation(Installation),
     Reachable(Reachable),
     Branch(Box<[u8]>),
@@ -117,6 +120,7 @@ pub struct Refusal {
 pub enum Document {
     Ruleset(api::Bypass),
     ClassicProtection(Option<Protection>),
+    Delivery(super::log::Logged),
     /// The REST merge's landed commit.
     Merge(api::Commit),
     /// A nonnull queue entry with its checked position.

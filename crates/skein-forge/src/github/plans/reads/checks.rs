@@ -109,6 +109,7 @@ impl Plan {
             document::Row::Context(_)
             | document::Row::Run(_)
             | document::Row::Pull(_)
+            | document::Row::Log(_)
             | document::Row::Installation(_)
             | document::Row::Rule(_)
             | document::Row::Reachable(_)
