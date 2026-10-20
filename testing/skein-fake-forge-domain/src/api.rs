@@ -410,6 +410,8 @@ pub enum Answer {
         more: bool,
     },
     Comparison {
+        /// The newest commit shared by both histories, when they intersect.
+        merge_base: Option<u64>,
         base: u64,
         head: u64,
         /// Whether the requested base is an ancestor of the head.

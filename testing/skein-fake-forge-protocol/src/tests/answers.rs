@@ -202,6 +202,7 @@ fn statuses_combine_failed_before_pending_before_passed() {
 #[test]
 fn a_files_false_comparison_keeps_commits_and_lists_no_files() {
     let input = a::Answer::Comparison {
+        merge_base: Some(1),
         base: 8,
         head: 9,
         contains_base: true,

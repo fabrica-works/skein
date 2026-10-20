@@ -99,10 +99,11 @@ fn comparisons_ignore_paging_and_refuse_incomplete_data_explicitly() {
     h.push(ENGINE, b"work", two).unwrap();
     let first = h.ok(PERSON, read(Read::Compare { base: FIRST, head: two, page: 1, limit: 1 }));
     assert_eq!(first, h.ok(PERSON, read(Read::Compare { base: FIRST, head: two, page: 4, limit: 1 })));
-    let Answer::Comparison { base, head, contains_base: _, files: changed, commits } = first else {
+    let Answer::Comparison { base, head, merge_base, contains_base: _, files: changed, commits } = first else {
         unreachable!("a comparison")
     };
     assert_eq!((base, head), (FIRST, two));
+    assert_eq!(merge_base, Some(FIRST));
     assert_eq!(&*commits, &[one, two]);
     assert_eq!(changed.len(), 2);
     let excessive = crate::commit(&mut h.domain, &CALM, FIRST, files(&[(b"a", b"a"), (b"b", b"b"), (b"c", b"c")]), b"")
@@ -197,4 +198,32 @@ fn oversized_update_repository_is_not_retained_for_a_delayed_write() {
     let name = skein_lib::bytes::zeroed(usize::try_from(config.limits.name_bytes.checked_add(1).unwrap()).unwrap());
     assert_eq!(h.call_on(&name, ENGINE, write(Write::Update { number: 1 })), Err(Error::Missing(What::Repository)));
     assert_eq!(h.domain.tally().landed, 0);
+}
+
+#[test]
+fn comparisons_carry_the_shared_base_of_divergent_and_unrelated_histories() {
+    let mut h = Harness::new(CALM);
+    let left = h.commit(FIRST, &[(b"one", b"left")]);
+    let right = h.commit(FIRST, &[(b"two", b"right")]);
+    h.push(ENGINE, b"left", left).unwrap();
+    h.push(ENGINE, b"right", right).unwrap();
+    let Answer::Comparison { merge_base, contains_base, .. } =
+        h.ok(PERSON, read(Read::Compare { base: left, head: right, page: 1, limit: 1 }))
+    else {
+        unreachable!("comparison")
+    };
+    assert_eq!(merge_base, Some(FIRST));
+    assert!(!contains_base);
+    let mut other = setup();
+    other.name = copy_of(b"acme/unrelated");
+    other.id = 3;
+    let unrelated = crate::repository(&mut h.domain, &CALM, other);
+    h.push(ENGINE, b"unrelated", unrelated).unwrap();
+    let Answer::Comparison { merge_base, contains_base, .. } =
+        h.ok(PERSON, read(Read::Compare { base: left, head: unrelated, page: 1, limit: 1 }))
+    else {
+        unreachable!("comparison")
+    };
+    assert_eq!(merge_base, None);
+    assert!(!contains_base);
 }

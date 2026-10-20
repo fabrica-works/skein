@@ -222,7 +222,7 @@ pub fn answer(asked: &client::Op, answer: forge::Answer, l: &Limits) -> client::
         forge::Answer::PullFiles { head, files, more } => {
             client::Answer::PullFiles { head: commit(head), files: files_in(files), more }
         }
-        forge::Answer::Comparison { base, head, contains_base, files, commits } => {
+        forge::Answer::Comparison { base, head, contains_base, files, commits, merge_base: _ } => {
             let mut ids = List::with_capacity(u32::try_from(commits.len()).expect("bounded fake comparison"));
             for id in commits {
                 ids.push(commit(id)).expect("comparison capacity");

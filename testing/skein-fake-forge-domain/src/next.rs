@@ -100,6 +100,9 @@ pub(crate) fn compare(
     if !repository.has.contains(&base) || !repository.has.contains(&head) {
         return Err(Error::Missing(What::Commit));
     }
+    // Finish the merge-base walk before building the comparison histories,
+    // keeping scratch within the two sets and queue in worst_case.
+    let merge_base = git::merge_base(domain, base, head);
     let files = changed(domain, limits, Some(base), head)?;
     let old = git::ancestors(domain, base);
     let new = git::ancestors(domain, head);
@@ -110,6 +113,7 @@ pub(crate) fn compare(
         }
     }
     Ok(Answer::Comparison {
+        merge_base,
         base,
         head,
         contains_base: git::is_ancestor(domain, base, head),
