@@ -1448,3 +1448,358 @@ fn domain_limits_bound_the_reader() {
         }
     }
 }
+
+use skein_fake_forge_domain::{self as fake, Domain, promises};
+use skein_lib::{Duration, Env, Queue, ReplyTo, Token, Wall};
+
+struct World {
+    domain: Domain,
+    env: Env<fake::Config>,
+    replies: Queue<fake::Request>,
+}
+impl World {
+    fn new(branches: u32, observations: u32, repositories: u32) -> World {
+        let mut config = fake_config();
+        config.limits.branches = branches;
+        config.limits.observations = observations;
+        config.limits.repositories = repositories;
+        config.latency_min = Duration::ZERO;
+        config.latency_max = Duration::ZERO;
+        let domain = Domain::new(&config, 1);
+        World {
+            domain,
+            env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: config },
+            replies: Queue::with_capacity(fake::MAX_OUT),
+        }
+    }
+    fn repository(&mut self, name: &[u8], id: u32) -> u64 {
+        let first = fake::repository(
+            &mut self.domain,
+            &self.env.limits,
+            a::Setup {
+                id,
+                name: boxed(name),
+                default: boxed(b"main"),
+                tree: Box::new([]),
+                labels: Box::new([]),
+                checks: a::Checks {
+                    contexts: Box::new([]),
+                    latency_min: Duration::ZERO,
+                    latency_max: Duration::ZERO,
+                    silent: 0,
+                    passes: 1000,
+                    reruns: 0,
+                    cue: None,
+                },
+                protection: None,
+                hooked: false,
+            },
+        );
+        fake::grant(&mut self.domain, name, 2, a::Permission::Admin);
+        first
+    }
+    fn call(&mut self, repository: &[u8], op: a::Op) {
+        fake::step(
+            &mut self.domain,
+            &self.env,
+            fake::Event::Call { reply_to: ReplyTo::new(Token::new(1)), user: 2, repository: boxed(repository), op },
+            &mut self.replies,
+        );
+        for _ in 0..16_u32 {
+            if let Some(fake::Request::Reply { result, .. }) = self.replies.pop() {
+                result.expect("fixture write admitted");
+                self.domain.reclaim();
+                return;
+            }
+            fake::fire(&mut self.domain, &self.env, &mut self.replies);
+        }
+        panic!("fixture reply");
+    }
+    fn create(&mut self, repository: &[u8], branch: &[u8], commit: u64) {
+        self.call(repository, a::Op::Git(a::Git::Push { branch: boxed(branch), commit, expected: None }));
+    }
+    fn delete(&mut self, repository: &[u8], branch: &[u8]) {
+        self.call(repository, a::Op::Write(a::Write::DeleteBranch { branch: boxed(branch) }));
+    }
+    fn move_to(&mut self, repository: &[u8], branch: &[u8], commit: u64) {
+        self.call(repository, a::Op::Git(a::Git::Push { branch: boxed(branch), commit, expected: None }));
+    }
+    fn commit(&mut self, parent: u64) -> u64 {
+        fake::commit_tree(&mut self.domain, &self.env.limits, parent, None, Box::new([]), b"").expect("commit room")
+    }
+}
+
+#[derive(Clone, Copy)]
+enum MoveCase {
+    Forward,
+    Backward,
+    Remake,
+    Creation,
+    Forgotten,
+    RemakeBackward,
+    Consumed,
+    RepositoryIsolation,
+    ZeroHistory,
+}
+
+#[test]
+fn writer_computes_forward_from_the_domain_and_deletions() {
+    let rows = [
+        (MoveCase::Forward, Some(true)),
+        (MoveCase::Backward, Some(false)),
+        (MoveCase::Remake, Some(true)),
+        (MoveCase::Creation, None),
+        (MoveCase::Forgotten, None),
+        (MoveCase::RemakeBackward, Some(false)),
+        (MoveCase::Consumed, None),
+        (MoveCase::RepositoryIsolation, Some(true)),
+        (MoveCase::ZeroHistory, None),
+    ];
+    for (case, expected) in rows {
+        let mut world = World::new(2, 64, 2);
+        let first = world.repository(b"r", 1);
+        let child = world.commit(first);
+        let mut limits = world.env.limits.limits;
+        // The zero-history row deliberately gives the writer zero retention;
+        // the domain still needs branch room to produce the stream.
+        if let MoveCase::ZeroHistory = case {
+            limits.branches = 0;
+        }
+        let mut writer = observations::Writer::new(&limits);
+        let mut discarded = List::with_capacity(16384);
+        if let MoveCase::Backward = case {
+            // Git refuses a non-fast-forward, so exercise the writer's
+            // computation with the moved record over the real commit graph.
+            let observation = Observation::Moved {
+                repository: boxed(b"r"),
+                branch: boxed(b"main"),
+                from: Some(child),
+                to: first,
+                by: 2,
+            };
+            assert_eq!(writer.forward(&world.domain, &observation), expected);
+            continue;
+        }
+        match case {
+            MoveCase::Forward => world.move_to(b"r", b"main", child),
+            MoveCase::Backward => unreachable!("backward row checked above"),
+            MoveCase::Creation => world.create(b"r", b"work", child),
+            MoveCase::Remake
+            | MoveCase::RemakeBackward
+            | MoveCase::Forgotten
+            | MoveCase::Consumed
+            | MoveCase::RepositoryIsolation
+            | MoveCase::ZeroHistory => {
+                world.create(b"r", b"work", child);
+                world.delete(b"r", b"work");
+                writer.drain(&mut world.domain, &mut discarded).expect("deletion drain");
+                match case {
+                    MoveCase::Forgotten => {
+                        for branch in [b"other".as_slice(), b"last"] {
+                            world.create(b"r", branch, first);
+                            world.delete(b"r", branch);
+                        }
+                    }
+                    MoveCase::Consumed => {
+                        world.create(b"r", b"work", child);
+                        writer.drain(&mut world.domain, &mut discarded).expect("consume deletion");
+                        world.delete(b"r", b"work");
+                        drop(world.domain.pop_observation());
+                    }
+                    MoveCase::RepositoryIsolation => {
+                        let other = world.repository(b"s", 2);
+                        for branch in [b"work".as_slice(), b"last"] {
+                            world.create(b"s", branch, other);
+                            world.delete(b"s", branch);
+                        }
+                    }
+                    MoveCase::Forward
+                    | MoveCase::Backward
+                    | MoveCase::Remake
+                    | MoveCase::Creation
+                    | MoveCase::RemakeBackward
+                    | MoveCase::ZeroHistory => {}
+                }
+                let target = match case {
+                    MoveCase::RemakeBackward => first,
+                    MoveCase::Remake => world.commit(child),
+                    MoveCase::Forward
+                    | MoveCase::Backward
+                    | MoveCase::Creation
+                    | MoveCase::Forgotten
+                    | MoveCase::Consumed
+                    | MoveCase::RepositoryIsolation
+                    | MoveCase::ZeroHistory => child,
+                };
+                world.create(b"r", b"work", target);
+            }
+        }
+        let mut output = List::with_capacity(16384);
+        writer.drain(&mut world.domain, &mut output).expect("drain");
+        let mut found = None;
+        for record in decoded_lines(&output).into_boxed() {
+            if let Recorded::Observed { observation: Observation::Moved { repository, .. }, forward } = record
+                && repository.as_ref() == b"r"
+            {
+                found = Some(forward);
+            }
+        }
+        assert_eq!(found, Some(expected));
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CheckpointCase {
+    Observations,
+    Empty,
+    LostOnly,
+    NonUtf8,
+    Stop,
+    Cumulative,
+}
+
+#[test]
+fn writer_checkpoints_are_cumulative_and_close_each_drain() {
+    let rows = [
+        (CheckpointCase::Observations, 1, Some(0)),
+        (CheckpointCase::Empty, 0, None),
+        (CheckpointCase::LostOnly, 0, Some(1)),
+        (CheckpointCase::NonUtf8, 0, Some(1)),
+        (CheckpointCase::Stop, 0, Some(0)),
+        (CheckpointCase::Cumulative, 0, Some(2)),
+    ];
+    for (case, observations, checkpoint) in rows {
+        let mut world = World::new(4, 1, 1);
+        let first = world.repository(b"r", 1);
+        let child = world.commit(first);
+        let mut writer = observations::Writer::new(&world.env.limits.limits);
+        match case {
+            CheckpointCase::Observations => world.move_to(b"r", b"main", child),
+            CheckpointCase::Empty | CheckpointCase::Stop => {}
+            CheckpointCase::LostOnly => {
+                world.move_to(b"r", b"main", child);
+                world.move_to(b"r", b"main", first);
+                drop(world.domain.pop_observation());
+            }
+            CheckpointCase::NonUtf8 => world.create(b"r", &[255], child),
+            CheckpointCase::Cumulative => {
+                world.create(b"r", &[255], child);
+                let mut discarded = List::with_capacity(1024);
+                writer.drain(&mut world.domain, &mut discarded).expect("first omission");
+                world.move_to(b"r", b"main", child);
+                world.move_to(b"r", b"main", first);
+                drop(world.domain.pop_observation());
+            }
+        }
+        let mut output = List::with_capacity(4096);
+        if let CheckpointCase::Stop = case {
+            writer.stop(&mut world.domain, &mut output).expect("stop");
+        } else {
+            writer.drain(&mut world.domain, &mut output).expect("drain");
+        }
+        let mut observed = 0_u32;
+        let mut last = None;
+        let mut checkpoints = 0_u32;
+        for record in decoded_lines(&output).into_boxed() {
+            match record {
+                Recorded::Observed { .. } => {
+                    assert!(last.is_none(), "checkpoint ends the drain");
+                    observed = observed.checked_add(1).expect("test observations");
+                }
+                Recorded::Lost(n) => {
+                    checkpoints = checkpoints.checked_add(1).expect("test checkpoints");
+                    last = Some(n);
+                }
+            }
+        }
+        assert_eq!(observed, observations);
+        assert_eq!(last, checkpoint);
+        assert_eq!(checkpoints, u32::from(checkpoint.is_some()));
+        if checkpoint.is_some() {
+            assert_eq!(output.as_slice().last(), Some(&b'\n'));
+        }
+        let mut idle = List::with_capacity(1024);
+        writer.drain(&mut world.domain, &mut idle).expect("idle drain");
+        assert!(idle.is_empty(), "idle drain appends nothing");
+    }
+}
+
+#[test]
+fn writer_output_is_the_promises_judges_input() {
+    for forced in [false, true] {
+        let mut world = World::new(2, 64, 1);
+        let first = world.repository(b"r", 1);
+        let child = world.commit(first);
+        world.create(b"r", b"owned/work", child);
+        if forced {
+            world.delete(b"r", b"owned/work");
+            world.create(b"r", b"owned/work", first);
+        } else {
+            let grandchild = world.commit(child);
+            world.move_to(b"r", b"owned/work", grandchild);
+        }
+        let mut writer = observations::Writer::new(&world.env.limits.limits);
+        let mut output = List::with_capacity(4096);
+        writer.stop(&mut world.domain, &mut output).expect("complete output");
+        let mut judge = promises::Judge::new(promises::Profile {
+            client: 2,
+            marker: (boxed(b"<!--key:"), boxed(b"-->")),
+            owned_branches: Box::new([boxed(b"owned/")]),
+            allowed: Box::new([]),
+            bounds: promises::Bounds { objects: 4, decisions: 1 },
+        });
+        judge.decided();
+        for record in decoded_lines(&output).into_boxed() {
+            judge.observe(&record);
+        }
+        let expected = if forced {
+            promises::Verdict::Fail(Box::new([promises::Breach {
+                promise: promises::Promise::Forced,
+                subject: boxed(b"r/owned%2Fwork"),
+            }]))
+        } else {
+            promises::Verdict::Pass
+        };
+        assert_eq!(judge.verdict(), expected);
+    }
+}
+
+#[test]
+fn writer_resumes_without_losing_a_line_when_the_buffer_fills() {
+    let line = b"{\"observation\":\"moved\",\"repository\":\"r\",\"branch\":\"main\",\"from\":1,\"to\":2,\"by\":2,\"forward\":true}\n";
+    for capacity in [0, u32::try_from(line.len()).expect("line length")] {
+        let mut world = World::new(2, 64, 1);
+        let first = world.repository(b"r", 1);
+        let child = world.commit(first);
+        world.move_to(b"r", b"main", child);
+        let mut writer = observations::Writer::new(&world.env.limits.limits);
+        let mut full = List::with_capacity(capacity);
+        assert_eq!(writer.drain(&mut world.domain, &mut full), Err(skein_lib::Overflow));
+        let mut output = List::with_capacity(4096);
+        for byte in &full {
+            output.push(*byte).expect("prefix room");
+        }
+        writer.drain(&mut world.domain, &mut output).expect("resume");
+        let mut expected = List::with_capacity(4096);
+        for part in [line.as_slice(), b"{\"observations_lost\":0}\n"] {
+            for byte in part {
+                expected.push(*byte).expect("expected room");
+            }
+        }
+        assert_eq!(output, expected);
+    }
+}
+
+fn decoded_lines(output: &List<u8>) -> List<Recorded> {
+    let mut records = List::with_capacity(output.len());
+    let mut start = 0_usize;
+    for (end, byte) in output.as_slice().iter().enumerate() {
+        if *byte == b'\n' {
+            let line = output.as_slice().get(start..end).expect("line range");
+            records.push(observations::decode(line).expect("writer line")).expect("one record per newline");
+            start = end.checked_add(1).expect("bounded output");
+        }
+    }
+    assert_eq!(start, output.as_slice().len(), "every line has its newline");
+    records
+}

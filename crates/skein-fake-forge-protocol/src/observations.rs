@@ -4,7 +4,9 @@ use skein_fake_forge_domain::{Observation, Operation, api as a};
 use skein_json::writer::{Encoder, Limits as WriteLimits};
 use skein_lib::{List, Writer as Buffer, base64};
 mod read;
+mod writer;
 pub use read::{Reason, Refusal, decode, decode_with_limits};
+pub use writer::Writer;
 
 /// Appends one measured object and newline; a non-UTF-8 name writes nothing.
 /// The buffer must have room for the complete line; insufficient room writes nothing.
