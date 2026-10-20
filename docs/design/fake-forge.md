@@ -279,9 +279,13 @@ peers host theirs. The real loop hosts the same one.
   begun to stop may be; neither the peer nor the owner holds a hook back
   for the listener. A world asserts a delivery written only for a hook due inside
   its listener's life: a story set up before any host runs loses the
-  setup's hooks, and a story that asserts the hook its own end releases
-  ends only once each hook the forge released (its domain's tally) has its
-  delivery's outcome.
+  setup's hooks, and a story that asserts the hook its own end causes
+  ends only once the peer holds a delivery's outcome for each hook the
+  story's own changes cause, a count the story states. A hook is scheduled
+  at its change and released later, so no count of the hooks the forge
+  has released so far (its domain's tally) says what a story is still
+  owed: the story, which made the changes, does. Its domain's tally is
+  checked against that count at the end.
 
 ## 6. The throwaway Forgejo
 
