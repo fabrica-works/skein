@@ -12,6 +12,7 @@ use skein_lib::{Env, Id, List, Map, Queue, Slab, Time, Token};
 mod calls;
 mod github;
 mod github_calls;
+mod github_logs;
 use skein_forge::api;
 use skein_forge::forgejo::plans::{
     Body, Heard,
@@ -81,6 +82,12 @@ impl Waiting {
             deadline,
         }
     }
+    fn origin(&self) -> Option<u32> {
+        match &self.route {
+            Some(route) => route.origin,
+            None => None,
+        }
+    }
     fn answered_head(&mut self, status: u16, rate: Option<api::Rate>) {
         if status == 304 {
             self.free = self.free.checked_add(1).expect("bounded exchanges");
@@ -134,7 +141,9 @@ impl Component {
                 crate::settings::Kind::Forgejo => None,
                 crate::settings::Kind::GitHub => {
                     reserved = reserved.checked_add(1).expect("checked connection count");
-                    Some(Box::new(crate::installations::GitHub::new(limits.installations)))
+                    let mut github = crate::installations::GitHub::new(limits.installations);
+                    github.said_origins = Queue::with_capacity(limits.log_origins);
+                    Some(Box::new(github))
                 }
             };
             github.push(state_github).expect("checked forge count");
@@ -800,6 +809,15 @@ impl Component {
         count
     }
     fn open_call(&mut self, at: u32, env: &Env<Limits>, io: &mut Queue<skein_io::Request>) -> Token {
+        self.open_call_origin(at, None, env, io)
+    }
+    fn open_call_origin(
+        &mut self,
+        at: u32,
+        origin: Option<u32>,
+        env: &Env<Limits>,
+        io: &mut Queue<skein_io::Request>,
+    ) -> Token {
         assert!(self.next_token < 1_u64.checked_shl(59).expect("token prefix"), "connection token prefix");
         let owner = Token::new(self.next_token);
         self.next_token = self.next_token.checked_add(1).expect("connection token space");
@@ -807,10 +825,20 @@ impl Component {
         self.connection_slab.reclaim();
         let id = self
             .connection_slab
-            .insert(Connection::new(forge, &env.limits, self.shared, env.now.saturating_add(env.limits.deadline)))
+            .insert(Connection::at_origin(
+                forge,
+                origin,
+                &env.limits,
+                self.shared,
+                env.now.saturating_add(env.limits.deadline),
+            ))
             .expect("free connection slot");
         let _previous = self.connections.insert(owner, id).expect("connection index has room");
-        io.push(skein_io::Request::Connect { owner, addr: forge.address });
+        let address = match origin {
+            Some(at) => forge.log_origins.get(at).expect("origin").address,
+            None => forge.address,
+        };
+        io.push(skein_io::Request::Connect { owner, addr: address });
         owner
     }
     fn open_own(&mut self, at: u32, env: &Env<Limits>, io: &mut Queue<skein_io::Request>) -> Token {

@@ -7,6 +7,7 @@ mod github_calls;
 mod github_files;
 mod github_installation_loss;
 mod github_installations;
+mod github_logs;
 pub(crate) mod github_renewal;
 mod github_start;
 mod github_unknown_repository;
@@ -310,21 +311,21 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
 // Four hooks = 4*(HTTP 18_418 + tokenizer 2082 + decoder 16_668
 // + socket 69_696 + HMAC 208 + hint 88 + text/body 1170 + queues 368
 // + head 8192 + chunks 2048) + hook slab/index 4832 = 480_584.
-// Common calls = 2*544 (Waiting slab slots) + 288 (holders tree)
+// Common calls = 2*552 (Waiting slab slots) + 288 (holders tree)
 // + 2*16 (drive list) + 288 (call index) + 2*3*512 (operation copies)
-// + 2752 (held tree) + 2*65536 (held answers) = 138_592.
+// + 2752 (held tree) + 2*65536 (held answers) = 138_608.
 // Forgejo's call payload = read/write boxes 1208+408, staging 64*8
 // + 72*16 + 72*128, answer 65536, ChangedFile rows 8*40 + 8*2*128,
 // File/Commit rows 8*48 + 8*32, texts 4*128 + 13*128 and users 8*48
 // = 83_600. Its tables = repository tree 904 + 2*3*128
 // + user tree 1104 + 8*128 = 3800. Tree bounds include internal nodes.
-// Configured lists = 2*(Forge 136 + Start 24 + optional GitHub box 8
-// + optional token 16 + optional OwnPlan 344) = 1056. Each forge's
+// Configured lists = 2*(Forge 168 + Start 24 + optional GitHub box 8
+// + optional token 16 + optional OwnPlan 344) = 1120. Each forge's
 // common credential/secret/send/TLS = 64 + 128 + 32768 + 456_809 = 489_769.
 // Owner/framing/answer = 2*16 + (3+9) + 16 + Answered 224 = 284.
-// Total = 2*765459 + connection index 288 + slab 2*1400 + 480584
-// + 138592 + 2*83600 + 3800 + 1056 + 489769 + 284 = 2_815_291.
-const FIXTURE_HEAP: u64 = 2_815_291;
+// Total = 2*765459 + connection index 288 + slab 2*1408 + 480584
+// + 138608 + 2*83600 + 3800 + 1120 + 489769 + 284 = 2_815_387.
+const FIXTURE_HEAP: u64 = 2_815_387;
 
 // Complete GitHub fixture: the same common limits and owned bytes. Its
 // decoder's fixed size is 2400, including the 96-byte GraphQL pull builder,
@@ -345,8 +346,11 @@ const FIXTURE_HEAP: u64 = 2_815_291;
 // + 3*(6*128+64) (row accounts/tokens) + 7*64 (token handoffs)
 // + Event 224 + 3*128 (cursor/event accounts) = 44_208. Per-scope clocks,
 // eligibility/Full revisions, retries, held Contents and old/new Full
-// handoffs coexist with staging and pages; the GitHub box itself is 464.
-// Key/JWT = 1200+512, so each GitHub forge's App share is 46_384.
+// handoffs coexist with staging and pages; the GitHub box itself is 504.
+// Log origins at log_origins=2: configured 2*64, said 2*24, plus hosts:
+// 2*64 + 2*24 + 2*(253+1024) = 2730 bytes, with DNS hosts and said Location
+// hosts bounded by target_bytes. The queue header is in the GitHub box.
+// Key/JWT = 1200+512, so each GitHub forge's App and origins share is 49_154.
 // GitHub's tables are 3888; discovery's one-row tables are 2056.
 // Protection reserves 8*8 ruleset ids beside the context union. Its state
 // adds 120 bytes per read plan and 96 bytes per connection decoder.
@@ -366,15 +370,15 @@ const FIXTURE_HEAP: u64 = 2_815_291;
 // coexist, so each call pays 2*24 = 48 bytes. Call payload = 210_370.
 // Route/discovery envelopes are in Waiting's slab slot; both own-plan
 // slots occupy 344 bytes each.
-// Total = 3*768371 + index 288 + slab 3*1400 + 491752 + 138592
-// + 2*210370 + 3888 + 1056 + 489769 + 46384 + 284 = 3_902_066.
-const GITHUB_FIXTURE_HEAP: u64 = 3_902_066;
+// Total = 3*768371 + index 288 + slab 3*1408 + 491752 + 138608
+// + 2*210370 + 3888 + 1120 + 489769 + 49154 + 284 = 3_904_940.
+const GITHUB_FIXTURE_HEAP: u64 = 3_904_940;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
-// slab 544 + drive-list pair 16 + 3*512 operation copies + 65536 held
+// slab 552 + drive-list pair 16 + 3*512 operation copies + 65536 held
 // answer bytes, plus the selected dialect's payload from the ledgers above.
-const FORGEJO_CALL_SLOT: u64 = 151_232; // 544 + 16 + 1536 + 65536 + 83600.
-const GITHUB_CALL_SLOT: u64 = 278_002; // 544 + 16 + 1536 + 65536 + 210370.
+const FORGEJO_CALL_SLOT: u64 = 151_240; // 552 + 16 + 1536 + 65536 + 83600.
+const GITHUB_CALL_SLOT: u64 = 278_010; // 552 + 16 + 1536 + 65536 + 210370.
 const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
 const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
 const MIXED: limits::Forges = limits::Forges { forgejo: 1, github: 1 };
@@ -395,7 +399,7 @@ fn a_forgejo_forge_pays_no_github_share() {
     assert_eq!(fixture_bound(FORGEJO), FIXTURE_HEAP);
     assert!(fixture_bound(FORGEJO) < fixture_bound(GITHUB));
     let l = fixtures::limits();
-    let larger = Limits { key_bytes: u32::MAX, installations: u32::MAX, ..l };
+    let larger = Limits { key_bytes: u32::MAX, installations: u32::MAX, log_origins: u32::MAX, ..l };
     assert_eq!(
         limits::worst_case(&l, &fixtures::shared(), FORGEJO, 0),
         limits::worst_case(&larger, &fixtures::shared(), FORGEJO, 0),

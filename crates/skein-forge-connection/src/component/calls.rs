@@ -62,7 +62,7 @@ impl Component {
             calls.push((*call, *id)).expect("bounded calls");
         }
         for (call, id) in calls.into_boxed() {
-            if up.len().saturating_sub(above) >= above_room
+            if up.len().saturating_sub(above).saturating_add(1) >= above_room
                 || io.len().saturating_sub(below).saturating_add(1) >= below_room
             {
                 self.wake = Some(env.now);
@@ -148,6 +148,9 @@ impl Component {
                 break;
             }
             let c = self.connection_slab.get_mut(*id).expect("indexed connection");
+            if c.drain_redirect(env, io, below_room.saturating_sub(io.len().saturating_sub(below)).saturating_sub(1)) {
+                self.wake = Some(env.now);
+            }
             if self.closed || (c.phase == Phase::Idle && c.deadline <= Some(env.now)) || c.phase == Phase::Closed {
                 c.close(c.in_flight(), io);
             }
@@ -198,7 +201,7 @@ impl Component {
                 continue;
             }
             if c.phase == Phase::Idle && !c.closing && !self.holders.contains_key(owner) {
-                if c.forge == forge {
+                if c.forge == forge && c.origin == waiting.origin() {
                     token = Some(*owner);
                     break;
                 }
@@ -217,7 +220,8 @@ impl Component {
             && call_connections < env.limits.connections
             && self.connections.len() < self.connections.capacity()
         {
-            token = Some(self.open_call(at, env, io));
+            let origin = waiting.origin();
+            token = Some(self.open_call_origin(at, origin, env, io));
         }
         if token.is_none() {
             if let Some(other) = other {

@@ -417,6 +417,7 @@ fn two_idle_forge_one_connections() -> Machine {
         .push(Forge {
             number: OTHER,
             kind: Kind::Forgejo,
+            log_origins: skein_lib::List::with_capacity(0),
             address: skein_io::Addr::Ip(([127, 0, 0, 1], 3001).into()),
             transport: Transport::Plaintext { name: None },
             access: Some(fixtures::access(fixtures::TOKEN, fixtures::WRITER, None)),

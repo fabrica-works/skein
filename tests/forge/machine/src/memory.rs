@@ -217,6 +217,7 @@ impl World {
                 .push(Forge {
                     number: u16::try_from(at + 1).expect("forge"),
                     kind,
+                    log_origins: List::with_capacity(0),
                     address: skein_io::Addr::Ip(([127, 0, 0, 1], 3000 + u16::try_from(at).expect("port")).into()),
                     transport: Transport::Tls { server_name: pki::name(), trust: trust.clone() },
                     access: None,

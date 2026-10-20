@@ -163,7 +163,8 @@ at or below a space, at or above DEL, or one of `/:[]`; an access that
 other than tab, or DEL, which skein-http would refuse in every request's
 head; more than `log_origins` origins, an origin on a Forgejo forge, and
 an origin whose host is not a DNS name or whose address 3.1's rules
-refuse; a listener that is not a loopback IP socket; a word that is not
+refuse; an `https` origin on a plaintext forge, which has no trust to
+check it with; a listener that is not a loopback IP socket; a word that is not
 1 to 16 bytes of lowercase ASCII letters, digits and `-`; and the limits
 7.4 checks. A TLS name is refused by none of them: `Name` holds only a
 DNS name or an IP address, and either makes a `Host`. The check makes
@@ -759,7 +760,10 @@ It is the sum of:
   expiry and due time, pending work, selected work and retry state,
   a deferred Identity candidate and one held git token at `token_bytes`
   with its account and the old/new API token handoff, all at simultaneous
-  peak; its log origins, each a host of 253 bytes and an address; and its puller, its
+  peak; its log origins, each a host of 253 bytes and an address, and its
+  said origins, each a host bounded by `target_bytes` (the dialect
+  bounds Location, including the host), both at `log_origins`; and its
+  puller, its
   validator, a guid, the delivery's decoder and the hint it holds.
 
 A long thread or a large payload costs time, not memory. The owner

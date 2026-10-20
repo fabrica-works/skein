@@ -102,6 +102,7 @@ impl Hosted {
             repositories: 2,
             users: 256,
             installations: 3,
+            log_origins: 2,
             deadline: Duration::from_secs(10),
             idle: Duration::from_secs(4),
             start_backoff: Duration::from_secs(1),
@@ -123,6 +124,7 @@ impl Hosted {
             .push(skein_forge_connection::settings::Forge {
                 number: 1,
                 kind: skein_forge_connection::settings::Kind::Forgejo,
+                log_origins: List::with_capacity(0),
                 address: skein_io::Addr::Ip(([127, 0, 0, 1], f.instance.port()).into()),
                 transport: skein_forge_connection::settings::Transport::Plaintext { name: None },
                 access: Some(skein_forge_connection::Access {

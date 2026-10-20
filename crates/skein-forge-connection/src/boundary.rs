@@ -21,9 +21,15 @@ pub enum Change {
     Renamed,
 }
 /// A diagnostic for the owner's log (forge-connection.md, 4.4).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Fact {
-    Unkept { installation: u64 },
+    /// An unconfigured job log origin, once per remembered origin per connect.
+    Origin {
+        origin: skein_forge::github::redirect::Origin,
+    },
+    Unkept {
+        installation: u64,
+    },
 }
 
 /// One call's terminal, the forge client's `Event::Answered` field for field. The

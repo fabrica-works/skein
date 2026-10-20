@@ -108,6 +108,8 @@ const GITHUB_HEADERS: u32 = 6;
 /// One connection's machines, socket identity, request and pending output.
 pub(crate) struct Connection {
     pub(crate) forge: u16,
+    pub(crate) origin: Option<u32>,
+    pub(crate) draining: bool,
     kind: Kind,
     pub(crate) phase: Phase,
     pub(crate) deadline: Option<Time>,
@@ -137,15 +139,33 @@ pub(crate) struct Connection {
     json_limits: tokenizer::Limits,
 }
 impl Connection {
+    #[cfg(test)]
     pub fn new(forge: &Forge, l: &Limits, shared: Shared, deadline: Time) -> Self {
-        let tls = match &forge.transport {
-            Transport::Plaintext { .. } => None,
-            Transport::Tls { trust, server_name } => {
+        Self::at_origin(forge, None, l, shared, deadline)
+    }
+    #[expect(clippy::manual_map, reason = "the programming model excludes closures")]
+    pub fn at_origin(forge: &Forge, origin: Option<u32>, l: &Limits, shared: Shared, deadline: Time) -> Self {
+        let configured = match origin {
+            Some(at) => Some(forge.log_origins.get(at).expect("configured log origin")),
+            None => None,
+        };
+        let tls = match (&forge.transport, configured) {
+            (Transport::Plaintext { .. } | Transport::Tls { .. }, Some(configured)) if !configured.origin.tls => None,
+            (Transport::Tls { trust, .. }, Some(configured)) => Some(skein_tls::client::Client::new(
+                trust,
+                crate::settings::log_name(&configured.origin).expect("checked DNS name"),
+                &l.tls,
+            )),
+            (Transport::Plaintext { .. }, Some(_)) => unreachable!("HTTPS origin requires trust"),
+            (Transport::Plaintext { .. }, None) => None,
+            (Transport::Tls { trust, server_name }, None) => {
                 Some(skein_tls::client::Client::new(trust, server_name.clone(), &l.tls))
             }
         };
         Self {
             forge: forge.number,
+            origin,
+            draining: false,
             kind: forge.kind,
             phase: Phase::Connecting,
             deadline: Some(deadline),
@@ -175,6 +195,12 @@ impl Connection {
             json_limits: limits::documents(l).json,
         }
     }
+    fn host(&self, forge: &Forge) -> Box<[u8]> {
+        match self.origin {
+            Some(at) => crate::settings::log_host(forge.log_origins.get(at).expect("configured origin")),
+            None => crate::settings::host(forge).expect("checked forge host"),
+        }
+    }
     pub fn start(
         &mut self,
         env: &Env<Limits>,
@@ -192,9 +218,7 @@ impl Connection {
                 };
                 // Host, Authorization, User-Agent, Content-Type and Range; HTTP adds Content-Length.
                 let mut headers = List::with_capacity(5);
-                headers
-                    .push(field(b"Host", &crate::settings::host(forge).expect("checked forge host")))
-                    .expect("five Forgejo header fields");
+                headers.push(field(b"Host", &self.host(forge))).expect("five Forgejo header fields");
                 headers.push(field(b"Authorization", authorization.expose())).expect("five Forgejo header fields");
                 headers.push(field(b"User-Agent", user_agent)).expect("five Forgejo header fields");
                 let method = match encoded.method {
@@ -222,9 +246,7 @@ impl Connection {
                     }
                 }
                 let mut headers = List::with_capacity(GITHUB_HEADERS);
-                headers
-                    .push(field(b"Host", &crate::settings::host(forge).expect("checked forge host")))
-                    .expect("six GitHub header fields");
+                headers.push(field(b"Host", &self.host(forge))).expect("six GitHub header fields");
                 headers.push(field(b"User-Agent", user_agent)).expect("six GitHub header fields");
                 for (name, value) in github::request::fields(&encoded) {
                     headers.push(field(name, value)).expect("six GitHub header fields");
@@ -282,6 +304,34 @@ impl Connection {
             );
         }
         Ok(())
+    }
+    pub fn drain_redirect(&mut self, env: &Env<Limits>, io: &mut Queue<skein_io::Request>, budget: u32) -> bool {
+        if !self.draining {
+            return false;
+        }
+        if self.deadline <= Some(env.now) {
+            self.timeout();
+        }
+        self.pump(env, io, budget);
+        drop(self.heard());
+        if self.phase == Phase::Idle || self.phase == Phase::Closed {
+            self.draining = false;
+        }
+        self.ready()
+    }
+    pub fn discard_redirect(&mut self, env: &Env<Limits>) {
+        if self.phase == Phase::Reading {
+            self.draining = true;
+            self.receive = Receiving::Empty;
+            self.json_next = None;
+            for _ in 0..self.json_up.len() {
+                drop(self.json_up.pop());
+            }
+            for _ in 0..self.json_down.len() {
+                drop(self.json_down.pop());
+            }
+            self.http_down(env, http::Request::Discard);
+        }
     }
     pub fn connect(&mut self, env: &Env<Limits>) {
         match &mut self.tls {

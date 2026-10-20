@@ -37,6 +37,8 @@ pub struct Limits {
     pub users: u32,
     /// The installations kept per GitHub forge (4.4).
     pub installations: u32,
+    /// Configured and remembered job log origins per GitHub forge, at least one.
+    pub log_origins: u32,
     /// A call's, at most the client's `lifetime`; also each start read's.
     pub deadline: Duration,
     /// How long an idle connection is kept, below the forge's keep-alive timeout.
@@ -120,8 +122,12 @@ pub enum Stacked {
 
 /// Why the component cannot start (protocol/configuration.md, 7:
 /// "each failure naming both limits").
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Unusable {
+    /// More configured job log origins than the bound.
+    LogOrigins { forge: u16, origins: u32, limit: u32 },
+    /// A refused origin, including its dialect, name, address or missing TLS trust.
+    Origin { forge: u16, origin: skein_forge::github::redirect::Origin },
     /// A limit is 0, or the worst case passes a `u64`.
     Zero,
     /// Owner word outside its alphabet or length: terminal before begin.
@@ -318,6 +324,9 @@ fn check_github(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusa
     Ok(())
 }
 fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable> {
+    if l.log_origins == 0 {
+        return Err(Unusable::Zero);
+    }
     if settings.forges.len() > l.forges {
         return Err(Unusable::Forges { forges: l.forges });
     }
@@ -357,6 +366,7 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
             }
             skein_io::Addr::InProcess(_) => return Err(Unusable::Address { forge: forge.number }),
         }
+        check_origins(l, s, settings, forge, tls)?;
         // Longest method, target, seven fields and final empty line. Decimal lengths
         // use u64's longest spelling; headers here reserve their complete framing.
         let head = u64::from(l.target_bytes)
@@ -384,6 +394,46 @@ fn check_settings(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unu
         match hooks.listener {
             skein_io::Addr::Ip(ip) if ip.ip().is_loopback() => {}
             skein_io::Addr::Ip(_) | skein_io::Addr::InProcess(_) => return Err(Unusable::Listener),
+        }
+    }
+    Ok(())
+}
+fn check_origins(
+    l: &Limits,
+    s: &Shared,
+    settings: &Settings,
+    forge: &crate::settings::Forge,
+    tls: bool,
+) -> Result<(), Unusable> {
+    if forge.log_origins.len() > l.log_origins {
+        return Err(Unusable::LogOrigins {
+            forge: forge.number,
+            origins: forge.log_origins.len(),
+            limit: l.log_origins,
+        });
+    }
+    for configured in &forge.log_origins {
+        let origin = &configured.origin;
+        let address_ok = match configured.address {
+            skein_io::Addr::Ip(ip) => origin.tls || ip.ip().is_loopback(),
+            skein_io::Addr::InProcess(_) => false,
+        };
+        if forge.kind != Kind::GitHub
+            || crate::settings::log_name(origin).is_none()
+            || !address_ok
+            || (origin.tls && !tls)
+        {
+            return Err(Unusable::Origin { forge: forge.number, origin: origin.clone() });
+        }
+        let head = u64::from(l.target_bytes)
+            .checked_add(u64::try_from(crate::settings::log_host(configured).len()).ok().ok_or(Unusable::Zero)?)
+            .ok_or(Unusable::Zero)?
+            .checked_add(u64::try_from(settings.user_agent.len()).ok().ok_or(Unusable::Zero)?)
+            .ok_or(Unusable::Zero)?
+            .checked_add(192)
+            .ok_or(Unusable::Zero)?;
+        if head > u64::from(http(l, origin.tls, &s.io).request) {
+            return Err(Unusable::Origin { forge: forge.number, origin: origin.clone() });
         }
     }
     Ok(())
@@ -592,6 +642,22 @@ fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
         .checked_add(u64::try_from(size_of::<crate::Event>()).ok()?)?
         .checked_add(u64::from(s.name_bytes).checked_mul(3)?)
 }
+fn log_origin_heap(l: &Limits) -> Option<u64> {
+    skein_lib::List::<crate::settings::LogOrigin>::worst_case(l.log_origins)?
+        .checked_add(skein_lib::Queue::<skein_forge::github::redirect::Origin>::worst_case(l.log_origins)?)?
+        .checked_add(u64::from(l.log_origins).checked_mul(253_u64.checked_add(u64::from(l.target_bytes))?)?)
+}
+fn github_forge_heap(l: &Limits, s: &Shared, forges: u32) -> Option<u64> {
+    if forges == 0 {
+        return Some(0);
+    }
+    installation_heap(l, s)?
+        .checked_add(log_origin_heap(l)?)?
+        .checked_add(u64::try_from(size_of::<crate::installations::GitHub>()).ok()?)?
+        .checked_add(u64::from(l.key_bytes))?
+        .checked_add(u64::try_from(skein_forge::github::jwt::JWT_BYTES).ok()?)?
+        .checked_mul(u64::from(forges))
+}
 /// Conservative complete heap, pricing TLS on every connection because this interface
 /// knows each kind's count, not their transports. Raw growth includes its doubling overlap.
 #[must_use]
@@ -609,15 +675,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: Forges, owned_bytes: u64) -> O
     let count = forges.forgejo.checked_add(forges.github)?;
     let docs = documents(l);
     let raw = u64::from(s.answer_bytes).checked_mul(2)?;
-    let github = if forges.github > 0 {
-        installation_heap(l, s)?
-            .checked_add(u64::try_from(size_of::<crate::installations::GitHub>()).ok()?)?
-            .checked_add(u64::from(l.key_bytes))?
-            .checked_add(u64::try_from(skein_forge::github::jwt::JWT_BYTES).ok()?)?
-            .checked_mul(u64::from(forges.github))?
-    } else {
-        0
-    };
+    let github = github_forge_heap(l, s, forges.github)?;
     let decoder = decoder_heap(l, forges)?;
     let json = if forges.github > 0 { github_mint_documents(l).json } else { docs.json };
     let exchange = if forges.github > 0 {

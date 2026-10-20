@@ -28,6 +28,15 @@ pub struct Forge {
     /// The access the forge holds; with none it runs no start, and its calls are
     /// answered `NotConnected`.
     pub access: Option<Access>,
+    /// Resolved job log origins; empty reads no job log (forge-connection.md, 4.5).
+    pub log_origins: List<LogOrigin>,
+}
+
+/// One permitted job log origin and its address resolved before the loop.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct LogOrigin {
+    pub origin: skein_forge::github::redirect::Origin,
+    pub address: Addr,
 }
 
 /// What lets the component act on a forge as its user (forge-connection.md,
@@ -79,6 +88,24 @@ pub(crate) fn host(forge: &Forge) -> Option<Box<[u8]>> {
     };
     skein_forge::host::host(address, name)
 }
+pub(crate) fn log_host(origin: &LogOrigin) -> Box<[u8]> {
+    let Addr::Ip(address) = origin.address else { unreachable!("checked origin address") };
+    skein_forge::host::host(core::net::SocketAddr::new(address.ip(), origin.origin.port), Some(&origin.origin.host))
+        .expect("checked origin host")
+}
+
+#[expect(clippy::disallowed_methods, reason = "TLS Name validates the owner supplied DNS text at start")]
+pub(crate) fn log_name(origin: &skein_forge::github::redirect::Origin) -> Option<skein_tls::Name> {
+    if origin.host.len() > 253 {
+        return None;
+    }
+    let name = skein_tls::Name::new(core::str::from_utf8(&origin.host).ok()?)?;
+    match name.server() {
+        skein_tls::Server::Dns(_) => Some(name),
+        skein_tls::Server::Ip(_) => None,
+    }
+}
+
 /// Newly retained owner slices, priced separately from bounded tables and credentials.
 #[must_use]
 pub fn owned_bytes(settings: &Settings) -> Option<u64> {

@@ -351,6 +351,7 @@ pub(crate) enum Read {
     reason = "baseline consumption, read scheduling, mint staleness, identity and connect notification are independent"
 )]
 pub(crate) struct GitHub {
+    pub said_origins: skein_lib::Queue<skein_forge::github::redirect::Origin>,
     pub jwt: Jwt,
     pub accepted: Set<u64>,
     pub known: Map<u64, Accepted>,
@@ -376,6 +377,7 @@ pub(crate) struct GitHub {
 impl GitHub {
     pub fn new(cap: u32) -> Self {
         Self {
+            said_origins: skein_lib::Queue::with_capacity(0),
             jwt: Jwt::new(),
             accepted: Set::with_capacity(cap),
             known: Map::with_capacity(cap),
@@ -401,6 +403,9 @@ impl GitHub {
     }
     /// Access replacement drops private work and credentials, keeping the comparison table.
     pub fn forget(&mut self) {
+        for _ in 0..self.said_origins.len() {
+            drop(self.said_origins.pop());
+        }
         self.connect = self.connect.wrapping_add(1);
         self.jwt.forget();
         self.read = Read::Idle;

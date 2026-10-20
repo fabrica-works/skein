@@ -21,6 +21,7 @@ pub fn limits() -> Limits {
         repositories: 2,
         users: 8,
         installations: 3,
+        log_origins: 2,
         deadline: Duration::from_secs(10),
         idle: Duration::from_secs(5),
         start_backoff: Duration::from_secs(1),
@@ -92,6 +93,7 @@ pub fn settings() -> Settings {
         .push(Forge {
             number: FORGE,
             kind: Kind::Forgejo,
+            log_origins: List::with_capacity(0),
             address: skein_io::Addr::Ip(SocketAddr::from((Ipv4Addr::LOCALHOST, 3000))),
             transport: Transport::Plaintext { name: None },
             access: Some(access(TOKEN, WRITER, None)),

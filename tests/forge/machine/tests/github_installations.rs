@@ -112,7 +112,7 @@ fn overflow_keeps_a_later_accepted_installation() {
     assert_eq!(changes(&world), vec![(3, Some((24, b"other".as_slice())), Change::Suspended)]);
     assert_eq!(world.facts().len(), 1);
     match world.facts().first().expect("overflow fact") {
-        Event::Fact { forge, fact } => assert_eq!((*forge, *fact), (FORGE, Fact::Unkept { installation: 2 })),
+        Event::Fact { forge, fact } => assert_eq!((*forge, fact.clone()), (FORGE, Fact::Unkept { installation: 2 })),
         Event::Installation { .. }
         | Event::GitToken { .. }
         | Event::Answered(_)

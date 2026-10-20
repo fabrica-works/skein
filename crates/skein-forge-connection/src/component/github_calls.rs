@@ -24,6 +24,7 @@ pub(crate) struct Route {
     selected: Selected,
     token_revision: u64,
     status: Option<u16>,
+    pub(super) origin: Option<u32>,
 }
 /// One call's finite eligibility snapshot and private validated row.
 #[derive(Debug)]
@@ -95,7 +96,8 @@ impl Component {
             }
             let row = gh.rows.get(&selected.id).expect("eligible row");
             if waiting.route.is_none() || waiting.plan.is_none() {
-                waiting.route = Some(Route { selected, token_revision: row.token_revision, status: None });
+                waiting.route =
+                    Some(Route { selected, token_revision: row.token_revision, status: None, origin: None });
             }
             return Ok(gh.identity_checked && row.credential(env.now).is_some());
         }
@@ -103,8 +105,9 @@ impl Component {
             if waiting.revoked || !gh.valid(route.selected) {
                 return Err(api::Error::Forbidden);
             }
-            return Ok(gh.identity_checked
-                && gh.rows.get(&route.selected.id).expect("eligible row").credential(env.now).is_some());
+            return Ok(route.origin.is_some()
+                || (gh.identity_checked
+                    && gh.rows.get(&route.selected.id).expect("eligible row").credential(env.now).is_some()));
         }
         let owner = match self.github_tables.repository(waiting.repository) {
             Some(row) => Some(row.owner_id),
@@ -149,6 +152,7 @@ impl Component {
             selected: Selected { id: installation, connect: gh.connect, revision: row.revision },
             token_revision: row.token_revision,
             status: None,
+            origin: None,
         });
         Ok(gh.identity_checked && row.credential(env.now).is_some())
     }
@@ -165,6 +169,13 @@ impl Component {
         let above = up.len();
         let below = io.len();
         let waiting = self.waiting.get(id).expect("call");
+        if waiting.plan.is_none()
+            && self.settings.forges.get(at).expect("forge").log_origins.is_empty()
+            && let Some(api::Op::Read(api::Read::Job { .. })) = waiting.op.as_ref()
+        {
+            self.finish(call, id, Err(api::Error::Unavailable), up);
+            return;
+        }
         if waiting.plan.is_none() && !admitted(waiting.op.as_ref().expect("operation")) {
             self.finish(call, id, Err(api::Error::Refused), up);
             return;
@@ -261,7 +272,7 @@ impl Component {
         let token = self.waiting.get(id).expect("call").connection.expect("holder");
         let connection = *self.connections.get(&token).expect("connection");
         for _ in 0..64_u32 {
-            if up.len().saturating_sub(above) >= budget.0
+            if up.len().saturating_sub(above).saturating_add(1) >= budget.0
                 || io.len().saturating_sub(below).saturating_add(1) >= budget.1
             {
                 self.wake = Some(env.now);
@@ -333,16 +344,19 @@ impl Component {
         let encoded = github::request::encode(&exchange.request, &crate::limits::github_documents(&env.limits));
         match encoded {
             Ok(encoded) => match encoded.auth {
-                Auth::Installation => {}
-                Auth::App | Auth::None => unreachable!("ordinary GitHub plans require Installation"),
+                Auth::Installation | Auth::None => {}
+                Auth::App => unreachable!("ordinary GitHub plans use Installation or no credential"),
             },
             Err(_) => return Err(api::Error::Refused),
         }
         let route = waiting.route.as_mut().expect("eligible route");
         let gh = self.github.get(at).expect("forge").as_ref().expect("GitHub");
         let row = gh.rows.get(&route.selected.id).expect("eligible row");
-        let authorization =
-            github::credential::bearer(row.credential(env.now).expect("usable Full")).expect("validated token");
+        let authorization = if route.origin.is_some() {
+            None
+        } else {
+            Some(github::credential::bearer(row.credential(env.now).expect("usable Full")).expect("validated token"))
+        };
         route.token_revision = row.token_revision;
         route.status = None;
         let token = waiting.connection.expect("holder");
@@ -352,7 +366,7 @@ impl Component {
             env,
             self.settings.forges.get(at).expect("forge"),
             &self.settings.user_agent,
-            Exchange::GitHub { exchange, authorization: Some(authorization) },
+            Exchange::GitHub { exchange, authorization },
         ) {
             Ok(()) => {}
             Err(connection::Refusal::GitHub(_)) => return Err(api::Error::Refused),
@@ -405,20 +419,26 @@ impl Component {
             CallPlan::Forgejo(_) => unreachable!("GitHub plan"),
         };
         let step = plan.heard(heard, bounds(page_size, env, &self.shared), &self.settings.word, tables);
-        let step = if refused { Ok(Some(Step::Done(Err(api::Error::Forbidden)))) } else { step };
-        if refused && valid {
+        let step =
+            if refused && route.origin.is_none() { Ok(Some(Step::Done(Err(api::Error::Forbidden)))) } else { step };
+        if refused && route.origin.is_none() && valid {
             self.github_token_refused(at, route.selected.id, route.token_revision, env);
         }
         (step, valid)
     }
-    fn release_github_call(&mut self, id: Id<Waiting>, env: &Env<Limits>, io: &mut Queue<skein_io::Request>) {
+    pub(super) fn release_github_call(
+        &mut self,
+        id: Id<Waiting>,
+        env: &Env<Limits>,
+        io: &mut Queue<skein_io::Request>,
+    ) {
         let waiting = self.waiting.get_mut(id).expect("call");
         if let Some(token) = waiting.connection.take() {
             let c =
                 self.connection_slab.get_mut(*self.connections.get(&token).expect("connection")).expect("connection");
             if c.phase == Phase::Idle && !c.in_flight() {
                 c.deadline = Some(env.now.saturating_add(env.limits.idle));
-            } else {
+            } else if !c.draining {
                 c.close(c.in_flight(), io);
             }
             let _holder = self.holders.remove(&token);
@@ -449,11 +469,8 @@ impl Component {
                 }
                 false
             }
-            Step::Redirect { .. } => {
-                // Following redirects is o/github-runtime's component work;
-                // its implementation replaces this refusal (forge-github.md, 10).
-                self.release_github_call(id, env, io);
-                self.finish(call, id, Err(api::Error::Unavailable), up);
+            Step::Redirect { redirect, retention } => {
+                self.follow_github_log(holder, redirect, retention, env, up, io);
                 true
             }
             Step::Done(result) => {
@@ -510,11 +527,8 @@ impl Component {
                     Ok(Step::Send(exchange)) => {
                         github_plan(self.waiting.get_mut(id).expect("call")).set_pending(exchange);
                     }
-                    Ok(Step::Redirect { .. }) => {
-                        // o/github-runtime's redirect following replaces this
-                        // refusal (forge-github.md, 10).
-                        self.release_github_call(id, env, io);
-                        self.finish(call, id, Err(api::Error::Unavailable), up);
+                    Ok(Step::Redirect { redirect, retention }) => {
+                        self.follow_github_log(holder, redirect, retention, env, up, io);
                         return;
                     }
                     Ok(Step::Done(result)) => {
@@ -549,7 +563,7 @@ impl Component {
         }
     }
 }
-fn github_plan(waiting: &mut Waiting) -> &mut Plan {
+pub(super) fn github_plan(waiting: &mut Waiting) -> &mut Plan {
     match waiting.plan.as_mut().expect("plan") {
         CallPlan::GitHub(plan) => plan,
         CallPlan::Forgejo(_) => unreachable!("GitHub plan"),
@@ -567,8 +581,9 @@ fn bounds(page_size: u32, env: &Env<Limits>, shared: &crate::Shared) -> Bounds {
 fn admitted(op: &api::Op) -> bool {
     match op {
         api::Op::Read(read) => match read {
-            api::Read::Protection { .. } | api::Read::Job { .. } => false,
-            api::Read::File { .. }
+            api::Read::Protection { .. } => false,
+            api::Read::Job { .. }
+            | api::Read::File { .. }
             | api::Read::Compare { .. }
             | api::Read::PullFiles { .. }
             | api::Read::Locate { .. }
