@@ -978,12 +978,15 @@ Each within skein's suites' budgets (testing-strategy.md, section 8).
       A command that has not exited when its story ends fails the test,
       naming it, and the harness kills it. Its standard error's tail is
       written on a failure, as the binary's is;
-  - **keeps a value for the test:** the value, or an attribute the test
-    names, of the first element a CSS selector the test gives finds in
-    the person's page, as it stands at the step, under a name the test
+  - **keeps a value for the test:** an attribute the test names, or
+    else the `value` attribute, of the first element a CSS selector the
+    test gives finds in the person's page, as its document holds it at
+    the step (browser.md, sections 5 and 6), under a name the test
     gives. A selector, not a target, since a hidden field holds no role
-    a person finds it by. A selector that finds no element, or an
-    element without that attribute, fails the step. The run hands back what each person kept, by name, with each
+    a person finds it by, and its `value` attribute is its value. It
+    reads markup: what a person typed into a field a find reads, by its
+    target. A selector that finds no element, or an element without
+    that attribute, fails the step. The run hands back what each person kept, by name, with each
     link a command's step opened, so that the test reads a peer's state
     by what the story saw;
   - **awaits trouble** with given words, which the person's pages then

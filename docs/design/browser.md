@@ -145,6 +145,9 @@ caps, as for any machine stacked on a stream (io.md, 2).
   `Log` and `Inspector` (the document's object, exceptions, console and
   log entries, crashes). Several of these commands are experimental in
   CDP, which is why the real browser is checked (section 9).
+- **A selector is a parameter, never an expression.** The kit sends an
+  attribute read's selector as `DOM.querySelector`'s own, and Chromium
+  parses it as CSS; no page script runs, and no selector becomes code.
 - **The one expression the kit evaluates is `document`.** It sends
   `Runtime.evaluate` with that expression alone, for a find's root
   (section 6), and it never sends `Runtime.callFunctionOn`.
@@ -173,6 +176,7 @@ pub enum Request {                                       // from the test
     Keys   { page: Token, op: Token, node: Node, text: Box<[u8]> },  // each character a key: a native date or time field
     Key    { page: Token, op: Token, key: Key, shift: bool },  // Enter, Escape, Tab, Backspace, arrows
     Address { page: Token, op: Token },                  // the current address, from the history
+    Attribute { page: Token, op: Token, selector: Box<[u8]>, name: Box<[u8]> },  // of the first element a CSS selector finds
     Snapshot   { page: Token, op: Token },               // the accessibility tree, as text
     Screenshot { page: Token, op: Token },
     Close  { entity: Token },                            // a page, a person, or the browser
@@ -190,6 +194,7 @@ pub enum Event {                                         // to the test
     Snapshot   { op: Token, text: Box<[u8]> },
     Screenshot { op: Token, png: Box<[u8]> },
     Address { op: Token, url: Box<[u8]> },               // the history's current entry
+    Attribute { op: Token, read: Read },
     Trouble { page: Token, trouble: Trouble, text: Box<[u8]> },  // an exception, a console or log error, a crash, a dialog
     Closed  { owner: Token },                            // terminal
 }
@@ -200,6 +205,7 @@ pub struct Point { x: u32, y: u32 }                      // whole CSS pixels fro
 pub struct Seen  { node: Node, role: Box<[u8]>, name: Box<[u8]>, value: Box<[u8]>,
                    states: States, rect: Option<Rect> }   // focused, disabled, checked, expanded, selected
 pub enum Expect  { Present, Count(u32), Absent }
+pub enum Read    { NoElement, NoAttribute, Value(Box<[u8]>) }  // Value: whole, perhaps empty
 ```
 
 - **A person is a browser context,** with its own cookies and storage.
@@ -228,11 +234,19 @@ pub enum Expect  { Present, Count(u32), Absent }
   that holds it.
 - **A key may be pressed with Shift held,** as a person makes a new line
   with Shift+Enter in a text area, where Enter alone sends.
+- **An attribute is read by a CSS selector,** of the first element it
+  finds in the page's current document, as the document holds it. It is
+  how a test reads what holds no role a person finds it by, such as a
+  hidden field, whose `value` attribute is its value. It reads markup,
+  not state: a field a person types into is read by a find, whose `Seen`
+  carries its value as the person sees it. No element, an element
+  without the attribute, and an empty attribute are three answers.
 - **The current address** is the page's history's current entry, as the
   browser's address bar shows it, so that a test sees the address the
   page's own code put there.
 - **Every operation has one terminal event:** `Found`, `Met`, `Missed`,
-  `Done`, `Refused`, `Snapshot`, `Screenshot` or `Address`. Every
+  `Done`, `Refused`, `Snapshot`, `Screenshot`, `Address` or
+  `Attribute`. Every
   person, page and the browser itself ends with one `Closed`. `Warned` is
   not terminal: a go reports it at most once, before its terminal
   (section 6).
@@ -254,6 +268,7 @@ to the next command, never a closure waiting on a reply:
 | keys | the node focused; for each character of the text, in order, its key down and up, the character its key and its text |
 | key | the key down and up, with the text it makes; with `shift`, Shift's modifier on both |
 | address | the page's navigation history (`Page.getNavigationHistory`); its current entry's URL, `Address` |
+| attribute | the current document's root (`DOM.getDocument`, its root alone); the first element under it the selector finds (`DOM.querySelector`), `NoElement` if none; its attributes (`DOM.getAttributes`), the named one's value, or `NoAttribute`; refused `Protocol` for a selector Chromium cannot parse, and `Limit` for a value past `Limits::text`, which is never cut, since a test uses it whole |
 | snapshot | the accessibility tree under the document, as indented lines of role, name, value and states, cut at `Limits::snapshot` |
 | screenshot | the viewport as PNG, under `Limits::screenshot` |
 
@@ -279,7 +294,9 @@ to the next command, never a closure waiting on a reply:
   in flight, the kit's go or the page's own, the kit holds its DOM and
   accessibility commands to the page, and the evaluation of `document`,
   until the navigation commits, as a go's does. A find in flight when the
-  navigation begins starts again, and asks once it has committed.
+  navigation begins starts again, and asks once it has committed. An
+  attribute read waits and starts again the same way, so that it reads
+  one document from its root to its answer.
 - **A press at a point reaches a shape of an inline SVG.** The hit test
   there lands on the shape, inside the node that holds it, and the mouse
   goes down on the shape; something over the shape covers it, as it would
