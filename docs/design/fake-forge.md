@@ -159,7 +159,8 @@ Chances are per mille, in `Config`, and drawn from the domain's seed.
     (temper's `protocol/setup.md`, 8.4), so a reader that has seen a
     reply, or what a reply caused, finds what it observed.
   - **A number,** a commit, a user, an item, an id, a revision or a
-    position, is a JSON integer, exact to `u64`. An absent value is
+    position, is a JSON integer, exact to `u64`. A flag, a group's
+    `ended` or `landed`, is `true` or `false`. An absent value is
     `null`, a list is an array, and an opened pull request's `branches`
     an object of its fields.
   - **A name,** a repository's, a branch's, a label's, a context's or a
