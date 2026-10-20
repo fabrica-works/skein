@@ -554,6 +554,7 @@ pub fn hint(repository: client::Repository, request: &skein_fake_forge_domain::R
         return None;
     };
     let change = match change {
+        forge::Change::Group { .. } => return None,
         forge::Change::Push => match (branch, head, by) {
             (Some(branch), Some(head), Some(actor)) => {
                 client::Change::BranchMoved { branch: branch.clone(), head: commit(*head), actor: *actor }

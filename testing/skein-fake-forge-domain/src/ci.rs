@@ -113,6 +113,7 @@ pub(crate) fn report(domain: &mut Domain, env: &Env<Config>, id: Id<Repository>,
         let alarm = Alarm::Rerun { repository: id, commit, context };
         domain.timers.arm(alarm, env.now.saturating_add(span)).expect("a timer per context of a commit with statuses");
     }
+    crate::queue::verdict(domain, env, id, commit);
 }
 
 /// A re-run's timer: CI runs the context `context` on `commit` again, once:
@@ -161,6 +162,7 @@ pub(crate) fn status(
         return Err(Error::Full);
     }
     reported(domain, env, id, commit, context, state, user);
+    crate::queue::verdict(domain, env, id, commit);
     Ok(Answer::Done)
 }
 

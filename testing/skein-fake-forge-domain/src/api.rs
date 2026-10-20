@@ -605,12 +605,36 @@ pub struct Pull {
     pub queue_required: bool,
     /// Its retained merge-queue entry, if admitted.
     pub queued: Option<QueueEntry>,
+    /// The current group commit, if its queue entry has been built.
+    pub group: Option<u64>,
+    /// The reason for its last ejection, cleared by another admission.
+    pub dequeued: Option<QueueRemoval>,
+    /// Whether the merge fact came from the queue.
+    pub queue_merged: bool,
     /// Whether the head merges into the base without a conflict.
     pub mergeable: bool,
     /// The users asked to review it who have not yet, in their order.
     pub reviewers: Box<[u64]>,
     pub reviews: Box<[Review]>,
     pub statuses: Box<[Status]>,
+}
+
+/// Why an entry left the queue without landing.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum QueueRemoval {
+    MergeConflict,
+    CiFailure,
+}
+
+impl QueueRemoval {
+    /// GitHub's spelling (forge-github.md, 4.1).
+    #[must_use]
+    pub fn github(self) -> &'static [u8] {
+        match self {
+            Self::MergeConflict => b"MERGE_CONFLICT",
+            Self::CiFailure => b"CI_FAILURE",
+        }
+    }
 }
 
 /// An admission in repository order, numbered from one.
@@ -754,6 +778,10 @@ pub enum Change {
     Review,
     /// A job ended, passed or failed; never a person's status.
     Job,
+    /// A queue group made or ended, naming its commit.
+    Group {
+        ended: bool,
+    },
     /// A branch moved, made or deleted.
     Push,
 }

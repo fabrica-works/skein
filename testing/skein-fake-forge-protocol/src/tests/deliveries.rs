@@ -35,7 +35,7 @@ fn hook(change: Change) -> domain::Request {
         by: Some(2),
         body: match change {
             Change::Issue | Change::Comment | Change::Review => Some(boxed(b"fixture body")),
-            Change::Pull | Change::Job | Change::Push => None,
+            Change::Pull | Change::Job | Change::Push | Change::Group { .. } => None,
         },
         ended: (change == Change::Job).then_some(Ended {
             job: JobRef { run: 4, job: 5, attempt: 1 },
@@ -209,4 +209,11 @@ fn a_signature_holds_for_its_body_only() {
     let signature = *b"59d76cdeaea4277b5fe9055ba0c6f03f8c3ce07dfc2e298df9d624cce4c99df3";
     assert_eq!(delivery::sign(&secret, &post.body), signature);
     assert_ne!(delivery::sign(&secret, b"{}"), signature);
+}
+
+#[test]
+fn forgejo_never_delivers_a_merge_queue_group_hook() {
+    let limits = fixtures::limits();
+    let service = Service::new(fixtures::hooked_config(), &limits, 3).unwrap();
+    assert!(service.delivery(&hook(Change::Group { ended: false }), &limits).is_none());
 }

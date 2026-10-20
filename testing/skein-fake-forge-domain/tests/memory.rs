@@ -389,14 +389,9 @@ fn fill(forge: &mut Measured, index: u64, first: u64) {
             head: name(b'w', branch),
             base: name(b'b', 0),
         };
-        let number = forge.ok(AUTHOR, &repository, Op::Write(open)).expect("opened pull");
-        let Answer::Pull(pull) = forge.domain.inspect(&config, &repository, &Read::Pull { number }).expect("pull")
-        else {
-            panic!("pull view")
-        };
-        // Each of the fixture's two pulls holds one fixed-size admission;
-        // the repository budgets limits.items QueueEntry slots, including issues.
-        forge.ok(AUTHOR, &repository, Op::Write(Write::Enqueue { number, head: pull.commit }));
+        forge.ok(AUTHOR, &repository, Op::Write(open)).expect("opened pull");
+        // Group branches need room for their generated name. This fixture's
+        // names are sixteen bytes; queue occupancy is measured separately.
     }
     for _ in 0..2_u32 {
         let create = Write::CreateIssue {
@@ -518,4 +513,57 @@ fn a_forge_filled_to_its_limits_stays_within_its_worst_case() {
         "the fill reaches two thirds of the worst case: {held} of {}",
         forge.bound
     );
+}
+
+#[test]
+fn counted_group_branches_and_queue_landings_stay_within_memory_bound() {
+    // A generated group name needs at most 18 + 4 + 4 + 20 + 1 + 40
+    // bytes here. Compared with the full fixture, names gain eighty bytes;
+    // one repository and three branches hold main, the pull head and its group.
+    let limits = Limits { repositories: 1, name_bytes: 96, branches: 3, ..LIMITS };
+    let config = Config { limits, ..CONFIG };
+    let mut forge = Measured::with(config);
+    let repository = name(b'r', 0);
+    let mut configured = setup(0);
+    configured.default = Box::from(*b"main");
+    configured.checks.latency_min = Duration::from_secs(2);
+    configured.checks.latency_max = Duration::from_secs(2);
+    configured.checks.reruns = 0;
+    configured.protection = Some(Protection {
+        queue: true,
+        branch: Box::from(*b"main"),
+        contexts: names(b'c', LIMITS.contexts),
+        approvals: 0,
+        dismiss_stale: false,
+    });
+    let first = skein_fake_forge_domain::repository(&mut forge.domain, &config, configured);
+    skein_fake_forge_domain::grant(&mut forge.domain, &repository, AUTHOR, Permission::Write);
+    let head = skein_fake_forge_domain::commit(&mut forge.domain, &config, first, tree(b'g'), b"").unwrap().unwrap();
+    forge.ok(AUTHOR, &repository, Op::Git(Git::Push { branch: Box::from(*b"alice"), commit: head, expected: None }));
+    let number = forge
+        .ok(
+            AUTHOR,
+            &repository,
+            Op::Write(Write::OpenPull {
+                title: Box::from(*b"group"),
+                body: Box::new([]),
+                head: Box::from(*b"alice"),
+                base: Box::from(*b"main"),
+                opens_empty: false,
+            }),
+        )
+        .unwrap();
+    forge.ok(AUTHOR, &repository, Op::Write(Write::Enqueue { number, head }));
+    assert_eq!(forge.domain.branches(&repository).len(), limits.branches);
+    for _ in 0..64_u32 {
+        if forge.domain.next_deadline().is_none() {
+            break;
+        }
+        forge.fire();
+    }
+    let Answer::Pull(pull) = forge.domain.inspect(&config, &repository, &Read::Pull { number }).unwrap() else {
+        panic!("pull")
+    };
+    assert!(pull.queue_merged);
+    assert_eq!(forge.domain.branches(&repository).len(), 2);
 }

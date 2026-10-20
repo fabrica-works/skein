@@ -68,10 +68,10 @@ pub struct Limits {
 }
 
 /// The timers armed at most: one per call, one per delivery, and one per
-/// context of each commit with statuses.
+/// context of each commit with statuses, and one queue wake per repository.
 pub(crate) fn timers(limits: &Limits) -> Option<u32> {
     let checks = limits.repositories.checked_mul(limits.statuses)?.checked_mul(limits.contexts)?;
-    limits.calls.checked_add(limits.hooks)?.checked_add(checks)
+    limits.calls.checked_add(limits.hooks)?.checked_add(checks)?.checked_add(limits.repositories)
 }
 
 /// The comments a repository holds at most.
@@ -111,8 +111,13 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     // that follow it; what a call brings is held until it is stored or
     // dropped; a write replaces what an item held, an observation is made
     // before a full queue drops it.
-    let scratch = Set::<u64>::worst_case(limits.commits)?
-        .checked_mul(2)?
+    // Queue transitions also hold their generated branch, the base name,
+    // and branch names copied into move/delete observations and hooks.
+    // Groups and their commits occupy the existing branch/commit budgets;
+    // Group metadata is inline in Item and Pull, counted by their slots.
+    let queue_scratch = u64::from(limits.name_bytes).checked_mul(4)?;
+    let scratch = queue_scratch
+        .checked_add(Set::<u64>::worst_case(limits.commits)?.checked_mul(2)?)?
         .checked_add(Queue::<u64>::worst_case(limits.commits)?)?
         .checked_add(tree(limits)?)?
         .checked_add(changes(limits)?)?

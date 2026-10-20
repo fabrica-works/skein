@@ -68,6 +68,10 @@ pub(crate) fn open(
         commit,
         checked: skein_lib::Time::ZERO,
         merged: None,
+        queue_merged: false,
+        dequeued: None,
+        group: None,
+        queued_by: 0,
         requested: Set::with_capacity(limits.users),
         reviews: List::with_capacity(limits.reviews),
     };
@@ -387,6 +391,9 @@ pub(crate) fn pull(domain: &Domain, limits: &Limits, repository: &Repository, nu
             None => false,
         },
         queued,
+        group: crate::queue::Group::count(pull.group),
+        dequeued: pull.dequeued,
+        queue_merged: pull.queue_merged,
         mergeable,
         reviewers,
         reviews: reviews.into_boxed(),
@@ -542,28 +549,5 @@ pub(crate) fn enqueue(
     number: u64,
     head: u64,
 ) -> Result<Answer, Error> {
-    let repository = domain.repositories.get_mut(id).expect("a repository of the forge");
-    repository.require(user, Permission::Write)?;
-    let item = repository.item(number)?;
-    let pull = item.pull.as_ref().ok_or(Error::Missing(What::Pull))?;
-    if item.state == State::Closed {
-        return Err(Error::Closed);
-    }
-    if pull.commit != head {
-        return Err(Error::Stale);
-    }
-    for entry in &repository.queue {
-        if entry.number == number {
-            return Err(Error::AlreadyQueued(*entry));
-        }
-    }
-    let position = repository.queue.len().checked_add(1).ok_or(Error::Full)?;
-    if repository.queue.push(crate::api::QueueEntry { number, head, position }).is_err() {
-        return Err(Error::Full);
-    }
-    repository.touch(number, domain::clock(env));
-    let observation = Observation::Enqueued { repository: copy_of(&repository.name), number, head, position, by: user };
-    domain::changed(domain, env, id, observation, Hook::item(Change::Pull, number, user));
-    let repository = domain.repositories.get(id).expect("a repository of the forge");
-    view(domain, &env.limits.limits, repository, number)
+    crate::queue::enqueue(domain, env, id, user, number, head)
 }

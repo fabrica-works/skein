@@ -154,6 +154,20 @@ pub enum Observation {
         position: u32,
         by: u64,
     },
+    /// A group commit was made or ended, with its landing outcome.
+    Group {
+        repository: Box<[u8]>,
+        number: u64,
+        commit: u64,
+        ended: bool,
+        landed: bool,
+    },
+    /// An entry left without landing; the pull stays open.
+    Dequeued {
+        repository: Box<[u8]>,
+        number: u64,
+        reason: crate::api::QueueRemoval,
+    },
     /// A write or a git call was refused for `error`, and changed nothing:
     /// `what` it was, the item `number` and the `commit` it named, if it
     /// named them. Reads, and calls on a repository the forge does not

@@ -205,6 +205,8 @@ pub(crate) enum Alarm {
     },
     /// The webhook is delivered.
     Hook(Id<Delivery>),
+    /// A queue admission is processed on the forge clock.
+    Queue(Id<Repository>),
 }
 
 /// A call being answered.
@@ -214,6 +216,7 @@ pub(crate) struct Call {
 }
 
 #[derive(Debug)]
+#[expect(clippy::large_enum_variant, reason = "bounded call slots retain their answers inline; limits count State")]
 enum State {
     /// The answer is decided, and goes out when the call's timer fires; then
     /// the call lands, if it is to land late.
@@ -319,6 +322,21 @@ impl Domain {
     pub fn queue_entries(&self, repository: &[u8]) -> Result<&[crate::api::QueueEntry], Error> {
         let id = *self.names.get(repository).ok_or(Error::Missing(What::Repository))?;
         Ok(self.repositories.get(id).expect("live repository name").queue.as_slice())
+    }
+
+    /// A retained CI context's run and job identity, without effects.
+    #[must_use]
+    pub fn check_run(&self, repository: &[u8], commit: u64, context: &[u8]) -> Option<crate::api::JobRef> {
+        let id = self.names.get(repository)?;
+        crate::actions::reference(self.repositories.get(*id)?, commit, context)
+    }
+
+    /// The commit of a retained job, without effects.
+    #[must_use]
+    pub fn job_commit(&self, repository: &[u8], job: u64) -> Option<u64> {
+        let id = self.names.get(repository)?;
+        let (commit, _) = crate::actions::latest(self.repositories.get(*id)?, job).ok()?;
+        Some(commit)
     }
 
     /// A branch's protection, without authorization, rate, fault or observation
@@ -435,6 +453,7 @@ pub fn fire(domain: &mut Domain, env: &Env<Config>, out: &mut Queue<Request>) {
         Alarm::Check { repository, commit, context } => ci::report(domain, env, repository, commit, context),
         Alarm::Rerun { repository, commit, context } => ci::rerun(domain, env, repository, commit, context),
         Alarm::Hook(id) => hooks::deliver(domain, id, out),
+        Alarm::Queue(id) => crate::queue::process(domain, env, id),
     }
 }
 

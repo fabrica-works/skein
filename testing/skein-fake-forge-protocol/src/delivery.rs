@@ -39,6 +39,7 @@ impl Service {
         }
         let repository = id?;
         let value = match change {
+            Change::Group { .. } => return None,
             Change::Issue => {
                 delivery::Delivery::Issue { repository, number: (*number)?, body: Body::Kept(body.as_ref()?.clone()) }
             }

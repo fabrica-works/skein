@@ -48,6 +48,19 @@ impl Hook {
         Hook { body: Some(copy_of(body)), ..Self::item(change, number, by) }
     }
 
+    /// A queue group made or ended; its commit identifies the group.
+    pub(crate) fn group(commit: u64, by: u64, ended: bool) -> Hook {
+        Hook {
+            change: Change::Group { ended },
+            number: None,
+            branch: None,
+            commit: Some(commit),
+            by: Some(by),
+            body: None,
+            ended: None,
+        }
+    }
+
     /// A job ended with its run, commit and verdict.
     pub(crate) fn job(ended: Ended, by: u64) -> Hook {
         Hook {

@@ -90,6 +90,10 @@ pub(crate) struct Pull {
     pub(crate) checked: Time,
     /// The commit its merge made.
     pub(crate) merged: Option<u64>,
+    pub(crate) queue_merged: bool,
+    pub(crate) dequeued: Option<crate::api::QueueRemoval>,
+    pub(crate) group: Option<crate::queue::Group>,
+    pub(crate) queued_by: u64,
     /// The users asked to review it who have not yet.
     pub(crate) requested: Set<u64>,
     /// Its reviews, in the order they were started.
