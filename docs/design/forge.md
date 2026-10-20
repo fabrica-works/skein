@@ -557,6 +557,42 @@ behaviour the conformance checked.
 - **Readers:** the throwaway Forgejo, the conformance, and a service's
   owned Forgejo check their binaries against the pin (fake-forge.md,
   section 6).
+- **Digests:** the SHA-256 of each release's Linux binary, per
+  architecture, as lowercase hex:
+
+  | Constant | Of | Bytes | SHA-256 |
+  |---|---|---|---|
+  | `FORGEJO_SHA256_LINUX_AMD64` | `forgejo-17.0.0-linux-amd64` | 122,053,192 | `5a3b07e124ed70b4e46ee3939515f003bd3cc85352257a9a4607a527251042ca` |
+  | `FORGEJO_SHA256_LINUX_ARM64` | `forgejo-17.0.0-linux-arm64` | 113,760,224 | `e5ec437cd6357e8d1b4580cb47ab1daa58a32b33971a63db63446a535d33adb7` |
+  | `RUNNER_SHA256_LINUX_AMD64` | `forgejo-runner-13.2.0-linux-amd64` | 22,290,594 | `fadaec897f5e6641c363f87ecaf75f866f99c81b7097ec6b433e4c48123fcad1` |
+  | `RUNNER_SHA256_LINUX_ARM64` | `forgejo-runner-13.2.0-linux-arm64` | 20,775,074 | `9d3d462ee83e4e629f959faeacceb20eed2f25290bddea402e65ace46a31afd9` |
+
+  The sizes are not constants: they are what the digests were taken
+  over, and what a fetch's bound must admit.
+- **Sources:** each binary's release file, named by the constants and
+  the architecture:
+  - Forgejo's on codeberg.org,
+    `https://codeberg.org/forgejo/forgejo/releases/download/v17.0.0/forgejo-17.0.0-linux-{amd64,arm64}`;
+  - forgejo-runner's on code.forgejo.org,
+    `https://code.forgejo.org/forgejo/runner/releases/download/v13.2.0/forgejo-runner-13.2.0-linux-{amd64,arm64}`.
+    Codeberg serves no runner release (404).
+
+  Each answers a single `200` with the file, and no redirect. A fetcher
+  follows none, and takes any other status as the source failing.
+- **TLS:** with the machine's roots. The digest, not the certificate, is
+  what makes the file the pinned one.
+- **An architecture without a digest** is refused: a fetcher names the
+  architecture and fetches nothing. The pins are Linux on amd64 and
+  arm64 alone.
+- **Readers of the digests:** a service that fetches the pinned binaries
+  (temper's `forge fetch`) checks each file it streams, and each file it
+  finds already in place, against the digest of its own architecture.
+  skein-forge does no io for this: it holds the constants and a
+  `digest(binary, arch)` that answers the pinned digest, or none for an
+  architecture without one.
+- **Moving the pin** moves the digests with it: a new `VERSION` or
+  `RUNNER_VERSION` comes with the new release files' digests, taken as
+  above, in the same change.
 
 ## 5. Forgejo's API
 
