@@ -585,7 +585,8 @@ Pure functions and decoders; forge-setup.md's plans run them.
     which the plan's accept reads; strays are found from 8.3's
     listing, by `created_at`.
 - **The App's writes,** on the JSON Web Token: `PATCH /app/hook/config`
-  `{url}` (`200`); `DELETE /app/installations/<id>` (`204`).
+  `{url}` (`200`); `DELETE /app/installations/<id>` (`204`). The
+  conformance sends neither live (fake-forge.md, section 11).
 - **The key** is the conversion's PEM; the setup's host converts it to
   the DER that `Credential::App` holds (forge.md, section 8).
 
@@ -635,8 +636,10 @@ temper's draft section 11.
   `comment-updated-at-on-edit`; for setup and the component
   (forge-setup.md and forge-connection.md cite them):
   `manifest-hook-invalid-host-accepted` (an App hook at
-  `https://<name>.invalid/`), `inactive-hook-visible`, `job-log-host-per-owner` (whether the log's
-  redirect host differs across the two owners' repositories).
+  `https://<name>.invalid/`) and `inactive-hook-visible`, held on the
+  fake alone, since a live run changes nothing of the App
+  (fake-forge.md, section 11); and `job-log-host-per-owner` (whether
+  the log's redirect host differs across the two owners' repositories).
 
 A fact's texts (each refusal's message) are the conformance's
 transcripts, and the decoders' tests take them (section 14).

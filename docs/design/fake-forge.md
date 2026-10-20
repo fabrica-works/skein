@@ -646,6 +646,19 @@ masking and refusal of leaked secrets are section 7's.
   `Authorization`, signed blob addresses, guids, node ids and ETags as
   well as section 7's. Numeric ids are masked by first appearance, since
   github.com's do not come in a fixed order.
+- **The App is read only, live.** The fixture installations are
+  accepted by no setup state, so setup's reconcile would take them for
+  strays (forge-setup.md, section 5). A live run therefore never sends
+  `DELETE /app/installations/<id>` or `PATCH /app/hook/config`, makes
+  or converts no manifest, and changes nothing of the App: it reads
+  the App's documents alone. The tool refuses those routes on the live
+  target before any byte is written. Strays, the uninstall and the
+  hook's address being set are checked on the fake alone, and their
+  facts are `unchecked` live (forge-github.md, section 13).
+- **Access is put back.** A repository the run adds to an installation
+  or removes from it, with the person's token's `204`, is restored at
+  the run's end. Each such change is written to `made.txt` before its
+  request, so `--clean` restores it too.
 - **A run cleans up what it made:** rulesets, pull requests (closed),
   issues (closed), branches, the spare's grant, and minted tokens
   (revoked). Each thing made is first written to `made.txt` in `--out`,
