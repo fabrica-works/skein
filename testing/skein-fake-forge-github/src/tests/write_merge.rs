@@ -202,3 +202,39 @@ fn github_fake_merge_outside_installation_is_missing_before_domain_calls() {
     f::refusal(&h, &response, 404, b"Not Found");
     assert_eq!(h.calls, 0);
 }
+
+#[test]
+fn github_fake_merge_waits_for_head_or_base_settle_and_stale_sha_keeps_precedence() {
+    for branch in [b"feature".as_slice(), b"trunk"] {
+        let mut h = w::harness();
+        let (number, head) = r::pull(&mut h);
+        let token = r::token(&mut h);
+        h.drain_timers = false;
+        let parent = if branch == b"feature" { head } else { h.first };
+        let next = fake::commit(
+            &mut h.domain,
+            &h.env.limits,
+            parent,
+            Box::from([a::File { path: f::boxed(b"separate"), content: f::boxed(b"move") }]),
+            b"move",
+        )
+        .unwrap()
+        .unwrap();
+        r::call(&mut h, a::Op::Git(a::Git::Push { branch: f::boxed(branch), commit: next, expected: None }));
+        let current = if branch == b"feature" { next } else { head };
+        let response = w::ask(&mut h, &token, &request(number, current, Method::Squash));
+        f::refusal(&h, &response, 405, crate::texts::NOT_MERGEABLE);
+        let stale = h.first;
+        let response = w::ask(&mut h, &token, &request(number, stale, Method::Squash));
+        f::refusal(&h, &response, 409, crate::texts::MERGE_STALE);
+        h.env.now = h.env.now.saturating_add(h.env.limits.settle_max);
+        h.now = crate::tests::wall(1202);
+        let response = w::ask(&mut h, &token, &request(number, current, Method::Squash));
+        assert_eq!(response.status, 200);
+        let api::Answer::Pull(pull) = r::read(&mut h, &token, api::Read::Pull { number }).unwrap() else {
+            panic!("merged readback")
+        };
+        assert_eq!(pull.state, api::State::Closed);
+        assert!(pull.merged.is_some());
+    }
+}

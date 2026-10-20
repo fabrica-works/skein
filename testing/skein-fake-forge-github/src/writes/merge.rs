@@ -66,6 +66,10 @@ pub(super) fn finish(
             if reads::commit(pull.commit) != head {
                 return Outcome::Reply(answers::refusal(409, texts::MERGE_STALE, limits));
             }
+            // forge-github.md, 7: a move is Conflict until mergeability settles.
+            if pull.checking {
+                return Outcome::Reply(answers::refusal(405, texts::NOT_MERGEABLE, limits));
+            }
             if pull.queue_required {
                 return queue(user, repository, number, reply_to);
             }

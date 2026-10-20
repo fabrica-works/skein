@@ -929,6 +929,10 @@ the fake.
   the inferred approval counts and queue context lines.
 - **Merges** follow the domain: squashes, whatever the method asked,
   and a queue's group is built from the entry ahead, not batched.
+  While a head or base move is still checking mergeability, the GitHub
+  route answers `405` "Pull Request is not mergeable"
+  (`merge-after-move-405-not-mergeable`, forge-github.md, section 7).
+  A stale supplied SHA keeps its `409` precedence.
 - **Ids** are the domain's numbers, small and sequential. Deliveries'
   ids are 19 digits, so `u64` is held exactly.
 - **What is not modelled:** GitHub Apps other than the one App and
