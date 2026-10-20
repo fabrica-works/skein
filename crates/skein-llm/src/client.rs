@@ -566,8 +566,9 @@ impl Client {
         self.owner
     }
 
-    /// The number of complete SSE messages read for this call, including
-    /// provider pings and extension events that consume no `Next` demand.
+    /// The number of complete SSE messages decoded into model output: parts,
+    /// deltas or a terminal, counted at dispatch before `Next` drains them.
+    /// Pings and other messages yielding only progress or no output do not count.
     #[must_use]
     pub const fn activity(&self) -> u64 {
         self.activity
@@ -1078,7 +1079,7 @@ fn sse_event(
             event_data(client, event, env, above, below);
         }
         sse::Event::Dispatched(dispatch) => {
-            client.activity = client.activity.checked_add(1).expect("an SSE message count fits u64");
+            let before = usize::try_from(client.outputs.len()).expect("the output count fits usize");
             let data = mem::replace(&mut client.event_data, EventData::Idle);
             let decoder = client.decoder.as_mut().expect("the streaming state has its decoder");
             let parsed = match data {
@@ -1108,6 +1109,21 @@ fn sse_event(
                 };
                 fail(client, failure, bytes::copy_of(b"malformed provider event"), above);
                 closing(client, env, above, below);
+            } else {
+                for output in client.outputs.iter().skip(before) {
+                    match output {
+                        dialect::Output::Progress => {}
+                        dialect::Output::Part(_)
+                        | dialect::Output::TextDelta { .. }
+                        | dialect::Output::ArgumentsDelta { .. }
+                        | dialect::Output::ReasoningDelta { .. }
+                        | dialect::Output::Completed { .. }
+                        | dialect::Output::Failed { .. } => {
+                            client.activity = client.activity.checked_add(1).expect("an SSE message count fits u64");
+                            break;
+                        }
+                    }
+                }
             }
         }
         sse::Event::Ended => {

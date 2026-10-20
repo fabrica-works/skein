@@ -306,3 +306,125 @@ fn a_caller_field_cannot_name_the_content_coding() {
     input.endpoint = endpoint;
     assert!(Client::prepare(input, &limits()).is_err());
 }
+
+/// Dispatch a collected SSE message while the caller has no Next outstanding.
+fn dispatch_without_next(world: &mut World, source: &[u8], activity: u64) -> bool {
+    let json = openai::Json::from_bytes(source, &world.env.limits.native().document()).unwrap();
+    world.client.event_data = EventData::Collected(json.document().clone());
+    sse_event(
+        &mut world.client,
+        sse::Event::Dispatched(sse::Dispatch { name: bytes::copy_of(b"message"), id: Box::new([]) }),
+        &world.env,
+        &mut world.above,
+        &mut world.below,
+    );
+    assert!(!world.client.asked, "the caller has not demanded its next output");
+    assert!(world.above.is_empty(), "dispatch holds output until Next");
+    assert_eq!(world.client.activity(), activity, "activity is counted before output is drained: {source:?}");
+    let mut completed = false;
+    while let Some(output) = world.client.outputs.pop() {
+        match output {
+            dialect::Output::Completed { .. } => completed = true,
+            dialect::Output::Failed { failure, .. } => panic!("expected a valid stream, got {failure:?}"),
+            dialect::Output::Part(Err(error)) => panic!("expected a valid part, got {error:?}"),
+            dialect::Output::Part(Ok(_))
+            | dialect::Output::TextDelta { .. }
+            | dialect::Output::ArgumentsDelta { .. }
+            | dialect::Output::ReasoningDelta { .. }
+            | dialect::Output::Progress => {}
+        }
+    }
+    completed
+}
+
+#[test]
+fn responses_activity_counts_output_at_dispatch_and_ignores_status_and_extension_events() {
+    for endpoint in [Endpoint::openai(), Endpoint::codex()] {
+        let mut input = call();
+        input.endpoint = endpoint;
+        input.credential = Some(Credential::key(bytes::copy_of(b"key")));
+        if input.endpoint.provider == Provider::OpenAiCodex {
+            input.credential = call().credential;
+        }
+        let mut world = World::started_with(input);
+        world.feed(HEAD);
+        assert_eq!(world.client.activity(), 0, "the response head carries no model output");
+        for source in [
+            br#"{"type":"ping"}"#.as_slice(),
+            br#"{"type":"response.created"}"#,
+            br#"{"type":"response.in_progress"}"#,
+            br#"{"type":"future.extension"}"#,
+            br#"{"type":"response.content_part.added"}"#,
+            br#"{"type":"response.output_text.done"}"#,
+            br#"{"type":"response.content_part.done"}"#,
+            br#"{"type":"response.output_item.added","output_index":0,"item":{"id":"msg_1","type":"message"}}"#,
+        ] {
+            assert!(!dispatch_without_next(&mut world, source, 0));
+        }
+        assert!(!dispatch_without_next(
+            &mut world,
+            br#"{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Hello"}"#,
+            1,
+        ));
+        assert!(!dispatch_without_next(&mut world, br#"{"type":"response.in_progress"}"#, 1));
+        assert!(!dispatch_without_next(
+            &mut world,
+            br#"{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","content":[{"type":"output_text","text":"Hello"}]}}"#,
+            2,
+        ));
+        assert!(dispatch_without_next(
+            &mut world,
+            br#"{"type":"response.completed","response":{"status":"completed"}}"#,
+            3,
+        ));
+        assert!(!dispatch_without_next(&mut world, br#"{"type":"future.extension"}"#, 3));
+    }
+}
+
+#[test]
+fn anthropic_activity_counts_output_at_dispatch_and_ignores_pings() {
+    let mut input = call();
+    input.endpoint = Endpoint::anthropic();
+    input.credential = Some(Credential::key(bytes::copy_of(b"key")));
+    let mut world = World::started_with(input);
+    world.feed(HEAD);
+    assert_eq!(world.client.activity(), 0);
+    for source in [
+        br#"{"type":"ping"}"#.as_slice(),
+        br#"{"type":"future.extension"}"#,
+        br#"{"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}"#,
+        br#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+    ] {
+        assert!(!dispatch_without_next(&mut world, source, 0));
+    }
+    assert!(!dispatch_without_next(
+        &mut world,
+        br#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}"#,
+        1,
+    ));
+    assert!(!dispatch_without_next(&mut world, br#"{"type":"ping"}"#, 1));
+    assert!(!dispatch_without_next(&mut world, br#"{"type":"content_block_stop","index":0}"#, 2));
+    assert!(!dispatch_without_next(&mut world, br#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#, 2,));
+    assert!(dispatch_without_next(&mut world, br#"{"type":"message_stop"}"#, 3));
+    assert!(!dispatch_without_next(&mut world, br#"{"type":"ping"}"#, 3));
+}
+
+#[test]
+fn a_done_sentinel_counts_the_terminal_it_decodes() {
+    let mut world = World::started();
+    world.down(Request::Next);
+    world.feed(HEAD);
+    world.feed(b"data: [DONE]\n\n");
+    assert_eq!(world.client.activity(), 1);
+    assert_eq!(world.failure().0, Failure::Protocol, "an incomplete stream ends in failure");
+}
+
+#[test]
+fn a_malformed_message_fails_without_counting_activity() {
+    let mut world = World::started();
+    world.down(Request::Next);
+    world.feed(HEAD);
+    world.feed(b"data: {\"type\":4}\n\n");
+    assert_eq!(world.client.activity(), 0);
+    assert_eq!(world.failure().0, Failure::Protocol);
+}

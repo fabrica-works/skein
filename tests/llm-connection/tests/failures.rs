@@ -370,7 +370,7 @@ fn run_idle_stall_expires_after_response_head(seed: u64) -> World {
     world
 }
 
-fn run_a_provider_ping_rearms_idle_without_consuming_next(seed: u64) -> World {
+fn run_a_provider_ping_does_not_rearm_idle_or_consume_next(seed: u64) -> World {
     let mut world = World::new(Deadlines { idle: Some(Duration::from_secs(1)), ..Deadlines::none() }, seed, false);
     world.run_until_request();
     world.wire.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
@@ -381,21 +381,53 @@ fn run_a_provider_ping_rearms_idle_without_consuming_next(seed: u64) -> World {
     world.wire.write(chunk.as_bytes());
     world.wire.write(ping);
     world.wire.write(b"\r\n");
-    let expected = Some(Time::from_nanos(1_500_000_000));
-    for _ in 0_u32..20_000 {
+    for _ in 0_u32..1000 {
         world.tick();
-        if world.component.next_deadline() == expected {
-            break;
-        }
+        assert!(world.up.is_empty(), "a ping consumes no Next demand");
     }
-    assert_eq!(world.component.next_deadline(), expected);
-    world.now = Time::from_nanos(1_000_000_000);
-    let at_one = world.env();
-    world.component.fire(&at_one, &mut world.up, &mut world.io);
-    assert!(world.up.is_empty(), "a ping extends the idle interval");
-    world.at(Time::from_nanos(1_500_000_000));
+    assert!(world.terminals.is_empty());
+    assert_eq!(world.component.next_deadline(), Some(Time::from_nanos(1_000_000_000)));
+    world.now = Time::from_nanos(999_999_999);
+    let before_idle = world.env();
+    world.component.fire(&before_idle, &mut world.up, &mut world.io);
+    assert!(world.up.is_empty(), "idle has not passed yet");
+    world.at(Time::from_nanos(1_000_000_000));
     assert_failure(&world, Failure::TimedOut { phase: Phase::Idle }, Evidence::Response { status: 200 });
     world
+}
+
+fn run_a_stream_of_pings_still_meets_idle(seed: u64) -> World {
+    let mut world = World::new(Deadlines { idle: Some(Duration::from_secs(1)), ..Deadlines::none() }, seed, false);
+    world.run_until_request();
+    world.wire.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
+    world.run_until_head();
+    for tick in 1..=4 {
+        world.now = Time::from_nanos(tick * 200_000_000);
+        write_event(&mut world, r#"{"type":"ping"}"#);
+        for _ in 0..1000 {
+            world.tick();
+        }
+        let env = world.env();
+        world.component.fire(&env, &mut world.up, &mut world.io);
+        assert!(world.terminals.is_empty());
+        assert_eq!(world.component.next_deadline(), Some(Time::from_nanos(1_000_000_000)));
+    }
+    world.at(Time::from_nanos(1_000_000_000));
+    assert_failure(&world, Failure::TimedOut { phase: Phase::Idle }, Evidence::Response { status: 200 });
+    assert_eq!(terminal_measures(&world).largest_gap, None, "pings produce no output pair");
+    world
+}
+
+#[test]
+fn a_stream_of_pings_still_meets_idle() {
+    assert_replays(7, 8, |seed| run_a_stream_of_pings_still_meets_idle(seed).report());
+}
+
+fn write_event(world: &mut World, document: &str) {
+    let event = format!("data: {document}\n\n");
+    world.wire.write(format!("{:x}\r\n", event.len()).as_bytes());
+    world.wire.write(event.as_bytes());
+    world.wire.write(b"\r\n");
 }
 
 fn run_truncated_response_has_one_failed_terminal(seed: u64) -> World {
@@ -438,8 +470,8 @@ fn idle_stall_expires_after_response_head() {
 }
 
 #[test]
-fn a_provider_ping_rearms_idle_without_consuming_next() {
-    assert_replays(7, 8, |seed| run_a_provider_ping_rearms_idle_without_consuming_next(seed).report());
+fn a_provider_ping_does_not_rearm_idle_or_consume_next() {
+    assert_replays(7, 8, |seed| run_a_provider_ping_does_not_rearm_idle_or_consume_next(seed).report());
 }
 
 #[test]
@@ -472,12 +504,10 @@ fn run_a_steady_stream_outlasts_any_fixed_bound_and_completes(seed: u64) -> Worl
     world.run_until_request();
     world.wire.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
     world.run_until_head();
+    write_event(&mut world, skein_llm_world::TEXT_ADDED);
     for tick in 1..=20 {
         world.now = Time::from_nanos(tick * 500_000_000);
-        let ping = b"data: {\"type\":\"ping\"}\n\n";
-        world.wire.write(format!("{:x}\r\n", ping.len()).as_bytes());
-        world.wire.write(ping);
-        world.wire.write(b"\r\n");
+        write_event(&mut world, skein_llm_world::TEXT_DELTA);
         let expected = Some(world.now.saturating_add(Duration::from_secs(1)));
         for _ in 0..20_000 {
             world.tick();
@@ -490,9 +520,10 @@ fn run_a_steady_stream_outlasts_any_fixed_bound_and_completes(seed: u64) -> Worl
         world.component.fire(&env, &mut world.up, &mut world.io);
         assert!(world.terminals.is_empty());
     }
-    let response = skein_llm_world::text_response(true);
-    let body = response.windows(4).position(|part| part == b"\r\n\r\n").expect("response head") + 4;
-    world.wire.write(&response[body..]);
+    let done = skein_llm_world::TEXT_DONE.replace("Hello", &"Hello".repeat(20));
+    write_event(&mut world, &done);
+    write_event(&mut world, skein_llm_world::TERMINAL);
+    world.wire.write(b"0\r\n\r\n");
     for _ in 0..20_000 {
         world.tick();
         if !world.terminals.is_empty() {
@@ -583,7 +614,7 @@ fn a_close_while_handshaking_lets_the_tls_call_complete_and_says_closed_last() {
 }
 
 #[test]
-fn provider_pings_keep_idle_alive_but_do_not_extend_the_whole_call() {
+fn content_deltas_keep_idle_alive_but_do_not_extend_the_whole_call() {
     assert_replays(7, 8, |seed| {
         let mut world = World::new(
             Deadlines { idle: Some(Duration::from_secs(1)), whole: Some(Duration::from_secs(1)), ..Deadlines::none() },
@@ -594,10 +625,8 @@ fn provider_pings_keep_idle_alive_but_do_not_extend_the_whole_call() {
         world.wire.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n");
         world.run_until_head();
         world.now = Time::from_nanos(500_000_000);
-        let ping = b"data: {\"type\":\"ping\"}\n\n";
-        world.wire.write(format!("{:x}\r\n", ping.len()).as_bytes());
-        world.wire.write(ping);
-        world.wire.write(b"\r\n");
+        write_event(&mut world, skein_llm_world::TEXT_ADDED);
+        write_event(&mut world, skein_llm_world::TEXT_DELTA);
         for _ in 0..1000 {
             world.tick();
         }
@@ -624,8 +653,8 @@ fn a_connect_deadline_keeps_unsent_evidence_through_late_socket_settlement() {
 }
 
 #[test]
-fn a_scripted_call_carries_its_observed_measures_on_the_terminal() {
-    let mut world = World::new(Deadlines::none(), 71, false);
+fn pings_between_content_deltas_allow_completion_and_do_not_shorten_the_largest_gap() {
+    let mut world = World::new(Deadlines { idle: Some(Duration::from_secs(1)), ..Deadlines::none() }, 71, false);
     // Connecting and waiting time is excluded from first-byte latency.
     world.now = Time::from_nanos(1_000_000_000);
     world.run_until_request();
@@ -635,22 +664,27 @@ fn a_scripted_call_carries_its_observed_measures_on_the_terminal() {
     for _ in 0..1000 {
         world.tick();
     }
+    let done = skein_llm_world::TEXT_DONE.replace("Hello", "HelloHello");
     for (now, event) in [
-        (1_200_000_000, b"data: {\"type\":\"ping\"}\n\n".as_slice()),
-        (1_500_000_000, b"data: {\"type\":\"ping\"}\n\n".as_slice()),
+        (1_200_000_000, skein_llm_world::TEXT_ADDED),
+        (1_200_000_000, skein_llm_world::TEXT_DELTA),
+        (1_500_000_000, r#"{"type":"ping"}"#),
+        (1_800_000_000, r#"{"type":"ping"}"#),
+        (2_000_000_000, skein_llm_world::TEXT_DELTA),
+        (2_300_000_000, r#"{"type":"ping"}"#),
+        (2_600_000_000, r#"{"type":"ping"}"#),
+        (2_800_000_000, done.as_str()),
+        (2_800_000_000, skein_llm_world::TERMINAL),
     ] {
         world.now = Time::from_nanos(now);
-        world.wire.write(format!("{:x}\r\n", event.len()).as_bytes());
-        world.wire.write(event);
-        world.wire.write(b"\r\n");
+        write_event(&mut world, event);
         for _ in 0..1000 {
             world.tick();
         }
+        let env = world.env();
+        world.component.fire(&env, &mut world.up, &mut world.io);
     }
-    world.now = Time::from_nanos(1_700_000_000);
-    let response = skein_llm_world::text_response(true);
-    let body = response.windows(4).position(|part| part == b"\r\n\r\n").expect("head") + 4;
-    world.wire.write(&response[body..]);
+    world.wire.write(b"0\r\n\r\n");
     for _ in 0..20_000 {
         world.tick();
         if !world.terminals.is_empty() {
@@ -661,7 +695,7 @@ fn a_scripted_call_carries_its_observed_measures_on_the_terminal() {
     let terminal = format!("{:?}", world.terminals[0]);
     assert!(terminal.contains(&format!("request_bytes: Some({request_bytes})")), "{terminal}");
     assert!(terminal.contains("first_byte: Some(Duration(125000000))"), "{terminal}");
-    assert!(terminal.contains("largest_gap: Some(Duration(300000000))"), "{terminal}");
+    assert!(terminal.contains("largest_gap: Some(Duration(800000000))"), "{terminal}");
 }
 
 fn terminal_measures(world: &World) -> skein_llm_connection::Measures {
@@ -736,17 +770,19 @@ fn the_terminal_event_is_in_the_largest_gap_for_plaintext_and_tls() {
             world.tick();
         }
         world.now = Time::from_nanos(1_500_000_000);
-        let ping = b"data: {\"type\":\"ping\"}\n\n";
-        world.wire.write(format!("{:x}\r\n", ping.len()).as_bytes());
-        world.wire.write(ping);
-        world.wire.write(b"\r\n");
+        write_event(&mut world, skein_llm_world::TEXT_ADDED);
+        write_event(&mut world, skein_llm_world::TEXT_DELTA);
         for _ in 0..1000 {
             world.tick();
         }
         world.now = Time::from_nanos(2_100_000_000);
-        let response = skein_llm_world::text_response(true);
-        let body = response.windows(4).position(|part| part == b"\r\n\r\n").unwrap() + 4;
-        world.wire.write(&response[body..]);
+        write_event(&mut world, skein_llm_world::TEXT_DONE);
+        for _ in 0..1000 {
+            world.tick();
+        }
+        world.now = Time::from_nanos(2_900_000_000);
+        write_event(&mut world, skein_llm_world::TERMINAL);
+        world.wire.write(b"0\r\n\r\n");
         for _ in 0..20_000 {
             world.tick();
             if !world.terminals.is_empty() {
@@ -759,7 +795,7 @@ fn the_terminal_event_is_in_the_largest_gap_for_plaintext_and_tls() {
             skein_llm_connection::Measures {
                 request_bytes: Some(request_bytes),
                 first_byte: Some(Duration::from_millis(125)),
-                largest_gap: Some(Duration::from_millis(600)),
+                largest_gap: Some(Duration::from_millis(800)),
             }
         );
     }

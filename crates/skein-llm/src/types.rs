@@ -276,7 +276,7 @@ pub enum Phase {
     Handshake,
     /// No response head arrived before the peer's head deadline.
     Head,
-    /// No response event, including pings, arrived before the idle deadline.
+    /// No event carrying the model's output arrived before the idle deadline.
     Idle,
     /// The whole call, including its wait, exceeded the owner's deadline.
     Whole,

@@ -32,7 +32,7 @@ pub struct Measures {
     pub request_bytes: Option<u64>,
     /// From the first request send to the first plaintext response byte.
     pub first_byte: Option<Duration>,
-    /// Between complete response events, including pings; none before a pair.
+    /// Between response events carrying the model's output; none before a pair.
     pub largest_gap: Option<Duration>,
 }
 
