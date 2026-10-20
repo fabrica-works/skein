@@ -11,7 +11,7 @@ use crate::{
 use alloc::boxed::Box;
 use skein_fake_forge_domain as fake;
 use skein_forge::github::{self, document as d, request, server};
-use skein_lib::{List, Map, Overflow, ReplyTo, Secret, Wall, Writer};
+use skein_lib::{List, Map, Overflow, ReplyTo, Rng, Secret, Wall, Writer};
 
 /// GitHub's repository metadata absent from the shared domain.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -87,6 +87,8 @@ pub struct Config {
     pub person: Box<[u8]>,
     /// Person secrets and their domain user numbers, bounded by github.inner.
     pub tokens: List<(Secret, u64)>,
+    /// Per-mille byte faults, using the Forgejo face's scenario vocabulary.
+    pub faults: crate::Faults,
 }
 /// All retained tables and transient input/output are bounded here.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -223,6 +225,8 @@ pub struct Service {
     pub(crate) accounts: List<Account>,
     pub(crate) person: Box<[u8]>,
     pub(crate) tokens: List<(Secret, u64)>,
+    pub(crate) faults: crate::Faults,
+    pub(crate) rng: Rng,
     pub(crate) pages: pages::Store,
     pub(crate) repositories: Map<u32, Row>,
     pub(crate) installations: Installations,
@@ -235,7 +239,8 @@ impl Service {
             return Err(Problem::Limits);
         }
         let string = usize::try_from(limits.github.string_bytes).or(Err(Problem::Limits))?;
-        if config.ruleset_id == 0
+        if !valid_faults(config.faults)
+            || config.ruleset_id == 0
             || !valid_origin(&config.base, limits.github.target_bytes)
             || !crate::logs::origin_fits(&config.blob, limits)
             || !crate::logs::optional_origin_fits(config.third_origin.as_deref(), limits)
@@ -263,26 +268,7 @@ impl Service {
             }
         }
         repository_rows(&config.repositories, string)?;
-        if config.accounts.len() > limits.github.inner || config.person.len() > string {
-            return Err(Problem::Config);
-        }
-        let mut person_found = false;
-        for (at, account) in config.accounts.iter().enumerate() {
-            if account.id == 0 || account.login.len() > string || !pages::unreserved(&account.login) {
-                return Err(Problem::Config);
-            }
-            if account.login == config.person {
-                person_found = true;
-            }
-            for prior in config.accounts.iter().take(at) {
-                if prior.id == account.id || prior.login == account.login {
-                    return Err(Problem::Config);
-                }
-            }
-        }
-        if !person_found {
-            return Err(Problem::Config);
-        }
+        check_accounts(&config, limits, string)?;
         crate::auth::check(&config, limits)?;
         let mut repositories = Map::with_capacity(limits.github.inner);
         for row in config.repositories.into_boxed() {
@@ -310,6 +296,8 @@ impl Service {
             accounts: config.accounts,
             person: config.person,
             tokens: config.tokens,
+            faults: config.faults,
+            rng: Rng::new(seed),
             pages: pages::Store::new(limits.pages, seed),
             repositories,
             installations: Installations::new(&limits.installations, seed),
@@ -844,6 +832,34 @@ fn repository_rows(rows: &List<Row>, string: usize) -> Result<(), Problem> {
                 return Err(Problem::Config);
             }
         }
+    }
+    Ok(())
+}
+
+fn valid_faults(faults: crate::Faults) -> bool {
+    faults.reset <= 1000 && faults.drop <= 1000 && faults.server_error <= 1000
+}
+
+fn check_accounts(config: &Config, limits: &Limits, string: usize) -> Result<(), Problem> {
+    if config.accounts.len() > limits.github.inner || config.person.len() > string {
+        return Err(Problem::Config);
+    }
+    let mut person_found = false;
+    for (at, account) in config.accounts.iter().enumerate() {
+        if account.id == 0 || account.login.len() > string || !pages::unreserved(&account.login) {
+            return Err(Problem::Config);
+        }
+        if account.login == config.person {
+            person_found = true;
+        }
+        for prior in config.accounts.iter().take(at) {
+            if prior.id == account.id || prior.login == account.login {
+                return Err(Problem::Config);
+            }
+        }
+    }
+    if !person_found {
+        return Err(Problem::Config);
     }
     Ok(())
 }

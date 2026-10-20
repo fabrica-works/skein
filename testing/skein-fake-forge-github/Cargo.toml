@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 skein-fake-forge-domain.workspace = true
+skein-fake-forge-protocol.workspace = true
 skein-lib.workspace = true
 skein-http.workspace = true
 skein-forge.workspace = true

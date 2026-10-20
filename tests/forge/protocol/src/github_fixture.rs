@@ -78,6 +78,7 @@ pub(crate) fn service(seed: u64, key: &'static [u8]) -> Service {
             pull_requests_only: false,
             required_signatures: false,
             tokens: List::with_capacity(0),
+            faults: skein_fake_forge_github::Faults { reset: 0, drop: 0, server_error: 0 },
             bot: USER,
             hook: Box::from(b"https://hook.test/start".as_slice()),
             repositories,

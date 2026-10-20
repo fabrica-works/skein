@@ -61,7 +61,6 @@ pub(crate) const MERGE_CONFLICT: &[u8] = b"MERGE_CONFLICT";
 pub(crate) const BRANCH_NOT_PROTECTED: &[u8] = b"Branch not protected";
 // Unrecorded: HTTP admission refusals before GitHub route decoding.
 pub(crate) const PAYLOAD_TOO_LARGE: &[u8] = b"Payload Too Large";
-pub(crate) const METHOD_NOT_ALLOWED: &[u8] = b"Method Not Allowed";
 // live session 1917, followed by the approval sentence without blank lines.
 pub(crate) const ENQUEUE_APPROVAL_PREFIX: &[u8] = b"Pull request ";
 

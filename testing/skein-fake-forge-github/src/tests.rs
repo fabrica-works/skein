@@ -61,3 +61,5 @@ mod write_merge;
 mod protection;
 
 mod auth;
+
+mod byte_faults;

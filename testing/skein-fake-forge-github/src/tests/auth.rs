@@ -369,10 +369,7 @@ fn matrix_request(h: &mut f::Harness, method: Method, target: &[u8], body: &[u8]
         let expected = expected(class, credential, target);
         if let Some(status) = expected {
             let Outcome::Reply(response) = outcome else {
-                panic!(
-                    "{credential:?} must be refused before domain for {method:?}, target length {}",
-                    target.len()
-                )
+                panic!("{credential:?} must be refused before domain for {method:?}, target length {}", target.len())
             };
             assert_eq!(response.status, status, "{credential:?} {method:?}, target length {}", target.len());
             if status == 200 {

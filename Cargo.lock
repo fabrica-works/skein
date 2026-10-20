@@ -609,6 +609,7 @@ name = "skein-fake-forge-github"
 version = "0.0.0"
 dependencies = [
  "skein-fake-forge-domain",
+ "skein-fake-forge-protocol",
  "skein-forge",
  "skein-http",
  "skein-json",

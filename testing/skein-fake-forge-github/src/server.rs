@@ -133,7 +133,7 @@ pub fn start(
     if server.state != State::New {
         return;
     }
-    next(server);
+    next(server, service, env, above, below);
     resume(server, service, env, above, below);
 }
 pub fn up(
@@ -184,6 +184,18 @@ pub fn down(
     }
     let Some(pending) = server.pending.take() else { return };
     let outcome = service.finish(pending, result, ReplyTo::new(server.owner), domain);
+    // A request's reads and write continuations finish before its answer is lost.
+    // Drawing here keeps a merge's preliminary reads from losing its write.
+    let outcome = match outcome {
+        call @ Outcome::Call(_, _) => call,
+        Outcome::Reply(reply) => {
+            if service.rng.chance(service.faults.drop) {
+                close(server, service, env, above, below);
+                return;
+            }
+            Outcome::Reply(if service.rng.chance(service.faults.server_error) { answers::failed() } else { reply })
+        }
+    };
     answer(server, &env.limits, outcome, above);
     resume(server, service, env, above, below);
 }
@@ -249,9 +261,19 @@ pub fn closed(
     server.state = State::Closed;
     above.push(Event::Closed);
 }
-fn next(server: &mut Server) {
-    server.state = State::Reading;
-    server.requests.push(http::Request::Next);
+fn next(
+    server: &mut Server,
+    service: &mut Service,
+    env: &Env<Limits>,
+    above: &mut Queue<Event>,
+    below: &mut Queue<Down>,
+) {
+    if service.rng.chance(service.faults.reset) {
+        close(server, service, env, above, below);
+    } else {
+        server.state = State::Reading;
+        server.requests.push(http::Request::Next);
+    }
 }
 fn http_down(server: &mut Server, env: &Env<Limits>, request: http::Request, below: &mut Queue<Down>) {
     http::down(
@@ -321,7 +343,7 @@ fn event_up(
             server.call = None;
             server.body.clear();
             match reuse {
-                http::Reuse::Keep => next(server),
+                http::Reuse::Keep => next(server, service, env, above, below),
                 http::Reuse::Close => close(server, service, env, above, below),
             }
         }
@@ -351,7 +373,7 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
         HttpMethod::Head => {
             server.state = State::Streaming;
             server.requests.push(http::Request::Respond(http::Response {
-                status: 405,
+                status: 404,
                 headers: Box::new([]),
                 body: http::Body::None,
                 close: false,
@@ -359,7 +381,7 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
             return;
         }
         HttpMethod::Options => {
-            respond(server, &env.limits, answers::refusal(405, crate::texts::METHOD_NOT_ALLOWED, &env.limits), None);
+            respond(server, &env.limits, answers::missing(&env.limits), None);
             return;
         }
     };

@@ -57,6 +57,7 @@ pub fn config() -> Config {
         pull_requests_only: false,
         required_signatures: false,
         tokens: List::with_capacity(0),
+        faults: crate::Faults { reset: 0, drop: 0, server_error: 0 },
         bot: BOT,
         hook: boxed(b"https://hook.test/start"),
         repositories,

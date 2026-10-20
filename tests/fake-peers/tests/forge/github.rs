@@ -107,6 +107,7 @@ fn config() -> fake::Config {
         pull_requests_only: false,
         required_signatures: false,
         tokens: List::with_capacity(0),
+        faults: skein_fake_forge_github::Faults { reset: 0, drop: 0, server_error: 0 },
         bot: BOT,
         hook: f::boxed(b"http://127.0.0.1/hooks"),
         repositories,
@@ -448,13 +449,13 @@ fn request_reuse(method: Method, target: &[u8], body: &[u8], auth: Option<&Secre
 }
 
 #[test]
-fn github_peer_head_is_a_bodyless_405_and_allows_reuse() {
+fn github_peer_head_is_a_bodyless_404_and_allows_reuse() {
     let mut world = World::new(f::SEED);
     let fd = world.open(true);
     world.send(fd, b"HEAD /app HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n");
     world.send(fd, &request(Method::Get, b"/unknown", b"", None));
     let replies = world.receive(fd);
-    assert_eq!(replies.status, 405);
+    assert_eq!(replies.status, 404);
     assert!(replies.body.starts_with(b"HTTP/1.1 404 "), "the next response starts immediately after HEAD's head");
     assert_eq!(Reply::parse(&replies.body).status, 404);
     world.settle();

@@ -98,6 +98,7 @@ impl Fake {
             pull_requests_only: false,
             required_signatures: false,
             tokens: List::with_capacity(0),
+            faults: skein_fake_forge_github::Faults { reset: 0, drop: 0, server_error: 0 },
             bot: 9,
             hook: Box::from(hook),
             repositories: fixture_repositories(),
