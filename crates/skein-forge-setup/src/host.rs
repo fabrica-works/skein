@@ -2,7 +2,7 @@
 mod boundary;
 mod connection;
 mod limits;
-mod run;
+pub(crate) mod run;
 mod settings;
 use crate::reconcile::{self, Failure, Reply, Stage, Why};
 pub use boundary::{Answer, Event, MAX_OUT, MaxOut, Need, Plan, Request};
@@ -53,7 +53,7 @@ impl Host {
         }
         let above = up.len();
         match request {
-            Request::Run { run, plan: Plan::Reconcile { forge } } => {
+            Request::Run { run, plan: Plan::Reconcile { forge, adopted } } => {
                 assert!(!self.runs.contains_key(&run), "one live run per owner token");
                 let given = &configured(&self.settings, forge).given;
                 let mut busy = self.runs.len() == self.runs.capacity();
@@ -71,8 +71,9 @@ impl Host {
                         },
                     });
                 } else {
+                    let given = run::given_for(given, &adopted);
                     let previous =
-                        self.runs.insert(run, Run::new(given, env.now, &mut self.plan_out)).expect("admitted run");
+                        self.runs.insert(run, Run::new(&given, env.now, &mut self.plan_out)).expect("admitted run");
                     assert!(previous.is_none(), "fresh owner token");
                 }
             }

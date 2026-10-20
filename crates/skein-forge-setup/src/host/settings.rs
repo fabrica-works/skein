@@ -12,6 +12,7 @@ pub struct Forge {
     pub kind: Kind,
     pub address: skein_io::Addr,
     pub transport: Transport,
+    /// The forge's given values; a run ignores this `adopted` in favour of its plan's.
     pub given: Given,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

@@ -18,10 +18,12 @@ pub fn given(owned: bool) -> Given {
         git_name: b"kit-git".as_slice().into(),
         orgs: if owned { Box::new([b"acme".as_slice().into(), b"work".as_slice().into()]) } else { Box::new([]) },
         org_owner: owned.then(|| b"ada".as_slice().into()),
+        adopted: Box::new([]),
         listener: None,
         word: b"kit".as_slice().into(),
         limits: Limits {
             orgs: 8,
+            repositories: 8,
             deadline: Duration::from_secs(120),
             backoff: Duration::from_millis(100),
             backoff_max: Duration::from_secs(5),

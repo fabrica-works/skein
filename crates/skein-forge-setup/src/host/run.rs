@@ -7,6 +7,12 @@ use crate::{
 };
 use skein_forge::forgejo::request::Request;
 use skein_lib::{Duration, Queue, Secret, Time, Token};
+/// The forge's settings given, with the plan's adopted repositories.
+pub(crate) fn given_for(forge: &Given, adopted: &[u64]) -> Given {
+    let mut given = forge.clone();
+    given.adopted = adopted.into();
+    given
+}
 #[derive(Debug)]
 pub(super) enum Owner {
     Read(Item),
@@ -36,7 +42,7 @@ impl Run {
     pub fn new(given: &Given, now: Time, out: &mut Queue<reconcile::Need>) -> Self {
         let mut run = Self {
             forge: given.forge,
-            machine: Reconcile::new(given).expect("given checked at host construction"),
+            machine: Reconcile::new(given).expect("the owner checks a plan's adopted repositories"),
             deadline: now.saturating_add(given.limits.deadline),
             pending: None,
             owner: None,

@@ -112,7 +112,14 @@ fn invalid(place: Place, value: &[u8]) -> Given {
         Place::AdminName => given.admin_name = value.into(),
         Place::ApiName => given.api_name = value.into(),
         Place::GitName => given.git_name = value.into(),
-        Place::Orgs | Place::OrgsLimit | Place::Deadline | Place::Backoff | Place::BackoffMax => {
+        Place::Orgs
+        | Place::Repositories
+        | Place::Repository(_)
+        | Place::OrgsLimit
+        | Place::RepositoriesLimit
+        | Place::Deadline
+        | Place::Backoff
+        | Place::BackoffMax => {
             unreachable!("grammar rows")
         }
     }
@@ -185,10 +192,11 @@ fn an_org_count_past_the_bound_is_refused() {
 fn a_zero_limit_names_its_place() {
     use crate::limits;
     use skein_lib::Duration;
-    for place in [Place::OrgsLimit, Place::Deadline, Place::Backoff, Place::BackoffMax] {
+    for place in [Place::OrgsLimit, Place::RepositoriesLimit, Place::Deadline, Place::Backoff, Place::BackoffMax] {
         let mut given = fixtures::given();
         match place {
             Place::OrgsLimit => given.limits.orgs = 0,
+            Place::RepositoriesLimit => given.limits.repositories = 0,
             Place::Deadline => given.limits.deadline = Duration::ZERO,
             Place::Backoff => given.limits.backoff = Duration::ZERO,
             Place::BackoffMax => given.limits.backoff_max = Duration::ZERO,
@@ -200,9 +208,69 @@ fn a_zero_limit_names_its_place() {
             | Place::GitName
             | Place::Orgs
             | Place::Org(_)
-            | Place::OrgOwner => unreachable!("limit rows"),
+            | Place::OrgOwner
+            | Place::Repositories
+            | Place::Repository(_) => unreachable!("limit rows"),
         }
         assert_eq!(limits::check(&given.limits), Err(Refused { place, other: None }), "{place:?}");
         refused(&given, place, None);
     }
+}
+
+fn adopted(ids: &[u64]) -> Given {
+    let mut given = fixtures::given();
+    given.adopted = ids.into();
+    given
+}
+fn adopted_count(count: u32) -> Given {
+    let mut ids = skein_lib::List::with_capacity(count);
+    for id in 1..=u64::from(count) {
+        ids.push(id).expect("fixture repository count");
+    }
+    adopted(ids.as_slice())
+}
+#[test]
+fn adopted_repositories_are_accepted_in_the_order_given() {
+    let ids = [9, 3, 7];
+    let given = adopted(&ids);
+    accepted(&given, "adopted order");
+    assert_eq!(given.adopted.as_ref(), &ids);
+}
+#[test]
+fn no_repository_is_admitted() {
+    accepted(&adopted(&[]), "no repositories");
+}
+#[test]
+fn an_adopted_count_at_the_bound_is_accepted() {
+    accepted(&adopted_count(fixtures::PROFILE_REPOSITORIES), "repository bound");
+}
+#[test]
+fn an_adopted_count_past_the_bound_is_refused() {
+    refused(&adopted_count(fixtures::PROFILE_REPOSITORIES + 1), Place::Repositories, None);
+}
+#[test]
+fn an_adopted_id_of_zero_names_its_index() {
+    for (ids, first_zero) in [([7, 9, 0], 2), ([7, 0, 0], 1), ([7, 7, 0], 2)] {
+        refused(&adopted(&ids), Place::Repository(first_zero), None);
+    }
+}
+#[test]
+fn a_repeated_adopted_id_names_the_repeat_and_the_first() {
+    for (ids, later, earlier) in
+        [(&[7, 9, 7][..], 2, 0), (&[9, 7, 9, 7], 2, 0), (&[7, 7, 7], 1, 0), (&[u64::MAX, 1, u64::MAX], 2, 0)]
+    {
+        refused(&adopted(ids), Place::Repository(later), Some(Place::Repository(earlier)));
+    }
+}
+#[test]
+fn ids_that_differ_are_never_a_repeat() {
+    for ids in [[1, 2, 3], [3, 2, 1], [u64::MAX, 1, 7]] {
+        accepted(&adopted(&ids), "distinct ids");
+    }
+}
+#[test]
+fn the_count_is_checked_before_the_ids() {
+    let mut given = adopted_count(fixtures::PROFILE_REPOSITORIES + 1);
+    given.adopted[0] = 0;
+    refused(&given, Place::Repositories, None);
 }

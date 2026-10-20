@@ -2,7 +2,7 @@
 use crate::limits::{self, Limits};
 use alloc::boxed::Box;
 use core::net::SocketAddr;
-use skein_lib::Writer;
+use skein_lib::{List, Writer};
 /// Owner's inputs; the checked machine copies these for one run.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Given {
@@ -16,6 +16,8 @@ pub struct Given {
     pub orgs: Box<[Box<[u8]>]>,
     /// Who owns the orgs made; set with `orgs`.
     pub org_owner: Option<Box<[u8]>>,
+    /// The repositories adopted, by id, in the order given; none when no repository is.
+    pub adopted: Box<[u64]>,
     pub listener: Option<SocketAddr>,
     pub word: Box<[u8]>,
     pub limits: Limits,
@@ -32,7 +34,10 @@ pub enum Place {
     Orgs,
     Org(u32),
     OrgOwner,
+    Repositories,
+    Repository(u32),
     OrgsLimit,
+    RepositoriesLimit,
     Deadline,
     Backoff,
     BackoffMax,
@@ -73,6 +78,42 @@ pub fn check(given: &Given) -> Result<(), Refused> {
     }
     if !given.orgs.is_empty() && given.org_owner.is_none() {
         return Err(Refused { place: Place::Orgs, other: Some(Place::OrgOwner) });
+    }
+    if given.adopted.len() > usize::try_from(given.limits.repositories).expect("u32 fits") {
+        return Err(Refused { place: Place::Repositories, other: None });
+    }
+    for (at, id) in given.adopted.iter().enumerate() {
+        if *id == 0 {
+            return Err(Refused {
+                place: Place::Repository(u32::try_from(at).expect("bounded repositories")),
+                other: None,
+            });
+        }
+    }
+    let count = u32::try_from(given.adopted.len()).expect("bounded repositories");
+    let mut ids = List::with_capacity(count);
+    for (at, id) in given.adopted.iter().enumerate() {
+        ids.push((*id, u32::try_from(at).expect("bounded repositories"))).expect("checked repository count");
+    }
+    let mut ids = ids.into_boxed();
+    ids.sort_unstable();
+    let mut previous = None;
+    let mut duplicate = None;
+    for &(id, later) in &ids {
+        if let Some((prior, earlier)) = previous
+            && prior == id
+        {
+            // Tuple order chooses the first repeat in the order given.
+            let pair = (later, earlier);
+            duplicate = Some(match duplicate {
+                Some(found) => core::cmp::min(found, pair),
+                None => pair,
+            });
+        }
+        previous = Some((id, later));
+    }
+    if let Some((later, earlier)) = duplicate {
+        return Err(Refused { place: Place::Repository(later), other: Some(Place::Repository(earlier)) });
     }
     Ok(())
 }

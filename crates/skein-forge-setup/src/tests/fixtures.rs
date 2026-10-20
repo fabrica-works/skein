@@ -95,6 +95,7 @@ impl Run {
 pub fn limits() -> crate::limits::Limits {
     crate::limits::Limits {
         orgs: PROFILE_ORGS,
+        repositories: PROFILE_REPOSITORIES,
         deadline: Duration::from_secs(120),
         backoff: Duration::from_millis(100),
         backoff_max: Duration::from_secs(5),
@@ -110,6 +111,7 @@ pub fn given() -> crate::given::Given {
         git_name: b"kit-git".as_slice().into(),
         orgs: Box::new([]),
         org_owner: None,
+        adopted: Box::new([]),
         listener: None,
         word: b"kit".as_slice().into(),
         limits: limits(),
@@ -126,6 +128,7 @@ pub fn to_bot(run: &mut Run) {
 }
 // Shared profile and small page sizes from forge-setup.md, 4.3 and 4.4.
 pub const PROFILE_ORGS: u32 = 8;
+pub const PROFILE_REPOSITORIES: u32 = 8;
 pub const PAGE_CAP: u32 = 2;
 pub fn bot_event() -> crate::reconcile::Event {
     user_event(person(b"kit", b"kit:bot"))

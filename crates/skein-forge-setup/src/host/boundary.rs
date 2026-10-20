@@ -1,9 +1,10 @@
 //! The owner's plans, answers and retained items (forge-setup.md, 6.3).
 use crate::{item::Item, reconcile::Failure};
+use alloc::boxed::Box;
 use skein_lib::{Secret, Token};
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Plan {
-    Reconcile { forge: u16 },
+    Reconcile { forge: u16, adopted: Box<[u64]> },
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Request {

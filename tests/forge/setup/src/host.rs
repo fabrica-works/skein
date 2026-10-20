@@ -72,7 +72,14 @@ impl HostWorld {
         }
     }
     pub fn run(&mut self, run: u64) {
-        self.action(Request::Run { run: Token::new(run), plan: Plan::Reconcile { forge: 1 } });
+        self.run_adopted(run, &[]);
+    }
+    pub fn run_adopted(&mut self, run: u64, adopted: &[u64]) {
+        self.action(Request::Run { run: Token::new(run), plan: Plan::Reconcile { forge: 1, adopted: adopted.into() } });
+    }
+    #[must_use]
+    pub fn requests(&self) -> &fake::Tally {
+        self.service.tally()
     }
     pub fn close(&mut self) {
         self.action(Request::Close);

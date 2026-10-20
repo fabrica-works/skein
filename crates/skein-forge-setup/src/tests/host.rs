@@ -76,7 +76,7 @@ impl World {
         self.host.down(&self.env, request, &mut self.up, &mut self.io);
     }
     fn run(&mut self, run: u64, forge: u16) {
-        self.down(Request::Run { run: Token::new(run), plan: Plan::Reconcile { forge } });
+        self.down(Request::Run { run: Token::new(run), plan: Plan::Reconcile { forge, adopted: Box::new([]) } });
     }
     fn answer(&mut self, run: u64, answer: Answer) {
         self.down(Request::Answer { run: Token::new(run), answer });
@@ -122,6 +122,33 @@ fn stop(run: u64, forge: u16, why: Why) -> Event {
         run: Token::new(run),
         failure: Failure { forge, step: Stage::Admin, subject: b"kit-admin".as_slice().into(), why },
     }
+}
+#[test]
+fn a_runs_given_takes_the_plans_adopted_and_the_rest_from_the_forge() {
+    let mut forge = fixtures::given();
+    forge.adopted = Box::new([99]);
+    forge.orgs = Box::new([b"acme".as_slice().into()]);
+    forge.org_owner = Some(b"ada".as_slice().into());
+    forge.listener = Some(([127, 0, 0, 1], 9898).into());
+    let plan = [7, 3];
+    let given = crate::host::run::given_for(&forge, &plan);
+    let mut expected = forge.clone();
+    expected.adopted = plan.into();
+    assert_eq!(given, expected);
+    assert_eq!(forge.adopted.as_ref(), &[99]);
+    assert!(crate::host::run::given_for(&forge, &[]).adopted.is_empty());
+}
+#[test]
+fn settings_with_too_many_adopted_repositories_are_refused() {
+    use crate::given::{Place, Refused};
+    let mut s = settings(&[1]);
+    let given = &mut s.forges.get_mut(0).unwrap().given;
+    given.limits.repositories = 1;
+    given.adopted = Box::new([1, 2]);
+    assert_eq!(
+        Host::new(&limits(), s, crypto()).err(),
+        Some(Unusable::Given { forge: 1, refused: Refused { place: Place::Repositories, other: None } })
+    );
 }
 #[test]
 fn a_run_without_an_admin_token_stops_before_any_connection() {

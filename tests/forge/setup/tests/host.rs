@@ -23,6 +23,19 @@ fn the_host_reconciles_an_empty_forge_through_http() {
     }
 }
 #[test]
+fn the_host_runs_a_plan_that_names_adopted_repositories() {
+    let mut without = HostWorld::new(7, &[]);
+    without.run(1);
+    without.finish();
+    let mut world = HostWorld::new(7, &[]);
+    world.run_adopted(1, &[1, 2]);
+    world.finish();
+    assert_eq!(world.heard(), &[Heard::Done { run: Token::new(1), at: Duration::ZERO }]);
+    assert_eq!(world.requests().total, without.requests().total);
+    assert!(world.requests().routes.iter().eq(without.requests().routes.iter()));
+    assert_eq!(world.requests().unrouted, 0);
+}
+#[test]
 fn refused_and_unavailable_first_tries_wait_doubling_then_converge() {
     let mut world = HostWorld::new(7, &[Connect::Refused, Connect::Unavailable, Connect::Refused]);
     world.run(1);
