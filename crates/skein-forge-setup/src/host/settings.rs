@@ -75,13 +75,28 @@ pub(super) struct Times {
 }
 #[derive(Debug)]
 pub enum Transport {
-    Plaintext { name: Option<Box<[u8]>> },
+    Plaintext {
+        name: Option<Box<[u8]>>,
+    },
+    /// TLS with the configured server name and trust.
+    Tls {
+        server_name: skein_tls::Name,
+        trust: skein_tls::Config,
+    },
 }
 pub(super) fn host(forge: &Forge) -> Option<Box<[u8]>> {
     let address = match forge.address {
         skein_io::Addr::Ip(address) => address,
         skein_io::Addr::InProcess(_) => return None,
     };
-    let Transport::Plaintext { name } = &forge.transport;
-    skein_forge::host::host(address, name.as_deref())
+    let name = match &forge.transport {
+        Transport::Plaintext { name } => name.as_deref(),
+        Transport::Tls { server_name, .. } => match server_name.server() {
+            skein_tls::Server::Dns(text) => Some(text.as_bytes()),
+            skein_tls::Server::Ip(ip) => {
+                return skein_forge::host::host(core::net::SocketAddr::new(ip, address.port()), None);
+            }
+        },
+    };
+    skein_forge::host::host(address, name)
 }

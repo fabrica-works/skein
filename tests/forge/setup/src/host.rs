@@ -1,10 +1,7 @@
 //! The host over HTTP bytes, a fake Forgejo and io played by hand.
-use crate::{fixtures, world::seeded_config};
+use crate::{fixtures, tls::Carrier, world::seeded_config};
 use skein_fake_forge_protocol::{self as fake, Service};
-use skein_forge_machine_world::{
-    github::{self, Fake},
-    pipe::{Cut, Pipe},
-};
+use skein_forge_machine_world::github::{self, Fake};
 use skein_forge_setup::{
     host::{Answer, Event, Host, Limits, Need, Plan, Request, Settings},
     item::Item,
@@ -36,7 +33,7 @@ enum Api {
     Forgejo,
 }
 struct Peer {
-    pipe: Pipe,
+    pipe: Carrier,
     server: Option<fake::Server>,
     github: bool,
     api: Api,
@@ -49,6 +46,7 @@ struct Peer {
 }
 pub struct HostWorld {
     host: Host,
+    tls_addresses: Vec<skein_io::Addr>,
     env: Env<Limits>,
     service: Service,
     github: Option<Fake>,
@@ -185,6 +183,15 @@ impl HostWorld {
         settings: Settings,
         limits: Limits,
     ) -> Self {
+        let tls_addresses = settings
+            .forges
+            .as_slice()
+            .iter()
+            .filter_map(|forge| match &forge.transport {
+                skein_forge_setup::host::Transport::Plaintext { .. } => None,
+                skein_forge_setup::host::Transport::Tls { .. } => Some(forge.address),
+            })
+            .collect();
         let (service, fake_limits) = seeded_config(seed, false, config);
         let mut documents = skein_forge_setup::host::documents(&limits);
         // The host may retain a larger GitHub PEM scalar than Forgejo's peer emits.
@@ -193,6 +200,7 @@ impl HostWorld {
         assert_eq!(documents, fake_limits.documents);
         Self {
             host: Host::new(&limits, settings, fixtures::crypto()).expect("host fixtures"),
+            tls_addresses,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             service,
             github: None,
@@ -476,7 +484,7 @@ impl HostWorld {
                     return;
                 }
                 let mut peer = Peer {
-                    pipe: Pipe::new(self.seed ^ owner.raw(), Cut::Never),
+                    pipe: Carrier::new(self.seed ^ owner.raw(), self.tls_addresses.contains(&addr)),
                     server: None,
                     api: if self.github.is_some() && addr == fixtures::github_forge().address {
                         Api::GitHub
@@ -603,4 +611,48 @@ fn complete_request(bytes: &[u8]) -> bool {
         }
     }
     bytes.len() >= end + 4 + length
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::num::NonZeroU32;
+    use skein_forge_setup::host::Transport;
+    use skein_tls_world::pki;
+
+    #[test]
+    fn the_github_picker_over_tls_reaches_the_same_done_as_plaintext() {
+        let mut plain = HostWorld::github(7, &[]);
+        let mut settings = fixtures::github_settings();
+        settings.forges.get_mut(1).expect("GitHub forge").transport =
+            Transport::Tls { server_name: pki::name(), trust: pki::client(&[]) };
+        let mut tls = HostWorld::new_with(7, &[], settings, plain.env.limits);
+        tls.github = Some(Fake::new(7));
+        tls.wall_base = plain.wall_base;
+        tls.set_time(Time::ZERO);
+        tls.files.clone_from(&plain.files);
+        for world in [&mut plain, &mut tls] {
+            world.wall_base = Some(pki::VALID);
+            world.set_time(Time::ZERO);
+            world.github_all_repositories(1);
+            world.run_plan(
+                1,
+                Plan::Reachable { forge: 4, installation: Some(1), page: NonZeroU32::new(1).expect("page") },
+            );
+            world.finish();
+            assert!(
+                matches!(world.heard(), [Heard::Done { outcome: Outcome::Reachable { rows, more: true }, .. }] if rows.len() == 2),
+                "{:?}",
+                world.heard()
+            );
+        }
+        assert_eq!(tls.heard(), plain.heard());
+        assert_eq!(tls.github_requests(), plain.github_requests());
+        assert_eq!(tls.connects().len(), 2);
+        for world in [&mut plain, &mut tls] {
+            world.close();
+            world.finish();
+            assert!(matches!(world.heard().last(), Some(Heard::Closed { .. })));
+        }
+    }
 }

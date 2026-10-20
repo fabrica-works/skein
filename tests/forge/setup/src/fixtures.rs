@@ -210,6 +210,7 @@ pub fn host_limits() -> skein_forge_setup::host::Limits {
         body_bytes: 16384,
         inner: 32,
         target_bytes: 4096,
+        tls: skein_forge_machine_world::fixtures::limits().tls,
         io: skein_forge_machine_world::fixtures::shared().io,
     }
 }

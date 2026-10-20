@@ -18,6 +18,7 @@ skein-fake-forge-protocol.workspace = true
 skein-fake-forge-github.workspace = true
 skein-fake-forge-domain.workspace = true
 skein-forge-machine-world.workspace = true
+skein-tls-world = { path = "../../tls" }
 
 [lints.rust]
 unsafe_code = "forbid"

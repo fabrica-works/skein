@@ -32,6 +32,8 @@ pub struct Limits {
     pub target_bytes: u32,
     /// The owner's io stream limits, checked against HTTP's demands.
     pub io: skein_io::Limits,
+    /// The TLS client beneath HTTP.
+    pub tls: skein_tls::client::Limits,
 }
 /// The documents' limits, with body strings bounded independently.
 #[must_use]
@@ -72,17 +74,22 @@ pub fn github(l: &Limits) -> dialect::limits::Limits {
 /// HTTP's limits on plaintext, with complete heads sent within io's cap.
 #[must_use]
 pub fn http(l: &Limits) -> skein_http::client::Limits {
+    http_transport(l, false)
+}
+pub(super) fn http_transport(l: &Limits, tls: bool) -> skein_http::client::Limits {
     skein_http::client::Limits {
-        request: l.io.output,
+        request: if tls { l.tls.send } else { l.io.output },
         head: l.head_bytes,
         headers: l.headers,
         read: l.chunk.max(5),
-        send: l.io.output,
+        send: if tls { l.tls.send } else { l.io.output },
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Stacked {
     HttpOverIo,
+    HttpOverTls,
+    TlsOverIo,
     JsonOverHttp,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -153,7 +160,7 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
             return Err(Unusable::Zero);
         }
     }
-    if !l.io.is_usable() {
+    if !l.io.is_usable() || skein_tls::client::worst_case(&l.tls).is_none() {
         return Err(Unusable::Zero);
     }
     if l.token_bytes < 64 {
@@ -162,10 +169,7 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
     if let Err(problem) = docs::check(&documents(l)) {
         return Err(Unusable::Documents(problem));
     }
-    let h = http(l);
-    stack(Stacked::HttpOverIo, skein_http::client::largest_read(&h), l.io.intake)?;
-    stack(Stacked::HttpOverIo, skein_http::client::largest_room(&h), l.io.output)?;
-    stack(Stacked::JsonOverHttp, tokenizer::largest_demand(&documents(l).json), h.read)?;
+    stacks(l)?;
     if settings.forges.len() > l.forges {
         return Err(Unusable::Forges { forges: l.forges });
     }
@@ -176,16 +180,26 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
                 return Err(Unusable::Duplicate { forge: number });
             }
         }
-        let Transport::Plaintext { name } = &forge.transport;
-        if let Some(name) = name
-            && !plaintext_name(name)
-        {
-            return Err(Unusable::PlaintextName { forge: number });
-        }
+        let tls = match &forge.transport {
+            Transport::Plaintext { name } => {
+                if let Some(name) = name
+                    && !plaintext_name(name)
+                {
+                    return Err(Unusable::PlaintextName { forge: number });
+                }
+                false
+            }
+            Transport::Tls { .. } => true,
+        };
         match forge.address {
-            skein_io::Addr::Ip(ip) if ip.ip().is_loopback() => (),
-            skein_io::Addr::Ip(_) | skein_io::Addr::InProcess(_) => return Err(Unusable::Address { forge: number }),
+            skein_io::Addr::Ip(ip) => {
+                if !tls && !ip.ip().is_loopback() {
+                    return Err(Unusable::Address { forge: number });
+                }
+            }
+            skein_io::Addr::InProcess(_) => return Err(Unusable::Address { forge: number }),
         }
+        let h = http_transport(l, tls);
         let host = settings::host(forge).ok_or(Unusable::Request { forge: number })?;
         let (credential, framing) = match &forge.kind {
             Kind::Forgejo(_) => (u64::from(l.token_bytes), 192),
@@ -224,6 +238,23 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
             return Err(Unusable::Reachable { forge: number, reachable, inner: l.inner });
         }
     }
+    Ok(())
+}
+fn stacks(l: &Limits) -> Result<(), Unusable> {
+    for tls in [true, false] {
+        let h = http_transport(l, tls);
+        let (stacked, read, send) = if tls {
+            (Stacked::HttpOverTls, l.tls.read, l.tls.send)
+        } else {
+            (Stacked::HttpOverIo, l.io.intake, l.io.output)
+        };
+        stack(stacked, skein_http::client::largest_read(&h), read)?;
+        stack(stacked, skein_http::client::largest_room(&h), send)?;
+    }
+    stack(Stacked::TlsOverIo, skein_tls::client::LARGEST_READ, l.io.intake)?;
+    stack(Stacked::TlsOverIo, skein_tls::client::largest_room(&l.tls), l.io.output)?;
+    let h = http(l);
+    stack(Stacked::JsonOverHttp, tokenizer::largest_demand(&documents(l).json), h.read)?;
     Ok(())
 }
 fn stack(stacked: Stacked, demand: u32, cap: u32) -> Result<(), Unusable> {

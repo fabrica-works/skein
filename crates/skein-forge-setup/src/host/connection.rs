@@ -1,7 +1,7 @@
 //! One request per connection, with its answer decoded as bytes arrive (6.3).
 use super::{
     Limits, limits,
-    settings::{self, Forge},
+    settings::{self, Forge, Transport},
 };
 use crate::{call::Auth, reconcile::Reply};
 use alloc::boxed::Box;
@@ -31,6 +31,9 @@ pub(crate) struct Connection {
     pub(crate) result: Option<Reply>,
     answered: bool,
     http: http::Client,
+    tls: Option<skein_tls::client::Client>,
+    tls_up: Queue<skein_tls::client::Event>,
+    tls_down: Queue<Down>,
     http_up: Queue<http::Event>,
     http_down: Queue<Down>,
     json: tokenizer::Tokenizer,
@@ -91,6 +94,7 @@ impl Connection {
             request::Method::Patch => skein_http::Method::Patch,
             request::Method::Delete => skein_http::Method::Delete,
         };
+        let tls = tls(forge, l);
         Some(Self {
             run,
             socket: None,
@@ -99,7 +103,10 @@ impl Connection {
             close_sent: false,
             result: None,
             answered: false,
-            http: http::Client::new(&limits::http(l)),
+            http: http::Client::new(&limits::http_transport(l, tls.is_some())),
+            tls,
+            tls_up: Queue::with_capacity(8),
+            tls_down: Queue::with_capacity(8),
             http_up: Queue::with_capacity(8),
             http_down: Queue::with_capacity(8),
             json: tokenizer::Tokenizer::new(&limits::documents(l).json),
@@ -154,6 +161,7 @@ impl Connection {
             dialect::request::Method::Patch => skein_http::Method::Patch,
             dialect::request::Method::Delete => skein_http::Method::Delete,
         };
+        let tls = tls(forge, l);
         Ok(Self {
             run,
             socket: None,
@@ -162,7 +170,10 @@ impl Connection {
             close_sent: false,
             result: None,
             answered: false,
-            http: http::Client::new(&limits::http(l)),
+            http: http::Client::new(&limits::http_transport(l, tls.is_some())),
+            tls,
+            tls_up: Queue::with_capacity(8),
+            tls_down: Queue::with_capacity(8),
             http_up: Queue::with_capacity(8),
             http_down: Queue::with_capacity(8),
             json: tokenizer::Tokenizer::new(&limits::github(l).json),
@@ -185,12 +196,30 @@ impl Connection {
         if self.closing.is_some() {
             return;
         }
+        match &mut self.tls {
+            Some(tls) => {
+                let e = Env { now: env.now, wall: env.wall, limits: env.limits.tls };
+                skein_tls::client::down(
+                    tls,
+                    &e,
+                    skein_tls::client::Request::Handshake,
+                    &mut self.tls_up,
+                    &mut self.tls_down,
+                );
+            }
+            None => self.start(env),
+        }
+    }
+    fn start(&mut self, env: &Env<Limits>) {
         if let Some(call) = self.call.take() {
             self.http_down(env, http::Request::Call(call));
             if self.upload.is_some() {
                 self.http_down(
                     env,
-                    http::Request::Upload(Down::Demand { read: Read::Nothing, room: limits::http(&env.limits).send }),
+                    http::Request::Upload(Down::Demand {
+                        read: Read::Nothing,
+                        room: limits::http_transport(&env.limits, self.tls.is_some()).send,
+                    }),
                 );
             }
         }
@@ -199,11 +228,20 @@ impl Connection {
         if self.closing.is_some() {
             return;
         }
-        let h = Env { now: env.now, wall: env.wall, limits: limits::http(&env.limits) };
+        match &mut self.tls {
+            Some(tls) => {
+                let e = Env { now: env.now, wall: env.wall, limits: env.limits.tls };
+                skein_tls::client::up(tls, &e, event, &mut self.tls_up, &mut self.tls_down);
+            }
+            None => self.http_stream(env, event),
+        }
+    }
+    fn http_stream(&mut self, env: &Env<Limits>, event: Up) {
+        let h = Env { now: env.now, wall: env.wall, limits: limits::http_transport(&env.limits, self.tls.is_some()) };
         http::up(&mut self.http, &h, event, &mut self.http_up, &mut self.http_down);
     }
     fn http_down(&mut self, env: &Env<Limits>, request: http::Request) {
-        let h = Env { now: env.now, wall: env.wall, limits: limits::http(&env.limits) };
+        let h = Env { now: env.now, wall: env.wall, limits: limits::http_transport(&env.limits, self.tls.is_some()) };
         http::down(&mut self.http, &h, request, &mut self.http_up, &mut self.http_down);
     }
     fn json_down(&mut self, env: &Env<Limits>, request: tokenizer::Request) {
@@ -246,11 +284,42 @@ impl Connection {
             }
             return false;
         }
-        if let Some(down) = self.http_down.pop() {
+        if let Some(down) = self.tls_down.pop() {
             if !self.closed
                 && let Some(socket) = self.socket
             {
                 io.push(skein_io::Request::Stream { stream: socket, down });
+            }
+            return true;
+        }
+        if let Some(event) = self.tls_up.pop() {
+            match event {
+                skein_tls::client::Event::Ready(_) => self.start(env),
+                skein_tls::client::Event::Stream(event) => self.http_stream(env, event),
+                skein_tls::client::Event::Failed(_) => self.fail(),
+                skein_tls::client::Event::Closed => (),
+            }
+            return true;
+        }
+        if let Some(down) = self.http_down.pop() {
+            match &mut self.tls {
+                Some(tls) => {
+                    let e = Env { now: env.now, wall: env.wall, limits: env.limits.tls };
+                    skein_tls::client::down(
+                        tls,
+                        &e,
+                        skein_tls::client::Request::Stream(down),
+                        &mut self.tls_up,
+                        &mut self.tls_down,
+                    );
+                }
+                None => {
+                    if !self.closed
+                        && let Some(socket) = self.socket
+                    {
+                        io.push(skein_io::Request::Stream { stream: socket, down });
+                    }
+                }
             }
             return true;
         }
@@ -280,7 +349,9 @@ impl Connection {
         if self.closing.is_some() {
             return !self.closed && !self.close_sent && self.socket.is_some();
         }
-        !self.http_down.is_empty()
+        !self.tls_down.is_empty()
+            || !self.tls_up.is_empty()
+            || !self.http_down.is_empty()
             || !self.http_up.is_empty()
             || !self.json_down.is_empty()
             || !self.json_up.is_empty()
@@ -389,7 +460,9 @@ impl Connection {
         };
         let end = self
             .uploaded
-            .saturating_add(usize::try_from(limits::http(&env.limits).send).expect("u32 fits"))
+            .saturating_add(
+                usize::try_from(limits::http_transport(&env.limits, self.tls.is_some()).send).expect("u32 fits"),
+            )
             .min(body.len());
         let piece = bytes::copy_of(body.get(self.uploaded..end).expect("bounded upload"));
         self.uploaded = end;
@@ -401,8 +474,19 @@ impl Connection {
         } else {
             self.http_down(
                 env,
-                http::Request::Upload(Down::Demand { read: Read::Nothing, room: limits::http(&env.limits).send }),
+                http::Request::Upload(Down::Demand {
+                    read: Read::Nothing,
+                    room: limits::http_transport(&env.limits, self.tls.is_some()).send,
+                }),
             );
+        }
+    }
+}
+fn tls(forge: &Forge, l: &Limits) -> Option<skein_tls::client::Client> {
+    match &forge.transport {
+        Transport::Plaintext { .. } => None,
+        Transport::Tls { server_name, trust } => {
+            Some(skein_tls::client::Client::new(trust, server_name.clone(), &l.tls))
         }
     }
 }

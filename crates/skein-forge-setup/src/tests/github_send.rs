@@ -470,6 +470,7 @@ fn a_github_request_head_must_fit_the_hosts_output() {
     let bound = l.target_bytes + HOST_BYTES + u32::try_from(dialect::jwt::JWT_BYTES).unwrap() + AGENT_BYTES + FRAMING;
     for (output, expected) in [(bound, None), (bound - 1, Some(crate::host::Unusable::Request { forge: 4 }))] {
         l.io.output = output;
+        l.tls.send = 1;
         assert_eq!(crate::host::Host::new(&l, settings(), crypto()).err(), expected);
     }
 }

@@ -60,6 +60,7 @@ pub(crate) fn limits() -> Limits {
         body_bytes: 16384,
         inner: 32,
         target_bytes: 4096,
+        tls: skein_tls::client::Limits { read: 16384, send: 16384, records: skein_tls::client::MAX_RECORD },
         io: skein_io::Limits {
             sockets: 8,
             names: 0,
@@ -1168,6 +1169,7 @@ fn a_host_with_no_github_forge_checks_what_it_did() {
     const FRAMING: u32 = 192; // Forgejo's request-head overhead in host::limits.
     let mut l = limits();
     l.depth = 9;
+    l.tls.send = 1;
     l.io.output = l.target_bytes + HOST_BYTES + l.token_bytes + AGENT_BYTES + FRAMING;
     Host::new(&l, settings(&[1]), crypto()).unwrap();
 }
@@ -1183,4 +1185,122 @@ fn a_github_forge_with_documents_that_cannot_hold_the_pin_is_unusable() {
     l.depth = skein_forge::github::limits::DEPTH;
     l.string_bytes = 27;
     Host::new(&l, github_settings(), crypto()).unwrap();
+}
+
+fn tls_settings() -> Settings {
+    let root = std::fs::read("../../tests/tls/fixtures/root.der").expect("TLS world's root");
+    let trust = skein_tls::Config::from_der(&[root.into_boxed_slice()], &[]).expect("valid root").0;
+    let mut settings = settings(&[1]);
+    settings.forges.get_mut(0).expect("forge").transport =
+        Transport::Tls { server_name: skein_tls::Name::new("skein.test").expect("TLS name"), trust };
+    settings
+}
+#[test]
+fn a_tls_forge_of_either_kind_off_loopback_is_usable() {
+    for github in [false, true] {
+        let mut settings = tls_settings();
+        let forge = settings.forges.get_mut(0).expect("forge");
+        if github {
+            forge.kind = Kind::GitHub(super::github_fixtures::given());
+        }
+        forge.address = skein_io::Addr::Ip(([192, 0, 2, 1], 3000).into());
+        Host::new(&limits(), settings, crypto()).expect("TLS at any IP");
+    }
+}
+#[test]
+fn tls_stack_demands_past_the_caps_are_refused() {
+    let mut l = limits();
+    l.tls.read = 1;
+    assert_eq!(
+        Host::new(&l, tls_settings(), crypto()).err(),
+        Some(Unusable::Stack { stacked: Stacked::HttpOverTls, demand: 4096, cap: 1 })
+    );
+    let mut l = limits();
+    l.io.intake = 8192;
+    assert_eq!(
+        Host::new(&l, tls_settings(), crypto()).err(),
+        Some(Unusable::Stack { stacked: Stacked::TlsOverIo, demand: skein_tls::client::LARGEST_READ, cap: 8192 })
+    );
+    let mut l = limits();
+    l.tls.send = l.io.output;
+    assert_eq!(
+        Host::new(&l, tls_settings(), crypto()).err(),
+        Some(Unusable::Stack {
+            stacked: Stacked::TlsOverIo,
+            demand: skein_tls::client::largest_room(&l.tls),
+            cap: l.io.output
+        })
+    );
+}
+#[test]
+fn in_process_forges_are_refused_on_both_transports() {
+    for mut settings in [settings(&[1]), tls_settings()] {
+        settings.forges.get_mut(0).expect("forge").address =
+            skein_io::Addr::InProcess(skein_io::Name::new(b"setup").expect("in-process name"));
+        assert_eq!(Host::new(&limits(), settings, crypto()).err(), Some(Unusable::Address { forge: 1 }));
+    }
+}
+
+#[test]
+fn tls_handshake_failure_answers_down_and_closes_for_both_dialects() {
+    use crate::host::connection::Connection;
+    use crate::reconcile::Reply;
+    use skein_lib::stream::{Fault, Up};
+    let settings = tls_settings();
+    let forge = settings.forges.get(0).expect("forge");
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits() };
+    let forgejo = Connection::new(
+        Token::new(1),
+        forge,
+        b"kit",
+        &skein_forge::forgejo::request::Request::User,
+        &fixtures::secret(fixtures::ADMIN),
+        &env.limits,
+    )
+    .expect("Forgejo call");
+    let github = Connection::github(
+        Token::new(1),
+        forge,
+        b"kit",
+        &skein_forge::github::request::Request::Conversion { code: b"code".as_slice().into() },
+        &Auth::None,
+        env.wall,
+        &env.limits,
+    )
+    .expect("GitHub call");
+    for mut connection in [forgejo, github] {
+        let call = connection.call.as_ref().expect("held call");
+        let mut host = None;
+        for header in &call.headers {
+            if header.name.as_ref() == b"Host" {
+                host = Some(header.value.as_ref());
+            }
+        }
+        assert_eq!(host, Some(b"skein.test:3000".as_slice()));
+        connection.socket = Some(Token::new(2));
+        connection.connect(&env);
+        assert!(connection.call.is_some(), "HTTP waits for Ready");
+        let mut io = Queue::with_capacity(16);
+        for _ in 0_u32..8 {
+            if !connection.pump(&env, &mut io) {
+                break;
+            }
+        }
+        connection.stream(&env, Up::Failed(Fault::Reset));
+        for _ in 0_u32..16 {
+            if !connection.pump(&env, &mut io) {
+                break;
+            }
+        }
+        assert_eq!(connection.result.take(), Some(Reply::Down));
+        assert!(connection.call.is_none());
+        let mut closed = false;
+        for _ in 0..io.len() {
+            if let Some(skein_io::Request::Close { entity }) = io.pop() {
+                assert_eq!(entity, Token::new(2));
+                closed = true;
+            }
+        }
+        assert!(closed);
+    }
 }

@@ -159,7 +159,8 @@ failures.
   an empty value is none, for every item. The admin's token is asked for
   like the rest and held to the run's end.
 - **The API's address and transport are its host's:** reconcile says a
-  request, never an address. Plaintext to loopback (section 9).
+  request, never an address. The host speaks plaintext to loopback, or
+  TLS (section 9).
 
 ### 4.2 Events in, needs out
 
@@ -908,7 +909,7 @@ pin (forge.md, section 4.3), and named by the fact's name.
   plan when a second does.
 - **Reconcile over TLS,** for a managed forge on another host. Default:
   plaintext to loopback alone, and the owner refuses a forge on TLS.
-  The host component speaks TLS for GitHub, so the default is the
+  The host component speaks TLS to either kind, so the default is the
   owner's, not the host's.
 - **A hook left at an old listener's address,** after the listener
   moves. Default: left alone; the person deletes it.
