@@ -222,3 +222,21 @@ fn without_records_omits_the_observation_bound() {
     world.pass();
     skein_fake_peers_tests::assert_record_bound::<forge::Observation>(before, world.peer.worst_case(), limits().observations, limits().observation_bytes);
 }
+
+#[test]
+fn an_owner_seeds_the_setup_admin_and_token_before_serving() {
+    let mut world = World::new();
+    let store = world.peer.setup_mut();
+    let admin = store.account(b"site-admin", true, b"Site Administrator");
+    let token = b"owner-seeded-admin-token";
+    store.token(admin, b"owner", &[b"all"], skein_lib::Secret::new(fixtures::boxed(token)));
+    let fd = world.open();
+    let request = format!("GET /api/v1/user HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: token {}\r\nConnection: close\r\n\r\n", std::str::from_utf8(token).unwrap());
+    world.send(fd, request.as_bytes());
+    let response = world.response(fd);
+    assert!(response.starts_with(b"HTTP/1.1 200"));
+    let expected = format!(r#"{{"id":{admin},"login":"site-admin","is_admin":true,"full_name":"Site Administrator"}}"#);
+    assert!(response.ends_with(expected.as_bytes()), "{}", String::from_utf8_lossy(&response));
+    world.close(fd);
+    world.settle();
+}

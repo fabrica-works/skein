@@ -217,6 +217,14 @@ impl Peer {
     pub fn observations(&self) -> &[Observation] {
         &self.observations
     }
+    /// Lends Forgejo's setup store so an owner can seed accounts and tokens before serving.
+    /// Panics for a GitHub face, which has no Forgejo setup store.
+    pub fn setup_mut(&mut self) -> &mut forgejo::setup::Store {
+        match &mut self.service {
+            protocol::Service::Forgejo(service) => service.setup_mut(),
+            protocol::Service::Github(_) => panic!("GitHub has no Forgejo setup store"),
+        }
+    }
     pub fn shutdown(&mut self) {
         self.face.shutdown();
     }
