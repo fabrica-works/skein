@@ -135,8 +135,8 @@ The owner names an endpoint by its index in that configuration.
     when the call ended before its request was measured;
   - the time from the request sent to the response's first byte, or none
     before one arrived;
-  - the largest gap between two of the response's events, the measure
-    the idle deadline bounds.
+  - the largest gap between two of the response's events that carry the
+    model's output, the measure the idle deadline bounds.
 
   They are observed where the component already observes them (the client's
   encoded request, its first response bytes, the deadlines' activity),
@@ -251,7 +251,7 @@ Once it runs, a call that waited is a call like any other.
 | connect | the connection's start | the socket connected | `Connect` |
 | handshake | the socket connected | TLS ready | `Handshake` |
 | head | the request's first byte, again at each piece of upload room granted | the response's head | `Head` |
-| idle | the response's head, again at each event, the provider's pings included | the call's terminal | `Idle` |
+| idle | the response's head, again at each event that carries the model's output | the call's terminal | `Idle` |
 | whole | the call's start, its wait included | its terminal | `Whole` |
 
 Each is the owner's, per call, and none is required. One that passes ends
@@ -280,8 +280,14 @@ client's evidence: unsent, possibly sent, or a response received.
 - **Progress, not duration.** Head and idle measure the peer's progress
   (programming-model.md, section 7): a peer reading a large request
   re-arms head with each piece of room it grants, and a stream that keeps
-  sending events never meets idle. Only whole bounds a call's length, and
-  it is the owner's time, not the provider's.
+  sending the model's output never meets idle. Only whole bounds a call's
+  length, and it is the owner's time, not the provider's.
+- **A ping is not progress.** An event that carries none of the model's
+  output (a ping, a keepalive, the response's created or in-progress
+  status, an event the dialect does not know) shows the connection alive,
+  not the model working. A provider can keep sending them for a response
+  that will never finish, so they re-arm neither idle nor the largest
+  gap. The events that do are the dialect's items, deltas and terminal.
 - **Retry by phase is the owner's.** Head and idle say the peer stalled;
   whole says the owner's own time ran out (llm.md, section 2.5).
 
@@ -342,7 +348,8 @@ client's evidence: unsent, possibly sent, or a response received.
   - handshakes failing;
   - a slow head, and a slow upload that keeps its head deadline alive by
     the room it grants;
-  - an idle stall, and a steady stream that outlasts any fixed bound and
+  - an idle stall, a stall that keeps sending pings and meets idle all
+    the same, and a steady stream that outlasts any fixed bound and
     completes;
   - each deadline passing, its failure naming its phase;
   - a truncated body;
