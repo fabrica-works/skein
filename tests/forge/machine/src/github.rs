@@ -15,6 +15,16 @@ use skein_lib::{Duration, Env, List, Queue, ReplyTo, Secret, Time, Token, Wall};
 /// A wall past the fake's installation dates, advanced by the machine's clock.
 pub const WALL_BASE: Wall = Wall::from_nanos(1_000_000_000_000_000);
 
+/// The blob host is resolved to a loopback destination by this in-memory world.
+pub const BLOB_ADDRESS: core::net::SocketAddr =
+    core::net::SocketAddr::new(core::net::IpAddr::V4(core::net::Ipv4Addr::LOCALHOST), 3001);
+pub const BLOB_ORIGIN: &[u8] = b"http://logs.example.test:3001";
+
+struct LogScenario<'a> {
+    third_origin: Option<&'a [u8]>,
+    blob_redirect: Option<&'a [u8]>,
+}
+
 /// The GitHub service's state behind one machine's scripted peer.
 pub struct Fake {
     service: Service,
@@ -31,6 +41,25 @@ impl Fake {
     /// Scenario-only App metadata and hook, using the dialect's public configuration.
     #[must_use]
     pub fn scenario(seed: u64, facts: AppFacts, complete: bool, hook: &[u8]) -> Self {
+        Self::configured(seed, facts, complete, hook, None)
+    }
+
+    /// A failing CI job and the fake's signed-log scenarios.
+    #[must_use]
+    pub fn job_logs(seed: u64, third_origin: Option<&[u8]>, blob_redirect: Option<&[u8]>) -> Self {
+        Self::configured(
+            seed,
+            AppFacts::Complete,
+            false,
+            b"https://hook.test/start",
+            Some(LogScenario { third_origin, blob_redirect }),
+        )
+    }
+
+    fn configured(seed: u64, facts: AppFacts, complete: bool, hook: &[u8], logs: Option<LogScenario<'_>>) -> Self {
+        let has_logs = logs.is_some();
+        let LogScenario { third_origin, blob_redirect } =
+            logs.unwrap_or(LogScenario { third_origin: None, blob_redirect: None });
         let mut accounts = List::with_capacity(2);
         for (login, id, organization) in [(b"acme".as_slice(), 22, true), (b"alice".as_slice(), 31, false)] {
             accounts.push(Account { login: Box::from(login), id, organization }).expect("fixture accounts");
@@ -51,9 +80,9 @@ impl Fake {
         };
         let config = Config {
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
-            blob: Box::from(b"http://logs.example.test".as_slice()),
-            third_origin: None,
-            blob_redirect: None,
+            blob: Box::from(BLOB_ORIGIN),
+            third_origin: third_origin.map(Box::from),
+            blob_redirect: blob_redirect.map(Box::from),
             app: App {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),
@@ -125,7 +154,7 @@ impl Fake {
             3
         );
         assert!(store.suspend(3, true), "third installation exists");
-        let (domain, config) = fixture_domain(seed);
+        let (domain, config) = fixture_domain(seed, has_logs);
         Self { service, domain, config }
     }
 
@@ -143,7 +172,33 @@ impl Fake {
     /// Answers one complete HTTP/1.1 request, keeping the connection open.
     pub fn serve(&mut self, request: &[u8], wall: Wall) -> Vec<u8> {
         let request = parse(request);
-        let mut outcome = self.service.request(&request, wall, ReplyTo::new(Token::new(77)));
+        let outcome = self.service.request(&request, wall, ReplyTo::new(Token::new(77)));
+        self.finish(outcome, wall)
+    }
+
+    /// Blob requests go through the fake's signature check and header-presence record.
+    pub fn blob(&mut self, bytes: &[u8], wall: Wall) -> Vec<u8> {
+        let request = parse(bytes);
+        let range = bytes
+            .split(|b| *b == b'\n')
+            .any(|line| line.split(|b| *b == b':').next().is_some_and(|name| name.eq_ignore_ascii_case(b"Range")));
+        let outcome = self.service.blob(
+            request.method,
+            request.target,
+            request.authorization.is_some(),
+            range,
+            wall,
+            ReplyTo::new(Token::new(77)),
+        );
+        self.finish(outcome, wall)
+    }
+
+    #[must_use]
+    pub fn blob_records(&self) -> &Queue<skein_fake_forge_github::logs::Record> {
+        self.service.blob_records()
+    }
+
+    fn finish(&mut self, mut outcome: Outcome, wall: Wall) -> Vec<u8> {
         let response = loop {
             outcome = match outcome {
                 Outcome::Reply(response) => break response,
@@ -153,7 +208,18 @@ impl Fake {
                 }
             };
         };
-        let mut bytes = response_head(response.status, wall, Some("application/json; charset=utf-8"));
+        let media = match response.content_type {
+            skein_fake_forge_github::service::ContentType::Json => "application/json; charset=utf-8",
+            skein_fake_forge_github::service::ContentType::Plaintext => "text/plain; charset=utf-8",
+            skein_fake_forge_github::service::ContentType::Octets => "application/octet-stream",
+            skein_fake_forge_github::service::ContentType::Html => "text/html; charset=utf-8",
+        };
+        let mut bytes = response_head(response.status, wall, Some(media));
+        if let Some(location) = response.location {
+            bytes.extend_from_slice(b"Location: ");
+            bytes.extend_from_slice(&location);
+            bytes.extend_from_slice(b"\r\n");
+        }
         if let Some(link) = response.link {
             bytes.extend_from_slice(b"Link: ");
             bytes.extend_from_slice(&link);
@@ -306,7 +372,7 @@ fn imf(wall: Wall) -> String {
     format!("{weekday}, {day:02} {month} {year:04} {:02}:{:02}:{:02} GMT", time / 3600, time / 60 % 60, time % 60)
 }
 
-fn fixture_domain(seed: u64) -> (fake::Domain, fake::Config) {
+fn fixture_domain(seed: u64, logs: bool) -> (fake::Domain, fake::Config) {
     let mut config = crate::fixtures::fake_config();
     config.limits.repositories = 3;
     config.latency_min = Duration::ZERO;
@@ -323,14 +389,18 @@ fn fixture_domain(seed: u64) -> (fake::Domain, fake::Config) {
                 default: Box::from(if id == 4 { b"queue".as_slice() } else { b"main".as_slice() }),
                 tree: Box::from([]),
                 labels: Box::from([]),
-                checks: a::Checks {
-                    contexts: Box::from([]),
-                    latency_min: Duration::ZERO,
-                    latency_max: Duration::ZERO,
-                    silent: 0,
-                    passes: 1000,
-                    reruns: 0,
-                    cue: None,
+                checks: if logs && id == 2 {
+                    crate::joint::checks(0)
+                } else {
+                    a::Checks {
+                        contexts: Box::from([]),
+                        latency_min: Duration::ZERO,
+                        latency_max: Duration::ZERO,
+                        silent: 0,
+                        passes: 1000,
+                        reruns: 0,
+                        cue: None,
+                    }
                 },
                 protection: (id == 4).then(|| a::Protection {
                     linear: false,

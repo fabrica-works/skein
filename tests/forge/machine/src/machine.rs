@@ -227,6 +227,22 @@ impl Machine {
         world.component.begin(&world.env, &mut world.above, &mut world.below);
         world
     }
+    /// Scenario access to the world's GitHub peer before its queued startup runs.
+    pub fn github_fake_mut(&mut self) -> &mut github::Fake {
+        self.fake.as_mut().expect("GitHub fixture")
+    }
+
+    #[must_use]
+    pub fn blob_records(&self) -> &Queue<skein_fake_forge_github::logs::Record> {
+        self.fake.as_ref().expect("GitHub fixture").blob_records()
+    }
+
+    /// A wall-clock adjustment leaves monotonic call deadlines running as before.
+    pub fn jump_wall(&mut self, span: Duration) {
+        let base = self.wall_base.as_mut().expect("world with a wall clock");
+        *base = Wall::from_nanos(base.as_nanos().checked_add(span.as_nanos()).expect("fixture wall fits"));
+    }
+
     /// Installation lifecycle events, independently of token deliveries.
     #[must_use]
     pub fn installation_events(&self) -> &[Event] {
@@ -674,19 +690,26 @@ impl Machine {
         let answer = self.script.pop_front().expect("a scripted answer for each request");
         let line = request.split(|byte| *byte == b'\r').next().expect("request line");
         let asked = line.strip_suffix(b" HTTP/1.1").expect("HTTP version");
-        assert_eq!(asked, answer.request.as_bytes(), "script request");
+        let blob = self.fake.is_some()
+            && self.peers.get(&owner).expect("peer").address == skein_io::Addr::Ip(github::BLOB_ADDRESS);
+        // The fake checks the signed query; the script names the stable log path.
+        let script_path = if blob { asked.split(|byte| *byte == b'?').next().expect("blob path") } else { asked };
+        assert_eq!(script_path, answer.request.as_bytes(), "script request");
         let ordinal = self.requests.len();
         self.requests.push(request);
         let peer = self.peers.get_mut(&owner).expect("peer");
         peer.responding();
         let response = match answer.response {
             Response::Case(case) => Response::Bytes(case_bytes(case)),
-            Response::Served => Response::Bytes(
-                self.fake
-                    .as_mut()
-                    .expect("Answer::served needs Machine::github")
-                    .serve(self.requests.last().expect("captured request"), self.env.wall),
-            ),
+            Response::Served => {
+                let fake = self.fake.as_mut().expect("Answer::served needs Machine::github");
+                let request = self.requests.last().expect("captured request");
+                Response::Bytes(if blob {
+                    fake.blob(request, self.env.wall)
+                } else {
+                    fake.serve(request, self.env.wall)
+                })
+            }
             other @ (Response::Bytes(_) | Response::Reset | Response::Cut { .. } | Response::Silent) => other,
         };
         if let Response::Bytes(bytes) = &response {
