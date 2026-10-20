@@ -4,6 +4,7 @@
 resolver = "3"
 members = [
     "tests/forge/client",
+    "tests/forge/setup",
     "tests/forge/machine",
     "tests/forge/conformance",
     "crates/*",
@@ -67,6 +68,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+skein-forge-machine-world = { path = "tests/forge/machine" }
 skein-forge-client-world = { path = "tests/forge/client" }
 skein-forge-connection = { path = "crates/skein-forge-connection" }
 skein-throwaway-forgejo = { path = "testing/skein-throwaway-forgejo" }

@@ -759,6 +759,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-forge-setup-world"
+version = "0.0.0"
+dependencies = [
+ "skein-fake-forge-protocol",
+ "skein-forge",
+ "skein-forge-machine-world",
+ "skein-forge-setup",
+ "skein-http",
+ "skein-json",
+ "skein-lib",
+]
+
+[[package]]
 name = "skein-heap"
 version = "0.0.0"
 
