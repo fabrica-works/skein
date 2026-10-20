@@ -271,6 +271,12 @@ Batched reads are later (temper's draft 18).
    answers `Queued`.
 3. Every other refusal is section 7's.
 
+- **A row with no merge method** makes `Merge` answer `Refused` before
+  anything is sent.
+- **A lost enqueue is never resent.** When nothing is heard from `GQ
+  enqueue` the call is a `Timeout`, and the client reads the pull: an
+  observed `queued` entry is adopted as the call's `Queued`.
+
 - **REST first, always.** The plan keeps nothing between calls, so it
   learns of a queue by GitHub's refusal, which costs one request on a
   queued branch and holds when the rules change after adoption: a
