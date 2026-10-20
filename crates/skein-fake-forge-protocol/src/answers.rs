@@ -84,6 +84,7 @@ pub fn pull(config: &Config, id: u64, pull: &a::Pull) -> d::PullRequest {
         merged: pull.merged.is_some(),
         merge_commit_sha: optional_object(pull.merged),
         merge_base: optional_object(pull.merge_base),
+        // Forgejo exposes a boolean: false while mergeability is checking.
         mergeable: pull.mergeable,
         requested_reviewers: reviewers.into_boxed(),
     }

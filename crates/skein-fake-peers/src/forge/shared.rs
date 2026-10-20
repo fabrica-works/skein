@@ -40,6 +40,7 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
         || domain.page_size == 0
         || domain.calls == 0
         || config.latency_min > config.latency_max
+        || config.settle_min > config.settle_max
         || config.late_min > config.late_max
         || config.land_min > config.land_max
         || config.hook_min > config.hook_max

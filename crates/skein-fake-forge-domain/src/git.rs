@@ -367,9 +367,16 @@ pub(crate) fn moved(
         pull.commit = to;
         repository.touch(number, domain::clock(env));
     }
-    for &number in &repository.on_branch(branch) {
+    let affected = repository.on_branch(branch);
+    for &number in &affected {
+        let span = if env.limits.settle_min == env.limits.settle_max {
+            env.limits.settle_min
+        } else {
+            crate::faults::draw(domain, env.limits.settle_min, env.limits.settle_max)
+        };
+        let repository = domain.repositories.get_mut(id).expect("a repository of the forge");
         let item = repository.items.get_mut(&number).expect("an open pull on the branch");
-        item.pull.as_mut().expect("a pull request").checked = domain::clock(env).saturating_add(crate::pulls::CHECK);
+        item.pull.as_mut().expect("a pull request").checked = domain::clock(env).saturating_add(span);
     }
     domain::changed(domain, env, id, observation, Hook::push(branch, Some(to), by));
     for &number in &following {

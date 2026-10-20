@@ -47,6 +47,9 @@ pub struct Config {
     /// or, for the `late` chance of calls, from `late_min..=late_max`.
     pub latency_min: Duration,
     pub latency_max: Duration,
+    /// Mergeability checks after a head or base move, drawn inclusively.
+    pub settle_min: Duration,
+    pub settle_max: Duration,
     pub late: u32,
     pub late_min: Duration,
     pub late_max: Duration,
@@ -249,6 +252,7 @@ impl Domain {
         assert!(limits.page_size > 0 && limits.calls > 0, "a listing answers something, and a call is taken");
         assert!(
             config.latency_min <= config.latency_max
+                && config.settle_min <= config.settle_max
                 && config.late_min <= config.late_max
                 && config.hook_min <= config.hook_max,
             "latencies are ranges"

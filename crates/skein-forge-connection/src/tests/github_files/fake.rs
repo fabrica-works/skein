@@ -261,6 +261,8 @@ fn config() -> domain::Config {
         },
         latency_min: Duration::ZERO,
         latency_max: Duration::ZERO,
+        settle_min: Duration::from_secs(2),
+        settle_max: Duration::from_secs(2),
         late: 0,
         late_min: Duration::ZERO,
         late_max: Duration::ZERO,

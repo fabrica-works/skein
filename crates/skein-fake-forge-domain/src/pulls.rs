@@ -339,9 +339,6 @@ pub(crate) fn merge(
     Ok(Answer::Merged(commit))
 }
 
-/// How long a moved pull checks its mergeability.
-pub(crate) const CHECK: skein_lib::Duration = skein_lib::Duration::from_secs(2);
-
 /// The pull request `number` as a read shows it.
 pub(crate) fn view(domain: &Domain, limits: &Limits, repository: &Repository, number: u64) -> Result<Answer, Error> {
     Ok(Answer::Pull(pull(domain, limits, repository, number)?))
@@ -394,6 +391,7 @@ pub(crate) fn pull(domain: &Domain, limits: &Limits, repository: &Repository, nu
         group: crate::queue::Group::count(pull.group),
         dequeued: pull.dequeued,
         queue_merged: pull.queue_merged,
+        checking: domain.clock < pull.checked,
         mergeable,
         reviewers,
         reviews: reviews.into_boxed(),

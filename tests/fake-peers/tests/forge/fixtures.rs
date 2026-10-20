@@ -126,6 +126,8 @@ pub fn fake_config() -> domain::Config {
         },
         latency_min: Duration::from_millis(10),
         latency_max: Duration::from_millis(50),
+        settle_min: Duration::from_secs(2),
+        settle_max: Duration::from_secs(2),
         late: 0,
         late_min: Duration::from_secs(1),
         late_max: Duration::from_secs(3),

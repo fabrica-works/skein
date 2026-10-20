@@ -611,6 +611,8 @@ pub struct Pull {
     pub dequeued: Option<QueueRemoval>,
     /// Whether the merge fact came from the queue.
     pub queue_merged: bool,
+    /// Whether a head or base move is still checking mergeability.
+    pub checking: bool,
     /// Whether the head merges into the base without a conflict.
     pub mergeable: bool,
     /// The users asked to review it who have not yet, in their order.

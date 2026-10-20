@@ -367,3 +367,33 @@ fn unauthorized_heads_are_drained_and_counted_in_the_bound() {
     assert_eq!(&*call.target, b"/api/v1/repos/org/repo/issues");
     assert_eq!(call.header(b"authorization"), Some(b"".as_slice()));
 }
+
+#[test]
+fn forgejo_pull_is_false_while_mergeability_is_checking() {
+    let mut h = Harness::new(fixtures::config());
+    h.push(b"work");
+    h.call(
+        fixtures::PERSON,
+        Op::Write(Write::OpenPull {
+            title: boxed(b"pull"),
+            body: boxed(b"body"),
+            head: boxed(b"work"),
+            base: boxed(b"main"),
+            opens_empty: false,
+        }),
+    )
+    .unwrap();
+    skein_fake_forge_domain::check(
+        &mut h.domain,
+        &h.fake_env,
+        b"org/repo",
+        FIRST_PULL,
+        skein_lib::Duration::from_secs(60),
+    );
+    let request = Request::Pull { at: fixtures::at(), number: FIRST_PULL };
+    h.send(&request);
+    assert_eq!(h.status(), 200);
+    let Document::Pull(pull) = h.decoded(&request).document else { panic!("pull response") };
+    assert!(!pull.mergeable);
+    assert!(bytes::find(&h.body(), b"\"mergeable\":false").is_some());
+}

@@ -46,6 +46,8 @@ const CONFIG: Config = Config {
     limits: LIMITS,
     latency_min: Duration::from_millis(1),
     latency_max: Duration::from_millis(1),
+    settle_min: Duration::from_secs(2),
+    settle_max: Duration::from_secs(2),
     late: 0,
     late_min: Duration::from_millis(1),
     late_max: Duration::from_millis(1),

@@ -6,6 +6,7 @@ mod next;
 mod promises;
 mod protection;
 mod queue;
+mod settle;
 
 use alloc::boxed::Box;
 
@@ -51,6 +52,8 @@ const CALM: Config = Config {
     limits: LIMITS,
     latency_min: Duration::from_secs(1),
     latency_max: Duration::from_secs(1),
+    settle_min: Duration::from_secs(2),
+    settle_max: Duration::from_secs(2),
     late: 0,
     late_min: Duration::from_secs(30),
     late_max: Duration::from_secs(30),
@@ -1620,6 +1623,8 @@ fn run(seed: u64) -> Run {
     let config = Config {
         latency_min: Duration::from_millis(100),
         latency_max: Duration::from_secs(2),
+        settle_min: Duration::from_secs(2),
+        settle_max: Duration::from_secs(2),
         late: 200,
         unavailable: 150,
         timeouts: 150,
@@ -2034,6 +2039,8 @@ fn every_call_is_answered_once_under_every_fault() {
         let config = Config {
             latency_min: Duration::from_millis(10),
             latency_max: Duration::from_secs(2),
+            settle_min: Duration::from_secs(2),
+            settle_max: Duration::from_secs(2),
             late: 100,
             unavailable: 100,
             timeouts: 100,
