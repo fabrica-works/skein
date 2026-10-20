@@ -314,7 +314,7 @@ they are away. Its working files are in `~/src/rust/tmp/director/`.
 ### 3.1 Repositories
 
 - **Each project is a repository under `~/src/rust/`,** on GitHub under
-  `fabrig-dev`: skein, then smith, which builds on skein, then jig, which
+  `fabrica-works`: skein, then smith, which builds on skein, then jig, which
   builds on both, then hearth, which builds on skein alone, then temper,
   which builds on skein, smith and jig. That is the workspace's order:
   each repository after those it builds on.

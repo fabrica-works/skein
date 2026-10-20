@@ -6,7 +6,7 @@ beside this file is what every agent reads.
 ## A new machine
 
 Clone skein, smith, jig, hearth and temper from
-`git@github.com:fabrig-dev/` into `~/src/rust/`, then run
+`git@github.com:fabrica-works/` into `~/src/rust/`, then run
 `skein/scripts/dev/plan check --fix`. It links the tools (`heavy`,
 `land`, `plan`) into `~/.local/bin`, links `AGENTS.md`, `CLAUDE.md`,
 the Claude Code settings (`.claude/settings.json`) and the coordinator's
