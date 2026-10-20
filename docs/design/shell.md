@@ -328,6 +328,31 @@ at startup, with the kit:
 A service with neither reads none of this. Under the simulator, the
 world gives the service its own cgroup (simulator.md, 3.4).
 
+### 6.5 A command's settings
+
+Every binary of every repository built on skein reads what it is given
+alike, before startup's step 1:
+
+- **Each setting is three things:** a flag, `--name VALUE`; an
+  environment variable, the tool's name and the setting's in capitals,
+  `-` as `_` (`TEMPER_CONFIG` for temper's `--config`); and a default,
+  documented with the flag. A setting with no sensible default has
+  none, and its absence refuses the start, naming the flag and the
+  variable.
+- **The flag wins over the variable, and the variable over the
+  default.** An empty variable is unset.
+- **Directories default to XDG's base directories:**
+  `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, `$XDG_STATE_HOME` and
+  `$XDG_CACHE_HOME`, each with the specification's fallback under
+  `$HOME` when unset, empty or not absolute, then the tool's name.
+- **The kit resolves them:** a function of `skein-shell` takes the
+  settings' table (name, variable, default) with the arguments and the
+  environment, and answers each setting's value and where it came
+  from, or the setting it refused, so that a binary's `--help` and its
+  refusals say the same. Positional arguments stay the binary's own.
+- **A test never relies on a default under `$HOME`:** it gives every
+  directory as a flag.
+
 ## 7. The readiness backend (later)
 
 This backend is for hosts where io_uring is not available: a container
