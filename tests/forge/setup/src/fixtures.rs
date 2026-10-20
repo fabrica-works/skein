@@ -199,6 +199,7 @@ pub fn host_limits() -> skein_forge_setup::host::Limits {
     skein_forge_setup::host::Limits {
         forges: 2,
         runs: 2,
+        states: 8,
         token_bytes: 64,
         head_bytes: 4096,
         headers: 32,

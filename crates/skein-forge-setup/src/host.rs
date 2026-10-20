@@ -4,6 +4,10 @@ pub(crate) mod connection;
 mod limits;
 pub(crate) mod run;
 mod settings;
+#[cfg(test)]
+#[path = "tests/github_states.rs"]
+mod state_tests;
+mod states;
 use crate::item::Bounds;
 use crate::reconcile::{self, Failure, Reply, Stage, Why};
 pub use boundary::{Answer, Event, MAX_OUT, MaxOut, Need, Plan, Request};
@@ -17,6 +21,7 @@ use skein_lib::{CryptoRng, Env, List, Map, Queue, Secret, Time, Token, bytes};
 pub struct Host {
     settings: Settings,
     crypto: CryptoRng,
+    states: states::States,
     runs: Map<Token, Run>,
     connections: Map<Token, Connection>,
     plan_out: Queue<reconcile::Need>,
@@ -32,6 +37,7 @@ impl Host {
         Ok(Self {
             settings,
             crypto,
+            states: states::States::new(limits.states),
             runs: Map::with_capacity(limits.runs),
             connections: Map::with_capacity(limits.runs),
             plan_out: Queue::with_capacity(reconcile::MAX_OUT),
@@ -70,7 +76,15 @@ impl Host {
                 if let Some(why) = refused {
                     up.push(Event::Stop { run, failure: about(configured, &plan, why) });
                 } else {
-                    match Run::new(configured, plan, bounds(&env.limits, configured), env.now, &mut self.plan_out) {
+                    match Run::new(
+                        configured,
+                        plan,
+                        bounds(&env.limits, configured),
+                        env.now,
+                        &mut self.crypto,
+                        &mut self.states,
+                        &mut self.plan_out,
+                    ) {
                         Err(failure) => up.push(Event::Stop { run, failure }),
                         Ok(mut live) => match live.pending.take() {
                             Some(reconcile::Need::Stop(failure)) => up.push(Event::Stop { run, failure }),
@@ -97,6 +111,7 @@ impl Host {
             }
             Request::Close => {
                 self.closing = true;
+                self.states.clear();
                 self.runs = Map::with_capacity(self.runs.capacity());
                 self.closing_tokens.clear();
                 for (token, _) in &self.connections {
@@ -285,6 +300,9 @@ impl Host {
                     let _ended = self.runs.remove(&token);
                 }
                 reconcile::Need::Stop(failure) => {
+                    if let Some(state) = run.manifest_state.take() {
+                        let _taken = self.states.take(run.forge, states::Purpose::Convert, &state, env.now);
+                    }
                     up.push(Event::Stop { run: token, failure });
                     let _ended = self.runs.remove(&token);
                 }

@@ -45,10 +45,11 @@ fn a_forgejo_call_on_a_token_passes_through_forgejo_pair() {
         Ok((request, token))
     );
 }
-pub(super) fn limits() -> Limits {
+pub(crate) fn limits() -> Limits {
     Limits {
         forges: 2,
         runs: 2,
+        states: 8,
         token_bytes: 64,
         head_bytes: 4096,
         headers: 32,
@@ -96,7 +97,7 @@ fn settings(numbers: &[u16]) -> Settings {
     }
     Settings { forges, user_agent: b"kit/0.0.0".as_slice().into() }
 }
-fn crypto() -> CryptoRng {
+pub(crate) fn crypto() -> CryptoRng {
     CryptoRng::new(&fixtures::secret(&[42; 32]), 0).expect("32-byte seed")
 }
 struct World {
@@ -566,7 +567,7 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                     None
                 }
                 Plan::TakeOver { .. } => Some(w.connect()),
-                Plan::Reachable { .. } => unreachable!("writing plan table"),
+                Plan::Reachable { .. } | Plan::Manifest { .. } => unreachable!("Forgejo writing plan table"),
             };
             w.plan(2, second);
             assert_eq!(w.up.pop(), Some(stop(2, 1, Why::Busy)));
@@ -595,7 +596,7 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                 let expected = match first {
                     Plan::Check { .. } => token_stop(Why::Missing),
                     Plan::Reconcile { .. } | Plan::Adopt { .. } | Plan::TakeOver { .. } => stop(1, 1, Why::Missing),
-                    Plan::Reachable { .. } => unreachable!("writing plan table"),
+                    Plan::Reachable { .. } | Plan::Manifest { .. } => unreachable!("Forgejo writing plan table"),
                 };
                 assert_eq!(w.up.pop(), Some(expected));
             }
@@ -936,7 +937,7 @@ fn github_forge() -> Forge {
         transport: Transport::Plaintext { name: None },
     }
 }
-fn github_settings() -> Settings {
+pub(crate) fn github_settings() -> Settings {
     let mut settings = settings(&[1, 4]);
     *settings.forges.get_mut(1).expect("second forge") = github_forge();
     settings

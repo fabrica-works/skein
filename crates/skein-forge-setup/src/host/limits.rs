@@ -8,6 +8,8 @@ pub struct Limits {
     pub forges: u32,
     /// Live runs at once, over every forge (6.3).
     pub runs: u32,
+    /// One-time states retained across all forges, nonzero (forge-setup.md, 5.7).
+    pub states: u32,
     /// The longest token or secret item (6.4), at least 64 bytes.
     pub token_bytes: u32,
     /// The most bytes of response heads, their framing included.
@@ -130,6 +132,7 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
     for value in [
         l.forges,
         l.runs,
+        l.states,
         l.token_bytes,
         l.head_bytes,
         l.headers,

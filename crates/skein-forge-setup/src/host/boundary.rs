@@ -1,5 +1,6 @@
 //! The owner's plans, answers and retained items (forge-setup.md, 6.3).
 use crate::{
+    github::manifest::Target,
     item::Item,
     reconcile::{Failure, Outcome},
 };
@@ -8,6 +9,11 @@ use core::num::{NonZeroU32, NonZeroU64};
 use skein_lib::{Secret, Token};
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Plan {
+    /// The browser page for creating a GitHub App (5.1).
+    Manifest {
+        forge: u16,
+        target: Target,
+    },
     Reconcile {
         forge: u16,
         adopted: Box<[u64]>,
@@ -41,19 +47,25 @@ impl Plan {
             | Self::Check { forge }
             | Self::TakeOver { forge, .. }
             | Self::Adopt { forge, .. }
-            | Self::Reachable { forge, .. } => *forge,
+            | Self::Reachable { forge, .. }
+            | Self::Manifest { forge, .. } => *forge,
         }
     }
     /// Whether the plan may change the forge or the owner's items.
     pub(super) fn writes(&self) -> bool {
         match self {
-            Self::Reconcile { .. } | Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } => true,
+            Self::Reconcile { .. }
+            | Self::Check { .. }
+            | Self::TakeOver { .. }
+            | Self::Adopt { .. }
+            | Self::Manifest { .. } => true,
             Self::Reachable { .. } => false,
         }
     }
     /// The plan's name, used in a failure the host reports at a GitHub App.
     pub(super) fn name(&self) -> &'static [u8] {
         match self {
+            Self::Manifest { .. } => b"manifest",
             Self::Reconcile { .. } => b"reconcile",
             Self::Check { .. } => b"check",
             Self::TakeOver { .. } => b"take-over",
@@ -64,6 +76,7 @@ impl Plan {
     /// The dialects the plan is for.
     pub(super) fn dialect(&self) -> Dialect {
         match self {
+            Self::Manifest { .. } => Dialect::GitHub,
             Self::Reconcile { .. } | Self::Reachable { .. } => Dialect::Both,
             Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } => Dialect::Forgejo,
         }
@@ -71,7 +84,6 @@ impl Plan {
 }
 pub(super) enum Dialect {
     Forgejo,
-    #[expect(dead_code, reason = "GitHub-only plans are added with their host machines")]
     GitHub,
     Both,
 }

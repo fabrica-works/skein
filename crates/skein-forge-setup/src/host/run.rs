@@ -1,9 +1,13 @@
 //! One bounded plan and its outstanding owner or forge need (6.3).
-use super::{Answer, Forge, Kind, Need, Plan};
+use super::{
+    Answer, Forge, Kind, Need, Plan,
+    states::{Purpose, States},
+};
 use crate::{
     adopt::{self, Adopt},
     call::{Auth, Call},
     check::{self, Check},
+    github::manifest::{self, Manifest},
     given::Given,
     item::{self, Bounds, Item},
     reachable::{self, Reachable},
@@ -12,7 +16,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use skein_forge::forgejo::request::Request;
-use skein_lib::{Duration, Queue, Secret, Time, Token};
+use skein_lib::{CryptoRng, Duration, Queue, Secret, Time, Token};
 /// The forge's settings given, with the plan's adopted repositories.
 pub(crate) fn given_for(forge: &Given, adopted: &[u64]) -> Given {
     let mut given = forge.clone();
@@ -22,6 +26,7 @@ pub(crate) fn given_for(forge: &Given, adopted: &[u64]) -> Given {
 /// One machine per plan, sharing the host's need and connection loop.
 #[derive(Debug)]
 pub(crate) enum Machine {
+    Manifest(Manifest),
     Reconcile(Box<Reconcile>),
     Check(Check),
     TakeOver(TakeOver),
@@ -31,6 +36,7 @@ pub(crate) enum Machine {
 impl Machine {
     pub(crate) fn step(&mut self, event: Event, out: &mut Queue<reconcile::Need>) {
         match self {
+            Self::Manifest(machine) => manifest::step(machine, event, out),
             Self::Reconcile(machine) => reconcile::step(machine, event, out),
             Self::Check(machine) => check::step(machine, event, out),
             Self::TakeOver(machine) => take_over::step(machine, event, out),
@@ -42,7 +48,9 @@ impl Machine {
     pub(crate) fn halt(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
         match self {
             Self::Reconcile(machine) => reconcile::halt(machine, why, out),
-            Self::Check(_) | Self::TakeOver(_) | Self::Adopt(_) | Self::Reachable(_) => self.halt_begun(why, out),
+            Self::Manifest(_) | Self::Check(_) | Self::TakeOver(_) | Self::Adopt(_) | Self::Reachable(_) => {
+                self.halt_begun(why, out);
+            }
         }
     }
     fn halt_begun(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
@@ -87,6 +95,7 @@ pub(crate) fn forgejo_pair(call: Call, auth: Auth) -> Result<(Request, Secret), 
 #[derive(Debug)]
 pub(super) struct Run {
     pub bounds: Bounds,
+    pub manifest_state: Option<Box<[u8]>>,
     pub forge: u16,
     pub writes: bool,
     pub machine: Machine,
@@ -107,11 +116,15 @@ impl Run {
         plan: Plan,
         bounds: Bounds,
         now: Time,
+        crypto: &mut CryptoRng,
+        states: &mut States,
         out: &mut Queue<reconcile::Need>,
     ) -> Result<Self, Failure> {
         let writes = plan.writes();
+        let mut manifest_state = None;
         let machine = match &forge.kind {
             Kind::Forgejo(given) => match plan {
+                Plan::Manifest { .. } => return Err(super::about(forge, &plan, Why::Unexpected)),
                 Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
                     Reconcile::new(&given_for(given, &adopted))
                         .expect("the owner checks a plan's adopted repositories"),
@@ -134,6 +147,24 @@ impl Run {
                 ),
             },
             Kind::GitHub(given) => match plan {
+                Plan::Manifest { ref target, .. } => {
+                    let mut random = [0_u8; 16];
+                    crypto.fill(&mut random);
+                    let state = states.issue(
+                        given.forge,
+                        Purpose::Convert,
+                        &random,
+                        now,
+                        given.limits.state_life,
+                        b"manifest",
+                    )?;
+                    let Ok(machine) = Manifest::new(given, target, &state) else {
+                        let _taken = states.take(given.forge, Purpose::Convert, &state, now);
+                        return Err(super::about(forge, &plan, Why::Unexpected));
+                    };
+                    manifest_state = Some(state);
+                    Machine::Manifest(machine)
+                }
                 Plan::Reachable { installation, page, .. } => {
                     let Some(id) = installation else {
                         return Err(Failure {
@@ -156,6 +187,7 @@ impl Run {
         let times = forge.times();
         let mut run = Self {
             bounds,
+            manifest_state,
             forge: forge.number(),
             writes,
             machine,
