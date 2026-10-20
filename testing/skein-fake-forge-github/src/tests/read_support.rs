@@ -27,7 +27,9 @@ pub fn harness() -> f::Harness {
     config.limits.files = 4;
     f::Harness::with_domain(f::limits(), f::config(), config)
 }
-pub fn call(h: &mut f::Harness, op: a::Op) -> a::Answer { call_as(h, 1, op) }
+pub fn call(h: &mut f::Harness, op: a::Op) -> a::Answer {
+    call_as(h, 1, op)
+}
 pub fn call_as(h: &mut f::Harness, user: u64, op: a::Op) -> a::Answer {
     let result = h
         .drive(fake::Event::Call {

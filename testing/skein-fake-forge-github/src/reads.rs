@@ -19,10 +19,13 @@ use skein_lib::{List, ReplyTo, Wall, bytes};
 mod issues;
 mod people;
 mod pulls;
+mod reviews;
 
 #[derive(Debug)]
 pub(crate) enum Read {
     Repository(u64),
+    Reviews { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
+    ReviewComments { owner: Box<[u8]>, name: Box<[u8]>, number: u64, review: u64 },
     Collaborators { owner: Box<[u8]>, name: Box<[u8]>, page: u32, per_page: u32 },
     Permission { owner: Box<[u8]>, name: Box<[u8]>, login: Box<[u8]> },
     Pull { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
@@ -40,6 +43,8 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Repository(Row),
+    Reviews { page: u32, size: u32, target: Box<[u8]> },
+    ReviewComments(u64),
     Collaborators { page: u32, size: u32, target: Box<[u8]> },
     Permission,
     Pull,
@@ -56,7 +61,9 @@ pub(crate) enum Pending {
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::Collaborators { owner, name, .. }
+        Read::Reviews { owner, name, .. }
+        | Read::ReviewComments { owner, name, .. }
+        | Read::Collaborators { owner, name, .. }
         | Read::Permission { owner, name, .. }
         | Read::Pull { owner, name, .. }
         | Read::PullsFor { owner, name, .. }
@@ -99,6 +106,13 @@ pub(crate) fn call(
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::Reviews { number, page, per_page, .. } => (
+            Pending::Reviews { page, size: per_page.min(service.limits.page), target: bytes::copy_of(target) },
+            Op::Read(a::Read::Pull { number }),
+        ),
+        Read::ReviewComments { number, review, .. } => {
+            (Pending::ReviewComments(review), Op::Read(a::Read::Pull { number }))
+        }
         Read::Collaborators { page, per_page, .. } => (
             Pending::Collaborators { page, size: per_page.min(service.limits.page), target: bytes::copy_of(target) },
             Op::Read(a::Read::Collaborators),
@@ -198,7 +212,9 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
             }
             result => result,
         },
-        Pending::Collaborators { .. }
+        Pending::Reviews { .. }
+        | Pending::ReviewComments(_)
+        | Pending::Collaborators { .. }
         | Pending::Permission
         | Pending::Repository(_)
         | Pending::Issues { .. }
@@ -216,6 +232,8 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
         Err(error) => return refused(error, limits),
     };
     match pending.kind {
+        Pending::Reviews { page, size, target } => reviews::reviews(answer, page, size, &target, limits),
+        Pending::ReviewComments(review) => reviews::comments(answer, review, limits),
         Pending::Collaborators { page, size, target } => people::collaborators(answer, page, size, &target, limits),
         Pending::Permission => {
             let Answer::Permission(value) = answer else {

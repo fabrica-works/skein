@@ -86,6 +86,12 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::Permission { owner, name, login } => {
             Route::Token(Token::Read(reads::Read::Permission { owner, name, login }))
         }
+        Request::Reviews { owner, name, number, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::Reviews { owner, name, number, page, per_page }))
+        }
+        Request::ReviewComments { owner, name, number, review, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::ReviewComments { owner, name, number, review }))
+        }
         Request::Installations { .. }
         | Request::Reachable { .. }
         | Request::Branches { .. }

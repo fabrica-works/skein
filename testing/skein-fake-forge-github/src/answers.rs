@@ -31,6 +31,8 @@ pub(crate) enum Body<'a> {
     User(&'a d::User),
     Collaborators(&'a [d::Collaborator]),
     Permission(skein_forge::api::Permission),
+    Reviews(&'a [d::Review]),
+    Remarks(&'a [d::Remark]),
     Refusal(&'a [u8]),
 }
 fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
@@ -58,6 +60,8 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::User(row) => server::user(row, out),
         Body::Collaborators(rows) => server::collaborators(rows, out),
         Body::Permission(value) => server::permission(*value, out),
+        Body::Reviews(rows) => server::reviews(rows, out),
+        Body::Remarks(rows) => server::remarks(rows, out),
         Body::Refusal(message) => server::refusal(message, &[], out),
     }
 }
