@@ -124,6 +124,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         // Raw bodies, and an uninstall's empty answer.
         Request::Raw { .. }
         | Request::JobLog { .. }
+        | Request::DeleteBranch { .. }
         | Request::Uninstall { .. }
         // Reads whose documents are not decoded yet; each gains its kind with its decoder.
         | Request::RulesForBranch { .. }

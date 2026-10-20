@@ -79,6 +79,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Permission { .. }
+        | Request::DeleteBranch { .. }
         | Request::User { .. } => return None,
     })
 }

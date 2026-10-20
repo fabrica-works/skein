@@ -352,8 +352,25 @@ fn github_plans_malformed_body() {
 #[test]
 fn github_plans_writes_refused() {
     let mut tables = Tables::new(2, 2);
-    let mut write = Plan::new(KEY, api::Op::Write(api::Write::Close { number: 1 }));
-    assert_eq!(write.begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
+    for write in [
+        api::Write::CreateIssue { key: Box::from([]), title: Box::from([]), body: Box::from([]) },
+        api::Write::OpenPull { title: Box::from([]), body: Box::from([]), head: Box::from([]), base: Box::from([]) },
+        api::Write::Post { number: 1, key: Box::from([]), body: Box::from([]) },
+        api::Write::Review { number: 1, key: Box::from([]), verdict: api::Verdict::Approve, body: Box::from([]) },
+        api::Write::Edit { number: 1, title: None, body: None },
+        api::Write::SetReviewers { number: 1, reviewers: Box::from([]) },
+        api::Write::Close { number: 1 },
+        api::Write::Reopen { number: 1 },
+        api::Write::Merge { number: 1, head: [0; 32] },
+        api::Write::Update { number: 1 },
+        api::Write::Status { commit: [0; 32], context: Box::from([]), check: api::Check::Pending },
+        api::Write::CreateBranch { branch: Box::from([]), commit: [0; 32] },
+    ] {
+        assert_eq!(
+            Plan::new(KEY, api::Op::Write(write)).begin(bounds(), b"example-app", &mut tables),
+            Err(api::Error::Refused)
+        );
+    }
     for read in [
         api::Read::Job { attempt: api::JobAttempt { head: [0; 32], run: 1, job: 1, attempt: 1 }, max_bytes: 1 },
         api::Read::Protection { branch: Box::from(*b"b") },

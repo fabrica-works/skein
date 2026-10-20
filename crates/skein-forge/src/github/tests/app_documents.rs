@@ -421,6 +421,7 @@ fn github_app_server_round_trip() {
                 | Request::ClassicProtection { .. }
                 | Request::Collaborators { .. }
                 | Request::Permission { .. }
+                | Request::DeleteBranch { .. }
                 | Request::User { .. } => {}
             }
             routed

@@ -451,3 +451,5 @@ fn document_bounds(good: limits::Limits) {
         assert_eq!(decode(Kind::Error, &bytes(out), 7, &good).1, expected, "{count} errors");
     }
 }
+
+mod writes;

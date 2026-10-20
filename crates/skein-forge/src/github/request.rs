@@ -63,6 +63,7 @@ pub enum Request {
     Collaborators { owner: Box<[u8]>, name: Box<[u8]>, page: u32, per_page: u32 },
     Permission { owner: Box<[u8]>, name: Box<[u8]>, login: Box<[u8]> },
     User { id: u64 },
+    DeleteBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
 }
 /// The permissions requested from an installation's mint.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -87,6 +88,49 @@ pub enum Refusal {
 }
 /// Measures, checks and writes a request's target and body.
 pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
+    match request {
+        Request::DeleteBranch { branch, .. }
+            if u64::try_from(branch.len()).ok().ok_or(Refusal::TooLong)? > u64::from(limits.string_bytes) =>
+        {
+            return Err(Refusal::TooLong);
+        }
+        Request::DeleteBranch { .. }
+        | Request::Raw { .. }
+        | Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Mint { .. }
+        | Request::Reachable { .. }
+        | Request::Viewer
+        | Request::App
+        | Request::HookConfig
+        | Request::SetHook { .. }
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. } => {}
+    }
     let mut out = Target { length: 0, writer: None };
     target(request, &mut out)?;
     if out.length > usize::try_from(limits.target_bytes).expect("u32 fits usize") {
@@ -129,6 +173,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Permission { .. }
+        | Request::DeleteBranch { .. }
         | Request::User { .. } => Accept::Json,
     };
     let (method, auth) = selection(request);
@@ -219,6 +264,7 @@ impl Target {
 pub(crate) fn valid_text(text: &[u8]) -> bool {
     core::str::from_utf8(text).is_ok()
 }
+#[expect(clippy::too_many_lines, reason = "exhaustive target dispatch includes read and write requests")]
 fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
     match request {
         Request::Installations { .. }
@@ -241,6 +287,11 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::ReviewComments { .. }
         | Request::PullFiles { .. }
         | Request::Branches { .. } => return items_target(request, out),
+        Request::DeleteBranch { owner, name, branch } => {
+            out.repo(owner, name)?;
+            out.put(b"/git/refs/heads/");
+            out.file(branch)?;
+        }
         Request::Repository { id } => {
             out.put(b"/repositories/");
             out.number(*id);
@@ -412,6 +463,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Permission { .. }
+        | Request::DeleteBranch { .. }
         | Request::User { .. } => unreachable!("item target dispatch"),
     }
     Ok(())
@@ -447,6 +499,7 @@ fn escape_digit(byte: u8) -> Option<u8> {
 
 fn selection(request: &Request) -> (Method, Auth) {
     match request {
+        Request::DeleteBranch { .. } => (Method::Delete, Auth::Installation),
         Request::Installations { .. } | Request::Installation { .. } | Request::App | Request::HookConfig => {
             (Method::Get, Auth::App)
         }
@@ -518,6 +571,7 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Permission { .. }
+        | Request::DeleteBranch { .. }
         | Request::User { .. } => return Ok(None),
     }
     let bounds = skein_json::writer::Limits { depth: super::limits::DEPTH, length: limits.body_bytes };
@@ -585,6 +639,7 @@ fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) {
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Permission { .. }
+        | Request::DeleteBranch { .. }
         | Request::User { .. } => unreachable!("request has a body"),
     }
     json.object_end();
@@ -648,6 +703,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Permission { .. }
+        | Request::DeleteBranch { .. }
         | Request::User { .. } => unreachable!("App target dispatch"),
     }
     Ok(())

@@ -8,6 +8,7 @@ mod reading;
 pub mod reads;
 pub mod start;
 pub mod tables;
+pub mod writes;
 
 #[cfg(test)]
 mod tests;
