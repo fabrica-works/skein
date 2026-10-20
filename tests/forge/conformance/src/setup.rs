@@ -31,6 +31,7 @@ pub(crate) fn record(f: &Fixture, out: &Path, secrets: &mut Secrets) -> Result<(
     crate::hooks::record(&mut recorder, &admin)?;
     crate::repos::record(&mut recorder, &admin)?;
     let adopt = scoped(f, recorder.secrets, "fixture", "setup-adopt", ADOPT)?;
+    crate::search::record(&mut recorder, &adopt)?;
     crate::repo_setup::record(&mut recorder, &adopt)
 }
 pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
@@ -39,6 +40,7 @@ pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
     facts.extend(crate::orgs::facts(f, out)?);
     facts.extend(crate::hooks::facts(f, out)?);
     facts.extend(crate::repos::facts(out)?);
+    facts.extend(crate::search::facts(out)?);
     facts.extend(crate::repo_setup::facts(out)?);
     Ok(facts)
 }

@@ -14,6 +14,7 @@ mod registration;
 mod repo_setup;
 mod repos;
 mod runner;
+mod search;
 mod setup;
 mod tokens;
 mod users;

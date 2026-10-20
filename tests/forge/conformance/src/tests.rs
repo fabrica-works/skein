@@ -516,3 +516,107 @@ fn forgejo_user_repos_facts_reject_repeated_pages_and_refused_reads() {
         assert!(matches!(facts[2].outcome, crate::facts::Outcome::Fails(_)));
     }
 }
+
+fn search_facts(name: &str, first: &str, second: &str, pages: &[&str], status: u16) -> Vec<crate::facts::Fact> {
+    let out = std::env::temp_dir().join(format!("skein-repo-search-{}-{name}", std::process::id()));
+    let mut responses = vec![
+        ("setup-search".to_owned(), status, first.to_owned()),
+        ("setup-search-page-2".to_owned(), 200, second.to_owned()),
+        ("setup-search-repeat".to_owned(), 200, first.to_owned()),
+    ];
+    for (index, body) in pages.iter().enumerate() {
+        responses.push((format!("setup-search-all-{}", index + 1), 200, (*body).to_owned()));
+    }
+    for (name, status, body) in responses {
+        let directory = out.join("transcripts").join(name);
+        std::fs::create_dir_all(&directory).expect("canned search directory");
+        std::fs::write(
+            directory.join("response"),
+            format!("HTTP/1.1 {status} canned\r\nContent-Type: application/json\r\n\r\n{body}"),
+        )
+        .expect("canned search response");
+    }
+    let facts = crate::search::facts(&out).expect("search facts");
+    std::fs::remove_dir_all(out).expect("remove canned search transcripts");
+    facts
+}
+fn search_answer(rows: &str) -> String {
+    format!(r#"{{"ok":true,"data":[{rows}]}}"#)
+}
+#[test]
+fn forgejo_repo_search_facts_accept_private_owners_and_capped_pages() {
+    let first = search_answer(USER_REPOS_BOB);
+    let second = search_answer(USER_REPOS_ACME);
+    let all = search_answer(&format!("{USER_REPOS_BOB},{USER_REPOS_ACME}"));
+    let rest = search_answer(USER_REPOS_ALICE);
+    let facts = search_facts("holds", &first, &second, &[&all, &rest, &search_answer("")], 200);
+    assert_eq!(facts.len(), 3);
+    assert_eq!(
+        facts.iter().map(|fact| fact.name).collect::<Vec<_>>(),
+        vec![
+            "setup-search-by-an-admin-lists-every-owners-private-repositories",
+            "setup-search-answers-ok-and-data",
+            "setup-search-sorted-by-id-pages-by-page-and-limit",
+        ]
+    );
+    assert!(facts.iter().all(|fact| matches!(fact.outcome, crate::facts::Outcome::Holds)));
+}
+#[test]
+fn forgejo_repo_search_facts_reject_missing_owner_or_private_repository() {
+    let first = search_answer(USER_REPOS_BOB);
+    let second = search_answer(USER_REPOS_ACME);
+    for (name, rows) in [
+        ("missing-owner", format!("{USER_REPOS_BOB},{USER_REPOS_ALICE}")),
+        (
+            "public",
+            format!("{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ALICE}")
+                .replace("\"private\":true", "\"private\":false"),
+        ),
+        ("missing-owner-id", format!("{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ALICE}").replace("\"id\":3,", "")),
+    ] {
+        let all = search_answer(&rows);
+        let facts = search_facts(name, &first, &second, &[&all, &search_answer("")], 200);
+        assert!(matches!(facts[0].outcome, crate::facts::Outcome::Fails(_)));
+    }
+}
+#[test]
+fn forgejo_repo_search_facts_require_ok_and_array_data() {
+    let first = search_answer(USER_REPOS_BOB);
+    let second = search_answer(USER_REPOS_ACME);
+    for (name, all) in [
+        ("false", r#"{"ok":false,"data":[]}"#),
+        ("missing-ok", r#"{"data":[]}"#),
+        ("missing-data", r#"{"ok":true}"#),
+        ("wrong-data", r#"{"ok":true,"data":{}}"#),
+        ("wrong-ok", r#"{"ok":"true","data":[]}"#),
+    ] {
+        let facts = search_facts(name, &first, &second, &[all], 200);
+        assert!(matches!(facts[1].outcome, crate::facts::Outcome::Fails(_)));
+    }
+}
+#[test]
+fn forgejo_repo_search_facts_reject_repeated_or_unordered_pages() {
+    let first = search_answer(USER_REPOS_BOB);
+    let second = search_answer(USER_REPOS_ACME);
+    for (name, second, rows) in [
+        ("repeat", first.as_str(), format!("{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ALICE}")),
+        ("unordered", second.as_str(), format!("{USER_REPOS_ALICE},{USER_REPOS_ACME},{USER_REPOS_BOB}")),
+        (
+            "duplicate",
+            second.as_str(),
+            format!("{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ACME},{USER_REPOS_ALICE}"),
+        ),
+    ] {
+        let all = search_answer(&rows);
+        let facts = search_facts(name, &first, second, &[&all, &search_answer("")], 200);
+        assert!(matches!(facts[2].outcome, crate::facts::Outcome::Fails(_)));
+    }
+}
+#[test]
+fn forgejo_repo_search_facts_reject_refused_reads() {
+    let first = search_answer(USER_REPOS_BOB);
+    let second = search_answer(USER_REPOS_ACME);
+    let all = search_answer(&format!("{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ALICE}"));
+    let facts = search_facts("refused", &first, &second, &[&all, &search_answer("")], 401);
+    assert!(facts.iter().all(|fact| matches!(fact.outcome, crate::facts::Outcome::Fails(_))));
+}
