@@ -259,3 +259,20 @@ pub fn fake_config() -> skein_fake_forge_domain::Config {
         edit_updates: false,
     }
 }
+
+/// The first call has no repository-resolution prelude.
+#[must_use]
+pub fn locate() -> api::Op {
+    api::Op::Read(api::Read::Locate { owner: Box::from(&b"fixture"[..]), name: Box::from(&b"specimen"[..]) })
+}
+pub const LOCATE: &str = "GET /api/v1/repos/fixture/specimen";
+/// A small generated startup and locate exchange for byte sweeps.
+#[must_use]
+pub fn locate_script() -> Vec<crate::machine::Answer> {
+    use crate::machine::{Answer, Response};
+    [
+        ("GET /api/v1/user", br#"{"id":2,"login":"writer"}"#.as_slice()),
+        ("GET /api/v1/settings/api", br#"{"max_response_items":2,"default_paging_num":30}"#.as_slice()),
+        (LOCATE, br#"{"id":1,"owner":{"id":1,"login":"fixture"},"name":"specimen","object_format_name":"sha1","default_branch":"main","default_merge_style":"merge","allow_merge_commits":true,"allow_squash_merge":true,"allow_rebase":true,"html_url":"http://127.0.0.1:3000/fixture/specimen"}"#.as_slice()),
+    ].into_iter().map(|(request, body)| Answer { request, response: Response::Bytes(response(200, body)) }).collect()
+}
