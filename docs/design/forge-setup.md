@@ -205,6 +205,16 @@ forge differs.
    site admin, or the run stops with `NotAdmin`. Either failure names
    the admin by the given name. Every later request carries the token,
    but step 3's check of a kept token.
+   - Its scopes, three: `write:admin`, for the users, their tokens and
+     the orgs (steps 2, 3 and 5, and 4.7); `read:user`, for `GET
+     /api/v1/user`; and `write:repository`, for a repository's read,
+     its collaborator and its hooks (4.5) and the admin's search (4.8),
+     which Forgejo files under its repository scope. The owner mints
+     the token with these, or tells the person who mints it to. A site
+     admin passes each repository's own check, so a `403` on one of
+     those routes is the token without `write:repository`: the run
+     stops `Refused(403)` at the step that sent it, and the owner can
+     say which scope is missing.
 2. **The bot.** It reads the user of the bot's login.
    - Absent (404): it draws 32 bytes and makes the user (`POST
      /api/v1/admin/users`) with them as 64 lowercase hex digits for a
@@ -292,7 +302,10 @@ first call to it; reconcile's step 6 runs the same for each adopted
 repository at each start, so access a person removed is repaired.
 
 1. **The admin's token,** as step 1 (4.3). Reconcile's run has it
-   already.
+   already. Steps 2 to 4 need its `write:repository`: a `403` on any
+   of them stops the plan `Refused(403)` at `Repository`, naming the
+   repository's id before step 2 has read its path, and its path
+   after.
 2. **The repository,** `GET /api/v1/repositories/{id}`: its path. A
    `404` stops `Adopt` with `Missing`; reconcile passes over a
    repository the forge no longer has, which the owner's client finds
@@ -375,7 +388,9 @@ Every picker's read is this plan's; the forge client has none.
 
 1. **The token.** The admin's token, read first, checked as step 1
    (4.3): `NotAdmin`. When none is kept, the API token; none of either
-   is `Missing` (`Token`, `api`).
+   is `Missing` (`Token`, `api`). The admin's search needs its
+   `write:repository`: a `403` there stops the run `Refused(403)`,
+   `Token`, naming the admin.
 2. **The page cap,** read from `GET /api/v1/settings/api` as 4.4 says.
 3. **One page,** `n` being the least of `reachable` and the cap:
    - with the admin's token,
