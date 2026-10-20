@@ -5,8 +5,10 @@ experiment a product keeps in its own repository is run as processes,
 driven by an agent, checked from outside, and judged over seeds into
 verdicts and findings. The records are files of a fixed form, so that a
 lab application can take them as its state later; the runner is a
-command in `scripts/lab/` that names no product. A product's binding (its
-experiments, their templates and checks) is the product's own document.
+command in `scripts/lab/` that names no product, in Python's standard
+library for now, until the lab application takes it over in Rust
+(10.1). A product's binding (its experiments, their templates and
+checks, the values of its cost classes) is the product's own document.
 What is still open is in section 11.
 
 ## 1. In one page
@@ -17,14 +19,15 @@ What is still open is in section 11.
   agent's experiment, a charter and tools (section 4). The runner knows
   processes, files and commands, never the product.
 - **Every record is canonical JSON** (2.2): RFC 8785's form on a subset
-  (ASCII keys, integers, no floats), digested with SHA-256, so that a
-  reader in any language agrees on its bytes. Prose (a charter, a
-  campaign's note) is Markdown that records name.
+  (ASCII keys, exact integers, no floats; a 64-bit seed or draw as a
+  decimal string), digested with SHA-256, so that a reader in any
+  language agrees on its bytes. Prose (a charter, a campaign's note) is
+  Markdown that records name.
 - **A key is what a run may not vary:** the experiment's digest, the
   subject's (the product's artifacts and source) and the lab's (the
-  runner, the driver host and its model, the cost class's values) (2.3).
-  A run adds its seed and what it is given: addresses, directories,
-  scratch.
+  runner, the programs it runs, the driver host with its model and its
+  configuration, the cost class's values) (2.3). A run adds its seed and
+  what it is given: addresses, directories, scratch.
 - **Evidence only grows.** A run's record is written once; a key's
   evidence, a finding's history and a campaign's are appended to;
   verdicts and indexes are derived and never edited (2.4).
@@ -33,15 +36,17 @@ What is still open is in section 11.
   by a line on their output; watched for their exit in every phase;
   measured against their declared memory; stopped in reverse order,
   each whole tree, however the run ends (section 5).
-- **Addresses are never guessed:** a listener is handed to its process
-  already bound, or the process binds port 0 and reports its address on
-  its ready line. The runner never picks a port it has released (4.4).
+- **Addresses are reported:** a process binds port 0 itself and prints
+  its address on a ready line. The runner never picks, binds or passes
+  a port (4.4).
 - **The driver's boundary is the runner's, not the prompt's.** The
-  agent's own commands run in Codex's sandbox: reads of the subject's
-  source and its work directory, writes to its work directory, no
-  network. The product is reached only through the experiment's tools,
-  each call run by the runner in a view of its own and recorded. A probe
-  proves the boundary before each start (section 6).
+  agent's own commands run in Codex's sandbox: reads of the host's
+  minimal roots, the subject's source and its work directory, writes to
+  its work directory, no network. The product is reached only through
+  the experiment's tools, trusted programs each call of which the runner
+  runs in a view of its own and records. A probe checks what it names
+  before each start, and the host's tools are checked every run
+  (section 6).
 - **Checks are commands with three statuses** (passed, failed with
   signatures, could not judge) beside the runner's own: stops, panics,
   survivors, memory, bounds, seed actions and the agent's report
@@ -50,9 +55,10 @@ What is still open is in section 11.
   observed failing but something not judged; error, the lab's own
   machinery failed. Invalid inputs are refused before anything starts
   (4.7, 5.5).
-- **A verdict is a key's evidence judged:** three judged seeds, all pass
-  is pass, all fail is fail, and mixed is flaky as soon as it is mixed
-  (section 8).
+- **A verdict is a key's evidence judged:** exactly three seeds, each
+  with a judged run, before any verdict; then all pass is pass, all fail
+  is fail, and mixed is flaky. Attempts and reruns add evidence, never
+  replace it (section 8).
 - **A finding is a failure with a signature:** matched mechanically
   where the signature says enough, by Codex's triager where it does not;
   filed once reproduced; classed by where its fix goes; fixed with a
@@ -61,15 +67,21 @@ What is still open is in section 11.
 - **A planted fault stays detected:** nothing ignores an early exit.
   Detection is proven with the fault on, the correction with the fault
   off, under two keys (9.4).
-- **Bounded, never by default:** an experiment names a cost class whose
-  values are the user's to approve; a run without them is refused, and
-  each run records what it used, unknown where the host did not say
-  (6.5).
+- **Bounded, never by default:** an experiment names a cost class, whose
+  values are budgets decided as `owners.md` (3) says and kept in the
+  lab's settings; a run without them is refused. Actions are bounded as
+  they start; tokens are observed as the host reports them, so a drive
+  may overshoot by a turn, recorded. Each run records what it used,
+  unknown where the host did not say, never 0 (6.5).
 - **On demand, one cluster at a time, private:** everything under
   `~/src/rust/tmp/lab/`, `0700`, one run holding the lab's lock, one
   campaign open (section 3).
-- **The runner is Python's standard library,** in `scripts/lab/`: no
-  crate and no build (10.1).
+- **The runner is Python 3.11's standard library, for now,** in
+  `scripts/lab/`: no package installed, no build. Its decisions are pure
+  functions apart from the code that spawns, signals and reads files, so
+  that the lab application takes it over in Rust from the records and
+  those functions, and skein's contained trees can take its host's part
+  (10.1, 10.4).
 
 ## 2. Records and identity
 
@@ -79,7 +91,7 @@ What is still open is in section 11.
 |---|---|---|
 | experiment | a product's directory: `experiment.json` (section 4), its templates, its charter, its check programs; copied whole into the store, read-only, named by its tree's digest | `store/experiments/<digest>/` |
 | subject | what is under test: the product's artifacts by name and digest, the commit they were made from, and the source tree the driver may read | `store/subjects/<digest>/` |
-| lab | the lab's inputs to a run: the runner's tree, the interpreter, the driver host, the cost class | inside `key.json` |
+| lab | the lab's inputs to a run: the runner's tree, the programs it runs (the interpreter among them), the driver host and its configuration, the cost class | inside `key.json` |
 | key | the experiment's, the subject's and the lab's digests | `keys/<experiment>/<key>/key.json` |
 | run | one execution of a key with a seed: what it was given, what happened, what it used, its outcome | `.../runs/<run>/run.json` and its files (5.6) |
 | evidence | one line per ended run of the key | `.../evidence.jsonl` |
@@ -91,13 +103,29 @@ What is still open is in section 11.
 ### 2.2 Canonical JSON and digests
 
 - **One form.** A record is a JSON object whose keys are ASCII and
-  unique, whose numbers are integers within ±(2^53 − 1), and whose
-  strings are Unicode scalar values; there are no floats. Its canonical
-  bytes are RFC 8785's for that subset: UTF-8, members sorted by key,
-  no insignificant whitespace, the minimal escapes. A record file holds
-  its canonical bytes and a final newline; a JSON Lines file, one
-  canonical record per line. A reader refuses any other form, a
-  duplicate key and a `format` it does not know.
+  unique, whose numbers are exact integers within ±(2^53 − 1), written
+  without a fraction or an exponent, and whose strings are Unicode
+  scalar values; there are no floats. Its canonical bytes are RFC 8785's
+  for that subset: UTF-8, members sorted by key, no insignificant
+  whitespace, the minimal escapes. A record file holds its canonical
+  bytes and a final newline; a JSON Lines file, one canonical record per
+  line. A reader refuses any other form, a duplicate key and a `format`
+  it does not know.
+- **A 64-bit value is a string.** A seed and a draw (5.4) are unsigned
+  64-bit integers, past what every reader holds exactly, so a record
+  writes each as its canonical decimal string: `0`, or digits without a
+  leading zero, at most 18446744073709551615. A count, a size, a time or
+  an index is an integer.
+- **The subset is chosen so that any language's standard parts write
+  it.** With ASCII keys, RFC 8785's order (by UTF-16 code units) is the
+  keys' byte order; with integers only, a number is its decimal. In
+  Python, `json` and `hashlib` implement it: the reader parses with
+  duplicates, floats and `NaN` refused, checks keys, integers and
+  strings, and refuses a file whose bytes differ from the canonical bytes
+  of what it parsed (which refuses `-0`, `1.0` and a needless escape);
+  the writer is `json.dumps` with keys sorted, `ensure_ascii` off and no
+  spaces, encoded as strict UTF-8 (which refuses a lone surrogate). The
+  runner needs no other program to read or write its records.
 - **A `format` in every record:** `lab-<record>/<version>`, as
   `lab-experiment/1` or `lab-run/1`. The version changes when a reader of
   the old one would misread the new.
@@ -127,21 +155,35 @@ named by its digest.
   source tree's digest (or none) and its commit; the repository's path,
   the paths it excluded from the source, its maker and its time are its
   `about`.
-- **The lab's** is inline: `runner`, the digest of `scripts/lab/`'s tree
-  without its `tests/`; `python`, the interpreter's version; `driver`,
-  the host program's digest and version, its model and its effort (null
-  for an experiment without a driver); `cost`, the class's name and
-  every value. A runner whose checks change, a host updated, another
-  model or a changed value is a new key.
+- **The lab's** is inline:
+  - `runner`, the digest of `scripts/lab/`'s tree without its `tests/`;
+  - `python`, the interpreter's version;
+  - `programs`, each system program the runner or experiment declares,
+    the interpreter, `systemd-run` and `bwrap` among them, as
+    `{"path", "sha256"}`: its
+    resolved absolute path and its file's digest, sorted by path. These
+    are the lab's and the experiment's helpers, whose behaviour affects
+    the run, so they are identity, not the machine's provenance;
+  - `driver`, null for an experiment without one, or the host's
+    `program` (`{"path", "sha256", "version"}`), its `model`, its
+    `effort`, and its `config`, the configuration the runner gives it
+    (6.1) as JSON: its arguments, permission profile, disabled features,
+    server and schema, with each run's own paths left as their template
+    names;
+  - `cost`, the class's `name` and every value.
+
+  A runner whose checks change, a helper or a host updated, another
+  model, a changed configuration or a changed value is a new key.
 - **Not in the key:** the seed; the addresses and directories a run is
-  given; what the runner generates from the key's inputs (rendered
-  files, the driver's configuration with its paths); the time; the
-  machine. The machine's facts (host name, kernel, processors, memory,
-  bubblewrap's version, and the digest of each system program an
-  experiment runs by absolute path) go in each run's `about`.
+  given; what the runner renders with them (files, the driver's
+  configuration with its paths); the time; the machine. The machine's
+  facts (host name, kernel, the user manager's version, processors and
+  memory) go in each run's `about`.
 - **Programs are named by absolute path** after templating: an
   artifact, a file of the experiment, or a system program. The first two
-  are in the key; the third is the machine's.
+  are in the key through their trees; the third is in `programs`.
+  The program's identity is known before the run: an executable's path
+  uses no run-specific value or readiness capture. Its arguments may.
 
 ### 2.4 Immutable, run-specific, append-only
 
@@ -149,8 +191,8 @@ named by its digest.
   (directories `0500`, files `0400`), shared by every run of their keys,
   never written once made, removed only by pruning (3.3).
 - **Run-specific:** the seed; the run's id, `<UTC time>-<6 hex>`; its
-  handed listeners; its directories (`{dir.D}`) and each process's
-  scratch directory, created empty, `0700`.
+  unit (5.2); its directories (`{dir.D}`) and each process's scratch
+  directory, created empty, `0700`.
 - **Append-only:** a run's `events.jsonl` while it runs; its `run.json`,
   written once when it ends; the key's `evidence.jsonl`; each finding's
   file; each campaign's. Nothing in them is rewritten; a correction is a
@@ -236,12 +278,12 @@ and an agent:
      "memory_bytes": null},
     {"name": "app",
      "after": ["backend"],
-     "listen": ["clients"],
      "files": [{"path": "app.conf", "from": "app.conf"}],
-     "argv": ["{artifact.app}", "serve", "--listen-fd", "{listen.clients.fd}",
+     "argv": ["{artifact.app}", "serve", "--listen", "127.0.0.1:0",
               "--config", "{proc.app.dir}/app.conf"],
      "env": {"PATH": "/usr/bin:/bin", "HOME": "{proc.app.dir}"},
-     "ready": [{"stream": "stdout", "prefix": "sign in: ", "capture": "link"}],
+     "ready": [{"stream": "stdout", "prefix": "listening on ", "capture": "address"},
+               {"stream": "stdout", "prefix": "sign in: ", "capture": "link"}],
      "memory_bytes": null}
   ],
   "actions": [
@@ -282,8 +324,8 @@ and an agent:
   and names the experiment's directory under `keys/`.
 - **`cost`** is a cost class of the lab's settings (6.5).
 - **`dirs`:** the run's directories, `{dir.D}`, created empty, `0700`.
-- **Members** are required, but `after`, `listen` and `files` in a
-  process, and `stdin` in a command, which are empty when absent.
+- **Members** are required, but `after` and `files` in a process, and
+  `stdin` in a command, which are empty when absent.
   `driver` may be null: an experiment with no agent. An unknown member
   is refused.
 
@@ -298,12 +340,10 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 | `{experiment}` | the experiment's tree in the store | everything |
 | `{artifact.A}` | the subject's artifact A | everything |
 | `{source}` | the subject's source tree | everything |
-| `{run.id}`, `{run.seed}` | the run's id and seed | everything |
-| `{seed.L}` | the seed derived for label L, in decimal (5.4) | everything |
+| `{run.id}`, `{run.seed}` | the run's id and seed, the seed in decimal | everything |
+| `{seed.L}` | the draw for label L, in decimal (5.4) | everything |
 | `{dir.D}` | run directory D | everything |
 | `{proc.P.dir}` | process P's scratch directory | everything |
-| `{listen.L.address}`, `.host`, `.port` | handed listener L (4.4) | everything |
-| `{listen.L.fd}` | L's descriptor in its process | the process that takes L |
 | `{proc.P.ready.C}` | capture C of P's ready lines | processes after P, transitively; seed actions, tools, collection, checks |
 | `{collect.dir}` | this collection's directory | a collection |
 | `{collected.N}` | collection N's directory | checks |
@@ -319,14 +359,13 @@ named by `files`, is a template: `{name}` is replaced by its value, and
   starts.
 - **`after`:** the processes that must be ready before it starts. The
   graph is acyclic.
-- **`listen`:** the listeners handed to it (4.4).
 - **`ready`:** one or more lines, each `{"stream": "stdout" | "stderr",
   "prefix": TEXT, "capture": NAME | null}`. The process is ready once
   each has been seen, in any order: the first line of its stream that
   starts with its prefix, the rest of the line, less its end, being the
-  capture. Prefixes are literal, so readers in any language agree. A
-  port that accepts is no readiness: a handed listener accepts before
-  its process runs, and a port the process chose is on its line anyway.
+  capture. Prefixes are literal, so readers in any language agree.
+  Readiness is by lines only: a port that accepts says nothing of what
+  serves it, and a port the process chose is on its line anyway.
 - **`memory_bytes`:** the bound the program's own configuration states,
   an integer, or null for a program that declares none, whose peak is
   recorded and not judged. The lab adds no bound of its own.
@@ -335,21 +374,13 @@ named by `files`, is a template: `{name}` is replaced by its value, and
 
 ### 4.4 Addresses
 
-Two ways, neither with a race between a bind and its release:
-
-- **Handed:** before any process starts, the runner binds a TCP listener
-  on `127.0.0.1`, port 0, listens, and hands its descriptor to the
-  process that names it in `listen`, at `{listen.L.fd}` (from 3, in
-  `listen`'s order). Its address is known to every template from the
-  start, so a process that reaches it may start first: its connections
-  wait in the backlog. The runner closes its own copy once the process
-  has started.
-- **Reported:** the process binds port 0 itself and prints the address
-  on a ready line, captured as `{proc.P.ready.C}` for what comes after
-  it.
-- **Nothing else.** The runner never chooses a port number it has
-  released, and an experiment cannot ask it to. A program that can do
-  neither has no place in a cluster until it can.
+- **Reported:** a process that listens binds port 0 itself, on the
+  address its arguments name, and prints the address it got on a ready
+  line, captured as `{proc.P.ready.C}` for what comes after it (4.2).
+- **Nothing else.** The runner never chooses, binds, releases or passes
+  a port, so no bind races its release, and an experiment cannot ask for
+  a port number. A program that cannot report its address has no place
+  in a cluster until it can.
 
 ### 4.5 Commands: seed actions, collection and checks
 
@@ -374,10 +405,10 @@ stderr are kept.
 ### 4.6 Faults and planted failures
 
 - **`faults`** are the runner's own, drawn from the seed and recorded:
-  `{"kill": P, "signal": NAME, "after_calls": [LOW, HIGH]}` sends the
-  signal to process P once the driver's tool call N has ended, N drawn
-  in `[LOW, HIGH]` (5.4). Faults need a driver. A fault that never fires
-  leaves the run incomplete (5.5).
+  `{"kill": P, "signal": NAME, "after_actions": [LOW, HIGH]}` sends the
+  signal to process P once the driver's action N (6.5) has ended, N
+  drawn in `[LOW, HIGH]` (5.4). Faults need a driver. A fault that never
+  fires leaves the run incomplete (5.5).
 - **A fake's faults** (a delay, a refused call, a broken promise) are the
   fake's, configured by the experiment's templates and drawn from the
   seed the experiment hands it.
@@ -397,9 +428,9 @@ run:
 
 - the format; a missing or unknown member; a wrong type; a name that
   repeats or is not `[a-z][a-z0-9-]*`;
-- an `after`, a fault or a template naming no process, listener,
-  directory, artifact or collection; a cycle; a template name not yet
-  known where it is used (4.2); a capture no ready line declares;
+- an `after`, a fault or a template naming no process, directory,
+  artifact or collection; a cycle; a template name not yet known where
+  it is used (4.2); a capture no ready line declares;
 - a `from` missing from the experiment; a `path` absolute or climbing
   out; a program that is not an absolute path to an executable regular
   file;
@@ -408,6 +439,8 @@ run:
 - a cost class missing from the settings, or a value of it missing or
   not a positive integer; the driver's or the triager's settings missing
   when needed;
+- a seed that is not a canonical decimal string (2.2); a seed new to a
+  key that already has three (section 8);
 - the lab: not private, its lock held, the disk below its floor, no
   containment (5.2), no bubblewrap, or no driver host for an experiment
   with a driver.
@@ -416,11 +449,14 @@ run:
 
 ### 5.1 Phases
 
-1. **Provision:** the run's directory and `live.json`, the scratch and
-   `{dir.D}` directories, the handed listeners, the rendered files, and,
-   for an experiment with a driver, the boundary's probe (6.2).
-2. **Start:** the processes in dependency order (5.4), each ready within
-   `ready_seconds` of its start.
+1. **Provision:** the run's directory and `live.json`, its cgroups
+   (5.2), the scratch and `{dir.D}` directories, the files whose inputs
+   are known, and, for an experiment with a driver, the boundary's
+   probe (6.2).
+2. **Start:** the processes in dependency order, one at a time (5.4),
+   each ready within `ready_seconds` of its start. Its files are rendered
+   immediately before it starts, once its dependencies' readiness
+   captures are known (4.2, 4.3).
 3. **Seed:** the seed actions.
 4. **Drive:** the driver, until its host ends, a bound passes (6.5) or a
    process stops. Without a driver, nothing.
@@ -439,14 +475,34 @@ its outcome is error, `interrupted`.
 ### 5.2 Containment and teardown
 
 - **A tree per process and per command,** in a cgroup of its own under
-  the run's: what it starts stays in it, however it detaches (a new
-  session, a double fork). A tree is empty when its cgroup's
-  `populated` is 0; `cgroup.kill` ends all of it at once.
-- **The run whole.** The runner runs as a transient systemd user service
-  with delegation, whose processes are all killed when its main process
-  ends, however it ends. So after a `SIGKILL` or a crash of the runner
-  nothing of the run is left, and the next command's sweep records it
-  (3.2). A machine without cgroup v2 and a user manager is refused.
+  the run's, entered before its program starts: what it starts stays in
+  it, however it detaches (a new session, a double fork). A tree is
+  empty when its cgroup's `populated` is 0; `cgroup.kill` ends all of it
+  at once.
+- **The run whole.** Each run's runner runs in a transient systemd user
+  unit of its own, `lab-<run>.service`: started by `lab run`, which
+  waits on it and passes it a `SIGINT` or `SIGTERM` it gets; delegated
+  (`Delegate=yes`), so the runner makes its trees' cgroups beneath the
+  unit's, its own process in a leaf beside them, with the `memory` and
+  `pids` controllers enabled for them; killed whole when its main
+  process ends, however it ends (`KillMode=control-group`); and
+  collected once it ends. So after a `SIGKILL` or a crash of the runner
+  nothing of the run is left, its cgroup included, and the next
+  command's sweep records it (3.2).
+- **The machine** needs cgroup v2 and a user manager that delegates
+  `memory` and `pids` to a transient unit, bubblewrap, and unprivileged
+  user namespaces. A machine without cgroup v2, a user manager or
+  bubblewrap is refused (4.7); the controllers are checked as each run
+  provisions, which makes its cgroups with them or ends in error.
+- **The host is replaceable.** What the run's life asks of the machine
+  is a short list (10.4): make a tree's cgroup, spawn into it, signal its
+  first process, kill the tree, await it empty, read its counts, remove
+  it, compose a view. That is the shape of skein's contained trees (io.md,
+  6.2 to 6.4: a cgroup's `Make`, `Signal`, `Kill`, `Empty` and `Counts`;
+  a `Spawn` into a cgroup, contained with a view), so they can take the
+  host's part in the lab application without changing the run's life.
+  Until then the host is systemd's units, cgroup v2's files and
+  bubblewrap; the runner depends on nothing of skein's.
 - **No survivors.** Once the process the runner started has ended, at
   any time and however, what is left of its tree is killed at once and
   reported as its survivors (7.1): a process owns its children until
@@ -467,41 +523,55 @@ its outcome is error, `interrupted`.
 - **Output:** each process's and command's stdout and stderr, written to
   the run's files as they come; ready lines are read from them.
 - **Memory:** a process's peak is its resident set's high-water mark,
-  `VmHWM` in `/proc/<pid>/status`, read just before its stop signal; for
-  a process that ended by itself, the maximum resident set its wait
+  `VmHWM` in `/proc/<pid>/status`, read just before its stop signal,
+  while it is the runner's unreaped child, so that the PID is its own;
+  for a process that ended by itself, the maximum resident set its wait
   status reports. Its tree's peak, its cgroup's `memory.peak`, is
-  recorded beside it and not judged. The runner reads `status` of the
-  processes it started, nothing else under `/proc`, and never another
-  process's environment.
+  recorded beside it and not judged. Under `/proc` the runner reads the
+  `status` of the processes it started and its own PID namespace's link
+  (6.2), nothing else, and never another process's environment.
 - **Time** on the monotonic clock, in milliseconds from the run's start;
   wall-clock times only for its start and its end.
 
 ### 5.4 The seed
 
 - **A run's seed** is an unsigned 64-bit integer, given with `--seed` or
-  drawn from the system's random source, and recorded either way.
-- **Derived seeds:** the seed for label L is the first 8 bytes, read
-  big-endian, of SHA-256 over `lab-seed`, the seed in decimal and L,
-  joined by zero bytes. `{seed.L}` hands one to a process; the runner's
-  own draws use `start-order` and `fault.<index>`.
-- **The start order:** while processes wait to start, the runner starts
-  one at a time, drawn among those whose dependencies are ready.
-- **Recorded in full:** `run.json`'s `schedule` holds each draw: the
-  start order, each fault's N and whether and when it fired, each
-  derived seed handed out.
-- **What replays:** a rerun of a seed draws the same order, the same
-  derived seeds (so the fakes draw the same faults), and the same fault
-  at the same call. Real scheduling, timing and the model's output do
-  not replay: a rerun is a new run of the key, and reproduction is
-  measured, never assumed (9.3).
+  drawn from the system's random source, recorded either way, and
+  written as its canonical decimal string everywhere: records,
+  templates, arguments (2.2).
+- **Draws:** the draw for label L is the first 8 bytes, read
+  big-endian, of SHA-256 over `lab-seed`, the seed's decimal string and
+  L, joined by zero bytes; an unsigned 64-bit integer, recorded as its
+  decimal string. `{seed.L}` hands one to a process, as the seed its
+  fake draws from; the runner's own labels are `start-order.<k>` and
+  `fault.<index>`.
+- **The start order:** the runner starts one process at a time, and
+  waits for it to be ready before the next. The k-th start, from 0,
+  takes from the processes whose dependencies are ready, sorted by
+  name, the one at the draw `start-order.<k>` modulo their number. A
+  fault's N is `LOW` plus the draw `fault.<index>` modulo
+  `HIGH − LOW + 1`.
+- **Recorded in full:** `run.json`'s `schedule` holds each draw by its
+  label, the start order, and each fault's N and whether and when it
+  fired.
+- **What replays:** the seed fixes the lab's draws, and nothing else. A
+  rerun of a seed draws the same order, the same seeds for the fakes (so
+  they draw the same faults), and the same fault at the same action.
+  The kernel's scheduling, timing and the model's output do not replay:
+  a rerun is a new run of the key, and reproduction is measured, never
+  assumed. How often a failing seed's reruns show its signature again is
+  recorded with the finding and reported (9.3, 10.2). There is no
+  replay: a failure that does not come back is filed flaky, and its
+  transcript (6.3) is what a lower world's story, which replays its own
+  seeds, is made from.
 
 ### 5.5 Outcomes
 
 | Outcome | When | Judged (section 8) | `lab run` exits |
 |---|---|---|---|
-| pass | every check passed, the driver reported done, no bound passed | yes | 0 |
+| pass | every check passed, the driver, if present, reported done, no bound passed | yes | 0 |
 | fail | a failure observed (section 7) | yes | 1 |
-| incomplete | none observed, but a check could not judge, a fault did not fire, or the report is missing or malformed though its host ended well | no | 3 |
+| incomplete | none observed, but a check could not judge, a fault did not fire, or a required report is missing or malformed though its host ended well | no | 3 |
 | error | the lab's machinery failed: containment, the driver host (an exit but 0, a transport or account error), a check that broke its contract (7.2), the runner, an interruption | no | 4 |
 
 - **Refused** is no outcome: no run is made (4.7), and `lab run` exits
@@ -525,45 +595,70 @@ and `dirs/<D>/`.
 
 `run.json` (`lab-run/1`):
 
-- `run`, `key`, `experiment` (its name), `seed`, `attempt` (one more
-  than the key's earlier runs of the seed), `campaign`, `started`,
-  `ended` (UTC, RFC 3339, milliseconds), `outcome`;
+- `run`, `key`, `experiment` (its name), `seed` (a decimal string),
+  `attempt` (one more than the key's earlier runs of the seed),
+  `campaign`, `started`, `ended` (UTC, RFC 3339, milliseconds),
+  `outcome`;
 - `schedule` (5.4);
-- `processes`: each one's rendered argv and environment, its listeners,
-  `started_ms`, `ready_ms` and captures; its exit (`ms`, `phase`,
-  `status` or `signal`, `stopped`, `killed`); its memory (`peak_bytes`,
-  `source`, `bound_bytes`, `tree_peak_bytes`); its output's files;
+- `processes`: each one's rendered argv and environment, `started_ms`,
+  `ready_ms` and captures; its exit (`ms`, `phase`, `status` or
+  `signal`, `stopped`, `killed`); its memory (`peak_bytes`, `source`,
+  `bound_bytes`, `tree_peak_bytes`); its output's files;
 - `commands`: each seed action, collection and check, as a process,
   with its status and lines (7.2);
-- `driver`: its host's invocation and end, the report's and the
-  transcript's files (6.3, 6.4);
+- `driver`: its host's invocation, the inventory it was checked against
+  and what was found (6.1), its actions and observed turns, its end, the
+  report's and the transcript's files (6.3, 6.4);
 - `failures`, each `{"id", "signature", "kind", "summary", "evidence"}`;
   `undecided`, each `{"check", "reason"}`; `errors`, each `{"what",
   "detail"}`;
 - `bounds` and `usage` (6.5); `about`, the machine (2.3).
 
 The evidence line (`lab-evidence/1`) is `{"run", "seed", "attempt",
-"outcome", "signatures", "ended"}`.
+"outcome", "signatures", "ended"}`, its seed a decimal string.
 
 ## 6. The driver
 
 ### 6.1 The host
 
+The driver's boundary is provisional: Codex's permission profile for
+the agent's commands, and a stdio MCP server whose calls run in
+bubblewrap views for its tools. What it rests on is checked every run
+(the inventory below, the probe of 6.2), not assumed from the host's
+documentation.
+
 - **Codex,** `codex exec`, one per run, started in the drive phase. The
   lab's settings name its program, model and effort; the key holds its
-  version and digest (2.3).
+  version and digest, and its configuration (2.3).
 - **Its prompt** is the runner's preamble (the tools, the boundary, the
   report's shape), then the experiment's charter, verbatim.
-- **Its configuration is the run's alone.** The user's Codex
-  configuration is ignored (`--ignore-user-config`); the runner writes
-  the run's: the permission profile of 6.2, the experiment's tools as
-  its one MCP server (6.3), Codex's other tools that reach past the
-  sandbox (web search, a browser, other servers) off, no session kept
-  (`--ephemeral`), the report's schema (`--output-schema`), and its
-  events as JSON lines (`--json`) into `driver/events.jsonl`.
-- **Its own login is the host's.** Codex authenticates its model
-  transport with the machine's Codex login under `CODEX_HOME`: the one
-  credential in the host's reach, and never in its tools' (6.2).
+- **Its configuration is the run's alone,** and is in the key. The
+  user's configuration and rules are ignored (`--ignore-user-config`,
+  `--ignore-rules`), and the run's is parsed strictly
+  (`--strict-config`): approvals never asked; the permission profile of
+  6.2 as the default, with no legacy sandbox setting beside it; no
+  login shell and no inherited environment for the agent's commands; the
+  experiment's tools as its one MCP server, `lab`, required, with
+  exactly their names enabled and no environment passed (6.3); and every
+  other source of tools or configuration disabled by name: web search,
+  apps, plugins, browsers, computer use, image tools, other agents,
+  hooks, skills' installs, as the runner's list for the host's version
+  names them. No session is kept (`--ephemeral`); the report is held to
+  its schema (`--output-schema`); its events go as JSON lines (`--json`)
+  into `driver/events.jsonl`.
+- **The inventory is checked every run.** Configuration accepted is not
+  configuration in effect, so the runner reads what the host offers the
+  agent once started: its shell under the profile, the one server `lab`
+  offering exactly the experiment's tools, no resources and no prompts,
+  and no other server, plugin, app or configuration layer. A host whose
+  inventory differs ends the run in error, the driver ended at once. How
+  the inventory is read is the runner's, for each host version; no run
+  with a driver starts on a version it cannot read.
+- **The model's credential stays with the host.** Codex authenticates
+  its model transport with the machine's Codex login under
+  `CODEX_HOME`, the one credential in the host's reach; the profile
+  grants no part of it to the agent's commands, and no tool's view or
+  environment holds it (6.2, 6.3).
 
 ### 6.2 The boundary
 
@@ -571,31 +666,53 @@ What the agent's own commands may reach:
 
 | | May | May not |
 |---|---|---|
-| read | the system's directories (`/usr`, `/bin`, `/lib`, `/lib64`, `/etc`), the subject's source tree, its work directory | the home directory and every credential on the machine, the host's login, the lab, the experiment (its checks), other processes' `/proc` |
+| read | the host's minimal roots (Codex's `:minimal`), the host's own executable, the subject's source tree, its work directory | the home directory, the host's login (`CODEX_HOME`), the lab (its store, the experiment and its checks, the runs), the runner's processes |
 | write | its work directory | the source, the product's repository, the run's processes' files, the lab |
-| run | what it may read | the subject's artifacts |
-| reach | nothing on the network | the cluster, but through the tools (6.3) |
+| run | what it may read, and what it writes | nothing is barred by its bytes' identity: the artifacts are out of its view, but what it builds from the source runs as anything does |
+| reach | nothing on the network: a socket is refused as it is made | the cluster, but through the tools (6.3) |
 
 - **The agent's commands** run in Codex's sandbox, under the run's
-  permission profile: reads denied but for the table's roots, writes
-  only to the work directory, no network.
+  permission profile: reads of the minimal roots, of the host's
+  executable by its exact resolved path (without which the sandbox
+  cannot start it), of the source, and of the work directory; writes
+  only to the work directory; the network disabled.
+- **The minimal roots are reviewed, not assumed safe.** They are what
+  Codex's sandboxed programs need to start, and their list is Codex's:
+  the lab's owner reviews it for each host version, whose change is a new
+  key. The boundary claims nothing of a system directory beyond that
+  review, `/etc` included: what the roots hold is the machine's, and the
+  probe proves only the paths it names.
 - **The tools run outside it,** in the runner's MCP server (6.3), each
-  call in a bubblewrap view of its own: the system's directories, the
-  tool's program, the directories the tool declares (`writes`, `reads`),
-  the work directory read-only (for a file an argument names), a new PID
-  namespace with its own `/proc`, an empty `/tmp`, the environment the
-  tool declares and nothing else, and the network shared, for loopback.
-  So an argument naming a file reaches only what the view holds.
+  call in a bubblewrap view of its own: the system directories its
+  program needs, read-only; the tool's program; the directories the tool
+  declares (`writes`, `reads`); the work directory read-only (for a file
+  an argument names); a new PID namespace with its own `/proc`; an empty
+  `/tmp`; the environment the tool declares and nothing else; and the
+  host's network, shared. So an argument naming a file reaches only what
+  the view holds.
+- **A tool is trusted, and its endpoint is its own.** Sharing the
+  network (bubblewrap's `--share-net`) shares all of the host's, not one
+  address: no view isolates an endpoint. A tool is a program of the
+  subject's or the experiment's whose fixed arguments and files name the
+  endpoint it reaches, and which refuses an argument of the agent's that
+  would name another; that validation is the tool's own, and an
+  experiment names no tool without it.
 - **The source** leaves out the paths the subject excluded, the
   product's experiments among them, so the agent never reads its checks.
 - **The probe:** when a run is provisioned, before any process starts,
   and before each triage, the runner runs fixed commands through the
-  same profile (`codex sandbox`, no model): reading `canary`, listing
-  the home directory, reading `/proc/<the runner's pid>/status`, writing
-  into the source, connecting to a listener of its own on loopback,
-  running an artifact. Each must be refused, and a write in the work
-  directory must succeed; otherwise the run ends in error before any
-  process starts, having spent nothing.
+  same profile with `codex sandbox`, no model, and `CODEX_HOME` an
+  inert, empty directory of the run's, so that the probe reaches no
+  login. They read `canary` (in the lab's root: it stands for the store,
+  the experiment and the runs); list the home directory; write into the
+  source; open a socket to a listener the runner holds on loopback; and
+  look for the runner's processes by identity, never by a PID's number,
+  which another namespace reuses: the probe's PID namespace
+  (`/proc/self/ns/pid`) must not be the runner's, and a canary process
+  the runner starts, named by a token in its arguments, must not appear
+  in the probe's `/proc`. Each must be refused or absent, and a write in
+  the work directory must succeed; otherwise the run ends in error
+  before any process starts, having spent nothing.
 - **The preamble says the same** for the agent's sake; the boundary does
   not rest on it.
 
@@ -604,19 +721,23 @@ What the agent's own commands may reach:
 - **A tool** is `{"name", "argv", "env", "writes", "reads"}`: `argv` is a
   prefix (the program and its fixed arguments, a client directory among
   them) to which the agent's arguments are appended.
-- **One MCP server,** `lab tool`, which Codex starts as its only server,
-  offers one MCP tool per experiment tool: its input `{"args": [...],
-  "stdin": TEXT | null}`, its result the call's status or signal, its
-  stdout and its stderr, as text.
+- **One MCP server,** `lab tool`, which Codex starts over stdio as its
+  only server, with no environment of the runner's, offers one MCP tool
+  per experiment tool and no resources or prompts: a tool's input
+  `{"args": [...], "stdin": TEXT | null}`, its result the call's status
+  or signal, its stdout and its stderr, as text.
+- **An action** is one command the agent runs in its sandbox, or one
+  tool call (6.5). Codex's own turns are not actions.
 - **Every call is recorded** before its result reaches the agent:
   `driver/calls.jsonl` gets a `start` line (`n`, the tool, `args`, the
   stdin's file, `t_ms`) and an `end` line (`n`, `t_ms`, `status` or
   `signal`, and the stdout's and stderr's files with their sizes and
   digests) in `driver/calls/`. A call cut by the driver's end has a
   start and no end. The transcript is outside the agent's view.
-- **The transcript,** the calls in order with their outputs, is the
-  run's, a finding's reproduction, and the material of a lower world's
-  story (9.3).
+- **The transcript,** the actions in order with their outputs (the
+  calls from `calls.jsonl`, the agent's commands from the host's
+  events), is the run's, a finding's reproduction, and the material of a
+  lower world's story (5.4, 9.3).
 - **Each call's tree** is contained as a command's (5.2): its survivors
   killed and reported.
 
@@ -647,24 +768,42 @@ evidence for the owner, not failures.
 
 - **A cost class** of the lab's settings, named by the experiment:
   `ready_seconds`, `command_seconds`, `stop_seconds`, `driver_seconds`,
-  `driver_turns` and `driver_tokens`, and the lab's triage class,
-  `triage_seconds` and `triage_tokens`; each a positive integer. A
+  `driver_actions` and `driver_input_tokens`, and the lab's triage
+  class, `triage_seconds` and `triage_tokens`; each a positive integer.
+  The class the experiment names is the one its runs are held to; a
   missing class or value refuses the run (4.7): there is no default.
-  They are budgets and timeouts, so their values are the user's to
-  approve (`owners.md`, 3), never the runner's.
+  They are budgets and timeouts, decided as `owners.md` (3) says, kept
+  in the lab's settings and named in the product's binding; never the
+  runner's, and no number of theirs is in this document.
+- **What each counts.** `driver_actions`: the agent's actions (6.3),
+  its commands and its tool calls together. `driver_input_tokens`: the
+  input tokens the host reports, cached ones included.
+  `triage_tokens`: the triage's tokens, input (cached included) and
+  output together. Codex's turns are observed and recorded, never
+  bounded: a turn may hold many actions, or be the whole drive.
 - **A run's longest** follows from the class and the experiment (each
   process's readiness and stop, each command, the drive) and is
   recorded; it is no bound of its own.
-- **Enforced as they pass:** time on the runner's clock; turns, each
-  command the agent runs and each tool call, counted from the host's
-  events as each starts. Past either, the driver's tree is ended, no
-  report is awaited, and the run fails `bound/<name>`. Tokens come from
-  the host's report of usage; past the bound, the run fails
-  `bound/driver_tokens`.
+- **Time and actions are enforced as they pass:** time on the runner's
+  clock, actions from the host's events and the tool server's as each
+  starts. Past either, the driver is stopped as a process is (5.2), no
+  report is awaited, and the run fails `bound/driver_seconds` or
+  `bound/driver_actions`. The action that passes the bound may have
+  begun by the time its event is read: it is recorded as such.
+- **Tokens are observed, not capped.** The host reports usage when a
+  turn completes, so the runner knows tokens per completed turn, and
+  only then. Once the observed input tokens pass the bound, the runner
+  stops the driver, if it still runs, and the run fails
+  `bound/driver_input_tokens`; the overshoot, at most the turn that
+  reported it, is recorded. Nothing promises that no token is spent past
+  a bound: while a drive runs, its time and its actions are what bound
+  it. A triage's time and tokens are bounded the same way.
 - **Usage, whatever the outcome:** `usage` holds the driver's seconds,
-  turns and tokens by kind (input, cached input, output, as the host
-  reports them), and each triage's (9.2). A value the host did not
-  report, as when it was ended first, is null: unknown, never 0. A
+  actions, observed turns and tokens by kind (input with cached
+  included, cached input, output, as the host reports them), and each
+  triage's (9.2). The driver's events are read until its end, so usage
+  it reports as it stops is kept. A value the host did not report, as
+  when it was ended within a turn, is null: unknown, never 0. A
   campaign's totals add what is known and count what is not.
 
 ## 7. Checks and signatures
@@ -677,7 +816,7 @@ evidence for the owner, not failures.
 | panics | a Rust panic's header, `thread '…' panicked at FILE:LINE:COL:`, in the stderr of a process, a command or a tool call, or in a collected log | `panic/<who>/<FILE>:<LINE>:<COL>`, the message in the summary |
 | survivors | a process, command or call whose tree outlived it | `survivor/<who>` |
 | memory | a peak past `memory_bytes` | `memory/<process>` |
-| bounds | a readiness, a command, a stop, or the driver's time, turns or tokens past its bound | `bound/<name>/<who>` or `bound/<name>` |
+| bounds | a readiness, a command, a stop, or the driver's time, actions or input tokens past its bound | `bound/<name>/<who>` or `bound/<name>` |
 | seed actions | an action that exited non-zero | `action/<name>/exit:<status>` |
 | use | the report's `done: false`, each `unseen` | the triager's, `use/…` |
 | planted | a planted signature missing from a judged run | `planted-missing/<signature>` |
@@ -718,25 +857,30 @@ evidence for the owner, not failures.
 ## 8. Verdicts
 
 - **The policy,** `three-seeds`. A run is judged when its outcome is
-  pass or fail. A key's verdict is:
-  - *flaky* as soon as two of its judged runs disagree, a seed's own
-    runs included;
-  - *pass* once three seeds have judged runs and all of them passed;
-  - *fail* once three seeds have judged runs and all of them failed;
-  - *not enough evidence* otherwise.
+  pass or fail. A key has exactly three seeds, the distinct seeds of its
+  evidence in the order of their first runs; a run under a fourth is
+  refused (4.7). A key's verdict is:
+  - *not enough evidence* until each of its three seeds has a judged
+    run, however the judged runs so far disagree;
+  - then *pass* when every judged run passed, *fail* when every one
+    failed, and *flaky* when any two disagree, a seed's own runs
+    included.
 - **`verdict.json`** (`lab-verdict/1`): the key, the policy, each seed's
   state, the runs judged and the runs not, and the verdict. It is derived
   from `evidence.jsonl` whenever that grows.
-- **`lab judge`** runs new seeds of a key, one run at a time, until its
-  verdict is decided; a key whose evidence already decides it runs
-  nothing. It stops at the first run that is not judged (error or
-  incomplete), running no other: the owner reads it first.
-- **Attempts:** a seed whose run ended in error or incomplete may be run
-  again under the same seed: a new run, its `attempt` one more. Nothing
-  attempts again on its own.
-- **Reruns:** any seed may be run again under the same immutable inputs.
-  Its run adds to the evidence, and may change the verdict: a pass
-  becomes flaky when a later run fails.
+- **`lab judge`** runs a key's seeds one run at a time, drawing a new
+  seed while the key has fewer than three, until each has a judged run;
+  a key whose evidence already decides it runs nothing. It stops at the
+  first run that is not judged (error or incomplete), running no other,
+  and a seed whose runs are none of them judged is left to the owner:
+  `judge` names it and runs nothing until it is attempted again.
+- **Attempts add, never replace:** a seed whose run ended in error or
+  incomplete may be run again under the same seed: a new run, its
+  `attempt` one more, beside the earlier one, which stays in the
+  evidence, not judged. Nothing attempts again on its own.
+- **Reruns** of a seed under the same immutable inputs add to the
+  evidence too, and may change the verdict: a pass or a fail becomes
+  flaky when a later run disagrees, and flaky stays flaky.
 - **A new subject or experiment is a new key,** with its own evidence; a
   verdict never borrows another key's.
 
@@ -772,13 +916,14 @@ finding's id, signature, class, state, title and runs, derived.
 - **The triager** is Codex, its host as the driver's, bounded by the
   triage class; `lab triage RUN` runs it on the run's failures no
   signature matched and on its use failures. Its commands may read the
-  system's directories and the run's evidence (never its scratch), and
-  write only in `triage/<n>/work/`, with no network; it has no tools;
-  its output is held to its schema.
+  host's minimal roots and the run's evidence (never its scratch), and
+  write only in `triage/<n>/work/`, with no network, under a profile
+  probed as the driver's is (6.2); it has no tools, which its inventory
+  is checked for (6.1); its output is held to its schema.
 - **Its input,** on stdin:
 
   ```json
-  {"run": "...", "key": "...", "seed": 0,
+  {"run": "...", "key": "...", "seed": "...",
    "failures": [{"id": "...", "signature": "...", "kind": "...",
                  "summary": "...", "evidence": ["..."]}],
    "report": {"done": false, "retried": [], "unseen": [], "surprises": []},
@@ -811,10 +956,12 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
 
 - **Filed** (`lab finding ID file`, refused until then) once its key's
   verdict is decided (fail or flaky, section 8) and its first failing
-  seed has been run again: `flaky` when not every
-  judged run of the key showed its signature, and the rerun's result
-  recorded, reproduced or not. Filing needs a class, proposed or
-  confirmed.
+  seed has been run again: `flaky` when not every judged run of the key
+  showed its signature, and the rerun's result recorded, reproduced or
+  not. Every rerun of a failing seed counts toward its reproduction
+  rate, the reruns that showed the signature again out of all of them,
+  kept in the finding's index and reported by the campaign (10.2).
+  Filing needs a class, proposed or confirmed.
 - **Classes,** by where the fix goes: `world`, a world lacks a story;
   `fake`, a fake differs from its system; `below`, a bug below the
   domain (protocol, io, the binary); `tools`, the driver's tools or
@@ -839,6 +986,11 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
   stays closed; for `lab`, the owner judges.
 - **Fixes land as any change does** (`owners.md`, 4.4). The lab never
   writes a product's repository.
+- **Findings are the lab's files,** under its directory, reported by the
+  lab's owner as `owners.md` (5) routes them. The lab writes no issue on
+  a forge: a
+  lab application that holds findings as its state may project them as
+  issues, never reading them back.
 
 ### 9.4 Planted faults
 
@@ -860,22 +1012,30 @@ candidate ─filed─> open ─taken─> taken ─fixed─> fixed ─rechecked�
 
 ### 10.1 Language and place
 
-- **`scripts/lab/`, in Python 3's standard library** (3.11 or later),
-  with nothing installed from elsewhere: `lab`, the command; `src/`, its
-  modules; `preamble/`, the driver's and the triager's preambles;
-  `schemas/`, the report's and the triage's; `tests/`, its tests and
-  their stand-in programs.
-- **Not a crate:** the runner supervises processes and writes files, and
-  nothing of it is a step machine. A crate would cost builds through
-  `heavy`, pins and departures from `programming-model.md` for nothing
-  the records do not already carry: a lab application takes the records
-  and the run's procedure (section 5), not this code.
-- **Not bash,** skein's scripts' language: process trees, ready lines,
-  deadlines, signals, descriptors handed on and canonical JSON are
-  where shell breaks, and jq's output is not RFC 8785's.
-- **Its cost:** a second scripting language in skein, and an interpreter
-  of a known version on each machine that runs the lab, recorded in each
-  key (2.3).
+- **Python 3.11 or later, its standard library only, for now,** by the
+  user's decision: no package installed with pip, no virtual
+  environment, no module from elsewhere. The lab application, a jig
+  application, takes the runner over in Rust later.
+- **What carries over is the records and the decisions,** not the code:
+  the records' bytes are language-neutral (2.2), and the run's life, its
+  checks, the judgement, the verdicts and the findings' life are pure
+  functions apart from the code that spawns, signals and reads files
+  (10.4), held to vectors the port is held to as well (10.3).
+- **In `scripts/lab/`,** outside skein's workspace and its builds:
+  `lab`, the command; `runner/`, its package (10.4); `preamble/`, the
+  driver's and the triager's preambles; `schemas/`, the report's and the
+  triage's; `tests/`, its tests and their support (10.3).
+- **Isolated:** `lab` runs its interpreter with `-I` (no user site, no
+  environment variable, not the current directory) and `-B` (no
+  bytecode written), and puts its own directory first on its path; so
+  it imports nothing from beside its tree, and its tree, the key's
+  `runner`, stays as committed.
+- **A departure, for now:** `programming-model.md` governs skein's code,
+  and this is skein's one Python, which needs an interpreter of a known
+  version on each machine that runs the lab, recorded in each key
+  (2.3). Its reason is the user's decision: a runner that supervises
+  processes and writes files is no service, and the lab application in
+  Rust replaces it.
 
 ### 10.2 Commands
 
@@ -901,47 +1061,119 @@ lab tool RUN
   4, error; 128 plus N, cut by signal N. `judge` exits by its verdict:
   0 pass, 1 fail or flaky, 3 not enough evidence, 4 an error.
 - **`campaign close`** writes `<name>.md`'s tables (each key's verdict,
-  the findings filed and closed, usage known and unknown, the errors)
-  for the owner to finish with what the runner or the records lacked.
+  the findings filed and closed with each one's reproduction rate (9.3),
+  each run's usage, known and unknown, with the totals, the errors) for
+  the owner to finish with what the runner or the records lacked.
 
-### 10.3 Before a product's fakes
+### 10.3 Its tests
 
-The runner's tests prove the contract with stand-in programs (one
-reports its port, one takes a handed listener, one panics, one detaches
-a child, one ignores `SIGTERM`, one grows past its bound, one fails by
-its seed's parity) and a scripted host in Codex's place, making tool
-calls from a script:
+Python's `unittest`, in two tiers, each one command run from skein's
+root:
 
-- each refusal, before any process starts, naming its member;
-- the key: the same over seeds, addresses and directories, and changed
-  by any byte of the experiment, an artifact, the runner, the model or a
-  class's value;
-- the start order drawn and replayed by its seed; ready lines feeding a
-  dependent; a handed listener reached before its process is ready;
-- an exit in each phase recorded and cutting it; a panic in a process
-  and in a tool call; memory past its bound; a survivor; a stop past its
-  grace;
-- no process left after a pass, a failure, a `SIGINT`, and a `SIGKILL`
-  of the runner;
-- every call in the transcript; the boundary's probe against Codex's
-  sandbox, with no model;
-- the verdicts; a planted fault's finding through its whole life;
-  pruning's refusals.
+- **The unit tier,** `tests/unit/`, run by `python3 -I -B -m unittest
+  discover -t scripts/lab -s scripts/lab/tests/unit`: the pure modules
+  alone (10.4), with no process, no clock, no sleep and no file outside
+  a temporary directory, so it is cheap, and it joins skein's gate
+  through `check.sh`. It shows:
+  - canonical bytes, and each form a reader refuses (2.2); a digest
+    without `about`; a tree's manifest and its refusals;
+  - the key: the same over seeds, addresses and directories, and changed
+    by any byte of the experiment or an artifact, by the runner, a
+    helper, the driver's configuration, its model or a class's value
+    (2.3);
+  - each refusal of `validate`, naming its member, all of them at once
+    (4.7); the templates, and where each name is known (4.2);
+  - the draws, the start order and a fault's N, replayed by a seed
+    (5.4);
+  - the run's life over scripted events: a stop in each phase cutting
+    it, teardown in reverse order, the driver stopped past its time or
+    its actions, a token bound passed at a turn's completion with its
+    overshoot, an interruption (section 5, 6.5);
+  - a check command's statuses and lines, and each way of breaking its
+    contract (7.2); panic headers; the outcome's precedence (5.5);
+  - the verdict: two seeds that disagree are not enough evidence, three
+    decide; an attempt beside an error adds; a rerun that disagrees
+    makes flaky; a fourth seed is refused (section 8);
+  - a finding's life, each transition refused out of turn, matching and
+    reopening (section 9);
+  - the host's events read as actions, turns and usage, unknown kept
+    null (6.5); the report held to its schema (6.4);
+  - each pure module's imports (10.4).
+- **Its vectors are files:** canonical bytes, digests, draws, start
+  orders and verdicts, as JSON in `tests/unit/vectors/`, so that the lab
+  application's code is held to the same.
+- **The process tier,** `tests/process/`, run by `python3 -I -B -m
+  unittest discover -t scripts/lab -s scripts/lab/tests/process`: the
+  runner whole, with real spawns, its unit and cgroups, bubblewrap and
+  Codex's sandbox with no model, against stand-in programs and a
+  scripted host in Codex's place that makes actions from a script; its
+  test support, in `tests/support/`. It runs outside the gate, in the
+  after-landing lane. The stand-ins: one reports its port, one panics,
+  one detaches a child, one ignores `SIGTERM`, one grows past its bound,
+  one fails by its seed's parity. It shows:
+  - ready lines feeding a dependent; an exit in each phase recorded and
+    cutting it; a panic in a process and in a tool call; memory past its
+    bound; a survivor; a stop past its grace;
+  - no process and no cgroup left after a pass, a failure, a `SIGINT`
+    and a `SIGKILL` of the runner, and the next command's sweep;
+  - every action in the transcript; the inventory checked; the driver
+    stopped past its bound;
+  - the probe against Codex's sandbox: each refusal of 6.2, and its
+    failure when the profile is weakened;
+  - three seeds of the parity stand-in giving flaky, and three passes
+    giving pass; a planted fault's finding through its whole life;
+    pruning's refusals.
+- **Wiring** the two commands into the gate and the after-landing lane
+  is the kit's, by its owner, not the runner's.
+
+### 10.4 Pure decisions and the host
+
+`runner/` is a dozen modules of two kinds: the pure ones decide, the
+host's carry out.
+
+| Module | Holds | Kind |
+|---|---|---|
+| `canonical` | canonical JSON's reader and writer, digests, a tree's manifest from its entries, 64-bit values' decimal strings (2.2) | pure |
+| `records` | each record's shape and refusals: key, run, evidence line, verdict, finding event, settings (2.1) | pure |
+| `experiment` | `experiment.json` validated against the subject, the settings and the machine's facts; its templates; the key (2.3, section 4) | pure |
+| `draws` | the draws, the start order, a fault's N (5.4) | pure |
+| `life` | the run's life, `step(state, event) -> (state, requests)` (section 5) | pure |
+| `checks` | the runner's own checks, a check command's result, panic headers (section 7) | pure |
+| `judge` | the outcome (5.5) and the verdict (section 8) | pure |
+| `findings` | a finding's fold, its transitions and their refusals, matching (section 9) | pure |
+| `codex` | the host's arguments and configuration as values; its events read as actions, turns and usage; the report checked (6.1, 6.4, 6.5) | pure |
+| `store` | the lab's directory: modes, the lock, write-once and appended files, manifests' walks, the sweep, pruning (2.4, section 3) | host |
+| `host` | the run's unit, cgroups, spawns into them, signals by pidfd, waits, memory read, bubblewrap views, `codex sandbox` (5.2, 5.3, 6.2) | host |
+| `loop` | a run carried out: events from pipes, pidfds and the clock into `life`, its requests to `host` and `store` | host |
+| `tool` | the MCP server, over stdio (6.3) | host |
+| `cli` | the commands, their arguments and exit statuses (10.2) | host |
+
+- **A pure module** imports, of the standard library, `json`,
+  `hashlib`, `re`, `dataclasses`, `enum` and `typing`, and other pure
+  modules; no `os`, `subprocess`, `signal`, `time`, `random`, `socket`
+  or `selectors`, and it opens no file. Time, draws, files' bytes,
+  machine facts and processes' ends are its inputs; records, requests
+  and refusals are its outputs.
+- **The life's requests are the host's whole vocabulary:** make a tree's
+  cgroup, spawn into it, signal its first process, kill it, await it
+  empty, read its counts and a process's peak, remove it, compose a
+  view. `host` is one implementation of them (5.2); skein's contained
+  trees, under the lab application, are another.
+- **Plain code:** functions over dataclasses, one loop and no thread, no
+  async; no framework for plugins, schemas or commands beyond
+  `argparse`; JSON by `json` and `hashlib` alone, with no program in
+  Rust or elsewhere to write it.
 
 ## 11. Open questions
 
-- **A fake's promises as a check:** whether the fake forge's owner
-  provides its promises' judgement as a command under 7.2's contract,
-  or otherwise. Not designed here.
-- **Programs' addresses:** whether each fake program, and the product's
-  server, reports its address on a ready line or takes a handed
-  listener (4.4).
-- **The cost classes' values,** the user's.
+- **A fake's promises as a check:** the fake forge's owner provides a
+  function that judges a recorded stream of the fake's observations, and
+  the fake forge's program exposes it as a check under 7.2's contract,
+  its signatures `promise/<promise>/<subject>`. Its interface is that
+  owner's, and pending; nothing of it is designed here.
 - **A process restarted within a run** (a crash, then a start on the
   same directory, as a story): not in this contract, where a stop cuts
   the drive (5.1).
 - **A driver that replays a transcript** with no model, as a cheaper
-  reproduction: another driver, so another key.
-- **Findings beyond the lab's files:** projected as issues on the
-  product's forge once a lab application holds them as its state.
-- **The runner's tests** in skein's gate, or run beside it.
+  reproduction: another driver, so another key. This contract has none
+  (5.4).
