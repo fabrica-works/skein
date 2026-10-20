@@ -299,7 +299,7 @@ fn fixture_domain(seed: u64) -> (fake::Domain, fake::Config) {
             a::Setup {
                 id,
                 name: Box::from(name),
-                default: Box::from(b"main".as_slice()),
+                default: Box::from(if id == 4 { b"queue".as_slice() } else { b"main".as_slice() }),
                 tree: Box::from([]),
                 labels: Box::from([]),
                 checks: a::Checks {
@@ -311,11 +311,20 @@ fn fixture_domain(seed: u64) -> (fake::Domain, fake::Config) {
                     reruns: 0,
                     cue: None,
                 },
-                protection: None,
+                protection: (id == 4).then(|| a::Protection {
+                    queue: true,
+                    branch: Box::from(b"queue".as_slice()),
+                    contexts: Box::from([]),
+                    approvals: 0,
+                    dismiss_stale: false,
+                }),
                 hooked: false,
             },
         );
         fake::grant(&mut domain, name, 9, a::Permission::Write);
+        if id == 4 {
+            merge_fixture(&mut domain, &config, first);
+        }
         fake::settings(
             &mut domain,
             name,
@@ -359,9 +368,53 @@ fn domain_reply(
             assert_eq!(to.into_token(), Token::new(77));
             result
         }
-        fake::Request::Hook { .. } => panic!("fixture reads produce one reply"),
+        fake::Request::Hook { .. } => panic!("fixture calls produce one reply"),
     };
     assert!(out.is_empty());
     domain.reclaim();
     result
+}
+
+// Tools has ordinary and queued pulls; widgets keeps the read fixtures' branches.
+fn merge_fixture(domain: &mut fake::Domain, config: &fake::Config, first: u64) {
+    let repository = b"acme/tools";
+    fake::grant(domain, repository, 31, a::Permission::Read);
+    let head = fake::commit(
+        domain,
+        config,
+        first,
+        Box::from([a::File { path: Box::from(b"change".as_slice()), content: Box::from(b"feature".as_slice()) }]),
+        b"feature",
+    )
+    .expect("fixture commit")
+    .expect("changed tree");
+    for op in [
+        a::Op::Write(a::Write::CreateBranch { branch: Box::from(b"main".as_slice()), commit: first }),
+        a::Op::Git(a::Git::Push { branch: Box::from(b"feature".as_slice()), commit: head, expected: None }),
+    ] {
+        fixture_call(domain, config, repository, op);
+    }
+    for base in [b"main".as_slice(), b"queue"] {
+        fixture_call(
+            domain,
+            config,
+            repository,
+            a::Op::Write(a::Write::OpenPull {
+                title: Box::from(b"feature".as_slice()),
+                body: Box::from(b"pull body".as_slice()),
+                head: Box::from(b"feature".as_slice()),
+                base: Box::from(base),
+                opens_empty: false,
+            }),
+        );
+    }
+}
+fn fixture_call(domain: &mut fake::Domain, config: &fake::Config, repository: &[u8], op: a::Op) {
+    domain_reply(
+        domain,
+        config,
+        Wall::EPOCH,
+        fake::Event::Call { reply_to: ReplyTo::new(Token::new(77)), user: 9, repository: Box::from(repository), op },
+    )
+    .expect("fixture call");
 }

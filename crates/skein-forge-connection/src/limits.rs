@@ -795,7 +795,21 @@ pub(crate) fn github_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
         .checked_add(u64::from(l.string_bytes).checked_mul(11)?)?
         .checked_add(u64::from(l.body_bytes))?
         .checked_add(256_u64.checked_add(u64::from(l.target_bytes))?)?
-        .checked_add(u64::from(s.answer_bytes).checked_mul(3)?)
+        .checked_add(u64::from(s.answer_bytes).checked_mul(3)?)?
+        .checked_add(github_write_heap(l, s)?)
+}
+// The retained addition/removal login arrays share the combined difference
+// bound already priced in reviewers. The pending mutation owns one more array;
+// its cloned text shares the answer envelopes, so only its slots are added.
+// Decoded write prerequisites coexist with that state, outside read containers:
+// Pull's reviewer ids/head/base, GraphQL's node/dequeue reason, and Enqueue's
+// error type/message. The request's enqueue id stays in the eleven-string term.
+fn github_write_heap(l: &Limits, s: &Shared) -> Option<u64> {
+    use skein_lib::List;
+    let logins = s.rows.min(s.answer_bytes.checked_div(8)?);
+    List::<Box<[u8]>>::worst_case(logins)?
+        .checked_add(List::<u64>::worst_case(l.inner)?)?
+        .checked_add(u64::from(l.string_bytes).checked_mul(6)?)
 }
 // reads::size::capacity: the backing allocation precedes page_size admission.
 fn github_read_capacity(s: &Shared, width: usize) -> Option<u32> {

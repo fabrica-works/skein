@@ -327,3 +327,115 @@ fn another_installations_call_proceeds_after_one_full_expires() {
     assert!(w.script_done());
     assert!(w.close());
 }
+
+const TOOLS: api::Repository = api::Repository { forge: FORGE, repository: 4 };
+const TOOLS_RESOLVE: &str = "GET /repositories/4";
+const FEATURE: &str = "GET /repos/acme/tools/branches/feature";
+const DIRECT_MERGE: &str = "PUT /repos/acme/tools/pulls/1/merge";
+const QUEUE_MERGE: &str = "PUT /repos/acme/tools/pulls/2/merge";
+// Startup's five requests, repository discovery and the feature-head read.
+const MERGE_READY: usize = START + 2;
+// REST merge, GQ pull and GQ enqueue are one call's three exchanges.
+const MERGE_EXCHANGES: u32 = 3;
+fn tools(calls: Vec<Answer>) -> (Machine, api::Commit) {
+    let mut script = vec![Answer::served(TOOLS_RESOLVE), Answer::served(FEATURE)];
+    script.extend(calls);
+    let mut w = world(&[1], script);
+    w.call(1, TOOLS, Op::Read(Read::Branch { branch: Box::from(b"feature".as_slice()) }));
+    w.run_for(SECOND);
+    let Ok(Value::Commit(head)) = w.answered(1).expect("feature head").result else { panic!("feature commit") };
+    (w, head)
+}
+fn merge_call(w: &mut Machine, call: u64, number: u64, head: api::Commit) {
+    w.call(call, TOOLS, Op::Write(api::Write::Merge { number, head }));
+    w.run_for(SECOND);
+}
+fn queue_script() -> Vec<Answer> {
+    [QUEUE_MERGE, VIEWER, VIEWER].into_iter().map(Answer::served).collect()
+}
+fn enqueue_count(w: &Machine) -> usize {
+    w.requests()
+        .iter()
+        .filter(|request| request.windows(b"enqueuePullRequest".len()).any(|b| b == b"enqueuePullRequest"))
+        .count()
+}
+#[test]
+fn github_reviewers_add_and_remove_through_the_fake() {
+    const PULL: &str = "GET /repos/acme/tools/pulls/1";
+    const ADD: &str = "POST /repos/acme/tools/pulls/1/requested_reviewers";
+    const REMOVE: &str = "DELETE /repos/acme/tools/pulls/1/requested_reviewers";
+    let (mut w, _) = tools([PULL, "GET /user/31", ADD, PULL, REMOVE].into_iter().map(Answer::served).collect());
+    for (call, reviewers, cost) in [(2, Box::from([31_u64].as_slice()), 3), (3, Box::from([]), 2)] {
+        w.call(call, TOOLS, Op::Write(api::Write::SetReviewers { number: 1, reviewers }));
+        w.run_for(SECOND);
+        value(&w, call, cost, &Ok(Value::Done));
+    }
+    assert!(w.script_done());
+    assert!(w.close());
+}
+#[test]
+fn github_rest_merge_returns_the_fakes_landed_commit() {
+    const BASE: &str = "GET /repos/acme/tools/branches/main";
+    let (mut w, head) = tools(vec![Answer::served(DIRECT_MERGE), Answer::served(BASE)]);
+    merge_call(&mut w, 2, 1, head);
+    let Ok(Value::Merged(commit)) = w.answered(2).expect("merged").result else { panic!("merged commit") };
+    assert_eq!(w.answered(2).expect("merged").cost, 1);
+    w.call(3, TOOLS, Op::Read(Read::Branch { branch: Box::from(b"main".as_slice()) }));
+    w.run_for(SECOND);
+    value(&w, 3, 1, &Ok(Value::Commit(commit)));
+    assert!(w.script_done());
+    assert!(w.close());
+}
+#[test]
+fn github_queue_merge_uses_three_requests_and_one_installation() {
+    let (mut w, head) = tools(queue_script());
+    merge_call(&mut w, 2, 2, head);
+    value(&w, 2, MERGE_EXCHANGES, &Ok(Value::Queued));
+    let requests = &w.requests()[MERGE_READY..];
+    let authorizations: Vec<_> = requests
+        .iter()
+        .map(|request| {
+            request.split(|b| *b == b'\n').find(|line| line.starts_with(b"Authorization: ")).expect("Full header")
+        })
+        .collect();
+    assert_eq!(authorizations.len(), usize::try_from(MERGE_EXCHANGES).unwrap());
+    assert!(authorizations.windows(2).all(|pair| pair[0] == pair[1]));
+    assert_eq!(enqueue_count(&w), 1);
+    assert!(w.script_done());
+    assert!(w.close());
+}
+#[test]
+fn github_lost_enqueue_is_recorded_once_across_reconnect() {
+    for reset in [true, false] {
+        let mut script = queue_script();
+        script.push(Answer::served(FEATURE));
+        let (mut w, head) = tools(script);
+        // Drop the served enqueue's entire response, after the fake admits it.
+        w.cut(skein_forge_machine_world::machine::Cut { request: MERGE_READY + 2, response: true, at: 0, reset });
+        merge_call(&mut w, 2, 2, head);
+        value(&w, 2, MERGE_EXCHANGES, &Err(Error::Timeout));
+        w.call(3, TOOLS, Op::Read(Read::Branch { branch: Box::from(b"feature".as_slice()) }));
+        w.run_for(SECOND);
+        value(&w, 3, 1, &Ok(Value::Commit(head)));
+        assert_eq!(enqueue_count(&w), 1);
+        assert!(w.script_done());
+        assert!(w.close());
+    }
+}
+#[test]
+fn github_merge_401_renews_full_once_for_a_later_call() {
+    let (mut w, head) = tools(vec![
+        Answer { request: DIRECT_MERGE, response: Response::Bytes(fixtures::response(401, b"")) },
+        Answer::served(MINT),
+        Answer::served(MINT),
+        Answer::served(DIRECT_MERGE),
+    ]);
+    merge_call(&mut w, 2, 1, head);
+    value(&w, 2, 1, &Err(Error::Forbidden));
+    assert_eq!(w.requests().len(), MERGE_READY + 3);
+    merge_call(&mut w, 3, 1, head);
+    assert!(matches!(w.answered(3).expect("fresh merge").result, Ok(Value::Merged(_))));
+    assert_eq!(w.requests().iter().filter(|r| r.starts_with(MINT.as_bytes())).count(), 4);
+    assert!(w.script_done());
+    assert!(w.close());
+}

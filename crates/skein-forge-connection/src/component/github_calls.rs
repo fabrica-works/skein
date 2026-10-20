@@ -564,8 +564,9 @@ fn admitted(op: &api::Op) -> bool {
             | api::Read::Reviews { .. } => true,
         },
         api::Op::Write(write) => match write {
-            api::Write::SetReviewers { .. } | api::Write::Merge { .. } => false,
-            api::Write::DeleteBranch { .. }
+            api::Write::SetReviewers { .. }
+            | api::Write::Merge { .. }
+            | api::Write::DeleteBranch { .. }
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
             | api::Write::Edit { .. }

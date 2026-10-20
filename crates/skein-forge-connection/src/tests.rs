@@ -9,6 +9,7 @@ mod github_installations;
 pub(crate) mod github_renewal;
 mod github_start;
 mod github_unknown_repository;
+mod github_writes_heap;
 mod hooks;
 mod reads;
 mod writes;
@@ -350,17 +351,22 @@ const FIXTURE_HEAP: u64 = 2_814_955;
 // File bodies share the payload envelope; current/previous are inline.
 // Reviewers box 4*32+2*8 + id lists 8*8+8*8 + login slots 8*16 = 400.
 // Row/request/login/id text 11*128 + marked body 1042 + refusal header
-// 2*128+1024 = 3730. Call payload = 209_058. Route/discovery envelopes are
-// in Waiting's slab slot; both own-plan slots occupy 344 bytes each.
+// 2*128+1024 = 3730. Write prerequisite overlap adds login slots 8*16,
+// decoded reviewer ids 8*8 and pull/GraphQL/error text 6*128 = 960.
+// Login text shares the answer envelopes; the retained arrays and box, ids,
+// row/request texts and enqueue id are counted once above.
+// Call payload = 210_018. The two slots add 1920 to 57b's 3_895_946.
+// Route/discovery envelopes are in Waiting's slab slot; both own-plan
+// slots occupy 344 bytes each.
 // Total = 3*767923 + index 288 + slab 3*1400 + 489960 + 138280
-// + 2*209058 + 3888 + 1056 + 489769 + 46360 + 260 = 3_895_946.
-const GITHUB_FIXTURE_HEAP: u64 = 3_895_946;
+// + 2*210018 + 3888 + 1056 + 489769 + 46360 + 260 = 3_897_866.
+const GITHUB_FIXTURE_HEAP: u64 = 3_897_866;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 520 + drive-list pair 16 + 3*512 operation copies + 65536 held
 // answer bytes, plus the selected dialect's payload from the ledgers above.
 const FORGEJO_CALL_SLOT: u64 = 151_208; // 520 + 16 + 1536 + 65536 + 83600.
-const GITHUB_CALL_SLOT: u64 = 276_666; // 520 + 16 + 1536 + 65536 + 209058.
+const GITHUB_CALL_SLOT: u64 = 277_626; // 520 + 16 + 1536 + 65536 + 210018.
 const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
 const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
 const MIXED: limits::Forges = limits::Forges { forgejo: 1, github: 1 };

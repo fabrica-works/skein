@@ -221,17 +221,99 @@ fn unseen_connect_failure_costs_zero_and_seen_reset_costs_one() {
     h.reset(FORGE);
     answered(&mut h, 1, Err(Error::Timeout));
 }
+fn merge() -> Op {
+    Op::Write(Write::Merge { number: 7, head: [0; 32] })
+}
+fn reviewers() -> Op {
+    Op::Write(Write::SetReviewers { number: 7, reviewers: Box::from([]) })
+}
+const QUEUE_REFUSAL: &[u8] =
+    br#"{"message":"Repository rule violations found\n\nChanges must be made through the merge queue\n\n"}"#;
+fn enqueue(h: &mut Harness) {
+    begin(h, merge());
+    h.answer(FORGE, &f::response(405, QUEUE_REFUSAL));
+    h.answer(FORGE, &f::ok(f::GITHUB_GRAPHQL));
+}
 #[test]
-fn unsupported_operations_are_refused_without_discovery_or_socket() {
-    for op in [
-        Op::Write(Write::SetReviewers { number: 7, reviewers: Box::from([]) }),
-        Op::Write(Write::Merge { number: 7, head: [0; 32] }),
-    ] {
-        let mut h = f::github_calls();
+fn merge_without_a_method_keeps_the_dialect_refusal() {
+    let mut h = known();
+    let mut row = h.component.github_tables().repository(REPO).expect("row").clone();
+    row.merge = None;
+    h.component.github_tables().keep_repository(REPO, row);
+    begin(&mut h, merge());
+    answered(&mut h, 0, Err(Error::Refused));
+    assert!(h.request_lines(FORGE).is_empty());
+}
+#[test]
+fn merge_and_reviewers_require_the_repository_installation() {
+    for op in [merge(), reviewers()] {
+        let mut h = known();
+        h.component.test_github_mut().rows.get_mut(&1).expect("row").accepted = false;
         h.call(1, REPO, op);
-        answered(&mut h, 0, Err(Error::Refused));
+        answered(&mut h, 0, Err(Error::NotInstalled));
         assert_eq!(h.connections_opened(), 0);
     }
+}
+#[test]
+fn sent_enqueue_is_never_replayed_after_loss_or_deadline() {
+    for reset in [true, false] {
+        let mut h = known();
+        enqueue(&mut h);
+        if reset {
+            h.reset(FORGE);
+        } else {
+            h.run(h.env.limits.deadline);
+        }
+        answered(&mut h, 3, Err(Error::Timeout));
+        h.call(2, REPO, branch());
+        h.run(Duration::ZERO);
+        h.connected(FORGE);
+        h.answer(FORGE, &f::ok(f::GITHUB_BRANCH));
+        h.run(Duration::ZERO);
+        assert_eq!(h.answered(2).expect("fresh call").result, Ok(Answer::Commit([0; 32])));
+        assert_eq!(skein_lib::bytes::count(&h.all_request_bytes(FORGE), b"enqueuePullRequest", u32::MAX), 1);
+    }
+}
+#[test]
+fn merge_401_is_forbidden_and_renews_full_without_replay() {
+    let mut h = known();
+    begin(&mut h, merge());
+    h.answer(FORGE, &f::status(401));
+    answered(&mut h, 1, Err(Error::Forbidden));
+    h.run(Duration::ZERO);
+    assert_eq!(h.component.test_github().rows.get(&1).expect("row").refused_revision, Some(1));
+    assert_eq!(h.component.test_github().mint, Some((1, skein_forge::github::request::Scope::Full)));
+    assert_eq!(skein_lib::bytes::count(&h.all_request_bytes(FORGE), b"PUT /repos/", u32::MAX), 1);
+}
+#[test]
+fn queue_continuation_renews_only_its_selected_installations_token() {
+    let mut h = known();
+    f::github_account(&mut h, 2, 23, b"other", b"artificial-full-two");
+    begin(&mut h, merge());
+    h.answer(FORGE, &f::response(405, QUEUE_REFUSAL));
+    h.component.test_github_mut().recent = Some(2);
+    let row = h.component.test_github_mut().rows.get_mut(&1).expect("selected installation");
+    row.api = Some(Secret::new(Box::from(b"renewed-full-one".as_slice())));
+    row.token_revision = 2;
+    h.answer(FORGE, &f::ok(f::GITHUB_GRAPHQL));
+    h.answer(FORGE, &f::ok(br#"{"data":{"enqueuePullRequest":{"mergeQueueEntry":{"position":1}}}}"#));
+    answered(&mut h, 3, Ok(Answer::Queued));
+    let requests = h.all_request_bytes(FORGE);
+    assert_eq!(skein_lib::bytes::count(&requests, b"Bearer artificial-full-one\r\n", u32::MAX), 2);
+    assert_eq!(skein_lib::bytes::count(&requests, b"Bearer renewed-full-one\r\n", u32::MAX), 1);
+    assert_eq!(skein_lib::bytes::count(&requests, b"Bearer artificial-full-two\r\n", u32::MAX), 0);
+}
+#[test]
+fn revoked_queue_route_never_enqueues_under_another_installation() {
+    let mut h = known();
+    f::github_account(&mut h, 2, 23, b"other", b"artificial-full-two");
+    begin(&mut h, merge());
+    h.answer(FORGE, &f::response(405, QUEUE_REFUSAL));
+    h.component.test_github_mut().rows.get_mut(&1).expect("selected installation").forget();
+    h.component.test_github_mut().recent = Some(2);
+    h.answer(FORGE, &f::ok(f::GITHUB_GRAPHQL));
+    answered(&mut h, 2, Err(Error::Forbidden));
+    assert_eq!(skein_lib::bytes::count(&h.all_request_bytes(FORGE), b"enqueuePullRequest", u32::MAX), 0);
 }
 #[test]
 fn loss_and_reacceptance_discard_discovery_and_its_staged_row() {
@@ -355,6 +437,20 @@ fn every_additional_read_runs_through_the_component() {
 #[test]
 fn every_landed_write_runs_once_with_full_installation_authorization() {
     for (label, write, code, body, expected) in [
+        (
+            "SetReviewers",
+            Write::SetReviewers { number: 7, reviewers: Box::from([]) },
+            200,
+            f::GITHUB_PULL,
+            Answer::Done,
+        ),
+        (
+            "Merge",
+            Write::Merge { number: 7, head: [0; 32] },
+            200,
+            br#"{"sha":"0000000000000000000000000000000000000000"}"#,
+            Answer::Merged([0; 32]),
+        ),
         (
             "DeleteBranch",
             Write::DeleteBranch { branch: Box::from(b"topic".as_slice()) },

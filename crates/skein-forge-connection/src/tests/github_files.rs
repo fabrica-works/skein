@@ -262,12 +262,12 @@ fn measure_files_page(comparison: bool) {
 
 // Sum only component/harness spans. Each next step starts with the retained
 // growth of the preceding steps; fake allocations between them are excluded.
-struct CallHeap {
-    peak: i64,
-    held: i64,
+pub(super) struct CallHeap {
+    pub(super) peak: i64,
+    pub(super) held: i64,
 }
 impl CallHeap {
-    fn count(&mut self, growth: skein_heap::Grown) {
+    pub(super) fn count(&mut self, growth: skein_heap::Grown) {
         self.peak = self.peak.max(self.held.checked_add(growth.peak).expect("peak growth"));
         self.held = self.held.checked_add(growth.net).expect("retained growth");
     }
