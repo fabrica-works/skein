@@ -635,10 +635,11 @@ temper's draft section 11.
   `merge-closed-405-not-mergeable`, `compare-files-capped-300`,
   `comment-updated-at-on-edit`; for setup and the component
   (forge-setup.md and forge-connection.md cite them):
-  `manifest-hook-invalid-host-accepted` (an App hook at
-  `https://<name>.invalid/`) and `inactive-hook-visible`, held on the
-  fake alone, since a live run changes nothing of the App
-  (fake-forge.md, section 11); and `job-log-host-per-owner` (whether
+  `inactive-hook-visible`, and `manifest-hook-invalid-host-accepted`
+  (an App hook at `https://<name>.invalid/`; the draft's Setup probe
+  saw `https://hooks.temper-probe.invalid/github` taken), both
+  `unchecked` on github.com and held on the fake alone, since a live
+  run changes nothing of the App (fake-forge.md, section 11); and `job-log-host-per-owner` (whether
   the log's redirect host differs across the two owners' repositories).
 
 A fact's texts (each refusal's message) are the conformance's
