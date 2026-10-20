@@ -643,7 +643,7 @@ masking and refusal of leaked secrets are section 7's.
     number of owners, found by name. Each is limited to that owner's
     probe repositories.
 - **The fixtures:** the probe App `temper-probe-d0fc06`, installed on
-  `freeekanayaka/temper-probe` and `fabrig-dev/temper-probe`. The spare,
+  `freeekanayaka/temper-probe` and `fabrica-works/temper-probe`. The spare,
   `freeekanayaka/temper-probe-2`, is not granted: a run adds it to the
   installation and removes it again. Each probe repository's `ci`
   workflow fails a head whose message holds `FAIL`.
