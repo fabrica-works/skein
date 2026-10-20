@@ -28,6 +28,9 @@ pub(crate) const NO_COMMITS: &[u8] = b"No commits between ";
 // github/tests/writes.rs; the fake supplies the requested head.
 pub(crate) const PULL_EXISTS: &[u8] = b"A pull request already exists for ";
 
+// approve-own-422.
+pub(crate) const OWN_REVIEW_ERROR: &[u8] = skein_forge::github::failure::OWN_REVIEW_ERROR;
+
 // refs-422-exists.
 pub(crate) const REF_EXISTS: &[u8] = b"Reference already exists";
 // refs-delete-missing-422.

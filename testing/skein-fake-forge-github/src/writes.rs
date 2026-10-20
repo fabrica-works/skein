@@ -410,11 +410,11 @@ pub(crate) fn finish(
                 return Outcome::Reply(answers::failed());
             };
             if item.author == pending.user && verdict != skein_forge::api::Verdict::Comment {
-                let mut response = answers::refusal(422, b"Unprocessable Entity", limits);
-                response.body = skein_lib::bytes::copy_of(
-                    br#"{"message":"Unprocessable Entity","errors":["Review Can not approve your own pull request"]}"#,
-                );
-                return Outcome::Reply(response);
+                return Outcome::Reply(answers::response(
+                    422,
+                    &Body::RefusalStrings(b"Unprocessable Entity", &[texts::OWN_REVIEW_ERROR]),
+                    limits,
+                ));
             }
             return dispatch(
                 Pending { user: pending.user, repository: pending.repository, stage: Stage::Reviewed },

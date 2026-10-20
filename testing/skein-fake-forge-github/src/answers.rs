@@ -49,6 +49,7 @@ pub(crate) enum Body<'a> {
     Reviews(&'a [d::Review]),
     Remarks(&'a [d::Remark]),
     Refusal(&'a [u8]),
+    RefusalStrings(&'a [u8], &'a [&'a [u8]]),
 }
 fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
     match body {
@@ -93,6 +94,7 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::Reviews(rows) => server::reviews(rows, out),
         Body::Remarks(rows) => server::remarks(rows, out),
         Body::Refusal(message) => server::refusal(message, &[], out),
+        Body::RefusalStrings(message, errors) => server::refusal_strings(message, errors, out),
     }
 }
 fn minted(
