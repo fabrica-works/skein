@@ -70,21 +70,21 @@ fn branches_request(page: u32, per_page: u32) -> Request {
 fn head(plan: &mut Plan, next: bool, bounds: Bounds, tables: &mut Tables) {
     let mut head = Head::new();
     head.next = next;
-    assert_eq!(plan.heard(Heard::Head { status: 200, head }, bounds, tables), Ok(None));
+    assert_eq!(plan.heard(Heard::Head { status: 200, head }, bounds, b"example-app", tables), Ok(None));
 }
 fn done(plan: &mut Plan, document: Document, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
-    plan.heard(Heard::Done(Body::Document(document)), bounds, tables)
+    plan.heard(Heard::Done(Body::Document(document)), bounds, b"example-app", tables)
 }
 #[expect(clippy::unnecessary_wraps, reason = "expected verdicts retain heard's result shape beside call-order errors")]
 fn ended(answer: Result<api::Answer, api::Error>) -> Result<Option<Step>, api::Error> {
     Ok(Some(Step::Done(answer)))
 }
 fn name(plan: &mut Plan, name: &[u8], bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
-    plan.heard(Heard::Row(Row::Branch(Box::from(name))), bounds, tables)
+    plan.heard(Heard::Row(Row::Branch(Box::from(name))), bounds, b"example-app", tables)
 }
 fn started(read: api::Read, bounds: Bounds, tables: &mut Tables) -> Plan {
     let mut plan = read_plan(read);
-    match plan.begin(bounds, tables).expect("admitted read") {
+    match plan.begin(bounds, b"example-app", tables).expect("admitted read") {
         Step::Send(_) => {}
         Step::Done(answer) => panic!("expected request, got {answer:?}"),
     }
@@ -105,7 +105,7 @@ fn github_plans_locate_keeps_the_row() {
             Plan::new(key, api::Op::Read(api::Read::Locate { owner: Box::from(*b"o"), name: Box::from(*b"n") }));
         let mut tables = Tables::new(2, 2);
         assert_eq!(
-            plan.begin(bounds(), &mut tables),
+            plan.begin(bounds(), b"example-app", &mut tables),
             Ok(Step::send(Request::Locate { owner: Box::from(*b"o"), name: Box::from(*b"n") }))
         );
         head(&mut plan, false, bounds(), &mut tables);
@@ -130,7 +130,7 @@ fn github_plans_settings_refresh_the_row() {
     let mut tables = Tables::new(2, 2);
     keep(&mut tables);
     let mut plan = read_plan(api::Read::Settings);
-    assert_eq!(plan.begin(bounds(), &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
+    assert_eq!(plan.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
     head(&mut plan, false, bounds(), &mut tables);
     let mut document = repository(7);
     document.owner = Box::from(*b"new-owner");
@@ -162,7 +162,7 @@ fn github_plans_settings_refresh_the_row() {
 fn github_plans_branch_resolves_then_reads() {
     let mut tables = Tables::new(2, 2);
     let mut plan = read_plan(branch());
-    assert_eq!(plan.begin(bounds(), &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
+    assert_eq!(plan.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
     head(&mut plan, false, bounds(), &mut tables);
     let document = repository(7);
     assert_eq!(
@@ -182,14 +182,14 @@ fn github_plans_branch_resolves_then_reads() {
         ended(Ok(api::Answer::Commit(commit)))
     );
     let mut cached = read_plan(branch());
-    assert_eq!(cached.begin(bounds(), &mut tables), Ok(Step::send(branch_request())));
+    assert_eq!(cached.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(branch_request())));
 }
 
 #[test]
 fn github_plans_branches_page_twice() {
     let mut tables = Tables::new(2, 2);
     let mut plan = read_plan(api::Read::Branches);
-    assert_eq!(plan.begin(bounds(), &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
+    assert_eq!(plan.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
     head(&mut plan, false, bounds(), &mut tables);
     assert_eq!(
         done(&mut plan, Document::Repository(repository(7)), bounds(), &mut tables),
@@ -224,7 +224,7 @@ fn github_plans_branches_past_the_bound() {
         let mut tables = Tables::new(2, 2);
         keep(&mut tables);
         let mut plan = read_plan(api::Read::Branches);
-        plan.begin(bounds, &mut tables).expect("admitted");
+        plan.begin(bounds, b"example-app", &mut tables).expect("admitted");
         head(&mut plan, true, bounds, &mut tables);
         assert_eq!(name(&mut plan, first, bounds, &mut tables), Ok(None));
         // A fresh page separates the total-row/byte bound from the per-page bound.
@@ -242,11 +242,14 @@ fn dropped(status: u16, error: api::Error) {
     let mut tables = Tables::new(2, 2);
     keep(&mut tables);
     let mut plan = read_plan(branch());
-    assert_eq!(plan.begin(bounds(), &mut tables), Ok(Step::send(branch_request())));
-    assert_eq!(plan.heard(Heard::Head { status, head: Head::new() }, bounds(), &mut tables), ended(Err(error)));
+    assert_eq!(plan.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(branch_request())));
+    assert_eq!(
+        plan.heard(Heard::Head { status, head: Head::new() }, bounds(), b"example-app", &mut tables),
+        ended(Err(error))
+    );
     assert_eq!(tables.repository(KEY), None);
     let mut fresh = read_plan(branch());
-    assert_eq!(fresh.begin(bounds(), &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
+    assert_eq!(fresh.begin(bounds(), b"example-app", &mut tables), Ok(Step::send(Request::Repository { id: 7 })));
 }
 #[test]
 fn github_plans_missing_drops_the_row() {
@@ -292,10 +295,10 @@ fn github_plans_rate_limit() {
             let mut tables = Tables::new(2, 2);
             keep(&mut tables);
             let mut plan = read_plan(branch());
-            plan.begin(bounds(), &mut tables).expect("admitted");
-            assert_eq!(plan.heard(Heard::Head { status, head }, bounds(), &mut tables), Ok(None));
+            plan.begin(bounds(), b"example-app", &mut tables).expect("admitted");
+            assert_eq!(plan.heard(Heard::Head { status, head }, bounds(), b"example-app", &mut tables), Ok(None));
             assert_eq!(
-                plan.heard(Heard::Done(body), bounds(), &mut tables),
+                plan.heard(Heard::Done(body), bounds(), b"example-app", &mut tables),
                 ended(Err(api::Error::RateLimited { after: Duration::from_secs(after) }))
             );
             assert_eq!(tables.repository(KEY), Some(&tables::repository(&repository(7))));
@@ -303,10 +306,13 @@ fn github_plans_rate_limit() {
         for failure in [Failure::Unseen, Failure::Seen] {
             let mut tables = Tables::new(2, 2);
             let mut plan = read_plan(api::Read::Settings);
-            plan.begin(bounds(), &mut tables).expect("admitted");
-            assert_eq!(plan.heard(Heard::Head { status, head: Head::new() }, bounds(), &mut tables), Ok(None));
+            plan.begin(bounds(), b"example-app", &mut tables).expect("admitted");
             assert_eq!(
-                plan.heard(Heard::Failed(failure), bounds(), &mut tables),
+                plan.heard(Heard::Head { status, head: Head::new() }, bounds(), b"example-app", &mut tables),
+                Ok(None)
+            );
+            assert_eq!(
+                plan.heard(Heard::Failed(failure), bounds(), b"example-app", &mut tables),
                 ended(Err(if status == 403 { api::Error::Forbidden } else { api::Error::InvalidAnswer }))
             );
         }
@@ -319,11 +325,11 @@ fn github_plans_transport_failures() {
         for with_head in [false, true] {
             let mut tables = Tables::new(2, 2);
             let mut plan = read_plan(api::Read::Settings);
-            plan.begin(bounds(), &mut tables).expect("admitted");
+            plan.begin(bounds(), b"example-app", &mut tables).expect("admitted");
             if with_head {
                 head(&mut plan, false, bounds(), &mut tables);
             }
-            assert_eq!(plan.heard(Heard::Failed(failure), bounds(), &mut tables), ended(Err(error)));
+            assert_eq!(plan.heard(Heard::Failed(failure), bounds(), b"example-app", &mut tables), ended(Err(error)));
         }
     }
 }
@@ -339,7 +345,7 @@ fn github_plans_malformed_body() {
     ] {
         let mut tables = Tables::new(2, 2);
         let mut plan = started(api::Read::Settings, bounds(), &mut tables);
-        assert_eq!(plan.heard(Heard::Done(body), bounds(), &mut tables), ended(Err(error)));
+        assert_eq!(plan.heard(Heard::Done(body), bounds(), b"example-app", &mut tables), ended(Err(error)));
     }
 }
 
@@ -347,10 +353,8 @@ fn github_plans_malformed_body() {
 fn github_plans_writes_refused() {
     let mut tables = Tables::new(2, 2);
     let mut write = Plan::new(KEY, api::Op::Write(api::Write::Close { number: 1 }));
-    assert_eq!(write.begin(bounds(), &mut tables), Err(api::Error::Refused));
+    assert_eq!(write.begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
     for read in [
-        api::Read::Items { since: skein_lib::Time::ZERO, page: 1, kind: None },
-        api::Read::Item { number: 1, after: 0 },
         api::Read::Pull { number: 1 },
         api::Read::PullFor { head: Box::from(*b"h"), base: Box::from(*b"b") },
         api::Read::Reviews { number: 1, page: 1 },
@@ -365,7 +369,7 @@ fn github_plans_writes_refused() {
         api::Read::Collaborators { page: 1 },
         api::Read::Permission { user: 1 },
     ] {
-        assert_eq!(read_plan(read).begin(bounds(), &mut tables), Err(api::Error::Refused));
+        assert_eq!(read_plan(read).begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
     }
 }
 
@@ -381,7 +385,7 @@ fn github_plans_page_size_and_empty_listing() {
         let mut tables = Tables::new(2, 2);
         keep(&mut tables);
         let mut plan = read_plan(api::Read::Branches);
-        assert_eq!(plan.begin(bounds, &mut tables), Ok(Step::send(branches_request(1, limit))));
+        assert_eq!(plan.begin(bounds, b"example-app", &mut tables), Ok(Step::send(branches_request(1, limit))));
         head(&mut plan, false, bounds, &mut tables);
         assert_eq!(
             done(&mut plan, Document::Rows, bounds, &mut tables),
@@ -395,7 +399,10 @@ fn github_plans_page_size_and_empty_listing() {
         Bounds { answer_bytes: width - 1, ..bounds() },
     ] {
         let mut tables = Tables::new(0, 0);
-        assert_eq!(read_plan(api::Read::Branches).begin(bounds, &mut tables), Err(api::Error::TooLarge));
+        assert_eq!(
+            read_plan(api::Read::Branches).begin(bounds, b"example-app", &mut tables),
+            Err(api::Error::TooLarge)
+        );
     }
 }
 
@@ -455,20 +462,29 @@ fn github_plans_status_and_call_order() {
     ] {
         let mut tables = Tables::new(2, 2);
         let mut plan = read_plan(api::Read::Settings);
-        assert_eq!(plan.heard(Heard::Failed(Failure::Unseen), bounds(), &mut tables), Err(api::Error::InvalidAnswer));
-        plan.begin(bounds(), &mut tables).expect("admitted");
-        assert_eq!(plan.begin(bounds(), &mut tables), Err(api::Error::InvalidAnswer));
+        assert_eq!(
+            plan.heard(Heard::Failed(Failure::Unseen), bounds(), b"example-app", &mut tables),
+            Err(api::Error::InvalidAnswer)
+        );
+        plan.begin(bounds(), b"example-app", &mut tables).expect("admitted");
+        assert_eq!(plan.begin(bounds(), b"example-app", &mut tables), Err(api::Error::InvalidAnswer));
         assert_eq!(
             done(&mut plan, Document::Repository(repository(7)), bounds(), &mut tables),
             Err(api::Error::InvalidAnswer)
         );
-        assert_eq!(plan.heard(Heard::Head { status, head: Head::new() }, bounds(), &mut tables), ended(Err(error)));
-        assert_eq!(plan.heard(Heard::Failed(Failure::Seen), bounds(), &mut tables), Err(api::Error::InvalidAnswer));
+        assert_eq!(
+            plan.heard(Heard::Head { status, head: Head::new() }, bounds(), b"example-app", &mut tables),
+            ended(Err(error))
+        );
+        assert_eq!(
+            plan.heard(Heard::Failed(Failure::Seen), bounds(), b"example-app", &mut tables),
+            Err(api::Error::InvalidAnswer)
+        );
     }
     let mut tables = Tables::new(2, 2);
     let mut plan = started(api::Read::Settings, bounds(), &mut tables);
     assert_eq!(
-        plan.heard(Heard::Head { status: 200, head: Head::new() }, bounds(), &mut tables),
+        plan.heard(Heard::Head { status: 200, head: Head::new() }, bounds(), b"example-app", &mut tables),
         Err(api::Error::InvalidAnswer)
     );
     assert_eq!(
@@ -491,7 +507,7 @@ fn github_plans_pending_is_caller_retained() {
     let mut tables = Tables::new(2, 2);
     let mut plan = read_plan(api::Read::Settings);
     let exchange = Exchange { request: Request::Repository { id: 7 } };
-    assert_eq!(plan.begin(bounds(), &mut tables), Ok(Step::Send(exchange.clone())));
+    assert_eq!(plan.begin(bounds(), b"example-app", &mut tables), Ok(Step::Send(exchange.clone())));
     assert_eq!(plan.pending(), None);
     plan.set_pending(exchange.clone());
     assert_eq!(plan.pending(), Some(exchange));

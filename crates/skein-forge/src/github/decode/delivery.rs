@@ -96,9 +96,9 @@ impl Decoder {
         match movement {
             Move::Demand(demand) => return Ok(Step::Demand(demand)),
             Move::PayloadScalar(node, key, token) => self.scalar(node, key, token)?,
-            Move::BodyLong(length) => self.body = Body::Long(length),
+            Move::BodyLong(None, length) => self.body = Body::Long(length),
             Move::PayloadEnd => {}
-            Move::Scalar(..) | Move::End(_) => unreachable!("delivery walker root"),
+            Move::BodyLong(Some(_), _) | Move::Scalar(..) | Move::End(_) => unreachable!("delivery walker root"),
             Move::Done => {
                 self.terminal = true;
                 return Ok(Step::Done(self.finish()?));

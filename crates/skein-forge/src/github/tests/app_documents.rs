@@ -339,6 +339,7 @@ fn github_app_secrets_hidden() {
             | Document::Repository(_)
             | Document::Branch(_)
             | Document::Rows
+            | Document::Issue(_)
             | Document::Error(_) => panic!("secret document fixture"),
         }
     }
@@ -457,7 +458,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                 match row {
                     Row::Installation(row) => installations.push(row.clone()).unwrap(),
                     Row::Reachable(row) => reachable.push(row.clone()).unwrap(),
-                    Row::Branch(_) => panic!("App row fixture"),
+                    Row::Issue(_) | Row::Comment(_) | Row::Branch(_) => panic!("App row fixture"),
                 }
             }
             if case.kind == Kind::InstallationRows {
@@ -466,7 +467,9 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
                 server::reachable(reachable.as_slice(), 10, out)
             }
         }
-        Document::Repository(_) | Document::Branch(_) | Document::Error(_) => panic!("App document fixture"),
+        Document::Repository(_) | Document::Branch(_) | Document::Issue(_) | Document::Error(_) => {
+            panic!("App document fixture")
+        }
     }
 }
 fn server_refusals() {

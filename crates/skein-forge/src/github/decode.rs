@@ -9,6 +9,7 @@ use skein_json::{Token, tokenizer};
 use skein_lib::List;
 mod app;
 pub(crate) mod delivery;
+mod issues;
 mod walk;
 use walk::{Move, Node, Walk};
 /// The result of one event, with its next demand returned beside it.
@@ -25,6 +26,7 @@ pub struct Decoder {
     walk: Walk,
     kind: Kind,
     app: app::State,
+    issues: issues::State,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -39,6 +41,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         walk: Walk::new(kind, limits),
         kind,
         app: app::State::new(kind),
+        issues: issues::State::new(limits.inner),
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -103,6 +106,22 @@ impl Decoder {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
             }
+            Move::End(
+                node @ (Node::IssueRows
+                | Node::Issue
+                | Node::IssueUser
+                | Node::Labels
+                | Node::Label
+                | Node::PullRequest
+                | Node::CommentRows
+                | Node::Comment
+                | Node::CommentUser),
+            ) => {
+                if let Some(row) = self.issues.end(node, self.kind)? {
+                    return Ok((tokenizer::Request::Next, Step::Row(row)));
+                }
+            }
+            Move::BodyLong(Some(node), length) => self.issues.long(node, length),
             Move::End(Node::BranchName) => {
                 return Ok((
                     tokenizer::Request::Next,
@@ -124,7 +143,9 @@ impl Decoder {
                 | Node::Error
                 | Node::Errors,
             ) => {}
-            Move::PayloadScalar(..) | Move::PayloadEnd | Move::BodyLong(_) => unreachable!("document walker root"),
+            Move::PayloadScalar(..) | Move::PayloadEnd | Move::BodyLong(None, _) => {
+                unreachable!("document walker root")
+            }
             Move::Done => {
                 self.terminal = true;
                 let document = match self.kind {
@@ -139,7 +160,8 @@ impl Decoder {
                     | Kind::BotUser => self.app.document()?,
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
-                    Kind::BranchRows => Document::Rows,
+                    Kind::BranchRows | Kind::IssueRows | Kind::CommentRows => Document::Rows,
+                    Kind::Issue => Document::Issue(self.issues.document()),
                     Kind::Error => Document::Error(document::Refusal {
                         message: core::mem::replace(&mut self.message, Box::from([])),
                         errors: core::mem::replace(&mut self.errors, List::with_capacity(0)).into_boxed(),
@@ -152,6 +174,19 @@ impl Decoder {
     }
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (
+                node @ (Node::IssueRows
+                | Node::Issue
+                | Node::IssueUser
+                | Node::Labels
+                | Node::Label
+                | Node::PullRequest
+                | Node::CommentRows
+                | Node::Comment
+                | Node::CommentUser),
+                key,
+                token,
+            ) => return self.issues.scalar(node, key, token),
             (
                 node @ (Node::Installation
                 | Node::InstallationAccount

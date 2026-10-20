@@ -12,6 +12,7 @@ use alloc::boxed::Box;
 use skein_lib::List;
 
 mod done;
+mod issues;
 mod size;
 
 /// Only these reads have stages; all others are refused at admission.
@@ -21,6 +22,8 @@ enum Read {
     Settings,
     Branch { branch: Box<[u8]> },
     Branches,
+    Items { since: skein_lib::Time, page: u32, kind: Option<api::Kind> },
+    Item { number: u64, after: u64 },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -28,6 +31,7 @@ enum Stage {
     New,
     Resolve,
     Read,
+    Comments,
     Done,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -50,6 +54,7 @@ pub struct Plan {
     count: u32,
     page: u32,
     limit: u32,
+    issues: issues::State,
 }
 impl Plan {
     #[must_use]
@@ -59,9 +64,9 @@ impl Plan {
             api::Read::Settings => Read::Settings,
             api::Read::Branch { branch } => Read::Branch { branch },
             api::Read::Branches => Read::Branches,
-            api::Read::Items { .. }
-            | api::Read::Item { .. }
-            | api::Read::Pull { .. }
+            api::Read::Items { since, page, kind } => Read::Items { since, page, kind },
+            api::Read::Item { number, after } => Read::Item { number, after },
+            api::Read::Pull { .. }
             | api::Read::PullFor { .. }
             | api::Read::Reviews { .. }
             | api::Read::Statuses { .. }
@@ -87,9 +92,10 @@ impl Plan {
             count: 0,
             page: 1,
             limit: 0,
+            issues: issues::State::new(),
         }
     }
-    pub fn begin(&mut self, bounds: Bounds, tables: &mut Tables) -> Result<Step, api::Error> {
+    pub fn begin(&mut self, bounds: Bounds, _word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
         if self.stage != Stage::New {
             return Err(api::Error::InvalidAnswer);
         }
@@ -103,10 +109,11 @@ impl Plan {
                 return Ok(self.send(Request::Repository { id: u64::from(self.repository.repository) }));
             }
             Read::Branches => {
-                let capacity = size::capacity(bounds)?;
+                let capacity = size::capacity(bounds, crate::measure::STRING_BYTES)?;
                 self.limit = size::page_size(bounds, capacity)?;
                 self.rows = List::with_capacity(capacity);
             }
+            Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Branch { .. } => {}
             // Later tasks plan every other read.
             Read::Refused => return Err(api::Error::Refused),
@@ -136,13 +143,27 @@ impl Plan {
         let request = match &self.read {
             Read::Branch { branch } => Request::Branch { owner, name, branch: branch.clone() },
             Read::Branches => Request::Branches { owner, name, page: self.page, per_page: self.limit },
+            Read::Items { since, page, .. } => Request::Issues {
+                owner,
+                name,
+                since: skein_lib::Wall::from_nanos(since.as_nanos()),
+                page: *page,
+                per_page: self.limit,
+            },
+            Read::Item { number, .. } => Request::Issue { owner, name, number: *number },
             Read::Locate { .. } | Read::Settings | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
         Ok(self.send(request))
     }
     /// Admission and call-order errors use `Err`; exchange verdicts finish the plan.
-    pub fn heard(&mut self, heard: Heard, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
+    pub fn heard(
+        &mut self,
+        heard: Heard,
+        bounds: Bounds,
+        word: &[u8],
+        tables: &mut Tables,
+    ) -> Result<Option<Step>, api::Error> {
         if self.stage == Stage::New || self.stage == Stage::Done {
             return Err(api::Error::InvalidAnswer);
         }
@@ -155,7 +176,7 @@ impl Plan {
             | (Heard::Row(_) | Heard::Done(_), Response::None | Response::Head)
             | (Heard::Failed(_), Response::None) => return Err(api::Error::InvalidAnswer),
         }
-        match self.advance(heard, bounds, tables) {
+        match self.advance(heard, bounds, word, tables) {
             Ok(step) => Ok(step),
             Err(error) => {
                 self.stage = Stage::Done;
@@ -164,10 +185,29 @@ impl Plan {
             }
         }
     }
-    fn advance(&mut self, heard: Heard, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
+    fn advance(
+        &mut self,
+        heard: Heard,
+        bounds: Bounds,
+        word: &[u8],
+        tables: &mut Tables,
+    ) -> Result<Option<Step>, api::Error> {
         match heard {
             Heard::Head { status, head } => {
                 if status == 200 {
+                    match self.read {
+                        Read::Items { .. } if self.stage == Stage::Read => {
+                            let date = head.date.ok_or(api::Error::InvalidAnswer)?;
+                            self.issues.set_now(skein_lib::Time::from_nanos(date.as_nanos()));
+                        }
+                        Read::Items { .. }
+                        | Read::Item { .. }
+                        | Read::Locate { .. }
+                        | Read::Settings
+                        | Read::Branch { .. }
+                        | Read::Branches
+                        | Read::Refused => {}
+                    }
                     self.response = Response::Body { next: head.next };
                     return Ok(None);
                 }
@@ -185,7 +225,7 @@ impl Plan {
                     Response::Body { .. } => {}
                     Response::None | Response::Head => return Err(api::Error::InvalidAnswer),
                 }
-                self.keep_row(row, bounds)?;
+                self.keep_row(row, bounds, word)?;
                 Ok(None)
             }
             Heard::Done(body) => {
@@ -196,6 +236,7 @@ impl Plan {
                             Body::Document(
                                 document::Document::Repository(_)
                                 | document::Document::Branch(_)
+                                | document::Document::Issue(_)
                                 | document::Document::Rows
                                 | document::Document::Installation(_)
                                 | document::Document::Minted(_)
@@ -216,7 +257,7 @@ impl Plan {
                     Response::None | Response::Head => return Err(api::Error::InvalidAnswer),
                 }
                 match body {
-                    Body::Document(document) => self.done(document, bounds, tables),
+                    Body::Document(document) => self.done(document, bounds, word, tables),
                     Body::Malformed(malformed) => Err(failure::malformed(malformed)),
                     Body::Empty | Body::Raw { .. } => Err(api::Error::InvalidAnswer),
                 }
@@ -227,7 +268,11 @@ impl Plan {
             },
         }
     }
-    fn keep_row(&mut self, row: document::Row, bounds: Bounds) -> Result<(), api::Error> {
+    fn keep_row(&mut self, row: document::Row, bounds: Bounds, word: &[u8]) -> Result<(), api::Error> {
+        match self.read {
+            Read::Items { .. } | Read::Item { .. } => return self.issue_row(row, bounds, word),
+            Read::Locate { .. } | Read::Settings | Read::Branch { .. } | Read::Branches | Read::Refused => {}
+        }
         if self.stage != Stage::Read || self.read != Read::Branches {
             return Err(api::Error::InvalidAnswer);
         }
@@ -243,7 +288,10 @@ impl Plan {
                     Err(_) => Err(api::Error::TooLarge),
                 }
             }
-            document::Row::Installation(_) | document::Row::Reachable(_) => Err(api::Error::InvalidAnswer),
+            document::Row::Issue(_)
+            | document::Row::Comment(_)
+            | document::Row::Installation(_)
+            | document::Row::Reachable(_) => Err(api::Error::InvalidAnswer),
         }
     }
 }

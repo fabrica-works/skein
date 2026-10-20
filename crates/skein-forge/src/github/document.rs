@@ -19,6 +19,9 @@ pub enum Kind {
     Repository,
     Branch,
     BranchRows,
+    IssueRows,
+    Issue,
+    CommentRows,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -48,6 +51,8 @@ pub enum Row {
     Installation(Installation),
     Reachable(Reachable),
     Branch(Box<[u8]>),
+    Issue(Issue),
+    Comment(Comment),
 }
 /// GitHub's message and bounded error messages.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -68,6 +73,7 @@ pub enum Document {
     BotUser(u64),
     Repository(Repository),
     Branch(Branch),
+    Issue(Issue),
     Rows,
     Error(Refusal),
 }
@@ -143,4 +149,27 @@ pub struct Conversion {
     pub owner_id: u64,
     pub pem: Secret,
     pub webhook_secret: Secret,
+}
+
+/// An issue or pull from GitHub's issue routes.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Issue {
+    pub number: u64,
+    pub pull: bool,
+    pub merged: bool,
+    pub state: api::State,
+    pub author: u64,
+    pub labels: Box<[Box<[u8]>]>,
+    pub updated_at: Wall,
+    pub title: Box<[u8]>,
+    pub body: crate::forgejo::document::Body,
+}
+/// One issue comment; missing times leave its provenance unknown.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Comment {
+    pub id: u64,
+    pub author: u64,
+    pub created_at: Option<Wall>,
+    pub updated_at: Option<Wall>,
+    pub body: crate::forgejo::document::Body,
 }

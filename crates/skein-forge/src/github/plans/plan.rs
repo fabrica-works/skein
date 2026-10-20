@@ -40,17 +40,23 @@ impl Plan {
             api::Op::Write(_) => Self::Refused,
         }
     }
-    pub fn begin(&mut self, bounds: Bounds, tables: &mut Tables) -> Result<Step, api::Error> {
+    pub fn begin(&mut self, bounds: Bounds, word: &[u8], tables: &mut Tables) -> Result<Step, api::Error> {
         match self {
-            Self::Read(plan) => plan.begin(bounds, tables),
+            Self::Read(plan) => plan.begin(bounds, word, tables),
             // Later tasks plan every write.
             Self::Refused => Err(api::Error::Refused),
         }
     }
     /// `Err` rejects an out-of-order call; a plan's verdict is `Step::Done`.
-    pub fn heard(&mut self, heard: Heard, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
+    pub fn heard(
+        &mut self,
+        heard: Heard,
+        bounds: Bounds,
+        word: &[u8],
+        tables: &mut Tables,
+    ) -> Result<Option<Step>, api::Error> {
         match self {
-            Self::Read(plan) => plan.heard(heard, bounds, tables),
+            Self::Read(plan) => plan.heard(heard, bounds, word, tables),
             Self::Refused => Err(api::Error::InvalidAnswer),
         }
     }

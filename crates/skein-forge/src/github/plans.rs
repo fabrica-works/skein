@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 
 pub mod failure;
 pub mod plan;
+mod reading;
 pub mod reads;
 pub mod tables;
 

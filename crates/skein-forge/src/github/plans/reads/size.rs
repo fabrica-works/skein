@@ -2,8 +2,8 @@
 use super::{Bounds, api};
 use crate::{github::pin, measure};
 
-pub(super) fn capacity(bounds: Bounds) -> Result<u32, api::Error> {
-    let Ok(width) = u32::try_from(measure::STRING_BYTES) else {
+pub(super) fn capacity(bounds: Bounds, width: usize) -> Result<u32, api::Error> {
+    let Ok(width) = u32::try_from(width) else {
         return Err(api::Error::TooLarge);
     };
     let room = bounds.answer_bytes.checked_div(width).ok_or(api::Error::TooLarge)?;

@@ -8,6 +8,7 @@ impl Plan {
         &mut self,
         document: document::Document,
         bounds: Bounds,
+        word: &[u8],
         tables: &mut Tables,
     ) -> Result<Option<Step>, api::Error> {
         match document {
@@ -18,12 +19,21 @@ impl Plan {
                 }
                 match self.read {
                     Read::Branch { .. } => self.terminal(api::Answer::Commit(branch.commit), bounds),
-                    Read::Locate { .. } | Read::Settings | Read::Branches | Read::Refused => {
-                        Err(api::Error::InvalidAnswer)
-                    }
+                    Read::Items { .. }
+                    | Read::Item { .. }
+                    | Read::Locate { .. }
+                    | Read::Settings
+                    | Read::Branches
+                    | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
-            document::Document::Rows => self.branches_done(bounds),
+            document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
+            document::Document::Rows => match self.read {
+                Read::Items { .. } | Read::Item { .. } => self.issue_rows_done(bounds),
+                Read::Locate { .. } | Read::Settings | Read::Branch { .. } | Read::Branches | Read::Refused => {
+                    self.branches_done(bounds)
+                }
+            },
             document::Document::Error(_)
             | document::Document::Installation(_)
             | document::Document::Minted(_)
@@ -55,8 +65,14 @@ impl Plan {
                 squash: repository.squash,
                 rebase: repository.rebase,
             })),
-            Read::Branch { .. } | Read::Branches if self.stage == Stage::Resolve => None,
-            Read::Branch { .. } | Read::Branches | Read::Refused => return Err(api::Error::InvalidAnswer),
+            Read::Items { .. } | Read::Item { .. } | Read::Branch { .. } | Read::Branches
+                if self.stage == Stage::Resolve =>
+            {
+                None
+            }
+            Read::Items { .. } | Read::Item { .. } | Read::Branch { .. } | Read::Branches | Read::Refused => {
+                return Err(api::Error::InvalidAnswer);
+            }
         };
         let row = tables::repository(&repository);
         let key = api::Repository { forge: self.repository.forge, repository: id };
@@ -84,7 +100,7 @@ impl Plan {
         let rows = core::mem::replace(&mut self.rows, List::with_capacity(0));
         self.terminal(api::Answer::Branches(rows.into_boxed()), bounds)
     }
-    fn terminal(&mut self, answer: api::Answer, bounds: Bounds) -> Result<Option<Step>, api::Error> {
+    pub(super) fn terminal(&mut self, answer: api::Answer, bounds: Bounds) -> Result<Option<Step>, api::Error> {
         let size = measure::answer(&answer).ok_or(api::Error::TooLarge)?;
         if size > u64::from(bounds.answer_bytes) {
             return Err(api::Error::TooLarge);

@@ -92,6 +92,15 @@ impl State {
             | Node::BranchName
             | Node::Error
             | Node::Errors
+            | Node::IssueRows
+            | Node::Issue
+            | Node::IssueUser
+            | Node::Labels
+            | Node::Label
+            | Node::PullRequest
+            | Node::CommentRows
+            | Node::Comment
+            | Node::CommentUser
             | Node::ErrorEntry => unreachable!("App container dispatch"),
         }
         Ok(None)
@@ -114,7 +123,13 @@ impl State {
             Kind::HookConfig => Document::HookConfig(self.hook.clone()),
             Kind::Conversion => Document::Conversion(self.conversion.clone()),
             Kind::BotUser => Document::BotUser(self.bot),
-            Kind::Repository | Kind::Branch | Kind::BranchRows | Kind::Error => unreachable!("App document dispatch"),
+            Kind::Repository
+            | Kind::Branch
+            | Kind::BranchRows
+            | Kind::IssueRows
+            | Kind::Issue
+            | Kind::CommentRows
+            | Kind::Error => unreachable!("App document dispatch"),
         })
     }
     pub(super) fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
@@ -190,6 +205,15 @@ impl State {
                 | Node::BranchName
                 | Node::Error
                 | Node::Errors
+                | Node::IssueRows
+                | Node::Issue
+                | Node::IssueUser
+                | Node::Labels
+                | Node::Label
+                | Node::PullRequest
+                | Node::CommentRows
+                | Node::Comment
+                | Node::CommentUser
                 | Node::ErrorEntry,
                 _,
                 Token::ObjectStart
