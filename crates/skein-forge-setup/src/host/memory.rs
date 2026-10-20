@@ -1,5 +1,5 @@
 //! Checked whole-host admission (forge-setup.md, 6.5).
-use super::{Connection, Forge, Host, Kind, Limits, Run, Settings, Transport, limits};
+use super::{Connection, Forge, Host, Kind, Limits, Run, Settings, Transport, connection::row_bound, limits};
 use crate::reconcile;
 use alloc::boxed::Box;
 use skein_forge::{forgejo, github};
@@ -74,10 +74,11 @@ fn connection_heap(l: &Limits, forge: &Forge) -> Option<u64> {
         Transport::Tls { .. } => true,
     };
     let h = limits::http_transport(l, tls);
+    let capacity = largest_page(l, &forge.kind)?;
     let (rows, decoder, jwt) = match &forge.kind {
-        Kind::Forgejo(_) => (List::<forgejo::document::Row>::worst_case(l.body_bytes_in)?, forgejo_decoder(l)?, 0),
+        Kind::Forgejo(_) => (List::<forgejo::document::Row>::worst_case(capacity)?, forgejo_decoder(l)?, 0),
         Kind::GitHub(g) => (
-            List::<github::document::Row>::worst_case(l.body_bytes_in)?,
+            List::<github::document::Row>::worst_case(capacity)?,
             github_decoder(l)?,
             // Signing input, signature, token/bearer and signing-key scratch.
             u64::try_from(github::jwt::JWT_BYTES)
@@ -135,4 +136,21 @@ fn github_decoder(l: &Limits) -> Option<u64> {
         .checked_add(List::<u64>::worst_case(l.inner)?)?
         .checked_add(u64::from(l.string_bytes).checked_mul(u64::from(l.inner).checked_mul(4)?.checked_add(32)?)?)?
         .checked_add(u64::from(l.body_bytes).checked_mul(2)?)
+}
+
+// Price the largest page any setup plan for this configured kind can request.
+fn largest_page(l: &Limits, kind: &Kind) -> Option<u32> {
+    match kind {
+        Kind::Forgejo(given) => {
+            use forgejo::request::{Page, Request};
+            let listing = Request::Tokens { login: Box::new([]), page: Page { page: Some(1), limit: Some(l.inner) } };
+            let picker = Request::RepoSearch { page: Page { page: Some(1), limit: Some(given.limits.reachable) } };
+            Some(row_bound(&listing.into())?.max(row_bound(&picker.into())?))
+        }
+        Kind::GitHub(given) => {
+            use github::request::Request;
+            let picker = Request::Reachable { page: 1, per_page: given.limits.reachable.min(github::pin::PAGE_CAP) };
+            Some(row_bound(&Request::Installations { page: 1 }.into())?.max(row_bound(&picker.into())?))
+        }
+    }
 }

@@ -47,7 +47,7 @@ fn conversion() -> Request {
     Request::Conversion { code: b"code".as_slice().into() }
 }
 fn sent(request: &Request, auth: &Auth, wall: Wall, limits: &Limits) -> Result<Connection, Refused> {
-    Connection::github(Token::new(1), &forge(), AGENT, request, auth, wall, limits)
+    Connection::github(Token::new(1), &forge(), AGENT, &request.clone().into(), auth, wall, limits)
 }
 fn connection(request: &Request, auth: &Auth) -> Connection {
     sent(request, auth, WALL, &host::limits()).expect("request fits")
@@ -63,7 +63,7 @@ fn header(conn: &Connection, name: &[u8]) -> Option<Box<[u8]>> {
 fn authorization(conn: &Connection) -> Box<[u8]> {
     header(conn, b"Authorization").expect("authorized request")
 }
-fn answering(mut conn: Connection, head: &[u8], body: &[u8]) -> Connection {
+pub(crate) fn answering(mut conn: Connection, head: &[u8], body: &[u8]) -> Connection {
     let env = Env { now: Time::ZERO, wall: WALL, limits: host::limits() };
     let mut bytes = skein_lib::Writer::new(head.len().checked_add(body.len()).unwrap());
     bytes.put(head).unwrap();
@@ -326,7 +326,7 @@ fn a_forgejo_connection_is_unchanged() {
         Token::new(1),
         &forge,
         AGENT,
-        &FRequest::RepoSearch { page: Page { page: Some(1), limit: Some(4) } },
+        &FRequest::RepoSearch { page: Page { page: Some(1), limit: Some(4) } }.into(),
         &fixtures::secret(TOKEN),
         &host::limits(),
     )

@@ -1253,7 +1253,7 @@ fn tls_handshake_failure_answers_down_and_closes_for_both_dialects() {
         Token::new(1),
         forge,
         b"kit",
-        &skein_forge::forgejo::request::Request::User,
+        &skein_forge::forgejo::request::Request::User.into(),
         &fixtures::secret(fixtures::ADMIN),
         &env.limits,
     )
@@ -1262,7 +1262,7 @@ fn tls_handshake_failure_answers_down_and_closes_for_both_dialects() {
         Token::new(1),
         forge,
         b"kit",
-        &skein_forge::github::request::Request::Conversion { code: b"code".as_slice().into() },
+        &skein_forge::github::request::Request::Conversion { code: b"code".as_slice().into() }.into(),
         &Auth::None,
         env.wall,
         &env.limits,

@@ -3,7 +3,10 @@ use super::{
     Limits, limits,
     settings::{self, Forge, Transport},
 };
-use crate::{call::Auth, reconcile::Reply};
+use crate::{
+    call::{Auth, Call},
+    reconcile::Reply,
+};
 use alloc::boxed::Box;
 use skein_forge::{
     credential::Credential,
@@ -70,10 +73,15 @@ impl Connection {
         run: Token,
         forge: &Forge,
         agent: &[u8],
-        request: &request::Request,
+        call: &Call,
         token: &Secret,
         l: &Limits,
     ) -> Option<Self> {
+        let capacity = row_bound(call)?;
+        let request = match call {
+            Call::Forgejo(request) => request,
+            Call::GitHub(_) => return None,
+        };
         let encoded = documents::encode(request, &limits::documents(l)).ok()?;
         let mut headers = List::with_capacity(4);
         headers.push(field(b"Host", &settings::host(forge)?)).expect("four headers");
@@ -117,8 +125,7 @@ impl Connection {
                 request: request.clone(),
                 decoder: None,
                 document: None,
-                // Each row consumes at least one input byte; the tokenizer bounds the page.
-                rows: List::with_capacity(l.body_bytes_in),
+                rows: List::with_capacity(capacity),
             },
             call: Some(http::Call { method, target: encoded.target, headers: headers.into_boxed(), body, close: true }),
             upload: encoded.body,
@@ -129,11 +136,16 @@ impl Connection {
         run: Token,
         forge: &Forge,
         agent: &[u8],
-        request: &dialect::request::Request,
+        call: &Call,
         auth: &Auth,
         wall: Wall,
         l: &Limits,
     ) -> Result<Self, Refused> {
+        let capacity = row_bound(call).ok_or(Refused::Unexpected)?;
+        let request = match call {
+            Call::GitHub(request) => request,
+            Call::Forgejo(_) => return Err(Refused::Unexpected),
+        };
         let kind = kind_of(request)?;
         let encoded = dialect::request::encode(request, &limits::github(l)).or(Err(Refused::Unexpected))?;
         let authorization = authorization(auth, encoded.auth, wall)?;
@@ -180,7 +192,7 @@ impl Connection {
             json_up: Queue::with_capacity(8),
             json_down: Queue::with_capacity(8),
             json_next: None,
-            speech: Speech::GitHub { kind, decoder: None, document: None, rows: List::with_capacity(l.body_bytes_in) },
+            speech: Speech::GitHub { kind, decoder: None, document: None, rows: List::with_capacity(capacity) },
             call: Some(http::Call { method, target: encoded.target, headers: headers.into_boxed(), body, close: true }),
             upload: encoded.body,
             uploaded: 0,
@@ -433,6 +445,11 @@ impl Connection {
                             self.json_next = Some(next);
                         }
                     }
+                    Step::Done(Document::ApiSettings(mut settings)) => {
+                        // Every setup listing uses the effective cap for sending and finishing.
+                        settings.max_response_items = settings.max_response_items.min(env.limits.inner);
+                        *document = Some(Document::ApiSettings(settings));
+                    }
                     Step::Done(done) => *document = Some(done),
                     Step::Malformed(_) => self.fail(),
                 }
@@ -485,6 +502,141 @@ impl Connection {
         }
     }
 }
+/// Rows in one setup reply, from its requested page or the pinned installation page.
+/// Unpaged listings and requests outside setup have no admitted row bound.
+pub(crate) fn row_bound(call: &Call) -> Option<u32> {
+    match call {
+        Call::Forgejo(request) => forgejo_row_bound(request),
+        Call::GitHub(request) => github_row_bound(request),
+    }
+}
+fn forgejo_row_bound(request: &request::Request) -> Option<u32> {
+    use request::Request;
+    match request {
+        Request::Tokens { page, .. }
+        | Request::RepoHooks { page, .. }
+        | Request::RepoSearch { page }
+        | Request::UserRepos { page } => page.limit,
+        Request::AddCollaborator { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
+        | Request::Org { .. }
+        | Request::CreateOrg { .. }
+        | Request::User
+        | Request::ApiSettings
+        | Request::RepositoryById { .. }
+        | Request::Permission { .. }
+        | Request::CreateToken { .. }
+        | Request::DeleteToken { .. }
+        | Request::UserOf { .. }
+        | Request::CreateUser { .. } => Some(0),
+        Request::OrgHooks { .. }
+        | Request::CreateOrgHook { .. }
+        | Request::EditOrgHook { .. }
+        | Request::DeleteOrgHook { .. }
+        | Request::Teams { .. }
+        | Request::CreateTeam { .. }
+        | Request::EditTeam { .. }
+        | Request::TeamMembers { .. }
+        | Request::AddMember { .. }
+        | Request::Repository { .. }
+        | Request::UserSearch { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullFor { .. }
+        | Request::CombinedStatus { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::Protection { .. }
+        | Request::Protections { .. }
+        | Request::Collaborators { .. }
+        | Request::Pulls { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::Runs { .. }
+        | Request::Run { .. }
+        | Request::Jobs { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::CreateIssue { .. }
+        | Request::OpenPull { .. }
+        | Request::PostComment { .. }
+        | Request::PostReview { .. }
+        | Request::EditIssue { .. }
+        | Request::RequestReviewers { .. }
+        | Request::RemoveReviewers { .. }
+        | Request::Merge { .. }
+        | Request::Update { .. }
+        | Request::PostStatus { .. }
+        | Request::CreateBranch { .. }
+        | Request::DeleteBranch { .. } => None,
+    }
+}
+fn github_row_bound(request: &dialect::request::Request) -> Option<u32> {
+    use dialect::request::Request;
+    match request {
+        Request::Installations { .. } => Some(dialect::pin::PAGE_CAP),
+        Request::Reachable { per_page, .. } => Some(*per_page),
+        Request::Installation { .. }
+        | Request::Mint { .. }
+        | Request::Viewer
+        | Request::App
+        | Request::HookConfig
+        | Request::SetHook { .. }
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. } => Some(0),
+        Request::LogPage { .. }
+        | Request::LogDelivery { .. }
+        | Request::Merge { .. }
+        | Request::Enqueue { .. }
+        | Request::PullGraphql { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::Followed { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. }
+        | Request::Reopen { .. }
+        | Request::Edit { .. }
+        | Request::Status { .. }
+        | Request::CreateBranch { .. }
+        | Request::Reviewers { .. }
+        | Request::Update { .. }
+        | Request::Review { .. }
+        | Request::Post { .. }
+        | Request::CreateIssue { .. }
+        | Request::OpenPull { .. }
+        | Request::Close { .. }
+        | Request::DeleteBranch { .. } => None,
+    }
+}
+
 fn tls(forge: &Forge, l: &Limits) -> Option<skein_tls::client::Client> {
     match &forge.transport {
         Transport::Plaintext { .. } => None,
@@ -595,3 +747,7 @@ fn authorization(auth: &Auth, encoded: dialect::request::Auth, wall: Wall) -> Re
         },
     }
 }
+
+#[cfg(test)]
+#[path = "connection_tests.rs"]
+mod tests;

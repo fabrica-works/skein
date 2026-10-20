@@ -266,7 +266,8 @@ forge differs.
 - **Bounded:** the orgs at most `orgs`, the repositories at most
   `repositories`; every listing paged by the forge's page cap, read once
   from `GET /api/v1/settings/api` (`max_response_items`; zero is
-  `Unexpected`), a page shorter than the cap being the last; the run
+  `Unexpected`) and lowered to the host's `inner` when larger, a page
+  shorter than that cap being the last; the run
   within `deadline`. The limits are `orgs`, `repositories`, `reachable`,
   `deadline`, `backoff` and `backoff_max`, each at least 1, with
   `backoff <= backoff_max < deadline`; the crate names the pair that
@@ -773,7 +774,8 @@ The host's heap has a bound the owner admits before it starts
   - **`runs` connections,** each at the most a configured forge's
     transport needs: HTTP's client, TLS's client when a forge speaks TLS,
     the stack's queues, the JSON tokenizer, the larger configured
-    dialect's decoder and document, the body held up to `body_bytes_in`,
+    dialect's decoder and document, the rows its request's page may hold,
+    the body held up to `body_bytes_in`,
     the request's head (a GitHub forge's JWT signed for it included) and
     body, and io's share for the stream it opens: intake, receive buffer,
     output and its sends' queue, as the forge component prices its own

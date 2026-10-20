@@ -26,7 +26,8 @@ pub struct Limits {
     pub string_bytes: u32,
     /// The most bytes retained in a document's body string.
     pub body_bytes: u32,
-    /// The most elements retained in a document's inner list; at least 14 for GitHub.
+    /// The most elements in a document's inner list or a Forgejo listing's page;
+    /// at least 14 for GitHub.
     pub inner: u32,
     /// The longest encoded request target.
     pub target_bytes: u32,

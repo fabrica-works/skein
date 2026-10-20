@@ -438,3 +438,24 @@ pub fn adopt_listening() -> AdoptRun {
 
 // The 32 fixture draw bytes rendered in lowercase hex.
 pub const DRAWN_HEX: &[u8] = b"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a";
+
+/// A forge with a learned cap above the fixture host's inner limit.
+pub fn host_bounded_settings() -> crate::reconcile::Event {
+    use crate::host::connection::Connection;
+    let settings = super::host::github_settings();
+    let connection = Connection::new(
+        skein_lib::Token::new(1),
+        settings.forges.get(0).expect("Forgejo fixture"),
+        b"kit",
+        &skein_forge::forgejo::request::Request::ApiSettings.into(),
+        &secret(ADMIN),
+        &super::host::limits(),
+    )
+    .expect("settings call");
+    let connection = super::github_send::answering(
+        connection,
+        b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n",
+        br#"{"max_response_items":1000000,"default_paging_num":30}"#,
+    );
+    crate::reconcile::Event::Reply(connection.result.expect("settings reply"))
+}

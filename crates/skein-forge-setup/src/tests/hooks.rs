@@ -271,3 +271,24 @@ fn no_secret_is_in_a_hook_failures_debug() {
     }
     assert!(text.contains("secret: None"));
 }
+
+#[test]
+fn a_learned_cap_above_inner_pages_hooks_at_inner() {
+    use skein_forge::forgejo::request::Page;
+    let cap = super::host::limits().inner;
+    let mut run = phase(3);
+    assert_eq!(
+        run.step(fixtures::host_bounded_settings()),
+        fixtures::send(Request::RepoHooks { at: at(), page: Page { page: Some(1), limit: Some(cap) } })
+    );
+    let mut rows = skein_lib::List::with_capacity(cap);
+    for id in 1..=cap {
+        rows.push(fixtures::hook(u64::from(id), b"elsewhere")).expect("page fits");
+    }
+    assert_eq!(
+        run.step(fixtures::rows(rows.into_boxed())),
+        fixtures::send(Request::RepoHooks { at: at(), page: Page { page: Some(2), limit: Some(cap) } })
+    );
+    save(run.step(fixtures::rows(Box::new([fixtures::hook(99, b"elsewhere")]))), None);
+    assert_eq!(run.step(saved()), Need::Done(fixtures::done()));
+}

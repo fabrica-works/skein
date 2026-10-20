@@ -14,7 +14,7 @@ mod github_manifest;
 mod github_paste;
 mod github_picker;
 mod github_reconcile;
-mod github_send;
+pub(crate) mod github_send;
 mod given;
 mod hooks;
 pub(crate) mod host;

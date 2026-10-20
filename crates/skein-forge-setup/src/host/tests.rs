@@ -15,7 +15,7 @@ fn abort_upgrades_a_graceful_close_already_sent_to_io() {
         Token::new(1),
         &forge,
         b"kit",
-        &skein_forge::forgejo::request::Request::User,
+        &skein_forge::forgejo::request::Request::User.into(),
         &fixtures::secret(fixtures::ADMIN),
         &env.limits,
     )

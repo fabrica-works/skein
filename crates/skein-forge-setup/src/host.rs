@@ -370,11 +370,11 @@ fn open(run: Token, forge: &Forge, agent: &[u8], send: &Send, env: &Env<Limits>)
         Kind::Forgejo(_) => {
             let (request, credential) =
                 forgejo_pair(send.call.clone(), send.auth.clone()).or(Err(Refused::Unexpected))?;
-            Connection::new(run, forge, agent, &request, &credential, &env.limits).ok_or(Refused::Unexpected)
+            Connection::new(run, forge, agent, &request.into(), &credential, &env.limits).ok_or(Refused::Unexpected)
         }
         Kind::GitHub(_) => match &send.call {
-            crate::call::Call::GitHub(request) => {
-                Connection::github(run, forge, agent, request, &send.auth, env.wall, &env.limits)
+            crate::call::Call::GitHub(_) => {
+                Connection::github(run, forge, agent, &send.call, &send.auth, env.wall, &env.limits)
             }
             crate::call::Call::Forgejo(_) => Err(Refused::Unexpected),
         },

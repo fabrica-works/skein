@@ -244,3 +244,23 @@ fn invalid_given_values_refuse_a_take_over_before_it_starts() {
         crate::given::Refused { place: crate::given::Place::AdminName, other: None }
     );
 }
+
+#[test]
+fn a_learned_cap_above_inner_pages_takeover_at_inner() {
+    use skein_forge::forgejo::request::Page;
+    let cap = super::host::limits().inner;
+    let mut run = at(SETTINGS);
+    assert_eq!(
+        run.step(fixtures::host_bounded_settings()),
+        send(Request::Tokens { login: b"root".as_slice().into(), page: Page { page: Some(1), limit: Some(cap) } })
+    );
+    let mut rows = skein_lib::List::with_capacity(cap);
+    for id in 1..=cap {
+        rows.push(take_over_row(u64::from(id), TAKEN_SUFFIX)).expect("page fits");
+    }
+    assert_eq!(
+        run.step(fixtures::rows(rows.into_boxed())),
+        send(Request::Tokens { login: b"root".as_slice().into(), page: Page { page: Some(2), limit: Some(cap) } })
+    );
+    assert_eq!(run.step(fixtures::rows(Box::new([take_over_row(99, TAKEN_SUFFIX)]))), done());
+}
