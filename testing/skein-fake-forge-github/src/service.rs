@@ -155,6 +155,7 @@ impl Service {
         }
         let string = usize::try_from(limits.github.string_bytes).or(Err(Problem::Limits))?;
         if config.bot == 0
+            || config.bot == config.app.id
             || config.app.id == 0
             || config.app.slug.is_empty()
             || config.app.slug.len().checked_add(b"[bot]".len()).ok_or(Problem::Config)? > string
@@ -265,6 +266,13 @@ impl Service {
             return Outcome::Reply(answers::missing(limits));
         };
         match &route {
+            routes::Route::BotUser(slug) => {
+                return Outcome::Reply(if slug == &self.app.slug {
+                    answers::response(200, &Body::BotUser(self.bot, slug), limits)
+                } else {
+                    answers::missing(limits)
+                });
+            }
             routes::Route::Conversion(code) => {
                 return Outcome::Reply(pages::convert(self, code.expose(), request.body, now));
             }
@@ -278,7 +286,7 @@ impl Service {
             return Outcome::Reply(answers::unauthorized(limits));
         };
         match route {
-            routes::Route::Conversion(_) => Outcome::Reply(answers::failed()),
+            routes::Route::Conversion(_) | routes::Route::BotUser(_) => Outcome::Reply(answers::failed()),
             routes::Route::App(route) => {
                 if app::check(bearer, &self.app, now).is_err() {
                     return Outcome::Reply(answers::unauthorized(limits));

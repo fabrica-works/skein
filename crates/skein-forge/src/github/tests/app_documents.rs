@@ -480,7 +480,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
         Document::Id(id) => server::id(*id, out),
         Document::Number(number) => server::number(*number, out),
         Document::Done => server::done(out),
-        Document::BotUser(id) => server::bot_user(*id, out),
+        Document::BotUser(id) => server::bot_user(*id, b"example-app", out),
         Document::Rows => {
             let mut installations = skein_lib::List::with_capacity(3);
             let mut reachable = skein_lib::List::with_capacity(2);

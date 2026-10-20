@@ -114,7 +114,7 @@ enum Answer<'a> {
     App(&'a document::App),
     Hook(&'a document::Hook),
     Conversion(&'a document::Conversion),
-    BotUser(u64),
+    BotUser(u64, &'a [u8]),
 }
 fn encode(answer: &Answer<'_>, out: &mut Writer) -> Result<(), Overflow> {
     let limits = output_limits(out)?;
@@ -173,9 +173,9 @@ pub fn conversion(row: &document::Conversion, out: &mut Writer) -> Result<(), Ov
     encode(&Answer::Conversion(row), out)
 }
 
-/// Writes the bot's numeric id.
-pub fn bot_user(id: u64, out: &mut Writer) -> Result<(), Overflow> {
-    encode(&Answer::BotUser(id), out)
+/// Writes the bot's login, numeric id and account type.
+pub fn bot_user(id: u64, slug: &[u8], out: &mut Writer) -> Result<(), Overflow> {
+    encode(&Answer::BotUser(id, slug), out)
 }
 
 fn answer_json(answer: &Answer<'_>, json: &mut Encoder) {
@@ -272,10 +272,14 @@ fn answer_json(answer: &Answer<'_>, json: &mut Encoder) {
             json.string(row.webhook_secret.expose());
             json.object_end();
         }
-        Answer::BotUser(id) => {
+        Answer::BotUser(id, slug) => {
             json.object_start();
             json.key(b"id");
             json.unsigned(*id);
+            json.key(b"login");
+            json.string_parts(&[slug, b"[bot]"]);
+            json.key(b"type");
+            json.string(b"Bot");
             json.object_end();
         }
     }

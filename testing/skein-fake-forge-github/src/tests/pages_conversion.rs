@@ -15,7 +15,7 @@ use skein_lib::{ReplyTo, Secret, Token, base64, bytes};
 #[test]
 fn github_fake_conversion_hands_out_the_app() {
     let mut h = f::pages();
-    for (index, expected_id) in [(0_usize, 8), (1, 9), (2, 10), (0, 11)] {
+    for (index, expected_id) in [(0_usize, 8), (1, 10), (2, 11), (0, 12)] {
         let answer = f::create(&mut h, b"s1", f::NAME);
         let response = f::convert(&mut h, &f::code(&answer));
         assert_eq!(response.status, 201);
@@ -180,4 +180,30 @@ fn github_fake_conversion_secrets_stay_out_of_debug() {
         let array = alloc::fmt::format(format_args!("{secret:?}"));
         assert!(!debug.contains(array.as_str()), "Debug excludes secret bytes");
     }
+}
+
+#[test]
+fn github_fake_converted_slug_reads_the_bot_without_a_credential() {
+    let mut h = f::pages();
+    for state in [b"s1", b"s2", b"s3"] {
+        let answer = f::create(&mut h, state, f::NAME);
+        let response = f::convert(&mut h, &f::code(&answer));
+        let app = f::conversion(&h, &response);
+        let request = github::request::Request::BotUser { slug: app.slug };
+        let target = github::request::encode(&request, &h.limits.github).expect("bot request").target;
+        for _read in 0..2_u32 {
+            let response = h.ask(Method::Get, &target, None, b"");
+            assert_eq!(response.status, 200);
+            assert!(bytes::find(&response.body, br#""login":"example-app[bot]""#).is_some());
+            assert!(bytes::find(&response.body, br#""type":"Bot""#).is_some());
+            let (_, Document::BotUser(bot)) = h.decode(Kind::BotUser, &response) else {
+                panic!("bot document");
+            };
+            assert_eq!(bot, f::BOT);
+            assert_ne!(bot, app.id);
+        }
+        let response = h.ask(Method::Get, b"/users/absent%5Bbot%5D", None, b"");
+        f::refusal(&h, &response, 404, b"Not Found");
+    }
+    assert_eq!((h.calls, h.hooks), (0, 0));
 }

@@ -1,5 +1,6 @@
 //! The task's route subset; credentials precede body decoding.
 use crate::reads;
+use alloc::boxed::Box;
 use skein_forge::github::{
     limits::Limits,
     request::{Method, Request},
@@ -11,6 +12,7 @@ pub(crate) enum Route {
     App(App),
     Token(Token),
     Conversion(skein_lib::Secret),
+    BotUser(Box<[u8]>),
 }
 #[derive(Debug)]
 pub(crate) enum App {
@@ -38,6 +40,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
     }
     // REST keeps server::route's canonical targets, including explicit paging.
     Some(match server::route(method, target, limits)? {
+        Request::BotUser { slug } => Route::BotUser(slug),
         Request::Conversion { code } => Route::Conversion(skein_lib::Secret::new(code)),
         Request::App => Route::App(App::Identity),
         Request::HookConfig => Route::App(App::Hook),
@@ -59,7 +62,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Reachable { .. }
         | Request::Branches { .. }
         | Request::Viewer
-        | Request::BotUser { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
         | Request::Comments { .. }

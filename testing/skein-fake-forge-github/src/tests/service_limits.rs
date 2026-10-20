@@ -87,7 +87,7 @@ fn github_fake_config_and_limits_refused_at_admission() {
         }
         assert_eq!(Service::new(f::config(), &limits, 1).expect_err("invalid limits"), Problem::Limits);
     }
-    for invalid in 0..5_u32 {
+    for invalid in 0..6_u32 {
         let mut config = f::config();
         match invalid {
             0 => config.repositories.get_mut(0).expect("row").id = 0,
@@ -95,6 +95,7 @@ fn github_fake_config_and_limits_refused_at_admission() {
             2 => config.repositories.get_mut(0).expect("row").name = f::boxed(b"widgets"),
             3 => config.hook = f::boxed(&[b'x'; 257]),
             4 => config.bot = 0,
+            5 => config.bot = config.app.id,
             _ => panic!("fixture case"),
         }
         assert_eq!(Service::new(config, &f::limits(), 1).expect_err("invalid config"), Problem::Config);

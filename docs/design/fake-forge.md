@@ -475,7 +475,10 @@ only what GitHub has and Forgejo lacks (10.2).
   webhook secret, permissions, events and the hook's URL. Its bot is a
   domain user, `<slug>[bot]`, who acts on the domain. `GET /app`, `GET`
   and `PATCH /app/hook/config`, and `GET /users/<slug>%5Bbot%5D` read and
-  change the store.
+  change the store. The bot read needs no credential and answers its
+  `login`, `id` and `type: "Bot"`; another slug is `404`. The scenario
+  owns the domain bot's stable id, distinct from the App's id; conversion
+  skips it when allocating an App id.
 - **Installations and their tokens.** An installation is an account and
   either all its repositories or a list of them, and may be suspended.
   A repository's `owner.type` is its account's kind, so one an

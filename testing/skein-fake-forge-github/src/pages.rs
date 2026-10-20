@@ -223,7 +223,12 @@ pub(crate) fn convert(service: &mut Service, code: &[u8], body: &[u8], now: Wall
     let Some(slug) = slug(&manifest.name) else {
         return answers::refusal(422, b"Validation Failed", &limits);
     };
-    let Some(id) = service.app.id.checked_add(1) else {
+    // The scenario's domain bot keeps its id across conversions; App ids skip it.
+    let Some(next) = service.app.id.checked_add(1) else {
+        return answers::refusal(503, b"Server Error", &limits);
+    };
+    let id = if next == service.bot { next.checked_add(1) } else { Some(next) };
+    let Some(id) = id else {
         return answers::refusal(503, b"Server Error", &limits);
     };
     let mut account = None;
