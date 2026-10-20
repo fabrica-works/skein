@@ -159,7 +159,14 @@ pub fn token_read(item: crate::item::Item) -> Run {
     match item {
         Item::ApiToken => (),
         Item::GitToken => keep_token(&mut run),
-        Item::AdminToken | Item::User | Item::WebhookSecret => panic!("token fixture"),
+        Item::AdminToken
+        | Item::User
+        | Item::WebhookSecret
+        | Item::AppId
+        | Item::AppSlug
+        | Item::AppKey
+        | Item::Accepted
+        | Item::Pasted => panic!("token fixture"),
     }
     run
 }
@@ -188,7 +195,14 @@ pub fn token_name(item: crate::item::Item) -> &'static [u8] {
     match item {
         Item::ApiToken => b"kit-api",
         Item::GitToken => b"kit-git",
-        Item::AdminToken | Item::User | Item::WebhookSecret => panic!("token name"),
+        Item::AdminToken
+        | Item::User
+        | Item::WebhookSecret
+        | Item::AppId
+        | Item::AppSlug
+        | Item::AppKey
+        | Item::Accepted
+        | Item::Pasted => panic!("token name"),
     }
 }
 pub fn create_token(item: crate::item::Item) -> skein_forge::forgejo::request::Request {
@@ -200,7 +214,14 @@ pub fn create_token(item: crate::item::Item) -> skein_forge::forgejo::request::R
             b"write:repository".as_slice().into(),
         ]),
         Item::GitToken => Box::new([b"write:repository".as_slice().into(), b"read:user".as_slice().into()]),
-        Item::AdminToken | Item::User | Item::WebhookSecret => panic!("token scopes"),
+        Item::AdminToken
+        | Item::User
+        | Item::WebhookSecret
+        | Item::AppId
+        | Item::AppSlug
+        | Item::AppKey
+        | Item::Accepted
+        | Item::Pasted => panic!("token scopes"),
     };
     skein_forge::forgejo::request::Request::CreateToken {
         login: b"kit".as_slice().into(),

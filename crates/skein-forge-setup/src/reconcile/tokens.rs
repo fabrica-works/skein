@@ -46,7 +46,14 @@ impl Tokens {
         match self.item {
             Item::ApiToken => &self.api_name,
             Item::GitToken => &self.git_name,
-            Item::AdminToken | Item::User | Item::WebhookSecret => unreachable!("two token items"),
+            Item::AdminToken
+            | Item::User
+            | Item::WebhookSecret
+            | Item::AppId
+            | Item::AppSlug
+            | Item::AppKey
+            | Item::Accepted
+            | Item::Pasted => unreachable!("two token items"),
         }
     }
     fn listing(&mut self, machine: &Reconcile) -> Need {

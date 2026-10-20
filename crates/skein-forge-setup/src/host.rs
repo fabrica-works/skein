@@ -4,6 +4,7 @@ mod connection;
 mod limits;
 pub(crate) mod run;
 mod settings;
+use crate::item::Bounds;
 use crate::reconcile::{self, Failure, Reply, Stage, Why};
 pub use boundary::{Answer, Event, MAX_OUT, MaxOut, Need, Plan, Request};
 use connection::Connection;
@@ -72,7 +73,13 @@ impl Host {
                         },
                     });
                 } else {
-                    let mut live = Run::new(given, plan, env.limits.token_bytes, env.now, &mut self.plan_out);
+                    let mut live = Run::new(
+                        given,
+                        plan,
+                        bounds(&env.limits, configured(&self.settings, forge)),
+                        env.now,
+                        &mut self.plan_out,
+                    );
                     match live.pending.take() {
                         Some(reconcile::Need::Stop(failure)) => up.push(Event::Stop { run, failure }),
                         Some(reconcile::Need::Done(outcome)) => up.push(Event::Done { run, outcome }),
@@ -92,7 +99,7 @@ impl Host {
             }
             Request::Answer { run, answer } => {
                 if let Some(live) = self.runs.get_mut(&run) {
-                    live.answer(answer, env.limits.token_bytes, &mut self.plan_out);
+                    live.answer(answer, &mut self.plan_out);
                 }
             }
             Request::Close => {
@@ -345,4 +352,10 @@ fn configured(settings: &Settings, number: u16) -> &Forge {
         }
     }
     unreachable!("owner names a configured forge")
+}
+
+fn bounds(env_limits: &Limits, forge: &Forge) -> Bounds {
+    match forge.kind {
+        Kind::Forgejo => Bounds { token_bytes: env_limits.token_bytes, name_bytes: 0, key_bytes: 0, installations: 0 },
+    }
 }

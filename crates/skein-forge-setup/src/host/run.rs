@@ -4,7 +4,7 @@ use crate::{
     adopt::{self, Adopt},
     check::{self, Check},
     given::Given,
-    item::{self, Item},
+    item::{self, Bounds, Item},
     reachable::{self, Reachable},
     reconcile::{self, Event, Reconcile, Reply, Why},
     take_over::{self, TakeOver},
@@ -75,6 +75,7 @@ pub(super) struct Send {
 }
 #[derive(Debug)]
 pub(super) struct Run {
+    pub bounds: Bounds,
     pub forge: u16,
     pub writes: bool,
     pub machine: Machine,
@@ -90,7 +91,7 @@ pub(super) struct Run {
     pub answered: bool,
 }
 impl Run {
-    pub fn new(given: &Given, plan: Plan, token_bytes: u32, now: Time, out: &mut Queue<reconcile::Need>) -> Self {
+    pub fn new(given: &Given, plan: Plan, bounds: Bounds, now: Time, out: &mut Queue<reconcile::Need>) -> Self {
         let writes = plan.writes();
         let machine = match plan {
             Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
@@ -98,7 +99,7 @@ impl Run {
             )),
             Plan::Check { forge } => Machine::Check(Check::new(forge)),
             Plan::TakeOver { admin_token, .. } => {
-                let taken = if item::token(admin_token.expose(), token_bytes).is_some() {
+                let taken = if item::token(admin_token.expose(), bounds.token_bytes).is_some() {
                     admin_token
                 } else {
                     Secret::new(Box::new([]))
@@ -113,6 +114,7 @@ impl Run {
             ),
         };
         let mut run = Self {
+            bounds,
             forge: given.forge,
             writes,
             machine,
@@ -144,7 +146,7 @@ impl Run {
         self.retry_at = None;
         self.retry = false;
     }
-    pub fn answer(&mut self, answer: Answer, token_bytes: u32, out: &mut Queue<reconcile::Need>) {
+    pub fn answer(&mut self, answer: Answer, out: &mut Queue<reconcile::Need>) {
         let Some(owner) = self.owner.take() else {
             return;
         };
@@ -154,7 +156,7 @@ impl Run {
                 match owner {
                     Owner::Read(item) => {
                         if let Some(bytes) = &value
-                            && !item::fits(item, bytes.expose(), token_bytes)
+                            && !item::fits(item, bytes.expose(), &self.bounds)
                         {
                             value = None;
                         }
