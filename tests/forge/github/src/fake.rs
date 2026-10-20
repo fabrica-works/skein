@@ -111,6 +111,8 @@ pub(crate) struct World {
     serial: u64,
     #[cfg(test)]
     pub last_wire: Vec<u8>,
+    #[cfg(test)]
+    pub refuse_issue_patch_for: Option<String>,
 }
 impl World {
     #[expect(clippy::too_many_lines, reason = "one declared fixture binds domain, service and peer limits")]
@@ -238,6 +240,8 @@ impl World {
             serial: 0,
             #[cfg(test)]
             last_wire: vec![],
+            #[cfg(test)]
+            refuse_issue_patch_for: None,
         };
         for _ in 0..1000 {
             if w.peer.address().is_some() && w.peer.blob_address().is_some() {
@@ -286,6 +290,23 @@ impl World {
         #[cfg(test)]
         {
             self.last_wire = wire.clone();
+            // A scoped issue-PATCH refusal models a restricted person token.
+            if request.method == skein_forge::github::request::Method::Patch
+                && request.target.rsplit_once("/issues/").is_some_and(|(_, number)| number.parse::<u64>().is_ok())
+                && self
+                    .refuse_issue_patch_for
+                    .as_ref()
+                    .is_some_and(|token| request.authorization.as_deref() == Some(format!("Bearer {token}").as_str()))
+            {
+                return Ok((
+                    wire,
+                    Response {
+                        status: 403,
+                        head: b"HTTP/1.1 403 Forbidden\r\nContent-Type: application/json".to_vec(),
+                        body: br#"{"message":"Forbidden"}"#.to_vec(),
+                    },
+                ));
+            }
         }
         let socket = self.client(Op::Socket { family: Family::Ipv4 })?;
         let Ok(Done::Fd(fd)) = socket.result else {

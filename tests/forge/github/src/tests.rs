@@ -528,8 +528,8 @@ fn github_conformance_checks_logged_payload_signatures() {
 
 #[test]
 fn github_conformance_cleanup_finds_an_issue_after_more_than_one_page() {
-    for known_number in [false, true] {
-        let out = Temp::new(if known_number { "number-cleanup" } else { "title-cleanup" });
+    for (known_number, resume) in [(false, false), (false, true), (true, false), (true, true)] {
+        let out = Temp::new(&format!("issue-cleanup-number-{known_number}-resume-{resume}"));
         let mut r = runner(&out.0);
         r.start().expect("start");
         let repo = r.repo(0).expect("repository");
@@ -558,7 +558,7 @@ fn github_conformance_cleanup_finds_an_issue_after_more_than_one_page() {
             let answer = w
                 .call(
                     &repo,
-                    crate::fake::PERSON,
+                    crate::fake::BOT,
                     skein_fake_forge_domain::api::Op::Write(skein_fake_forge_domain::api::Write::CreateIssue {
                         title: crate::fake::boxed(title.as_bytes()),
                         body: crate::fake::boxed(b"interrupted reply"),
@@ -570,11 +570,30 @@ fn github_conformance_cleanup_finds_an_issue_after_more_than_one_page() {
             number
         };
         r.wait(4);
+        let person = r.person(0).expect("person");
+        let Target::Fake(w) = &mut r.target else { unreachable!() };
+        w.refuse_issue_patch_for = Some(person.clone());
+        let target = format!("/repos/{repo}/issues/{number}");
+        assert_eq!(
+            r.raw(Method::Patch, &target, &person, br#"{"state":"closed"}"#).expect("person close refusal").status,
+            403
+        );
+        let mut r = if resume {
+            r.flush().expect("partial run transcripts");
+            Runner::resume(r.target, r.fixtures, &out.0).expect("resumed cleanup without token values or JWT")
+        } else {
+            r
+        };
+        let cleanup_start = r.replay.len();
         r.finish().expect("verified cleanup");
         assert!(r.journal.pending.is_empty());
-        let person = r.person(0).expect("person");
-        let read =
-            r.raw(Method::Get, format!("/repos/{repo}/issues/{number}"), &person, b"").expect("read closed issue");
+        let methods: Vec<_> = r.replay[cleanup_start..]
+            .iter()
+            .filter(|(_, request)| request.target == target)
+            .map(|(_, request)| request.method)
+            .collect();
+        assert_eq!(methods, [Method::Get, Method::Patch, Method::Get], "cleanup reads back its close");
+        let read = r.raw(Method::Get, &target, &person, b"").expect("read closed issue");
         assert!(read.json().expect("issue").root().get("state").is("closed"));
         if !known_number {
             assert!(r.replay.iter().any(|(_, request)| request.target.ends_with("page=2")));

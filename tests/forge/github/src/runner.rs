@@ -56,6 +56,7 @@ pub(crate) struct Runner<'a> {
     pub serial: usize,
     tables: github::plans::tables::Tables,
     repositories: std::collections::BTreeMap<String, u64>,
+    cleanup_tokens: std::collections::BTreeMap<u64, String>,
     null_pulls: std::collections::BTreeSet<u64>,
     request_bytes: Vec<u8>,
     response_bytes: Vec<u8>,
@@ -103,6 +104,7 @@ impl<'a> Runner<'a> {
             serial: 0,
             tables: github::plans::tables::Tables::new(16, 512),
             repositories: std::collections::BTreeMap::new(),
+            cleanup_tokens: std::collections::BTreeMap::new(),
             null_pulls: std::collections::BTreeSet::new(),
             request_bytes: vec![],
             response_bytes: vec![],
@@ -670,6 +672,15 @@ impl<'a> Runner<'a> {
         self.request_bytes.clear();
         self.response_bytes.clear();
         self.case = "cleanup";
+        self.cleanup_tokens.clear();
+        for (id, made) in self.journal.pending.clone().into_iter().rev() {
+            let result = self.undo(id, &made);
+            if let Err(e) = result
+                && error.is_none()
+            {
+                error = Some(e);
+            }
+        }
         // Revocation is independent of repository restoration and transcript failures.
         for token in std::mem::take(&mut self.tokens) {
             if !self.journal.pending.iter().any(|(id, _)| *id == token.journal) {
@@ -698,19 +709,28 @@ impl<'a> Runner<'a> {
                 }
             }
         }
-        for (id, made) in self.journal.pending.clone().into_iter().rev() {
-            let result = self.undo(id, &made);
-            if let Err(e) = result
-                && error.is_none()
-            {
-                error = Some(e);
-            }
-        }
+        self.cleanup_tokens.clear();
         self.flush()?;
         if let Some(e) = error {
             return Err(e);
         }
         Ok(())
+    }
+    fn cleanup_token(&mut self, repo: &str) -> Result<String> {
+        let index = self
+            .fixtures
+            .installations
+            .iter()
+            .position(|installation| installation.repositories.iter().any(|name| name == repo))
+            .ok_or("cleanup installation absent")?;
+        let installation = self.fixtures.installations[index].id;
+        if let Some(token) = self.cleanup_tokens.get(&installation) {
+            return Ok(token.clone());
+        }
+        self.sign()?;
+        let token = self.mint(index, false)?;
+        self.cleanup_tokens.insert(installation, token.clone());
+        Ok(token)
     }
     #[expect(clippy::too_many_lines, reason = "each durable intention has its restoration beside the others")]
     fn undo(&mut self, id: usize, made: &Made) -> Result<()> {
@@ -738,8 +758,7 @@ impl<'a> Runner<'a> {
                 }
             }
             Made::Pull { repo, .. } | Made::Issue { repo, .. } => {
-                let owner = repo.split_once('/').ok_or("invalid cleanup repository")?.0;
-                let token = self.fixtures.people.get(owner).ok_or("cleanup owner absent")?.clone();
+                let token = self.cleanup_token(repo)?;
                 if let Some(number) = self.journal.numbers.get(&id).copied() {
                     self.close_number(repo, number, &token)?;
                 } else {
