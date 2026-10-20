@@ -1,8 +1,8 @@
 # The forge kit
 
-Provisional, 2026-10-18. What skein gives a service that works on a code
-forge. Forgejo's dialect is built, and GitHub's comes later (section
-10). The kit is:
+Provisional, 2026-10-20. What skein gives a service that works on a code
+forge. Forgejo's dialect is built, and GitHub's is designed in
+forge-github.md (section 10). The kit is:
 
 - a neutral vocabulary of forge calls, rendered by a dialect;
 - a component that runs those calls and receives the forge's webhooks;
@@ -52,8 +52,8 @@ throwaway Forgejo and the conformance).
   machine that does no io (section 4).
 - **Credentials have a kind, set by the dialect.** A token lasts until
   revoked (Forgejo's, or a GitHub fine-grained token). A GitHub App
-  installation's token is renewed from the App's key every hour. The
-  component holds the current credential, renews it when the dialect
+  installation's token is minted from the App's key and lasts an hour.
+  The component holds the current credential, renews it when the dialect
   says, and gives it to no one (section 8).
 - **Webhooks for latency, polling for liveness.** Deliveries are
   verified as they stream and become hints. The client's keep polls
@@ -71,14 +71,19 @@ throwaway Forgejo and the conformance).
   - a webhook secret and its hooks.
 
   Each forge has its own plan to reach it. Forgejo's is reconcile, with
-  a site admin's token. GitHub's is the App manifest flow, later. The
-  kit supplies only the machines; the host is the service's.
-- **The fake forge is Forgejo-shaped and shared.** Its domain and
-  protocol layer follow the dialect, and skein-fake-peers hosts them.
-  The conformance runs against a throwaway Forgejo, and records the
-  facts that section 9 lists.
-- **GitHub is a second dialect, later.** The seams are designed for it
-  (section 10). Nothing GitHub-specific is contract for Forgejo's code.
+  a site admin's token. GitHub's is the App manifest flow
+  (forge-setup.md). The kit supplies only the machines; the host is the service's.
+- **The fake forge is shared, with a layer per dialect.** Its domain is
+  one; Forgejo's protocol layer and GitHub's follow their dialects, and
+  skein-fake-peers hosts them. Forgejo's conformance runs against a
+  throwaway Forgejo and records the facts that section 9 lists;
+  GitHub's runs against the fake, and opt-in against github.com
+  (fake-forge.md, sections 10 and 11).
+- **GitHub is a second dialect,** `skein_forge::github`, beside
+  `forgejo` (forge-github.md). It adds to the vocabulary validators, the
+  rate's window, `Queued`, the protection's queue and bypass,
+  `NotConnected`, `NotInstalled` and the App's credential (section 10).
+  Forgejo's dialect ignores each addition or answers its neutral value.
 
 ## 2. The kit's crates
 
@@ -87,7 +92,8 @@ throwaway Forgejo and the conformance).
 ```
 skein-forge                     the vocabulary (api, locate); the dialects: Forgejo's documents, both
 │                                 sides, its call plans, its deliveries, the setup's documents, the
-│                                 pin; keys' markers; credentials' kinds
+│                                 pin; GitHub's likewise (forge-github.md); keys' markers;
+│                                 credentials' kinds
 ├── skein-lib, skein-json
 skein-forge-client              the keep (working set), the request budget, the write lanes and their
 │                                 recovery, keys
@@ -96,16 +102,19 @@ skein-forge-connection          the component: calls, connections, each forge's 
 │                                 paths, users, credentials and their renewal; the webhooks' listener
 ├── skein-lib, skein-io, skein-http, skein-tls, skein-json, skein-forge
 skein-forge-setup               the access and each forge's plan: Forgejo's reconcile machine;
-│                                 GitHub's manifest flow, later
+│                                 GitHub's manifest flow
 ├── skein-lib, skein-json, skein-forge
 testing/skein-fake-forge-domain    the fake forge's domain
 testing/skein-fake-forge-protocol  Forgejo's API over it on skein's HTTP server; the setup's routes;
                                      signed deliveries; the tally of requests served
+testing/skein-fake-forge-github    GitHub's API over it, at its pin (fake-forge.md, section 10)
 testing/skein-fake-peers           hosts the forge peer, beside the LLM and OAuth peers
 testing/skein-throwaway-forgejo    a real Forgejo and its runner, at the pin, for the conformance
 tests/forge/machine, protocol,     the kit's worlds, one crate each (section 11)
   client, setup
 tests/forge/conformance            a tool outside the suites: records the dialect's facts
+tests/forge/github                 GitHub's conformance: on the fake, and opt-in live (fake-forge.md,
+                                     section 11)
 ```
 
 - **`skein-forge` is `no_std` (with `alloc`) and lib-only,** as the
@@ -172,7 +181,9 @@ and no policy. Every type is a plain value.
 - **Calls:** `Op`, which is a `Read` or a `Write`.
 - **Their result:** `Answer`, `Error`, and the enums they use (`Kind`,
   `State`, `Ci`, `Check`, `Verdict`, `Permission`, `BranchCreation`,
-  `Provenance`).
+  `Provenance`, `Bypass`).
+- **What an answer says of the forge** (3.3): `Rate`, the rate's window,
+  and `Validator`, a read's validator.
 - **A hint:** `Hint`, with its `Change`.
 - **The items** that answers carry (3.6).
 - **Addressing:** `Repository { forge, repository }`, `forge` being the
@@ -197,7 +208,7 @@ and no policy. Every type is a plain value.
 | Creations | `CreateIssue` (keyed), `OpenPull` | `Created` |
 | Comments, keyed | `Post`, `Review` | `Commented`; `Reviewed` |
 | Edits | `Edit`, `SetReviewers`, `Close`, `Reopen` | `Done` |
-| Merging | `Merge`, `Update` | `Merged`; `Done` |
+| Merging | `Merge`, `Update` | `Merged` or `Queued`; `Done` |
 | Marks and branches | `Status`, `CreateBranch`, `DeleteBranch` | `Done`; `Branch`; `Done` |
 
 - **The change feed** is one listing of items since a time, least
@@ -214,16 +225,20 @@ and no policy. Every type is a plain value.
   has left (5.3), and say when they cut.
 - **`Merge { number, head }`** is conditional on the head. A merge's
   base is the client's precondition, checked by reading the pull
-  request afresh (forge-client.md, section 7).
+  request afresh (forge-client.md, section 7). Where a merge queue
+  guards the base, it answers `Queued`: the pull request was put in the
+  queue at that head, and the landing comes later, as a hint
+  (forge-github.md, section 5.1).
 - **`Protection`** needs an admin to read an absent rule. A writer who
   is not an admin gets `Forbidden` (5.2).
 
 ### 3.3 The answers
 
-24 answers: `Located`, `Items`, `Item`, `Pull`, `Reviews`, `Statuses`,
+25 answers: `Located`, `Items`, `Item`, `Pull`, `Reviews`, `Statuses`,
 `Remarks`, `Commit`, `Branches`, `PullFiles`, `Compare`, `Checks`,
 `Job`, `File`, `Protection`, `Settings`, `Collaborators`, `Permission`,
-`Created`, `Commented`, `Reviewed`, `Merged`, `Branch`, `Done`.
+`Created`, `Commented`, `Reviewed`, `Merged`, `Queued`, `Branch`,
+`Done`.
 
 - **A paged answer says whether more follows** (`more`): `Items`,
   `Item` (its comments), `Reviews`, `Statuses`, `Remarks`, `PullFiles`
@@ -236,10 +251,27 @@ and no policy. Every type is a plain value.
   `Reopen`, `Status` and `DeleteBranch`.
 - **`Pull` answers both `Pull` and `PullFor`;** the `Commit` answer is a
   branch's tip.
+- **`Queued` is final for its call.** It answers `Merge` alone, and
+  says the merge is the queue's now: neither a merge nor a refusal. The
+  client keeps the write open until a read finds the pull request merged
+  or out of the queue (forge-client.md, section 7). Forgejo's dialect
+  never answers it.
+- **What an answer says of the forge,** beside its cost, travels with
+  it in the component's envelope (forge-connection.md, section 4), and
+  each dialect fills what its forge sends:
+  - **`Rate { limit, remaining, reset_at }`,** the rate's window: the
+    requests the window allows, those left, and when it resets, in
+    seconds since the epoch. The client's budget takes it in place of
+    its configured window (forge-client.md, section 6). Forgejo's
+    answers carry none.
+  - **`Validator`,** a read's validator (an `ETag`), at most 128
+    printable bytes. A read sent with one that the forge answers
+    `304` is answered as not modified, at no cost (`free`). Forgejo's
+    dialect sends none.
 
 ### 3.4 The errors
 
-18 errors. A call's `Error` is the first failure of its requests, and
+20 errors. A call's `Error` is the first failure of its requests, and
 5.4 says which failure gives which.
 
 | Error | Means |
@@ -262,10 +294,20 @@ and no policy. Every type is a plain value.
 | `Refused` | the repository's settings, or the forge's policy, refuse the write |
 | `InvalidAnswer` | a decoded answer does not match its call |
 | `Busy` | the client's own admission refused the call; no API call was made |
+| `NotConnected` | the forge is not connected, or stopped; no API call was made |
+| `NotInstalled` | no installation of the App reaches the repository's owner; no API call was made |
 
 - **`Busy` is never a dialect's.** It is the client's own refusal
   (forge-client.md, section 2.3). The component never produces it
   (forge-connection.md, section 7).
+- **`NotConnected` and `NotInstalled` are the component's,** never a
+  dialect's, and cost nothing (forge-connection.md, section 7).
+  `NotInstalled` is GitHub's alone: the component chooses an
+  installation by the repository's owner (section 8).
+- **A pause is `RateLimited { after }`:** `Retry-After` when the forge
+  gives it; else, when the window has none left, its reset less the
+  forge's clock; else, for GitHub's secondary limits, 60 seconds
+  (forge-github.md, section 7).
 - **`Timeout` is the error that leaves a write's outcome unknown.** The
   client finds the outcome by the write's key, or by reading
   (forge-client.md, section 7).
@@ -300,7 +342,8 @@ By name; the code holds the fields.
 - **`Comment`:** a comment, with its id, author, created time, its key,
   its `Provenance`, its `revision` and its body.
 - **`Pull`:** a pull request's head and base branches and commits, its
-  merge commit, whether it is mergeable, its reviewers and its `Ci`.
+  merge commit, whether it is mergeable, its reviewers, its `Ci`, and
+  `queued`, its position in a merge queue when it is in one.
 - **`Review`:** a review, with its `Verdict`, its commit, its key, its
   `Provenance`, its `revision`, its time and whether it is official.
 - **`Remark`:** a comment attached to a review at a path and a line.
@@ -311,7 +354,11 @@ By name; the code holds the fields.
 - **`File`:** a changed file: its path and its bytes before and after,
   either absent when the file was added or deleted.
 - **`Protection`:** a rule's branch, required contexts, required
-  approvals and whether it dismisses stale approvals.
+  approvals and whether it dismisses stale approvals; whether a merge
+  queue guards it, and whether it requires signatures, linear history
+  or code owners' reviews; and `Bypass`, whether the credential may pass
+  it: `Never`, `PullsOnly` or `Always`. Forgejo's dialect answers no
+  queue and `Never`.
 - **`Settings`:** a repository's default branch and the merge styles it
   allows.
 - **`Collaborator`:** a user's id and `Permission`.
@@ -337,7 +384,8 @@ body the forge keeps changes (5.3).
   never 0. The call's bytes are the lengths of its `owner` and `name`.
 - **Every dialect answers every call.** A call that a dialect cannot
   answer as Forgejo does is named when that dialect is designed (section
-  10).
+  10). GitHub's one is `Status`, which answers `Forbidden` where the
+  App lacks `statuses` write (forge-github.md, section 4.2).
 - **An answer fits its call.** The client checks each answer against
   its call before it takes it (forge-client.md, section 2.3):
 
@@ -439,6 +487,11 @@ pin (4.3), holds:
   a body read, the deadline) are forge-connection.md's, section 7.
 
 A dialect holds no io, no clock and no connection.
+
+GitHub's dialect, `skein_forge::github`, holds the same at its own pin,
+with the App's documents (the JSON Web Token's bytes, the mint and the
+installations' reads) where Forgejo's has the setup's admin reads
+(forge-github.md, section 2).
 
 ### 4.2 Call plans
 
@@ -1039,10 +1092,14 @@ forge-connection.md, section 6. This section is what the dialect holds.
   takes:**
   - **a token,** which lasts until revoked: Forgejo's, or GitHub's
     fine-grained token;
-  - **an App installation** (GitHub, later: section 10): the App's id,
-    its private key and the installation's id. Its token is minted from
-    a JSON Web Token signed with RS256, through `ring` as skein-tls has
-    it, and expires within the hour.
+  - **an App** (GitHub's: `Credential::App { id, key }`): the App's id,
+    and its private key, an RSA key of 2048 bits as PKCS#1 DER. The
+    component signs a JSON Web Token with it (RS256, through `ring` as
+    `skein_tls::sign_rs256` has it), mints from that each installation's
+    token, which expires within the hour, and chooses the installation
+    by a repository's owner (forge-connection.md, section 5). The
+    dialect gives the token's bytes and the mint (forge-github.md,
+    section 8); GitHub's tokens render as `Authorization: Bearer <t>`.
 - **The owner gives the value** at start, for each forge (section 2.2).
   The component reads no file.
 - **The dialect says how a credential renders on a request.** Forgejo's
@@ -1055,7 +1112,8 @@ forge-connection.md, section 6. This section is what the dialect holds.
 - **A credential's value reaches no record, request line, fact or
   hint.** It is not logged, granted or stored.
 - **A credential that is expired or revoked** reads as `Forbidden` on
-  every call (section 12).
+  every call (section 12). An App's key that GitHub refuses (a `401` on
+  the JSON Web Token) is the same.
 
 ## 9. What skein-forge relies on of Forgejo
 
@@ -1223,39 +1281,48 @@ on. What no run records yet has its own bullet, near the end.
   refusal of a push) is the owner's own, recorded in its own
   transcripts.
 
-## 10. GitHub, later
+## 10. GitHub
 
-What its dialect must give, and what the seams above hold for it. Its
-documents, plans, facts and fake come in a plan of their own.
-Nothing here is contract for Forgejo's code.
+GitHub's dialect is `skein_forge::github`, a module of `skein-forge`
+beside `forgejo`, at the pin `X-GitHub-Api-Version: 2026-03-10`.
+forge-github.md holds its documents, plans, failures, deliveries, the
+App's documents and the facts it relies on; fake-forge.md, sections 10
+and 11, its fake layer and its conformance. Here is what it adds to the
+kit.
 
 - **A provider is documents plus call plans.** Nothing above the
-  Forgejo dialect and its plans assumes Forgejo, so a provider is its
-  documents and a set of call plans, each call made of whatever requests
-  it takes, its cost counted by the component as Forgejo's is (4.2).
-- **The vocabulary may gain three things:**
-  - validators for conditional requests, whose `304` GitHub does not
-    count against the rate;
-  - the rate's window, reported on every answer, which the budget takes
-    in place of its configured one;
-  - reads batched into one query.
+  Forgejo dialect and its plans assumes Forgejo. GitHub's calls are REST
+  at the pin and three GraphQL documents (the viewer, the queue's
+  enqueue, a pull's merge commit), each call's cost counted by the
+  component as Forgejo's is (4.2).
+- **The vocabulary gains:**
+  - validators on reads and their not-modified answer, free of the rate
+    (3.3);
+  - the rate's window, `Rate`, which the budget takes in place of its
+    configured one (3.3);
+  - pauses, as `RateLimited { after }` (3.4);
+  - `Queued`, a merge put in a merge queue (3.2, 3.3), and `Pull`'s
+    `queued`;
+  - the protection's queue, signatures, linear history, code owners and
+    `Bypass` (3.6);
+  - `NotConnected` and `NotInstalled`, the component's (3.4);
+  - the App's credential, `Credential::App` (section 8).
 
-  Each addition is optional, and Forgejo's dialect ignores it. Section 12
-  says what else is open.
-- **Credentials:** the installation kind (section 8); git over HTTPS
-  with the installation's token.
-- **Deliveries:**
-  - They carry `X-Hub-Signature-256`, `X-GitHub-Event` and
-    `X-GitHub-Delivery`.
-  - An App's deliveries all arrive at one URL, and each names its
-    installation.
-  - GitHub delivers from the internet, so its listener needs skein's TLS
-    server side, or a relay. Until then, a GitHub forge polls.
-- **CI:** commit statuses and check runs, and Actions' jobs, whose logs
-  come as a redirect to a download.
-- **Setup:** forge-setup.md, section 5. There is no owned mode.
-- **The fake:** a GitHub protocol layer over the same domain, with its
-  quirks set per dialect (fake-forge.md, section 4).
+  Each addition is optional for a dialect: Forgejo's carries no rate and
+  no validator, answers no queue and `Bypass::Never`, and never
+  `Queued`. Reads batched into one query are not added.
+- **Credentials:** the App (section 8); git over HTTPS with an
+  installation's token narrowed to contents.
+- **Deliveries:** `X-Hub-Signature-256`, `X-GitHub-Event` and
+  `X-GitHub-Delivery`, one URL for the App, each naming its
+  installation. A pushed delivery and one read from the App's delivery
+  log go through one decoder (forge-github.md, section 9).
+- **CI:** check runs and Actions' jobs, whose logs come as a redirect to
+  a download host the component reaches (forge-github.md, section 10).
+- **Setup:** the App manifest flow (forge-setup.md). There is no owned
+  mode.
+- **The fake:** a GitHub protocol layer over the same domain
+  (fake-forge.md, section 10).
 
 ## 11. Verification
 
@@ -1328,7 +1395,6 @@ the suites (testing.md, section 6).
   call until the next start, which it stops (forge-connection.md,
   sections 3 and 5). Default: so; the owner could tell it apart, so a
   person is told once.
-- **GitHub's gaps in the vocabulary.** What its API would add to the
-  vocabulary beyond section 10's three, and where its dialect lives: a
-  module of `skein-forge`, or a crate beside it. Default: none until its
-  plan.
+- **GitHub's further gaps.** Settled: its dialect is a module of
+  `skein-forge`, and section 10 lists what it adds. Open:
+  forge-github.md, section 15.
