@@ -562,6 +562,8 @@ impl<P: Host, R: Referee<P>> Running<P, R> {
                         Err(Error::Other(3))
                     } else {
                         match signal {
+                            Signal::Interrupt => skein_shell::write_service_signal(writer, ServiceSignal::Interrupt)
+                                .map(|()| Done::Nothing),
                             Signal::Terminate => skein_shell::write_service_signal(writer, ServiceSignal::Terminate)
                                 .map(|()| Done::Nothing),
                             Signal::Kill => {

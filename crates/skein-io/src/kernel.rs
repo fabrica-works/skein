@@ -557,11 +557,15 @@ pub enum Way {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-/// A termination signal requested by a child owner.
+/// A signal a child's owner sends it, or its group, or a cgroup's
+/// processes (kernel.md, sections 6.2 and 6.6).
 pub enum Signal {
-    /// Ask the recipient to terminate.
+    /// Ask the recipient to stop what it is doing (`SIGINT`): a program
+    /// may handle it and go on.
+    Interrupt,
+    /// Ask the recipient to terminate (`SIGTERM`).
     Terminate,
-    /// End the recipient without allowing it to handle the signal.
+    /// End the recipient without allowing it to handle the signal (`SIGKILL`).
     Kill,
 }
 

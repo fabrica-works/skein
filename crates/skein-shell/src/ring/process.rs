@@ -289,6 +289,7 @@ fn spawn_prepared(command: &mut Spawn, terminal: Option<&CString>, cgroup: Optio
 
 pub(super) fn signal_child(pidfd: Fd, signal: Signal, to: Target) -> Result<Done, Error> {
     let number = match signal {
+        Signal::Interrupt => libc::SIGINT,
         Signal::Terminate => libc::SIGTERM,
         Signal::Kill => libc::SIGKILL,
     };

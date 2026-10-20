@@ -37,9 +37,9 @@ pub enum Act {
     ReadFile(usize),
     /// The parent closes its launch root while the child retains its own roots.
     CloseLaunch,
-    /// The parent sends a termination or kill signal to its child.
+    /// The parent sends an interrupt, termination or kill signal to its child.
     Signal(Signal),
-    /// The child waits for a termination signal from its parent.
+    /// The child waits for a catchable signal from its parent.
     ReadSignal,
     /// The script stops until this simulated instant.
     Pause(Time),
@@ -332,6 +332,8 @@ pub enum Story {
     Kill,
     /// The child closes its input before the parent writes.
     EarlyExit,
+    /// The child handles an interrupt and continues exchanging bytes.
+    Interrupt,
     /// The child reads and answers its parent's termination signal.
     Terminate,
     /// The child exchanges while holding its largest scripted payload.
@@ -354,6 +356,12 @@ fn terminating_child(_spawn: &Spawn, inherited: &Inherited) -> Script {
     Script::child(inherited, &[Act::ReadSignal, Act::Write(1, b"terminated")])
 }
 
+/// Handles an interrupt before accepting another request from its parent.
+#[must_use]
+pub fn interrupted_child(_spawn: &Spawn, inherited: &Inherited) -> Script {
+    Script::child(inherited, &[Act::ReadSignal, Act::Write(1, b"interrupted"), Act::Read(0), Act::Write(1, b"reply")])
+}
+
 fn full_child(spawn: &Spawn, inherited: &Inherited) -> Script {
     let mut script = exchange_child(spawn, inherited);
     script.hog = 60 * 1024;
@@ -373,7 +381,9 @@ pub fn story(seed: u64, story: Story) -> skein_world::Outcome<Script, RootMachin
     // EarlyExit deliberately pauses before writing to an already-ended child.
     let last_word = match story {
         Story::EarlyExit => skein_world::LastWord::After(Time::from_nanos(10_000_000)),
-        Story::Exchange | Story::Kill | Story::Terminate | Story::Memory => skein_world::LastWord::LastExpectation,
+        Story::Exchange | Story::Kill | Story::Interrupt | Story::Terminate | Story::Memory => {
+            skein_world::LastWord::LastExpectation
+        }
     };
     let mut world = skein_world::World::new(
         seed,
@@ -396,6 +406,18 @@ pub fn story(seed: u64, story: Story) -> skein_world::Outcome<Script, RootMachin
                 Act::Spawn,
                 Act::Pause(Time::from_nanos(10_000_000)),
                 Act::Write(0, b"hello"),
+                Act::Read(1),
+                Act::Wait,
+            ],
+        ),
+        Story::Interrupt => (
+            interrupted_child,
+            vec![
+                Act::Spawn,
+                Act::Signal(Signal::Interrupt),
+                Act::Read(1),
+                Act::Write(0, b"hello"),
+                Act::Read(1),
                 Act::Read(1),
                 Act::Wait,
             ],
@@ -435,6 +457,7 @@ pub fn check_story(story: Story, outcome: &skein_world::Outcome<Script, RootMach
             assert_eq!(parent.child_exit, Some(Exit::Code(0)), "the early child exits normally");
             assert!(parent.received.is_empty(), "the parent reads EOF from the child without output");
         }
+        Story::Interrupt => check_interrupt(&outcome.procs),
         Story::Terminate => {
             assert_eq!(parent.received, b"terminated", "the child handles its parent's termination signal");
             assert_eq!(
@@ -452,4 +475,12 @@ pub fn check_story(story: Story, outcome: &skein_world::Outcome<Script, RootMach
             "the child's largest payload reaches its declared bound within container headroom: {peak}/{bound}"
         );
     }
+}
+
+/// Checks signal delivery and a subsequent exchange before the child's normal exit.
+pub fn check_interrupt(procs: &[Script]) {
+    assert_eq!(procs[1].signals, [skein_io::kernel::ServiceSignal::Interrupt]);
+    assert_eq!(procs[0].received, b"interruptedreply");
+    assert_eq!(procs[1].received, b"hello");
+    assert_eq!(procs[0].child_exit, Some(Exit::Code(0)));
 }

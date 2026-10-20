@@ -9,7 +9,9 @@ static HEAP: Counting = Counting;
 #[test]
 fn every_hosted_story_settles_replays_and_frees_its_own_heap_over_seeds() {
     for seed in 0..100 {
-        for scenario in [Story::Exchange, Story::Kill, Story::EarlyExit, Story::Terminate, Story::Memory] {
+        for scenario in
+            [Story::Exchange, Story::Kill, Story::EarlyExit, Story::Interrupt, Story::Terminate, Story::Memory]
+        {
             let first = story(seed, scenario);
             let replay = story(seed, scenario);
             check_story(scenario, &first);

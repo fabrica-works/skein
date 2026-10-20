@@ -171,28 +171,63 @@ fn a_zombies_usage_joins_its_parents_children_only_at_the_reap() {
 }
 
 #[test]
-fn a_hosted_service_in_the_group_hears_a_termination_signal() {
-    let (mut world, parent, root, leader) = rooted(Program::Never);
-    let (member, _) = child(&mut world, parent, root, Program::Service, false);
-    let (service, _) = world.sim.bind_service(parent, member);
-    let source = world.sim.open_signal_source(service);
-    world.sim.join_group(parent, member, parent, leader);
-    world.call(parent, Op::Signal { pidfd: leader, signal: Signal::Terminate, to: Target::Group });
-    assert_eq!(
-        world.call(service, Op::ReadSignal { fd: source }).result,
-        Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(ServiceSignal::Terminate)))
-    );
-    assert!(world.sim.service_running(service), "termination is delivered to the service's signal source");
-    world.close(service, source);
-    world.sim.finish_service(service, Exit::Code(0));
-    for pidfd in [leader, member] {
-        world.call(parent, Op::Wait { pidfd, reap: false });
+fn an_unhandled_interrupt_ends_a_plain_child_with_signal_two() {
+    for target in [Target::Child, Target::Group] {
+        let (mut world, parent, root, pidfd) = rooted(Program::Never);
+        assert_eq!(
+            world.call(parent, Op::Signal { pidfd, signal: Signal::Interrupt, to: target }).result,
+            Ok(Done::Nothing)
+        );
+        assert!(world.sim.trace().iter().any(|entry| matches!(
+            entry.event,
+            skein_sim::Event::Submit { kind: skein_sim::Summary::Signal { signal: 2, to, .. }, .. } if to == target
+        )));
+        assert_eq!(world.call(parent, Op::Wait { pidfd, reap: false }).result, Ok(Done::Exit(Exit::Signal(2))));
         world.call(parent, Op::Wait { pidfd, reap: true });
         world.close(parent, pidfd);
+        world.close(parent, root);
+        world.settled(parent);
     }
-    world.close(parent, root);
-    world.settled(parent);
-    world.settled(service);
+}
+
+#[test]
+fn a_hosted_service_in_the_group_hears_a_termination_signal() {
+    hosted_signal(Signal::Terminate, ServiceSignal::Terminate);
+}
+
+#[test]
+fn a_hosted_service_hears_an_interrupt_without_exiting() {
+    hosted_signal(Signal::Interrupt, ServiceSignal::Interrupt);
+}
+
+fn hosted_signal(signal: Signal, expected: ServiceSignal) {
+    for target in [Target::Child, Target::Group] {
+        let (mut world, parent, root, leader) = rooted(Program::Never);
+        let (member, _) = child(&mut world, parent, root, Program::Service, false);
+        let (service, _) = world.sim.bind_service(parent, member);
+        let source = world.sim.open_signal_source(service);
+        world.sim.join_group(parent, member, parent, leader);
+        let pidfd = if target == Target::Child { member } else { leader };
+        world.call(parent, Op::Signal { pidfd, signal, to: target });
+        assert_eq!(
+            world.call(service, Op::ReadSignal { fd: source }).result,
+            Ok(Done::Signalled(skein_io::kernel::Signalled::Termination(expected)))
+        );
+        assert!(world.sim.service_running(service), "the catchable signal is delivered to the service's signal source");
+        world.close(service, source);
+        world.sim.finish_service(service, Exit::Code(0));
+        if target == Target::Child {
+            world.call(parent, Op::Signal { pidfd: leader, signal: Signal::Kill, to: Target::Child });
+        }
+        for pidfd in [leader, member] {
+            world.call(parent, Op::Wait { pidfd, reap: false });
+            world.call(parent, Op::Wait { pidfd, reap: true });
+            world.close(parent, pidfd);
+        }
+        world.close(parent, root);
+        world.settled(parent);
+        world.settled(service);
+    }
 }
 
 #[test]

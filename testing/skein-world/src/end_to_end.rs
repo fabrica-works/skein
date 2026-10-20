@@ -260,8 +260,8 @@ impl Binary {
         self.tree_signal = Some(signal);
     }
 
-    /// The supervised tree's last poll and delivered cleanup signals. Its
-    /// history remains available after `counts` reports genuine settlement.
+    /// The supervised tree's last poll and delivered signals. Its
+    /// history remains available after `counts` reports settlement.
     #[must_use]
     pub fn tree_status(&self) -> &TreeStatus {
         &self.tree_status
@@ -390,6 +390,7 @@ impl Host for Binary {
             let (delivered, forced) = tree.signal(self.pidfd.expect("a retained tree has its leader pidfd"), signal);
             self.tree_status.forced_cleanup |= forced;
             let history = match signal {
+                Signal::Interrupt => &mut self.tree_status.interrupted_pids,
                 Signal::Terminate => &mut self.tree_status.terminated_pids,
                 Signal::Kill => &mut self.tree_status.killed_pids,
             };

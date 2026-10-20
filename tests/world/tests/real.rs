@@ -55,6 +55,63 @@ fn parent_termination_arrives_as_a_signal_record_on_the_child_pipe() {
     assert_eq!(outcome.procs[0].child_exit, Some(Exit::Code(0)));
 }
 
+#[test]
+fn parent_interrupt_arrives_on_the_hosted_child_signal_pipe() {
+    use skein_world_tests::hosted::{check_interrupt, interrupted_child};
+    let outcome = run(
+        interrupted_child,
+        &[
+            Act::Spawn,
+            Act::Signal(Signal::Interrupt),
+            Act::Read(1),
+            Act::Write(0, b"hello"),
+            Act::Read(1),
+            Act::Read(1),
+            Act::Wait,
+        ],
+    );
+    check_interrupt(&outcome.procs);
+}
+
+struct PlainJudge;
+
+impl skein_world::Referee<skein_world::end_to_end::Binary> for PlainJudge {
+    fn act(&mut self, _now: skein_lib::Time, _procs: &mut [skein_world::end_to_end::Binary]) {}
+    fn observe(&mut self, _now: skein_lib::Time, _procs: &[skein_world::end_to_end::Binary]) {}
+    fn next_deadline(&self) -> Option<skein_lib::Time> {
+        None
+    }
+    fn overdue(&self, _now: skein_lib::Time) -> Option<String> {
+        None
+    }
+    fn passed(&self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn an_unhandled_interrupt_ends_a_real_child_with_signal_two() {
+    use skein_world::end_to_end::{Binary, Command, Mode};
+    for group in [false, true] {
+        let command = Command {
+            program: env!("CARGO_BIN_EXE_world_process_fixture").into(),
+            arguments: vec!["never".into()],
+            environment: vec![],
+            directory: "/tmp".into(),
+        };
+        let mut binary = Binary::start(command, Mode::Pipes, 1024).expect("the plain child starts");
+        if group {
+            binary.signal_group(Signal::Interrupt);
+        } else {
+            binary.signal(Signal::Interrupt);
+        }
+        let mut world = real::World::new(PlainJudge);
+        world.spawn_with_fds(binary.descriptors(), || binary);
+        let outcome = world.run(&Clock::new(), Duration::from_secs(1));
+        assert_eq!(outcome.procs[0].exit_status(), Some(Exit::Signal(2)));
+    }
+}
+
 #[derive(Debug)]
 struct SignalJudge {
     control: real::Controls,

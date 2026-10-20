@@ -85,6 +85,8 @@ pub struct TreeStatus {
     pub live_pids: Vec<u32>,
     /// Live descendants when the leader's exit was first observed; absent before it.
     pub live_at_leader_exit: Option<Vec<u32>>,
+    /// Identities observed alive and successfully sent INT by the keeper.
+    pub interrupted_pids: Vec<u32>,
     /// Identities observed alive and successfully sent TERM by the keeper.
     pub terminated_pids: Vec<u32>,
     /// Identities observed alive and successfully sent KILL by the keeper.
@@ -98,6 +100,7 @@ impl TreeStatus {
         Self {
             live_pids: Vec::new(),
             live_at_leader_exit: None,
+            interrupted_pids: Vec::new(),
             terminated_pids: Vec::new(),
             killed_pids: Vec::new(),
             forced_cleanup: false,

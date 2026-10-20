@@ -90,6 +90,22 @@ pub fn processes<B: Backend>(backend: &mut B, executable: &[u8]) -> Processes {
     let reaped = run.call(process, Op::Wait { pidfd: never_pidfd, reap: true });
     assert!(matches!(reaped.result, Ok(Done::Exit(_))), "an observed child reaps at once");
     run.close(process, never_pidfd);
+    for to in [skein_io::kernel::Target::Child, skein_io::kernel::Target::Group] {
+        let never = command(executable, root, &[b"never"], &[]);
+        let (pidfd, _) = spawned(run.call(process, Op::Spawn { spawn: Box::new(never) }));
+        assert_eq!(
+            run.call(process, Op::Signal { pidfd, signal: Signal::Interrupt, to }).result,
+            Ok(Done::Nothing),
+            "the owner sends an interrupt through the pidfd"
+        );
+        assert_eq!(
+            run.call(process, Op::Wait { pidfd, reap: false }).result,
+            Ok(Done::Exit(Exit::Signal(2))),
+            "an unhandled interrupt ends the child with SIGINT"
+        );
+        run.call(process, Op::Wait { pidfd, reap: true });
+        run.close(process, pidfd);
+    }
     run.close(process, root);
     run.finish();
     Processes { echoed, eof, echo_exit, status_exit, never_waited, signalled, killed_exit }

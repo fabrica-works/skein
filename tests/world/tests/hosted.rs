@@ -124,6 +124,13 @@ fn a_hosted_child_exits_before_its_parent_writes() {
 }
 
 #[test]
+fn a_parents_interrupt_reaches_its_hosted_child() {
+    use skein_world_tests::hosted::{Story, check_story, story};
+    let outcome = story(7, Story::Interrupt);
+    check_story(Story::Interrupt, &outcome);
+}
+
+#[test]
 fn a_parents_termination_signal_reaches_its_hosted_child() {
     use skein_world_tests::hosted::{Story, check_story, story};
     let outcome = story(7, Story::Terminate);
@@ -140,7 +147,8 @@ fn a_hosted_child_reaches_its_worst_case_and_still_frees_exactly_what_it_held() 
 #[test]
 fn every_hosted_story_replays_under_its_own_memory_meter() {
     use skein_world_tests::hosted::{Story, check_story, story};
-    for scenario in [Story::Exchange, Story::Kill, Story::EarlyExit, Story::Terminate, Story::Memory] {
+    for scenario in [Story::Exchange, Story::Kill, Story::EarlyExit, Story::Interrupt, Story::Terminate, Story::Memory]
+    {
         let first = story(19, scenario);
         let second = story(19, scenario);
         check_story(scenario, &first);

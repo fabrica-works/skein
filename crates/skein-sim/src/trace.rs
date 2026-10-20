@@ -251,6 +251,7 @@ impl Summary {
                 pidfd: *pidfd,
                 to: *to,
                 signal: match signal {
+                    Signal::Interrupt => 2,
                     Signal::Terminate => 15,
                     Signal::Kill => 9,
                 },

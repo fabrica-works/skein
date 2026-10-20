@@ -655,21 +655,27 @@ impl Sim {
             return;
         }
         let number = match signal {
+            Signal::Interrupt => 2,
             Signal::Terminate => 15,
             Signal::Kill => 9,
         };
+        let delivered = match signal {
+            Signal::Interrupt => Some(skein_io::kernel::ServiceSignal::Interrupt),
+            Signal::Terminate => Some(skein_io::kernel::ServiceSignal::Terminate),
+            Signal::Kill => None,
+        };
         let service = self.process(parent).children[&child_id].service;
-        match (signal, service) {
-            (Signal::Terminate, Some(service)) => {
+        match (delivered, service) {
+            (Some(delivered), Some(service)) => {
                 let source = self.process(service).signal_fds.keys().next().copied();
                 match source {
-                    Some(fd) => {
-                        self.deliver_service_signal(service, fd, skein_io::kernel::ServiceSignal::Terminate);
-                    }
+                    Some(fd) => self.deliver_service_signal(service, fd, delivered),
                     None => self.exit_child(parent, child_id, Exit::Signal(number)),
                 }
             }
-            _ => self.exit_child(parent, child_id, Exit::Signal(number)),
+            (Some(_), None) | (None, Some(_) | None) => {
+                self.exit_child(parent, child_id, Exit::Signal(number));
+            }
         }
     }
 
