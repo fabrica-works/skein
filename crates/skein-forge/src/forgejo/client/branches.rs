@@ -42,6 +42,7 @@ pub(crate) fn fields(kind: BranchKind) -> &'static [Field] {
                     field(b"status_check_contexts", Read::Array(Kind::Branch(BranchKind::Contexts))),
                     field(b"required_approvals", Read::Number),
                     field(b"dismiss_stale_approvals", Read::Boolean),
+                    field(b"require_signed_commits", Read::Boolean),
                 ]
             }
         }
@@ -77,6 +78,7 @@ fn protection() -> BranchProtection {
         status_check_contexts: Box::from([]),
         required_approvals: 0,
         dismiss_stale_approvals: false,
+        require_signed_commits: false,
     }
 }
 pub(crate) fn permission(text: &[u8]) -> Option<Permission> {
@@ -224,8 +226,10 @@ impl Branches {
             Value::Boolean(value) => {
                 if key == b"enable_status_check" {
                     self.protection.enable_status_check = value;
-                } else {
+                } else if key == b"dismiss_stale_approvals" {
                     self.protection.dismiss_stale_approvals = value;
+                } else {
+                    self.protection.require_signed_commits = value;
                 }
             }
             Value::Time(_) | Value::Body(_) => unreachable!("branch scalar table"),

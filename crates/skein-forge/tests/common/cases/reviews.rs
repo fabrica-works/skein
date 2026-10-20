@@ -44,6 +44,7 @@ pub fn protection() -> BranchProtection {
         status_check_contexts: Box::from([Box::from(b"fixture/test".as_slice())]),
         required_approvals: 1,
         dismiss_stale_approvals: true,
+        require_signed_commits: false,
     }
 }
 pub fn cases() -> Vec<(&'static str, Request, Option<Answer>)> {

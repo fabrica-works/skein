@@ -70,6 +70,8 @@ fn protection(json: &mut Encoder, value: &BranchProtection) {
     json.unsigned(u64::from(value.required_approvals));
     json.key(b"dismiss_stale_approvals");
     json.boolean(value.dismiss_stale_approvals);
+    json.key(b"require_signed_commits");
+    json.boolean(value.require_signed_commits);
     json.object_end();
 }
 pub(super) fn permission(value: Permission) -> &'static [u8] {

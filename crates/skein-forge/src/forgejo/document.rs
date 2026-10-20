@@ -318,6 +318,8 @@ pub struct BranchProtection {
     pub status_check_contexts: Box<[Box<[u8]>]>,
     pub required_approvals: u32,
     pub dismiss_stale_approvals: bool,
+    /// Whether commits must be signed.
+    pub require_signed_commits: bool,
 }
 
 /// A collaborator's `permission` (06.3); `owner` is its own value, read as admin by 13.

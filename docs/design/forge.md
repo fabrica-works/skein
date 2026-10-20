@@ -359,8 +359,9 @@ By name; the code holds the fields.
   approvals and whether it dismisses stale approvals; whether a merge
   queue guards it, and whether it requires signatures, linear history
   or code owners' reviews; and `Bypass`, whether the credential may pass
-  it: `Never`, `PullsOnly` or `Always`. Forgejo's dialect answers no
-  queue and `Never`.
+  it: `Never`, `PullsOnly` or `Always`. Forgejo's dialect reads signatures
+  from `require_signed_commits`, and answers no queue, no linear history,
+  no code owners and `Never`.
 - **`Settings`:** a repository's default branch and the merge styles it
   allows.
 - **`Collaborator`:** a user's id and `Permission`.
@@ -688,7 +689,7 @@ first failure, but where a row says otherwise.
 | `Read::Checks { commit }` | `GET R/commits/<commit>/status?page=<n>&limit=<size>`, every page; for each failing status whose link names a run of this repository's Actions: `GET R/actions/runs?head_sha=<commit>&run_number=<n>&page=1&limit=1`, then `GET R/actions/runs/<id>/jobs` | each context's latest status as for `Statuses`, its `job` the commit, the run's `id`, the job's `id` and its `attempt` when found, none otherwise |
 | `Read::Job { attempt, max_bytes }` | `GET R/actions/runs/<run>`; `GET R/actions/jobs/<job>`; `GET R/actions/jobs/<job>/logs?attempt=<attempt>&step=<number>` with `Range: bytes=-<max_bytes>`, `step` the failed step's, absent when no step failed | the failed step, its `number` and `name` (5.3), none when no step failed; the last `max_bytes` bytes of that step's log, or of the job's whole log when no step failed; `truncated` when `Content-Range` names bytes before them; `MissingJob` when a read answers `404`, the run's `commit_sha` is not the attempt's head, or the job's `run_id` or `attempt` is not the attempt's |
 | `Read::File { head, path, max_bytes }` | `GET R/raw/<path>?ref=<head>` with `Range: bytes=0-<max_bytes>` | the first `max_bytes` bytes; `truncated` when more came |
-| `Read::Protection { branch }` | `GET R/branches/<branch>`; then `GET R/branch_protections/<effective_branch_protection_name>` when it names a rule, or `GET R/branch_protections` when it names none | `rule_name`, `status_check_contexts` when `enable_status_check`, `required_approvals`, `dismiss_stale_approvals`; none when no rule applies; a `403` (a writer who is not an admin) `Forbidden` |
+| `Read::Protection { branch }` | `GET R/branches/<branch>`; then `GET R/branch_protections/<effective_branch_protection_name>` when it names a rule, or `GET R/branch_protections` when it names none | `rule_name`, `status_check_contexts` when `enable_status_check`, `required_approvals`, `dismiss_stale_approvals`, `require_signed_commits`; none when no rule applies; a `403` (a writer who is not an admin) `Forbidden` |
 | `Read::Settings` | `GET /api/v1/repositories/<id>` | `default_branch`; `allow_merge_commits`, `allow_squash_merge`, `allow_rebase`; the repository's row kept afresh |
 | `Read::Collaborators { page }` | `GET R/collaborators?page=<page>&limit=<size>`; for each user, `GET R/collaborators/<login>/permission` | each user's `id` and permission; `more` when the page came full |
 | `Read::Permission { user }` | `GET R/collaborators/<login>/permission` | `permission`: `none`, `read`, `write`, `admin`, and `owner` as `Admin` |

@@ -96,6 +96,8 @@ pub fn protection(protection: &a::Protection) -> d::BranchProtection {
         status_check_contexts: protection.contexts.clone(),
         required_approvals: protection.approvals,
         dismiss_stale_approvals: protection.dismiss_stale,
+        // The domain does not sign, so it keeps no signatures rule.
+        require_signed_commits: false,
     }
 }
 #[must_use]

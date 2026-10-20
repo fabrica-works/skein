@@ -5,6 +5,7 @@ pub(crate) mod fixtures;
 mod hooks;
 mod orgs;
 mod pin;
+mod protection;
 use crate::forgejo::{
     client,
     decode::Malformed,
@@ -329,7 +330,7 @@ fn a_protection_with_inner_plus_one_contexts_is_past_its_bound() {
         at: crate::forgejo::request::Repo { owner: Box::from(*b"fixture"), name: Box::from(*b"specimen") },
         name: Box::from(*b"main"),
     };
-    for (body,valid) in [(br#"{"rule_name":"main","enable_status_check":true,"status_check_contexts":["test"],"required_approvals":1,"dismiss_stale_approvals":true}"#.as_slice(),true),(br#"{"rule_name":"main","enable_status_check":true,"status_check_contexts":["test","other"],"required_approvals":1,"dismiss_stale_approvals":true}"#,false)] {
+    for (body,valid) in [(br#"{"rule_name":"main","enable_status_check":true,"status_check_contexts":["test"],"required_approvals":1,"dismiss_stale_approvals":true,"require_signed_commits":false}"#.as_slice(),true),(br#"{"rule_name":"main","enable_status_check":true,"status_check_contexts":["test","other"],"required_approvals":1,"dismiss_stale_approvals":true,"require_signed_commits":false}"#,false)] {
         let decoded=fixtures::decode(client::decoder(&request,&limits).unwrap(),body,&limits);
         if valid { let Document::Protection(value)=decoded.document.unwrap() else { panic!("protection"); }; assert_eq!(value.status_check_contexts.as_ref(),&[Box::from(b"test".as_slice())]); } else { assert_eq!(decoded.document,Err(Malformed::Bound { field:b"status_check_contexts" })); }
     }

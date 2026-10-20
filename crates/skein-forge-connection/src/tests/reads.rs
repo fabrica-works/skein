@@ -552,7 +552,7 @@ fn protection_checks_admin_access_even_when_no_rule_applies() {
     let mut h = fixtures::known();
     for (name, call, rule, response, expected) in [
         ("no rule", 1, b"".as_slice(), b"[]".as_slice(), Ok(Answer::Protection(None))),
-        ("effective rule", 2, b"main".as_slice(), br#"{"rule_name":"main","enable_status_check":true,"status_check_contexts":["build"],"required_approvals":2,"dismiss_stale_approvals":true}"#.as_slice(), Ok(Answer::Protection(Some(api::Protection { queue: false, signatures: false, linear: false, code_owners: false, bypass: api::Bypass::Never, branch: Box::from(&b"main"[..]), contexts: Box::new([Box::from(&b"build"[..])]), approvals: 2, dismiss_stale: true })))),
+        ("effective rule", 2, b"main".as_slice(), br#"{"rule_name":"main","enable_status_check":true,"status_check_contexts":["build"],"required_approvals":2,"dismiss_stale_approvals":true,"require_signed_commits":false}"#.as_slice(), Ok(Answer::Protection(Some(api::Protection { queue: false, signatures: false, linear: false, code_owners: false, bypass: api::Bypass::Never, branch: Box::from(&b"main"[..]), contexts: Box::new([Box::from(&b"build"[..])]), approvals: 2, dismiss_stale: true })))),
     ] {
         h.call(call, fixtures::REPO, Op::Read(Read::Protection { branch: Box::from(&b"main"[..]) })); answer(&mut h, &branch(b"main", rule)); answer(&mut h, response);
         assert_eq!(h.answered(call).expect("protection").result, expected, "{name}");

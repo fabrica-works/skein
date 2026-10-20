@@ -216,7 +216,7 @@ pub fn repository(value: d::Repository) -> crate::forgejo::plans::tables::Reposi
 pub fn protection(value: d::BranchProtection) -> api::Protection {
     api::Protection {
         queue: false,
-        signatures: false,
+        signatures: value.require_signed_commits,
         linear: false,
         code_owners: false,
         bypass: api::Bypass::Never,
