@@ -62,6 +62,7 @@ impl Installations {
                 | document::Document::Repository(_)
                 | document::Document::Branch(_)
                 | document::Document::Pull(_)
+                | document::Document::Job(_)
                 | document::Document::Combined(_)
                 | document::Document::Issue(_)
                 | document::Document::Error(_) => Err(api::Error::InvalidAnswer),

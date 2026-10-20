@@ -10,6 +10,7 @@ enum Answer<'a> {
     Pulls(&'a [document::Pull]),
     Combined(&'a document::Combined, &'a [document::Context]),
     Runs(&'a [document::Run]),
+    Job(&'a document::Job),
 }
 /// Writes one pull including its merged flag.
 pub fn pull(row: &document::Pull, out: &mut Writer) -> Result<(), Overflow> {
@@ -23,9 +24,13 @@ pub fn pulls(rows: &[document::Pull], out: &mut Writer) -> Result<(), Overflow> 
 pub fn combined(row: &document::Combined, contexts: &[document::Context], out: &mut Writer) -> Result<(), Overflow> {
     encode(&Answer::Combined(row, contexts), out)
 }
-/// Writes the minimal check run envelope used by the CI fold.
+/// Writes the check run envelope with any retained metadata.
 pub fn runs(rows: &[document::Run], out: &mut Writer) -> Result<(), Overflow> {
     encode(&Answer::Runs(rows), out)
+}
+/// Writes the Actions job identity and attempt, without steps or logs.
+pub fn job(row: &document::Job, out: &mut Writer) -> Result<(), Overflow> {
+    encode(&Answer::Job(row), out)
 }
 fn encode(answer: &Answer<'_>, out: &mut Writer) -> Result<(), Overflow> {
     let limits = output_limits(out)?;
@@ -40,6 +45,18 @@ fn encode(answer: &Answer<'_>, out: &mut Writer) -> Result<(), Overflow> {
 }
 fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> {
     match answer {
+        Answer::Job(row) => {
+            json.object_start();
+            json.key(b"id");
+            json.unsigned(row.id);
+            json.key(b"run_id");
+            json.unsigned(row.run);
+            json.key(b"run_attempt");
+            json.unsigned(u64::from(row.attempt));
+            json.key(b"head_sha");
+            json.string(&id::write_commit(&row.head).ok_or(Overflow)?);
+            json.object_end();
+        }
         Answer::Pull(row) => pull_json(row, true, json)?,
         Answer::Pulls(rows) => {
             json.array_start();
@@ -77,6 +94,7 @@ fn answer_json(answer: &Answer<'_>, json: &mut Encoder) -> Result<(), Overflow> 
                         json.string(if row.check == api::Check::Passed { b"success" } else { b"failure" });
                     }
                 }
+                run_metadata(row, json)?;
                 json.object_end();
             }
             json.array_end();
@@ -149,4 +167,40 @@ fn state(check: api::Check) -> &'static [u8] {
         api::Check::Passed => b"success",
         api::Check::Failed => b"failure",
     }
+}
+
+fn run_metadata(row: &document::Run, json: &mut Encoder) -> Result<(), Overflow> {
+    if let Some(id) = row.id {
+        json.key(b"id");
+        json.unsigned(id);
+    }
+    if let Some(head) = &row.head {
+        json.key(b"head_sha");
+        json.string(&id::write_commit(head).ok_or(Overflow)?);
+    }
+    if let Some(at) = row.completed {
+        json.key(b"completed_at");
+        json.string(&time::write(at));
+    }
+    if let Some(at) = row.started {
+        json.key(b"started_at");
+        json.string(&time::write(at));
+    }
+    json.key(b"name");
+    json.string(&row.name);
+    json.key(b"html_url");
+    json.string(&row.url);
+    json.key(b"output");
+    json.object_start();
+    json.key(b"title");
+    json.string(&row.title);
+    json.object_end();
+    if let Some(app) = &row.app {
+        json.key(b"app");
+        json.object_start();
+        json.key(b"slug");
+        json.string(app);
+        json.object_end();
+    }
+    Ok(())
 }

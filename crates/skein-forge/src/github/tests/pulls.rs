@@ -132,7 +132,7 @@ impl Call {
     fn runs(&mut self, checks: &[api::Check], next: bool) -> Option<Step> {
         let mut runs = skein_lib::List::with_capacity(u32::try_from(checks.len()).unwrap());
         for check in checks {
-            runs.push(document::Run { check: *check }).unwrap();
+            runs.push(document::Run::new(*check)).unwrap();
         }
         let mut out = Writer::new(4096);
         server::runs(runs.as_slice(), &mut out).unwrap();
@@ -335,7 +335,7 @@ fn github_pull_failures() {
         assert_eq!(call.heard(Heard::Done(Body::Malformed(malformed))), failed(error));
     }
     for row in [
-        Row::Run(document::Run { check: api::Check::Pending }),
+        Row::Run(document::Run::new(api::Check::Pending)),
         Row::Pull(fixtures::pull(5)),
         Row::Context(fixtures::context(api::Check::Passed)),
     ] {

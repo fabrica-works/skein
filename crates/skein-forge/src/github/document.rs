@@ -30,6 +30,8 @@ pub enum Kind {
     CombinedStatus,
     /// Check runs streamed from their envelope.
     CheckRuns,
+    /// Actions job identity and attempt metadata.
+    Job,
     /// A user resolved by numeric id.
     User,
     /// A repository permission.
@@ -113,6 +115,7 @@ pub enum Document {
     Pull(Pull),
     /// The combined status after its contexts.
     Combined(Combined),
+    Job(Job),
     Rows,
     Error(Refusal),
 }
@@ -242,10 +245,43 @@ pub struct Combined {
     pub check: api::Check,
     pub total: u64,
 }
-/// The check needed to fold a run into a pull's CI.
+/// A check and optional display and identity fields; Checks validates the identity.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Run {
     pub check: api::Check,
+    pub id: Option<u64>,
+    pub head: Option<api::Commit>,
+    pub completed: Option<Wall>,
+    pub started: Option<Wall>,
+    pub name: Box<[u8]>,
+    pub title: Box<[u8]>,
+    pub url: Box<[u8]>,
+    pub app: Option<Box<[u8]>>,
+}
+impl Run {
+    /// A check-only row is sufficient for Pull's CI fold.
+    #[must_use]
+    pub fn new(check: api::Check) -> Self {
+        Self {
+            check,
+            id: None,
+            head: None,
+            completed: None,
+            started: None,
+            name: Box::from([]),
+            title: Box::from([]),
+            url: Box::from([]),
+            app: None,
+        }
+    }
+}
+/// Actions job metadata shared by Checks and the Job read.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Job {
+    pub id: u64,
+    pub run: u64,
+    pub attempt: u32,
+    pub head: api::Commit,
 }
 
 /// A user id and bounded login for the users table.

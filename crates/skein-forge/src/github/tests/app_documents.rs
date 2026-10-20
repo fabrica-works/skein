@@ -343,6 +343,7 @@ fn github_app_secrets_hidden() {
             | Document::Branch(_)
             | Document::Rows
             | Document::Pull(_)
+            | Document::Job(_)
             | Document::Combined(_)
             | Document::Issue(_)
             | Document::Error(_) => panic!("secret document fixture"),
@@ -488,6 +489,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
             }
         }
         Document::Pull(_)
+        | Document::Job(_)
         | Document::Combined(_)
         | Document::Repository(_)
         | Document::Branch(_)

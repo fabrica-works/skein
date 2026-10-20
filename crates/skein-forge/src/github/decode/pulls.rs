@@ -19,8 +19,6 @@ pub(super) struct State {
     context: document::Context,
     reviewers: List<u64>,
     reviewer: u64,
-    completed: bool,
-    conclusion: Option<api::Check>,
     inner: u32,
 }
 fn pull() -> document::Pull {
@@ -54,8 +52,6 @@ impl State {
             context: context(),
             reviewers: List::with_capacity(inner),
             reviewer: 0,
-            completed: false,
-            conclusion: None,
             inner,
         }
     }
@@ -77,16 +73,6 @@ impl State {
         }
         if node == Node::Context {
             return Ok(Some(Row::Context(core::mem::replace(&mut self.context, context()))));
-        }
-        if node == Node::RunItem {
-            let conclusion = self.conclusion.take();
-            let completed = core::mem::replace(&mut self.completed, false);
-            let check = if completed {
-                conclusion.ok_or(Malformed::Value { field: b"conclusion" })?
-            } else {
-                api::Check::Pending
-            };
-            return Ok(Some(Row::Run(document::Run { check })));
         }
         Ok(None)
     }
@@ -150,20 +136,6 @@ impl State {
                     } else {
                         self.context.updated = Some(time::read(&text).ok_or(Malformed::Time { field: key })?);
                     }
-                } else if key == b"status" {
-                    self.completed = match text.as_ref() {
-                        b"completed" => true,
-                        b"queued" | b"in_progress" | b"waiting" | b"requested" | b"pending" => false,
-                        _ => return Err(Malformed::Value { field: key }),
-                    };
-                } else {
-                    // Unknown conclusions are rejected only for completed runs, regardless of member order.
-                    self.conclusion = match text.as_ref() {
-                        b"success" | b"neutral" | b"skipped" => Some(api::Check::Passed),
-                        b"failure" | b"timed_out" | b"cancelled" | b"action_required" | b"startup_failure"
-                        | b"stale" => Some(api::Check::Failed),
-                        _ => None,
-                    };
                 }
             }
             Token::ObjectStart

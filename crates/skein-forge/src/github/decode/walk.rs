@@ -78,6 +78,9 @@ pub(super) enum Node {
     RunsObject,
     Runs,
     RunItem,
+    RunOutput,
+    RunApp,
+    Job,
 }
 /// Payload roles share the walker without extending the document-only Node vocabulary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -239,7 +242,34 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::RunsObject => const { &[field(b"check_runs", Read::Container(Role::Document(Node::Runs)))] },
-        Node::RunItem => const { &[field(b"status", Read::Text), optional(b"conclusion", Read::Text)] },
+        Node::RunItem => {
+            const {
+                &[
+                    field(b"status", Read::Text),
+                    optional(b"conclusion", Read::Text),
+                    optional(b"id", Read::Number),
+                    optional(b"head_sha", Read::Text),
+                    optional(b"completed_at", Read::Text),
+                    optional(b"started_at", Read::Text),
+                    optional(b"name", Read::Text),
+                    optional(b"html_url", Read::Text),
+                    optional(b"output", Read::Container(Role::Document(Node::RunOutput))),
+                    optional(b"app", Read::Container(Role::Document(Node::RunApp))),
+                ]
+            }
+        }
+        Node::RunOutput => const { &[optional(b"title", Read::Text)] },
+        Node::RunApp => const { &[optional(b"slug", Read::Text)] },
+        Node::Job => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"run_id", Read::Number),
+                    field(b"run_attempt", Read::Number),
+                    field(b"head_sha", Read::Text),
+                ]
+            }
+        }
         Node::Issue => issue_fields(),
         Node::ReviewUser | Node::RemarkUser | Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => {
             const { &[field(b"id", Read::Number)] }
@@ -378,6 +408,9 @@ fn element(role: Role) -> Option<Role> {
         | Node::Context
         | Node::RunsObject
         | Node::RunItem
+        | Node::RunOutput
+        | Node::RunApp
+        | Node::Job
         | Node::Issue
         | Node::IssueUser
         | Node::Label
@@ -483,6 +516,7 @@ impl Walk {
             document::Kind::PullRows => Node::PullRows,
             document::Kind::CombinedStatus => Node::CombinedObject,
             document::Kind::CheckRuns => Node::RunsObject,
+            document::Kind::Job => Node::Job,
             document::Kind::Error => Node::Error,
         };
         Self::root(Role::Document(node), limits)

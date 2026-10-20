@@ -47,6 +47,7 @@ impl Plan {
             | Read::Branches
             | Read::Pull { .. }
             | Read::PullFor { .. }
+            | Read::Checks { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }
@@ -134,6 +135,7 @@ impl Plan {
                 | Read::Branches
                 | Read::Pull { .. }
                 | Read::PullFor { .. }
+                | Read::Checks { .. }
                 | Read::Statuses { .. }
                 | Read::Permission { .. }
                 | Read::Collaborators { .. }
@@ -176,6 +178,7 @@ impl Plan {
             | Read::Branches
             | Read::Pull { .. }
             | Read::PullFor { .. }
+            | Read::Checks { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }
@@ -209,6 +212,7 @@ impl Plan {
             | Read::Branches
             | Read::Pull { .. }
             | Read::PullFor { .. }
+            | Read::Checks { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }
@@ -256,6 +260,7 @@ impl Plan {
             | Read::Branches
             | Read::Pull { .. }
             | Read::PullFor { .. }
+            | Read::Checks { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }

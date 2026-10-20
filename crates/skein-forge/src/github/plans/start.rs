@@ -178,6 +178,7 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
             | Document::Repository(_)
             | Document::Branch(_)
             | Document::Pull(_)
+            | Document::Job(_)
             | Document::Combined(_)
             | Document::Issue(_)
             | Document::Rows,

@@ -11,6 +11,7 @@ use crate::{
 use alloc::boxed::Box;
 use skein_lib::List;
 
+mod checks;
 mod done;
 mod files;
 mod issues;
@@ -31,6 +32,7 @@ enum Read {
     Pull { number: u64 },
     PullFor { head: Box<[u8]>, base: Box<[u8]> },
     Statuses { commit: api::Commit, page: u32 },
+    Checks { commit: api::Commit },
     Permission { user: u64 },
     Collaborators { page: u32 },
     Remarks { number: u64, review: u64, page: u32 },
@@ -49,6 +51,7 @@ enum Stage {
     Listing,
     Combined,
     Runs,
+    Jobs,
     ResolveUser,
     Permission,
     Raw,
@@ -82,6 +85,7 @@ pub struct Plan {
     limit: u32,
     issues: issues::State,
     pulls: pulls::State,
+    checks: checks::State,
     login: Option<Box<[u8]>>,
     collaborators: List<api::Collaborator>,
     remarks: List<api::Remark>,
@@ -110,7 +114,8 @@ impl Plan {
             api::Read::Collaborators { page } => Read::Collaborators { page },
             api::Read::Permission { user } => Read::Permission { user },
             api::Read::PullFiles { number, head, page } => Read::PullFiles { number, head, page },
-            api::Read::Checks { .. } | api::Read::Job { .. } | api::Read::Protection { .. } => Read::Refused,
+            api::Read::Checks { commit } => Read::Checks { commit },
+            api::Read::Job { .. } | api::Read::Protection { .. } => Read::Refused,
         };
         Self {
             repository,
@@ -126,6 +131,7 @@ impl Plan {
             limit: 0,
             issues: issues::State::new(),
             pulls: pulls::State::new(),
+            checks: checks::State::new(),
             login: None,
             collaborators: List::with_capacity(0),
             remarks: List::with_capacity(0),
@@ -155,6 +161,7 @@ impl Plan {
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
+            Read::Checks { .. } => self.checks_admission(bounds)?,
             Read::Compare { .. } | Read::PullFiles { .. } => self.files_admission(bounds)?,
             Read::File { path, max_bytes, .. } => {
                 let path = u32::try_from(path.len()).ok().ok_or(api::Error::TooLarge)?;
@@ -205,6 +212,7 @@ impl Plan {
     }
     fn initial(&mut self) -> Result<Step, api::Error> {
         match self.read {
+            Read::Checks { .. } => return self.checks_initial(),
             Read::Permission { .. } => return self.permission_initial(),
             Read::Compare { .. } => return self.compare_initial(),
             Read::PullFiles { .. } => return self.pull_files_initial(),
@@ -237,6 +245,7 @@ impl Plan {
             Read::Item { number, .. } => Request::Issue { owner, name, number: *number },
             Read::Pull { .. }
             | Read::PullFor { .. }
+            | Read::Checks { .. }
             | Read::Statuses { .. }
             | Read::Locate { .. }
             | Read::Settings
@@ -281,6 +290,10 @@ impl Plan {
             }
         }
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the read dispatcher exhaustively handles heads, rows and terminal bodies"
+    )]
     fn advance(
         &mut self,
         heard: Heard,
@@ -312,6 +325,7 @@ impl Plan {
                         | Read::Branches
                         | Read::Pull { .. }
                         | Read::PullFor { .. }
+                        | Read::Checks { .. }
                         | Read::Statuses { .. }
                         | Read::Permission { .. }
                         | Read::Collaborators { .. }
@@ -355,6 +369,7 @@ impl Plan {
                                 | document::Document::Branch(_)
                                 | document::Document::Issue(_)
                                 | document::Document::Pull(_)
+                                | document::Document::Job(_)
                                 | document::Document::Combined(_)
                                 | document::Document::Rows
                                 | document::Document::Installation(_)
@@ -399,6 +414,7 @@ impl Plan {
         tables: &mut Tables,
     ) -> Result<(), api::Error> {
         match self.read {
+            Read::Checks { .. } => return self.checks_row(row, bounds),
             Read::Compare { .. } | Read::PullFiles { .. } => return self.file_row(row, bounds),
             Read::Reviews { .. } => return self.review_row(row, bounds, word),
             Read::Remarks { .. } => return self.remark_row(row, bounds),

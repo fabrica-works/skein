@@ -9,6 +9,7 @@ use alloc::boxed::Box;
 use skein_json::{Token, tokenizer};
 use skein_lib::List;
 mod app;
+mod checks;
 pub(crate) mod delivery;
 mod files;
 mod issues;
@@ -33,6 +34,7 @@ pub struct Decoder {
     app: app::State,
     issues: issues::State,
     pulls: pulls::State,
+    checks: checks::State,
     user: document::User,
     permission: crate::api::Permission,
     collaborator: document::Collaborator,
@@ -54,6 +56,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         app: app::State::new(kind),
         issues: issues::State::new(limits.inner),
         pulls: pulls::State::new(limits.inner),
+        checks: checks::State::new(),
         user: document::User { id: 0, login: Box::from([]) },
         permission: crate::api::Permission::None,
         collaborator: people::collaborator(),
@@ -108,6 +111,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::PullsFor { .. } => Kind::PullRows,
         Request::CombinedStatus { .. } => Kind::CombinedStatus,
         Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::Job { .. } => Kind::Job,
         Request::PullFiles { .. } => Kind::FileRows,
         Request::Compare { .. } => Kind::Compare,
         Request::Reviews { .. } => Kind::ReviewRows,
@@ -122,7 +126,6 @@ pub fn kind(request: &Request) -> Option<Kind> {
         | Request::JobLog { .. }
         | Request::Uninstall { .. }
         // Reads whose documents are not decoded yet; each gains its kind with its decoder.
-        | Request::Job { .. }
         | Request::RulesForBranch { .. }
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }
@@ -200,8 +203,7 @@ impl Decoder {
                 | Node::Contexts
                 | Node::Context
                 | Node::RunsObject
-                | Node::Runs
-                | Node::RunItem),
+                | Node::Runs),
             ) => {
                 if let Some(row) = self.pulls.end(node, self.kind)? {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
@@ -238,6 +240,10 @@ impl Decoder {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
             }
+            Move::End(Node::RunItem) => {
+                let row = self.checks.end()?;
+                return Ok((tokenizer::Request::Next, Step::Row(Row::Run(row))));
+            }
             Move::End(Node::Collaborator) => {
                 let row = core::mem::replace(&mut self.collaborator, people::collaborator());
                 return Ok((tokenizer::Request::Next, Step::Row(Row::Collaborator(row))));
@@ -255,7 +261,10 @@ impl Decoder {
                 }
             }
             Move::End(
-                Node::CollaboratorRows
+                Node::RunOutput
+                | Node::RunApp
+                | Node::Job
+                | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
                 | Node::Repository
@@ -281,6 +290,7 @@ impl Decoder {
                     | Kind::HookConfig
                     | Kind::Conversion
                     | Kind::BotUser => self.app.document()?,
+                    Kind::Job => Document::Job(self.checks.job()),
                     Kind::Compare => Document::Compare(self.files.document()),
                     Kind::User => Document::User(self.user.clone()),
                     Kind::Permission => Document::Permission(self.permission),
@@ -311,6 +321,9 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (node @ (Node::RunItem | Node::RunOutput | Node::RunApp | Node::Job), key, token) => {
+                return self.checks.scalar(node, key, token);
+            }
             (
                 node @ (Node::Compare
                 | Node::MergeBaseOnly
@@ -346,8 +359,7 @@ impl Decoder {
                 | Node::Contexts
                 | Node::Context
                 | Node::RunsObject
-                | Node::Runs
-                | Node::RunItem),
+                | Node::Runs),
                 key,
                 token,
             ) => return self.pulls.scalar(node, key, token),

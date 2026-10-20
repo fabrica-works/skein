@@ -7,7 +7,7 @@ use crate::{
 use skein_lib::List;
 
 // Check runs are folded without retaining rows, but at most 50 pages are read.
-const RUN_PAGES: u32 = 50;
+pub(super) const RUN_PAGES: u32 = 50;
 #[derive(Debug)]
 #[expect(clippy::struct_excessive_bools, reason = "listing preference and the three independent CI fold flags")]
 pub(super) struct State {
@@ -83,6 +83,7 @@ impl Plan {
             | Read::File { .. }
             | Read::Compare { .. }
             | Read::PullFiles { .. }
+            | Read::Checks { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(self.send(request))
@@ -165,6 +166,7 @@ impl Plan {
             | Read::File { .. }
             | Read::Compare { .. }
             | Read::PullFiles { .. }
+            | Read::Checks { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         }
         let pull = reading::pull(pull, api::Ci::None)?;
@@ -266,6 +268,7 @@ fn is_statuses(read: &Read) -> bool {
         | Read::File { .. }
         | Read::Compare { .. }
         | Read::PullFiles { .. }
+        | Read::Checks { .. }
         | Read::Refused => false,
     }
 }

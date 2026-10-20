@@ -60,6 +60,7 @@ fn github_decode_kind_names_each_documented_answer() {
             Request::CombinedStatus { owner: owner(), name: name(), commit, page: 1, per_page: 100 },
             Kind::CombinedStatus,
         ),
+        (Request::Job { owner: owner(), name: name(), id: 11 }, Kind::Job),
         (Request::CheckRuns { owner: owner(), name: name(), commit, page: 1, per_page: 100 }, Kind::CheckRuns),
         (Request::Branch { owner: owner(), name: name(), branch: Box::from(*b"main") }, Kind::Branch),
         (Request::Branches { owner: owner(), name: name(), page: 1, per_page: 100 }, Kind::BranchRows),
@@ -82,7 +83,6 @@ fn github_decode_kind_is_none_for_raw_and_empty_answers() {
 #[test]
 fn github_decode_kind_is_none_for_reads_not_yet_decoded() {
     for request in [
-        Request::Job { owner: owner(), name: name(), id: 11 },
         Request::RulesForBranch { owner: owner(), name: name(), branch: Box::from(*b"main"), page: 1 },
         Request::Ruleset { owner: owner(), name: name(), id: 4 },
         Request::ClassicProtection { owner: owner(), name: name(), branch: Box::from(*b"main") },

@@ -16,7 +16,7 @@ pub use app::{
     minted, reachable, viewer,
 };
 pub use delivery::{Sent, encode};
-pub use pulls::{combined, pull, pulls, runs};
+pub use pulls::{combined, job, pull, pulls, runs};
 /// Reads a request target into the request whose canonical spelling it carries.
 #[must_use]
 pub fn route(method: Method, target: &[u8], limits: &Limits) -> Option<Request> {

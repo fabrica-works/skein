@@ -160,9 +160,9 @@ fn github_statuses_document_round_trips() {
 #[test]
 fn github_checks_runs_round_trip() {
     let runs = [
-        document::Run { check: api::Check::Pending },
-        document::Run { check: api::Check::Passed },
-        document::Run { check: api::Check::Failed },
+        document::Run::new(api::Check::Pending),
+        document::Run::new(api::Check::Passed),
+        document::Run::new(api::Check::Failed),
     ];
     let mut out = Writer::new(4096);
     server::runs(&runs, &mut out).unwrap();
@@ -190,7 +190,7 @@ fn github_checks_runs_round_trip() {
                 alloc::fmt::format(format_args!(r#""status":"{status}","conclusion":"{conclusion}""#))
             };
             let json = alloc::fmt::format(format_args!(r#"{{"check_runs":[{{{fields}}}]}}"#));
-            assert_decode(Kind::CheckRuns, json.as_bytes(), Document::Rows, &[Row::Run(document::Run { check })]);
+            assert_decode(Kind::CheckRuns, json.as_bytes(), Document::Rows, &[Row::Run(document::Run::new(check))]);
         }
     }
     for (json, expected) in [
@@ -208,7 +208,7 @@ fn github_checks_runs_round_trip() {
         Kind::CheckRuns,
         br#"{"check_runs":[{"status":"queued","conclusion":null}]}"#,
         Document::Rows,
-        &[Row::Run(document::Run { check: api::Check::Pending })],
+        &[Row::Run(document::Run::new(api::Check::Pending))],
     );
     let mut small = Writer::new(1);
     assert_eq!(server::runs(&[], &mut small), Err(Overflow));

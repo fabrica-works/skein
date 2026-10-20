@@ -26,6 +26,7 @@ impl Plan {
                     | Read::Branches
                     | Read::Pull { .. }
                     | Read::PullFor { .. }
+                    | Read::Checks { .. }
                     | Read::Statuses { .. }
                     | Read::Permission { .. }
                     | Read::Collaborators { .. }
@@ -47,9 +48,30 @@ impl Plan {
                     self.pull_done(pull, bounds)
                 }
             }
-            document::Document::Combined(combined) => self.combined_done(combined, bounds),
+            document::Document::Job(job) => self.checks_job_done(job, bounds),
+            document::Document::Combined(combined) => match self.read {
+                Read::Checks { .. } => self.checks_combined_done(),
+                Read::Locate { .. }
+                | Read::Settings
+                | Read::Branch { .. }
+                | Read::Branches
+                | Read::Items { .. }
+                | Read::Item { .. }
+                | Read::Pull { .. }
+                | Read::PullFor { .. }
+                | Read::Statuses { .. }
+                | Read::Permission { .. }
+                | Read::Collaborators { .. }
+                | Read::Remarks { .. }
+                | Read::Reviews { .. }
+                | Read::File { .. }
+                | Read::Compare { .. }
+                | Read::PullFiles { .. }
+                | Read::Refused => self.combined_done(combined, bounds),
+            },
             document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
             document::Document::Rows => match self.read {
+                Read::Checks { .. } => self.checks_runs_done(bounds),
                 Read::PullFiles { .. } => self.file_listing_done(bounds),
                 Read::Reviews { .. } => self.reviews_done(bounds),
                 Read::Remarks { .. } => self.remarks_done(bounds),
@@ -102,6 +124,7 @@ impl Plan {
             | Read::Branches
             | Read::Pull { .. }
             | Read::PullFor { .. }
+            | Read::Checks { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }
@@ -120,6 +143,7 @@ impl Plan {
             | Read::Branches
             | Read::Pull { .. }
             | Read::PullFor { .. }
+            | Read::Checks { .. }
             | Read::Statuses { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }

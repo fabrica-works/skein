@@ -84,7 +84,10 @@ impl State {
             | Node::Hook
             | Node::Conversion
             | Node::BotUser => {}
-            Node::User
+            Node::RunOutput
+            | Node::RunApp
+            | Node::Job
+            | Node::User
             | Node::Compare
             | Node::MergeBaseOnly
             | Node::FileRows
@@ -169,6 +172,7 @@ impl State {
             | Kind::Pull
             | Kind::PullRows
             | Kind::CombinedStatus
+            | Kind::Job
             | Kind::CheckRuns
             | Kind::Error => unreachable!("App document dispatch"),
         })
@@ -289,6 +293,9 @@ impl State {
                 | Node::RunsObject
                 | Node::Runs
                 | Node::RunItem
+                | Node::RunOutput
+                | Node::RunApp
+                | Node::Job
                 | Node::ErrorEntry,
                 _,
                 Token::ObjectStart
