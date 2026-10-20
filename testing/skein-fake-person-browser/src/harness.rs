@@ -2,13 +2,15 @@
 use crate::BrowserFace;
 use browser::boundary::{Below, Down, Event, Request};
 use skein_browser::{self as browser, Browser};
+use skein_fake_peers::Listening;
 use skein_fake_person::Next;
 use skein_io::{
     self as io, Io,
     kernel::{self, Complete, Op, Pipe, Spawn, Submit, Way},
 };
 use skein_lib::{Duration, Env, Queue, Time, Token, Wall, stream};
-use skein_shell::{Clock, Config, Kernel, Wait, open_root};
+use skein_shell::{Clock, Wait, open_root};
+use skein_world::ring::Ring;
 use std::fmt::Write as _;
 use std::{collections::VecDeque, ffi::OsString, os::unix::ffi::OsStrExt, path::PathBuf};
 
@@ -20,6 +22,12 @@ const SNAPSHOT: Token = Token::new(u64::MAX - 3);
 const IMAGE: Token = Token::new(u64::MAX - 2);
 const ROOT: Token = Token::new(u64::MAX - 1);
 const SERVER_ROOT: Token = Token::new(u64::MAX);
+
+/// A peer borrowed for this run; its observations remain the test's.
+pub struct Lent<'a> {
+    pub name: &'a [u8],
+    pub peer: &'a mut dyn Listening,
+}
 
 #[derive(Clone, Copy)]
 pub struct Printed<'a> {
@@ -118,13 +126,22 @@ impl Harness {
         }
     }
     pub fn run(&mut self, people: &mut [&mut dyn Play]) -> Outcome {
+        self.run_lending(people, &mut [])
+    }
+    pub fn run_lending(&mut self, people: &mut [&mut dyn Play], peers: &mut [Lent<'_>]) -> Outcome {
+        let mut peers = match peers::Peers::new(peers) {
+            Ok(peers) => peers,
+            Err(report) => return Outcome::Failed { person: 0, step: 0, report },
+        };
         let profile = skein_scratch::Scratch::new("ui-browser");
-        Runtime::new(self, profile.path(), people).run(self, people)
+        Runtime::new(self, profile.path(), people, &peers.limits).run(self, people, &mut peers)
     }
 }
+pub(crate) mod capacity;
 mod lines;
+mod peers;
 pub use lines::printed;
-pub(crate) use lines::{opening, replace_address, restart, server_pipes};
+pub(crate) use lines::{opening, restart, server_pipes, substitute};
 #[derive(PartialEq, Eq)]
 enum ServerState {
     Running,
@@ -139,7 +156,9 @@ struct Runtime {
     origins: Vec<crate::origins::Pages>,
     browser: Browser,
     io: Io,
-    kernel: Kernel,
+    ring: Ring,
+    startup: VecDeque<io::Request>,
+    peer_addresses: Vec<(Box<[u8]>, String)>,
     clock: Clock,
     benv: Env<browser::Limits>,
     ienv: Env<io::Limits>,
@@ -150,6 +169,7 @@ struct Runtime {
     down: Queue<Down>,
     requests: VecDeque<io::Request>,
     roots: [kernel::Fd; 2],
+    roots_closing: [bool; 2],
     pipes: Option<[Token; 3]>,
     server_pipes: Vec<Token>,
     output: Vec<u8>,
@@ -188,23 +208,21 @@ impl Runtime {
             })
             .collect()
     }
-    fn new(setup: &Harness, profile: &std::path::Path, people: &[&mut dyn Play]) -> Self {
+    fn new(setup: &Harness, profile: &std::path::Path, people: &[&mut dyn Play], peers: &[u32]) -> Self {
         let bl = browser::Limits::default();
-        let il = io::Limits {
-            sockets: 12,
-            refusals: 8,
-            intake: bl.message + 1,
-            receive: 65_536,
-            output: bl.command + 1,
-            sends: 16,
-            accepts: 4,
-            backlog: 4,
-            close_timeout: Duration::from_secs(2),
-            names: 0,
-            retry: Duration::from_millis(10),
-        };
-        let kernel = Kernel::open(Config { operations: io::operations(&il).expect("ring size") })
-            .expect("io_uring is required for the browser suite");
+        let capacity = capacity::Capacity::new(
+            u32::try_from(people.len()).expect("person count fits"),
+            u32::try_from(setup.origins.len()).expect("origin count fits"),
+            setup.output,
+            &bl,
+        )
+        .expect("harness capacity fits");
+        let il = capacity.io;
+        let mut limits = vec![capacity.operations, capacity::ROOT_OPERATIONS];
+        limits.extend_from_slice(peers);
+        let operations =
+            limits.iter().try_fold(0_u32, |total, limit| total.checked_add(*limit)).expect("shared ring capacity fits");
+        let ring = Ring::new(operations, limits).expect("io_uring is required for the browser suite");
         let command = browser::command::command(setup.chromium.as_os_str().as_bytes(), profile.as_os_str().as_bytes());
         let root = open_root(std::path::Path::new("/")).expect("child root");
         let server_root = open_root(std::path::Path::new("/")).expect("server root");
@@ -251,20 +269,23 @@ impl Runtime {
             origins: Self::origins(setup),
             browser: Browser::new(BROWSER, &bl),
             io: Io::new(&il),
-            kernel,
-            clock: Clock::new(),
-            benv: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: bl },
-            ienv: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: il },
-            complete: Queue::with_capacity(256),
-            submits: Queue::with_capacity(256),
-            events: Queue::with_capacity(256),
-            io_events: Queue::with_capacity(256),
-            down: Queue::with_capacity(256),
-            requests: VecDeque::from([
+            ring,
+            startup: VecDeque::from([
                 io::Request::Spawn { owner: SERVER, spawn: server_spawn },
                 io::Request::Spawn { owner: PROCESS, spawn: browser_spawn },
             ]),
+            peer_addresses: Vec::new(),
+            clock: Clock::new(),
+            benv: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: bl },
+            ienv: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: il },
+            complete: Queue::with_capacity(capacity.queue),
+            submits: Queue::with_capacity(capacity.queue),
+            events: Queue::with_capacity(capacity.browser_queue),
+            io_events: Queue::with_capacity(capacity.queue),
+            down: Queue::with_capacity(capacity.browser_queue),
+            requests: VecDeque::new(),
             roots: [server_root, root],
+            roots_closing: [false; 2],
             pipes: None,
             server_pipes: Vec::new(),
             output: Vec::new(),
@@ -298,7 +319,7 @@ impl Runtime {
         });
     }
     fn fail(&mut self, person: usize, step: u32, report: String) {
-        if self.outcome.is_none() {
+        if !matches!(self.outcome, Some(Outcome::Failed { .. })) {
             self.outcome = Some(Outcome::Failed { person: u32::try_from(person).expect("person fits"), step, report });
         }
     }
@@ -364,7 +385,7 @@ impl Runtime {
                 } else {
                     let [commands, replies, errors] = pipes.as_ref() else { panic!("Chromium pipes") };
                     self.pipes = Some([*commands, *replies, *errors]);
-                    self.submits.push(Submit { op: ROOT, kind: Op::Close { fd: self.roots[1] } });
+                    self.close_root(1);
                 }
             }
             io::Event::Stream { owner, up } => {
@@ -505,6 +526,13 @@ impl Runtime {
             Some(Outcome::Done) | None => page(0),
         }
     }
+    fn close_root(&mut self, index: usize) {
+        if !self.roots_closing[index] {
+            self.roots_closing[index] = true;
+            let op = if index == 0 { SERVER_ROOT } else { ROOT };
+            self.submits.push(Submit { op, kind: Op::Close { fd: self.roots[index] } });
+        }
+    }
     fn close(&mut self) {
         self.closing = true;
         for pages in &mut self.origins {
@@ -513,8 +541,13 @@ impl Runtime {
         for exchange in &mut self.exchanges {
             exchange.stop();
         }
-        self.submits.push(Submit { op: SERVER_ROOT, kind: Op::Close { fd: self.roots[0] } });
-        self.ask(Request::Close { entity: BROWSER });
+        self.close_root(0);
+        if self.startup.is_empty() {
+            self.ask(Request::Close { entity: BROWSER });
+        } else {
+            self.startup.clear();
+            self.close_root(1);
+        }
         for child in &self.children {
             self.requests.push_back(io::Request::Signal {
                 child: *child,
@@ -540,7 +573,8 @@ impl Runtime {
                 self.server_stderr.clear();
                 self.output.clear();
                 self.lines.clear();
-                let args = restart(&setup.restart, self.address.as_ref().expect("server address"));
+                let args =
+                    restart(&setup.restart, self.address.as_deref().expect("server address"), &self.peer_addresses);
                 self.requests.push_back(io::Request::Spawn {
                     owner: SERVER,
                     spawn: Spawn {
@@ -574,6 +608,9 @@ impl Runtime {
         self.exchanges.retain(|exchange| !exchange.closed);
         for (index, (play, face)) in people.iter_mut().zip(faces).enumerate() {
             if !self.opened[index] || done[index] {
+                continue;
+            }
+            if self.exchanges.iter().filter(|exchange| exchange.person == index).count() >= 2 {
                 continue;
             }
             play.check_deadline(face, now);
@@ -621,7 +658,7 @@ impl Runtime {
                 break;
             }
         }
-        if done.iter().all(|done| *done) {
+        if self.outcome.is_none() && done.iter().all(|done| *done) {
             self.outcome = Some(Outcome::Done);
         }
     }
@@ -708,23 +745,47 @@ impl Runtime {
             }
         }
     }
-    fn run(mut self, setup: &Harness, people: &mut [&mut dyn Play]) -> Outcome {
-        let deadline = self.clock.now().now.saturating_add(Duration::from_secs(20));
+    fn run(mut self, setup: &Harness, people: &mut [&mut dyn Play], peers: &mut peers::Peers<'_, '_>) -> Outcome {
+        let start = self.clock.now().now;
+        let deadline = start.saturating_add(Duration::from_secs(20));
+        // Reserve io's close window inside the run's twenty-second horizon.
+        let close_at = start.saturating_add(Duration::from_secs(18));
         let mut faces = Vec::new();
         let mut done = vec![false; people.len()];
         let mut began = false;
         let mut opening_page = false;
+        let mut started = false;
         loop {
-            self.kernel.reap(&mut self.complete);
+            self.reap(peers);
             let time = self.clock.now();
             self.benv.now = time.now;
             self.benv.wall = time.wall;
             self.ienv.now = time.now;
             self.ienv.wall = time.wall;
-            if time.now >= deadline {
-                self.fail(0, 0, "browser harness deadline passed".into());
+            let stop_peers = self.closing
+                && self.closed == self.spawned
+                && self.io.is_empty()
+                && self.requests.is_empty()
+                && self.origins.iter().all(crate::origins::Pages::is_closed);
+            for report in peers.drive(&mut self.ring, time.now, time.wall, stop_peers) {
+                self.fail(0, 0, report);
+            }
+            if !started && peers.ready() && self.outcome.is_none() {
+                started = true;
+                self.start(setup, peers);
+            }
+            if time.now >= close_at {
+                let report = if started {
+                    "browser harness deadline passed".into()
+                } else {
+                    format!("lent peer startup deadline: {}", peers.waiting())
+                };
+                self.fail(0, 0, report);
                 if !self.closing {
                     self.close();
+                }
+                if time.now >= deadline {
+                    break;
                 }
             }
             if self.tick(setup, &mut faces, time.now) {
@@ -739,10 +800,10 @@ impl Runtime {
                     self.ask(Request::Person { person: person(0) });
                 }
             }
-            if began {
+            if began && self.outcome.is_none() {
                 opening_page |= self.open_page(setup, &mut faces, opening_page);
             }
-            if self.outcome.is_none() {
+            if began && self.outcome.is_none() {
                 self.play(people, &mut faces, &mut done, time.now, setup);
             }
             if self.outcome.is_some() && !self.closing {
@@ -756,44 +817,97 @@ impl Runtime {
                     self.close();
                 }
             }
-            while let Some(down) = self.down.pop() {
-                let [commands, replies, errors] = self.pipes.expect("browser spawned");
-                let (pipe, down) = match down {
-                    Down::Commands(d) => (commands, d),
-                    Down::Replies(d) => (replies, d),
-                    Down::Errors(d) => (errors, d),
-                };
-                self.requests.push_back(io::Request::Stream { stream: pipe, down });
-            }
-            self.origin_requests(time.now, time.wall);
-            while self.io.takes() {
-                let Some(request) = self.requests.pop_front() else { break };
-                io::down(&mut self.io, &self.ienv, request, &mut self.submits);
-            }
-            self.io.reclaim();
+            self.flush(started, time.now, time.wall);
             if self.closing
                 && self.closed == self.spawned
                 && self.origins.iter().all(crate::origins::Pages::is_closed)
                 && self.io.is_empty()
-                && self.kernel.in_flight() == 0
+                && self.ring.is_empty()
+                && self.submits.is_empty()
+                && peers.empty()
             {
                 break;
             }
-            let pending = self.io.is_ready()
-                || !self.complete.is_empty()
-                || !self.io_events.is_empty()
-                || !self.events.is_empty()
-                || !self.down.is_empty()
-                || !self.requests.is_empty()
-                || self.browser.work_pending();
-            let until = self
-                .io
-                .next_deadline()
-                .into_iter()
-                .chain(self.browser.next_deadline())
-                .fold(time.now.saturating_add(POLL), Time::min);
-            self.kernel.submit(&mut self.submits, if pending { Wait::No } else { Wait::Until(until) });
+            self.submit(peers, time.now);
         }
+        self.report()
+    }
+    fn flush(&mut self, started: bool, now: Time, wall: Wall) {
+        while let Some(down) = self.down.pop() {
+            let [commands, replies, errors] = self.pipes.expect("browser spawned");
+            let (pipe, down) = match down {
+                Down::Commands(d) => (commands, d),
+                Down::Replies(d) => (replies, d),
+                Down::Errors(d) => (errors, d),
+            };
+            self.requests.push_back(io::Request::Stream { stream: pipe, down });
+        }
+        if started {
+            self.origin_requests(now, wall);
+        }
+        while self.io.takes() {
+            let Some(request) = self.requests.pop_front() else { break };
+            io::down(&mut self.io, &self.ienv, request, &mut self.submits);
+        }
+        self.io.reclaim();
+    }
+    fn submit(&mut self, peers: &peers::Peers<'_, '_>, now: Time) {
+        let pending = self.io.is_ready()
+            || !self.complete.is_empty()
+            || !self.io_events.is_empty()
+            || !self.events.is_empty()
+            || !self.down.is_empty()
+            || !self.requests.is_empty()
+            || self.browser.work_pending()
+            || peers.pending()
+            || self.ring.has_ready();
+        let until = self
+            .io
+            .next_deadline()
+            .into_iter()
+            .chain(self.browser.next_deadline())
+            .chain(peers.deadline())
+            .fold(now.saturating_add(POLL), Time::min);
+        while let Some(record) = self.submits.pop() {
+            let host = usize::from(record.op == ROOT || record.op == SERVER_ROOT);
+            let record = self.ring.register(host, record);
+            self.ring.queue(record);
+        }
+        self.ring.enter(if pending { Wait::No } else { Wait::Until(until) });
+    }
+    fn reap(&mut self, peers: &mut peers::Peers<'_, '_>) {
+        while let Some(complete) = self.ring.reap().pop() {
+            let (host, complete) = self.ring.complete(complete);
+            if host >= peers::FIRST
+                && let Some(report) = peers.completion(host, &complete)
+            {
+                self.fail(0, 0, report);
+            }
+            self.ring.returned(host, complete);
+        }
+        self.ring.deliver(0, &mut self.complete);
+        let mut roots = Queue::with_capacity(capacity::ROOT_OPERATIONS);
+        self.ring.deliver(1, &mut roots);
+        while let Some(complete) = roots.pop() {
+            if let Err(error) = complete.result {
+                self.fail(0, 0, format!("root close: {error:?}"));
+            }
+        }
+    }
+    fn start(&mut self, setup: &Harness, peers: &peers::Peers<'_, '_>) {
+        self.peer_addresses = peers.addresses();
+        for pages in &mut self.origins {
+            pages.peers(&self.peer_addresses);
+        }
+        while let Some(mut request) = self.startup.pop_front() {
+            if let io::Request::Spawn { owner: SERVER, spawn } = &mut request {
+                spawn.args =
+                    setup.args.iter().map(|arg| substitute(arg.as_bytes(), None, &self.peer_addresses)).collect();
+            }
+            self.requests.push_back(request);
+        }
+    }
+    fn report(self) -> Outcome {
         let mut outcome = self.outcome.expect("terminal outcome");
         if let Outcome::Failed { report, .. } = &mut outcome {
             write!(

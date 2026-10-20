@@ -4,17 +4,21 @@ use skein_lib::stream::{self, Held, Read};
 use skein_lib::{Time, Token, Wall};
 use std::net::{Ipv4Addr, SocketAddr};
 pub(super) fn response(path: &str) -> Vec<u8> {
+    response_body(path, b"http://{address}/", &[])
+}
+fn response_body(path: &str, body: &[u8], peers: &[(Box<[u8]>, String)]) -> Vec<u8> {
     let mut pages = serve::Pages::new(
         vec![serve::Page {
             path: b"/".as_slice().into(),
             kind: b"text/html".as_slice().into(),
-            body: b"http://{address}/".as_slice().into(),
+            body: body.into(),
             headers: vec![],
         }],
         Time::ZERO,
         Wall::EPOCH,
     );
     pages.address("127.0.0.1:9090");
+    pages.peers(peers);
     assert!(pages.pending());
     assert!(matches!(pages.take(), Some(Request::Listen { owner: serve::OWNER, .. })));
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 33333));
@@ -70,4 +74,14 @@ pub(super) fn response(path: &str) -> Vec<u8> {
     pages.event(Event::Closed { owner: serve::OWNER });
     assert!(pages.is_closed());
     wire
+}
+
+#[test]
+fn origin_bodies_replace_peer_and_server_placeholders() {
+    let wire = response_body(
+        "/",
+        b"{neighbor}/{address}/{neighbor}",
+        &[(b"neighbor".as_slice().into(), "127.0.0.1:8080".into())],
+    );
+    assert!(wire.ends_with(b"127.0.0.1:8080/127.0.0.1:9090/127.0.0.1:8080"));
 }

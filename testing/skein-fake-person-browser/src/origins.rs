@@ -49,6 +49,7 @@ pub struct Pages {
     pub pages: Vec<Page>,
     owner: Token,
     address: String,
+    peers: Vec<(Box<[u8]>, String)>,
 }
 
 impl Pages {
@@ -74,9 +75,13 @@ impl Pages {
             pages,
             owner,
             address: String::new(),
+            peers: Vec::new(),
         }
     }
 
+    pub(crate) fn peers(&mut self, peers: &[(Box<[u8]>, String)]) {
+        self.peers = peers.to_vec();
+    }
     pub(crate) fn address(&mut self, address: &str) {
         self.address.clear();
         self.address.push_str(address);
@@ -110,6 +115,7 @@ impl Pages {
             return;
         }
         self.stopping = true;
+        self.requests.retain(|request| !matches!(request, Request::Listen { .. }));
         if let Some(listener) = self.listener {
             self.requests.push_back(Request::Close { entity: listener });
         }
@@ -124,9 +130,15 @@ impl Pages {
                 self.listener = Some(listener);
                 let addr = addr.socket().expect("browser pages listen on loopback");
                 self.addr = Some(addr);
+                if self.stopping {
+                    self.requests.push_back(Request::Close { entity: listener });
+                }
             }
             io::Event::Accepted { owner, socket, .. } if owner == self.owner => {
-                if self.stopping {
+                if self.stopping
+                    || self.connections.len()
+                        >= usize::try_from(super::harness::capacity::ORIGIN_CONNECTIONS).expect("connection limit fits")
+                {
                     self.requests.push_back(Request::Reject { socket });
                     return;
                 }
@@ -185,7 +197,7 @@ impl Pages {
                         .map_or(if favicon { 204 } else { 404 }, |page| if page.kind.is_empty() { 204 } else { 200 });
                     let body = page.map_or_else(
                         || if favicon { Vec::new() } else { b"not found".to_vec() },
-                        |page| super::harness::replace_address(&page.body, &self.address).into_vec(),
+                        |page| super::harness::substitute(&page.body, Some(&self.address), &self.peers).into_vec(),
                     );
                     let mut headers = Vec::new();
                     if let Some(page) = page {

@@ -19,16 +19,36 @@ pub fn printed(output: &[u8], printed: &Printed<'_>) -> Vec<Opened> {
         })
         .collect()
 }
-pub(crate) fn restart(args: &[OsString], address: &str) -> Vec<Box<[u8]>> {
-    args.iter().map(|arg| replace_address(arg.as_bytes(), address)).collect()
+pub(crate) fn restart(args: &[OsString], address: &str, peers: &[(Box<[u8]>, String)]) -> Vec<Box<[u8]>> {
+    args.iter().map(|arg| substitute(arg.as_bytes(), Some(address), peers)).collect()
 }
-pub(crate) fn replace_address(bytes: &[u8], address: &str) -> Box<[u8]> {
-    let mut out = Vec::new();
+/// Each placeholder is read from the original bytes exactly once. Inserted
+/// addresses are never scanned, and unknown braces remain byte for byte.
+pub(crate) fn substitute(bytes: &[u8], address: Option<&str>, peers: &[(Box<[u8]>, String)]) -> Box<[u8]> {
+    let mut out = Vec::with_capacity(bytes.len());
     let mut rest = bytes;
-    while let Some(at) = rest.windows(9).position(|part| part == b"{address}") {
+    while let Some(at) = rest.iter().position(|byte| *byte == b'{') {
         out.extend_from_slice(&rest[..at]);
-        out.extend_from_slice(address.as_bytes());
-        rest = &rest[at + 9..];
+        rest = &rest[at..];
+        let known = if rest.starts_with(b"{address}") {
+            address.map(|address| (9, address))
+        } else {
+            peers.iter().find_map(|(name, value)| {
+                let end = name.len().checked_add(1)?;
+                if rest.get(1..end) == Some(name.as_ref()) && rest.get(end) == Some(&b'}') {
+                    Some((end.checked_add(1)?, value.as_str()))
+                } else {
+                    None
+                }
+            })
+        };
+        if let Some((end, value)) = known {
+            out.extend_from_slice(value.as_bytes());
+            rest = &rest[end..];
+        } else {
+            out.push(b'{');
+            rest = &rest[1..];
+        }
     }
     out.extend_from_slice(rest);
     out.into()
@@ -42,4 +62,34 @@ pub(crate) fn server_pipes(on: Output) -> Box<[Pipe]> {
 }
 pub(crate) fn opening(lines: &[Opened], names: Names, index: usize) -> Option<&Opened> {
     lines.get(if names == Names::Url { index } else { 0 })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::substitute;
+    #[test]
+    fn repeated_peer_and_server_placeholders_preserve_other_bytes() {
+        let peers = vec![(b"neighbor".as_slice().into(), "127.0.0.1:8".into())];
+        assert_eq!(
+            substitute(b"\xff{neighbor}/{address}/{neighbor}/{other}", Some("127.0.0.1:9"), &peers).as_ref(),
+            b"\xff127.0.0.1:8/127.0.0.1:9/127.0.0.1:8/{other}"
+        );
+    }
+    #[test]
+    fn initial_arguments_preserve_the_unknown_server_address() {
+        assert_eq!(
+            substitute(b"{address}/{neighbor}", None, &[(b"neighbor".as_slice().into(), "127.0.0.1:8".into())])
+                .as_ref(),
+            b"{address}/127.0.0.1:8"
+        );
+    }
+    #[test]
+    fn inserted_values_are_not_rewritten_in_either_peer_order() {
+        let mut peers =
+            vec![(b"first".as_slice().into(), "{second}".into()), (b"second".as_slice().into(), "127.0.0.1:8".into())];
+        for _ in 0..2 {
+            assert_eq!(substitute(b"{first}/{second}", None, &peers).as_ref(), b"{second}/127.0.0.1:8");
+            peers.reverse();
+        }
+    }
 }

@@ -694,6 +694,7 @@ name = "skein-fake-person-browser"
 version = "0.0.0"
 dependencies = [
  "skein-browser",
+ "skein-fake-peers",
  "skein-fake-person",
  "skein-http",
  "skein-io",
@@ -702,6 +703,7 @@ dependencies = [
  "skein-shell",
  "skein-ui",
  "skein-ui-web",
+ "skein-world",
 ]
 
 [[package]]
@@ -1207,9 +1209,11 @@ name = "skein-ui-web-tests"
 version = "0.0.0"
 dependencies = [
  "skein-browser",
+ "skein-fake-peers",
  "skein-fake-person",
  "skein-fake-person-browser",
  "skein-http",
+ "skein-io",
  "skein-lib",
  "skein-scratch",
  "skein-ui",
@@ -1217,6 +1221,7 @@ dependencies = [
  "skein-ui-example-server",
  "skein-ui-example-view",
  "skein-ui-web",
+ "skein-world",
 ]
 
 [[package]]

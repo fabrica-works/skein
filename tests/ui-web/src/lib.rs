@@ -112,3 +112,31 @@ pub fn page(path: &[u8], body: &[u8]) -> skein_fake_person_browser::origins::Pag
         headers: vec![],
     }
 }
+
+pub mod harness_peer;
+
+/// Prebuilt beside the UI test executables, as the example server is.
+#[must_use]
+pub fn harness_fixture() -> std::path::PathBuf {
+    let exe = std::env::current_exe().expect("test executable");
+    let binary = exe.parent().and_then(std::path::Path::parent).expect("target directory").join("harness_fixture");
+    assert!(binary.is_file(), "prebuild skein-ui-web-tests --bins");
+    binary
+}
+
+#[must_use]
+pub fn lending_harness(
+    args: &[&str],
+    origins: Vec<skein_fake_person_browser::harness::Origin>,
+) -> skein_fake_person_browser::Harness {
+    use skein_fake_person_browser::harness::{Harness, Names, Output, Printed, Setup};
+    Harness::new(Setup {
+        server: harness_fixture(),
+        args: std::iter::once("server").chain(args.iter().copied()).map(Into::into).collect(),
+        printed: Printed { prefix: b"fixture listening ", on: Output::Stderr, names: Names::Address },
+        restart: vec!["server".into()],
+        chromium: chromium(),
+        expected: vec![],
+        origins,
+    })
+}

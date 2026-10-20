@@ -190,7 +190,7 @@ fn a_printed_line_names_the_url_to_open_and_its_address() {
 fn a_restart_replaces_each_address_placeholder() {
     let args = ["serve".into(), "--at={address}/{address}".into()];
     assert_eq!(
-        crate::harness::restart(&args, "127.0.0.1:9"),
+        crate::harness::restart(&args, "127.0.0.1:9", &[]),
         vec![Box::from(b"serve".as_slice()), Box::from(b"--at=127.0.0.1:9/127.0.0.1:9".as_slice())]
     );
 }
