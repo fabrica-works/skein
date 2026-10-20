@@ -174,6 +174,7 @@ fn refusal(body: &Body) -> Option<&document::Refusal> {
             | Document::User(_)
             | Document::Compare(_)
             | Document::Permission(_)
+            | Document::Done
             | Document::BotUser(_)
             | Document::Repository(_)
             | Document::Branch(_)

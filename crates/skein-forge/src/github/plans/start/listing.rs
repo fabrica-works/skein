@@ -75,6 +75,7 @@ impl Listing {
                 | document::Document::User(_)
                 | document::Document::Compare(_)
                 | document::Document::Permission(_)
+                | document::Document::Done
                 | document::Document::BotUser(_)
                 | document::Document::Repository(_)
                 | document::Document::Branch(_)

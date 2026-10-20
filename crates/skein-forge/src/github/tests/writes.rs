@@ -1,4 +1,4 @@
-use super::fixtures::limits;
+use super::fixtures::{decode, limits};
 use crate::{
     api,
     github::{
@@ -186,5 +186,72 @@ fn github_write_resolution_and_first_failure() {
             write.heard(Heard::Failed(failed), bounds(), WORD, &mut tables),
             ended(Err(api::Error::Unavailable))
         );
+    }
+}
+
+fn close() -> api::Write {
+    api::Write::Close { number: NUMBER }
+}
+#[test]
+fn github_close_request_and_done() {
+    let mut tables = tables();
+    let mut plan = plan(close());
+    let request = begin(&mut plan, &mut tables);
+    golden(
+        &request,
+        Method::Patch,
+        b"/repos/acme/widgets/issues/9007199254740993",
+        Some(br#"{"state":"closed"}"#),
+        Some(Kind::Done),
+    );
+    let encoded = request::encode(&request, &limits()).unwrap();
+    assert_eq!(
+        crate::github::server::write_body(request.clone(), encoded.body.as_deref().unwrap(), &limits()),
+        Some(request.clone())
+    );
+    for body in
+        [b"{}".as_slice(), br#"{"state":true}"#, br#"{"state":"closed","state":"closed"}"#, br#"{"state":"open"}"#]
+    {
+        assert_eq!(crate::github::server::write_body(request.clone(), body, &limits()), None);
+    }
+    let mut out = skein_lib::Writer::new(2);
+    crate::github::server::done(&mut out).unwrap();
+    assert_eq!(out.finish().as_ref(), b"{}");
+    for chunk in [1, 7] {
+        assert_eq!(
+            decode(Kind::Done, br#"{"unknown":{"nested":[1,"alice"]}}"#, chunk, &limits()).1,
+            Ok(Document::Done)
+        );
+        decode(Kind::Done, b"[]", chunk, &limits()).1.unwrap_err();
+    }
+    head(&mut plan, 200, &mut tables);
+    assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+    let body_len = u32::try_from(encoded.body.unwrap().len()).unwrap();
+    for (body_bytes, ok) in [(body_len, true), (body_len - 1, false)] {
+        assert_eq!(request::encode(&request, &crate::github::limits::Limits { body_bytes, ..limits() }).is_ok(), ok);
+    }
+}
+#[test]
+fn github_close_replay_and_failures() {
+    for _attempt in 0_u32..2 {
+        let mut tables = tables();
+        let mut plan = plan(close());
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 200, &mut tables);
+        assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+    }
+    for (status, error) in [(422, api::Error::Refused), (409, api::Error::Refused), (500, api::Error::Timeout)] {
+        let mut tables = tables();
+        let mut plan = plan(close());
+        begin(&mut plan, &mut tables);
+        head(&mut plan, status, &mut tables);
+        assert_eq!(finish(&mut plan, refusal(b"unknown"), &mut tables), ended(Err(error)));
+    }
+    for body in [Body::Empty, Body::Document(Document::Rows)] {
+        let mut tables = tables();
+        let mut plan = plan(close());
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 200, &mut tables);
+        assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(api::Error::Timeout)));
     }
 }

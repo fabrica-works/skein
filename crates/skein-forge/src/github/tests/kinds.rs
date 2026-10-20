@@ -23,6 +23,7 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::Reachable { page: 1, per_page: 100 }, Kind::ReachableRows),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
+        (Request::Close { owner: owner(), name: name(), number: 9 }, Kind::Done),
         (Request::HookConfig, Kind::HookConfig),
         (Request::SetHook { url: Box::from(*b"https://example.test/hook") }, Kind::HookConfig),
         (Request::Conversion { code: Box::from(*b"code") }, Kind::Conversion),
@@ -75,6 +76,7 @@ fn github_decode_kind_is_none_for_raw_and_empty_answers() {
         Request::Raw { owner: owner(), name: name(), path: Box::from(*b"README.md"), commit: [7; 32] },
         Request::JobLog { owner: owner(), name: name(), id: 11 },
         Request::Uninstall { id: 3 },
+        Request::DeleteBranch { owner: owner(), name: name(), branch: Box::from(*b"alice") },
     ] {
         assert_eq!(decode::kind(&request), None, "{request:?}");
     }

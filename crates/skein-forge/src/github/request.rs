@@ -63,6 +63,7 @@ pub enum Request {
     Collaborators { owner: Box<[u8]>, name: Box<[u8]>, page: u32, per_page: u32 },
     Permission { owner: Box<[u8]>, name: Box<[u8]>, login: Box<[u8]> },
     User { id: u64 },
+    Close { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     DeleteBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
 }
 /// The permissions requested from an installation's mint.
@@ -129,6 +130,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
         | Request::Permission { .. }
+        | Request::Close { .. }
         | Request::User { .. } => {}
     }
     let mut out = Target { length: 0, writer: None };
@@ -174,6 +176,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Collaborators { .. }
         | Request::Permission { .. }
         | Request::DeleteBranch { .. }
+        | Request::Close { .. }
         | Request::User { .. } => Accept::Json,
     };
     let (method, auth) = selection(request);
@@ -287,6 +290,11 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::ReviewComments { .. }
         | Request::PullFiles { .. }
         | Request::Branches { .. } => return items_target(request, out),
+        Request::Close { owner, name, number } => {
+            out.repo(owner, name)?;
+            out.put(b"/issues/");
+            out.number(*number);
+        }
         Request::DeleteBranch { owner, name, branch } => {
             out.repo(owner, name)?;
             out.put(b"/git/refs/heads/");
@@ -464,6 +472,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Collaborators { .. }
         | Request::Permission { .. }
         | Request::DeleteBranch { .. }
+        | Request::Close { .. }
         | Request::User { .. } => unreachable!("item target dispatch"),
     }
     Ok(())
@@ -499,6 +508,7 @@ fn escape_digit(byte: u8) -> Option<u8> {
 
 fn selection(request: &Request) -> (Method, Auth) {
     match request {
+        Request::Close { .. } => (Method::Patch, Auth::Installation),
         Request::DeleteBranch { .. } => (Method::Delete, Auth::Installation),
         Request::Installations { .. } | Request::Installation { .. } | Request::App | Request::HookConfig => {
             (Method::Get, Auth::App)
@@ -538,7 +548,10 @@ fn selection(request: &Request) -> (Method, Auth) {
 }
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
-        Request::Mint { scope: Scope::Contents, .. } | Request::Viewer | Request::SetHook { .. } => {}
+        Request::Mint { scope: Scope::Contents, .. }
+        | Request::Viewer
+        | Request::SetHook { .. }
+        | Request::Close { .. } => {}
         Request::Mint { scope: Scope::Full, .. }
         | Request::Installations { .. }
         | Request::Installation { .. }
@@ -593,6 +606,10 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
 fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) {
     json.object_start();
     match request {
+        Request::Close { .. } => {
+            json.key(b"state");
+            json.string(b"closed");
+        }
         Request::Mint { .. } => {
             json.key(b"permissions");
             json.object_start();
@@ -704,6 +721,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Collaborators { .. }
         | Request::Permission { .. }
         | Request::DeleteBranch { .. }
+        | Request::Close { .. }
         | Request::User { .. } => unreachable!("App target dispatch"),
     }
     Ok(())

@@ -382,6 +382,7 @@ impl Plan {
                                 | document::Document::User(_)
                                 | document::Document::Compare(_)
                                 | document::Document::Permission(_)
+                                | document::Document::Done
                                 | document::Document::BotUser(_),
                             )
                             | Body::Raw { .. }

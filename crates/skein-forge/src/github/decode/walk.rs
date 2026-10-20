@@ -13,6 +13,7 @@ use skein_lib::Stack;
 /// Container roles in the first GitHub documents.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Node {
+    Done,
     Installation,
     InstallationAccount,
     InstallationRows,
@@ -363,6 +364,7 @@ fn document_fields(node: Node) -> &'static [Field] {
         | Node::ReviewRows
         | Node::RemarkRows
         | Node::CollaboratorRows
+        | Node::Done
         | Node::PullRows
         | Node::Reviewers
         | Node::Contexts
@@ -401,7 +403,8 @@ fn element(role: Role) -> Option<Role> {
         Node::GraphqlErrors => Some(Role::Document(Node::GraphqlError)),
         Node::BranchRows => Some(Role::Document(Node::BranchName)),
         Node::Errors => Some(Role::Document(Node::ErrorEntry)),
-        Node::PullObject
+        Node::Done
+        | Node::PullObject
         | Node::PullRef { .. }
         | Node::Reviewer
         | Node::CombinedObject
@@ -490,6 +493,7 @@ pub(super) struct Walk {
 impl Walk {
     pub(super) fn new(kind: document::Kind, limits: &Limits) -> Self {
         let node = match kind {
+            document::Kind::Done => Node::Done,
             document::Kind::Installation => Node::Installation,
             document::Kind::InstallationRows => Node::InstallationRows,
             document::Kind::Minted => Node::Minted,

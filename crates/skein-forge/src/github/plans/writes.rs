@@ -47,14 +47,13 @@ impl Plan {
             return Err(api::Error::InvalidAnswer);
         }
         match self.write {
-            api::Write::DeleteBranch { .. } => {}
+            api::Write::DeleteBranch { .. } | api::Write::Close { .. } => {}
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
-            | api::Write::Close { .. }
             | api::Write::Reopen { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
@@ -83,7 +82,29 @@ impl Plan {
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::Close { number } => Request::Close { owner, name, number: *number },
             api::Write::DeleteBranch { branch } => Request::DeleteBranch { owner, name, branch: branch.clone() },
+            api::Write::CreateIssue { .. }
+            | api::Write::OpenPull { .. }
+            | api::Write::Post { .. }
+            | api::Write::Review { .. }
+            | api::Write::Edit { .. }
+            | api::Write::SetReviewers { .. }
+            | api::Write::Reopen { .. }
+            | api::Write::Merge { .. }
+            | api::Write::Update { .. }
+            | api::Write::Status { .. }
+            | api::Write::CreateBranch { .. } => return Err(api::Error::Refused),
+        };
+        self.stage = Stage::Mutate;
+        Ok(self.send(request))
+    }
+    fn status(&self) -> u16 {
+        if self.asked() == Asked::DeleteBranch { 204 } else { 200 }
+    }
+    fn asked(&self) -> Asked {
+        match self.write {
+            api::Write::DeleteBranch { .. } => Asked::DeleteBranch,
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
@@ -95,16 +116,8 @@ impl Plan {
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
             | api::Write::Status { .. }
-            | api::Write::CreateBranch { .. } => return Err(api::Error::Refused),
-        };
-        self.stage = Stage::Mutate;
-        Ok(self.send(request))
-    }
-    fn status() -> u16 {
-        204
-    }
-    fn asked() -> Asked {
-        Asked::DeleteBranch
+            | api::Write::CreateBranch { .. } => Asked::Write { empty: false },
+        }
     }
     pub fn heard(
         &mut self,
@@ -163,7 +176,7 @@ impl Plan {
         body: Option<&crate::github::document::Refusal>,
         tables: &mut Tables,
     ) -> Result<api::Answer, api::Error> {
-        let asked = if self.stage == Stage::Mutate { Self::asked() } else { Asked::Read };
+        let asked = if self.stage == Stage::Mutate { self.asked() } else { Asked::Read };
         match failure::classify(asked, status, head, body) {
             Verdict::Fail(error, drop) => {
                 match drop {
@@ -188,7 +201,7 @@ impl Plan {
     fn advance(&mut self, heard: Heard, bounds: Bounds, tables: &mut Tables) -> Result<Option<Step>, api::Error> {
         match heard {
             Heard::Head { status, head } => {
-                let expected = if self.stage == Stage::Mutate { Self::status() } else { 200 };
+                let expected = if self.stage == Stage::Mutate { self.status() } else { 200 };
                 if status == expected {
                     self.response = Response::Body;
                 } else if (200..300).contains(&status) {
@@ -228,14 +241,16 @@ impl Plan {
                             | Document::App(_)
                             | Document::HookConfig(_)
                             | Document::Conversion(_)
-                        | Document::User(_)
-                        | Document::Compare(_)
-                        | Document::Permission(_)
+                            | Document::User(_)
+                            | Document::Compare(_)
+                            | Document::Permission(_)
+                            | Document::Done
                             | Document::BotUser(_)
                             | Document::Repository(_)
                             | Document::Branch(_)
                             | Document::Issue(_)
                             | Document::Pull(_)
+                            | Document::Job(_)
                             | Document::Combined(_)
                             | Document::Rows,
                         )
@@ -259,7 +274,9 @@ impl Plan {
                         self.row = Some(row);
                         return Ok(Some(self.mutation()?));
                     }
-                    Body::Empty if self.stage == Stage::Mutate => {}
+                    Body::Empty if self.stage == Stage::Mutate && self.asked() == Asked::DeleteBranch => {}
+                    Body::Document(Document::Done)
+                        if self.stage == Stage::Mutate && self.asked() != Asked::DeleteBranch => {}
                     Body::Document(
                         Document::Installation(_)
                         | Document::Minted(_)
@@ -268,14 +285,16 @@ impl Plan {
                         | Document::App(_)
                         | Document::HookConfig(_)
                         | Document::Conversion(_)
-                        | Document::User(_)
-                        | Document::Compare(_)
-                        | Document::Permission(_)
+                            | Document::User(_)
+                            | Document::Compare(_)
+                            | Document::Permission(_)
+                        | Document::Done
                         | Document::BotUser(_)
                         | Document::Repository(_)
                         | Document::Branch(_)
                         | Document::Issue(_)
                         | Document::Pull(_)
+                        | Document::Job(_)
                         | Document::Combined(_)
                         | Document::Rows
                         | Document::Error(_),

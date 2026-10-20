@@ -119,6 +119,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::Collaborators { .. } => Kind::CollaboratorRows,
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
+        Request::Close { .. } => Kind::Done,
         Request::Branch { .. } => Kind::Branch,
         Request::Branches { .. } => Kind::BranchRows,
         // Raw bodies, and an uninstall's empty answer.
@@ -268,6 +269,7 @@ impl Decoder {
                 | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
+                | Node::Done
                 | Node::Repository
                 | Node::Owner
                 | Node::Branch
@@ -295,6 +297,7 @@ impl Decoder {
                     Kind::Compare => Document::Compare(self.files.document()),
                     Kind::User => Document::User(self.user.clone()),
                     Kind::Permission => Document::Permission(self.permission),
+                    Kind::Done => Document::Done,
                     Kind::Pull => Document::Pull(self.pulls.pull()),
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
@@ -437,6 +440,7 @@ impl Decoder {
                 | Node::CollaboratorRows
                 | Node::User
                 | Node::Permission
+                | Node::Done
                 | Node::Repository
                 | Node::Owner
                 | Node::Branch

@@ -338,6 +338,7 @@ fn github_app_secrets_hidden() {
             | Document::User(_)
             | Document::Compare(_)
             | Document::Permission(_)
+            | Document::Done
             | Document::BotUser(_)
             | Document::Repository(_)
             | Document::Branch(_)
@@ -421,6 +422,7 @@ fn github_app_server_round_trip() {
                 | Request::ClassicProtection { .. }
                 | Request::Collaborators { .. }
                 | Request::Permission { .. }
+                | Request::Close { .. }
                 | Request::DeleteBranch { .. }
                 | Request::User { .. } => {}
             }
@@ -460,6 +462,7 @@ fn write_answer(case: &DocumentCase, out: &mut Writer) -> Result<(), skein_lib::
         Document::User(row) => server::user(row, out),
         Document::Compare(_) => panic!("App fixture"),
         Document::Permission(value) => server::permission(*value, out),
+        Document::Done => server::done(out),
         Document::BotUser(id) => server::bot_user(*id, out),
         Document::Rows => {
             let mut installations = skein_lib::List::with_capacity(3);
