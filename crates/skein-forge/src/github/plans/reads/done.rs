@@ -33,16 +33,24 @@ impl Plan {
                     | Read::Reviews { .. }
                     | Read::File { .. }
                     | Read::Compare { .. }
+                    | Read::PullFiles { .. }
                     | Read::Refused => Err(api::Error::InvalidAnswer),
                 }
             }
             document::Document::Compare(comparison) => self.compare_done(comparison, bounds),
             document::Document::User(user) => self.user_done(user, tables),
             document::Document::Permission(value) => self.permission_done(value, bounds),
-            document::Document::Pull(pull) => self.pull_done(pull, bounds),
+            document::Document::Pull(pull) => {
+                if let Read::PullFiles { .. } = self.read {
+                    self.file_pull_done(pull)
+                } else {
+                    self.pull_done(pull, bounds)
+                }
+            }
             document::Document::Combined(combined) => self.combined_done(combined, bounds),
             document::Document::Issue(issue) => self.issue_done(issue, bounds, word),
             document::Document::Rows => match self.read {
+                Read::PullFiles { .. } => self.file_listing_done(bounds),
                 Read::Reviews { .. } => self.reviews_done(bounds),
                 Read::Remarks { .. } => self.remarks_done(bounds),
                 Read::Collaborators { .. } => self.collaborators_done(bounds),
@@ -101,6 +109,7 @@ impl Plan {
             | Read::Reviews { .. }
             | Read::File { .. }
             | Read::Compare { .. }
+            | Read::PullFiles { .. }
                 if self.stage == Stage::Resolve =>
             {
                 None
@@ -118,6 +127,7 @@ impl Plan {
             | Read::Reviews { .. }
             | Read::File { .. }
             | Read::Compare { .. }
+            | Read::PullFiles { .. }
             | Read::Refused => {
                 return Err(api::Error::InvalidAnswer);
             }

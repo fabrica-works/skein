@@ -36,6 +36,9 @@ pub(super) enum Node {
     RemarkRows,
     ReviewRows,
     Compare,
+    MergeBaseOnly,
+    FileRows,
+    FileRow,
     CompareCommits,
     CompareCommit,
     CompareFiles,
@@ -154,6 +157,18 @@ fn document_fields(node: Node) -> &'static [Field] {
                     field(b"commits", Read::Container(Role::Document(Node::CompareCommits))),
                     field(b"files", Read::Container(Role::Document(Node::CompareFiles))),
                     optional(b"merge_base_commit", Read::Container(Role::Document(Node::MergeBase))),
+                ]
+            }
+        }
+        Node::MergeBaseOnly => {
+            const { &[field(b"merge_base_commit", Read::Container(Role::Document(Node::MergeBase)))] }
+        }
+        Node::FileRow => {
+            const {
+                &[
+                    field(b"filename", Read::Text),
+                    field(b"status", Read::Text),
+                    optional(b"previous_filename", Read::Text),
                 ]
             }
         }
@@ -312,7 +327,8 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::CompareCommits
+        Node::FileRows
+        | Node::CompareCommits
         | Node::CompareFiles
         | Node::ReviewRows
         | Node::RemarkRows
@@ -337,6 +353,7 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::FileRows => Some(Role::Document(Node::FileRow)),
         Node::CompareCommits => Some(Role::Document(Node::CompareCommit)),
         Node::CompareFiles => Some(Role::Document(Node::CompareFile)),
         Node::ReviewRows => Some(Role::Document(Node::Review)),
@@ -383,6 +400,8 @@ fn element(role: Role) -> Option<Role> {
         | Node::User
         | Node::Permission
         | Node::Compare
+        | Node::MergeBaseOnly
+        | Node::FileRow
         | Node::CompareCommit
         | Node::CompareFile
         | Node::MergeBase
@@ -449,6 +468,7 @@ impl Walk {
             document::Kind::BotUser => Node::BotUser,
             document::Kind::User => Node::User,
             document::Kind::Permission => Node::Permission,
+            document::Kind::FileRows => Node::FileRows,
             document::Kind::Compare => Node::Compare,
             document::Kind::ReviewRows => Node::ReviewRows,
             document::Kind::RemarkRows => Node::RemarkRows,
@@ -466,6 +486,9 @@ impl Walk {
             document::Kind::Error => Node::Error,
         };
         Self::root(Role::Document(node), limits)
+    }
+    pub(super) fn merge_base(limits: &Limits) -> Self {
+        Self::root(Role::Document(Node::MergeBaseOnly), limits)
     }
     /// A delivery has its own root but uses the same field masks and depth bound.
     pub(super) fn delivery(event: Hook, limits: &Limits) -> Self {

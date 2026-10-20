@@ -60,3 +60,43 @@ fn commit_json(commit: &api::Commit, json: &mut Encoder) -> Result<(), Overflow>
     json.object_end();
     Ok(())
 }
+
+/// Writes one page of pull file descriptors.
+pub fn file_rows(rows: &[document::File], out: &mut Writer) -> Result<(), Overflow> {
+    let limits = output_limits(out)?;
+    let mut measure = Encoder::measure(&limits);
+    file_rows_json(rows, &mut measure);
+    let Ok(length) = measure.measured() else {
+        return Err(Overflow);
+    };
+    let mut json = Encoder::write(length, &limits);
+    file_rows_json(rows, &mut json);
+    out.put(&json.finish())
+}
+fn file_rows_json(rows: &[document::File], json: &mut Encoder) {
+    json.array_start();
+    for row in rows {
+        json.object_start();
+        json.key(b"filename");
+        json.string(&row.path);
+        json.key(b"status");
+        json.string(status(row.status));
+        if let Some(previous) = &row.previous {
+            json.key(b"previous_filename");
+            json.string(previous);
+        }
+        json.object_end();
+    }
+    json.array_end();
+}
+fn status(status: document::FileStatus) -> &'static [u8] {
+    match status {
+        document::FileStatus::Added => b"added",
+        document::FileStatus::Removed => b"removed",
+        document::FileStatus::Renamed => b"renamed",
+        document::FileStatus::Modified => b"modified",
+        document::FileStatus::Changed => b"changed",
+        document::FileStatus::Copied => b"copied",
+        document::FileStatus::Unchanged => b"unchanged",
+    }
+}

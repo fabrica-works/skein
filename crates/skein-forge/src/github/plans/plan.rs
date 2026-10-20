@@ -8,6 +8,8 @@ pub struct Exchange {
     pub request: request::Request,
     /// Raw retention to apply while reading through the exchange body.
     pub retention: Option<Retention>,
+    /// Selects comparison fields without changing request kind dispatch.
+    pub comparison: Comparison,
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Step {
@@ -17,7 +19,7 @@ pub enum Step {
 impl Step {
     #[must_use]
     pub fn send(request: request::Request) -> Self {
-        Self::Send(Exchange { request, retention: None })
+        Self::Send(Exchange { request, retention: None, comparison: Comparison::Full })
     }
 }
 
@@ -85,4 +87,23 @@ pub enum Retention {
     Head { bytes: u32 },
     Tail { bytes: u32 },
     Whole { bytes: u32 },
+}
+
+/// A pull's merge-base lookup skips comparison completeness fields and lists.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Comparison {
+    Full,
+    MergeBase,
+}
+impl Exchange {
+    /// Selects the successful response decoder; error responses use `Kind::Error`.
+    #[must_use]
+    pub fn decoder(&self, limits: &crate::github::limits::Limits) -> Option<crate::github::decode::Decoder> {
+        let kind = crate::github::decode::kind(&self.request)?;
+        if kind == crate::github::document::Kind::Compare && self.comparison == Comparison::MergeBase {
+            Some(crate::github::decode::merge_base_decoder(limits))
+        } else {
+            Some(crate::github::decode::decoder(kind, limits))
+        }
+    }
 }

@@ -82,6 +82,7 @@ impl Plan {
             | Read::Reviews { .. }
             | Read::File { .. }
             | Read::Compare { .. }
+            | Read::PullFiles { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(self.send(request))
@@ -163,6 +164,7 @@ impl Plan {
             | Read::Reviews { .. }
             | Read::File { .. }
             | Read::Compare { .. }
+            | Read::PullFiles { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         }
         let pull = reading::pull(pull, api::Ci::None)?;
@@ -263,6 +265,7 @@ fn is_statuses(read: &Read) -> bool {
         | Read::Reviews { .. }
         | Read::File { .. }
         | Read::Compare { .. }
+        | Read::PullFiles { .. }
         | Read::Refused => false,
     }
 }

@@ -78,6 +78,13 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         terminal: false,
     }
 }
+/// Starts a comparison decoder that requires only the merge base.
+#[must_use]
+pub fn merge_base_decoder(limits: &Limits) -> Decoder {
+    let mut result = decoder(Kind::Compare, limits);
+    result.walk = Walk::merge_base(limits);
+    result
+}
 /// The document a request's 2xx answer decodes as, or `None` when it is no
 /// document: a raw body, an empty answer, or a read whose decoder is not built.
 /// An answer at 300 or above decodes as `Kind::Error`, whatever the request.
@@ -101,6 +108,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::PullsFor { .. } => Kind::PullRows,
         Request::CombinedStatus { .. } => Kind::CombinedStatus,
         Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::PullFiles { .. } => Kind::FileRows,
         Request::Compare { .. } => Kind::Compare,
         Request::Reviews { .. } => Kind::ReviewRows,
         Request::ReviewComments { .. } => Kind::RemarkRows,
@@ -115,7 +123,6 @@ pub fn kind(request: &Request) -> Option<Kind> {
         | Request::Uninstall { .. }
         // Reads whose documents are not decoded yet; each gains its kind with its decoder.
         | Request::Job { .. }
-        | Request::PullFiles { .. }
         | Request::RulesForBranch { .. }
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }
@@ -218,6 +225,9 @@ impl Decoder {
             }
             Move::End(
                 node @ (Node::Compare
+                | Node::MergeBaseOnly
+                | Node::FileRows
+                | Node::FileRow
                 | Node::CompareCommits
                 | Node::CompareCommit
                 | Node::CompareFiles
@@ -278,7 +288,8 @@ impl Decoder {
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
-                    Kind::ReviewRows
+                    Kind::FileRows
+                    | Kind::ReviewRows
                     | Kind::RemarkRows
                     | Kind::CollaboratorRows
                     | Kind::PullRows
@@ -302,6 +313,9 @@ impl Decoder {
         match (node, key, token) {
             (
                 node @ (Node::Compare
+                | Node::MergeBaseOnly
+                | Node::FileRows
+                | Node::FileRow
                 | Node::CompareCommits
                 | Node::CompareCommit
                 | Node::CompareFiles

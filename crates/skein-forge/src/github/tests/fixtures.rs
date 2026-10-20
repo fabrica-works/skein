@@ -56,11 +56,18 @@ pub fn wall() -> Wall {
     crate::forgejo::time::read(b"2026-10-20T08:00:00Z").unwrap()
 }
 pub fn decode(kind: Kind, body: &[u8], chunk: u32, limits: &Limits) -> (List<Row>, Result<Document, Malformed>) {
+    decode_with(decode::decoder(kind, limits), body, chunk, limits)
+}
+pub fn decode_with(
+    mut decoder: decode::Decoder,
+    body: &[u8],
+    chunk: u32,
+    limits: &Limits,
+) -> (List<Row>, Result<Document, Malformed>) {
     let mut limits = *limits;
     limits.json.chunk = chunk;
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json };
     let mut tokenizer = tokenizer::Tokenizer::new(&limits.json);
-    let mut decoder = decode::decoder(kind, &limits);
     let mut above = Queue::with_capacity(1);
     let mut below = Queue::with_capacity(1);
     let mut intake =

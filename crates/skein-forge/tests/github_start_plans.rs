@@ -298,14 +298,22 @@ impl TestPlan {
 #[test]
 fn github_start_listing_follows_every_page() {
     let mut plan = Listing::new();
-    let first = Exchange { request: Request::Installations { page: 1 }, retention: None };
+    let first = Exchange {
+        request: Request::Installations { page: 1 },
+        retention: None,
+        comparison: skein_forge::github::plans::plan::Comparison::Full,
+    };
     assert_eq!(plan.begin(bounds()), Ok(Step::Send(first.clone())));
     assert_eq!(plan.pending(), None);
     plan.set_pending(first.clone());
     assert_eq!(plan.pending(), Some(first));
     assert_eq!(plan.pending(), None);
     listing_head(&mut plan, true, bounds());
-    let second = Exchange { request: Request::Installations { page: 2 }, retention: None };
+    let second = Exchange {
+        request: Request::Installations { page: 2 },
+        retention: None,
+        comparison: skein_forge::github::plans::plan::Comparison::Full,
+    };
     assert_eq!(listing_page(&mut plan, &[INSTALLATION], bounds()), Ok(Some(Step::Send(second.clone()))));
     let encoded = request::encode(&second.request, &limits()).unwrap();
     assert_eq!(encoded.target.as_ref(), b"/app/installations?per_page=100&page=2");

@@ -405,4 +405,4 @@ mod reviews;
 pub use reviews::{remarks, reviews};
 
 mod files;
-pub use files::compare;
+pub use files::{compare, file_rows};

@@ -586,7 +586,8 @@ fn github_file_raw_target_and_prefix() {
         call.begin(),
         Ok(Step::Send(crate::github::plans::plan::Exchange {
             request: raw_request(),
-            retention: Some(crate::github::plans::plan::Retention::Head { bytes: 3 })
+            retention: Some(crate::github::plans::plan::Retention::Head { bytes: 3 }),
+            comparison: crate::github::plans::plan::Comparison::Full
         }))
     );
     call.head(false);
@@ -632,7 +633,8 @@ fn github_file_exact_limit_and_truncated() {
             call.begin(),
             Ok(Step::Send(crate::github::plans::plan::Exchange {
                 request: raw_request(),
-                retention: Some(crate::github::plans::plan::Retention::Head { bytes: cap })
+                retention: Some(crate::github::plans::plan::Retention::Head { bytes: cap }),
+                comparison: crate::github::plans::plan::Comparison::Full
             }))
         );
         call.head(false);
@@ -661,7 +663,7 @@ fn comparison(total_commits: u64, behind_by: u64) -> document::Compare {
     document::Compare { total_commits, behind_by, merge_base: Some(review(1).commit) }
 }
 fn file(path: &[u8]) -> document::File {
-    document::File { path: Box::from(path) }
+    document::File { path: Box::from(path), status: document::FileStatus::Modified, previous: None }
 }
 fn compare_rows(call: &mut Call, commit: bool) {
     if commit {
@@ -821,4 +823,274 @@ fn github_compare_absent_side_and_budget() {
     }
     let mut call = started(compare_read(), bounds());
     assert_eq!(call.done(Document::Rows), ended(Err(api::Error::InvalidAnswer)));
+}
+
+fn pull_files_read() -> api::Read {
+    api::Read::PullFiles { number: 3, head: review(1).commit, page: 2 }
+}
+fn merge_base() -> api::Commit {
+    crate::github::id::commit(b"1111111111111111111111111111111111111111").unwrap()
+}
+fn pull_files_listing(cap: Bounds, next: bool) -> Call {
+    let mut call = started(pull_files_read(), cap);
+    let exchange = sent(call.done(Document::Pull(fixtures::pull(3))));
+    assert_eq!(exchange.comparison, crate::github::plans::plan::Comparison::MergeBase);
+    assert_eq!(
+        exchange.request,
+        Request::Compare {
+            owner: owner(),
+            name: name(),
+            before: fixtures::pull(3).base_commit,
+            after: review(1).commit,
+            per_page: 1
+        }
+    );
+    call.head(false);
+    let exchange =
+        sent(call.done(Document::Compare(document::Compare { merge_base: Some(merge_base()), ..comparison(1000, 3) })));
+    let expected = cap.page_size.min(cap.rows).min(100).min(cap.answer_bytes / 64);
+    assert_eq!(
+        exchange.request,
+        Request::PullFiles { owner: owner(), name: name(), number: 3, page: 2, per_page: expected }
+    );
+    call.head(next);
+    call
+}
+fn side(exchange: crate::github::plans::plan::Exchange, path: &[u8], commit: api::Commit) {
+    assert_eq!(exchange.request, Request::Raw { owner: owner(), name: name(), path: Box::from(path), commit });
+    assert!(exchange.retention.is_some());
+}
+#[test]
+fn github_pull_files_stale_before_contents() {
+    golden(
+        &Request::Pull { owner: owner(), name: name(), number: 3 },
+        b"/repos/acme/widgets/pulls/3",
+        Some(Kind::Pull),
+        Accept::Json,
+    );
+    golden(&Request::Compare { owner:owner(),name:name(),before:fixtures::pull(3).base_commit,after:review(1).commit,per_page:1 },
+        b"/repos/acme/widgets/compare/abcdef0123456789abcdef0123456789abcdef01...0123456789abcdef0123456789abcdef01234567?per_page=1",Some(Kind::Compare),Accept::Json);
+    golden(
+        &Request::PullFiles { owner: owner(), name: name(), number: 3, page: 2, per_page: 4 },
+        b"/repos/acme/widgets/pulls/3/files?per_page=4&page=2",
+        Some(Kind::FileRows),
+        Accept::Json,
+    );
+    let mut call = started(pull_files_read(), bounds());
+    let mut pull = fixtures::pull(3);
+    pull.head_commit = merge_base();
+    assert_eq!(call.done(Document::Pull(pull)), ended(Err(api::Error::Stale)));
+    let mut call = started(pull_files_read(), bounds());
+    assert_eq!(call.done(Document::Pull(fixtures::pull(4))), ended(Err(api::Error::InvalidAnswer)));
+    let mut call = started(pull_files_read(), bounds());
+    assert_eq!(call.done(Document::Rows), ended(Err(api::Error::InvalidAnswer)));
+    let mut call = started(pull_files_read(), bounds());
+    let exchange = sent(call.done(Document::Pull(fixtures::pull(3))));
+    let mut wire = Writer::new(18000);
+    wire.put(br#"{"total_commits":1000,"behind_by":false,"commits":[{"sha":"bad"}],"files":["#).unwrap();
+    for i in 0..300u32 {
+        if i != 0 {
+            wire.put(b",").unwrap();
+        }
+        wire.put(br#"{"filename":"x","status":null}"#).unwrap();
+    }
+    wire.put(br#"],"merge_base_commit":{"sha":"1111111111111111111111111111111111111111"}}"#).unwrap();
+    let wire = bytes(wire);
+    let mut cap = limits();
+    cap.inner = 0;
+    cap.json.length = 18000;
+    for chunk in [1, 7] {
+        let (rows, result) = fixtures::decode_with(exchange.decoder(&cap).unwrap(), &wire, chunk, &cap);
+        assert!(rows.is_empty());
+        assert_eq!(
+            result,
+            Ok(Document::Compare(document::Compare { total_commits: 0, behind_by: 0, merge_base: Some(merge_base()) }))
+        );
+        decode(Kind::Compare, &wire, chunk, &cap).1.unwrap_err();
+        for bad in [
+            b"{}".as_slice(),
+            br#"{"merge_base_commit":null}"#,
+            br#"{"merge_base_commit":{"sha":"A"}}"#,
+            br#"{"merge_base_commit":{"sha":"1111111111111111111111111111111111111111","sha":null}}"#,
+        ] {
+            fixtures::decode_with(exchange.decoder(&cap).unwrap(), bad, chunk, &cap).1.unwrap_err();
+        }
+    }
+    call.head(false);
+    assert_eq!(
+        call.done(Document::Compare(document::Compare { merge_base: None, ..comparison(0, 0) })),
+        ended(Err(api::Error::InvalidAnswer))
+    );
+}
+#[test]
+fn github_pull_files_merge_base_rename_add_remove() {
+    use document::FileStatus;
+    let rows = [
+        document::File {
+            status: FileStatus::Renamed,
+            previous: Some(Box::from(*b"dir/old name")),
+            ..file(b"dir/new name")
+        },
+        document::File { status: FileStatus::Added, ..file(b"added") },
+        document::File { status: FileStatus::Removed, ..file(b"removed") },
+    ];
+    let mut wire = Writer::new(1024);
+    server::file_rows(&rows, &mut wire).unwrap();
+    document(
+        Kind::FileRows,
+        &bytes(wire),
+        Document::Rows,
+        &[Row::File(rows[0].clone()), Row::File(rows[1].clone()), Row::File(rows[2].clone())],
+    );
+    for status in [FileStatus::Modified, FileStatus::Changed, FileStatus::Copied, FileStatus::Unchanged] {
+        let row = document::File { status, ..file(b"x") };
+        let mut wire = Writer::new(256);
+        server::file_rows(core::slice::from_ref(&row), &mut wire).unwrap();
+        document(Kind::FileRows, &bytes(wire), Document::Rows, &[Row::File(row)]);
+    }
+    let mut call = pull_files_listing(bounds(), true);
+    for row in rows {
+        call.heard(Heard::Row(Row::File(row))).unwrap();
+    }
+    side(sent(call.done(Document::Rows)), b"dir/old name", merge_base());
+    call.head(false);
+    side(sent(raw_body(&mut call, b"old", false)), b"dir/new name", review(1).commit);
+    call.head(false);
+    side(sent(raw_body(&mut call, b"new", false)), b"added", review(1).commit);
+    call.head(false);
+    side(sent(raw_body(&mut call, b"add", false)), b"removed", merge_base());
+    call.head(false);
+    let expected = api::Answer::PullFiles {
+        head: review(1).commit,
+        more: true,
+        files: Box::from([
+            api::File {
+                path: Box::from(*b"dir/new name"),
+                before: Some(Box::from(*b"old")),
+                after: Some(Box::from(*b"new")),
+            },
+            api::File { path: Box::from(*b"added"), before: None, after: Some(Box::from(*b"add")) },
+            api::File { path: Box::from(*b"removed"), before: Some(Box::from(*b"gone")), after: None },
+        ]),
+    };
+    assert_eq!(raw_body(&mut call, b"gone", false), ended(Ok(expected)));
+    for wire in [
+        br#"[{"filename":"x","status":"future"}]"#.as_slice(),
+        br#"[{"filename":"x","status":"renamed"}]"#,
+        br#"[{"filename":"x","status":false}]"#,
+        br#"[{"filename":"x","status":"added","filename":null}]"#,
+        br#"[{"status":"removed"}]"#,
+        br#"[{"filename":"x","status":"renamed","previous_filename":false}]"#,
+    ] {
+        malformed(Kind::FileRows, wire);
+    }
+}
+#[test]
+fn github_pull_files_page_and_budget() {
+    for more in [false, true] {
+        let mut call = pull_files_listing(bounds(), more);
+        assert_eq!(
+            call.done(Document::Rows),
+            ended(Ok(api::Answer::PullFiles { head: review(1).commit, files: Box::from([]), more }))
+        );
+        let mut call = pull_files_listing(bounds(), more);
+        call.heard(Heard::Row(Row::File(file(b"x")))).unwrap();
+        sent(call.done(Document::Rows));
+        let mut raw_head = Head::new();
+        raw_head.next = !more;
+        call.heard(Heard::Head { status: 404, head: raw_head }).unwrap();
+        assert_eq!(
+            call.heard(Heard::Head { status: 404, head: Head::new() }),
+            ended(Ok(api::Answer::PullFiles {
+                head: review(1).commit,
+                files: Box::from([api::File { path: Box::from(*b"x"), before: None, after: None }]),
+                more
+            }))
+        );
+    }
+    for (body, more, ok) in [(b"abc".as_slice(), false, true), (b"abcd", false, false), (b"abc", true, false)] {
+        let mut call = pull_files_listing(Bounds { answer_bytes: 68, ..bounds() }, false);
+        call.heard(Heard::Row(Row::File(file(b"x")))).unwrap();
+        sent(call.done(Document::Rows));
+        let exchange = sent(call.heard(Heard::Head { status: 404, head: Head::new() }));
+        assert_eq!(exchange.retention, Some(crate::github::plans::plan::Retention::Whole { bytes: 3 }));
+        call.head(false);
+        let result = raw_body(&mut call, body, more);
+        if ok {
+            assert_eq!(
+                result,
+                ended(Ok(api::Answer::PullFiles {
+                    head: review(1).commit,
+                    more: false,
+                    files: Box::from([api::File {
+                        path: Box::from(*b"x"),
+                        before: None,
+                        after: Some(Box::from(*b"abc"))
+                    }])
+                }))
+            );
+        } else {
+            assert_eq!(result, ended(Err(api::Error::TooLarge)));
+        }
+    }
+    let mut call = pull_files_listing(Bounds { page_size: 1, ..bounds() }, false);
+    call.heard(Heard::Row(Row::File(file(b"x")))).unwrap();
+    assert_eq!(call.heard(Heard::Row(Row::File(file(b"y")))), ended(Err(api::Error::TooLarge)));
+    for cap in [65, 66] {
+        let mut call = pull_files_listing(Bounds { answer_bytes: cap, ..bounds() }, false);
+        let result = call.heard(Heard::Row(Row::File(document::File {
+            status: document::FileStatus::Renamed,
+            previous: Some(Box::from(*b"y")),
+            ..file(b"x")
+        })));
+        if cap == 66 {
+            assert_eq!(result, Ok(None));
+        } else {
+            assert_eq!(result, ended(Err(api::Error::TooLarge)));
+        }
+    }
+    for (wire, fits) in [
+        (br#"[{"filename":"x","status":"modified"}]"#.as_slice(), true),
+        (br#"[{"filename":"x","status":"modified"},{"filename":"y","status":"added"}]"#.as_slice(), false),
+    ] {
+        let mut cap = limits();
+        cap.inner = 1;
+        for chunk in [1, 7] {
+            assert_eq!(decode(Kind::FileRows, wire, chunk, &cap).1.is_ok(), fits);
+        }
+    }
+    file_path_limits();
+    let mut call = pull_files_listing(bounds(), false);
+    call.heard(Heard::Row(Row::File(file(b"x")))).unwrap();
+    sent(call.done(Document::Rows));
+    let mut head = Head::new();
+    head.json = true;
+    assert_eq!(call.heard(Heard::Head { status: 200, head }), ended(Err(api::Error::InvalidAnswer)));
+    let mut call = pull_files_listing(bounds(), false);
+    call.heard(Heard::Row(Row::File(file(b"x")))).unwrap();
+    sent(call.done(Document::Rows));
+    assert_eq!(call.heard(Heard::Failed(Failure::Seen)), ended(Err(api::Error::Timeout)));
+}
+
+fn file_path_limits() {
+    for length in [128usize, 129] {
+        for key in [b"filename".as_slice(), b"previous_filename"] {
+            let mut wire = Writer::new(512);
+            wire.put(br#"[{"filename":"x","status":"modified","#).unwrap();
+            // Only one filename member is emitted when that is the bounded field.
+            if key == b"filename" {
+                wire = Writer::new(512);
+                wire.put(br#"[{"status":"modified","#).unwrap();
+            }
+            wire.put(b"\"").unwrap();
+            wire.put(key).unwrap();
+            wire.put(b"\":\"").unwrap();
+            wire.put(&[b'x'; 129][..length]).unwrap();
+            wire.put(b"\"}]").unwrap();
+            let wire = bytes(wire);
+            for chunk in [1, 7] {
+                assert_eq!(decode(Kind::FileRows, &wire, chunk, &limits()).1.is_ok(), length == 128);
+            }
+        }
+    }
 }

@@ -86,6 +86,9 @@ impl State {
             | Node::BotUser => {}
             Node::User
             | Node::Compare
+            | Node::MergeBaseOnly
+            | Node::FileRows
+            | Node::FileRow
             | Node::CompareCommits
             | Node::CompareCommit
             | Node::CompareFiles
@@ -152,6 +155,7 @@ impl State {
             Kind::BotUser => Document::BotUser(self.bot),
             Kind::User
             | Kind::Compare
+            | Kind::FileRows
             | Kind::ReviewRows
             | Kind::RemarkRows
             | Kind::CollaboratorRows
@@ -240,6 +244,9 @@ impl State {
                 | Node::BotUser
                 | Node::User
                 | Node::Compare
+                | Node::MergeBaseOnly
+                | Node::FileRows
+                | Node::FileRow
                 | Node::CompareCommits
                 | Node::CompareCommit
                 | Node::CompareFiles

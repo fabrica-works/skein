@@ -37,6 +37,7 @@ enum Read {
     Reviews { number: u64, page: u32 },
     File { head: api::Commit, path: Box<[u8]>, max_bytes: u32 },
     Compare { before: api::Commit, after: api::Commit },
+    PullFiles { number: u64, head: api::Commit, page: u32 },
     Refused,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -52,6 +53,9 @@ enum Stage {
     Permission,
     Raw,
     Compare,
+    FilePull,
+    MergeBase,
+    FileListing,
     Before,
     After,
     Done,
@@ -105,10 +109,8 @@ impl Plan {
             api::Read::Remarks { number, review, page } => Read::Remarks { number, review, page },
             api::Read::Collaborators { page } => Read::Collaborators { page },
             api::Read::Permission { user } => Read::Permission { user },
-            api::Read::PullFiles { .. }
-            | api::Read::Checks { .. }
-            | api::Read::Job { .. }
-            | api::Read::Protection { .. } => Read::Refused,
+            api::Read::PullFiles { number, head, page } => Read::PullFiles { number, head, page },
+            api::Read::Checks { .. } | api::Read::Job { .. } | api::Read::Protection { .. } => Read::Refused,
         };
         Self {
             repository,
@@ -153,7 +155,7 @@ impl Plan {
             }
             Read::Items { .. } | Read::Item { .. } => self.issue_admission(bounds)?,
             Read::Pull { .. } | Read::PullFor { .. } | Read::Statuses { .. } => self.pull_admission(bounds)?,
-            Read::Compare { .. } => self.files_admission(bounds)?,
+            Read::Compare { .. } | Read::PullFiles { .. } => self.files_admission(bounds)?,
             Read::File { path, max_bytes, .. } => {
                 let path = u32::try_from(path.len()).ok().ok_or(api::Error::TooLarge)?;
                 let room = bounds.answer_bytes.checked_sub(path).ok_or(api::Error::TooLarge)?;
@@ -205,6 +207,7 @@ impl Plan {
         match self.read {
             Read::Permission { .. } => return self.permission_initial(),
             Read::Compare { .. } => return self.compare_initial(),
+            Read::PullFiles { .. } => return self.pull_files_initial(),
             Read::File { .. } => return self.file_initial(),
             Read::Reviews { .. } => return self.reviews_initial(),
             Read::Remarks { .. } => return self.remarks_initial(),
@@ -243,6 +246,7 @@ impl Plan {
             | Read::Reviews { .. }
             | Read::File { .. }
             | Read::Compare { .. }
+            | Read::PullFiles { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         self.stage = Stage::Read;
@@ -315,6 +319,7 @@ impl Plan {
                         | Read::Reviews { .. }
                         | Read::File { .. }
                         | Read::Compare { .. }
+                        | Read::PullFiles { .. }
                         | Read::Refused => {}
                     }
                     self.response = Response::Body { next: head.next };
@@ -394,7 +399,7 @@ impl Plan {
         tables: &mut Tables,
     ) -> Result<(), api::Error> {
         match self.read {
-            Read::Compare { .. } => return self.file_row(row, bounds),
+            Read::Compare { .. } | Read::PullFiles { .. } => return self.file_row(row, bounds),
             Read::Reviews { .. } => return self.review_row(row, bounds, word),
             Read::Remarks { .. } => return self.remark_row(row, bounds),
             Read::Collaborators { .. } => return self.collaborator_row(row, bounds, tables),

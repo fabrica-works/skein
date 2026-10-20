@@ -42,6 +42,7 @@ pub enum Kind {
     ReviewRows,
     /// A comparison envelope with streamed commits and filenames.
     Compare,
+    FileRows,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -296,4 +297,17 @@ pub struct Compare {
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct File {
     pub path: Box<[u8]>,
+    pub status: FileStatus,
+    pub previous: Option<Box<[u8]>>,
+}
+/// Statuses determine which raw sides a pull file can have.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum FileStatus {
+    Added,
+    Removed,
+    Renamed,
+    Modified,
+    Changed,
+    Copied,
+    Unchanged,
 }
