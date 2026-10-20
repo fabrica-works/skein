@@ -1,5 +1,7 @@
 mod check;
 mod fixtures;
+mod github_fixtures;
+mod github_given;
 mod given;
 mod host;
 mod item;

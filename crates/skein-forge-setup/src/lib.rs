@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 extern crate alloc;
 pub mod check;
+pub mod github;
 pub mod given;
 pub mod host;
 pub mod item;
