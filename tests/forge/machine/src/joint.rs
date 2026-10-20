@@ -9,6 +9,8 @@ use skein_forge::api;
 use skein_forge_connection::{Component, Event, Limits, Request, Settings, Shared};
 use skein_lib::{Duration, Env, Queue, ReplyTo, Rng, Time, Token, Wall};
 use std::collections::BTreeMap;
+mod github;
+
 const LISTENER: Token = Token::new(1_u64 << 57_u32);
 
 /// Startup traffic measured independently of call terminals.
@@ -34,7 +36,8 @@ pub struct Joint {
     pub above: Queue<Event>,
     pub below: Queue<skein_io::Request>,
     peers: BTreeMap<Token, Peer>,
-    service: Service,
+    service: Option<Service>,
+    github: Option<github::Github>,
     hook_listener: Option<Token>,
     hook_peers: BTreeMap<Token, crate::hooks::Peer>,
     pub hints: Vec<skein_forge_connection::hooks::Hinted>,
@@ -47,6 +50,10 @@ pub struct Joint {
     fake_out: Queue<fake::Request>,
     pub answers: BTreeMap<u64, skein_forge_connection::Answered>,
     pub observations: Vec<fake::Observation>,
+    pub installations: Vec<Event>,
+    pub facts: Vec<Event>,
+    pub git_tokens: Vec<Event>,
+    pub stopped: Vec<(u16, skein_forge_connection::Stopped)>,
     rng: Rng,
     cut_chance: u32,
     direct: Option<Result<raw::Answer, raw::Error>>,
@@ -103,7 +110,40 @@ impl Joint {
         shared: Shared,
         checks: raw::Checks,
     ) -> Self {
-        let fake_config = fixtures::fake_config();
+        Self::build(seed, cut_chance, Some(config), limits, settings, shared, checks)
+    }
+    /// Serves the fake GitHub App through this joint's seeded, cutting pipes.
+    /// The caller supplies accepted installations and access through `action`,
+    /// or configures access in settings. No hook listener is provided: GitHub
+    /// webhooks come through the delivery log, whose fake is not available here.
+    #[must_use]
+    pub fn github(
+        seed: u64,
+        cut_chance: u32,
+        limits: Limits,
+        settings: Settings,
+        shared: Shared,
+        checks: raw::Checks,
+    ) -> Self {
+        Self::build(seed, cut_chance, None, limits, settings, shared, checks)
+    }
+    fn build(
+        seed: u64,
+        cut_chance: u32,
+        config: Option<protocol::Config>,
+        limits: Limits,
+        settings: Settings,
+        shared: Shared,
+        checks: raw::Checks,
+    ) -> Self {
+        let is_github = config.is_none();
+        let mut fake_config = fixtures::fake_config();
+        if is_github {
+            fake_config.latency_min = Duration::ZERO;
+            fake_config.latency_max = Duration::ZERO;
+            fake_config.skew = fake::Skew::None;
+        }
+        let path = if is_github { b"acme/widgets".as_slice() } else { b"org/repo".as_slice() };
         let fake_limits = fixtures::fake_limits();
         let mut domain = fake::Domain::new(&fake_config, seed);
         fake::repository(
@@ -111,22 +151,23 @@ impl Joint {
             &fake_config,
             raw::Setup {
                 id: 2,
-                name: Box::from(b"org/repo".as_slice()),
+                name: Box::from(path),
                 default: Box::from(b"main".as_slice()),
                 tree: Box::from([]),
                 labels: Box::from([]),
                 checks,
                 protection: None,
-                hooked: config.hooks.is_some(),
+                hooked: config.as_ref().is_some_and(|config| config.hooks.is_some()),
             },
         );
-        fake::grant(&mut domain, b"org/repo", 1, raw::Permission::Admin);
-        fake::grant(&mut domain, b"org/repo", 2, raw::Permission::Write);
-        let now = Time::from_nanos(100_000_000_000);
+        fake::grant(&mut domain, path, if is_github { 9 } else { 1 }, raw::Permission::Admin);
+        fake::grant(&mut domain, path, 2, raw::Permission::Write);
+        let now = if is_github { Time::ZERO } else { Time::from_nanos(100_000_000_000) };
+        let wall = if is_github { crate::github::WALL_BASE } else { Wall::from_nanos(now.as_nanos()) };
         let forges = settings.forges.iter().map(|forge| forge.number).collect();
         let mut world = Self {
             component: Component::new(settings, &limits, &shared).expect("component"),
-            env: Env { now, wall: Wall::from_nanos(now.as_nanos()), limits },
+            env: Env { now, wall, limits },
             above: Queue::with_capacity(128),
             below: Queue::with_capacity(128),
             peers: BTreeMap::new(),
@@ -136,13 +177,22 @@ impl Joint {
             next_hook: 1_u64 << 58_u32,
             hook_waiting: false,
             hook_posts: std::collections::VecDeque::new(),
-            service: Service::new(config, &fake_limits, seed).expect("service"),
-            fake_env: Env { now, wall: Wall::EPOCH, limits: fake_config },
+            service: config.map(|config| Service::new(config, &fake_limits, seed).expect("service")),
+            github: is_github.then(|| github::Github::new(seed)),
+            fake_env: Env {
+                now: if is_github { Time::from_nanos(wall.as_nanos()) } else { now },
+                wall: if is_github { wall } else { Wall::EPOCH },
+                limits: fake_config,
+            },
             protocol_env: Env { now, wall: Wall::from_nanos(now.as_nanos()), limits: fake_limits },
             domain,
             fake_out: Queue::with_capacity(fake::MAX_OUT),
             answers: BTreeMap::new(),
             observations: Vec::new(),
+            installations: Vec::new(),
+            facts: Vec::new(),
+            git_tokens: Vec::new(),
+            stopped: Vec::new(),
             rng: Rng::new(seed),
             cut_chance,
             direct: None,
@@ -158,16 +208,16 @@ impl Joint {
         world
     }
     pub fn call(&mut self, call: u64, repository: api::Repository, op: api::Op) {
-        self.component.down(
-            &self.env,
-            Request::Call { call: Token::new(call), repository, op },
-            &mut self.above,
-            &mut self.below,
-        );
+        self.action(Request::Call { call: Token::new(call), repository, op });
+    }
+    /// Hands an owner request to the component without adding startup actions.
+    pub fn action(&mut self, request: Request) {
+        self.component.down(&self.env, request, &mut self.above, &mut self.below);
     }
     #[must_use]
     pub fn busy(&self) -> bool {
         !self.below.is_empty()
+            || self.github.as_ref().is_some_and(github::Github::busy)
             || self.peers.values().any(|peer| {
                 peer.pipe.has_work() || peer.server.has_work() || !peer.below.is_empty() || !peer.above.is_empty()
             })
@@ -176,28 +226,39 @@ impl Joint {
         let end = self.env.now.saturating_add(span);
         while self.env.now < end {
             self.tick();
-            let busy = self.peers.values().any(|peer| {
-                peer.pipe.has_work() || peer.server.has_work() || !peer.below.is_empty() || !peer.above.is_empty()
-            });
-            let next = if busy
-                || !self.below.is_empty()
+            let next = if self.busy()
                 || !self.hook_posts.is_empty()
                 || self.hook_peers.values().any(|peer| peer.wire.received.is_empty())
             {
                 self.env.now.saturating_add(Duration::from_nanos(100_000))
             } else {
                 let component = self.component.next_deadline().unwrap_or(end);
-                let fake = self.domain.next_deadline().unwrap_or(end);
+                let fake = self.domain.next_deadline().map_or(end, |at| {
+                    if self.github.is_some() {
+                        Time::from_nanos(at.as_nanos().saturating_sub(crate::github::WALL_BASE.as_nanos()))
+                    } else {
+                        at
+                    }
+                });
                 component.min(fake).max(self.env.now.saturating_add(Duration::from_nanos(100_000)))
             };
             self.time(next.min(end));
         }
         self.tick();
     }
+    /// Sets the component's monotonic clock. GitHub's wall and domain clock
+    /// follow `github::WALL_BASE + now`. Forgejo's HTTP clock keeps its
+    /// configured skew and its domain wall stays at the epoch.
     pub fn time(&mut self, now: Time) {
         self.env.now = now;
-        self.env.wall = Wall::from_nanos(now.as_nanos());
-        self.fake_env.now = now;
+        if self.github.is_some() {
+            self.env.wall = Wall::from_nanos(crate::github::WALL_BASE.as_nanos().saturating_add(now.as_nanos()));
+            self.fake_env.now = Time::from_nanos(self.env.wall.as_nanos());
+            self.fake_env.wall = self.env.wall;
+        } else {
+            self.env.wall = Wall::from_nanos(now.as_nanos());
+            self.fake_env.now = now;
+        }
         self.protocol_env.now = fake::time(&self.fake_env.limits, now);
         self.protocol_env.wall = Wall::from_nanos(self.protocol_env.now.as_nanos());
     }
@@ -208,10 +269,20 @@ impl Joint {
         while let Some(request) = self.below.pop() {
             self.io(request);
         }
+        if let Some(mut github) = self.github.take() {
+            github.tick(self);
+            self.github = Some(github);
+        }
         let owners: Vec<_> = self.peers.keys().copied().collect();
         for owner in owners {
             let peer = self.peers.get_mut(&owner).expect("peer");
-            protocol::resume(&mut peer.server, &mut self.service, &self.protocol_env, &mut peer.above, &mut peer.below);
+            protocol::resume(
+                &mut peer.server,
+                self.service.as_mut().expect("Forgejo service"),
+                &self.protocol_env,
+                &mut peer.above,
+                &mut peer.below,
+            );
             if peer.server.take_head().is_some() && peer.heads.pop_front().expect("head follows first byte") {
                 self.starts.served += 1;
             }
@@ -221,7 +292,7 @@ impl Joint {
             if let Some(up) = peer.pipe.server_up() {
                 protocol::up(
                     &mut peer.server,
-                    &mut self.service,
+                    self.service.as_mut().expect("Forgejo service"),
                     &self.protocol_env,
                     up,
                     &mut peer.above,
@@ -255,13 +326,16 @@ impl Joint {
                         assert!(self.direct.replace(result).is_none(), "one direct answer");
                         continue;
                     }
-                    if let Ok((owner, reply)) =
-                        self.service.target(fake::Request::Reply { to: ReplyTo::new(token), result })
+                    if let Ok((owner, reply)) = self
+                        .service
+                        .as_mut()
+                        .expect("Forgejo service")
+                        .target(fake::Request::Reply { to: ReplyTo::new(token), result })
                         && let Some(peer) = self.peers.get_mut(&owner)
                     {
                         protocol::down(
                             &mut peer.server,
-                            &mut self.service,
+                            self.service.as_mut().expect("Forgejo service"),
                             &self.protocol_env,
                             reply,
                             &mut peer.above,
@@ -270,7 +344,9 @@ impl Joint {
                     }
                 }
                 hook @ fake::Request::Hook { .. } => {
-                    if let Some(post) = self.service.delivery(&hook, &self.protocol_env.limits) {
+                    if let Some(post) =
+                        self.service.as_mut().expect("Forgejo service").delivery(&hook, &self.protocol_env.limits)
+                    {
                         self.hook_posts.push_back(post);
                     }
                 }
@@ -280,26 +356,45 @@ impl Joint {
         if self.component.next_deadline().is_some_and(|at| at <= self.env.now) {
             self.component.fire(&self.env, &mut self.above, &mut self.below);
         }
+        self.component_events();
+        while let Some(observation) = self.domain.pop_observation() {
+            self.observations.push(observation);
+        }
+        if let Some(service) = &mut self.service {
+            service.reclaim();
+        }
+        self.domain.reclaim();
+        self.component.reclaim();
+    }
+    fn component_events(&mut self) {
         while let Some(event) = self.above.pop() {
             self.events.push(format!("{event:?}"));
             match event {
                 Event::Answered(answer) => {
                     assert!(self.answers.insert(answer.call.raw(), answer).is_none(), "one answer per call");
                 }
-                Event::Stopped { forge, why } => panic!("forge {forge} stopped: {why:?}"),
+                Event::Stopped { forge, why } => {
+                    assert!(self.github.is_some(), "forge {forge} stopped: {why:?}");
+                    self.stopped.push((forge, why));
+                }
                 Event::Hint(hint) => self.hints.push(hint),
-                Event::Installation { .. } | Event::Fact { .. } | Event::GitToken { .. } => panic!("Forgejo fixture"),
+                event @ Event::Installation { .. } => {
+                    assert!(self.github.is_some(), "Forgejo fixture");
+                    self.installations.push(event);
+                }
+                event @ Event::Fact { .. } => {
+                    assert!(self.github.is_some(), "Forgejo fixture");
+                    self.facts.push(event);
+                }
+                event @ Event::GitToken { .. } => {
+                    assert!(self.github.is_some(), "Forgejo fixture");
+                    self.git_tokens.push(event);
+                }
                 Event::ListenerLost => panic!("hook listener lost"),
                 Event::Connected { .. } => self.connected += 1,
                 Event::Closed => self.closed = true,
             }
         }
-        while let Some(observation) = self.domain.pop_observation() {
-            self.observations.push(observation);
-        }
-        self.service.reclaim();
-        self.domain.reclaim();
-        self.component.reclaim();
     }
     fn accept_hook(&mut self) {
         if !self.hook_waiting
@@ -334,6 +429,11 @@ impl Joint {
         }
     }
     fn io(&mut self, request: skein_io::Request) {
+        if let Some(mut github) = self.github.take() {
+            github.io(self, request);
+            self.github = Some(github);
+            return;
+        }
         match request {
             skein_io::Request::Connect { owner, .. } => {
                 let cut =
@@ -348,7 +448,7 @@ impl Joint {
                 };
                 protocol::start(
                     &mut peer.server,
-                    &mut self.service,
+                    self.service.as_mut().expect("Forgejo service"),
                     &self.protocol_env,
                     &mut peer.above,
                     &mut peer.below,
@@ -408,6 +508,11 @@ impl Joint {
         }
     }
     pub(crate) fn end(&mut self, owner: Token) {
+        if let Some(mut github) = self.github.take() {
+            github.end(self, owner);
+            self.github = Some(github);
+            return;
+        }
         if owner == LISTENER
             && let Some(owner) = self.hook_listener.take()
         {
@@ -427,13 +532,22 @@ impl Joint {
                     self.starts.cut_in_head += 1;
                 }
             }
-            protocol::closed(&mut peer.server, &mut self.service, &self.protocol_env, &mut peer.above, &mut peer.below);
+            protocol::closed(
+                &mut peer.server,
+                self.service.as_mut().expect("Forgejo service"),
+                &self.protocol_env,
+                &mut peer.above,
+                &mut peer.below,
+            );
             self.up(skein_io::Event::Closed { owner });
         }
     }
     #[must_use]
     pub fn start_counts(&self) -> StartCounts {
         let mut counts = self.starts;
+        if let Some(github) = &self.github {
+            github.start_counts(&mut counts);
+        }
         for peer in self.peers.values() {
             let requests = peer.pipe.request_counts();
             if requests.cut_in_head > 0 && peer.heads.front() == Some(&true) {
@@ -445,6 +559,9 @@ impl Joint {
     #[must_use]
     pub fn request_counts(&self) -> RequestCounts {
         let mut counts = self.closed_counts;
+        if let Some(github) = &self.github {
+            github.request_counts(&mut counts);
+        }
         for peer in self.peers.values() {
             let requests = peer.pipe.request_counts();
             counts.written += requests.written;
@@ -463,9 +580,16 @@ impl Joint {
     pub fn answered(&self, call: u64) -> Option<&skein_forge_connection::Answered> {
         self.answers.get(&call)
     }
+    /// HTTP entrances, including startup. GitHub uses the shared route names
+    /// where available; its App and GraphQL routes count as unrouted, and its
+    /// authenticated requests count under the fixture bot's identity.
     #[must_use]
     pub fn tally(&self) -> &Tally {
-        self.service.tally()
+        if let Some(github) = &self.github {
+            &github.tally
+        } else {
+            self.service.as_ref().expect("Forgejo service").tally()
+        }
     }
     #[must_use]
     pub fn now(&self) -> Time {
@@ -481,7 +605,7 @@ impl Joint {
             fake::Event::Call {
                 reply_to: ReplyTo::new(Token::new(u64::MAX)),
                 user: 2,
-                repository: Box::from(b"org/repo".as_slice()),
+                repository: Box::from(if self.github.is_some() { b"acme/widgets".as_slice() } else { b"org/repo" }),
                 op,
             },
             &mut self.fake_out,
@@ -497,7 +621,10 @@ impl Joint {
     }
     /// Drops the old process's connections and installs its fresh component.
     pub fn replace(&mut self, component: Component) {
-        let owners: Vec<_> = self.peers.keys().copied().collect();
+        let mut owners: Vec<_> = self.peers.keys().copied().collect();
+        if let Some(github) = &self.github {
+            owners.extend(github.owners());
+        }
         for owner in owners {
             self.end(owner);
         }

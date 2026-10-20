@@ -82,15 +82,7 @@ impl Fake {
             blob: Box::from(BLOB_ORIGIN),
             third_origin: third_origin.map(Box::from),
             blob_redirect: blob_redirect.map(Box::from),
-            app: App {
-                id: 7,
-                slug: Box::from(b"test-app".as_slice()),
-                owner: 1,
-                permissions,
-                events,
-                key: app_key(),
-                webhook: Secret::new(Box::from(b"test-webhook".as_slice())),
-            },
+            app: App { permissions, events, ..fixture_app() },
             app_facts: facts,
             shown: skein_fake_forge_github::service::Shown::Ruleset,
             ruleset_id: 17,
@@ -158,6 +150,10 @@ impl Fake {
         assert!(store.suspend(3, true), "third installation exists");
         let (domain, config) = fixture_domain(seed, has_logs);
         Self { service, domain, config }
+    }
+
+    pub(crate) fn into_service(self) -> Service {
+        self.service
     }
 
     /// Scenario access to the fake's installation store.
@@ -368,6 +364,18 @@ fn response_head(status: u16, wall: Wall, media: Option<&str>) -> Vec<u8> {
         bytes.extend_from_slice(format!("Content-Type: {media}\r\n").as_bytes());
     }
     bytes
+}
+
+pub(crate) fn fixture_app() -> App {
+    App {
+        id: 7,
+        slug: Box::from(b"test-app".as_slice()),
+        owner: 1,
+        permissions: Box::from([]),
+        events: Box::from([]),
+        key: app_key(),
+        webhook: Secret::new(Box::from(b"test-webhook".as_slice())),
+    }
 }
 
 /// The fake App's public test key.

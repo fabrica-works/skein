@@ -304,3 +304,24 @@ pub fn locate_script() -> Vec<crate::machine::Answer> {
         (LOCATE, br#"{"id":1,"owner":{"id":1,"login":"fixture"},"name":"specimen","object_format_name":"sha1","default_branch":"main","default_merge_style":"merge","allow_merge_commits":true,"allow_squash_merge":true,"allow_rebase":true,"html_url":"http://127.0.0.1:3000/fixture/specimen"}"#.as_slice()),
     ].into_iter().map(|(request, body)| Answer { request, response: Response::Bytes(response(200, body)) }).collect()
 }
+
+/// Settings for the fake GitHub App, awaiting the owner's records and Connect.
+#[must_use]
+pub fn github_settings() -> Settings {
+    let mut settings = unconnected();
+    settings.forges.get_mut(0).expect("forge").kind = Kind::GitHub;
+    settings
+}
+
+/// The fake GitHub App's public test key and bot identity.
+#[must_use]
+pub fn github_access() -> Access {
+    Access {
+        credential: skein_forge::credential::Credential::App {
+            id: 7,
+            key: Secret::new(Box::from(crate::github::app_key())),
+        },
+        user: 9,
+        webhook_secret: None,
+    }
+}
