@@ -25,7 +25,7 @@ pub fn answer(error: Error, route: Route, now: Time) -> Failure {
             failure.retry_after = Some(nanos.div_ceil(1_000_000_000));
             429
         }
-        Error::Exists => 409,
+        Error::Exists | Error::AlreadyQueued(_) => 409,
         Error::Stale => return refusal(Refusal::HeadOutOfDate),
         Error::Conflict => {
             return refusal(if route == Route::Merge { Refusal::MergeConflict } else { Refusal::UpdateConflict });

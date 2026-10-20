@@ -27,6 +27,7 @@ pub(crate) struct Repository {
     /// The labels defined.
     pub(crate) labels: Set<Box<[u8]>>,
     pub(crate) items: Map<u64, Item>,
+    pub(crate) queue: List<crate::api::QueueEntry>,
     /// The items by when they were last updated, for listings.
     pub(crate) recent: Set<(Time, u64)>,
     /// The item each comment is on, by the comment's id.
@@ -150,6 +151,7 @@ impl Repository {
             permissions: Map::with_capacity(limits.users),
             labels: Set::with_capacity(limits.labels),
             items: Map::with_capacity(limits.items),
+            queue: List::with_capacity(limits.items),
             recent: Set::with_capacity(limits.items),
             comments: Map::with_capacity(limits::comments(limits).unwrap_or(u32::MAX)),
             numbered: 0,

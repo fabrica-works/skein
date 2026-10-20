@@ -151,6 +151,8 @@ fn repository(limits: &Limits) -> Option<u64> {
         .checked_add(Set::<(Time, u64)>::worst_case(limits.items)?)?
         .checked_add(Map::<u64, u64>::worst_case(comments)?)?
         .checked_add(times(limits.items, item(limits)?)?)?;
+    // At most one retained admission per item, with no owned payload bytes.
+    let queue = List::<crate::api::QueueEntry>::worst_case(limits.items)?;
     let branches = Map::<Box<[u8]>, u64>::worst_case(limits.branches)?.checked_add(times(limits.branches, name)?)?;
     let has = Set::<u64>::worst_case(limits.commits)?;
     let contexts = Map::<Box<[u8]>, Status>::worst_case(limits.contexts)?.checked_add(times(limits.contexts, name)?)?;
@@ -164,6 +166,7 @@ fn repository(limits: &Limits) -> Option<u64> {
         .checked_add(permissions)?
         .checked_add(labels)?
         .checked_add(items)?
+        .checked_add(queue)?
         .checked_add(branches)?
         .checked_add(has)?
         .checked_add(statuses)?

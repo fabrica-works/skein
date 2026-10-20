@@ -364,6 +364,12 @@ pub(crate) fn pull(domain: &Domain, limits: &Limits, repository: &Repository, nu
     }
     let statuses = statuses(repository, limits, pull.commit);
     let reviewers = numbers(&pull.requested);
+    let mut queued = None;
+    for entry in &repository.queue {
+        if entry.number == number {
+            queued = Some(*entry);
+        }
+    }
     Ok(PullView {
         number,
         state: item.state,
@@ -376,6 +382,11 @@ pub(crate) fn pull(domain: &Domain, limits: &Limits, repository: &Repository, nu
             None => None,
         },
         merged: pull.merged,
+        queue_required: match &repository.protection {
+            Some(protection) => protection.queue && protection.branch == pull.base,
+            None => false,
+        },
+        queued,
         mergeable,
         reviewers,
         reviews: reviews.into_boxed(),
@@ -408,6 +419,9 @@ fn allowed(repository: &Repository, item: &Item, pull: &Pull) -> bool {
     };
     if *protection.branch != *pull.base {
         return true;
+    }
+    if protection.queue {
+        return false;
     }
     for context in &protection.contexts {
         let passed = match repository.statuses.get(&pull.commit) {
@@ -517,4 +531,39 @@ pub(crate) fn reviewers(
         }
     }
     request(domain, env, id, user, number, numbers(&requested))
+}
+
+/// Admits an open pull at its exact head, retaining repository admission order.
+pub(crate) fn enqueue(
+    domain: &mut Domain,
+    env: &Env<Config>,
+    id: Id<Repository>,
+    user: u64,
+    number: u64,
+    head: u64,
+) -> Result<Answer, Error> {
+    let repository = domain.repositories.get_mut(id).expect("a repository of the forge");
+    repository.require(user, Permission::Write)?;
+    let item = repository.item(number)?;
+    let pull = item.pull.as_ref().ok_or(Error::Missing(What::Pull))?;
+    if item.state == State::Closed {
+        return Err(Error::Closed);
+    }
+    if pull.commit != head {
+        return Err(Error::Stale);
+    }
+    for entry in &repository.queue {
+        if entry.number == number {
+            return Err(Error::AlreadyQueued(*entry));
+        }
+    }
+    let position = repository.queue.len().checked_add(1).ok_or(Error::Full)?;
+    if repository.queue.push(crate::api::QueueEntry { number, head, position }).is_err() {
+        return Err(Error::Full);
+    }
+    repository.touch(number, domain::clock(env));
+    let observation = Observation::Enqueued { repository: copy_of(&repository.name), number, head, position, by: user };
+    domain::changed(domain, env, id, observation, Hook::item(Change::Pull, number, user));
+    let repository = domain.repositories.get(id).expect("a repository of the forge");
+    view(domain, &env.limits.limits, repository, number)
 }

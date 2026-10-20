@@ -3,6 +3,7 @@
 mod actions;
 mod locate;
 mod next;
+mod queue;
 
 use alloc::boxed::Box;
 
@@ -986,8 +987,13 @@ fn a_working_tree_commits_into_the_one_store() {
 #[test]
 fn a_branch_is_deleted_unless_it_is_the_default_or_protected() {
     let mut setup = setup();
-    setup.protection =
-        Some(Protection { branch: copy_of(b"release"), contexts: names(&[]), approvals: 0, dismiss_stale: false });
+    setup.protection = Some(Protection {
+        queue: false,
+        branch: copy_of(b"release"),
+        contexts: names(&[]),
+        approvals: 0,
+        dismiss_stale: false,
+    });
     let mut h = Harness::with(CALM, setup);
     h.ok(ENGINE, create_branch(b"work", FIRST));
     assert_eq!(h.call(ENGINE, delete_branch(MAIN)), Err(Error::Protected), "the default");
@@ -1032,8 +1038,13 @@ fn deleting_a_branch_closes_the_pull_requests_from_or_into_it() {
 #[test]
 fn a_protected_branch_is_not_created() {
     let mut setup = setup();
-    setup.protection =
-        Some(Protection { branch: copy_of(b"release"), contexts: names(&[]), approvals: 0, dismiss_stale: false });
+    setup.protection = Some(Protection {
+        queue: false,
+        branch: copy_of(b"release"),
+        contexts: names(&[]),
+        approvals: 0,
+        dismiss_stale: false,
+    });
     let mut h = Harness::with(CALM, setup);
     assert_eq!(h.call(ENGINE, create_branch(b"release", FIRST)), Err(Error::Protected));
     assert_eq!(h.push(ENGINE, b"release", FIRST), Err(Error::Protected));
@@ -1162,8 +1173,13 @@ fn a_merge_of_what_the_base_has_already_is_refused() {
 #[test]
 fn protection_wants_green_ci_and_approvals_of_the_exact_head_where_stale_ones_are_dismissed() {
     let mut setup = setup();
-    setup.protection =
-        Some(Protection { branch: copy_of(MAIN), contexts: names(&[b"ci"]), approvals: 1, dismiss_stale: true });
+    setup.protection = Some(Protection {
+        queue: false,
+        branch: copy_of(MAIN),
+        contexts: names(&[b"ci"]),
+        approvals: 1,
+        dismiss_stale: true,
+    });
     let mut h = Harness::with(CALM, setup);
     let work = h.commit(FIRST, &[(b"src", b"one")]);
     assert_eq!(h.push(ENGINE, MAIN, work), Err(Error::Protected), "nothing is pushed to it");
@@ -1192,8 +1208,13 @@ fn protection_wants_green_ci_and_approvals_of_the_exact_head_where_stale_ones_ar
 #[test]
 fn protection_counts_official_approvals_of_any_head_by_default() {
     let mut setup = setup();
-    setup.protection =
-        Some(Protection { branch: copy_of(MAIN), contexts: names(&[]), approvals: 2, dismiss_stale: false });
+    setup.protection = Some(Protection {
+        queue: false,
+        branch: copy_of(MAIN),
+        contexts: names(&[]),
+        approvals: 2,
+        dismiss_stale: false,
+    });
     let mut h = Harness::with(CALM, setup);
     let work = h.commit(FIRST, &[(b"src", b"one")]);
     h.push(ENGINE, b"work", work).expect("pushed");
@@ -1290,8 +1311,13 @@ fn ci_runs_a_context_again_after_it_settled_once() {
 #[test]
 fn a_pending_review_is_hidden_until_it_is_submitted_and_keeps_its_place() {
     let mut setup = setup();
-    setup.protection =
-        Some(Protection { branch: copy_of(MAIN), contexts: Box::new([]), approvals: 1, dismiss_stale: false });
+    setup.protection = Some(Protection {
+        queue: false,
+        branch: copy_of(MAIN),
+        contexts: Box::new([]),
+        approvals: 1,
+        dismiss_stale: false,
+    });
     let mut h = Harness::with(CALM, setup);
     let work = h.commit(FIRST, &[(b"src", b"one")]);
     h.push(ENGINE, b"work", work).expect("pushed");
@@ -1767,8 +1793,13 @@ fn webhooks_name_the_branch_and_commit_a_push_or_status_is_about() {
 #[test]
 fn refused_writes_and_rejected_pushes_are_observed() {
     let mut setup = setup();
-    setup.protection =
-        Some(Protection { branch: copy_of(MAIN), contexts: names(&[b"ci"]), approvals: 0, dismiss_stale: false });
+    setup.protection = Some(Protection {
+        queue: false,
+        branch: copy_of(MAIN),
+        contexts: names(&[b"ci"]),
+        approvals: 0,
+        dismiss_stale: false,
+    });
     setup.checks.silent = 1000;
     let mut h = Harness::with(CALM, setup);
     let work = h.commit(FIRST, &[(b"src", b"one")]);

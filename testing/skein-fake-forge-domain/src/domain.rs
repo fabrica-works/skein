@@ -315,6 +315,12 @@ impl Domain {
         reads::read(self, config, id, read)
     }
 
+    /// Retained admissions in repository order, without faults or observation effects.
+    pub fn queue_entries(&self, repository: &[u8]) -> Result<&[crate::api::QueueEntry], Error> {
+        let id = *self.names.get(repository).ok_or(Error::Missing(What::Repository))?;
+        Ok(self.repositories.get(id).expect("live repository name").queue.as_slice())
+    }
+
     /// Metadata for the protocol's provider-specific repository document.
     pub fn metadata(&self, repository: &[u8]) -> Result<Metadata, Error> {
         let Some(&id) = self.names.get(repository) else {
@@ -462,6 +468,7 @@ fn call(
             | Write::RemoveReviewers { .. }
             | Write::Review { .. }
             | Write::Submit { .. }
+            | Write::Enqueue { .. }
             | Write::Merge { .. }
             | Write::Close { .. }
             | Write::Reopen { .. }
@@ -576,6 +583,7 @@ fn execute(domain: &mut Domain, env: &Env<Config>, user: u64, repository: &[u8],
             Write::SetReviewers { number, reviewers } => pulls::request(domain, env, id, user, number, reviewers),
             Write::Review { number, verdict, body } => pulls::review(domain, env, id, user, number, verdict, body),
             Write::Submit { number, review, verdict } => pulls::submit(domain, env, id, user, number, review, verdict),
+            Write::Enqueue { number, head } => pulls::enqueue(domain, env, id, user, number, head),
             Write::Merge { number, head } => pulls::merge(domain, env, id, user, number, head),
             Write::Update { number } => crate::next::update(domain, env, id, user, number),
             Write::CreateBranch { branch, commit } => git::create(domain, env, id, user, &branch, commit),

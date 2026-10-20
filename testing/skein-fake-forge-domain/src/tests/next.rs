@@ -123,7 +123,13 @@ fn comparisons_ignore_paging_and_refuse_incomplete_data_explicitly() {
 #[test]
 fn adoption_metadata_and_protection_permission_match_the_probe() {
     let mut configured = setup();
-    let protection = Protection { branch: copy_of(MAIN), contexts: names(&[b"ci"]), approvals: 1, dismiss_stale: true };
+    let protection = Protection {
+        queue: false,
+        branch: copy_of(MAIN),
+        contexts: names(&[b"ci"]),
+        approvals: 1,
+        dismiss_stale: true,
+    };
     configured.protection = Some(protection.clone());
     let mut h = Harness::with(CALM, configured);
     assert_eq!(h.call(ENGINE, read(Read::Protection { branch: copy_of(MAIN) })), Err(Error::Forbidden));

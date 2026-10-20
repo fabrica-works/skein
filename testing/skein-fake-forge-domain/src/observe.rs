@@ -146,6 +146,14 @@ pub enum Observation {
         commit: u64,
         by: u64,
     },
+    /// The exact head was admitted at its repository queue position.
+    Enqueued {
+        repository: Box<[u8]>,
+        number: u64,
+        head: u64,
+        position: u32,
+        by: u64,
+    },
     /// A write or a git call was refused for `error`, and changed nothing:
     /// `what` it was, the item `number` and the `commit` it named, if it
     /// named them. Reads, and calls on a repository the forge does not
@@ -204,6 +212,7 @@ pub enum Operation {
     Review,
     Submit,
     Merge,
+    Enqueue,
     Update,
     Close,
     Reopen,
@@ -239,6 +248,7 @@ pub(crate) fn subject(op: &Op) -> Option<(Operation, Option<u64>, Option<u64>)> 
             | Write::SetReviewers { number, .. } => (Operation::SetReviewers, Some(*number), None),
             Write::Review { number, .. } => (Operation::Review, Some(*number), None),
             Write::Submit { number, .. } => (Operation::Submit, Some(*number), None),
+            Write::Enqueue { number, head } => (Operation::Enqueue, Some(*number), Some(*head)),
             Write::Merge { number, head } => (Operation::Merge, Some(*number), Some(*head)),
             Write::Update { number } => (Operation::Update, Some(*number), None),
             Write::CreateBranch { commit, .. } => (Operation::Create, None, Some(*commit)),

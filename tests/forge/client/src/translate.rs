@@ -173,7 +173,7 @@ pub fn error(error: forge::Error, now: Time) -> client::Error {
         },
         forge::Error::TooLarge => client::Error::TooLarge,
         forge::Error::Full => client::Error::Full,
-        forge::Error::Exists => client::Error::Exists,
+        forge::Error::Exists | forge::Error::AlreadyQueued(_) => client::Error::Exists,
         forge::Error::Circular | forge::Error::Refused => client::Error::Refused,
         forge::Error::NothingToMerge => client::Error::NothingToMerge,
         forge::Error::Empty => client::Error::Empty,

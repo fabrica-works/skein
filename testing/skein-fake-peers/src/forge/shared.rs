@@ -70,6 +70,8 @@ pub(super) fn bound(limits: &Limits, protocol: &protocol::Limits, protocol_bound
             u64::from(call_capacity(protocol, forge)?)
                 .checked_mul(u64::try_from(size_of::<Call>()).ok()?.checked_add(payload)?)?,
         )?
+        // Each frozen record owns a full inline slot, including a pull's
+        // queue metadata; separately allocated payload bytes follow it.
         .checked_add(u64::from(limits.observations).checked_mul(u64::try_from(size_of::<Observation>()).ok()?)?)?
         .checked_add(u64::from(limits.observation_bytes))
 }

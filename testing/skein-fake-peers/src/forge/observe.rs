@@ -203,6 +203,7 @@ impl Heap for api::Write {
             Self::PutPage { name, content } => sum(&[name.heap(), content.heap()]),
             Self::DeleteComment { .. }
             | Self::Submit { .. }
+            | Self::Enqueue { .. }
             | Self::Merge { .. }
             | Self::Update { .. }
             | Self::Close { .. }

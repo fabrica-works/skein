@@ -300,6 +300,12 @@ pub enum Write {
         number: u64,
         head: u64,
     },
+    /// Admits the exact head to the merge queue. Answered by the pull's
+    /// updated view; an existing entry is refused as `AlreadyQueued`. Needs write permission.
+    Enqueue {
+        number: u64,
+        head: u64,
+    },
     /// Merge the current base into the pull's branch, keeping both parents
     /// and starting CI at the new head. A conflict leaves it unchanged.
     Update {
@@ -487,6 +493,8 @@ pub enum Error {
     /// A label of that name is defined, or an open pull request has the same
     /// head and base.
     Exists,
+    /// The pull already has this retained admission; no second entry was made.
+    AlreadyQueued(QueueEntry),
     /// An item would depend on itself, or on an item that depends on it.
     Circular,
     /// The head has nothing the base does not have.
@@ -591,12 +599,24 @@ pub struct Pull {
     pub merge_base: Option<u64>,
     /// The commit its merge made.
     pub merged: Option<u64>,
+    /// Whether its base currently requires queue admission.
+    pub queue_required: bool,
+    /// Its retained merge-queue entry, if admitted.
+    pub queued: Option<QueueEntry>,
     /// Whether the head merges into the base without a conflict.
     pub mergeable: bool,
     /// The users asked to review it who have not yet, in their order.
     pub reviewers: Box<[u64]>,
     pub reviews: Box<[Review]>,
     pub statuses: Box<[Status]>,
+}
+
+/// An admission in repository order, numbered from one.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct QueueEntry {
+    pub number: u64,
+    pub head: u64,
+    pub position: u32,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -797,6 +817,8 @@ pub struct Cue {
 /// that head if `dismiss_stale`, and of any head if not (Forgejo's default).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Protection {
+    /// Requires admission through the merge queue; false for ordinary protection.
+    pub queue: bool,
     pub branch: Box<[u8]>,
     pub contexts: Box<[Box<[u8]>]>,
     pub approvals: u32,

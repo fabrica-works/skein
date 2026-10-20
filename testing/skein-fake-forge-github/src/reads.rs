@@ -309,6 +309,7 @@ fn refused(error: Error, limits: &Limits) -> Response {
         Error::RateLimited { .. }
         | Error::TooLarge
         | Error::Full
+        | Error::AlreadyQueued(_)
         | Error::Exists
         | Error::Circular
         | Error::NothingToMerge

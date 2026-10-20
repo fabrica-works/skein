@@ -127,6 +127,7 @@ fn setup(index: u64) -> Setup {
             cue: Some(Cue { path: name(b'p', 0), green: text(LIMITS.content_bytes, b'g') }),
         },
         protection: Some(Protection {
+            queue: false,
             branch: name(b'z', 0),
             contexts: names(b'c', LIMITS.contexts),
             approvals: 1,
@@ -388,7 +389,14 @@ fn fill(forge: &mut Measured, index: u64, first: u64) {
             head: name(b'w', branch),
             base: name(b'b', 0),
         };
-        forge.ok(AUTHOR, &repository, Op::Write(open));
+        let number = forge.ok(AUTHOR, &repository, Op::Write(open)).expect("opened pull");
+        let Answer::Pull(pull) = forge.domain.inspect(&config, &repository, &Read::Pull { number }).expect("pull")
+        else {
+            panic!("pull view")
+        };
+        // Each of the fixture's two pulls holds one fixed-size admission;
+        // the repository budgets limits.items QueueEntry slots, including issues.
+        forge.ok(AUTHOR, &repository, Op::Write(Write::Enqueue { number, head: pull.commit }));
     }
     for _ in 0..2_u32 {
         let create = Write::CreateIssue {

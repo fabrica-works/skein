@@ -90,6 +90,7 @@ impl Referee {
             | Observation::Edited { .. }
             | Observation::Removed { .. }
             | Observation::Reported { .. }
+            | Observation::Enqueued { .. }
             | Observation::Merged { .. }
             | Observation::Refused { .. }
             | Observation::Rejected { .. }
