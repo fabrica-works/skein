@@ -13,6 +13,7 @@ pub(crate) mod delivery;
 mod issues;
 mod people;
 mod pulls;
+mod reviews;
 mod walk;
 use walk::{Move, Node, Walk};
 /// The result of one event, with its next demand returned beside it.
@@ -34,6 +35,7 @@ pub struct Decoder {
     user: document::User,
     permission: crate::api::Permission,
     collaborator: document::Collaborator,
+    reviews: reviews::State,
     repository: document::Repository,
     branch: document::Branch,
     message: Box<[u8]>,
@@ -53,6 +55,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
         user: document::User { id: 0, login: Box::from([]) },
         permission: crate::api::Permission::None,
         collaborator: people::collaborator(),
+        reviews: reviews::State::new(),
         repository: document::Repository {
             id: 0,
             owner: Box::from([]),
@@ -95,6 +98,7 @@ pub fn kind(request: &Request) -> Option<Kind> {
         Request::PullsFor { .. } => Kind::PullRows,
         Request::CombinedStatus { .. } => Kind::CombinedStatus,
         Request::CheckRuns { .. } => Kind::CheckRuns,
+        Request::ReviewComments { .. } => Kind::RemarkRows,
         Request::Collaborators { .. } => Kind::CollaboratorRows,
         Request::User { .. } => Kind::User,
         Request::Permission { .. } => Kind::Permission,
@@ -106,7 +110,6 @@ pub fn kind(request: &Request) -> Option<Kind> {
         | Request::Uninstall { .. }
         // Reads whose documents are not decoded yet; each gains its kind with its decoder.
         | Request::Reviews { .. }
-        | Request::ReviewComments { .. }
         | Request::Job { .. }
         | Request::PullFiles { .. }
         | Request::Compare { .. }
@@ -194,7 +197,15 @@ impl Decoder {
                     return Ok((tokenizer::Request::Next, Step::Row(row)));
                 }
             }
-            Move::BodyLong(Some(node), length) => self.issues.long(node, length),
+            Move::End(node @ (Node::RemarkRows | Node::Remark | Node::RemarkUser)) => {
+                if let Some(row) = self.reviews.end(node) {
+                    return Ok((tokenizer::Request::Next, Step::Row(row)));
+                }
+            }
+            Move::BodyLong(Some(node), length) => {
+                self.issues.long(node, length);
+                self.reviews.long(node, length);
+            }
             Move::End(Node::Collaborator) => {
                 let row = core::mem::replace(&mut self.collaborator, people::collaborator());
                 return Ok((tokenizer::Request::Next, Step::Row(Row::Collaborator(row))));
@@ -244,7 +255,8 @@ impl Decoder {
                     Kind::CombinedStatus => Document::Combined(self.pulls.combined()),
                     Kind::Repository => Document::Repository(self.repository.clone()),
                     Kind::Branch => Document::Branch(self.branch.clone()),
-                    Kind::CollaboratorRows
+                    Kind::RemarkRows
+                    | Kind::CollaboratorRows
                     | Kind::PullRows
                     | Kind::CheckRuns
                     | Kind::BranchRows
@@ -264,6 +276,9 @@ impl Decoder {
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
         match (node, key, token) {
+            (node @ (Node::RemarkRows | Node::Remark | Node::RemarkUser), key, token) => {
+                return self.reviews.scalar(node, key, token);
+            }
             (
                 node @ (Node::PullRows
                 | Node::PullObject

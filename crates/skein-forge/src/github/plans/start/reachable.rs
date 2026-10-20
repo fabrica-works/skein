@@ -46,7 +46,8 @@ impl Reachable {
             Some(Event::Row(row)) => {
                 let row = match row {
                     document::Row::Reachable(row) => row,
-                    document::Row::Collaborator(_)
+                    document::Row::Remark(_)
+                    | document::Row::Collaborator(_)
                     | document::Row::Installation(_)
                     | document::Row::Branch(_)
                     | document::Row::Issue(_)

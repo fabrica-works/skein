@@ -28,6 +28,10 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::Conversion { code: Box::from(*b"code") }, Kind::Conversion),
         (Request::BotUser { slug: Box::from(*b"example-app") }, Kind::BotUser),
         (Request::Collaborators { owner: owner(), name: name(), page: 1, per_page: 100 }, Kind::CollaboratorRows),
+        (
+            Request::ReviewComments { owner: owner(), name: name(), number: 9, review: 2, page: 1, per_page: 100 },
+            Kind::RemarkRows,
+        ),
         (Request::User { id: 6 }, Kind::User),
         (Request::Permission { owner: owner(), name: name(), login: Box::from(*b"alice") }, Kind::Permission),
         (Request::Repository { id: 5 }, Kind::Repository),
@@ -74,7 +78,6 @@ fn github_decode_kind_is_none_for_reads_not_yet_decoded() {
     let commit = [7; 32];
     for request in [
         Request::Reviews { owner: owner(), name: name(), number: 9, page: 1, per_page: 100 },
-        Request::ReviewComments { owner: owner(), name: name(), number: 9, review: 2, page: 1, per_page: 100 },
         Request::Job { owner: owner(), name: name(), id: 11 },
         Request::PullFiles { owner: owner(), name: name(), number: 9, page: 1, per_page: 100 },
         Request::Compare { owner: owner(), name: name(), before: commit, after: [8; 32], per_page: 100 },

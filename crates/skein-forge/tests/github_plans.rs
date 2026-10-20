@@ -356,7 +356,6 @@ fn github_plans_writes_refused() {
     assert_eq!(write.begin(bounds(), b"example-app", &mut tables), Err(api::Error::Refused));
     for read in [
         api::Read::Reviews { number: 1, page: 1 },
-        api::Read::Remarks { number: 1, review: 1, page: 1 },
         api::Read::PullFiles { number: 1, head: [0; 32], page: 1 },
         api::Read::Compare { before: [0; 32], after: [0; 32] },
         api::Read::Checks { commit: [0; 32] },

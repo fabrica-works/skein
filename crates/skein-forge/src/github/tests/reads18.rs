@@ -323,3 +323,99 @@ fn github_collaborators_malformed_and_failures() {
     call.begin().unwrap();
     assert_eq!(call.heard(Heard::Head { status: 404, head: Head::new() }), ended(Err(api::Error::Missing)));
 }
+
+fn remark(id: u64) -> document::Remark {
+    document::Remark {
+        id,
+        author: USER,
+        path: Box::from(*b"dir/x y"),
+        line: 0,
+        body: crate::forgejo::document::Body::Kept(Box::from(*b"hello")),
+    }
+}
+fn remarks_read() -> api::Read {
+    api::Read::Remarks { number: 3, review: 4, page: 2 }
+}
+#[test]
+fn github_remarks_line_fallbacks() {
+    golden(
+        &Request::ReviewComments { owner: owner(), name: name(), number: 3, review: 4, page: 2, per_page: 4 },
+        b"/repos/acme/widgets/pulls/3/reviews/4/comments?per_page=4&page=2",
+        Some(Kind::RemarkRows),
+        Accept::Json,
+    );
+    for (lines, expected) in [
+        (b"\"line\":2,\"original_line\":3".as_slice(), 2),
+        (b"\"line\":null,\"original_line\":3", 3),
+        (b"\"line\":0,\"original_line\":3", 0),
+        (b"\"original_line\":4294967295", u32::MAX),
+        (b"\"line\":null", 0),
+    ] {
+        let mut wire = Writer::new(512);
+        wire.put(br#"[{"id":1,"user":{"id":9007199254740993},"path":"dir/x y","body":"hello","#).unwrap();
+        wire.put(lines).unwrap();
+        wire.put(b"}]").unwrap();
+        let mut row = remark(1);
+        row.line = expected;
+        document(Kind::RemarkRows, &bytes(wire), Document::Rows, &[Row::Remark(row)]);
+    }
+}
+#[test]
+fn github_remarks_page_and_long_body() {
+    let mut row = remark(1);
+    row.body = crate::forgejo::document::Body::Kept(Box::from([b'x'; 129]));
+    let mut out = Writer::new(usize::try_from(ROOM).unwrap());
+    server::remarks(&[row], &mut out).unwrap();
+    let mut long = remark(1);
+    long.body = crate::forgejo::document::Body::Long(129);
+    document(Kind::RemarkRows, &bytes(out), Document::Rows, &[Row::Remark(long.clone())]);
+    for more in [false, true] {
+        let mut call = Call::new(remarks_read(), bounds(), true);
+        call.begin().unwrap();
+        call.head(more);
+        assert_eq!(call.heard(Heard::Row(Row::Remark(long.clone()))), Ok(None));
+        assert_eq!(
+            call.done(Document::Rows),
+            ended(Ok(api::Answer::Remarks {
+                more,
+                remarks: Box::from([api::Remark {
+                    id: 1,
+                    author: USER,
+                    path: remark(1).path,
+                    line: 0,
+                    body: Box::from([])
+                }])
+            }))
+        );
+    }
+    document(
+        Kind::RemarkRows,
+        br#"[{"id":1,"user":{"id":9007199254740993},"path":"dir/x y","body":null}]"#,
+        Document::Rows,
+        &[Row::Remark(document::Remark { body: crate::forgejo::document::Body::Kept(Box::from([])), ..remark(1) })],
+    );
+}
+#[test]
+fn github_remarks_bounds_and_failures() {
+    for wire in [
+        br#"[{"id":1,"user":{"id":1},"path":"x","line":4294967296}]"#.as_slice(),
+        br#"[{"id":1,"user":{"id":1},"path":"x","original_line":4294967296}]"#,
+        br#"[{"id":1,"user":{"id":1},"path":"x","line":1,"line":null}]"#,
+        br#"[{"id":1,"path":"x"}]"#,
+        br#"[{"id":1,"user":{"id":1},"path":"x","body":false}]"#,
+    ] {
+        malformed(Kind::RemarkRows, wire);
+    }
+    for (room, expected) in [(76, Ok(None)), (75, ended(Err(api::Error::TooLarge)))] {
+        let mut call = started(remarks_read(), Bounds { answer_bytes: room, ..bounds() });
+        assert_eq!(call.heard(Heard::Row(Row::Remark(remark(1)))), expected);
+    }
+    let mut call = started(remarks_read(), Bounds { page_size: 1, ..bounds() });
+    call.heard(Heard::Row(Row::Remark(remark(1)))).unwrap();
+    assert_eq!(call.heard(Heard::Row(Row::Remark(remark(2)))), ended(Err(api::Error::TooLarge)));
+    let mut call = started(remarks_read(), bounds());
+    assert_eq!(call.done(Document::User(user())), ended(Err(api::Error::InvalidAnswer)));
+    let mut call = Call::new(remarks_read(), bounds(), true);
+    call.begin().unwrap();
+    assert_eq!(call.heard(Heard::Head { status: 404, head: Head::new() }), ended(Err(api::Error::Missing)));
+}

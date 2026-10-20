@@ -85,6 +85,9 @@ impl State {
             | Node::Conversion
             | Node::BotUser => {}
             Node::User
+            | Node::RemarkRows
+            | Node::Remark
+            | Node::RemarkUser
             | Node::CollaboratorRows
             | Node::Collaborator
             | Node::Permission
@@ -139,6 +142,7 @@ impl State {
             Kind::Conversion => Document::Conversion(self.conversion.clone()),
             Kind::BotUser => Document::BotUser(self.bot),
             Kind::User
+            | Kind::RemarkRows
             | Kind::CollaboratorRows
             | Kind::Permission
             | Kind::Repository
@@ -224,6 +228,9 @@ impl State {
                 | Node::Conversion
                 | Node::BotUser
                 | Node::User
+                | Node::RemarkRows
+                | Node::Remark
+                | Node::RemarkUser
                 | Node::CollaboratorRows
                 | Node::Collaborator
                 | Node::Permission

@@ -196,7 +196,8 @@ fn keep_installation(
 ) -> Result<(), api::Error> {
     let row = match row {
         Row::Installation(row) => row,
-        Row::Collaborator(_)
+        Row::Remark(_)
+        | Row::Collaborator(_)
         | Row::Reachable(_)
         | Row::Branch(_)
         | Row::Issue(_)

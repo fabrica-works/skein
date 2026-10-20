@@ -33,6 +33,9 @@ pub(super) enum Node {
     User,
     Permission,
     CollaboratorRows,
+    RemarkRows,
+    Remark,
+    RemarkUser,
     Collaborator,
     Repository,
     Owner,
@@ -134,6 +137,18 @@ fn comment_fields() -> &'static [Field] {
 #[expect(clippy::too_many_lines, reason = "one exhaustive table lists the fields of every document node")]
 fn document_fields(node: Node) -> &'static [Field] {
     match node {
+        Node::Remark => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"user", Read::Container(Role::Document(Node::RemarkUser))),
+                    field(b"path", Read::Text),
+                    optional(b"line", Read::Number),
+                    optional(b"original_line", Read::Number),
+                    optional(b"body", Read::LongBody),
+                ]
+            }
+        }
         Node::Collaborator => {
             const { &[field(b"id", Read::Number), field(b"role_name", Read::Text), optional(b"login", Read::Text)] }
         }
@@ -177,7 +192,9 @@ fn document_fields(node: Node) -> &'static [Field] {
         Node::RunsObject => const { &[field(b"check_runs", Read::Container(Role::Document(Node::Runs)))] },
         Node::RunItem => const { &[field(b"status", Read::Text), optional(b"conclusion", Read::Text)] },
         Node::Issue => issue_fields(),
-        Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => const { &[field(b"id", Read::Number)] },
+        Node::RemarkUser | Node::Reviewer | Node::IssueUser | Node::CommentUser | Node::BotUser => {
+            const { &[field(b"id", Read::Number)] }
+        }
         Node::Label | Node::BranchName => const { &[field(b"name", Read::Text)] },
         Node::PullRequest => const { &[optional(b"merged_at", Read::Presence)] },
         Node::Comment => comment_fields(),
@@ -261,7 +278,8 @@ fn document_fields(node: Node) -> &'static [Field] {
             }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::CollaboratorRows
+        Node::RemarkRows
+        | Node::CollaboratorRows
         | Node::PullRows
         | Node::Reviewers
         | Node::Contexts
@@ -282,6 +300,7 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::RemarkRows => Some(Role::Document(Node::Remark)),
         Node::CollaboratorRows => Some(Role::Document(Node::Collaborator)),
         Node::PullRows => Some(Role::Document(Node::PullObject)),
         Node::Reviewers => Some(Role::Document(Node::Reviewer)),
@@ -323,6 +342,8 @@ fn element(role: Role) -> Option<Role> {
         | Node::Conversion
         | Node::User
         | Node::Permission
+        | Node::Remark
+        | Node::RemarkUser
         | Node::Collaborator
         | Node::BotUser
         | Node::Repository
@@ -382,6 +403,7 @@ impl Walk {
             document::Kind::BotUser => Node::BotUser,
             document::Kind::User => Node::User,
             document::Kind::Permission => Node::Permission,
+            document::Kind::RemarkRows => Node::RemarkRows,
             document::Kind::CollaboratorRows => Node::CollaboratorRows,
             document::Kind::Repository => Node::Repository,
             document::Kind::Branch => Node::Branch,

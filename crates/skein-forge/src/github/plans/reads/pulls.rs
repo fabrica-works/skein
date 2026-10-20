@@ -78,6 +78,7 @@ impl Plan {
             | Read::Item { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }
+            | Read::Remarks { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         };
         Ok(self.send(request))
@@ -126,6 +127,7 @@ impl Plan {
             | document::Row::Comment(_)
             | document::Row::Branch(_)
             | document::Row::Installation(_)
+            | document::Row::Remark(_)
             | document::Row::Collaborator(_)
             | document::Row::Reachable(_) => return Err(api::Error::InvalidAnswer),
         }
@@ -151,6 +153,7 @@ impl Plan {
             | Read::Item { .. }
             | Read::Permission { .. }
             | Read::Collaborators { .. }
+            | Read::Remarks { .. }
             | Read::Refused => return Err(api::Error::InvalidAnswer),
         }
         let pull = reading::pull(pull, api::Ci::None)?;
@@ -247,6 +250,7 @@ fn is_statuses(read: &Read) -> bool {
         | Read::Item { .. }
         | Read::Permission { .. }
         | Read::Collaborators { .. }
+        | Read::Remarks { .. }
         | Read::Refused => false,
     }
 }

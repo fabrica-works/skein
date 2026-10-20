@@ -36,6 +36,8 @@ pub enum Kind {
     Permission,
     /// Streamed repository collaborators.
     CollaboratorRows,
+    /// Streamed review comments.
+    RemarkRows,
     Error,
 }
 /// A repository's routing, owner and settings row.
@@ -74,6 +76,7 @@ pub enum Row {
     /// One check run.
     Run(Run),
     Collaborator(Collaborator),
+    Remark(Remark),
 }
 /// GitHub's message and bounded error messages.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -249,4 +252,14 @@ pub struct Collaborator {
     pub id: u64,
     pub permission: api::Permission,
     pub login: Option<Box<[u8]>>,
+}
+
+/// A review comment with its selected line and bounded body.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Remark {
+    pub id: u64,
+    pub author: u64,
+    pub path: Box<[u8]>,
+    pub line: u32,
+    pub body: crate::forgejo::document::Body,
 }
