@@ -59,14 +59,14 @@ fn the_worst_case_grows_with_the_webhook_connections() {
     let one = limits::worst_case(
         &Limits { hooks: 1, ..limits },
         &fixtures::shared(),
-        1,
+        limits::Forges::of(&fixtures::hook_settings()).expect("forge counts"),
         crate::settings::owned_bytes(&fixtures::hook_settings()).expect("owner bytes"),
     )
     .expect("one");
     let two = limits::worst_case(
         &Limits { hooks: 2, ..limits },
         &fixtures::shared(),
-        1,
+        limits::Forges::of(&fixtures::hook_settings()).expect("forge counts"),
         crate::settings::owned_bytes(&fixtures::hook_settings()).expect("owner bytes"),
     )
     .expect("two");

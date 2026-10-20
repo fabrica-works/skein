@@ -151,7 +151,8 @@ impl Hosted {
             user_agent: Box::from(b"kit/0.0.0".as_slice()),
         };
         let owned_bytes = skein_forge_connection::settings::owned_bytes(&settings).ok_or("component owner bytes")?;
-        let heap = skein_forge_connection::limits::worst_case(&limits, &shared, 1, owned_bytes)
+        let kinds = skein_forge_connection::limits::Forges::of(&settings).ok_or("component forge counts")?;
+        let heap = skein_forge_connection::limits::worst_case(&limits, &shared, kinds, owned_bytes)
             .ok_or("component heap")?
             + skein_io::worst_case(&io_limits).ok_or("io heap")?
             + 256

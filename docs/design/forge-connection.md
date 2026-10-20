@@ -726,15 +726,16 @@ It is the sum of:
 - for each of `connections`: its stack, its intake and output caps, its
   decoder and the answer as it is built (twice `answer_bytes`, for a
   body kept raw while it grows), TLS priced on every connection, since
-  the check knows the forges' number, not their transports;
-- for each call or forge-owned connection: one boxed GitHub exchange,
-  retaining its request, raw retention and comparison selection together;
+  the bound knows each kind's count, not their transports;
+- with a GitHub forge configured, for each call or forge-owned connection:
+  one boxed GitHub exchange, retaining its request, raw retention and
+  comparison selection together;
 - for each of `calls`: its record, plan and copy of the operation, and
   its held answer, at most `answer_bytes`;
-- both dialects' repository/user tables, full in the conservative bound:
-  each dialect allocates its tables only when a forge of that kind is
-  configured, sharing them across its forges by forge key; the bound's
-  interface has no dialect counts, so prices both full sets. Discovery's
+- each configured dialect's repository/user tables, full and shared across
+  its forges by forge key. The bound takes each kind's count and prices a
+  dialect's tables, decoder share and call terms only when a forge of that
+  kind is configured, each call slot at the larger dialect's terms. Discovery's
   staged row, retained operation, route revisions and exchange/header
   handoffs coexist with the plans, row copies and held answers. Each
   active call's discovery also holds at most `installations` ids with

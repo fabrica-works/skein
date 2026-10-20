@@ -74,6 +74,27 @@ pub struct Shared {
     pub io: skein_io::Limits,
 }
 
+/// Configured forge counts by dialect (forge-connection.md, 7.5).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Forges {
+    pub forgejo: u32,
+    pub github: u32,
+}
+impl Forges {
+    /// Counts each configured kind, or returns `None` if a count overflows.
+    #[must_use]
+    pub fn of(settings: &Settings) -> Option<Forges> {
+        let mut counts = Self { forgejo: 0, github: 0 };
+        for forge in &settings.forges {
+            match forge.kind {
+                Kind::Forgejo => counts.forgejo = counts.forgejo.checked_add(1)?,
+                Kind::GitHub => counts.github = counts.github.checked_add(1)?,
+            }
+        }
+        Some(counts)
+    }
+}
+
 /// The listings whose page size the component chooses (forge-connection.md, 3.1).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Listing {
@@ -260,8 +281,13 @@ pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable
     stack(Stacked::TlsOverIo, skein_tls::client::largest_room(&l.tls), s.io.output)?;
     stack(Stacked::JsonOverHttp, tokenizer::largest_demand(&documents(l).json), http(l, false, &s.io).read)?;
     check_settings(l, s, settings)?;
-    worst_case(l, s, settings.forges.len(), crate::settings::owned_bytes(settings).ok_or(Unusable::Zero)?)
-        .ok_or(Unusable::Zero)?;
+    worst_case(
+        l,
+        s,
+        Forges::of(settings).ok_or(Unusable::Zero)?,
+        crate::settings::owned_bytes(settings).ok_or(Unusable::Zero)?,
+    )
+    .ok_or(Unusable::Zero)?;
     Ok(())
 }
 fn check_github(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable> {
@@ -496,9 +522,10 @@ pub fn hook_documents(l: &Limits) -> documents::Limits {
     docs.json.length = l.hook_body_bytes;
     docs
 }
-fn decoder_heap(l: &Limits) -> Option<u64> {
-    let fixed_decoder =
-        size_of::<skein_forge::github::decode::Decoder>().max(size_of::<skein_forge::forgejo::client::Decoder>());
+fn decoder_heap(l: &Limits, forges: Forges) -> Option<u64> {
+    let forgejo = if forges.forgejo > 0 { size_of::<skein_forge::forgejo::client::Decoder>() } else { 0 };
+    let github = if forges.github > 0 { size_of::<skein_forge::github::decode::Decoder>() } else { 0 };
+    let fixed_decoder = forgejo.max(github);
     // Conservatively covers the boxed decoder state and both builder/delivered
     // rows: 32 scalar strings, two bodies, three lists of texts/users, and the
     // walker's depth stack. Both dialects fit these payload envelopes;
@@ -509,12 +536,18 @@ fn decoder_heap(l: &Limits) -> Option<u64> {
         .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?)?;
     // An App's builder and delivered document each retain a permission and
     // event list: two names, a Permission and a text box per entry, twice.
-    let app_inner = u64::from(l.string_bytes)
-        .checked_mul(4)?
-        .checked_add(u64::try_from(size_of::<skein_forge::github::document::Permission>()).ok()?.checked_mul(2)?)?
-        .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?)?;
-    let inner = inner.max(app_inner);
-    let bytes = u64::from(l.string_bytes.max(github_mint_documents(l).string_bytes))
+    let app_inner = if forges.github > 0 {
+        u64::from(l.string_bytes)
+            .checked_mul(4)?
+            .checked_add(u64::try_from(size_of::<skein_forge::github::document::Permission>()).ok()?.checked_mul(2)?)?
+            .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?)?
+    } else {
+        0
+    };
+    let inner = if forges.forgejo > 0 || forges.github > 0 { inner.max(app_inner) } else { 0 };
+    let string =
+        if forges.github > 0 { l.string_bytes.max(github_mint_documents(l).string_bytes) } else { l.string_bytes };
+    let bytes = u64::from(string)
         .checked_mul(32)?
         .checked_add(u64::from(l.inner).checked_mul(inner)?)?
         .checked_add(u64::from(l.body_bytes).checked_mul(2)?)?
@@ -559,9 +592,9 @@ fn installation_heap(l: &Limits, s: &Shared) -> Option<u64> {
         .checked_add(u64::from(s.name_bytes).checked_mul(3)?)
 }
 /// Conservative complete heap, pricing TLS on every connection because this interface
-/// knows the forge count, not their transports. Raw growth includes its doubling overlap.
+/// knows each kind's count, not their transports. Raw growth includes its doubling overlap.
 #[must_use]
-pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Option<u64> {
+pub fn worst_case(l: &Limits, s: &Shared, forges: Forges, owned_bytes: u64) -> Option<u64> {
     use crate::{
         boundary::Answered,
         component::{Held, Waiting},
@@ -570,11 +603,27 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
     };
     use skein_forge::forgejo::plans::tables::{RepositoryEntry, UserEntry};
     use skein_lib::{Id, Intake, List, Map, Queue, Slab, Token};
-    let connections = l.connections.checked_add(forges)?;
+    // Forgejo start traffic uses the call pool; only GitHub reserves an extra connection.
+    let connections = l.connections.checked_add(forges.github)?;
+    let count = forges.forgejo.checked_add(forges.github)?;
     let docs = documents(l);
     let raw = u64::from(s.answer_bytes).checked_mul(2)?;
-    let installation_rows = installation_heap(l, s)?;
-    let decoder = decoder_heap(l)?;
+    let github = if forges.github > 0 {
+        installation_heap(l, s)?
+            .checked_add(u64::try_from(size_of::<crate::installations::GitHub>()).ok()?)?
+            .checked_add(u64::from(l.key_bytes))?
+            .checked_add(u64::try_from(skein_forge::github::jwt::JWT_BYTES).ok()?)?
+            .checked_mul(u64::from(forges.github))?
+    } else {
+        0
+    };
+    let decoder = decoder_heap(l, forges)?;
+    let json = if forges.github > 0 { github_mint_documents(l).json } else { docs.json };
+    let exchange = if forges.github > 0 {
+        u64::try_from(size_of::<skein_forge::github::plans::plan::Exchange>()).ok()?
+    } else {
+        0
+    };
     let socket = Intake::worst_case(s.io.intake)?
         .checked_add(u64::from(s.io.receive))?
         .checked_add(u64::from(s.io.output))?
@@ -583,63 +632,51 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .max(skein_http::client::worst_case(&http(l, false, &s.io))?)
         .checked_add(skein_tls::client::worst_case(&l.tls)?)?
         .checked_add(tokenizer::worst_case(&tokenizer::Limits {
-            string: github_mint_documents(l).json.string,
+            string: json.string.max(docs.json.string),
             ..docs.json
         })?)?
         .checked_add(decoder)?
         .checked_add(raw)?
-        // One boxed GitHub exchange retains the request, retention and comparison
-        // together until completion, replacement, loss or close, on every connection.
-        // In the fixture this adds 3 * 120 bytes, less 3 * 8 saved in the
-        // connection slab by boxing the request: a net delta of +336 bytes.
-        .checked_add(u64::try_from(size_of::<skein_forge::github::plans::plan::Exchange>()).ok()?)?
+        // A GitHub connection retains one boxed request, retention and comparison.
+        .checked_add(exchange)?
         .checked_add(crate::connection::routing_bytes()?)?
         .checked_add(u64::from(l.tls.send.max(s.io.output)))?
         .checked_add(u64::from(l.body_bytes).checked_mul(6)?.checked_add(1024)?)?
         .checked_add(socket)?;
     let hooks = hook_heap(l, decoder, socket)?;
+    // Common call storage: record and indexes, three operation copies, and the
+    // held answer below. A slot holds one dialect's plans and payloads at a time:
+    // Forgejo's boxed read/write plans, staging lists and decoded rows, or GitHub's
+    // boxed plans, discovery table/candidates and retained answer handoffs.
+    let forgejo_call = if forges.forgejo > 0 { forgejo_call_heap(l, s)? } else { 0 };
+    let github_call = if forges.github > 0 { github_call_heap(l, s)? } else { 0 };
     let calls = Slab::<Waiting>::worst_case(s.calls)?
         .checked_add(Map::<Token, Token>::worst_case(connections)?)?
         .checked_add(List::<(Token, Id<Waiting>)>::worst_case(s.calls)?)?
         .checked_add(Map::<Token, Id<Waiting>>::worst_case(s.calls)?)?
         .checked_add(
-            u64::from(s.calls).checked_mul(
-                u64::from(s.op_bytes)
-                    .checked_mul(3)?
-                    .checked_add(u64::try_from(size_of::<skein_forge::forgejo::plans::reads::Plan>()).ok()?)?
-                    .checked_add(u64::try_from(size_of::<skein_forge::forgejo::plans::writes::Plan>()).ok()?)?
-                    .checked_add(github_call_heap(l, s)?)?
-                    .checked_add(List::<u64>::worst_case(s.op_bytes.checked_div(8)?)?)?
-                    .checked_add(List::<Box<[u8]>>::worst_case(s.op_bytes.checked_div(8)?.checked_add(l.inner)?)?)?
-                    .checked_add(
-                        u64::from(s.op_bytes.checked_div(8)?.checked_add(l.inner)?)
-                            .checked_mul(u64::from(l.string_bytes))?,
-                    )?
-                    .checked_add(u64::from(s.answer_bytes))?
-                    .checked_add(List::<skein_forge::forgejo::document::ChangedFile>::worst_case(s.rows)?)?
-                    .checked_add(u64::from(s.rows).checked_mul(u64::from(l.string_bytes).checked_mul(2)?)?)?
-                    .checked_add(List::<api::File>::worst_case(s.rows)?)?
-                    .checked_add(List::<api::Commit>::worst_case(s.rows)?)?
-                    .checked_add(u64::from(l.string_bytes).checked_mul(4)?)?
-                    .checked_add(u64::from(l.string_bytes).checked_mul(u64::from(l.inner).checked_add(5)?)?)?
-                    .checked_add(
-                        u64::from(l.inner)
-                            .checked_mul(u64::try_from(size_of::<skein_forge::forgejo::document::User>()).ok()?)?,
-                    )?,
-            )?,
+            u64::from(s.calls)
+                .checked_mul(u64::from(s.op_bytes).checked_mul(3)?.checked_add(forgejo_call.max(github_call))?)?,
         )?;
     let held = Map::<Token, Held>::worst_case(s.calls)?
         .checked_add(u64::from(s.calls).checked_mul(u64::from(s.answer_bytes))?)?;
-    let repositories = Map::<api::Repository, RepositoryEntry>::worst_case(l.repositories)?
-        .checked_add(u64::from(l.repositories).checked_mul(u64::from(l.string_bytes).checked_mul(3)?)?)?;
-    let users = Map::<(u16, u64), UserEntry>::worst_case(l.users)?
-        .checked_add(u64::from(l.users).checked_mul(u64::from(l.string_bytes))?)?;
+    let repositories = if forges.forgejo > 0 {
+        Map::<api::Repository, RepositoryEntry>::worst_case(l.repositories)?
+            .checked_add(u64::from(l.repositories).checked_mul(u64::from(l.string_bytes).checked_mul(3)?)?)?
+    } else {
+        0
+    };
+    let users = if forges.forgejo > 0 {
+        Map::<(u16, u64), UserEntry>::worst_case(l.users)?
+            .checked_add(u64::from(l.users).checked_mul(u64::from(l.string_bytes))?)?
+    } else {
+        0
+    };
+    let github_tables = if forges.github > 0 { github_tables_heap(l, l.repositories, l.users)? } else { 0 };
     let configured =
         List::<Forge>::worst_case(l.forges)?.checked_add(List::<Start>::worst_case(l.forges)?)?.checked_add(
-            u64::from(forges).checked_mul(
+            u64::from(count).checked_mul(
                 u64::from(l.token_bytes)
-                    .checked_add(u64::from(l.key_bytes))?
-                    .checked_add(u64::try_from(skein_forge::github::jwt::JWT_BYTES).ok()?)?
                     .checked_add(u64::from(l.hook_secret_bytes))?
                     .checked_add(u64::from(l.tls.send.max(s.io.output)))?
                     .checked_add(skein_tls::client::worst_case(&l.tls)?)?,
@@ -648,9 +685,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
     connection
         .checked_mul(u64::from(connections))?
         .checked_add(List::<Option<Box<crate::installations::GitHub>>>::worst_case(l.forges)?)?
-        .checked_add(u64::from(forges).checked_mul(
-            installation_rows.checked_add(u64::try_from(size_of::<crate::installations::GitHub>()).ok()?)?,
-        )?)?
+        .checked_add(github)?
         .checked_add(Map::<Token, Id<crate::connection::Connection>>::worst_case(connections)?)?
         .checked_add(Slab::<crate::connection::Connection>::worst_case(connections)?)?
         .checked_add(List::<Option<Token>>::worst_case(l.forges)?)?
@@ -658,7 +693,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(hooks)?
         .checked_add(calls)?
         .checked_add(held)?
-        .checked_add(github_tables_heap(l, l.repositories, l.users)?)?
+        .checked_add(github_tables)?
         .checked_add(repositories)?
         .checked_add(users)?
         .checked_add(configured)?
@@ -666,6 +701,29 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(owned_bytes)?
         .checked_add(16)?
         .checked_add(u64::try_from(size_of::<Answered>()).ok()?)
+}
+
+// Forgejo plan boxes, operation staging, kept answer and decoded file/commit/user rows.
+fn forgejo_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
+    use skein_lib::List;
+    u64::try_from(size_of::<skein_forge::forgejo::plans::reads::Plan>())
+        .ok()?
+        .checked_add(u64::try_from(size_of::<skein_forge::forgejo::plans::writes::Plan>()).ok()?)?
+        .checked_add(List::<u64>::worst_case(s.op_bytes.checked_div(8)?)?)?
+        .checked_add(List::<Box<[u8]>>::worst_case(s.op_bytes.checked_div(8)?.checked_add(l.inner)?)?)?
+        .checked_add(
+            u64::from(s.op_bytes.checked_div(8)?.checked_add(l.inner)?).checked_mul(u64::from(l.string_bytes))?,
+        )?
+        .checked_add(u64::from(s.answer_bytes))?
+        .checked_add(List::<skein_forge::forgejo::document::ChangedFile>::worst_case(s.rows)?)?
+        .checked_add(u64::from(s.rows).checked_mul(u64::from(l.string_bytes).checked_mul(2)?)?)?
+        .checked_add(List::<api::File>::worst_case(s.rows)?)?
+        .checked_add(List::<api::Commit>::worst_case(s.rows)?)?
+        .checked_add(u64::from(l.string_bytes).checked_mul(4)?)?
+        .checked_add(u64::from(l.string_bytes).checked_mul(u64::from(l.inner).checked_add(5)?)?)?
+        .checked_add(
+            u64::from(l.inner).checked_mul(u64::try_from(size_of::<skein_forge::forgejo::document::User>()).ok()?)?,
+        )
 }
 
 // Both boxed plan envelopes, retained operation/answer overlap, discovery staging and candidates.

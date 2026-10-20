@@ -255,13 +255,13 @@ fn an_app_credential_on_a_forgejo_forge_is_the_other_dialects() {
 fn a_forges_key_and_jwt_are_in_the_worst_case() {
     let l = fixtures::limits();
     let shared = fixtures::shared();
-    let forges = 2;
+    let forges = super::Forges { forgejo: 0, github: 2 };
     let larger = super::Limits { key_bytes: l.key_bytes.checked_add(100).expect("key bound"), ..l };
     let before = super::worst_case(&l, &shared, forges, 0).expect("fixture bound");
     let after = super::worst_case(&larger, &shared, forges, 0).expect("larger bound");
     assert_eq!(
         after.checked_sub(before).expect("larger footprint"),
-        u64::from(forges).checked_mul(100).expect("key growth")
+        u64::from(forges.github).checked_mul(100).expect("key growth")
     );
 }
 
@@ -332,7 +332,7 @@ fn installation_staging_and_page_accounting_refuse_overflow() {
     let l = super::Limits { installations: u32::MAX, token_bytes: u32::MAX, ..fixtures::limits() };
     let s = Shared { name_bytes: u32::MAX, ..fixtures::shared() };
     assert_eq!(super::installation_heap(&l, &s), None);
-    assert_eq!(super::worst_case(&l, &s, 1, 0), None);
+    assert_eq!(super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, 0), None);
 }
 
 #[test]
@@ -373,9 +373,9 @@ fn renewal_clocks_and_handoff_fit_at_peak() {
 fn renewal_handoff_checked_add_refuses_overflow() {
     let l = fixtures::limits();
     let s = fixtures::shared();
-    let base = super::worst_case(&l, &s, 1, 0).expect("bounded renewal storage");
-    assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base), Some(u64::MAX));
-    assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base + 1), None);
+    let base = super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, 0).expect("bounded renewal storage");
+    assert_eq!(super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, u64::MAX - base), Some(u64::MAX));
+    assert_eq!(super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, u64::MAX - base + 1), None);
 }
 
 #[test]
@@ -389,11 +389,11 @@ fn github_tables_and_discovery_plans_are_priced_at_simultaneous_peak() {
             >= u64::from(l.repositories)
                 * u64::try_from(size_of::<skein_forge::github::plans::tables::Repository>()).expect("row size")
     );
-    let base = super::worst_case(&l, &s, 1, 0).expect("complete bound");
+    let base = super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, 0).expect("complete bound");
     assert!(base >= fixed + u64::from(s.calls) * (staged + u64::from(s.answer_bytes) * 4));
     let more = super::Limits { repositories: l.repositories + 1, users: l.users + 1, ..l };
-    assert!(super::worst_case(&more, &s, 1, 0).expect("larger tables") > base);
-    assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base + 1), None);
+    assert!(super::worst_case(&more, &s, super::Forges { forgejo: 0, github: 1 }, 0).expect("larger tables") > base);
+    assert_eq!(super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, u64::MAX - base + 1), None);
 }
 
 #[test]
@@ -404,9 +404,11 @@ fn discovery_candidates_fit_the_installation_bound_for_every_call() {
     let l = super::Limits { installations: ROWS, ..fixtures::limits() };
     let s = Shared { calls: CALLS, ..fixtures::shared() };
     let empty = super::Limits { installations: 0, ..l };
-    let before = super::worst_case(&empty, &s, 0, 0).expect("no candidate storage");
-    let after = super::worst_case(&l, &s, 0, 0).expect("candidate storage for all calls");
-    assert_eq!(after - before, u64::from(CALLS) * List::<Selected>::worst_case(ROWS).expect("candidate list"));
+    let before = super::github_call_heap(&empty, &s).expect("no candidate storage");
+    let after = super::github_call_heap(&l, &s).expect("candidate storage for a call");
+    assert_eq!(after - before, List::<Selected>::worst_case(ROWS).expect("candidate list"));
+    let total = super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, 0).expect("all calls");
+    assert!(total >= u64::from(CALLS) * after);
 }
 #[test]
 fn discovery_handoff_prices_two_live_read_plans_and_the_retained_operation() {
@@ -417,12 +419,12 @@ fn discovery_handoff_prices_two_live_read_plans_and_the_retained_operation() {
     let candidates = List::<crate::installations::Selected>::worst_case(l.installations).expect("candidate storage");
     let heap = super::github_call_heap(&l, &s).expect("discovery and handoff");
     assert!(heap >= reads * 2 + staged + candidates + u64::from(s.answer_bytes) * 3);
-    let base = super::worst_case(&l, &s, 1, 0).expect("all calls");
+    let base = super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, 0).expect("all calls");
     assert!(base >= heap * u64::from(s.calls) + u64::from(s.op_bytes) * 3 * u64::from(s.calls));
 }
 #[test]
 fn discovery_candidate_storage_refuses_checked_overflow() {
     let l = super::Limits { installations: u32::MAX, ..fixtures::limits() };
     let s = Shared { calls: u32::MAX, ..fixtures::shared() };
-    assert_eq!(super::worst_case(&l, &s, 0, 0), None);
+    assert_eq!(super::worst_case(&l, &s, super::Forges { forgejo: 0, github: 1 }, 0), None);
 }

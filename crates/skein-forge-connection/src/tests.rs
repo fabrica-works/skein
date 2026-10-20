@@ -295,53 +295,190 @@ fn duplicate_forge_numbers_are_refused_before_any_connection() {
     );
 }
 
+// Complete Forgejo fixture (forge-connection.md, 7.5), in bytes on the
+// landed 64-bit layout. Decoder = 32*128 + 8*(3*128 + 2*48 + 2*16)
+// + 2*1042 + 16*128 + 4096 + size_of::<forgejo::client::Decoder>() (248)
+// = 16_668. Socket = 32768 + 4096 + 32768 + 4*16 = 69_696.
+// Each of two pooled connections = HTTP 44_032 + TLS 456_809 + tokenizer
+// 2082 + decoder 16_668 + raw 2*65536 + routing 5056 + send 32768
+// + encoding (6*1042 + 1024) + socket 69_696 = 765_459.
+// Four hooks = 4*(HTTP 18_418 + tokenizer 2082 + decoder 16_668
+// + socket 69_696 + HMAC 208 + hint 88 + text/body 1170 + queues 368
+// + head 8192 + chunks 2048) + hook slab/index 4832 = 480_584.
+// Common calls = 2*520 (Waiting slab slots) + 288 (holders tree)
+// + 2*16 (drive list) + 288 (call index) + 2*3*512 (operation copies)
+// + 2488 (held tree) + 2*65536 (held answers) = 138_280.
+// Forgejo's call payload = read/write boxes 1208+408, staging 64*8
+// + 72*16 + 72*128, answer 65536, ChangedFile rows 8*40 + 8*2*128,
+// File/Commit rows 8*48 + 8*32, texts 4*128 + 13*128 and users 8*48
+// = 83_600. Its tables = repository tree 904 + 2*3*128
+// + user tree 1104 + 8*128 = 3800. Tree bounds include internal nodes.
+// Configured lists = 2*(Forge 136 + Start 24 + optional GitHub box 8
+// + optional token 16 + optional OwnPlan 344) = 1056. Each forge's
+// common credential/secret/send/TLS = 64 + 128 + 32768 + 456_809 = 489_769.
+// Owner/framing/answer = 2*16 + (3+9) + 16 + Answered 200 = 260.
+// Total = 2*765459 + connection index 288 + slab 2*1400 + 480584
+// + 138280 + 2*83600 + 3800 + 1056 + 489769 + 260 = 2_814_955.
+const FIXTURE_HEAP: u64 = 2_814_955;
+
+// Complete GitHub fixture: the same common limits and owned bytes. Its
+// decoder's fixed size is 1952, including the 96-byte GraphQL pull builder,
+// App builder state and the enqueue error's two type/message boxes.
+// App builder/document overlap needs max(3*128 + 2*48 + 2*16,
+// 4*128 + 2*24 + 2*16) = 592 per inner entry; its permissions and event
+// lists coexist. Decoder = 32*128 + 8*592 + 2*1042 + 16*128 + 4096
+// + 1952 = 19_012. Each connection also holds a 120-byte boxed exchange
+// retaining request, raw retention and comparison. Three connections are
+// 767_923 each; four hooks are 4*121282 + 4832 = 489_960.
+// Installation storage = 2136 (live Row tree, Row 176) + 2*552 (metadata)
+// + 2*552 (accepted accounts) + 464 (missing accounts) + 3*200 (id sets)
+// + 2*3*8 (id lists) + 2*100*48 (installation pages) + 2*100*128
+// + 3*(6*128+64) (row accounts/tokens) + 7*64 (token handoffs)
+// + Event 200 + 3*128 (cursor/event accounts) = 44_184. Per-scope clocks,
+// eligibility/Full revisions, retries, held Contents and old/new Full
+// handoffs coexist with staging and pages; the GitHub box itself is 464.
+// Key/JWT = 1200+512, so each GitHub forge's App share is 46_360.
+// GitHub's tables are 3888; discovery's one-row tables are 2056.
+// Call payload = 2*1352 (probe/original read boxes) + write box 480
+// + staging 2056 + 3*24 (revision-bearing candidates) + 3*65536
+// (retained answer handoffs) = 201_920. Route/discovery envelopes are
+// in Waiting's slab slot; both own-plan slots occupy 344 bytes each.
+// Total = 3*767923 + index 288 + slab 3*1400 + 489960 + 138280
+// + 2*201920 + 3888 + 1056 + 489769 + 46360 + 260 = 3_881_670.
+const GITHUB_FIXTURE_HEAP: u64 = 3_881_670;
+
+// At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
+// slab 520 + drive-list pair 16 + 3*512 operation copies + 65536 held
+// answer bytes, plus the selected dialect's payload from the ledgers above.
+const FORGEJO_CALL_SLOT: u64 = 151_208; // 520 + 16 + 1536 + 65536 + 83600.
+const GITHUB_CALL_SLOT: u64 = 269_528; // 520 + 16 + 1536 + 65536 + 201920.
+const FORGEJO: limits::Forges = limits::Forges { forgejo: 1, github: 0 };
+const GITHUB: limits::Forges = limits::Forges { forgejo: 0, github: 1 };
+const MIXED: limits::Forges = limits::Forges { forgejo: 1, github: 1 };
+const NO_FORGES: limits::Forges = limits::Forges { forgejo: 0, github: 0 };
+
+fn fixture_bound(forges: limits::Forges) -> u64 {
+    limits::worst_case(
+        &fixtures::limits(),
+        &fixtures::shared(),
+        forges,
+        crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes"),
+    )
+    .expect("fixture bound")
+}
+
+#[test]
+fn a_forgejo_forge_pays_no_github_share() {
+    assert_eq!(fixture_bound(FORGEJO), FIXTURE_HEAP);
+    assert!(fixture_bound(FORGEJO) < fixture_bound(GITHUB));
+    let l = fixtures::limits();
+    let larger = Limits { key_bytes: u32::MAX, installations: u32::MAX, ..l };
+    assert_eq!(
+        limits::worst_case(&l, &fixtures::shared(), FORGEJO, 0),
+        limits::worst_case(&larger, &fixtures::shared(), FORGEJO, 0),
+    );
+}
+
+#[test]
+fn a_github_forge_pays_its_app_share() {
+    let settings = fixtures::github_settings();
+    assert_eq!(limits::Forges::of(&settings), Some(GITHUB));
+    assert_eq!(
+        limits::worst_case(
+            &fixtures::limits(),
+            &fixtures::shared(),
+            GITHUB,
+            crate::settings::owned_bytes(&settings).expect("owner bytes"),
+        ),
+        Some(GITHUB_FIXTURE_HEAP),
+    );
+}
+
+#[test]
+fn a_call_slot_holds_one_dialect_at_a_time() {
+    assert!(fixture_bound(MIXED) < fixture_bound(FORGEJO) + fixture_bound(GITHUB));
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    // Keep connection capacity fixed to measure the call slot alone.
+    let more = crate::Shared { calls: s.calls + 1, ..s };
+    let mut growth = [0; 3];
+    for (forges, delta) in [FORGEJO, GITHUB, MIXED].into_iter().zip(growth.iter_mut()) {
+        *delta = limits::worst_case(&l, &more, forges, 0).expect("extra slot")
+            - limits::worst_case(&l, &s, forges, 0).expect("fixture slots");
+    }
+    let [forgejo, github, mixed] = growth;
+    assert_eq!(forgejo, FORGEJO_CALL_SLOT);
+    assert_eq!(github, GITHUB_CALL_SLOT);
+    assert_eq!(mixed, forgejo.max(github));
+}
+
+#[test]
+fn the_worst_case_grows_with_each_kind() {
+    // The grid includes absent kinds, one of each, and repeated forges of each kind.
+    const COUNTS: [u32; 3] = [0, 1, 2];
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    for forgejo in COUNTS {
+        for github in COUNTS {
+            let counts = limits::Forges { forgejo, github };
+            let base = limits::worst_case(&l, &s, counts, 0).expect("grid bound");
+            for more in
+                [limits::Forges { forgejo: forgejo + 1, github }, limits::Forges { forgejo, github: github + 1 }]
+            {
+                assert!(limits::worst_case(&l, &s, more, 0).expect("larger bound") > base, "{counts:?} -> {more:?}");
+            }
+            let mut settings = fixtures::settings();
+            settings.forges = skein_lib::List::with_capacity(forgejo + github);
+            for (kind, count) in [(crate::settings::Kind::Forgejo, forgejo), (crate::settings::Kind::GitHub, github)] {
+                for _ in 0..count {
+                    for mut forge in fixtures::settings().forges.into_boxed() {
+                        forge.kind = kind;
+                        settings.forges.push(forge).expect("counted capacity");
+                    }
+                }
+            }
+            assert_eq!(limits::Forges::of(&settings), Some(counts));
+        }
+    }
+}
+
+#[test]
+fn no_configured_forge_pays_neither_dialects_share() {
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    let larger = Limits { key_bytes: u32::MAX, installations: u32::MAX, repositories: u32::MAX, users: u32::MAX, ..l };
+    assert_eq!(limits::worst_case(&l, &s, NO_FORGES, 0), limits::worst_case(&larger, &s, NO_FORGES, 0));
+    let mut settings = fixtures::settings();
+    settings.forges = skein_lib::List::with_capacity(l.forges);
+    assert_eq!(limits::Forges::of(&settings), Some(NO_FORGES));
+    assert_eq!(limits::check(&l, &s, &settings), Ok(()));
+    assert_eq!(limits::worst_case(&l, &s, limits::Forges { forgejo: u32::MAX, github: 1 }, 0), None);
+}
+
 #[test]
 fn the_worst_case_counts_answers_and_refuses_overflow() {
-    // Complete fixture heap (forge-connection.md, 7.5), including both dialects.
-    // Three connection and four webhook decoders each hold 1808 fixed bytes.
-    // The GraphQL pull builder occupies 96: its 80-byte document, a presence
-    // flag, a u32 removal count and limit, and alignment. Its 7 * 96 = 672 bytes are
-    // priced by decoder_heap's fixed size. Two own-plan slots each include
-    // 16 bytes of exchange retention/comparison fields. Rows/documents fit
-    // the routing maxima and decoder payload envelopes (forge.md, 3.7 and 5.3; forge-github.md, 6).
-    // Installation staging, page buffers and handoff overlap add 39_432 bytes
-    // to the heap. Ready-time row revisions, jobs and held tokens add 464
-    // bytes. Per-scope clocks and Full/refusal revisions occupy 968 bytes
-    // in the row tree (88 bytes in each of eleven leaf slots); the renewed
-    // Full handoff occupies another 64 bytes.
-    // The App adds 112 bytes of fixed builder state per decoder (32 in App,
-    // two 32-byte Lists and a 16-byte pending name). At string_bytes=128,
-    // each of eight inner entries needs max(3*128 + 2*48 + 2*16,
-    // 4*128 + 2*24 + 2*16) = 592 bytes: the App's builder/document overlap
-    // adds 80 per entry. Seven decoders therefore add 7 * (112 + 8*80) = 5264
-    // bytes. The two retained private backoffs add 176 bytes (16 bytes in
-    // each of eleven leaf slots).
-    // Enqueue error folding holds a second type/message pair: two 16-byte
-    // boxes per decoder. The walker's enqueue flag fits its padding. The
-    // seven decoders' 7 * 32 = 224 fixed bytes are priced by decoder_heap.
-    // GitHub calls add 405_504 bytes: both resolution tables, boxed plans,
-    // discovery staging, route metadata and simultaneous answer/operation handoffs
-    // (16 of them from the writes plan's SetReviewers state).
-    // Discovery adds 2 * (72 candidate bytes + 56 record bytes + 1344
-    // bytes for the probe/original read-plan overlap), for both active calls.
-    // The boxed GitHub exchange adds 120 bytes on each of three connections,
-    // while the connection slab saves 8 bytes per slot: net +336 bytes retain
-    // request, retention and comparison together until released.
-    const FIXTURE_HEAP: u64 = 4_052_670;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(
         &limits,
         &shared,
-        1,
+        limits::Forges::of(&fixtures::settings()).expect("forge counts"),
         crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes"),
     )
     .expect("fixture bound fits");
-    assert_eq!(bytes, FIXTURE_HEAP, "complete owner-value fixture bound");
+
     let owner_bytes = u64::try_from(fixtures::WORD.len() + fixtures::USER_AGENT.len()).expect("fixture lengths");
     assert_eq!(crate::settings::owned_bytes(&fixtures::settings()), Some(owner_bytes));
-    assert_eq!(limits::worst_case(&limits, &shared, 1, 0).expect("fixed bound") + owner_bytes, bytes);
-    assert_eq!(limits::worst_case(&limits, &shared, 1, u64::MAX), None, "owner bytes cannot overflow");
+    assert_eq!(
+        limits::worst_case(&limits, &shared, limits::Forges { forgejo: 1, github: 0 }, 0).expect("fixed bound")
+            + owner_bytes,
+        bytes
+    );
+    assert_eq!(
+        limits::worst_case(&limits, &shared, limits::Forges { forgejo: 1, github: 0 }, u64::MAX),
+        None,
+        "owner bytes cannot overflow"
+    );
     let trust = fixtures::trust();
     for (name, extra) in [("forge.example", 13), ("192.0.2.7", 0), ("2001:db8::7", 0)] {
         let mut settings = fixtures::settings();
@@ -360,7 +497,7 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
         limits::worst_case(
             &huge,
             &shared,
-            1,
+            limits::Forges { forgejo: 1, github: 0 },
             crate::settings::owned_bytes(&fixtures::settings()).expect("owner bytes")
         ),
         None,
