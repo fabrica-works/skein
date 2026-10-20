@@ -1,4 +1,5 @@
 //! The fake GitHub layer, framed as HTTP for the machine world's peer.
+use skein_fake_forge_domain::{self as fake, api as a};
 use skein_fake_forge_github::{
     app::App,
     installations::{self, Installations, Kind, Reach},
@@ -8,7 +9,7 @@ use skein_fake_forge_github::{
 };
 use skein_forge::github::{self, request::Method};
 use skein_json::{tokenizer, writer};
-use skein_lib::{List, ReplyTo, Secret, Token, Wall};
+use skein_lib::{Duration, Env, List, Queue, ReplyTo, Secret, Time, Token, Wall};
 
 /// A wall past the fake's installation dates, advanced by the machine's clock.
 pub const WALL_BASE: Wall = Wall::from_nanos(1_000_000_000_000_000);
@@ -16,6 +17,8 @@ pub const WALL_BASE: Wall = Wall::from_nanos(1_000_000_000_000_000);
 /// The GitHub service's state behind one machine's scripted peer.
 pub struct Fake {
     service: Service,
+    domain: fake::Domain,
+    config: fake::Config,
 }
 impl Fake {
     /// Uses the GitHub fake's fixture App, accounts, repositories and installations.
@@ -97,7 +100,8 @@ impl Fake {
             3
         );
         assert!(store.suspend(3, true), "third installation exists");
-        Self { service }
+        let (domain, config) = fixture_domain(seed);
+        Self { service, domain, config }
     }
 
     /// Scenario access to the fake's installation store.
@@ -144,7 +148,10 @@ impl Fake {
             ReplyTo::new(Token::new(77)),
         ) {
             Outcome::Reply(response) => response,
-            Outcome::Call(..) => panic!("domain reads arrive with task 27"),
+            Outcome::Call(pending, event) => {
+                let result = domain_reply(&mut self.domain, &self.config, wall, event);
+                self.service.finish(pending, result)
+            }
         };
         let status = response.status;
         let reason = match status {
@@ -212,4 +219,85 @@ fn imf(wall: Wall) -> String {
     let month = ["Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb"]
         [usize::try_from(month).expect("month index")];
     format!("{weekday}, {day:02} {month} {year:04} {:02}:{:02}:{:02} GMT", time / 3600, time / 60 % 60, time % 60)
+}
+
+fn fixture_domain(seed: u64) -> (fake::Domain, fake::Config) {
+    let mut config = crate::fixtures::fake_config();
+    config.limits.repositories = 3;
+    config.latency_min = Duration::ZERO;
+    config.latency_max = Duration::ZERO;
+    config.skew = fake::Skew::None;
+    let mut domain = fake::Domain::new(&config, seed);
+    for (id, name) in [(2, b"acme/widgets".as_slice()), (4, b"acme/tools"), (6, b"acme/absent")] {
+        let first = fake::repository(
+            &mut domain,
+            &config,
+            a::Setup {
+                id,
+                name: Box::from(name),
+                default: Box::from(b"main".as_slice()),
+                tree: Box::from([]),
+                labels: Box::from([]),
+                checks: a::Checks {
+                    contexts: Box::from([]),
+                    latency_min: Duration::ZERO,
+                    latency_max: Duration::ZERO,
+                    silent: 0,
+                    passes: 1000,
+                    reruns: 0,
+                    cue: None,
+                },
+                protection: None,
+                hooked: false,
+            },
+        );
+        fake::grant(&mut domain, name, 9, a::Permission::Write);
+        fake::settings(
+            &mut domain,
+            name,
+            a::Settings { default: Box::from(b"main".as_slice()), merge: true, squash: true, rebase: false },
+        );
+        if id == 2 {
+            for branch in [b"alpha".as_slice(), b"feature/one"] {
+                domain_reply(
+                    &mut domain,
+                    &config,
+                    Wall::EPOCH,
+                    fake::Event::Call {
+                        reply_to: ReplyTo::new(Token::new(77)),
+                        user: 9,
+                        repository: Box::from(name),
+                        op: a::Op::Write(a::Write::CreateBranch { branch: Box::from(branch), commit: first }),
+                    },
+                )
+                .expect("fixture branch");
+            }
+        }
+    }
+    (domain, config)
+}
+
+// Fixture calls have zero latency and one reply, handled by the world's same thread.
+fn domain_reply(
+    domain: &mut fake::Domain,
+    config: &fake::Config,
+    wall: Wall,
+    event: fake::Event,
+) -> Result<a::Answer, a::Error> {
+    let env = Env { now: Time::from_nanos(wall.as_nanos()), wall, limits: *config };
+    let mut out = Queue::with_capacity(fake::MAX_OUT);
+    fake::step(domain, &env, event, &mut out);
+    if out.is_empty() {
+        fake::fire(domain, &env, &mut out);
+    }
+    let result = match out.pop().expect("zero-latency domain reply") {
+        fake::Request::Reply { to, result } => {
+            assert_eq!(to.into_token(), Token::new(77));
+            result
+        }
+        fake::Request::Hook { .. } => panic!("fixture reads produce one reply"),
+    };
+    assert!(out.is_empty());
+    domain.reclaim();
+    result
 }

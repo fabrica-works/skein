@@ -2,6 +2,7 @@ mod connection;
 mod contents;
 mod dialects;
 pub(crate) mod fixtures;
+mod github_calls;
 mod github_installation_loss;
 mod github_installations;
 pub(crate) mod github_renewal;
@@ -316,7 +317,10 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
     // Enqueue error folding holds a second type/message pair: two 16-byte
     // boxes per decoder. The walker's enqueue flag fits its padding. The
     // seven decoders' 7 * 32 = 224 fixed bytes are priced by decoder_heap.
-    const FIXTURE_HEAP: u64 = 3_643_886;
+    // GitHub calls add 405_504 bytes: both resolution tables, boxed plans,
+    // discovery staging, route metadata and simultaneous answer/operation handoffs
+    // (16 of them from the writes plan's SetReviewers state).
+    const FIXTURE_HEAP: u64 = 4_049_390;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(

@@ -28,7 +28,6 @@ enum Progress {
     Identified(Result<document::Viewer, api::Error>),
 }
 impl Component {
-    #[cfg_attr(not(test), expect(dead_code, reason = "task 27 wires the call-token refusal seam"))]
     pub(super) fn github_token_refused(&mut self, at: u32, installation: u64, token_revision: u64, env: &Env<Limits>) {
         if self.closed || !super::ready(*self.starts.get(at).expect("forge start")) {
             return;

@@ -11,6 +11,7 @@ use alloc::boxed::Box;
 use skein_lib::{Env, Id, List, Map, Queue, Slab, Time, Token};
 mod calls;
 mod github;
+mod github_calls;
 use skein_forge::api;
 use skein_forge::forgejo::plans::{
     Body, Heard,
@@ -35,6 +36,7 @@ pub struct Diagnostics {
 #[derive(Debug)]
 pub(crate) enum CallPlan {
     Forgejo(Plan),
+    GitHub(skein_forge::github::plans::plan::Plan),
 }
 #[derive(Debug)]
 pub(crate) enum OwnPlan {
@@ -48,12 +50,33 @@ pub(crate) struct Waiting {
     pub repository: api::Repository,
     pub op: Option<api::Op>,
     pub plan: Option<CallPlan>,
+    pub route: Option<github_calls::Route>,
+    pub discovery: Option<skein_forge::github::plans::tables::Tables>,
+    pub discovered: Option<api::Answer>,
     pub page_size: u32,
     pub connection: Option<Token>,
     pub cost: u32,
     pub charged: bool,
     pub revoked: bool,
     pub deadline: Time,
+}
+impl Waiting {
+    fn new(repository: api::Repository, op: api::Op, deadline: Time) -> Self {
+        Self {
+            repository,
+            op: Some(op),
+            plan: None,
+            route: None,
+            discovery: None,
+            discovered: None,
+            page_size: 1,
+            connection: None,
+            cost: 0,
+            charged: false,
+            revoked: false,
+            deadline,
+        }
+    }
 }
 #[derive(Debug)]
 pub(crate) struct Held {
@@ -67,7 +90,8 @@ pub struct Component {
     settings: Settings,
     starts: List<Start>,
     github: List<Option<Box<crate::installations::GitHub>>>,
-    tables: Tables,
+    forgejo_tables: Tables,
+    github_tables: skein_forge::github::plans::tables::Tables,
     waiting: Slab<Waiting>,
     calls: Map<Token, Id<Waiting>>,
     held: Map<Token, Held>,
@@ -106,12 +130,27 @@ impl Component {
             own_tokens.push(None).expect("checked forge count");
             own_plans.push(None).expect("checked forge count");
         }
+        let mut forgejo = false;
+        let mut has_github = false;
+        for forge in &settings.forges {
+            match forge.kind {
+                crate::settings::Kind::Forgejo => forgejo = true,
+                crate::settings::Kind::GitHub => has_github = true,
+            }
+        }
         Ok(Self {
             hooks: crate::hooks::Hooks::new(limits),
             settings,
             starts,
             github,
-            tables: Tables::new(limits.repositories, limits.users),
+            forgejo_tables: Tables::new(
+                if forgejo { limits.repositories } else { 0 },
+                if forgejo { limits.users } else { 0 },
+            ),
+            github_tables: skein_forge::github::plans::tables::Tables::new(
+                if has_github { limits.repositories } else { 0 },
+                if has_github { limits.users } else { 0 },
+            ),
             waiting: Slab::with_capacity(shared.calls),
             calls: Map::with_capacity(shared.calls),
             held: Map::with_capacity(shared.calls),
@@ -129,6 +168,19 @@ impl Component {
             wake: None,
             ended: false,
         })
+    }
+    #[cfg(test)]
+    pub(crate) fn test_calls_ready(&mut self) {
+        *self.starts.get_mut(0).expect("fixture start") = Start::Ready { cap: skein_forge::github::pin::PAGE_CAP };
+        self.settings.forges.get_mut(0).expect("forge").access = Some(crate::tests::fixtures::app_access(
+            skein_fake_forge_github::keys::KEYS.first().expect("test key"),
+            7,
+            9,
+        ));
+        let gh = self.test_github_mut();
+        gh.connected = true;
+        gh.identity_checked = true;
+        gh.baseline = false;
     }
     #[cfg(test)]
     pub(crate) fn test_github(&self) -> &crate::installations::GitHub {
@@ -197,17 +249,7 @@ impl Component {
                 assert!(!self.calls.contains_key(&call), "one live call per token");
                 let id = self
                     .waiting
-                    .insert(Waiting {
-                        repository,
-                        op: Some(op),
-                        plan: None,
-                        page_size: 1,
-                        connection: None,
-                        cost: 0,
-                        charged: false,
-                        revoked: false,
-                        deadline: env.now.saturating_add(env.limits.deadline),
-                    })
+                    .insert(Waiting::new(repository, op, env.now.saturating_add(env.limits.deadline)))
                     .expect("client bounds admitted calls");
                 let _previous: Option<Id<Waiting>> = self.calls.insert(call, id).expect("call index matches its slab");
                 self.drive(env, up, io, MAX_OUT.above);
@@ -310,7 +352,7 @@ impl Component {
         }
         for (_, id) in &self.calls {
             let call = self.waiting.get_mut(*id).expect("indexed call");
-            if call.repository.forge == number && call.plan.is_some() {
+            if call.repository.forge == number && (call.plan.is_some() || call.cost > 0) {
                 call.revoked = true;
             }
         }
@@ -780,8 +822,12 @@ impl Component {
         self.connection_slab.reclaim();
     }
     /// The bounded resolution tables owned by this component.
-    pub fn tables(&mut self) -> &mut Tables {
-        &mut self.tables
+    pub fn forgejo_tables(&mut self) -> &mut Tables {
+        &mut self.forgejo_tables
+    }
+    /// GitHub repository owners and user logins, shared by its configured forges.
+    pub fn github_tables(&mut self) -> &mut skein_forge::github::plans::tables::Tables {
+        &mut self.github_tables
     }
     /// The pure start, in configured forge order.
     #[must_use]

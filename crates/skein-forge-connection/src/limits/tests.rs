@@ -377,3 +377,21 @@ fn renewal_handoff_checked_add_refuses_overflow() {
     assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base), Some(u64::MAX));
     assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base + 1), None);
 }
+
+#[test]
+fn github_tables_and_discovery_plans_are_priced_at_simultaneous_peak() {
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    let fixed = super::github_tables_heap(&l, l.repositories, l.users).expect("full tables");
+    let staged = super::github_tables_heap(&l, 1, 1).expect("discovery staging");
+    assert!(
+        fixed
+            >= u64::from(l.repositories)
+                * u64::try_from(size_of::<skein_forge::github::plans::tables::Repository>()).expect("row size")
+    );
+    let base = super::worst_case(&l, &s, 1, 0).expect("complete bound");
+    assert!(base >= fixed + u64::from(s.calls) * (staged + u64::from(s.answer_bytes) * 4));
+    let more = super::Limits { repositories: l.repositories + 1, users: l.users + 1, ..l };
+    assert!(super::worst_case(&more, &s, 1, 0).expect("larger tables") > base);
+    assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base + 1), None);
+}

@@ -171,7 +171,7 @@ impl Harness {
         self.send(crate::Request::Call { call: skein_lib::Token::new(call), repository, op });
     }
     pub fn known(&mut self, repository: api::Repository, row: skein_forge::forgejo::plans::tables::Repository) {
-        self.component.tables().keep_repository(repository, row);
+        self.component.forgejo_tables().keep_repository(repository, row);
     }
     pub fn send(&mut self, request: crate::Request) {
         self.component.down(&self.env, request, &mut self.up, &mut self.io);
@@ -911,3 +911,62 @@ pub fn github_settings() -> Settings {
     forge.access = Some(app_access(skein_fake_forge_github::keys::KEYS.first().expect("test key"), 7, 9));
     settings
 }
+
+/// Ordinary calls start from a checked identity without repeating startup's RSA work.
+pub fn github_calls() -> Harness {
+    let mut settings = github_settings();
+    settings.forges.get_mut(0).expect("forge").access = None;
+    let mut h = Harness::new(settings);
+    h.component.test_calls_ready();
+    github_account(&mut h, 1, 22, b"acme", b"artificial-full-one");
+    h
+}
+pub fn github_account(h: &mut Harness, installation: u64, account: u64, login: &[u8], token: &[u8]) {
+    use crate::installations::{Clock, Row, Tokens};
+    let gh = h.component.test_github_mut();
+    let _accepted = gh.accepted.insert(installation).expect("fixture accepted");
+    drop(
+        gh.rows
+            .insert(
+                installation,
+                Row {
+                    state: Tokens::Current,
+                    revision: 0,
+                    token_revision: 1,
+                    refused_revision: None,
+                    full: Clock { expiry: Time::from_nanos(3_600_000_000_000), ..Clock::empty() },
+                    contents: Clock::empty(),
+                    account: crate::Account { id: account, login: Box::from(login) },
+                    suspended: false,
+                    accepted: true,
+                    api: Some(Secret::new(Box::from(token))),
+                    api_expires: Wall::from_nanos(3_600_000_000_000),
+                    git_expires: Wall::from_nanos(3_600_000_000_000),
+                },
+            )
+            .expect("fixture installation"),
+    );
+}
+pub fn github_repository(h: &mut Harness, repository: api::Repository, account: u64) {
+    h.component.github_tables().keep_repository(
+        repository,
+        skein_forge::github::plans::tables::Repository {
+            owner: Box::from(b"acme".as_slice()),
+            name: Box::from(b"widgets".as_slice()),
+            owner_id: account,
+            organization: true,
+            merge: Some(skein_forge::github::plans::tables::Method::Merge),
+            html_url: Box::from(b"https://github.com/acme/widgets".as_slice()),
+        },
+    );
+}
+pub const GITHUB_REPOSITORY: &[u8] = br#"{"id":1,"owner":{"id":22,"login":"acme","type":"Organization"},"name":"widgets","default_branch":"main","html_url":"https://github.com/acme/widgets","allow_merge_commit":true,"allow_squash_merge":true,"allow_rebase_merge":false}"#;
+pub const GITHUB_BRANCH: &[u8] = br#"{"name":"main","commit":{"sha":"0000000000000000000000000000000000000000"}}"#;
+
+// GitHub dialect fixtures: issue/comment, pull, combined status, check runs and GraphQL.
+pub const GITHUB_ISSUE: &[u8] = br#"{"number":7,"state":"open","user":{"id":9},"updated_at":"2026-10-20T08:00:00Z","title":"widgets","labels":[],"body":"description"}"#;
+pub const GITHUB_COMMENTS: &[u8] = br#"[{"id":8,"user":{"id":9},"created_at":"2026-10-20T08:00:00Z","updated_at":"2026-10-20T08:00:00Z","body":"hello"}]"#;
+pub const GITHUB_PULL: &[u8] = br#"{"number":7,"state":"open","merged":false,"merge_commit_sha":null,"mergeable":true,"head":{"ref":"feature","sha":"0000000000000000000000000000000000000000"},"base":{"ref":"main","sha":"1111111111111111111111111111111111111111"},"requested_reviewers":[]}"#;
+pub const GITHUB_COMBINED: &[u8] = br#"{"state":"pending","total_count":0,"statuses":[]}"#;
+pub const GITHUB_RUNS: &[u8] = br#"{"check_runs":[]}"#;
+pub const GITHUB_GRAPHQL: &[u8] = br#"{"data":{"repository":{"pullRequest":{"id":"opaque-node","mergeCommit":null,"mergeQueueEntry":null,"timelineItems":{"nodes":[]}}}}}"#;

@@ -19,7 +19,7 @@ impl Component {
         let error = if waiting.cost == 0 { api::Error::Unavailable } else { api::Error::Timeout };
         let error = match &waiting.plan {
             Some(CallPlan::Forgejo(plan)) => plan.error(error),
-            None => error,
+            Some(CallPlan::GitHub(_)) | None => error,
         };
         if let Some(token) = waiting.connection {
             self.connection_slab
@@ -88,8 +88,9 @@ impl Component {
             };
             if waiting.connection.is_none() {
                 if waiting.revoked {
-                    let error = match waiting.plan.as_ref().expect("begun call") {
-                        CallPlan::Forgejo(plan) => plan.error(api::Error::Forbidden),
+                    let error = match waiting.plan.as_ref() {
+                        Some(CallPlan::Forgejo(plan)) => plan.error(api::Error::Forbidden),
+                        Some(CallPlan::GitHub(_)) | None => api::Error::Forbidden,
                     };
                     self.finish(call, id, Err(error), up);
                     continue;
@@ -110,9 +111,18 @@ impl Component {
                     }
                 }
             }
-            // Task 27 replaces this guard with GitHub call plans and installation routing.
             if self.settings.forges.get(at).expect("forge").kind == crate::settings::Kind::GitHub {
-                self.finish(call, id, Err(api::Error::Unavailable), up);
+                self.drive_github_call(
+                    (call, id),
+                    at,
+                    env,
+                    up,
+                    io,
+                    (
+                        above_room.saturating_sub(up.len().saturating_sub(above)),
+                        below_room.saturating_sub(io.len().saturating_sub(below)),
+                    ),
+                );
                 continue;
             }
             if !self.assign(call, id, at, env, up, io) {
@@ -141,7 +151,7 @@ impl Component {
             }
         }
     }
-    fn assign(
+    pub(super) fn assign(
         &mut self,
         call: Token,
         id: Id<Waiting>,
@@ -223,13 +233,19 @@ impl Component {
         if waiting.plan.is_some() {
             return true;
         }
+        if self.settings.forges.get(at).expect("forge").kind == crate::settings::Kind::GitHub {
+            return self.begin_github_call(call, id, env, up, io);
+        }
         let op = waiting.op.take().expect("waiting operation");
         waiting.page_size = page_size(&op, cap, &env.limits, &self.shared);
         let mut plan = CallPlan::Forgejo(Plan::new(waiting.repository, op));
         let step = match &mut plan {
-            CallPlan::Forgejo(plan) => {
-                plan.begin(bounds(waiting.page_size, &env.limits, &self.shared), &self.settings.word, &mut self.tables)
-            }
+            CallPlan::Forgejo(plan) => plan.begin(
+                bounds(waiting.page_size, &env.limits, &self.shared),
+                &self.settings.word,
+                &mut self.forgejo_tables,
+            ),
+            CallPlan::GitHub(_) => unreachable!("Forgejo admission"),
         };
         waiting.plan = Some(plan);
         match step {
@@ -273,13 +289,15 @@ impl Component {
                     c.deadline = Some(env.now.saturating_add(env.limits.idle));
                     let error = match waiting.plan.as_ref().expect("call plan") {
                         CallPlan::Forgejo(plan) => plan.error(api::Error::Forbidden),
+                        CallPlan::GitHub(_) => api::Error::Forbidden,
                     };
                     self.finish(call, id, Err(error), up);
                     break;
                 }
-                let CallPlan::Forgejo(plan) = waiting.plan.as_mut().expect("call plan");
+                let deadline = waiting.deadline;
+                let plan = forgejo_plan(waiting);
                 if let Some(request) = plan.pending() {
-                    c.deadline = Some(waiting.deadline);
+                    c.deadline = Some(deadline);
                     c.raw_room(plan.raw_room(self.shared.answer_bytes));
                     let forge = self.settings.forges.get(at).expect("forge");
                     let authorization = skein_forge::forgejo::credential::authorization(
@@ -320,10 +338,11 @@ impl Component {
                             heard,
                             bounds(waiting.page_size, &env.limits, &self.shared),
                             &self.settings.word,
-                            &mut self.tables,
+                            &mut self.forgejo_tables,
                         );
                         (step, plan.take_cut())
                     }
+                    CallPlan::GitHub(_) => unreachable!("Forgejo heard"),
                 };
                 if cut {
                     c.cut(env);
@@ -365,6 +384,7 @@ impl Component {
             Step::Send(exchange) => {
                 match self.waiting.get_mut(id).expect("indexed call").plan.as_mut().expect("call plan") {
                     CallPlan::Forgejo(plan) => plan.set_pending(exchange),
+                    CallPlan::GitHub(_) => unreachable!("Forgejo step"),
                 }
                 let token = self.waiting.get(id).expect("call").connection.expect("holder");
                 let c = self
@@ -423,7 +443,7 @@ fn bounds(page_size: u32, l: &Limits, s: &Shared) -> Bounds {
     Bounds { page_size, rows: s.rows, answer_bytes: s.answer_bytes, body_bytes: l.body_bytes }
 }
 
-fn page_size(op: &api::Op, cap: u32, l: &Limits, s: &Shared) -> u32 {
+pub(super) fn page_size(op: &api::Op, cap: u32, l: &Limits, s: &Shared) -> u32 {
     let listing = match op {
         api::Op::Read(read) => match read {
             api::Read::Items { .. } | api::Read::PullFor { .. } => Listing::Items,
@@ -447,4 +467,11 @@ fn page_size(op: &api::Op, cap: u32, l: &Limits, s: &Shared) -> u32 {
         api::Op::Write(_) => return 1,
     };
     limits::page_size(listing, cap, l, s)
+}
+
+fn forgejo_plan(waiting: &mut Waiting) -> &mut Plan {
+    match waiting.plan.as_mut().expect("call plan") {
+        CallPlan::Forgejo(plan) => plan,
+        CallPlan::GitHub(_) => unreachable!("Forgejo pump"),
+    }
 }

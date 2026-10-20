@@ -573,7 +573,7 @@ fn github_own_connection_is_reserved_while_forgejo_calls_run() {
 }
 
 #[test]
-fn github_ready_calls_are_unavailable_without_cost() {
+fn github_ready_calls_without_an_accepted_installation_are_not_installed() {
     let mut h = harness();
     accepted(&mut h, &[]);
     h.answer(FORGE, &fixtures::ok(b"[]")); // The changed set discards the written page.
@@ -581,7 +581,7 @@ fn github_ready_calls_are_unavailable_without_cost() {
     h.call(1, fixtures::REPO, skein_forge::api::Op::Read(skein_forge::api::Read::Settings));
     h.run(Duration::ZERO);
     let answer = h.answered(1).expect("call terminal");
-    assert_eq!(answer.result, Err(skein_forge::api::Error::Unavailable));
+    assert_eq!(answer.result, Err(skein_forge::api::Error::NotInstalled));
     assert_eq!(answer.cost, 0);
     assert!(!contains(&h.request_bytes(FORGE), b"/api/v1"));
 }

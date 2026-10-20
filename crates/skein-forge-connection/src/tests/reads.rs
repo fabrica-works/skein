@@ -598,7 +598,7 @@ fn locate_keeps_the_repository() {
     answer(&mut h, REPOSITORY);
     assert_eq!(h.answered(1).expect("located").result, Ok(Answer::Located { repository: 1 }));
     assert_eq!(h.answered(1).expect("located").cost, 1);
-    assert!(h.component.tables().repository(fixtures::REPO).is_some(), "located row kept");
+    assert!(h.component.forgejo_tables().repository(fixtures::REPO).is_some(), "located row kept");
 }
 #[test]
 fn settings_refresh_the_kept_repository() {
@@ -616,7 +616,7 @@ fn settings_refresh_the_kept_repository() {
     );
     assert_eq!(h.answered(2).expect("settings").cost, 1);
     assert_eq!(
-        h.component.tables().repository(fixtures::REPO).expect("refreshed row").merge_style,
+        h.component.forgejo_tables().repository(fixtures::REPO).expect("refreshed row").merge_style,
         d::MergeStyle::Merge
     );
 }

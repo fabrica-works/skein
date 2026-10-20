@@ -603,6 +603,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
                     .checked_mul(3)?
                     .checked_add(u64::try_from(size_of::<skein_forge::forgejo::plans::reads::Plan>()).ok()?)?
                     .checked_add(u64::try_from(size_of::<skein_forge::forgejo::plans::writes::Plan>()).ok()?)?
+                    .checked_add(github_call_heap(l, s)?)?
                     .checked_add(List::<u64>::worst_case(s.op_bytes.checked_div(8)?)?)?
                     .checked_add(List::<Box<[u8]>>::worst_case(s.op_bytes.checked_div(8)?.checked_add(l.inner)?)?)?
                     .checked_add(
@@ -652,6 +653,7 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(hooks)?
         .checked_add(calls)?
         .checked_add(held)?
+        .checked_add(github_tables_heap(l, l.repositories, l.users)?)?
         .checked_add(repositories)?
         .checked_add(users)?
         .checked_add(configured)?
@@ -659,6 +661,24 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(owned_bytes)?
         .checked_add(16)?
         .checked_add(u64::try_from(size_of::<Answered>()).ok()?)
+}
+
+// Both boxed plan envelopes, retained operation/answer overlap and discovery staging.
+fn github_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
+    u64::try_from(size_of::<skein_forge::github::plans::reads::Plan>())
+        .ok()?
+        .checked_add(u64::try_from(size_of::<skein_forge::github::plans::writes::Plan>()).ok()?)?
+        .checked_add(github_tables_heap(l, 1, 1)?)?
+        .checked_add(u64::from(s.answer_bytes).checked_mul(3)?)
+}
+// Tuple envelopes price each dialect-private entry's row and LRU counter.
+// Discovery's one-row staging coexists with both full public tables.
+fn github_tables_heap(l: &Limits, repositories: u32, users: u32) -> Option<u64> {
+    use skein_lib::Map;
+    Map::<api::Repository, (skein_forge::github::plans::tables::Repository, u64)>::worst_case(repositories)?
+        .checked_add(u64::from(repositories).checked_mul(u64::from(l.string_bytes).checked_mul(3)?)?)?
+        .checked_add(Map::<(u16, u64), (Box<[u8]>, u64)>::worst_case(users)?)?
+        .checked_add(u64::from(users).checked_mul(u64::from(l.string_bytes))?)
 }
 
 fn hook_heap(l: &Limits, decoder: u64, socket: u64) -> Option<u64> {

@@ -726,7 +726,13 @@ It is the sum of:
   the check knows the forges' number, not their transports;
 - for each of `calls`: its record, plan and copy of the operation, and
   its held answer, at most `answer_bytes`;
-- the two tables, full; each forge's credential, secret and name, a
+- both dialects' repository/user tables, full in the conservative bound:
+  each dialect allocates its tables only when a forge of that kind is
+  configured, sharing them across its forges by forge key; the bound's
+  interface has no dialect counts, so prices both full sets. Discovery's
+  staged row, retained operation, route revisions and exchange/header
+  handoffs coexist with the plans, row copies and held answers;
+  each forge's credential, secret and name, a
   TLS name's DNS text or a plaintext name (an IP name holds none); and
   the word and the user agent;
 - for each of `hooks`: its stack, HMAC state, decoded fields and held

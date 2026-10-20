@@ -1,4 +1,4 @@
-//! Renewal uses the reserved connection; ordinary GitHub calls stay guarded until task 27.
+//! Renewal uses the reserved connection independently of ordinary GitHub calls.
 use super::{
     fixtures::{self, FORGE, Harness},
     github_installation_loss::{commit, public_ready, requests, row},
