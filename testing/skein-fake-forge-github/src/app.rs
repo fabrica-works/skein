@@ -1,6 +1,6 @@
 //! The App's state and bearer check (fake-forge.md, 10.1).
 use alloc::boxed::Box;
-use skein_forge::github::jwt;
+use skein_forge::github::{document::Permission, jwt};
 use skein_json::{Token, tokenizer};
 use skein_lib::stream::{Down, Read, Up};
 use skein_lib::{Env, List, Queue, Secret, Time, Wall, base64, bytes};
@@ -13,6 +13,8 @@ pub struct App {
     pub id: u64,
     pub slug: Box<[u8]>,
     pub owner: u64,
+    pub permissions: Box<[Permission]>,
+    pub events: Box<[Box<[u8]>]>,
     pub key: &'static [u8],
     pub webhook: Secret,
 }
@@ -24,6 +26,8 @@ impl core::fmt::Debug for App {
             .field("id", &self.id)
             .field("slug", &self.slug)
             .field("owner", &self.owner)
+            .field("permissions", &self.permissions)
+            .field("events", &self.events)
             .field("key_bytes", &self.key.len())
             .field("webhook", &self.webhook)
             .finish()

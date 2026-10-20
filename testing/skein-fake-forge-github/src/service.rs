@@ -35,11 +35,23 @@ pub struct Account {
     pub id: u64,
     pub organization: bool,
 }
+/// How a scenario presents the converted App's permissions and subscriptions.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AppFacts {
+    /// Keep every permission and event the manifest posts.
+    Complete,
+    /// Keep the grants, but omit both fields from GET /app.
+    Omitted,
+    /// Keep only the first permission at read access, and the first event.
+    Narrow,
+}
 /// The scenario's GitHub-only tables, including the signed-in browser account.
 #[derive(Debug)]
 pub struct Config {
     /// App identity and test signing key.
     pub app: App,
+    /// Grants at conversion and fields shown by GET /app.
+    pub app_facts: AppFacts,
     /// Domain user acting for every installation.
     pub bot: u64,
     /// Initial webhook URL.
@@ -138,6 +150,7 @@ pub struct Pending {
 #[derive(Debug)]
 pub struct Service {
     pub(crate) app: App,
+    pub(crate) app_facts: AppFacts,
     pub(crate) bot: u64,
     pub(crate) hook: Box<[u8]>,
     pub(crate) accounts: List<Account>,
@@ -161,8 +174,20 @@ impl Service {
             || config.app.slug.len().checked_add(b"[bot]".len()).ok_or(Problem::Config)? > string
             || config.hook.len() > string
             || config.repositories.len() > limits.github.inner
+            || config.app.permissions.len() > usize::try_from(limits.github.inner).or(Err(Problem::Limits))?
+            || config.app.events.len() > usize::try_from(limits.github.inner).or(Err(Problem::Limits))?
         {
             return Err(Problem::Config);
+        }
+        for permission in &config.app.permissions {
+            if permission.name.len() > string {
+                return Err(Problem::Config);
+            }
+        }
+        for event in &config.app.events {
+            if event.len() > string {
+                return Err(Problem::Config);
+            }
         }
         for (at, row) in config.repositories.iter().enumerate() {
             if row.id == 0
@@ -219,6 +244,7 @@ impl Service {
         }
         Ok(Self {
             app: config.app,
+            app_facts: config.app_facts,
             bot: config.bot,
             hook: config.hook,
             accounts: config.accounts,
@@ -344,16 +370,7 @@ impl Service {
             };
         }
         match route {
-            routes::App::Identity => answers::response(
-                200,
-                &Body::App(&d::App {
-                    id: self.app.id,
-                    slug: self.app.slug.clone(),
-                    permissions: Box::from([]),
-                    events: Box::from([]),
-                }),
-                &self.limits,
-            ),
+            routes::App::Identity => self.app_identity(),
             routes::App::Hook => answers::response(200, &Body::Hook(&d::Hook { url: self.hook.clone() }), &self.limits),
             routes::App::SetHook => self.set_hook(request.body),
             routes::App::Installations(page) => self.installation_page(page, request.target),
@@ -370,6 +387,19 @@ impl Service {
                 }
             }
         }
+    }
+    fn app_identity(&self) -> Response {
+        let app = d::App {
+            id: self.app.id,
+            slug: self.app.slug.clone(),
+            permissions: self.app.permissions.clone(),
+            events: self.app.events.clone(),
+        };
+        let body = match self.app_facts {
+            AppFacts::Complete | AppFacts::Narrow => Body::App(&app),
+            AppFacts::Omitted => Body::AppIdentity(&app),
+        };
+        answers::response(200, &body, &self.limits)
     }
     fn mint(&mut self, id: u64, body: &[u8], now: Wall) -> Response {
         let Some(row) = self.installations.get(id) else {
@@ -542,6 +572,14 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         .checked_add(u64::try_from(config.app.slug.len()).ok()?)?
         .checked_add(u64::try_from(config.app.webhook.len()).ok()?)?
         .checked_add(u64::from(limits.github.string_bytes))?;
+    // The retained App and its GET /app snapshot coexist. A conversion's
+    // manifest remains in the page store, whose budget counts its own lists.
+    let app_lists = List::<d::Permission>::worst_case(limits.github.inner)?
+        .checked_add(List::<Box<[u8]>>::worst_case(limits.github.inner)?)?
+        .checked_add(
+            u64::from(limits.github.string_bytes).checked_mul(2)?.checked_mul(u64::from(limits.github.inner))?,
+        )?;
+    bytes = bytes.checked_add(app_lists.checked_mul(2)?)?;
     let row_bytes = u64::from(limits.github.string_bytes).checked_mul(4)?.checked_add(256)?;
     bytes
         .checked_add(row_bytes.checked_mul(u64::from(limits.page))?)?

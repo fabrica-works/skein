@@ -511,7 +511,12 @@ only what GitHub has and Forgejo lacks (10.2).
     `hook_attributes` and the rest), since the page's post is not
     otherwise in sight.
   - `POST /app-manifests/<code>/conversions` makes the App and answers
-    as forge-github.md, section 11, says.
+    as forge-github.md, section 11, says. The converted App retains every
+    posted `default_permissions` and `default_events` entry. The scenario's
+    `Config::app_facts` is `Complete`, `Omitted` (GET /app omits both fields
+    while retaining the grants), or `Narrow` (conversion retains only the
+    first permission at read access and the first event). The posted
+    manifest remains readable in each case.
   - `GET /apps/<slug>/installations/new?state=<s>` takes `account=<login>`
     (by default the App's owner), and `repositories=all` (the default)
     or `repository_ids=<id>,...`. It installs and answers `302` to

@@ -4,7 +4,7 @@ use skein_fake_forge_github::{
     installations::{self, Installations, Kind, Reach},
     keys::KEYS,
     pages,
-    service::{Account, Config, Limits, Outcome, Request, Row, Service},
+    service::{Account, AppFacts, Config, Limits, Outcome, Request, Row, Service},
 };
 use skein_forge::github::{self, request::Method};
 use skein_json::{tokenizer, writer};
@@ -45,9 +45,12 @@ impl Fake {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),
                 owner: 1,
+                permissions: Box::from([]),
+                events: Box::from([]),
                 key: app_key(),
                 webhook: Secret::new(Box::from(b"test-webhook".as_slice())),
             },
+            app_facts: AppFacts::Complete,
             bot: 9,
             hook: Box::from(b"https://hook.test/start".as_slice()),
             repositories,

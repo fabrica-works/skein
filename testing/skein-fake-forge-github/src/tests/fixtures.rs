@@ -47,6 +47,7 @@ pub fn config() -> Config {
     }
     Config {
         app: app(),
+        app_facts: service::AppFacts::Complete,
         bot: BOT,
         hook: boxed(b"https://hook.test/start"),
         repositories,

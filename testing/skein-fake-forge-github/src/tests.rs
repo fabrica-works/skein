@@ -1,4 +1,5 @@
 mod app;
+mod app_facts;
 mod fixtures;
 mod installations;
 mod keys;
@@ -25,6 +26,8 @@ fn app() -> App {
         id: 7,
         slug: Box::from(*b"test-app"),
         owner: 1,
+        permissions: Box::from([]),
+        events: Box::from([]),
         key: KEYS.first().expect("first test key"),
         webhook: Secret::new(Box::from(*b"test-webhook")),
     }

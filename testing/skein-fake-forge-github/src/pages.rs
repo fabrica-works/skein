@@ -278,7 +278,9 @@ pub(crate) fn convert(service: &mut Service, code: &[u8], body: &[u8], now: Wall
     if let Some(hook) = hook {
         service.hook = hook;
     }
-    service.app = App { id, slug, owner: account.id, key, webhook };
+    let grants = app_grants(manifest, service.app_facts);
+    service.app =
+        App { id, slug, owner: account.id, key, webhook, permissions: grants.permissions, events: grants.events };
     service.pages.key = match service.pages.key.checked_add(1) {
         Some(next) => next.rem_euclid(3),
         None => return answers::failed(),
@@ -288,6 +290,32 @@ pub(crate) fn convert(service: &mut Service, code: &[u8], body: &[u8], now: Wall
     };
     record.used = true;
     Response { status: 201, link: None, body }
+}
+#[derive(Debug)]
+struct Grants {
+    permissions: Box<[document::Permission]>,
+    events: Box<[Box<[u8]>]>,
+}
+fn app_grants(manifest: &Manifest, facts: crate::service::AppFacts) -> Grants {
+    match facts {
+        crate::service::AppFacts::Complete | crate::service::AppFacts::Omitted => Grants {
+            permissions: manifest.default_permissions.clone().into_boxed(),
+            events: manifest.default_events.clone().into_boxed(),
+        },
+        crate::service::AppFacts::Narrow => {
+            let mut permissions = List::with_capacity(1);
+            if let Some(permission) = manifest.default_permissions.get(0) {
+                permissions
+                    .push(document::Permission { name: permission.name.clone(), access: document::Access::Read })
+                    .expect("one permission");
+            }
+            let mut events = List::with_capacity(1);
+            if let Some(event) = manifest.default_events.get(0) {
+                events.push(event.clone()).expect("one event");
+            }
+            Grants { permissions: permissions.into_boxed(), events: events.into_boxed() }
+        }
+    }
 }
 fn slug(name: &[u8]) -> Option<Box<[u8]>> {
     let bound = u32::try_from(name.len()).ok()?;

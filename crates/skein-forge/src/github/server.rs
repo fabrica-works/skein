@@ -13,8 +13,8 @@ mod delivery;
 mod pulls;
 mod writes;
 pub use app::{
-    app, bot_user, conversion, graphql, graphql_refusal, hook, hook_url, installation, installations, mint_scope,
-    minted, reachable, viewer,
+    app, app_identity, bot_user, conversion, graphql, graphql_refusal, hook, hook_url, installation, installations,
+    mint_scope, minted, reachable, viewer,
 };
 pub use delivery::{Sent, encode};
 pub use pulls::{combined, job, pull, pull_graphql, pulls, runs};
