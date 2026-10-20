@@ -415,6 +415,14 @@ domain, and holds no clock of its own.
     "message"}` with optional `"merging"`. Each answers `{"commit":N|null}`;
     trees carry `[{"path", "content"}]` as above.
   - `ancestor`: `{"ancestor", "commit"}` answers `{"ancestor":true|false}`.
+  - An error answers `{"error": NAME}`, NAME the domain error in snake
+    case (`missing`, `rate_limited`, `already_queued`, ...), with the
+    members that error carries: `"what"` for `missing` (`"repository"`,
+    `"branch"`, `"commit"`, ...), `"reset"` in nanoseconds for
+    `rate_limited`, and `"number"`, `"head"` and `"position"` for
+    `already_queued`, so every domain error crosses whole.
+  - An `objects` call asking for more commits than `max_response_items`
+    is `422`, before the store is read.
   - A body other than one object, an unknown, repeated or missing member,
     a wrong type, invalid base64, or both `"branch"` and `"commit"` on a
     fetch is malformed, `422`.
