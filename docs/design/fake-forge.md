@@ -674,7 +674,10 @@ below are tracked in STATUS.md.
   installation's token is `403`. Tokens stay in the layer, as in
   section 4. Person tokens, `GET /user` and the installation-token refusal
   are built. Each person secret names a configured account's domain user;
-  repository permissions and write authorship follow that user.
+  repository permissions and write authorship follow that user. An optional
+  expiry on each configured person token emits
+  `github-authentication-token-expiration` on that token's answers, in
+  `YYYY-MM-DD HH:MM:SS UTC` form. No expiry emits no header.
 - **The App** is held in the layer's store: id, slug, owner, key,
   webhook secret, permissions, events and the hook's URL. Its bot is a
   domain user, `<slug>[bot]`, who acts on the domain. `GET /app`, `GET`

@@ -98,7 +98,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(Queue::<http::Event>::worst_case(4)?)?
         .checked_add(Queue::<http::Request>::worst_case(4)?)?
         // One Respond owns rate fields, a validator, Link, Location and media.
-        .checked_add(List::<Header>::worst_case(10)?)?
+        .checked_add(List::<Header>::worst_case(11)?)?
         // A call moves from events into call; its redacted clone lives in head.
         // One exchange at a time and take_head before reuse allow two field lists
         // and two copies of their target/name/value bytes, each within http.head.
@@ -121,7 +121,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(u64::from(limits.response).checked_mul(2)?)?
         // Bounded decimal rate values, their field names, validator framing,
         // Link, Location and the longest media name/value fit this allowance.
-        .checked_add(512)?
+        .checked_add(576)?
         // One outstanding body demand: one queued/local Body(Bytes) delivery.
         .checked_add(u64::from(limits.http.read))?
         // One reply room grant: one copied chunk in requests' Reply(Send).
@@ -485,7 +485,7 @@ fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut locati
         reply = answers::failed();
         location = None;
     }
-    let mut headers = List::with_capacity(10);
+    let mut headers = List::with_capacity(11);
     if let Some(rate) = reply.rate {
         crate::rates::headers(rate, reply.status == 403, &mut headers);
     }

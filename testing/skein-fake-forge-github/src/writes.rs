@@ -231,6 +231,7 @@ fn verdict_of(verdict: skein_forge::api::Verdict) -> a::Verdict {
     }
 }
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively translates each write request")]
+#[expect(clippy::result_large_err, reason = "bounded inline responses avoid an allocation on refusals")]
 fn operation(service: &Service, request: Request, access: &Access) -> Result<(Stage, Op), Response> {
     let (stage, write) = match request {
         Request::Merge { number, head, method, .. } => {

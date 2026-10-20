@@ -10,6 +10,7 @@ use skein_fake_forge_domain as domain;
 use skein_lib::{Duration, Env, ReplyTo, Wall, bytes};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Heads {
+    pub expires: Option<Wall>,
     pub rate: domain::Rate,
     pub after: Option<Duration>,
     pub at: Wall,
@@ -80,6 +81,13 @@ impl Service {
         result: Result<domain::Rate, domain::RateDenied>,
         reply_to: ReplyTo,
     ) -> Outcome {
+        let expires = match admission.bearer {
+            Bearer::Person { index, .. } => match self.tokens.get(index) {
+                Some((_, _, expires)) => *expires,
+                None => None,
+            },
+            Bearer::Installation { .. } => None,
+        };
         let (outcome, heads) = match result {
             Ok(rate) => {
                 let request = Request {
@@ -95,15 +103,15 @@ impl Service {
                     Route::Token(route) => self.token_route(route, admission.now, admission.bearer, &request, reply_to),
                     Route::App => Outcome::Reply(answers::unauthorized(&self.limits)),
                 };
-                (outcome, Heads { rate, after: None, at: admission.now })
+                (outcome, Heads { expires, rate, after: None, at: admission.now })
             }
             Err(domain::RateDenied::Limited(rate)) => (
                 Outcome::Reply(answers::refusal(403, crate::texts::PRIMARY_RATE, &self.limits)),
-                Heads { rate, after: None, at: admission.now },
+                Heads { expires, rate, after: None, at: admission.now },
             ),
             Err(domain::RateDenied::Crowded { rate, after }) => (
                 Outcome::Reply(answers::refusal(403, crate::texts::SECONDARY_RATE, &self.limits)),
-                Heads { rate, after: Some(after), at: admission.now },
+                Heads { expires, rate, after: Some(after), at: admission.now },
             ),
         };
         attach(self.local_links(outcome), Some(heads))
@@ -134,8 +142,22 @@ pub(crate) fn attach(outcome: Outcome, rate: Option<Heads>) -> Outcome {
 fn decimal(value: u64) -> Box<[u8]> {
     bytes::copy_of(skein_lib::Decimal::of(value).as_bytes())
 }
-/// Appends the five core rate fields and at most one Retry-After; reserve six slots.
+/// Appends core rate fields, optional person-token expiry and Retry-After; reserve seven slots.
 pub fn headers(heads: Heads, refused: bool, headers: &mut skein_lib::List<skein_http::Header>) {
+    if let Some(expires) = heads.expires {
+        let date = skein_forge::forgejo::time::write(expires);
+        let mut out = skein_lib::Writer::new(23);
+        out.put(date.get(..10).expect("date prefix")).expect("expiry width");
+        out.put(b" ").expect("expiry width");
+        out.put(date.get(11..19).expect("time fields")).expect("expiry width");
+        out.put(b" UTC").expect("expiry width");
+        headers
+            .push(skein_http::Header {
+                name: bytes::copy_of(b"github-authentication-token-expiration"),
+                value: out.finish(),
+            })
+            .expect("expiry header slot");
+    }
     for (name, value) in [
         (b"X-RateLimit-Limit".as_slice(), decimal(u64::from(heads.rate.limit))),
         (b"X-RateLimit-Remaining", decimal(u64::from(heads.rate.limit.saturating_sub(heads.rate.used)))),
@@ -179,7 +201,7 @@ mod tests {
             let secret = Secret::new(f::boxed([b'!'; 256].get(..length).expect("bounded token length")));
             let mut config = f::config();
             config.tokens = List::with_capacity(1);
-            config.tokens.push((secret.clone(), 31)).unwrap();
+            config.tokens.push((secret.clone(), 31, None)).unwrap();
             let mut h = f::Harness::with(f::limits(), config);
             let authorization = f::bearer(secret.expose());
             let Outcome::Admit(admission) = h.service.request(

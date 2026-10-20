@@ -54,8 +54,9 @@ impl Service {
         let Some(installation) = self.installations.get(grant.installation) else { return false };
         row.owner_id == installation.account && self.installations.reaches(grant, repository)
     }
+    #[expect(clippy::result_large_err, reason = "bounded inline responses avoid an allocation on refusals")]
     pub(crate) fn resolve(&self, bearer: &[u8], now: Wall) -> Result<Bearer, Response> {
-        for (index, (secret, user)) in self.tokens.iter().enumerate() {
+        for (index, (secret, user, _)) in self.tokens.iter().enumerate() {
             if secret.expose() == bearer {
                 return Ok(Bearer::Person { index: u32::try_from(index).expect("bounded token table"), user: *user });
             }
@@ -65,10 +66,11 @@ impl Service {
         };
         Ok(Bearer::Installation { slot, installation: grant.installation })
     }
+    #[expect(clippy::result_large_err, reason = "bounded inline responses avoid an allocation on refusals")]
     pub(crate) fn access(&self, bearer: Bearer) -> Result<Access, Response> {
         match bearer {
             Bearer::Person { index, user } => {
-                let Some((_, stored)) = self.tokens.get(index) else {
+                let Some((_, stored, _)) = self.tokens.get(index) else {
                     return Err(answers::unauthorized(&self.limits));
                 };
                 if *stored != user {
@@ -191,7 +193,7 @@ pub(crate) fn check(config: &crate::Config, limits: &crate::Limits) -> Result<()
     if config.tokens.len() > limits.github.inner {
         return Err(crate::Problem::Config);
     }
-    for (at, (secret, user)) in config.tokens.iter().enumerate() {
+    for (at, (secret, user, _)) in config.tokens.iter().enumerate() {
         let mut person = false;
         for account in &config.accounts {
             if account.id == *user && !account.organization {
@@ -204,7 +206,7 @@ pub(crate) fn check(config: &crate::Config, limits: &crate::Limits) -> Result<()
         {
             return Err(crate::Problem::Config);
         }
-        for (prior, _) in config.tokens.iter().take(at) {
+        for (prior, _, _) in config.tokens.iter().take(at) {
             if prior.expose() == secret.expose() {
                 return Err(crate::Problem::Config);
             }

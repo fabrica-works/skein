@@ -28,7 +28,7 @@ fn harness() -> f::Harness {
     }]);
     config.tokens = List::with_capacity(2);
     for (value, user) in [(b"invented-alice".as_slice(), 31), (b"invented-bob", 32)] {
-        config.tokens.push((Secret::new(f::boxed(value)), user)).expect("person room");
+        config.tokens.push((Secret::new(f::boxed(value)), user, None)).expect("person room");
     }
     let mut domain = r::domain_config();
     domain.limits.users = 4;

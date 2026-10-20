@@ -15,7 +15,7 @@ fn github_fake_person_rates_belong_to_the_user_and_are_separate_from_installatio
     config.accounts = accounts;
     config.tokens = List::with_capacity(3);
     for (value, user) in [(b"first-person".as_slice(), 1), (b"same-person", 1), (b"other-person", 31)] {
-        config.tokens.push((Secret::new(f::boxed(value)), user)).unwrap();
+        config.tokens.push((Secret::new(f::boxed(value)), user, None)).unwrap();
     }
     let mut h = f::Harness::with(f::limits(), config);
     let tokens = [
@@ -81,7 +81,7 @@ fn github_fake_tokens_on_app_routes_pay_before_the_credential_class_refusal() {
         let mut config = f::config();
         config.rate_quota = 1;
         config.tokens = List::with_capacity(1);
-        config.tokens.push((Secret::new(f::boxed(b"invented-person")), 31)).unwrap();
+        config.tokens.push((Secret::new(f::boxed(b"invented-person")), 31, None)).unwrap();
         let mut h = f::Harness::with(f::limits(), config);
         let token =
             if installation { f::bearer(h.mint(1, false).token.expose()) } else { f::bearer(b"invented-person") };
@@ -92,5 +92,40 @@ fn github_fake_tokens_on_app_routes_pay_before_the_credential_class_refusal() {
         }
         assert!(h.app(Method::Get, b"/app", b"").rate.is_none());
         assert_eq!(h.calls, 0);
+    }
+}
+
+#[test]
+fn github_fake_person_token_expiration_is_optional_and_follows_every_answer() {
+    let expiry = skein_forge::forgejo::time::read(b"2026-11-19T12:00:00Z").unwrap();
+    for expires in [None, Some(expiry)] {
+        let mut config = f::config();
+        config.tokens = List::with_capacity(1);
+        config.tokens.push((Secret::new(f::boxed(b"invented-person")), 31, expires)).unwrap();
+        let mut h = f::Harness::with(f::limits(), config);
+        let token = f::bearer(b"invented-person");
+        for (target, status) in [(b"/user".as_slice(), 200), (b"/app", 401)] {
+            let response = h.ask(Method::Get, target, Some(token.expose()), b"");
+            assert_eq!(response.status, status);
+            let heads = response.rate.unwrap();
+            assert_eq!(heads.expires, expires);
+            let mut headers = List::with_capacity(7);
+            crate::rates::headers(heads, false, &mut headers);
+            let mut expiration = None;
+            for header in &headers {
+                if header.is(b"github-authentication-token-expiration") {
+                    expiration = Some(header.value.as_ref());
+                }
+            }
+            match expires {
+                Some(_) => assert_eq!(expiration, Some(b"2026-11-19 12:00:00 UTC".as_slice())),
+                None => assert_eq!(expiration, None),
+            }
+        }
+        let response = h.app(Method::Get, b"/app", b"");
+        assert!(response.rate.is_none());
+        let installation = f::bearer(h.mint(1, false).token.expose());
+        let response = h.ask(Method::Get, f::REACHABLE, Some(installation.expose()), b"");
+        assert_eq!(response.rate.unwrap().expires, None);
     }
 }

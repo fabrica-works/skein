@@ -89,8 +89,8 @@ pub struct Config {
     pub accounts: List<Account>,
     /// Login of the signed-in browser user, from accounts.
     pub person: Box<[u8]>,
-    /// Person secrets and their domain user numbers, bounded by github.inner.
-    pub tokens: List<(Secret, u64)>,
+    /// Person secrets, domain user numbers and optional expiry, bounded by github.inner.
+    pub tokens: List<(Secret, u64, Option<Wall>)>,
     /// Per-mille byte faults, using the Forgejo face's scenario vocabulary.
     pub faults: crate::Faults,
 }
@@ -243,7 +243,7 @@ pub struct Service {
     pub(crate) hook: Box<[u8]>,
     pub(crate) accounts: List<Account>,
     pub(crate) person: Box<[u8]>,
-    pub(crate) tokens: List<(Secret, u64)>,
+    pub(crate) tokens: List<(Secret, u64, Option<Wall>)>,
     pub(crate) faults: crate::Faults,
     pub(crate) rng: Rng,
     pub(crate) pages: pages::Store,
@@ -847,10 +847,11 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
     for account in &config.accounts {
         bytes = bytes.checked_add(u64::try_from(account.login.len()).ok()?)?;
     }
-    bytes = bytes
-        .checked_add(u64::try_from(config.person.len()).ok()?)?
-        .checked_add(List::<(Secret, u64)>::worst_case(config.tokens.capacity())?)?;
-    for (secret, _) in &config.tokens {
+    bytes =
+        bytes
+            .checked_add(u64::try_from(config.person.len()).ok()?)?
+            .checked_add(List::<(Secret, u64, Option<Wall>)>::worst_case(config.tokens.capacity())?)?;
+    for (secret, _, _) in &config.tokens {
         bytes = bytes.checked_add(u64::try_from(secret.expose().len()).ok()?)?;
     }
     bytes = bytes
