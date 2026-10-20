@@ -20,6 +20,29 @@ use skein_lib::{
     sha256::{self, Hmac},
 };
 
+// The 23 delivery fixtures fit in a capacity rounded up to a power of two.
+const CASE_CAPACITY: u32 = 32;
+const SIGNATURE_PREFIX: &[u8] = b"sha256=";
+const SIGNATURE_PREFIX_WIDTH: usize = SIGNATURE_PREFIX.len();
+// SHA-256 produces 32 bytes (skein_lib::sha256::Hmac::finish).
+const DIGEST_WIDTH: usize = 32;
+const ENCODED_DIGEST_WIDTH: usize = DIGEST_WIDTH * 2;
+const SIGNATURE_HEADER_WIDTH: usize = SIGNATURE_PREFIX_WIDTH + ENCODED_DIGEST_WIDTH;
+const INSTALLATION_CREATED: &[u8] =
+    br#"{"action":"created","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#;
+const INSTALLATION_DELETED: &[u8] =
+    br#"{"action":"deleted","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#;
+const INSTALLATION_SUSPENDED: &[u8] =
+    br#"{"action":"suspend","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#;
+const INSTALLATION_UNSUSPENDED: &[u8] =
+    br#"{"action":"unsuspend","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#;
+const INSTALLATION_REPOSITORIES_ADDED: &[u8] =
+    br#"{"action":"added","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#;
+const INSTALLATION_REPOSITORIES_REMOVED: &[u8] =
+    br#"{"action":"removed","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#;
+const INSTALLATION_RENAMED: &[u8] =
+    br#"{"action":"renamed","installation":{"id":9999999999999999999},"account":{"login":"acme","id":8}}"#;
+
 const ISSUE: &[u8] =
     br#"{"action":"opened","issue":{"number":3,"body":"plain"},"repository":{"id":7,"full_name":"acme/widgets"}}"#;
 const PUSH: &[u8] = br#"{"ref":"refs/heads/feat/a","after":"0123456789abcdef0123456789abcdef01234567","deleted":false,"repository":{"id":7},"sender":{"id":9}}"#;
@@ -75,7 +98,7 @@ struct Case {
     value: Delivery,
 }
 fn cases() -> List<Case> {
-    let mut cases = List::with_capacity(32);
+    let mut cases = List::with_capacity(CASE_CAPACITY);
     for (event, body, value) in [
         (b"issues".as_slice(), ISSUE, Delivery::Issue { repository: 7, number: 3, body: kept(b"plain") }),
         (b"issue_comment", br#"{"action":"created","issue":{"number":3,"body":"ignored"},"comment":{"body":"note"},"repository":{"id":7}}"#, Delivery::Comment { repository: 7, number: 3, body: kept(b"note") }),
@@ -95,42 +118,13 @@ fn cases() -> List<Case> {
         (b"merge_group", br#"{"action":"destroyed","merge_group":{"head_sha":"0123456789abcdef0123456789abcdef01234567"},"repository":{"id":7}}"#, Delivery::Ci { repository: 7, commit: id::commit(SHA).unwrap(), event: Ci::Destroyed }),
     ] { cases.push(Case { event, body, value }).unwrap(); }
     for (event, body, change) in [
-        (
-            b"installation".as_slice(),
-            br#"{"action":"created","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#
-                .as_slice(),
-            Change::Created,
-        ),
-        (
-            b"installation",
-            br#"{"action":"deleted","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#,
-            Change::Deleted,
-        ),
-        (
-            b"installation",
-            br#"{"action":"suspend","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#,
-            Change::Suspended,
-        ),
-        (
-            b"installation",
-            br#"{"action":"unsuspend","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#,
-            Change::Unsuspended,
-        ),
-        (
-            b"installation_repositories",
-            br#"{"action":"added","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#,
-            Change::Repositories,
-        ),
-        (
-            b"installation_repositories",
-            br#"{"action":"removed","installation":{"id":9999999999999999999,"account":{"login":"acme","id":8}}}"#,
-            Change::Repositories,
-        ),
-        (
-            b"installation_target",
-            br#"{"action":"renamed","installation":{"id":9999999999999999999},"account":{"login":"acme","id":8}}"#,
-            Change::Renamed { login: Box::from(*b"acme") },
-        ),
+        (b"installation".as_slice(), INSTALLATION_CREATED, Change::Created),
+        (b"installation", INSTALLATION_DELETED, Change::Deleted),
+        (b"installation", INSTALLATION_SUSPENDED, Change::Suspended),
+        (b"installation", INSTALLATION_UNSUSPENDED, Change::Unsuspended),
+        (b"installation_repositories", INSTALLATION_REPOSITORIES_ADDED, Change::Repositories),
+        (b"installation_repositories", INSTALLATION_REPOSITORIES_REMOVED, Change::Repositories),
+        (b"installation_target", INSTALLATION_RENAMED, Change::Renamed { login: Box::from(*b"acme") }),
     ] {
         cases
             .push(Case {
@@ -167,12 +161,12 @@ fn issue_body(text: &[u8]) -> Box<[u8]> {
 #[test]
 fn github_delivery_signature_good() {
     let header = delivery::sign(b"invented webhook secret", ISSUE);
-    assert!(header.starts_with(b"sha256="), "signature prefix");
-    assert_eq!(header.len(), 71);
-    for byte in &header[7..] {
+    assert!(header.starts_with(SIGNATURE_PREFIX), "signature prefix");
+    assert_eq!(header.len(), SIGNATURE_HEADER_WIDTH);
+    for byte in &header[SIGNATURE_PREFIX_WIDTH..] {
         assert!(byte.is_ascii_digit() || (b'a'..=b'f').contains(byte), "lowercase hexadecimal");
     }
-    assert_eq!(delivery::signature(&header).unwrap().len(), 32);
+    assert_eq!(delivery::signature(&header).unwrap().len(), DIGEST_WIDTH);
     assert!(delivery::verify(b"invented webhook secret", ISSUE, &header), "signed body verifies");
 }
 #[test]
@@ -562,7 +556,7 @@ fn github_delivery_terminal_and_encoder_refusals() {
     assert_eq!(server::encode(&invalid, &limits()), Err(Refusal::TooLong));
 }
 #[test]
-fn github_delivery_installation_shapes_and_unknown_actions() {
+fn github_delivery_installation_shapes() {
     for (event, body, error) in [
         (
             b"installation".as_slice(),
@@ -582,36 +576,23 @@ fn github_delivery_installation_shapes_and_unknown_actions() {
     ] {
         assert_eq!(delivery::decode(event, body, &limits()), Err(error));
     }
-    for case in &cases() {
-        if case.event.starts_with(b"installation") {
-            let action = match &case.value {
-                Delivery::Installation { change, .. } => match change {
-                    Change::Created => b"created".as_slice(),
-                    Change::Deleted => b"deleted",
-                    Change::Suspended => b"suspend",
-                    Change::Unsuspended => b"unsuspend",
-                    Change::Repositories => {
-                        if skein_lib::bytes::find(case.body, b"added").is_some() {
-                            b"added".as_slice()
-                        } else {
-                            b"removed"
-                        }
-                    }
-                    Change::Renamed { .. } => b"renamed",
-                },
-                Delivery::Issue { .. }
-                | Delivery::Comment { .. }
-                | Delivery::Pull { .. }
-                | Delivery::Review { .. }
-                | Delivery::Remark { .. }
-                | Delivery::Push { .. }
-                | Delivery::Ref { .. }
-                | Delivery::Ci { .. }
-                | Delivery::Other => unreachable!("installation case"),
-            };
-            assert_eq!(read(case.event, &changed(case.body, action, b"unknown")), Delivery::Other);
-        }
+}
+#[test]
+fn github_delivery_installation_unknown_actions() {
+    for (event, body, action, expected) in [
+        (b"installation".as_slice(), INSTALLATION_CREATED, b"created".as_slice(), Delivery::Other),
+        (b"installation", INSTALLATION_DELETED, b"deleted", Delivery::Other),
+        (b"installation", INSTALLATION_SUSPENDED, b"suspend", Delivery::Other),
+        (b"installation", INSTALLATION_UNSUSPENDED, b"unsuspend", Delivery::Other),
+        (b"installation_repositories", INSTALLATION_REPOSITORIES_ADDED, b"added", Delivery::Other),
+        (b"installation_repositories", INSTALLATION_REPOSITORIES_REMOVED, b"removed", Delivery::Other),
+        (b"installation_target", INSTALLATION_RENAMED, b"renamed", Delivery::Other),
+    ] {
+        assert_eq!(read(event, &changed(body, action, b"unknown")), expected);
     }
+}
+#[test]
+fn github_delivery_encoder_refuses_invalid_renamed_login() {
     let invalid = Delivery::Installation {
         installation: 1,
         account: Account { login: Box::from(*b"acme"), id: 8 },
