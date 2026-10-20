@@ -752,6 +752,58 @@ answered, and a connect sent, only on what a restart would find.
   item afresh. It tells the two forms apart by its own record, never by
   length, since an id of eight digits is eight bytes too.
 
+### 6.5 The host's heap, admitted
+
+The host's heap has a bound the owner admits before it starts
+(programming-model.md, 6.3 and 7), for Forgejo and GitHub alike.
+
+- **`host::worst_case(limits, settings) -> Option<u64>`** is the export:
+  the most heap a `Host` built from them holds, in checked arithmetic,
+  `None` past a `u64` or for limits and settings `Host::new` refuses. It
+  takes the settings because each forge's given values bound its plans:
+  their copied text and their own limits. It sums:
+  - **the tables:** the runs' and the connections' maps and the closing
+    list at `runs`, the plans' outgoing queue, and the states' table with
+    each state's bytes (5.7);
+  - **`runs` run slots,** each at the largest plan a configured forge may
+    run: Forgejo's reconcile, check, take-over, adoption or picker, bounded
+    by its `Given`, or GitHub's, the per-run term of `github::worst_case`;
+    with the run's record, its pending need, its send and the items it
+    holds;
+  - **`runs` connections,** each at the most a configured forge's
+    transport needs: HTTP's client, TLS's client when a forge speaks TLS,
+    the stack's queues, the JSON tokenizer, the larger configured
+    dialect's decoder and document, the body held up to `body_bytes_in`,
+    the request's head (a GitHub forge's JWT signed for it included) and
+    body, and io's share for the stream it opens: intake, receive buffer,
+    output and its sends' queue, as the forge component prices its own
+    (forge-connection.md, 7.5);
+  - **the settings** it keeps.
+
+  A kind or a transport no forge is configured with costs nothing. What
+  goes up is the owner's once handed: an item's bytes, an outcome, a
+  failure. `Host::new` refuses limits and settings whose bound is `None`.
+- **The settings are fixed for a `Host`'s life.** A change in the forges
+  builds a new `Host`, which the owner admits again before building it:
+  the bound never follows a growing list of forges. An owner builds its
+  host once, at start, from the forges it is configured with.
+- **One slot holds a run and its connection.** A run has at most one
+  connection open, and a run that has ended keeps its slot until its
+  connection has settled. A `Run` with no free slot stops at once,
+  `Busy`, before its plan starts, as one beside a live run of the same
+  kind on its forge does (6.3). An admitted run always finds room for
+  its connection: the host never waits for one or refuses one mid-run.
+- **The settling is bounded.** A connection closes once its reply is
+  taken, and io aborts a graceful close the peer has not finished within
+  io's `close_timeout`; a run past its deadline (`Times.deadline`) aborts
+  its connection outright. An ended run's slot comes back within
+  `close_timeout` of its end, so a `Busy` for want of a slot is always
+  transient.
+- **The owner admits the bound:** it adds `host::worst_case` to its own
+  and refuses to start past its configured memory. io's share of the
+  host's streams is in io's bound as well; the overlap overstates and
+  never understates.
+
 ## 7. Verification
 
 The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
@@ -808,9 +860,13 @@ The tiers and budgets are testing-strategy.md's and skein's `testing.md`.
     one uninstalled; the hook's address set; a pasted App lacking a
     permission named;
   - no secret in a failure's `Debug` or in the trace.
-- **The worst case,** against the counting allocator (skein-heap): every
-  limit at its maximum, `runs` plans running, each holding its items,
-  and `states` states, metered against `worst_case`.
+- **The worst case,** against the counting allocator (skein-heap): the
+  setup world meters the host alone, the fake and the store outside it
+  (skein-heap's `Measured`, as the machine world does), and checks at
+  every iteration that its live heap is within `host::worst_case`: over
+  plaintext and TLS, Forgejo, GitHub and both, `runs` runs live with
+  their connections and `states` states held. `github::worst_case` keeps
+  its unit test for the pure plans.
 - **Fuzzy:** random initial forges converge, and a second run writes only
   the hooks' patches (testing-strategy.md, section 8).
 - **Against a real forge,** the conformance records sections 8's and

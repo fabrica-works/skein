@@ -6,7 +6,7 @@ use skein_json::{tokenizer, writer};
 pub struct Limits {
     /// The most configured forges, with unique numbers.
     pub forges: u32,
-    /// Live runs at once, over every forge (6.3).
+    /// Run slots, including ended runs whose connections are settling (6.5).
     pub runs: u32,
     /// One-time states retained across all forges, nonzero (forge-setup.md, 5.7).
     pub states: u32,

@@ -110,7 +110,7 @@ pub enum Why {
     KeyForm,
     /// The state is unknown, used, expired, or belongs to another forge or plan.
     Unknown,
-    /// Another run of the forge is live, or the host's runs are full (6.3).
+    /// Another run of the forge is live, or every host slot is held (6.5).
     Busy,
     /// The installation listing exceeds `pages`; the strays seen were
     /// uninstalled and the accepted set was left unpruned.

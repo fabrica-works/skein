@@ -261,6 +261,9 @@ impl Connection {
         self.call = None;
     }
     pub(super) fn abort(&mut self) {
+        if self.closing == Some(false) {
+            self.close_sent = false;
+        }
         self.answered = true;
         self.closing = Some(true);
         self.result = None;

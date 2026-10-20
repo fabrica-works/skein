@@ -35,19 +35,21 @@ use skein_lib::{
 /// Returns None for invalid Given or any capacity/byte arithmetic overflow.
 #[must_use]
 pub fn worst_case(given: &Given, runs: u32, states: u32) -> Option<u64> {
+    per_run(given)?.checked_mul(u64::from(runs))?.checked_add(Host::github_states_worst_case(states)?)
+}
+/// One pure plan and its outgoing need, shared with whole-host admission.
+pub(crate) fn per_run(given: &Given) -> Option<u64> {
     given::check(given).ok()?;
-    let per_run = manifest(given)?
+    let plan = manifest(given)?
         .max(convert(given)?)
         .max(paste(given)?)
         .max(install(given)?)
         .max(accept(given)?)
         .max(reconcile::worst_case(given)?)
         .max(reachable(given)?);
-    let per_run = per_run
-        .checked_add(u64::try_from(size_of::<Machine>()).ok()?)?
-        .checked_add(Queue::<Need>::worst_case(MAX_OUT)?)?;
-    per_run.checked_mul(u64::from(runs))?.checked_add(Host::github_states_worst_case(states)?)
+    plan.checked_add(u64::try_from(size_of::<Machine>()).ok()?)?.checked_add(Queue::<Need>::worst_case(MAX_OUT)?)
 }
+
 fn copied(given: &Given) -> Option<u64> {
     let mut bytes = 0_u64;
     for text in [&given.word, &given.web, &given.url, &given.redirect_url, &given.setup_url] {

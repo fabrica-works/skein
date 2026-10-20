@@ -5,6 +5,8 @@ pub(crate) mod connection;
 #[path = "tests/github_host.rs"]
 mod install_tests;
 mod limits;
+mod memory;
+pub use memory::worst_case;
 pub(crate) mod run;
 mod settings;
 #[cfg(test)]
@@ -37,6 +39,7 @@ pub struct Host {
 impl Host {
     pub fn new(limits: &Limits, settings: Settings, crypto: CryptoRng) -> Result<Self, Unusable> {
         limits::check(limits, &settings)?;
+        worst_case(limits, &settings).ok_or(Unusable::Zero)?;
         Ok(Self {
             settings,
             crypto,
@@ -68,7 +71,7 @@ impl Host {
                 assert!(!self.runs.contains_key(&run), "one live run per owner token");
                 let configured = configured(&self.settings, forge);
                 let refused = if configured.takes(&plan) {
-                    let mut busy = self.runs.len() == self.runs.capacity();
+                    let mut busy = self.slots() == self.runs.capacity();
                     for (_, live) in &self.runs {
                         busy |= live.forge == forge && live.writes == plan.writes();
                     }
@@ -236,15 +239,31 @@ impl Host {
             self.wake = Some(env.now);
         }
     }
+    fn slots(&self) -> u32 {
+        let mut slots = self.runs.len();
+        for (token, connection) in &self.connections {
+            let owned = match self.runs.get(&connection.run) {
+                Some(run) => run.connection == Some(*token),
+                None => false,
+            };
+            if !owned {
+                slots = slots.checked_add(1).expect("admitted slots");
+            }
+        }
+        slots
+    }
     fn can_send(&self, run: &Run, now: Time) -> bool {
-        run.send.is_some()
+        let ready = run.send.is_some()
             && run.connection.is_none()
             && match run.retry_at {
                 Some(at) => at <= now,
                 None => true,
             }
-            && now < run.deadline
-            && self.connections.len() < self.connections.capacity()
+            && now < run.deadline;
+        if ready {
+            assert!(self.connections.len() < self.connections.capacity(), "an admitted run owns its connection slot");
+        }
+        ready
     }
     fn ready(&self, now: Time) -> bool {
         for (_, c) in &self.connections {
@@ -411,3 +430,7 @@ pub(super) fn about(forge: &Forge, plan: &Plan, why: Why) -> Failure {
         Kind::GitHub(given) => Failure { forge: given.forge, step: Stage::App, subject: plan.name().into(), why },
     }
 }
+
+#[cfg(test)]
+#[path = "host/tests.rs"]
+mod memory_tests;

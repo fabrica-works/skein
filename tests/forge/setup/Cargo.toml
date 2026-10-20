@@ -8,6 +8,7 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
+skein-heap.workspace = true
 skein-io.workspace = true
 skein-forge-setup.workspace = true
 skein-forge.workspace = true

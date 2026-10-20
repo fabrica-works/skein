@@ -13,7 +13,7 @@ pub mod manifest;
 pub use checks::Lacking;
 pub mod reconcile;
 
-mod memory;
+pub(crate) mod memory;
 pub use memory::worst_case;
 
 pub mod paste;

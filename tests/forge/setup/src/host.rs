@@ -19,6 +19,8 @@ pub enum Connect {
     Silent,
     Unavailable,
     Answers(u16, &'static [u8]),
+    /// Answers without ending its sending half; io must time out its close.
+    AnswersOpen(u16, &'static [u8]),
     /// GitHub processes the request, then the connection loses its response.
     LostGitHubReply,
 }
@@ -32,6 +34,10 @@ enum Api {
     GitHub,
     Forgejo,
 }
+enum PeerEnd {
+    Ends,
+    Open,
+}
 struct Peer {
     pipe: Carrier,
     server: Option<fake::Server>,
@@ -43,9 +49,15 @@ struct Peer {
     head: Vec<u8>,
     responded: bool,
     lose_reply: bool,
+    end: PeerEnd,
+    closing: Option<closing::Closing>,
 }
+#[path = "closing.rs"]
+mod closing;
+#[path = "memory.rs"]
+pub mod memory;
 pub struct HostWorld {
-    host: Host,
+    host: memory::Metered,
     tls_addresses: Vec<skein_io::Addr>,
     env: Env<Limits>,
     service: Service,
@@ -199,7 +211,7 @@ impl HostWorld {
         documents.string_bytes = fake_limits.documents.string_bytes;
         assert_eq!(documents, fake_limits.documents);
         Self {
-            host: Host::new(&limits, settings, fixtures::crypto()).expect("host fixtures"),
+            host: memory::Metered::new(Host::new(&limits, settings, fixtures::crypto()).expect("host fixtures")),
             tls_addresses,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             service,
@@ -359,7 +371,7 @@ impl HostWorld {
     pub fn finish(&mut self) {
         for _ in 0..4096 {
             self.settle();
-            let Some(at) = self.host.next_deadline() else {
+            let Some(at) = self.next_deadline() else {
                 return;
             };
             assert!(at >= self.env.now);
@@ -384,7 +396,27 @@ impl HostWorld {
         self.fake_env.now = now;
         self.fake_env.wall = self.env.wall;
     }
+    fn next_deadline(&self) -> Option<Time> {
+        self.peers
+            .values()
+            .filter_map(|p| p.closing.as_ref().and_then(closing::Closing::deadline))
+            .chain(self.host.next_deadline())
+            .min()
+    }
     fn tick(&mut self) {
+        let mut closed = Vec::new();
+        for (owner, peer) in &mut self.peers {
+            if let Some(closing) = &mut peer.closing
+                && closing.advance(self.env.now)
+            {
+                assert!(closing.cancelled, "io's close deadline aborts the held receive");
+                self.aborts += 1;
+                closed.push(*owner);
+            }
+        }
+        for owner in closed {
+            self.end(owner);
+        }
         self.events();
         while let Some(request) = self.below.pop() {
             self.io(request);
@@ -498,12 +530,14 @@ impl HostWorld {
                     below: Queue::with_capacity(16),
                     answer: match connect {
                         Connect::Unavailable => Some((503, b"")),
-                        Connect::Answers(status, body) => Some((status, body)),
+                        Connect::Answers(status, body) | Connect::AnswersOpen(status, body) => Some((status, body)),
                         Connect::Made | Connect::Refused | Connect::Silent | Connect::LostGitHubReply => None,
                     },
                     head: Vec::new(),
                     responded: false,
                     lose_reply: matches!(connect, Connect::LostGitHubReply),
+                    end: if matches!(connect, Connect::AnswersOpen(..)) { PeerEnd::Open } else { PeerEnd::Ends },
+                    closing: None,
                 };
                 if peer.github {
                     peer.below.push(Down::Demand { read: Read::Arrived { max: 4096 }, room: 0 });
@@ -528,7 +562,15 @@ impl HostWorld {
                 self.aborts += 1;
                 self.end(entity);
             }
-            skein_io::Request::Close { entity } => self.end(entity),
+            skein_io::Request::Close { entity } => {
+                if let Some(peer) = self.peers.get_mut(&entity)
+                    && matches!(peer.end, PeerEnd::Open)
+                {
+                    peer.closing = Some(closing::Closing::new(self.env.limits.io, entity, self.env.now));
+                } else {
+                    self.end(entity);
+                }
+            }
             skein_io::Request::Listen { .. }
             | skein_io::Request::Bind { .. }
             | skein_io::Request::Reject { .. }
@@ -566,7 +608,9 @@ fn answer(peer: &mut Peer, event: Up, records: &mut Vec<GitHubRequest>) {
             }
             let (status, body) = peer.answer.expect("scripted answer");
             peer.below.push(Down::Send(skein_forge_machine_world::fixtures::response(status, body).into_boxed_slice()));
-            peer.below.push(Down::Finish);
+            if matches!(peer.end, PeerEnd::Ends) {
+                peer.below.push(Down::Finish);
+            }
         }
         Up::End => (),
         Up::Failed(_) => panic!("uncut scripted stream"),

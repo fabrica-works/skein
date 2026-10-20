@@ -1304,3 +1304,71 @@ fn tls_handshake_failure_answers_down_and_closes_for_both_dialects() {
         assert!(closed);
     }
 }
+
+#[test]
+fn the_host_bound_refuses_invalid_settings_and_overflow() {
+    use crate::host::worst_case;
+    let l = limits();
+    let mut duplicate = settings(&[1, 1]);
+    assert_eq!(worst_case(&l, &duplicate), None);
+    duplicate.forges.clear();
+    duplicate.forges.push(forge(1)).expect("forge");
+    duplicate.user_agent = Box::new([]);
+    assert_eq!(worst_case(&l, &duplicate), None);
+    assert_eq!(Host::new(&l, duplicate, crypto()).err(), Some(Unusable::Request { forge: 1 }));
+    let mut invalid = github_settings();
+    github_mut(&mut invalid).limits.reachable = 0;
+    assert_eq!(worst_case(&l, &invalid), None);
+    assert_eq!(
+        Host::new(&l, invalid, crypto()).err(),
+        Some(Unusable::GitHubGiven {
+            forge: 4,
+            refused: crate::github::given::Refused { place: crate::github::given::Place::Reachable, other: None },
+        })
+    );
+    let mut huge = l;
+    huge.runs = u32::MAX;
+    huge.body_bytes_in = u32::MAX - 1;
+    assert_eq!(worst_case(&huge, &settings(&[1])), None);
+    assert_eq!(Host::new(&huge, settings(&[1]), crypto()).err(), Some(Unusable::Zero));
+}
+#[test]
+fn the_host_bound_prices_only_configured_kinds_and_transports() {
+    use crate::host::worst_case;
+    let l = limits();
+    let forgejo = worst_case(&l, &settings(&[1])).expect("bound");
+    assert!(forgejo < worst_case(&l, &github_settings()).expect("mixed bound"));
+    assert!(forgejo < worst_case(&l, &tls_settings()).expect("TLS bound"));
+}
+#[test]
+fn an_ended_runs_settling_connection_keeps_its_slot_until_closed() {
+    use skein_lib::stream::{Down, Up};
+    let mut l = limits();
+    l.runs = 1;
+    let mut w = World::with(l, settings(&[1, 2]));
+    w.send();
+    let owner = w.connect();
+    w.event(skein_io::Event::Connecting { owner, socket: owner });
+    w.event(skein_io::Event::Connected { owner });
+    let Some(skein_io::Request::Stream { down: Down::Demand { .. }, .. }) = w.io.pop() else {
+        panic!("stream demand");
+    };
+    w.event(skein_io::Event::Stream { owner, up: Up::Room });
+    let Some(skein_io::Request::Stream { down: Down::Send(_), .. }) = w.io.pop() else {
+        panic!("request head");
+    };
+    for line in [b"HTTP/1.1 401 Unauthorized\r\n".as_slice(), b"Content-Length: 0\r\n", b"\r\n"] {
+        let Some(skein_io::Request::Stream { down: Down::Demand { .. }, .. }) = w.io.pop() else {
+            panic!("stream demand");
+        };
+        w.event(skein_io::Event::Stream { owner, up: Up::Bytes(line.into()) });
+    }
+    assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Refused(401))));
+    assert_eq!(w.io.pop(), Some(skein_io::Request::Close { entity: owner }));
+    w.run(2, 2);
+    assert_eq!(w.up.pop(), Some(stop(2, 2, Why::Busy)));
+    assert!(w.io.is_empty());
+    w.event(skein_io::Event::Closed { owner });
+    w.run(2, 2);
+    assert_eq!(w.up.pop(), Some(owner_read(2)));
+}

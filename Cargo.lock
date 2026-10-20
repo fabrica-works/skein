@@ -853,6 +853,7 @@ dependencies = [
  "skein-forge",
  "skein-forge-machine-world",
  "skein-forge-setup",
+ "skein-heap",
  "skein-http",
  "skein-io",
  "skein-json",

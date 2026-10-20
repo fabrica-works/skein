@@ -5,6 +5,6 @@ pub mod fixtures;
 mod world;
 pub use world::{Ended, World};
 mod host;
-pub use host::{Connect, Heard, HostWorld};
+pub use host::{Connect, Heard, HostWorld, memory};
 
 mod tls;

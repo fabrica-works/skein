@@ -358,3 +358,28 @@ fn the_host_admits_a_reachable_beside_a_writing_run_refuses_a_second_and_ends_bo
     assert_eq!(world.heard()[0], busy(3));
     assert_eq!(world.heard()[2], done(1));
 }
+
+#[test]
+fn an_unclosed_reply_holds_the_slot_until_ios_close_deadline() {
+    let mut limits = fixtures::host_limits();
+    limits.runs = 1;
+    let mut world = HostWorld::new_with(7, &[Connect::AnswersOpen(401, b"")], fixtures::host_settings(), limits);
+    world.run(1);
+    world.settle();
+    assert!(matches!(world.heard(), [Heard::Stop { failure, .. }] if failure.why == Why::Refused(401)));
+    world.run(2);
+    world.settle();
+    assert!(
+        matches!(world.heard().last(), Some(Heard::Stop { run, failure, .. }) if *run == Token::new(2) && failure.why == Why::Busy)
+    );
+    let deadline = skein_lib::Time::ZERO.saturating_add(limits.io.close_timeout);
+    world.advance_to(skein_lib::Time::from_nanos(deadline.as_nanos() - 1));
+    assert_eq!(world.aborts(), 0);
+    world.advance_to(deadline);
+    assert_eq!(world.aborts(), 1);
+    world.run(2);
+    world.finish();
+    assert!(
+        matches!(world.heard().last(), Some(Heard::Done { run, outcome: Outcome::Nothing, .. }) if *run == Token::new(2))
+    );
+}
