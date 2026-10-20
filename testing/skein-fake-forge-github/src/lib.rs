@@ -4,9 +4,13 @@
 #![forbid(unsafe_code)]
 
 extern crate alloc;
+mod answers;
 pub mod app;
 pub mod installations;
 pub mod keys;
+mod reads;
+mod routes;
+pub mod service;
 
 #[cfg(test)]
 mod tests;

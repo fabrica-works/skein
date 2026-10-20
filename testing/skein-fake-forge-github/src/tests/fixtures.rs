@@ -1,0 +1,317 @@
+use super::{app, wall};
+use crate::{
+    installations::{self, Kind, Reach},
+    service::{self, Config, Limits, Outcome, Request, Response, Row, Service},
+};
+use alloc::boxed::Box;
+use skein_fake_forge_domain::{self as fake, api as a};
+use skein_forge::github::{
+    self,
+    decode::{self, Step},
+    document::{Document, Kind as DocumentKind, Row as DocumentRow},
+    request::Method,
+};
+use skein_json::{tokenizer, writer};
+use skein_lib::{
+    Duration, Env, Intake, List, Queue, ReplyTo, Secret, Time, Token, Wall, bytes,
+    stream::{Down, Up},
+};
+
+pub const VIEWER: &[u8] = br#"{"query":"query { viewer { login databaseId } }"}"#;
+pub const INSTALLATIONS: &[u8] = b"/app/installations?per_page=100&page=1";
+pub const REACHABLE: &[u8] = b"/installation/repositories?per_page=100&page=1";
+pub const BOT: u64 = 9;
+pub fn boxed(text: &[u8]) -> Box<[u8]> {
+    bytes::copy_of(text)
+}
+pub fn listed(ids: &[u32]) -> Reach {
+    let mut rows = List::with_capacity(u32::try_from(ids.len()).expect("fixture count"));
+    for id in ids {
+        rows.push(*id).expect("fixture reach");
+    }
+    Reach::Listed(rows)
+}
+pub fn config() -> Config {
+    let mut repositories = List::with_capacity(3);
+    // Deliberately not in id order: the service owns the listing's order.
+    for (id, name, organization, private) in
+        [(4, b"tools".as_slice(), false, false), (2, b"widgets", true, true), (6, b"absent", true, false)]
+    {
+        repositories
+            .push(Row { id, owner: boxed(b"acme"), owner_id: 22, organization, name: boxed(name), private })
+            .expect("fixture rows");
+    }
+    Config { app: app(), bot: BOT, hook: boxed(b"https://hook.test/start"), repositories }
+}
+pub fn limits() -> Limits {
+    Limits {
+        github: github::limits::Limits {
+            json: tokenizer::Limits { depth: 10, string: 4096, number: 32, chunk: 128, length: 8192 },
+            writer: writer::Limits { depth: 10, length: 8192 },
+            string_bytes: 256,
+            body_bytes: 4096,
+            inner: 8,
+            target_bytes: 1024,
+        },
+        installations: installations::Limits { installations: 3, tokens: 4, listed: 2 },
+        page: 2,
+        body: 4096,
+        response: 8192,
+    }
+}
+pub fn authorization(key: &[u8], issued: u64, expires: u64) -> Secret {
+    let input = github::jwt::signing_input(7, wall(issued), wall(expires)).expect("fixture JWT window");
+    let signature = skein_tls::sign_rs256(key, &input).expect("test key signs");
+    let token = github::jwt::token(&input, &signature).expect("fixture JWT");
+    bearer(token.expose())
+}
+pub fn bearer(token: &[u8]) -> Secret {
+    Secret::new(service::joined(b"Bearer ", token).expect("fixture header"))
+}
+
+pub struct Harness {
+    pub service: Service,
+    pub domain: fake::Domain,
+    pub env: Env<fake::Config>,
+    pub limits: Limits,
+    pub now: Wall,
+    pub calls: u32,
+    pub hooks: u32,
+    pub first: u64,
+    pub jwt: Secret,
+}
+impl Harness {
+    pub fn new() -> Self {
+        Self::with(limits(), config())
+    }
+    pub fn with(limits: Limits, config: Config) -> Self {
+        let fake_config = domain_config();
+        let mut domain = fake::Domain::new(&fake_config, 5);
+        let mut first = 0;
+        for (id, name) in [(2, b"acme/widgets".as_slice()), (4, b"acme/tools")] {
+            let commit = fake::repository(
+                &mut domain,
+                &fake_config,
+                a::Setup {
+                    id,
+                    name: boxed(name),
+                    default: boxed(b"trunk"),
+                    tree: Box::from([]),
+                    labels: Box::from([]),
+                    checks: a::Checks {
+                        contexts: Box::from([]),
+                        latency_min: Duration::ZERO,
+                        latency_max: Duration::ZERO,
+                        silent: 0,
+                        passes: 1000,
+                        reruns: 0,
+                        cue: None,
+                    },
+                    protection: None,
+                    hooked: true,
+                },
+            );
+            if id == 2 {
+                first = commit;
+            }
+            fake::grant(&mut domain, name, BOT, a::Permission::Read);
+            fake::grant(&mut domain, name, 1, a::Permission::Write);
+            fake::settings(
+                &mut domain,
+                name,
+                a::Settings { default: boxed(b"trunk"), merge: false, rebase: true, squash: true },
+            );
+        }
+        let mut service = Service::new(config, &limits, 5).expect("valid fixture config");
+        let store = service.installations_mut();
+        assert_eq!(store.install(22, b"acme", Kind::Organization, listed(&[2, 4]), wall(1000)), Ok(1));
+        assert_eq!(store.install(23, b"example", Kind::User, Reach::All, wall(1001)), Ok(2));
+        assert_eq!(store.install(24, b"other", Kind::User, Reach::All, wall(1002)), Ok(3));
+        assert!(store.suspend(3, true), "third installation exists");
+        let jwt = authorization(app().key, 1000, 1600);
+        Self {
+            service,
+            domain,
+            env: Env { now: Time::ZERO, wall: wall(1200), limits: fake_config },
+            limits,
+            now: wall(1200),
+            calls: 0,
+            hooks: 0,
+            first,
+            jwt,
+        }
+    }
+    pub fn ask(&mut self, method: Method, target: &[u8], authorization: Option<&[u8]>, body: &[u8]) -> Response {
+        let outcome = self.service.request(
+            &Request {
+                method,
+                target,
+                authorization,
+                version: Some(github::pin::API_VERSION.as_bytes()),
+                agent: true,
+                body,
+            },
+            self.now,
+            ReplyTo::new(Token::new(77)),
+        );
+        match outcome {
+            Outcome::Reply(response) => response,
+            Outcome::Call(pending, event) => {
+                self.calls = self.calls.checked_add(1).expect("fixture calls");
+                let result = self.drive(event);
+                self.service.finish(pending, result)
+            }
+        }
+    }
+    pub fn app(&mut self, method: Method, target: &[u8], body: &[u8]) -> Response {
+        let jwt = self.jwt.clone();
+        self.ask(method, target, Some(jwt.expose()), body)
+    }
+    pub fn mint(&mut self, id: u64, contents: bool) -> github::document::Minted {
+        let encoded = github::request::encode(
+            &github::request::Request::Mint { installation: id, scope: github::request::Scope::Full },
+            &self.limits.github,
+        )
+        .expect("fixture mint target");
+        let response = self.app(
+            Method::Post,
+            &encoded.target,
+            if contents { br#"{"permissions":{"contents":"write"}}"# } else { b"" },
+        );
+        assert_eq!(response.status, 201);
+        let (_, Document::Minted(minted)) = self.decode(DocumentKind::Minted, &response) else {
+            panic!("mint document");
+        };
+        minted
+    }
+    pub fn decode(&self, kind: DocumentKind, response: &Response) -> (List<DocumentRow>, Document) {
+        decode_body(kind, &response.body, &self.limits.github)
+    }
+    pub fn branch(&mut self, name: &[u8]) {
+        let event = fake::Event::Call {
+            reply_to: ReplyTo::new(Token::new(77)),
+            user: 1,
+            repository: boxed(b"acme/widgets"),
+            op: a::Op::Write(a::Write::CreateBranch { branch: boxed(name), commit: self.first }),
+        };
+        self.drive(event).expect("fixture branch");
+        // Setup's changes are outside each read story; reads must cause zero hooks.
+        self.hooks = 0;
+    }
+    fn drive(&mut self, event: fake::Event) -> Result<a::Answer, a::Error> {
+        let mut out = Queue::with_capacity(fake::MAX_OUT);
+        fake::step(&mut self.domain, &self.env, event, &mut out);
+        let mut reply = None;
+        for _tick in 0..16_u32 {
+            while let Some(request) = out.pop() {
+                match request {
+                    fake::Request::Reply { to, result } => {
+                        assert_eq!(to.into_token(), Token::new(77), "reply right passed through");
+                        assert!(reply.replace(result).is_none(), "one reply per call");
+                    }
+                    fake::Request::Hook { .. } => {
+                        self.hooks = self.hooks.checked_add(1).expect("fixture hooks");
+                    }
+                }
+            }
+            self.domain.reclaim();
+            let Some(deadline) = self.domain.next_deadline() else {
+                return reply.expect("terminal reply");
+            };
+            self.env.now = deadline;
+            self.env.wall = Wall::from_nanos(fake::time(&self.env.limits, deadline).as_nanos());
+            fake::fire(&mut self.domain, &self.env, &mut out);
+        }
+        panic!("domain settles within fixture tick bound")
+    }
+}
+pub fn decode_body(kind: DocumentKind, body: &[u8], limits: &github::limits::Limits) -> (List<DocumentRow>, Document) {
+    let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json };
+    let mut tokenizer = tokenizer::Tokenizer::new(&limits.json);
+    let mut decoder = decode::decoder(kind, limits);
+    let mut above = Queue::with_capacity(1);
+    let mut below = Queue::with_capacity(1);
+    let mut intake = Intake::with_capacity(
+        u32::try_from(body.len()).expect("fixture body").max(tokenizer::largest_demand(&limits.json)),
+    );
+    intake.append(body).expect("fixture body fits");
+    let mut rows = List::with_capacity(limits.inner);
+    tokenizer::down(&mut tokenizer, &env, tokenizer::Request::Next, &mut above, &mut below);
+    for _tick in 0..body.len().saturating_mul(8).saturating_add(64) {
+        if let Some(event) = above.pop() {
+            let (demand, step) = decoder.step(event);
+            match step {
+                Step::Demand => {}
+                Step::Row(row) => rows.push(row).expect("fixture rows fit"),
+                Step::Done(document) => return (rows, document),
+                Step::Malformed(error) => panic!("fake response decodes: {error:?}"),
+            }
+            tokenizer::down(&mut tokenizer, &env, demand, &mut above, &mut below);
+        } else {
+            let Down::Demand { read, room: 0 } = below.pop().expect("tokenizer demand") else {
+                panic!("JSON demands input only");
+            };
+            let delivery = match intake.meet(read) {
+                Some(bytes) => Up::Bytes(bytes),
+                None => Up::End,
+            };
+            tokenizer::up(&mut tokenizer, &env, delivery, &mut above, &mut below);
+        }
+    }
+    panic!("document settles within input step bound")
+}
+pub fn refusal(h: &Harness, response: &Response, status: u16, message: &[u8]) {
+    assert_eq!(response.status, status);
+    let (_, Document::Error(error)) = h.decode(DocumentKind::Error, response) else {
+        panic!("refusal document");
+    };
+    assert_eq!(error.message.as_ref(), message);
+}
+pub fn domain_config() -> fake::Config {
+    fake::Config {
+        limits: fake::Limits {
+            repositories: 2,
+            users: 3,
+            labels: 1,
+            items: 1,
+            comments: 1,
+            dependencies: 1,
+            reviews: 1,
+            branches: 4,
+            commits: 8,
+            files: 1,
+            statuses: 1,
+            contexts: 1,
+            pages: 1,
+            name_bytes: 64,
+            title_bytes: 64,
+            body_bytes: 128,
+            content_bytes: 128,
+            page_size: 2,
+            calls: 2,
+            hooks: 4,
+            observations: 64,
+        },
+        latency_min: Duration::ZERO,
+        latency_max: Duration::ZERO,
+        late: 0,
+        late_min: Duration::ZERO,
+        late_max: Duration::ZERO,
+        unavailable: 0,
+        timeouts: 0,
+        landing: 0,
+        land_min: Duration::ZERO,
+        land_max: Duration::ZERO,
+        rate_limit: 0,
+        rate_window: Duration::from_secs(10),
+        ci: 3,
+        hook_min: Duration::ZERO,
+        hook_max: Duration::ZERO,
+        hooks_late: 0,
+        hooks_lost: 0,
+        resolution: Duration::from_secs(1),
+        skew: fake::Skew::None,
+        status_updates: false,
+        edit_updates: false,
+    }
+}

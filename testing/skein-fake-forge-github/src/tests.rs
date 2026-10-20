@@ -1,6 +1,10 @@
 mod app;
+mod fixtures;
 mod installations;
 mod keys;
+mod service_app;
+mod service_limits;
+mod service_reads;
 
 use crate::{
     app::App,
