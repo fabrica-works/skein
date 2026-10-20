@@ -32,10 +32,22 @@ needs none of it.
 - **An owner** (Claude Code, Opus 5.5) designs its draft, or its part
   of one, and then implements it. A large scope is split into parts,
   each given to a sub-owner, a session like itself (section 3). Its
-  effort is its parent's choice (section 2).
+  effort is its parent's choice (section 2). An owner whose part needs
+  little taste (tooling, hygiene, optimization) is a Codex session
+  instead, under this same file, and brings its significant code and
+  test decisions to its parent.
 - **The flow:** design, report, a brief check by the parent, its green
   light, implementation with the QA passes the owner chooses, landings,
   a closing note.
+- **Claude for taste, Codex for the rest.** Claude's tokens are the
+  scarce ones; Codex's are ample, and throughput grows with what moves
+  there. The owner spends Claude on what needs taste: the design, the
+  shape of the code and its tests (their organization, names, APIs and
+  boundaries), the tasks' sketches, the check of each diff against
+  them, and its part's calls. Everything else goes to Codex (section
+  4.2): implementing, investigating a failure or a slow test down to
+  its cause, profiling and optimizing, surveys of code and logs,
+  repins, fixes after a review, QA passes.
 - **The compass and the guardrails** are the intended design and
   architecture, and the tests and QA. The bar for tests is
   testing-strategy.md and the project's testing documents (temper's
@@ -81,8 +93,9 @@ needs none of it.
   - `inbox/`: its children's reports and questions.
 - **After a compaction or a restart,** it reads its brief and its notes
   first.
-- **Its context is the scarce thing.** It reads code through sub-agents
-  (Sonnet, short reports) and the code graph. It ends its turn while
+- **Its context is the scarce thing.** It reads code through Codex
+  surveys (short reports) and the code graph, and a Codex task's report,
+  never its log. It ends its turn while
   implementers work, and is woken by their completion: it never polls.
   Between designing and implementing, it may write its notes and go on
   in a fresh session rather than carry the design conversation.
@@ -169,10 +182,19 @@ build the two sides orders their parts so that they meet early.
 
 ### 4.2 The implementer
 
-The owner picks the model and effort. The default is gpt-6.1-sol at
-high, through `codex exec` in the implementer's own worktree. Sonnet 5.5
-or Opus 5.5 go through `claude -p` or a sub-agent: when Codex is out, or
-when a task needs judgement more than typing.
+The implementer is Codex: gpt-6.1-sol at high, through `codex exec` in
+its own worktree, with `-o` naming the report the owner reads. So is
+the owner's other work that needs no taste (section 1): an
+investigation, a profile, a survey, a review's fixes. An
+investigation's task names the question and what its report holds: the
+cause, the evidence that shows it (a measurement, a trace, a failing
+test), and the fix it proposes, in a few lines. Where the work gets
+hard (two tries without the cause, evidence that conflicts, a fix that
+would reach across a boundary), gpt-6-astra at xhigh advises, from the
+report and the evidence rather than the whole history, before the
+owner steps in. Claude (Sonnet 5.5 or Opus 5.5, through `claude -p` or
+a sub-agent) implements only when Codex is out, or when the task is
+mostly taste: an API's shape, a test suite's organization and names.
 
 ### 4.3 The task
 
@@ -276,8 +298,8 @@ implements, or decide that none is warranted. It decides only when: when
 to start its tester, resume it after more has landed, stop it, and when
 it is happy with what the passes have done.
 
-- **The tester** is a session of the owner's choice of model and
-  effort, with its notes beside the owner's, in `qa/`. It reads the
+- **The tester** is a Codex session by default (section 1), of the
+  owner's choice of model and effort, with its notes beside the owner's, in `qa/`. It reads the
   design only: the sections its part covers, the testing documents (of
   testing-strategy.md, its one page and the sections its world needs),
   and the public surface of the world or harness it writes in. It never
