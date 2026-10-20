@@ -41,6 +41,10 @@ pub enum Route {
     Body(BodyDecoder),
 }
 pub fn route(method: Method, target: &[u8], limits: &Limits) -> Result<Route, Unrouted> {
+    match hooks::repository_route(method, target, limits) {
+        Err(Unrouted::NotFound) => {}
+        other => return other,
+    }
     match writes::route(method, target, limits) {
         Err(Unrouted::NotFound) => match read_route(method, target, limits) {
             Err(Unrouted::NotFound) => match setup::route(method, target, limits) {

@@ -37,6 +37,33 @@ pub enum Sort {
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Request {
+    /// Grants repository access to a collaborator, answering without a document.
+    AddCollaborator {
+        at: Repo,
+        login: Box<[u8]>,
+        permission: Grant,
+    },
+    /// Lists one page of a repository's hooks for setup inspection.
+    RepoHooks {
+        at: Repo,
+        page: Page,
+    },
+    /// Creates a repository's Forgejo JSON hook.
+    CreateRepoHook {
+        at: Repo,
+        hook: HookSpec,
+    },
+    /// Replaces a repository hook's complete configuration.
+    EditRepoHook {
+        at: Repo,
+        id: u64,
+        hook: HookSpec,
+    },
+    /// Deletes a repository hook, answering without a document.
+    DeleteRepoHook {
+        at: Repo,
+        id: u64,
+    },
     /// Lists one page of an organization's hooks.
     OrgHooks {
         org: Box<[u8]>,
@@ -318,7 +345,7 @@ pub enum UpdateStyle {
     Rebase,
 }
 
-/// The configuration sent when creating or patching an organization hook.
+/// The configuration sent when creating or patching a hook.
 /// The encoder fixes its type to `forgejo` and its content type to JSON.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct HookSpec {
@@ -326,4 +353,35 @@ pub struct HookSpec {
     pub secret: Secret,
     pub events: Box<[Box<[u8]>]>,
     pub active: bool,
+}
+
+/// A collaborator grant excludes the absence of permission from a write body.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Grant {
+    /// Allows reading the repository.
+    Read,
+    /// Allows writing the repository.
+    Write,
+    /// Allows administering the repository.
+    Admin,
+}
+impl Grant {
+    pub(crate) fn text(self) -> &'static [u8] {
+        match self {
+            Self::Read => b"read",
+            Self::Write => b"write",
+            Self::Admin => b"admin",
+        }
+    }
+    pub(crate) fn read(text: &[u8]) -> Option<Self> {
+        if text == b"read" {
+            Some(Self::Read)
+        } else if text == b"write" {
+            Some(Self::Write)
+        } else if text == b"admin" {
+            Some(Self::Admin)
+        } else {
+            None
+        }
+    }
 }

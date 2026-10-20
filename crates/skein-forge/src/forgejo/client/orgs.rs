@@ -64,7 +64,12 @@ pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refu
     }
     let mut out = Target { length: 0, writer: Some(Writer::new(measure.length)) };
     target(request, &mut out);
-    let body = if method == Method::Post || method == Method::Patch {
+    let has_body = if let Request::AddCollaborator { .. } = request {
+        true
+    } else {
+        method == Method::Post || method == Method::Patch
+    };
+    let body = if has_body {
         let mut measure = Encoder::measure(&limits.writer);
         body(&mut measure, request);
         let length = match measure.measured() {
@@ -82,16 +87,41 @@ pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refu
     };
     Ok(Encoded { method, target: out.writer.expect("writing pass").finish(), body })
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "exhaustive request selection lists every setup variant beside its owning group"
+)]
 fn target(request: &Request, out: &mut Target) -> Method {
-    out.put(b"/api/v1/");
     match request {
+        Request::AddCollaborator { at, login, .. } => {
+            out.repo(at);
+            out.put(b"/collaborators/");
+            out.segment(login);
+            Method::Put
+        }
+        Request::RepoHooks { at, page } => {
+            super::hooks::repo_target(out, at, Some(*page), None);
+            Method::Get
+        }
+        Request::CreateRepoHook { at, .. } => {
+            super::hooks::repo_target(out, at, None, None);
+            Method::Post
+        }
+        Request::EditRepoHook { at, id, .. } => {
+            super::hooks::repo_target(out, at, None, Some(*id));
+            Method::Patch
+        }
+        Request::DeleteRepoHook { at, id } => {
+            super::hooks::repo_target(out, at, None, Some(*id));
+            Method::Delete
+        }
         Request::Org { name } => {
-            out.put(b"orgs/");
+            out.put(b"/api/v1/orgs/");
             out.segment(name);
             Method::Get
         }
         Request::CreateOrg { person, .. } => {
-            out.put(b"admin/users/");
+            out.put(b"/api/v1/admin/users/");
             out.segment(person);
             out.put(b"/orgs");
             Method::Post
@@ -106,7 +136,7 @@ fn target(request: &Request, out: &mut Target) -> Method {
             Method::Post
         }
         Request::EditTeam { team, .. } => {
-            out.put(b"teams/");
+            out.put(b"/api/v1/teams/");
             out.number(*team);
             Method::Patch
         }
@@ -185,9 +215,22 @@ fn target(request: &Request, out: &mut Target) -> Method {
 }
 fn body(json: &mut Encoder, request: &Request) {
     match request {
-        Request::CreateOrgHook { hook, .. } => super::hooks::specification(json, hook, true),
-        Request::EditOrgHook { hook, .. } => super::hooks::specification(json, hook, false),
-        Request::OrgHooks { .. } | Request::DeleteOrgHook { .. } => unreachable!("hook has no body"),
+        Request::AddCollaborator { permission, .. } => {
+            json.object_start();
+            json.key(b"permission");
+            json.string(permission.text());
+            json.object_end();
+        }
+        Request::CreateOrgHook { hook, .. } | Request::CreateRepoHook { hook, .. } => {
+            super::hooks::specification(json, hook, true);
+        }
+        Request::EditOrgHook { hook, .. } | Request::EditRepoHook { hook, .. } => {
+            super::hooks::specification(json, hook, false);
+        }
+        Request::RepoHooks { .. }
+        | Request::DeleteRepoHook { .. }
+        | Request::OrgHooks { .. }
+        | Request::DeleteOrgHook { .. } => unreachable!("hook has no body"),
         Request::CreateOrg { name, .. } => {
             json.object_start();
             json.key(b"username");
@@ -374,7 +417,7 @@ impl Orgs {
 }
 
 fn member_target(out: &mut Target, team: u64, login: Option<&[u8]>) {
-    out.put(b"teams/");
+    out.put(b"/api/v1/teams/");
     out.number(team);
     out.put(b"/members");
     if let Some(login) = login {
@@ -384,7 +427,7 @@ fn member_target(out: &mut Target, team: u64, login: Option<&[u8]>) {
 }
 
 fn org_target(out: &mut Target, org: &[u8], tail: &[u8]) {
-    out.put(b"orgs/");
+    out.put(b"/api/v1/orgs/");
     out.segment(org);
     out.put(tail);
 }

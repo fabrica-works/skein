@@ -42,6 +42,27 @@ pub fn requests() -> Vec<(&'static str, Request)> {
     rows.extend(cases::reviews::cases().into_iter().map(|(name, request, _)| (name, request)));
     rows.extend(forgejo::write_cases());
     rows.extend(forgejo::setup_cases());
+    let repo = || skein_forge::forgejo::request::Repo { owner: Box::from(*b"acme"), name: Box::from(*b"widgets") };
+    let hook = || skein_forge::forgejo::request::HookSpec {
+        url: Box::from(*b"https://hooks.example/"),
+        secret: skein_lib::Secret::new(Box::from(*b"example-hook")),
+        events: Box::from([Box::<[u8]>::from(*b"push")]),
+        active: true,
+    };
+    rows.extend([
+        (
+            "repo-collaborator",
+            Request::AddCollaborator {
+                at: repo(),
+                login: Box::from(*b"alice"),
+                permission: skein_forge::forgejo::request::Grant::Write,
+            },
+        ),
+        ("repo-hooks", Request::RepoHooks { at: repo(), page: Page { page: Some(1), limit: Some(2) } }),
+        ("repo-hook-create", Request::CreateRepoHook { at: repo(), hook: hook() }),
+        ("repo-hook-edit", Request::EditRepoHook { at: repo(), id: 7, hook: hook() }),
+        ("repo-hook-delete", Request::DeleteRepoHook { at: repo(), id: 7 }),
+    ]);
     rows.push(("pulls", Request::Pulls { at: forgejo::specimen(), page: Page { page: Some(1), limit: Some(2) } }));
     rows.push(("delete-hook", Request::DeleteOrgHook { org: Box::from(*b"ensemble"), id: 1 }));
     let mut seen = Vec::new();
@@ -483,7 +504,11 @@ fn shorten(answer: &mut Answer) {
 pub fn request_documents() -> Vec<(&'static str, Request)> {
     let mut rows = requests();
     for (_, request) in &mut rows {
-        if let Request::CreateOrgHook { hook, .. } | Request::EditOrgHook { hook, .. } = request {
+        if let Request::CreateOrgHook { hook, .. }
+        | Request::EditOrgHook { hook, .. }
+        | Request::CreateRepoHook { hook, .. }
+        | Request::EditRepoHook { hook, .. } = request
+        {
             hook.events = Box::from([Box::from(*b"push")]);
             hook.url = Box::from(*b"x");
             hook.secret = skein_lib::Secret::new(Box::from(*b"x"));

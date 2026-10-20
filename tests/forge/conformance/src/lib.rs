@@ -11,6 +11,7 @@ pub mod json;
 pub mod mask;
 mod orgs;
 mod registration;
+mod repo_setup;
 mod repos;
 mod runner;
 mod setup;

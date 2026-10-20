@@ -242,6 +242,11 @@ fn pull_answer(config: &Config, request: &Request, value: &a::Pull) -> Result<An
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::DeleteBranch { .. } => Err(a::Error::Refused),
     }
@@ -322,6 +327,11 @@ fn checks(config: &Config, request: &Request, values: &[a::CheckSummary]) -> Res
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::DeleteBranch { .. } => return Err(a::Error::Refused),
     };
@@ -503,6 +513,11 @@ fn collaborators(config: &Config, request: &Request, values: &[a::Collaborator])
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::DeleteBranch { .. } => return Err(a::Error::Refused),
     };

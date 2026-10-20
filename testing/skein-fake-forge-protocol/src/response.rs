@@ -78,6 +78,11 @@ pub fn follow(request: &Request, answer: &Answer) -> Result<Option<(a::Read, Sel
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. } => return Err(a::Error::Refused),
         Request::CreateIssue { .. } => {
             (a::Read::Item { number: number(answer).ok_or(a::Error::Refused)?, after: 0 }, Select::Document)
@@ -153,6 +158,11 @@ pub fn select(config: &Config, request: &Request, range: Option<Range>) -> Resul
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. } => Err(a::Error::Refused),
         Request::Branch { name, .. } => Ok(Select::Branch(name.clone())),
         Request::Branches { page, .. } => Ok(Select::Branches(*page)),
@@ -227,6 +237,11 @@ fn status(request: &Request) -> u16 {
         | crate::Route::CreateOrgHook
         | crate::Route::EditOrgHook
         | crate::Route::DeleteOrgHook
+        | crate::Route::AddCollaborator
+        | crate::Route::RepoHooks
+        | crate::Route::CreateRepoHook
+        | crate::Route::EditRepoHook
+        | crate::Route::DeleteRepoHook
         | crate::Route::AddMember
         | crate::Route::CreateUser
         | crate::Route::User

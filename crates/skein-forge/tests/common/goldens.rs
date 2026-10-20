@@ -53,6 +53,11 @@ pub fn answer(name: &str) -> &'static [u8] {
 }
 pub fn request(name: &str) -> (Method, &'static [u8], &'static [u8]) {
     match name {
+        "repo-hooks" => (Method::Get, b"/api/v1/repos/acme/widgets/hooks?page=1&limit=2", b""),
+        "repo-hook-create" => (Method::Post, b"/api/v1/repos/acme/widgets/hooks", br#"{"type":"forgejo","config":{"url":"https://hooks.example/","content_type":"json","secret":"example-hook"},"events":["push"],"active":true}"#),
+        "repo-hook-edit" => (Method::Patch, b"/api/v1/repos/acme/widgets/hooks/7", br#"{"config":{"url":"https://hooks.example/","content_type":"json","secret":"example-hook"},"events":["push"],"active":true}"#),
+        "repo-hook-delete" => (Method::Delete, b"/api/v1/repos/acme/widgets/hooks/7", b""),
+        "repo-collaborator" | "setup-collaborator-put" => (Method::Put, b"/api/v1/repos/acme/widgets/collaborators/alice", br#"{"permission":"write"}"#),
         "actions-combined-status" => (Method::Get, br#"/api/v1/repos/fixture/specimen/commits/0000000000000000000000000000000000000010/status?page=1&limit=2"#, br#""#),
         "actions-job" => (Method::Get, br#"/api/v1/repos/fixture/specimen/actions/jobs/2"#, br#""#),
         "actions-job-log" => (Method::Get, br#"/api/v1/repos/fixture/specimen/actions/jobs/2/logs?attempt=1"#, br#""#),

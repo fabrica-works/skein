@@ -35,6 +35,10 @@ pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refu
     };
     Ok(Encoded { method, target: out.writer.expect("writing pass").finish(), body })
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "exhaustive request selection lists every setup variant beside its owning group"
+)]
 fn target(request: &Request, out: &mut Target) -> (Method, bool) {
     match request {
         Request::CreateIssue { at, .. } => {
@@ -104,6 +108,11 @@ fn target(request: &Request, out: &mut Target) -> (Method, bool) {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings
@@ -180,6 +189,10 @@ fn text(json: &mut Encoder, key: &[u8], value: &[u8]) {
     json.key(key);
     json.string(value);
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "exhaustive request selection lists every setup variant beside its owning group"
+)]
 fn write(json: &mut Encoder, request: &Request) {
     json.object_start();
     match request {
@@ -244,6 +257,11 @@ fn write(json: &mut Encoder, request: &Request) {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings

@@ -68,6 +68,10 @@ pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refu
     target(request, &mut write);
     Ok(Encoded { method: Method::Get, target: write.writer.expect("writing pass").finish(), body: None })
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "exhaustive request selection lists every setup variant beside its owning group"
+)]
 fn target(request: &Request, out: &mut Target) {
     match request {
         Request::Reviews { at, number, page } => {
@@ -162,6 +166,11 @@ fn target(request: &Request, out: &mut Target) {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::DeleteBranch { .. } => unreachable!("review encoder selection"),
     }

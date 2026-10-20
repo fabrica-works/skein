@@ -693,6 +693,12 @@ fn raw_request(request: &request::Request) -> bool {
         | request::Request::EditOrgHook { .. }
         | request::Request::DeleteOrgHook { .. }
         | request::Request::AddMember { .. }
+        // setup requests are the setup host's, not the connection's.
+        | request::Request::AddCollaborator { .. }
+        | request::Request::RepoHooks { .. }
+        | request::Request::CreateRepoHook { .. }
+        | request::Request::EditRepoHook { .. }
+        | request::Request::DeleteRepoHook { .. }
         | request::Request::CreateUser { .. }
         | request::Request::DeleteBranch { .. } => false,
     }

@@ -11,6 +11,17 @@ pub enum Route {
     EditTeam,
     TeamMembers,
     AddMember,
+    /// Counts repository collaborator grants.
+    AddCollaborator,
+    /// Counts repository hook listings.
+    RepoHooks,
+    /// Counts repository hook creation.
+    CreateRepoHook,
+    /// Counts repository hook replacements.
+    EditRepoHook,
+    /// Counts repository hook removal.
+    DeleteRepoHook,
+
     OrgHooks,
     CreateOrgHook,
     EditOrgHook,
@@ -76,6 +87,12 @@ pub fn route(request: &Request) -> Route {
         Request::EditTeam { .. } => Route::EditTeam,
         Request::TeamMembers { .. } => Route::TeamMembers,
         Request::AddMember { .. } => Route::AddMember,
+        Request::AddCollaborator { .. } => Route::AddCollaborator,
+        Request::RepoHooks { .. } => Route::RepoHooks,
+        Request::CreateRepoHook { .. } => Route::CreateRepoHook,
+        Request::EditRepoHook { .. } => Route::EditRepoHook,
+        Request::DeleteRepoHook { .. } => Route::DeleteRepoHook,
+
         Request::OrgHooks { .. } => Route::OrgHooks,
         Request::CreateOrgHook { .. } => Route::CreateOrgHook,
         Request::EditOrgHook { .. } => Route::EditOrgHook,

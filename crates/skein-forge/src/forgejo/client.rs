@@ -38,7 +38,12 @@ pub enum Refusal {
 }
 pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
     match request {
-        Request::OrgHooks { .. }
+        Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
+        | Request::OrgHooks { .. }
         | Request::CreateOrgHook { .. }
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
@@ -122,9 +127,14 @@ pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
         Request::Org { .. } | Request::CreateOrg { .. } => Kind::Setup(setup::SetupKind::Org),
         Request::CreateTeam { .. } | Request::EditTeam { .. } => Kind::Setup(setup::SetupKind::Team),
         Request::Teams { .. } => Kind::Setup(setup::SetupKind::Teams),
-        Request::OrgHooks { .. } => Kind::Setup(setup::SetupKind::Hooks),
-        Request::CreateOrgHook { .. } | Request::EditOrgHook { .. } => Kind::Setup(setup::SetupKind::Hook),
-        Request::DeleteOrgHook { .. }
+        Request::OrgHooks { .. } | Request::RepoHooks { .. } => Kind::Setup(setup::SetupKind::Hooks),
+        Request::CreateOrgHook { .. }
+        | Request::EditOrgHook { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. } => Kind::Setup(setup::SetupKind::Hook),
+        Request::DeleteRepoHook { .. }
+        | Request::AddCollaborator { .. }
+        | Request::DeleteOrgHook { .. }
         | Request::DeleteToken { .. }
         | Request::AddMember { .. }
         | Request::Raw { .. }

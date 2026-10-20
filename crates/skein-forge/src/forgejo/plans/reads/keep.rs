@@ -123,6 +123,11 @@ pub(super) fn page_bound(request: &Request) -> Option<u32> {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::DeleteBranch { .. } => None,
     }

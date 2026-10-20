@@ -615,6 +615,11 @@ fn table(service: &Service, request: &Request, user: u64) -> Option<documents::A
         | Request::CreateOrgHook { .. }
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::AddMember { .. }
         | Request::CreateUser { .. }
         | Request::DeleteBranch { .. } => None,

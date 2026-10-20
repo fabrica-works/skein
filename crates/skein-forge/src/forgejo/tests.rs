@@ -1,4 +1,5 @@
 mod accounts;
+mod collaborators;
 mod delivery;
 pub(crate) mod fixtures;
 mod hooks;

@@ -28,7 +28,8 @@ pub(crate) fn record(f: &Fixture, out: &Path, secrets: &mut Secrets) -> Result<(
     crate::tokens::record(&mut recorder, &admin)?;
     crate::orgs::record(&mut recorder, &admin)?;
     crate::hooks::record(&mut recorder, &admin)?;
-    crate::repos::record(&mut recorder, &admin)
+    crate::repos::record(&mut recorder, &admin)?;
+    crate::repo_setup::record(&mut recorder, &f.owner.token)
 }
 pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
     let mut facts = crate::users::facts(out)?;
@@ -36,5 +37,6 @@ pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
     facts.extend(crate::orgs::facts(f, out)?);
     facts.extend(crate::hooks::facts(f, out)?);
     facts.extend(crate::repos::facts(out)?);
+    facts.extend(crate::repo_setup::facts(out)?);
     Ok(facts)
 }

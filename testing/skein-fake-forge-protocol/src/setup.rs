@@ -8,7 +8,10 @@ use skein_forge::forgejo::{
 };
 use skein_lib::{List, Secret, Writer, bytes};
 mod accounts;
+mod collaborators;
 mod hooks;
+mod repo_hooks;
+pub use repo_hooks::{RepositoryHook, RepositoryHooks};
 mod orgs;
 pub(crate) mod repos;
 mod tokens;
@@ -40,6 +43,11 @@ pub struct Store {
     teams: List<Team>,
     hooks: List<Subscription>,
     private: List<u64>,
+    /// Setup grants are separate from the domain's permissions; collaborator reads do not see them.
+    collaborators: List<collaborators::Collaborator>,
+    /// Repository hooks made by setup are stored and route nothing.
+    repo_hooks: List<RepositoryHook>,
+    next_repo_hook: u64,
     next_org: u64,
     next_team: u64,
     next_hook: u64,
@@ -58,6 +66,9 @@ impl Store {
             teams: List::with_capacity(cap),
             hooks: List::with_capacity(cap),
             private: List::with_capacity(cap),
+            collaborators: List::with_capacity(cap),
+            repo_hooks: List::with_capacity(cap),
+            next_repo_hook: 1,
             next_org: 1,
             next_team: 1,
             next_hook: 1,
@@ -149,6 +160,11 @@ impl Store {
             | Request::CreateOrgHook { .. }
             | Request::EditOrgHook { .. }
             | Request::DeleteOrgHook { .. }
+            | Request::AddCollaborator { .. }
+            | Request::RepoHooks { .. }
+            | Request::CreateRepoHook { .. }
+            | Request::EditRepoHook { .. }
+            | Request::DeleteRepoHook { .. }
             | Request::AddMember { .. } => {
                 let admin = match self.user(user) {
                     Some(account) => account.is_admin,
@@ -204,6 +220,13 @@ impl Store {
     }
     fn admin(&mut self, request: &Request, config: &Config, limits: &Limits) -> Reply {
         match request {
+            Request::AddCollaborator { at, login, permission } => {
+                self.add_collaborator(at, login, *permission, config, limits)
+            }
+            Request::RepoHooks { at, page } => self.list_repo_hooks(at, *page, config, limits),
+            Request::CreateRepoHook { at, hook } => self.create_repo_hook(at, hook, config, limits),
+            Request::EditRepoHook { at, id, hook } => self.edit_repo_hook(at, *id, hook, config, limits),
+            Request::DeleteRepoHook { at, id } => self.remove_repo_hook(at, *id, config, limits),
             Request::CreateUser { login, full_name, .. } => self.create_account(login, full_name, limits),
             Request::Tokens { login, page } => self.list_tokens(login, *page, config, limits),
             Request::CreateToken { login, name, scopes } => self.create_token(login, name, scopes, limits),
@@ -294,6 +317,8 @@ pub(crate) fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_add(issued.checked_mul(2)?)?
         .checked_add(orgs::worst_case(limits)?)?
         .checked_add(hooks::worst_case(limits)?)?
+        .checked_add(repo_hooks::worst_case(limits)?)?
+        .checked_add(collaborators::worst_case(limits)?)?
         .checked_add(List::<u64>::worst_case(cap)?)
 }
 

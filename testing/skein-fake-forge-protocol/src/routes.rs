@@ -80,6 +80,11 @@ pub fn repository(config: &Config, request: &Request) -> Option<Box<[u8]>> {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings
@@ -159,6 +164,10 @@ pub fn check(state: d::StatusState) -> a::Check {
     }
 }
 /// Translates the document's fields; a bad count or user names a missing object.
+#[expect(
+    clippy::too_many_lines,
+    reason = "exhaustive domain request selection also names the protocol-only setup variants"
+)]
 pub fn op(config: &Config, request: &Request) -> Result<Op, a::Error> {
     let missing = a::Error::Missing(a::What::Commit);
     let read = match request {
@@ -177,6 +186,11 @@ pub fn op(config: &Config, request: &Request) -> Result<Op, a::Error> {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings
@@ -261,6 +275,10 @@ pub fn op(config: &Config, request: &Request) -> Result<Op, a::Error> {
     };
     Ok(Op::Read(read))
 }
+#[expect(
+    clippy::too_many_lines,
+    reason = "exhaustive domain request selection also names the protocol-only setup variants"
+)]
 fn write(config: &Config, request: &Request) -> Result<Op, a::Error> {
     let missing = a::Error::Missing(a::What::Commit);
     match request {
@@ -329,6 +347,11 @@ fn write(config: &Config, request: &Request) -> Result<Op, a::Error> {
         | Request::EditOrgHook { .. }
         | Request::DeleteOrgHook { .. }
         | Request::AddMember { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. }
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings

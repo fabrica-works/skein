@@ -25,6 +25,7 @@ pub(crate) enum WriteKind {
     Scopes,
     Scope,
     NewHook,
+    Collaborator,
     HookConfig,
     NewOrg,
     NewTeam,
@@ -48,6 +49,7 @@ pub(crate) fn fields(kind: WriteKind) -> &'static [Field] {
             const { &[field(b"name", Read::Text, true), field(b"scopes", Read::Array(Kind::Write(WriteKind::Scopes)), true)] }
         }
         WriteKind::NewHook => super::hooks::fields(),
+        WriteKind::Collaborator => const { &[field(b"permission", Read::Text, true)] },
         WriteKind::HookConfig => super::hooks::config(),
         WriteKind::NewOrg => const { &[field(b"username", Read::Text, true), field(b"visibility", Read::Text, true)] },
         WriteKind::NewTeam => {
@@ -112,7 +114,8 @@ pub(crate) fn element(kind: WriteKind) -> Option<Kind> {
     match kind {
         WriteKind::Scopes => Some(Kind::Write(WriteKind::Scope)),
         WriteKind::Logins => Some(Kind::Write(WriteKind::Login)),
-        WriteKind::HookConfig
+        WriteKind::Collaborator
+        | WriteKind::HookConfig
         | WriteKind::NewHook
         | WriteKind::NewToken
         | WriteKind::Scope
@@ -321,7 +324,10 @@ impl BodyDecoder {
         {
             let logins = core::mem::replace(&mut self.texts, List::with_capacity(limits.inner)).into_boxed();
             match &mut self.request {
-                Request::CreateOrgHook { hook, .. } | Request::EditOrgHook { hook, .. } => hook.events = logins,
+                Request::CreateOrgHook { hook, .. }
+                | Request::EditOrgHook { hook, .. }
+                | Request::CreateRepoHook { hook, .. }
+                | Request::EditRepoHook { hook, .. } => hook.events = logins,
                 Request::CreateToken { scopes, .. } => *scopes = logins,
                 Request::RequestReviewers { reviewers, .. } | Request::RemoveReviewers { reviewers, .. } => {
                     *reviewers = logins;
@@ -347,6 +353,9 @@ impl BodyDecoder {
                 | Request::OrgHooks { .. }
                 | Request::DeleteOrgHook { .. }
                 | Request::AddMember { .. }
+                | Request::AddCollaborator { .. }
+                | Request::RepoHooks { .. }
+                | Request::DeleteRepoHook { .. }
                 | Request::CreateUser { .. }
                 | Request::DeleteBranch { .. }
                 | Request::RepositoryById { .. }
@@ -383,7 +392,11 @@ impl BodyDecoder {
     }
 
     fn flag(&mut self, key: &'static [u8], value: bool) -> Result<(), Malformed> {
-        if let Request::CreateOrgHook { hook, .. } | Request::EditOrgHook { hook, .. } = &mut self.request {
+        if let Request::CreateOrgHook { hook, .. }
+        | Request::EditOrgHook { hook, .. }
+        | Request::CreateRepoHook { hook, .. }
+        | Request::EditRepoHook { hook, .. } = &mut self.request
+        {
             hook.active = value;
             return Ok(());
         }
@@ -418,11 +431,22 @@ impl BodyDecoder {
         }
         self.text(key, text)
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "exhaustive request selection lists every setup variant beside its owning group"
+    )]
     fn text(&mut self, key: &'static [u8], text: Box<[u8]>) -> Result<(), Malformed> {
-        if let Request::CreateOrgHook { hook, .. } | Request::EditOrgHook { hook, .. } = &mut self.request {
+        if let Request::CreateOrgHook { hook, .. }
+        | Request::EditOrgHook { hook, .. }
+        | Request::CreateRepoHook { hook, .. }
+        | Request::EditRepoHook { hook, .. } = &mut self.request
+        {
             return super::hooks::text(hook, key, text);
         }
         match &mut self.request {
+            Request::AddCollaborator { permission, .. } => {
+                *permission = crate::forgejo::request::Grant::read(&text).ok_or(Malformed::Value { field: key })?;
+            }
             Request::CreateToken { name, .. } => *name = text,
             Request::CreateTeam { spec, .. } | Request::EditTeam { spec, .. } => {
                 crate::forgejo::client::orgs::team_text(spec, key, text)?;
@@ -510,6 +534,10 @@ impl BodyDecoder {
             | Request::OrgHooks { .. }
             | Request::DeleteOrgHook { .. }
             | Request::AddMember { .. }
+            | Request::RepoHooks { .. }
+            | Request::CreateRepoHook { .. }
+            | Request::EditRepoHook { .. }
+            | Request::DeleteRepoHook { .. }
             | Request::DeleteBranch { .. } => unreachable!("body text selection"),
         }
         Ok(())
@@ -571,6 +599,11 @@ impl BodyDecoder {
             | Request::EditOrgHook { .. }
             | Request::DeleteOrgHook { .. }
             | Request::AddMember { .. }
+            | Request::AddCollaborator { .. }
+            | Request::RepoHooks { .. }
+            | Request::CreateRepoHook { .. }
+            | Request::EditRepoHook { .. }
+            | Request::DeleteRepoHook { .. }
             | Request::CreateUser { .. }
             | Request::DeleteBranch { .. } => unreachable!("body id selection"),
         }

@@ -42,8 +42,19 @@ pub(crate) fn fields(kind: SetupKind) -> &'static [Field] {
     }
 }
 pub(super) fn target(out: &mut Target, org: &[u8], page: Option<Page>, id: Option<u64>) {
-    out.put(b"orgs/");
+    out.put(b"/api/v1/orgs/");
     out.segment(org);
+    out.put(b"/hooks");
+    if let Some(page) = page {
+        out.page(page, false);
+    }
+    if let Some(id) = id {
+        out.put(b"/");
+        out.number(id);
+    }
+}
+pub(super) fn repo_target(out: &mut Target, at: &crate::forgejo::request::Repo, page: Option<Page>, id: Option<u64>) {
+    out.repo(at);
     out.put(b"/hooks");
     if let Some(page) = page {
         out.page(page, false);
