@@ -1,15 +1,18 @@
 //! One page of a forge's repositories for the picker (forge-setup.md, 4.8).
 use crate::call::Auth;
+use crate::github::{self, app};
 use crate::{
     given::{self, Given, Place, Refused},
     item::Item,
     reconcile::{self, Event, Failure, Need, Outcome, Reply, Stage, Why, reply, unexpected},
 };
 use alloc::boxed::Box;
+use core::num::NonZeroU64;
 use skein_forge::forgejo::{
     document::{Document, Row},
     request::{Page, Request},
 };
+use skein_forge::github::{document as github_document, request as github_request};
 use skein_lib::{Decimal, List, Queue, Secret, bytes};
 
 /// Room the host reserves before stepping.
@@ -34,6 +37,12 @@ enum State {
     Admin,
     Settings,
     Search,
+    GithubBegin { installations: u32 },
+    GithubAccepted { installations: u32 },
+    GithubId,
+    GithubKey(NonZeroU64),
+    GithubMint(app::Kept),
+    GithubPage,
     Ended,
 }
 
@@ -44,7 +53,7 @@ enum Token {
     Api,
 }
 
-/// One picker page; its token is held only until the plan ends.
+/// One picker page; credentials live only as long as their phases need them.
 #[derive(Debug)]
 pub struct Reachable {
     forge: u16,
@@ -71,6 +80,24 @@ impl Reachable {
             page,
             limit: given.limits.reachable,
             state: State::Begin,
+            token: None,
+            listing: Token::Admin,
+        })
+    }
+
+    /// GitHub's picker for an accepted installation; pages start at one.
+    pub fn github(given: &github::given::Given, installation: u64, page: u32) -> Result<Self, github::given::Refused> {
+        github::given::check(given)?;
+        if page == 0 {
+            return Err(github::given::Refused { place: github::given::Place::Page, other: None });
+        }
+        Ok(Self {
+            forge: given.forge,
+            admin_name: Box::new([]),
+            installation: Some(installation),
+            page,
+            limit: core::cmp::min(given.limits.reachable, skein_forge::github::pin::PAGE_CAP),
+            state: State::GithubBegin { installations: given.limits.installations },
             token: None,
             listing: Token::Admin,
         })
@@ -150,8 +177,185 @@ impl Reachable {
                     self.stop(Stage::Token, subject, why)
                 }
             },
+            State::GithubBegin { .. }
+            | State::GithubAccepted { .. }
+            | State::GithubId
+            | State::GithubKey(_)
+            | State::GithubMint(_)
+            | State::GithubPage => self.github_advance(state, event),
             State::Ended => unreachable!("terminal machine is not advanced"),
         }
+    }
+
+    fn github_advance(&mut self, state: State, event: Event) -> Need {
+        match state {
+            State::GithubBegin { installations } => match event {
+                Event::Begin => {
+                    self.state = State::GithubAccepted { installations };
+                    Need::Read(Item::Accepted)
+                }
+                Event::Read(_) | Event::Reply(_) | Event::Written | Event::Drawn(_) => {
+                    self.github_installation_stop(Why::Unexpected)
+                }
+            },
+            State::GithubAccepted { installations } => match event {
+                Event::Read(read) => {
+                    let accepted = match read {
+                        Some(value) => crate::item::accepted(value.expose(), installations),
+                        None => None,
+                    };
+                    let installation = self.installation.expect("GitHub picker names its installation");
+                    let found = match accepted {
+                        Some(ids) => ids.contains(&installation),
+                        None => false,
+                    };
+                    if !found {
+                        return self.github_installation_stop(Why::Missing);
+                    }
+                    self.state = State::GithubId;
+                    Need::Read(Item::AppId)
+                }
+                Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => {
+                    self.github_installation_stop(Why::Unexpected)
+                }
+            },
+            State::GithubId => match event {
+                Event::Read(read) => match app::id_of(read) {
+                    Some(id) => {
+                        self.state = State::GithubKey(id);
+                        Need::Read(Item::AppKey)
+                    }
+                    None => self.github_stop(Stage::App, b"id", Why::Missing),
+                },
+                Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => {
+                    self.github_stop(Stage::App, b"id", Why::Unexpected)
+                }
+            },
+            State::GithubKey(id) => match event {
+                Event::Read(Some(key)) => {
+                    let app = app::Kept::new(id, key);
+                    let auth = app.auth();
+                    self.state = State::GithubMint(app);
+                    Need::Send {
+                        request: github_request::Request::Mint {
+                            installation: self.installation.expect("GitHub picker names its installation"),
+                            scope: github_request::Scope::Full,
+                        }
+                        .into(),
+                        auth,
+                    }
+                }
+                Event::Read(None) => self.github_stop(Stage::App, b"key", Why::Missing),
+                Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => {
+                    self.github_stop(Stage::App, b"key", Why::Unexpected)
+                }
+            },
+            State::GithubMint(app) => {
+                drop(app);
+                self.github_mint(event)
+            }
+            State::GithubPage => self.github_page(event),
+            State::Begin
+            | State::Read
+            | State::ApiRead
+            | State::Admin
+            | State::Settings
+            | State::Search
+            | State::Ended => {
+                unreachable!("GitHub phases only")
+            }
+        }
+    }
+
+    fn github_mint(&mut self, event: Event) -> Need {
+        match reply(event) {
+            Ok(Reply::GithubDocument(github_document::Document::Minted(minted))) => {
+                self.state = State::GithubPage;
+                Need::Send {
+                    request: github_request::Request::Reachable { page: self.page, per_page: self.limit }.into(),
+                    auth: Auth::Bearer(minted.token),
+                }
+            }
+            Ok(Reply::Unsigned) => self.github_stop(Stage::App, b"key", Why::KeyForm),
+            Ok(Reply::Status(404)) => self.github_installation_stop(Why::Missing),
+            Ok(
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)),
+            ) => self.github_installation_stop(unexpected(other)),
+            Err(why) => self.github_installation_stop(why),
+        }
+    }
+
+    fn github_page(&mut self, event: Event) -> Need {
+        match reply(event) {
+            Ok(Reply::GithubRows(rows)) => match self.github_rows(rows) {
+                Ok(need) => need,
+                Err(why) => self.github_installation_stop(why),
+            },
+            Ok(Reply::Unsigned) => self.github_installation_stop(Why::Unexpected),
+            Ok(
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)),
+            ) => self.github_installation_stop(unexpected(other)),
+            Err(why) => self.github_installation_stop(why),
+        }
+    }
+
+    fn github_stop(&mut self, stage: Stage, subject: &[u8], why: Why) -> Need {
+        self.state = State::Ended;
+        self.token = None;
+        app::stop(self.forge, stage, subject, why)
+    }
+
+    fn github_installation_stop(&mut self, why: Why) -> Need {
+        let subject = app::decimal(self.installation.expect("GitHub picker names its installation"));
+        self.github_stop(Stage::Installation, &subject, why)
+    }
+
+    fn github_rows(&mut self, rows: Box<[github_document::Row]>) -> Result<Need, Why> {
+        let limit = usize::try_from(self.limit).expect("u32 fits");
+        if rows.len() > limit {
+            return Err(Why::Unexpected);
+        }
+        let more = rows.len() == limit;
+        let mut reached = List::with_capacity(u32::try_from(rows.len()).expect("bounded page"));
+        for row in rows {
+            let row = match row {
+                github_document::Row::Reachable(row) => row,
+                github_document::Row::Installation(_)
+                | github_document::Row::Branch(_)
+                | github_document::Row::Issue(_)
+                | github_document::Row::Comment(_)
+                | github_document::Row::Pull(_)
+                | github_document::Row::Context(_)
+                | github_document::Row::Run(_)
+                | github_document::Row::Collaborator(_)
+                | github_document::Row::Remark(_)
+                | github_document::Row::Review(_)
+                | github_document::Row::Commit(_)
+                | github_document::Row::File(_) => return Err(Why::Unexpected),
+            };
+            reached
+                .push(Reached {
+                    id: row.id,
+                    owner_id: row.owner,
+                    owner: row.login,
+                    name: row.name,
+                    private: row.private,
+                })
+                .expect("bounded page");
+        }
+        self.state = State::Ended;
+        Ok(Need::Done(Outcome::Reachable { rows: reached.into_boxed(), more }))
     }
 
     fn repositories(&mut self, state: State, event: Event) -> Result<Need, Why> {
@@ -176,7 +380,17 @@ impl Reachable {
                 | Reply::Unsigned) => Err(unexpected(other)),
             },
             State::Search => self.rows(reply(event)?),
-            State::Begin | State::Read | State::ApiRead | State::Admin | State::Ended => {
+            State::Begin
+            | State::Read
+            | State::ApiRead
+            | State::Admin
+            | State::GithubBegin { .. }
+            | State::GithubAccepted { .. }
+            | State::GithubId
+            | State::GithubKey(_)
+            | State::GithubMint(_)
+            | State::GithubPage
+            | State::Ended => {
                 unreachable!("repository phases only")
             }
         }
@@ -254,7 +468,18 @@ pub fn step(machine: &mut Reachable, event: Event, out: &mut Queue<Need>) {
     let state = core::mem::replace(&mut machine.state, State::Ended);
     match state {
         State::Ended => (),
-        State::Begin | State::Read | State::ApiRead | State::Admin | State::Settings | State::Search => {
+        State::Begin
+        | State::Read
+        | State::ApiRead
+        | State::Admin
+        | State::Settings
+        | State::Search
+        | State::GithubBegin { .. }
+        | State::GithubAccepted { .. }
+        | State::GithubId
+        | State::GithubKey(_)
+        | State::GithubMint(_)
+        | State::GithubPage => {
             let need = machine.advance(state, event);
             out.push(need);
         }

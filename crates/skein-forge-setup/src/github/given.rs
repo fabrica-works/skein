@@ -33,6 +33,7 @@ pub enum Place {
     Installations,
     Reachable,
     Pages,
+    Page,
     StateLife,
     Deadline,
     Backoff,

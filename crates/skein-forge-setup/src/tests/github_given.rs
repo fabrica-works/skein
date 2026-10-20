@@ -40,6 +40,7 @@ fn with_address(place: Place, value: &[u8]) -> Given {
         | Place::PageBytes
         | Place::Installations
         | Place::Reachable
+        | Place::Page
         | Place::Pages
         | Place::StateLife
         | Place::Deadline
@@ -68,7 +69,7 @@ fn zero_limit(value: &mut Limits, place: Place) {
         Place::Deadline => value.deadline = Duration::ZERO,
         Place::Backoff => value.backoff = Duration::ZERO,
         Place::BackoffMax => value.backoff_max = Duration::ZERO,
-        Place::Word | Place::Web | Place::Url | Place::RedirectUrl | Place::SetupUrl => {
+        Place::Word | Place::Web | Place::Url | Place::RedirectUrl | Place::SetupUrl | Place::Page => {
             unreachable!("limit rows")
         }
     }
