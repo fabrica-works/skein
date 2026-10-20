@@ -90,6 +90,8 @@ fn config() -> fake::Config {
     fake::Config {
         base: f::boxed(b"http://127.0.0.1:1"),
         blob: f::boxed(b"http://logs.example.test"),
+        third_origin: None,
+        blob_redirect: None,
         app: fake::app::App {
             id: APP,
             slug: f::boxed(SLUG),

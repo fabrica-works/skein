@@ -59,6 +59,10 @@ pub struct Config {
     pub base: Box<[u8]>,
     /// Blob origin; a peer replaces it with its bound second listener.
     pub blob: Box<[u8]>,
+    /// Optional unfamiliar origin for the API job-log redirect.
+    pub third_origin: Option<Box<[u8]>>,
+    /// Optional destination of a second redirect from the blob listener.
+    pub blob_redirect: Option<Box<[u8]>>,
     /// App identity and test signing key.
     pub app: App,
     /// Grants at conversion and fields shown by GET /app.
@@ -229,6 +233,8 @@ impl Service {
         if config.ruleset_id == 0
             || !valid_origin(&config.base, limits.github.target_bytes)
             || !crate::logs::origin_fits(&config.blob, limits)
+            || !crate::logs::optional_origin_fits(config.third_origin.as_deref(), limits)
+            || !crate::logs::optional_origin_fits(config.blob_redirect.as_deref(), limits)
             || config.bot == 0
             || config.bot == config.app.id
             || config.app.id == 0
@@ -251,33 +257,7 @@ impl Service {
                 return Err(Problem::Config);
             }
         }
-        for (at, row) in config.repositories.iter().enumerate() {
-            if row.id == 0
-                || row.owner_id == 0
-                || row.owner.is_empty()
-                || row.name.is_empty()
-                || row.owner.len() > string
-                || row.name.len() > string
-                || row.owner.contains(&b'/')
-                || row.name.contains(&b'/')
-                || b"https://github.com/"
-                    .len()
-                    .checked_add(row.owner.len())
-                    .ok_or(Problem::Config)?
-                    .checked_add(1)
-                    .ok_or(Problem::Config)?
-                    .checked_add(row.name.len())
-                    .ok_or(Problem::Config)?
-                    > string
-            {
-                return Err(Problem::Config);
-            }
-            for prior in config.repositories.iter().take(at) {
-                if prior.id == row.id || (prior.owner == row.owner && prior.name == row.name) {
-                    return Err(Problem::Config);
-                }
-            }
-        }
+        repository_rows(&config.repositories, string)?;
         if config.accounts.len() > limits.github.inner || config.person.len() > string {
             return Err(Problem::Config);
         }
@@ -305,7 +285,13 @@ impl Service {
             }
         }
         Ok(Self {
-            logs: crate::logs::Store::new(config.blob, limits.blob_records, seed),
+            logs: crate::logs::Store::new(
+                config.blob,
+                config.third_origin,
+                config.blob_redirect,
+                limits.blob_records,
+                seed,
+            ),
             base: config.base,
             app: config.app,
             app_facts: config.app_facts,
@@ -801,4 +787,35 @@ fn local_link_chunk(out: &mut Writer, prefix: &[u8], base: &[u8]) -> Result<(), 
     out.put(prefix)?;
     out.put(b"<")?;
     out.put(base)
+}
+
+fn repository_rows(rows: &List<Row>, string: usize) -> Result<(), Problem> {
+    for (at, row) in rows.iter().enumerate() {
+        if row.id == 0
+            || row.owner_id == 0
+            || row.owner.is_empty()
+            || row.name.is_empty()
+            || row.owner.len() > string
+            || row.name.len() > string
+            || row.owner.contains(&b'/')
+            || row.name.contains(&b'/')
+            || b"https://github.com/"
+                .len()
+                .checked_add(row.owner.len())
+                .ok_or(Problem::Config)?
+                .checked_add(1)
+                .ok_or(Problem::Config)?
+                .checked_add(row.name.len())
+                .ok_or(Problem::Config)?
+                > string
+        {
+            return Err(Problem::Config);
+        }
+        for prior in rows.iter().take(at) {
+            if prior.id == row.id || (prior.owner == row.owner && prior.name == row.name) {
+                return Err(Problem::Config);
+            }
+        }
+    }
+    Ok(())
 }

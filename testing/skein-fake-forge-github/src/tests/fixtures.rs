@@ -48,6 +48,8 @@ pub fn config() -> Config {
     Config {
         base: boxed(b"http://127.0.0.1:3000"),
         blob: boxed(b"http://logs.example.test"),
+        third_origin: None,
+        blob_redirect: None,
         app: app(),
         app_facts: service::AppFacts::Complete,
         shown: service::Shown::Ruleset,

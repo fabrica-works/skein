@@ -322,6 +322,8 @@ fn github_service(page: u32) -> service::Service {
         service::Config {
             base: Box::from(b"http://127.0.0.1:3000".as_slice()),
             blob: Box::from(b"http://logs.example.test".as_slice()),
+            third_origin: None,
+            blob_redirect: None,
             app: App {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),

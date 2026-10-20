@@ -31,17 +31,25 @@ impl core::fmt::Debug for Record {
 #[derive(Debug)]
 pub(crate) struct Store {
     pub(crate) origin: Box<[u8]>,
+    third_origin: Option<Box<[u8]>>,
+    redirect: Option<Box<[u8]>>,
     key: Secret,
     records: Queue<Record>,
 }
 impl Store {
-    pub(crate) fn new(origin: Box<[u8]>, records: u32, seed: u64) -> Self {
+    pub(crate) fn new(
+        origin: Box<[u8]>,
+        third_origin: Option<Box<[u8]>>,
+        redirect: Option<Box<[u8]>>,
+        records: u32,
+        seed: u64,
+    ) -> Self {
         let mut rng = Rng::new(seed);
         let mut key = Writer::new(32);
         for _ in 0_u8..4 {
             key.put(&rng.next_u64().to_be_bytes()).expect("four key words");
         }
-        Self { origin, key: Secret::new(key.finish()), records: Queue::with_capacity(records) }
+        Self { origin, third_origin, redirect, key: Secret::new(key.finish()), records: Queue::with_capacity(records) }
     }
 }
 impl Service {
@@ -85,6 +93,9 @@ impl Service {
         let Some(row) = self.repositories.get(&repository) else {
             return Outcome::Reply(empty(404));
         };
+        if let Some(origin) = &self.logs.redirect {
+            return Outcome::Reply(redirect_to(origin, target));
+        }
         let Some(repository) = reads::full(row) else {
             return Outcome::Reply(answers::failed());
         };
@@ -97,6 +108,12 @@ impl Service {
                 op: a::Op::Read(a::Read::Log { job, attempt, step: None }),
             },
         )
+    }
+}
+pub(crate) fn optional_origin_fits(origin: Option<&[u8]>, limits: &Limits) -> bool {
+    match origin {
+        Some(origin) => origin_fits(origin, limits),
+        None => true,
     }
 }
 pub(crate) fn origin_fits(origin: &[u8], limits: &Limits) -> bool {
@@ -118,7 +135,14 @@ pub(crate) fn redirect(service: &Service, repository: u32, answer: a::Answer, no
     let Some(path) = signed(&service.logs.key, repository, job.id, job.attempt, expires, &service.limits) else {
         return answers::failed();
     };
-    let Some(location) = crate::service::joined(&service.logs.origin, &path) else {
+    let origin = match &service.logs.third_origin {
+        Some(origin) => origin,
+        None => &service.logs.origin,
+    };
+    redirect_to(origin, &path)
+}
+fn redirect_to(origin: &[u8], target: &[u8]) -> Response {
+    let Some(location) = crate::service::joined(origin, target) else {
         return answers::failed();
     };
     let mut response = empty(302);
@@ -198,6 +222,7 @@ pub(crate) fn worst_case(limits: &Limits) -> Option<u64> {
     Queue::<Record>::worst_case(limits.blob_records)?
         .checked_add(u64::from(limits.blob_records).checked_mul(u64::from(limits.http.head))?)?
         .checked_add(32)?
-        .checked_add(u64::from(limits.github.target_bytes).checked_mul(4)?)?
+        // Three retained origins, signing scratch and the composed Location.
+        .checked_add(u64::from(limits.github.target_bytes).checked_mul(6)?)?
         .checked_add(List::<u8>::worst_case(SIGNED_MAX)?)
 }
