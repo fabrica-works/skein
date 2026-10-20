@@ -218,13 +218,51 @@ pub fn host_settings() -> skein_forge_setup::host::Settings {
     let mut forges = List::with_capacity(2);
     forges
         .push(Forge {
-            kind: Kind::Forgejo,
+            kind: Kind::Forgejo(given(false)),
             address: skein_io::Addr::Ip("127.0.0.1:3000".parse().expect("loopback")),
             transport: Transport::Plaintext { name: None },
-            given: given(false),
         })
         .expect("one forge");
     Settings { forges, user_agent: b"kit/0.0.0".as_slice().into() }
+}
+#[must_use]
+pub fn github_given() -> skein_forge_setup::github::given::Given {
+    use skein_forge_setup::github::{given::Given, limits::Limits};
+    Given {
+        forge: 4,
+        word: b"kit".as_slice().into(),
+        web: b"https://github.test".as_slice().into(),
+        url: b"https://kit.test/".as_slice().into(),
+        redirect_url: b"https://kit.test/connect/redirect".as_slice().into(),
+        setup_url: b"https://kit.test/connect/setup".as_slice().into(),
+        limits: Limits {
+            key_bytes: 1196,
+            name_bytes: 34,
+            page_bytes: 4096,
+            installations: 8,
+            reachable: 4,
+            pages: 4,
+            state_life: Duration::from_secs(600),
+            deadline: Duration::from_secs(120),
+            backoff: Duration::from_millis(100),
+            backoff_max: Duration::from_secs(2),
+        },
+    }
+}
+#[must_use]
+pub fn github_forge() -> skein_forge_setup::host::Forge {
+    use skein_forge_setup::host::{Forge, Kind, Transport};
+    Forge {
+        kind: Kind::GitHub(github_given()),
+        address: skein_io::Addr::Ip("127.0.0.1:3001".parse().expect("loopback")),
+        transport: Transport::Plaintext { name: None },
+    }
+}
+#[must_use]
+pub fn github_settings() -> skein_forge_setup::host::Settings {
+    let mut settings = host_settings();
+    settings.forges.push(github_forge()).expect("two forges");
+    settings
 }
 #[must_use]
 pub fn crypto() -> skein_lib::CryptoRng {

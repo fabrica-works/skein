@@ -1,5 +1,5 @@
 //! Admission and stack bounds for the host (forge-setup.md, 6.3).
-use super::settings::{self, Settings, Transport};
+use super::settings::{self, Kind, Settings, Transport};
 use skein_forge::forgejo::limits as docs;
 use skein_json::{tokenizer, writer};
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -96,6 +96,10 @@ pub enum Unusable {
         forge: u16,
         refused: crate::given::Refused,
     },
+    GitHubGiven {
+        forge: u16,
+        refused: crate::github::given::Refused,
+    },
     /// A forge's picker page could hold more rows than a listing keeps.
     Reachable {
         forge: u16,
@@ -139,9 +143,9 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
         return Err(Unusable::Forges { forges: l.forges });
     }
     for (at, forge) in settings.forges.as_slice().iter().enumerate() {
-        let number = forge.given.forge;
+        let number = forge.number();
         for before in settings.forges.as_slice().get(..at).expect("prior forge positions") {
-            if before.given.forge == number {
+            if before.number() == number {
                 return Err(Unusable::Duplicate { forge: number });
             }
         }
@@ -164,10 +168,20 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
         if !header_value(&settings.user_agent) || head > u64::from(h.request) {
             return Err(Unusable::Request { forge: number });
         }
-        if let Err(refused) = crate::given::check(&forge.given) {
-            return Err(Unusable::Given { forge: number, refused });
-        }
-        let reachable = forge.given.limits.reachable;
+        let reachable = match &forge.kind {
+            Kind::Forgejo(given) => {
+                if let Err(refused) = crate::given::check(given) {
+                    return Err(Unusable::Given { forge: number, refused });
+                }
+                given.limits.reachable
+            }
+            Kind::GitHub(given) => {
+                if let Err(refused) = crate::github::given::check(given) {
+                    return Err(Unusable::GitHubGiven { forge: number, refused });
+                }
+                given.limits.reachable
+            }
+        };
         if reachable > l.inner {
             return Err(Unusable::Reachable { forge: number, reachable, inner: l.inner });
         }

@@ -57,43 +57,36 @@ impl Host {
             Request::Run { run, plan } => {
                 let forge = plan.forge();
                 assert!(!self.runs.contains_key(&run), "one live run per owner token");
-                let given = &configured(&self.settings, forge).given;
-                let mut busy = self.runs.len() == self.runs.capacity();
-                for (_, live) in &self.runs {
-                    busy |= live.forge == forge && live.writes == plan.writes();
-                }
-                if busy {
-                    up.push(Event::Stop {
-                        run,
-                        failure: Failure {
-                            forge,
-                            step: Stage::Admin,
-                            subject: given.admin_name.clone(),
-                            why: Why::Busy,
-                        },
-                    });
+                let configured = configured(&self.settings, forge);
+                let refused = if configured.takes(&plan) {
+                    let mut busy = self.runs.len() == self.runs.capacity();
+                    for (_, live) in &self.runs {
+                        busy |= live.forge == forge && live.writes == plan.writes();
+                    }
+                    if busy { Some(Why::Busy) } else { None }
                 } else {
-                    let mut live = Run::new(
-                        given,
-                        plan,
-                        bounds(&env.limits, configured(&self.settings, forge)),
-                        env.now,
-                        &mut self.plan_out,
-                    );
-                    match live.pending.take() {
-                        Some(reconcile::Need::Stop(failure)) => up.push(Event::Stop { run, failure }),
-                        Some(reconcile::Need::Done(outcome)) => up.push(Event::Done { run, outcome }),
-                        pending @ (Some(
-                            reconcile::Need::Read(_)
-                            | reconcile::Need::Write { .. }
-                            | reconcile::Need::Send { .. }
-                            | reconcile::Need::Draw(_),
-                        )
-                        | None) => {
-                            live.pending = pending;
-                            let previous = self.runs.insert(run, live).expect("admitted run");
-                            assert!(previous.is_none(), "fresh owner token");
-                        }
+                    Some(Why::Unexpected)
+                };
+                if let Some(why) = refused {
+                    up.push(Event::Stop { run, failure: about(configured, &plan, why) });
+                } else {
+                    match Run::new(configured, plan, bounds(&env.limits, configured), env.now, &mut self.plan_out) {
+                        Err(failure) => up.push(Event::Stop { run, failure }),
+                        Ok(mut live) => match live.pending.take() {
+                            Some(reconcile::Need::Stop(failure)) => up.push(Event::Stop { run, failure }),
+                            Some(reconcile::Need::Done(outcome)) => up.push(Event::Done { run, outcome }),
+                            pending @ (Some(
+                                reconcile::Need::Read(_)
+                                | reconcile::Need::Write { .. }
+                                | reconcile::Need::Send { .. }
+                                | reconcile::Need::Draw(_),
+                            )
+                            | None) => {
+                                live.pending = pending;
+                                let previous = self.runs.insert(run, live).expect("admitted run");
+                                assert!(previous.is_none(), "fresh owner token");
+                            }
+                        },
                     }
                 }
             }
@@ -354,15 +347,33 @@ impl core::fmt::Debug for Host {
 
 fn configured(settings: &Settings, number: u16) -> &Forge {
     for forge in &settings.forges {
-        if forge.given.forge == number {
+        if forge.number() == number {
             return forge;
         }
     }
     unreachable!("owner names a configured forge")
 }
 
-fn bounds(env_limits: &Limits, forge: &Forge) -> Bounds {
-    match forge.kind {
-        Kind::Forgejo => Bounds { token_bytes: env_limits.token_bytes, name_bytes: 0, key_bytes: 0, installations: 0 },
+pub(super) fn bounds(env_limits: &Limits, forge: &Forge) -> Bounds {
+    match &forge.kind {
+        Kind::Forgejo(_) => {
+            Bounds { token_bytes: env_limits.token_bytes, name_bytes: 0, key_bytes: 0, installations: 0 }
+        }
+        Kind::GitHub(given) => Bounds {
+            token_bytes: env_limits.token_bytes,
+            name_bytes: given.limits.name_bytes,
+            key_bytes: given.limits.key_bytes,
+            installations: given.limits.installations,
+        },
+    }
+}
+
+/// A host failure is about a Forgejo's admin or a GitHub App, naming the plan.
+pub(super) fn about(forge: &Forge, plan: &Plan, why: Why) -> Failure {
+    match &forge.kind {
+        Kind::Forgejo(given) => {
+            Failure { forge: given.forge, step: Stage::Admin, subject: given.admin_name.clone(), why }
+        }
+        Kind::GitHub(given) => Failure { forge: given.forge, step: Stage::App, subject: plan.name().into(), why },
     }
 }

@@ -51,6 +51,29 @@ impl Plan {
             Self::Reachable { .. } => false,
         }
     }
+    /// The plan's name, used in a failure the host reports at a GitHub App.
+    pub(super) fn name(&self) -> &'static [u8] {
+        match self {
+            Self::Reconcile { .. } => b"reconcile",
+            Self::Check { .. } => b"check",
+            Self::TakeOver { .. } => b"take-over",
+            Self::Adopt { .. } => b"adopt",
+            Self::Reachable { .. } => b"reachable",
+        }
+    }
+    /// The dialects the plan is for.
+    pub(super) fn dialect(&self) -> Dialect {
+        match self {
+            Self::Reconcile { .. } | Self::Reachable { .. } => Dialect::Both,
+            Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } => Dialect::Forgejo,
+        }
+    }
+}
+pub(super) enum Dialect {
+    Forgejo,
+    #[expect(dead_code, reason = "GitHub-only plans are added with their host machines")]
+    GitHub,
+    Both,
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Request {

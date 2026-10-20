@@ -78,10 +78,15 @@ fn forge(number: u16) -> Forge {
     let mut given = fixtures::given();
     given.forge = number;
     Forge {
-        kind: Kind::Forgejo,
+        kind: Kind::Forgejo(given),
         address: skein_io::Addr::Ip(([127, 0, 0, 1], 3000).into()),
         transport: Transport::Plaintext { name: None },
-        given,
+    }
+}
+fn forgejo_mut(settings: &mut Settings) -> &mut crate::given::Given {
+    match &mut settings.forges.get_mut(0).expect("one forge").kind {
+        Kind::Forgejo(given) => given,
+        Kind::GitHub(_) => panic!("Forgejo fixture"),
     }
 }
 fn settings(numbers: &[u16]) -> Settings {
@@ -185,7 +190,7 @@ fn a_runs_given_takes_the_plans_adopted_and_the_rest_from_the_forge() {
 fn settings_with_too_many_adopted_repositories_are_refused() {
     use crate::given::{Place, Refused};
     let mut s = settings(&[1]);
-    let given = &mut s.forges.get_mut(0).unwrap().given;
+    let given = forgejo_mut(&mut s);
     given.limits.repositories = 1;
     given.adopted = Box::new([1, 2]);
     assert_eq!(
@@ -269,7 +274,7 @@ fn the_first_try_waits_double_from_backoff_to_backoff_max() {
 #[test]
 fn the_deadline_cuts_the_last_wait_and_stops_the_run_down() {
     let mut s = settings(&[1]);
-    let given = &mut s.forges.get_mut(0).unwrap().given;
+    let given = forgejo_mut(&mut s);
     given.limits.deadline = Duration::from_secs(1);
     given.limits.backoff_max = Duration::from_millis(400);
     let mut w = World::with(limits(), s);
@@ -343,7 +348,7 @@ fn the_host_refuses_unusable_settings_naming_each() {
     s.user_agent = b"kit\r\n".as_slice().into();
     cases.push((limits(), s, Unusable::Request { forge: 1 })).unwrap();
     let mut s = settings(&[1]);
-    s.forges.get_mut(0).unwrap().given.bot_login = b"".as_slice().into();
+    forgejo_mut(&mut s).bot_login = b"".as_slice().into();
     cases
         .push((limits(), s, Unusable::Given { forge: 1, refused: Refused { place: Place::BotLogin, other: None } }))
         .unwrap();
@@ -621,21 +626,21 @@ fn paired() -> World {
 fn a_forge_whose_page_could_pass_the_listing_bound_is_unusable() {
     let l = limits();
     let mut s = settings(&[1]);
-    s.forges.get_mut(0).unwrap().given.limits.reachable = l.inner + 1;
+    forgejo_mut(&mut s).limits.reachable = l.inner + 1;
     assert_eq!(Host::new(&l, s, crypto()).err(), Some(Unusable::Reachable { forge: 1, reachable: 33, inner: 32 }));
 }
 #[test]
 fn a_page_bound_equal_to_the_listing_bound_is_usable() {
     let l = limits();
     let mut s = settings(&[1]);
-    s.forges.get_mut(0).unwrap().given.limits.reachable = l.inner;
+    forgejo_mut(&mut s).limits.reachable = l.inner;
     Host::new(&l, s, crypto()).expect("a picker page at the listing bound is usable");
 }
 #[test]
 fn a_zero_page_bound_is_refused_by_the_given_first() {
     use crate::given::{Place, Refused};
     let mut s = settings(&[1]);
-    s.forges.get_mut(0).unwrap().given.limits.reachable = 0;
+    forgejo_mut(&mut s).limits.reachable = 0;
     assert_eq!(
         Host::new(&limits(), s, crypto()).err(),
         Some(Unusable::Given { forge: 1, refused: Refused { place: Place::ReachableLimit, other: None } })
@@ -922,4 +927,201 @@ fn a_finished_run_frees_its_own_kind_only() {
     assert_eq!(w.up.pop(), Some(owner_read(3)));
     w.plan(4, reachable(1));
     assert_eq!(w.up.pop(), Some(stop(4, 1, Why::Busy)));
+}
+
+fn github_forge() -> Forge {
+    Forge {
+        kind: Kind::GitHub(super::github_fixtures::given()),
+        address: skein_io::Addr::Ip(([127, 0, 0, 1], 3001).into()),
+        transport: Transport::Plaintext { name: None },
+    }
+}
+fn github_settings() -> Settings {
+    let mut settings = settings(&[1, 4]);
+    *settings.forges.get_mut(1).expect("second forge") = github_forge();
+    settings
+}
+fn github_mut(settings: &mut Settings) -> &mut crate::github::given::Given {
+    match &mut settings.forges.get_mut(1).expect("second forge").kind {
+        Kind::Forgejo(_) => panic!("GitHub fixture"),
+        Kind::GitHub(given) => given,
+    }
+}
+#[test]
+fn the_host_admits_a_github_forge_beside_a_forgejo_forge() {
+    let settings = github_settings();
+    let forgejo = settings.forges.get(0).expect("first forge");
+    assert_eq!(forgejo.number(), 1);
+    assert!(forgejo.forgejo().is_some());
+    assert!(forgejo.github().is_none());
+    let github = settings.forges.get(1).expect("second forge");
+    assert_eq!(github.number(), 4);
+    assert!(github.forgejo().is_none());
+    assert_eq!(github.github(), Some(&super::github_fixtures::given()));
+    Host::new(&limits(), settings, crypto()).expect("both kinds admitted");
+}
+#[test]
+fn a_github_given_that_is_refused_is_named() {
+    use crate::github::given::{Place, Refused};
+    let mut settings = github_settings();
+    github_mut(&mut settings).limits.reachable = 0;
+    assert_eq!(
+        Host::new(&limits(), settings, crypto()).err(),
+        Some(Unusable::GitHubGiven { forge: 4, refused: Refused { place: Place::Reachable, other: None } })
+    );
+}
+#[test]
+fn a_github_forge_off_loopback_is_refused_as_a_forgejo_is() {
+    let mut settings = github_settings();
+    settings.forges.get_mut(1).expect("second forge").address = skein_io::Addr::Ip(([192, 0, 2, 1], 3001).into());
+    assert_eq!(Host::new(&limits(), settings, crypto()).err(), Some(Unusable::Address { forge: 4 }));
+}
+#[test]
+fn a_forge_number_used_by_both_kinds_is_a_duplicate() {
+    for github_first in [false, true] {
+        let mut settings = github_settings();
+        github_mut(&mut settings).forge = 1;
+        if github_first {
+            let mut forges = List::with_capacity(2);
+            let mut github = github_forge();
+            github.kind = Kind::GitHub(crate::github::given::Given { forge: 1, ..super::github_fixtures::given() });
+            forges.push(github).expect("first forge");
+            forges.push(forge(1)).expect("second forge");
+            settings.forges = forges;
+        }
+        assert_eq!(Host::new(&limits(), settings, crypto()).err(), Some(Unusable::Duplicate { forge: 1 }));
+    }
+}
+#[test]
+fn forges_counts_both_kinds() {
+    let mut limits = limits();
+    limits.forges = 1;
+    assert_eq!(Host::new(&limits, github_settings(), crypto()).err(), Some(Unusable::Forges { forges: 1 }));
+}
+fn github_stop(run: u64, name: &[u8], why: Why) -> Event {
+    Event::Stop { run: Token::new(run), failure: Failure { forge: 4, step: Stage::App, subject: name.into(), why } }
+}
+#[test]
+#[expect(clippy::disallowed_macros, reason = "the failure's Debug must redact the handed token")]
+fn a_forgejo_plan_on_a_github_forge_stops_at_once_unexpected() {
+    let token = b"handed-token-that-must-stay-secret";
+    for (plan, name) in [
+        (Plan::Check { forge: 4 }, b"check".as_slice()),
+        (Plan::TakeOver { forge: 4, admin_token: fixtures::secret(token) }, b"take-over"),
+        (Plan::Adopt { forge: 4, repository: core::num::NonZeroU64::new(1).expect("repository") }, b"adopt"),
+    ] {
+        let mut limits = limits();
+        limits.runs = 1;
+        let mut w = World::with(limits, github_settings());
+        // Reusing the owner's run token proves that the refused run is never live.
+        for _ in 0..2u8 {
+            w.plan(1, plan.clone());
+            let event = w.up.pop().expect("immediate Stop");
+            assert_eq!(event, github_stop(1, name, Why::Unexpected));
+            let rendered = format!("{event:?}");
+            for bytes in rendered.as_bytes().windows(token.len()) {
+                assert_ne!(bytes, token, "credentials stay out of Debug");
+            }
+            assert_eq!(w.up.len(), 0);
+            assert_eq!(w.io.len(), 0);
+            assert_eq!(w.host.next_deadline(), None);
+        }
+        // A writing plan on the other forge can consume the host's only run slot.
+        w.run(2, 1);
+        assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(2), need: Need::Read(Item::AdminToken) }));
+    }
+}
+#[test]
+#[expect(clippy::disallowed_macros, reason = "a Busy failure's Debug must redact the handed token")]
+fn a_busy_github_forge_names_the_plan_at_the_app() {
+    let forgejo = forge(1);
+    let github = github_forge();
+    for (plan, name) in [
+        (Plan::Reconcile { forge: 4, adopted: Box::new([]) }, b"reconcile".as_slice()),
+        (Plan::Check { forge: 4 }, b"check"),
+        (Plan::TakeOver { forge: 4, admin_token: fixtures::secret(b"handed-token") }, b"take-over"),
+        (Plan::Adopt { forge: 4, repository: core::num::NonZeroU64::new(1).expect("repository") }, b"adopt"),
+        (
+            Plan::Reachable {
+                forge: 4,
+                installation: Some(1),
+                page: core::num::NonZeroU32::new(1).expect("first page"),
+            },
+            b"reachable",
+        ),
+    ] {
+        let failure = crate::host::about(&github, &plan, Why::Busy);
+        assert_eq!(failure, Failure { forge: 4, step: Stage::App, subject: name.into(), why: Why::Busy });
+        let rendered = format!("{failure:?}");
+        for bytes in rendered.as_bytes().windows(b"handed-token".len()) {
+            assert_ne!(bytes, b"handed-token", "credentials stay out of Debug");
+        }
+        assert_eq!(
+            crate::host::about(&forgejo, &plan, Why::Busy),
+            Failure { forge: 1, step: Stage::Admin, subject: b"kit-admin".as_slice().into(), why: Why::Busy }
+        );
+    }
+}
+#[test]
+fn a_reconcile_or_reachable_on_a_github_forge_stops_unexpected_until_theirs_land() {
+    let mut w = World::with(limits(), github_settings());
+    for (plan, name) in [
+        (Plan::Reconcile { forge: 4, adopted: Box::new([]) }, b"reconcile".as_slice()),
+        (
+            Plan::Reachable {
+                forge: 4,
+                installation: Some(1),
+                page: core::num::NonZeroU32::new(1).expect("first page"),
+            },
+            b"reachable",
+        ),
+    ] {
+        w.plan(1, plan);
+        assert_eq!(w.up.pop(), Some(github_stop(1, name, Why::Unexpected)));
+        assert_eq!(w.up.len(), 0);
+        assert_eq!(w.io.len(), 0);
+        assert_eq!(w.host.next_deadline(), None);
+    }
+}
+#[test]
+fn a_github_forges_bounds_come_from_its_given() {
+    use crate::item::{self, Bounds};
+    let mut given = super::github_fixtures::given();
+    given.limits.name_bytes = 3;
+    given.limits.key_bytes = 99;
+    given.limits.installations = 2;
+    let forge = Forge { kind: Kind::GitHub(given), ..github_forge() };
+    let bounds = crate::host::bounds(&limits(), &forge);
+    assert_eq!(bounds, Bounds { token_bytes: 64, name_bytes: 3, key_bytes: 99, installations: 2 });
+    assert!(item::fits(Item::AppSlug, b"kit", &bounds));
+    assert!(!item::fits(Item::AppSlug, b"kits", &bounds));
+    assert_eq!(
+        crate::host::bounds(&limits(), &self::forge(1)),
+        Bounds { token_bytes: 64, name_bytes: 0, key_bytes: 0, installations: 0 }
+    );
+}
+#[test]
+fn a_github_picker_page_must_fit_the_hosts_listing_bound() {
+    let limits = limits();
+    for reachable in [limits.inner, limits.inner + 1] {
+        let mut settings = github_settings();
+        github_mut(&mut settings).limits.reachable = reachable;
+        let expected = if reachable > limits.inner {
+            Some(Unusable::Reachable { forge: 4, reachable, inner: limits.inner })
+        } else {
+            None
+        };
+        assert_eq!(Host::new(&limits, settings, crypto()).err(), expected);
+    }
+}
+#[test]
+fn a_wrong_kind_plan_is_unexpected_even_when_the_host_is_full() {
+    let mut limits = limits();
+    limits.runs = 1;
+    let mut w = World::with(limits, github_settings());
+    w.read_admin();
+    w.plan(2, Plan::Check { forge: 4 });
+    assert_eq!(w.up.pop(), Some(github_stop(2, b"check", Why::Unexpected)));
+    assert_eq!(w.up.len(), 0);
+    assert_eq!(w.io.len(), 0);
 }

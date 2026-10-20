@@ -247,7 +247,10 @@ fn the_host_adopt_waits_for_the_secret_write_then_makes_the_hook_before_done() {
     use skein_lib::{Duration, Token};
 
     let mut settings = fixtures::host_settings();
-    settings.forges.get_mut(0).expect("one forge").given.listener = Some(listener());
+    match &mut settings.forges.get_mut(0).expect("one forge").kind {
+        skein_forge_setup::host::Kind::Forgejo(given) => given.listener = Some(listener()),
+        skein_forge_setup::host::Kind::GitHub(_) => panic!("Forgejo fixture"),
+    }
     let mut world = HostWorld::with_settings(7, &[], fixtures::repository_config(&[b"alice/specimen"]), settings);
     fixtures::seed_bot_tokens(world.store_mut());
     world.pause_writes();

@@ -3,7 +3,7 @@ use crate::{fixtures, world::seeded_config};
 use skein_fake_forge_protocol::{self as fake, Service};
 use skein_forge_machine_world::pipe::{Cut, Pipe};
 use skein_forge_setup::{
-    host::{Answer, Event, Host, Limits, Need, Plan, Request},
+    host::{Answer, Event, Host, Limits, Need, Plan, Request, Settings},
     item::Item,
     reconcile::{Failure, Outcome},
 };
@@ -47,6 +47,7 @@ pub struct HostWorld {
     files: Vec<(Item, Secret)>,
     heard: Vec<Heard>,
     connects: Vec<Duration>,
+    connection_addresses: Vec<skein_io::Addr>,
     aborts: u32,
     seed: u64,
     needs: Vec<Need>,
@@ -58,7 +59,11 @@ pub struct HostWorld {
 impl HostWorld {
     #[must_use]
     pub fn new(seed: u64, script: &[Connect]) -> Self {
-        Self::with_config(seed, script, fixtures::config())
+        Self::new_with(seed, script, fixtures::host_settings(), fixtures::host_limits())
+    }
+    #[must_use]
+    pub fn new_with(seed: u64, script: &[Connect], settings: Settings, limits: Limits) -> Self {
+        Self::with_settings_and_limits(seed, script, fixtures::config(), settings, limits)
     }
     #[must_use]
     pub fn with_config(seed: u64, script: &[Connect], config: fake::Config) -> Self {
@@ -71,7 +76,15 @@ impl HostWorld {
         config: fake::Config,
         settings: skein_forge_setup::host::Settings,
     ) -> Self {
-        let limits = fixtures::host_limits();
+        Self::with_settings_and_limits(seed, script, config, settings, fixtures::host_limits())
+    }
+    fn with_settings_and_limits(
+        seed: u64,
+        script: &[Connect],
+        config: fake::Config,
+        settings: Settings,
+        limits: Limits,
+    ) -> Self {
         let (service, fake_limits) = seeded_config(seed, false, config);
         assert_eq!(skein_forge_setup::host::documents(&limits), fake_limits.documents);
         Self {
@@ -86,6 +99,7 @@ impl HostWorld {
             files: vec![(Item::AdminToken, fixtures::secret(fixtures::ADMIN))],
             heard: Vec::new(),
             connects: Vec::new(),
+            connection_addresses: Vec::new(),
             aborts: 0,
             seed,
             needs: Vec::new(),
@@ -94,6 +108,10 @@ impl HostWorld {
             pause_reads: false,
             pending_reads: Vec::new(),
         }
+    }
+    #[must_use]
+    pub fn connection_addresses(&self) -> &[skein_io::Addr] {
+        &self.connection_addresses
     }
     pub fn run(&mut self, run: u64) {
         self.run_adopted(run, &[]);
@@ -291,7 +309,8 @@ impl HostWorld {
     }
     fn io(&mut self, request: skein_io::Request) {
         match request {
-            skein_io::Request::Connect { owner, .. } => {
+            skein_io::Request::Connect { owner, addr } => {
+                self.connection_addresses.push(addr);
                 self.connects.push(self.env.now.saturating_since(Time::ZERO));
                 let connect = self.script.pop_front().unwrap_or(Connect::Made);
                 self.up(skein_io::Event::Connecting { owner, socket: owner });

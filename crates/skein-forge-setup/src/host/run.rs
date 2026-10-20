@@ -1,5 +1,5 @@
 //! One bounded plan and its outstanding owner or forge need (6.3).
-use super::{Answer, Need, Plan};
+use super::{Answer, Forge, Kind, Need, Plan};
 use crate::{
     adopt::{self, Adopt},
     call::{Auth, Call},
@@ -7,7 +7,7 @@ use crate::{
     given::Given,
     item::{self, Bounds, Item},
     reachable::{self, Reachable},
-    reconcile::{self, Event, Reconcile, Reply, Why},
+    reconcile::{self, Event, Failure, Reconcile, Reply, Why},
     take_over::{self, TakeOver},
 };
 use alloc::boxed::Box;
@@ -102,46 +102,64 @@ pub(super) struct Run {
     pub answered: bool,
 }
 impl Run {
-    pub fn new(given: &Given, plan: Plan, bounds: Bounds, now: Time, out: &mut Queue<reconcile::Need>) -> Self {
+    pub fn new(
+        forge: &Forge,
+        plan: Plan,
+        bounds: Bounds,
+        now: Time,
+        out: &mut Queue<reconcile::Need>,
+    ) -> Result<Self, Failure> {
         let writes = plan.writes();
-        let machine = match plan {
-            Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
-                Reconcile::new(&given_for(given, &adopted)).expect("the owner checks a plan's adopted repositories"),
-            )),
-            Plan::Check { forge } => Machine::Check(Check::new(forge)),
-            Plan::TakeOver { admin_token, .. } => {
-                let taken = if item::token(admin_token.expose(), bounds.token_bytes).is_some() {
-                    admin_token
-                } else {
-                    Secret::new(Box::new([]))
-                };
-                Machine::TakeOver(TakeOver::new(given, taken).expect("host checks the given"))
-            }
-            Plan::Adopt { repository, .. } => Machine::Adopt(
-                Adopt::new(given, repository.get()).expect("host checks the given and the repository is nonzero"),
-            ),
-            Plan::Reachable { installation, page, .. } => Machine::Reachable(
-                Reachable::new(given, installation, page.get()).expect("host checks the given and the page is nonzero"),
-            ),
+        let machine = match &forge.kind {
+            Kind::Forgejo(given) => match plan {
+                Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
+                    Reconcile::new(&given_for(given, &adopted))
+                        .expect("the owner checks a plan's adopted repositories"),
+                )),
+                Plan::Check { forge } => Machine::Check(Check::new(forge)),
+                Plan::TakeOver { admin_token, .. } => {
+                    let taken = if item::token(admin_token.expose(), bounds.token_bytes).is_some() {
+                        admin_token
+                    } else {
+                        Secret::new(Box::new([]))
+                    };
+                    Machine::TakeOver(TakeOver::new(given, taken).expect("host checks the given"))
+                }
+                Plan::Adopt { repository, .. } => Machine::Adopt(
+                    Adopt::new(given, repository.get()).expect("host checks the given and the repository is nonzero"),
+                ),
+                Plan::Reachable { installation, page, .. } => Machine::Reachable(
+                    Reachable::new(given, installation, page.get())
+                        .expect("host checks the given and the page is nonzero"),
+                ),
+            },
+            Kind::GitHub(_) => match plan {
+                Plan::Reconcile { .. }
+                | Plan::Reachable { .. }
+                | Plan::Check { .. }
+                | Plan::TakeOver { .. }
+                | Plan::Adopt { .. } => return Err(super::about(forge, &plan, Why::Unexpected)),
+            },
         };
+        let times = forge.times();
         let mut run = Self {
             bounds,
-            forge: given.forge,
+            forge: forge.number(),
             writes,
             machine,
-            deadline: now.saturating_add(given.limits.deadline),
+            deadline: now.saturating_add(times.deadline),
             pending: None,
             owner: None,
             send: None,
             connection: None,
             retry: false,
             retry_at: None,
-            backoff: given.limits.backoff,
-            backoff_max: given.limits.backoff_max,
+            backoff: times.backoff,
+            backoff_max: times.backoff_max,
             answered: false,
         };
         run.step(Event::Begin, out);
-        run
+        Ok(run)
     }
     pub fn step(&mut self, event: Event, out: &mut Queue<reconcile::Need>) {
         self.machine.step(event, out);
