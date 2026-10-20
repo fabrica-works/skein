@@ -521,26 +521,41 @@ struct CloseRow {
     expected: [usize; 6],
 }
 
-#[test]
-fn owner_close_wins_or_follows_each_terminal() {
+fn close_rows() -> [CloseRow; 35] {
     use ClosePhase::{
         Checking, Closed, Connecting, Idle, Reading, ReadingBody, Resolving, Sending, SendingBefore, Settings, Stopped,
         Waiting,
     };
     use Delivery::{Accepted, Before, Refused, Returned};
-    let mut rows = Vec::new();
-    for phase in [Checking, Settings, Connecting, SendingBefore, Sending, Reading, ReadingBody, Resolving] {
-        rows.push(CloseRow { phase, delivery: Before, expected: [0, 0, 0, 1, 0, 0] });
-        for delivery in [Accepted, Refused, Returned] {
-            // Start-stop terminals are accepted; refusal/return applies to call answers.
-            if matches!(phase, Checking | Settings) && !matches!(delivery, Accepted) {
-                continue;
-            }
-            let immediate = usize::from(matches!(phase, Checking | Settings));
-            rows.push(CloseRow { phase, delivery, expected: [1, 0, immediate, 1, 0, 0] });
-        }
-    }
-    rows.extend([
+    [
+        CloseRow { phase: Checking, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Checking, delivery: Accepted, expected: [1, 0, 1, 1, 0, 0] },
+        CloseRow { phase: Settings, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Settings, delivery: Accepted, expected: [1, 0, 1, 1, 0, 0] },
+        CloseRow { phase: Connecting, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Connecting, delivery: Accepted, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Connecting, delivery: Refused, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Connecting, delivery: Returned, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: SendingBefore, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: SendingBefore, delivery: Accepted, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: SendingBefore, delivery: Refused, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: SendingBefore, delivery: Returned, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Sending, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Sending, delivery: Accepted, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Sending, delivery: Refused, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Sending, delivery: Returned, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Reading, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Reading, delivery: Accepted, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Reading, delivery: Refused, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Reading, delivery: Returned, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: ReadingBody, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: ReadingBody, delivery: Accepted, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: ReadingBody, delivery: Refused, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: ReadingBody, delivery: Returned, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Resolving, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Resolving, delivery: Accepted, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Resolving, delivery: Refused, expected: [1, 0, 0, 1, 0, 0] },
+        CloseRow { phase: Resolving, delivery: Returned, expected: [1, 0, 0, 1, 0, 0] },
         CloseRow { phase: Waiting, delivery: Before, expected: [0, 0, 1, 1, 0, 0] },
         CloseRow { phase: Waiting, delivery: Accepted, expected: [1, 0, 1, 1, 0, 0] },
         CloseRow { phase: Waiting, delivery: Refused, expected: [1, 0, 1, 1, 0, 0] },
@@ -548,15 +563,42 @@ fn owner_close_wins_or_follows_each_terminal() {
         CloseRow { phase: Idle, delivery: Before, expected: [0, 0, 0, 1, 0, 0] },
         CloseRow { phase: Closed, delivery: Before, expected: [0, 0, 1, 1, 0, 0] },
         CloseRow { phase: Stopped, delivery: Before, expected: [0, 0, 1, 1, 0, 0] },
-    ]);
-    for row in rows {
+    ]
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ListenerClosePhase {
+    Head,
+    Body,
+    Answering,
+    Closing,
+    Hint,
+}
+#[derive(Debug)]
+struct ListenerCloseRow {
+    phase: ListenerClosePhase,
+    expected: [usize; 6],
+}
+
+#[test]
+fn owner_close_wins_or_follows_each_terminal() {
+    use ListenerClosePhase::{Answering, Body, Closing, Head, Hint};
+    for row in close_rows() {
         assert_eq!(drive_close(&row), row.expected, "{row:?}");
     }
-    for phase in ["head", "body", "answering", "closing", "hint"] {
-        let expected = if matches!(phase, "hint" | "answering") { [1, 0, 0, 1, 0, 0] } else { [0, 0, 0, 1, 0, 0] };
-        assert_eq!(drive_listener_close(phase), expected, "{phase}");
+    for row in [
+        ListenerCloseRow { phase: Head, expected: [0, 0, 0, 1, 0, 0] },
+        ListenerCloseRow { phase: Body, expected: [0, 0, 0, 1, 0, 0] },
+        ListenerCloseRow { phase: Answering, expected: [1, 0, 0, 1, 0, 0] },
+        ListenerCloseRow { phase: Closing, expected: [0, 0, 0, 1, 0, 0] },
+        ListenerCloseRow { phase: Hint, expected: [1, 0, 0, 1, 0, 0] },
+    ] {
+        assert_eq!(drive_listener_close(row.phase), row.expected, "{row:?}");
     }
 }
+
+// Refusal-prefix room keeps the waiting fixture from the queue's default Made fallback.
+const WAITING_CONNECT_REFUSALS: usize = 32;
 
 fn close_machine(row: &CloseRow) -> Machine {
     use ClosePhase::{
@@ -585,7 +627,7 @@ fn close_machine(row: &CloseRow) -> Machine {
     }
     let mut world = Machine::new(7, script);
     if matches!(row.phase, Waiting) {
-        world.connects(&[Connect::Refused; 32]);
+        world.connects(&[Connect::Refused; WAITING_CONNECT_REFUSALS]);
     }
     if matches!(row.delivery, Delivery::Before) {
         let pause = match row.phase {
@@ -604,7 +646,7 @@ fn close_machine(row: &CloseRow) -> Machine {
                 | Stopped => 2,
             };
             if matches!(row.phase, Connecting) {
-                world.advance_to(skein_lib::Time::from_nanos(6_000_000_000));
+                world.advance_to(skein_lib::Time::ZERO.saturating_add(CALL_ADMISSION));
             }
             world.pause_at(at, pause);
         }
@@ -618,11 +660,11 @@ fn close_machine(row: &CloseRow) -> Machine {
         Idle | Closed | Stopped => {}
     }
     world.advance_to(if matches!(row.phase, Closed) {
-        skein_lib::Time::from_nanos(6_000_000_000)
+        skein_lib::Time::ZERO.saturating_add(CALL_ADMISSION)
     } else if matches!(row.phase, Waiting) && !matches!(row.delivery, Delivery::Before) {
         DEADLINE
     } else if matches!(row.phase, Connecting) && matches!(row.delivery, Delivery::Before) {
-        skein_lib::Time::from_nanos(6_000_000_000)
+        skein_lib::Time::ZERO.saturating_add(CALL_ADMISSION)
     } else {
         skein_lib::Time::ZERO
     });
@@ -661,7 +703,8 @@ fn drive_close(row: &CloseRow) -> [usize; 6] {
     ]
 }
 
-fn drive_listener_close(phase: &str) -> [usize; 6] {
+fn drive_listener_close(phase: ListenerClosePhase) -> [usize; 6] {
+    use ListenerClosePhase::{Answering, Body, Closing, Head, Hint};
     use skein_forge_connection::Request;
     use skein_forge_machine_world::hooks::{self, Listener};
     let mut world = Listener::new(7, fixtures::hook_limits(), fixtures::hook_settings());
@@ -669,21 +712,20 @@ fn drive_listener_close(phase: &str) -> [usize; 6] {
     let post = hooks::push(b"main", 7);
     world.hold_settlement();
     match phase {
-        "head" => world.write(socket, &post.head[..post.head.len() - 1]),
-        "body" => {
+        Head => world.write(socket, &post.head[..post.head.len() - 1]),
+        Body => {
             world.write(socket, &post.head);
             world.write(socket, &post.body[..post.body.len() - 1]);
         }
-        "answering" => {
+        Answering => {
             world.send(socket, &post);
             assert_eq!((world.counts()[0], world.hints().len()), (1, 1));
             assert!(world.hinted_after_answer());
             world.refuse();
             assert_eq!(world.hints().len(), 0);
         }
-        "closing" => world.fault(socket, true),
-        "hint" => world.send(socket, &post),
-        _ => unreachable!("listed phase"),
+        Closing => world.fault(socket, true),
+        Hint => world.send(socket, &post),
     }
     let terminals = world.counts()[1];
     world.request(Request::Close);
