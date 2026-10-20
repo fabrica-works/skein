@@ -44,7 +44,6 @@ pub struct Server {
     pending: Option<Pending>,
     reply: Option<Box<[u8]>>,
     offset: usize,
-    head_request: bool,
 }
 impl Server {
     pub fn new(owner: Token, limits: &Limits) -> Result<Self, Problem> {
@@ -61,7 +60,6 @@ impl Server {
             pending: None,
             reply: None,
             offset: 0,
-            head_request: false,
         })
     }
     /// Takes the head with every Authorization value removed.
@@ -79,6 +77,7 @@ impl Server {
 }
 /// One connection's queues, heads, intake, decoded continuation fields and responses.
 /// Domain answers moved into continuations remain in the host's domain-reply budget.
+/// The shared service counts decoding scratch, including reviewer login/id lists.
 #[must_use]
 pub fn worst_case(limits: &Limits) -> Option<u64> {
     if limits.body == 0 || limits.response < 128 {
@@ -87,19 +86,34 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     http::worst_case(&limits.http)?
         .checked_add(Queue::<http::Event>::worst_case(4)?)?
         .checked_add(Queue::<http::Request>::worst_case(4)?)?
+        // One Respond owns at most Link, Location and Content-Type descriptors.
         .checked_add(List::<Header>::worst_case(3)?)?
-        .checked_add(List::<Box<[u8]>>::worst_case(limits.github.inner)?.checked_mul(2)?)?
-        .checked_add(List::<u64>::worst_case(limits.github.inner)?)?
-        .checked_add(List::<Header>::worst_case(limits.http.headers)?.checked_mul(6)?)?
-        .checked_add(u64::from(limits.http.head).checked_mul(6)?)?
+        // A call moves from events into call; its redacted clone lives in head.
+        // One exchange at a time and take_head before reuse allow two field lists
+        // and two copies of their target/name/value bytes, each within http.head.
+        .checked_add(List::<Header>::worst_case(limits.http.headers)?.checked_mul(2)?)?
+        .checked_add(u64::from(limits.http.head).checked_mul(2)?)?
         .checked_add(Intake::worst_case(limits.body)?)?
-        // Continuations retain decoded write fields, repository paths and row metadata.
-        .checked_add(u64::from(limits.body).checked_mul(16)?)?
-        .checked_add(u64::from(limits.github.target_bytes).checked_mul(16)?)?
-        .checked_add(u64::from(limits.github.string_bytes).checked_mul(16)?)?
-        .checked_add(u64::from(limits.response).checked_mul(8)?)?
-        .checked_add(u64::from(limits.http.read).checked_mul(4)?)?
-        .checked_add(u64::from(limits.http.send).checked_mul(4)?)
+        // dispatch's extracted body and writes::Stage::ReviewAuthor.body can
+        // coexist. No other continuation retains a body; service counts decoding.
+        .checked_add(u64::from(limits.body).checked_mul(2)?)?
+        // One read continuation's target (Checks, Reviews, Collaborators,
+        // PullFiles, Issues, Comments, Branches) or Branch's decoded name.
+        .checked_add(u64::from(limits.github.target_bytes))?
+        // writes::Pending.repository plus writes::Stage::OpenPull's head and base.
+        // Service validates the repository's full URL within string_bytes, so
+        // its owner/name path fits one. Read::Repository's Row has two strings.
+        .checked_add(u64::from(limits.github.string_bytes).checked_mul(3)?)?
+        // Server.reply and Respond.headers' Link (API) or Location (page).
+        // The response head encoded by HTTP is in http::worst_case above.
+        .checked_add(u64::from(limits.response).checked_mul(2)?)?
+        // Link (4), Content-Type (12), application/octet-stream (24): header
+        // names and media values; Location (8) plus text/html (9) fits too.
+        .checked_add(40)?
+        // One outstanding body demand: one queued/local Body(Bytes) delivery.
+        .checked_add(u64::from(limits.http.read))?
+        // One reply room grant: one copied chunk in requests' Reply(Send).
+        .checked_add(u64::from(limits.http.send))
 }
 pub fn start(
     server: &mut Server,
@@ -261,7 +275,6 @@ fn event_up(
                 }
             }
             server.head = Some(snapshot);
-            server.head_request = call.method == HttpMethod::Head;
             server.call = Some(call);
             server.body.clear();
             server.state = State::Body;
@@ -314,7 +327,17 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
         HttpMethod::Put => Method::Put,
         HttpMethod::Patch => Method::Patch,
         HttpMethod::Delete => Method::Delete,
-        HttpMethod::Head | HttpMethod::Options => {
+        HttpMethod::Head => {
+            server.state = State::Streaming;
+            server.requests.push(http::Request::Respond(http::Response {
+                status: 405,
+                headers: Box::new([]),
+                body: http::Body::None,
+                close: false,
+            }));
+            return;
+        }
+        HttpMethod::Options => {
             respond(server, &env.limits, answers::refusal(405, crate::texts::METHOD_NOT_ALLOWED, &env.limits), None);
             return;
         }
@@ -324,10 +347,7 @@ fn dispatch(server: &mut Server, service: &mut Service, env: &Env<Limits>, above
     } else {
         server.body.meet(Read::Fill(server.body.len())).expect("whole body")
     };
-    if call.target.starts_with(b"/settings/")
-        || call.target.starts_with(b"/organizations/")
-        || call.target.starts_with(b"/apps/")
-    {
+    if pages::accepts(method, &call.target) {
         let page = service.page(&pages::Page { method, target: &call.target, body: &body }, env.wall);
         let content_type = match page.media {
             pages::Media::Html => crate::service::ContentType::Html,
@@ -398,9 +418,9 @@ fn respond(server: &mut Server, limits: &Limits, mut reply: Response, mut locati
         body: if reply.status == 204 { http::Body::None } else { http::Body::Length(length) },
         close: false,
     }));
-    if length > 0 && !server.head_request {
+    if length > 0 {
         reply_room(server, limits);
-    } else if reply.status != 204 && !server.head_request {
+    } else if reply.status != 204 {
         server.requests.push(http::Request::Reply(Down::Finish));
     }
 }

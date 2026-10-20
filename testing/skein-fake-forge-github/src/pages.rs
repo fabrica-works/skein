@@ -122,6 +122,11 @@ fn route(method: Method, path: &[u8]) -> Option<Route<'_>> {
     }
     None
 }
+/// Whether the browser layer has a route for this method and target's path.
+pub(crate) fn accepts(method: Method, target: &[u8]) -> bool {
+    let Some((path, _query)) = split(target, b'?') else { return false };
+    route(method, path).is_some()
+}
 pub(crate) fn serve(service: &mut Service, page: &Page<'_>, now: Wall) -> Answer {
     let limits = service.limits;
     if !fits(page.target, limits.github.target_bytes) || page.target.contains(&b'#') {

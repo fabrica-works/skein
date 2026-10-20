@@ -385,6 +385,41 @@ fn request_reuse(method: Method, target: &[u8], body: &[u8], auth: Option<&Secre
 }
 
 #[test]
+fn github_peer_head_is_a_bodyless_405_and_allows_reuse() {
+    let mut world = World::new(f::SEED);
+    let fd = world.open(true);
+    world.send(fd, b"HEAD /app HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n");
+    world.send(fd, &request(Method::Get, b"/unknown", b"", None));
+    let replies = world.receive(fd);
+    assert_eq!(replies.status, 405);
+    assert!(replies.body.starts_with(b"HTTP/1.1 404 "), "the next response starts immediately after HEAD's head");
+    assert_eq!(Reply::parse(&replies.body).status, 404);
+    world.settle();
+}
+
+#[test]
+fn github_peer_page_routes_choose_between_the_browser_and_api() {
+    let mut world = World::new(f::SEED);
+    let fd = world.open(true);
+    world.send(fd, b"GET /apps/example-app/installations/new HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    assert_eq!(world.receive(fd).status, 422, "the page needs state, with no API headers required");
+    for target in
+        [b"/apps/example-app/api-only".as_slice(), b"/settings/api-only", b"/organizations/example-org/api-only"]
+    {
+        let fd = world.open(true);
+        let mut wire = b"GET ".to_vec();
+        wire.extend_from_slice(target);
+        wire.extend_from_slice(b" HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        world.send(fd, &wire);
+        assert_eq!(world.receive(fd).status, 403, "the API requires its User-Agent");
+        let response = world.fetch(Method::Get, target, b"", None);
+        assert_eq!(response.status, 404, "the API cannot route this target");
+        assert!(bytes::find(&response.body, b"Not Found").is_some());
+    }
+    world.settle();
+}
+
+#[test]
 fn github_peer_serves_repository_reads_and_writes_over_the_shared_forge() {
     let mut world = World::new(f::SEED);
     let token = world.token();

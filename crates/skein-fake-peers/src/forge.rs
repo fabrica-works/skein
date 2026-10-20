@@ -121,7 +121,7 @@ impl Peer {
         Self::host(address, limits, protocol::Limits::Forgejo(protocol), service, protocol_bound, forge)
     }
     /// GitHub's API and browser pages share this listener and the owner's forge.
-    /// Blob hosting and GitHub hook delivery have separate owners (fake-forge.md, 10.3–10.5).
+    /// Blob hosting and GitHub hook delivery are later work; this face serves neither (fake-forge.md, 10.3–10.5).
     pub fn github(
         address: SocketAddr,
         limits: Limits,
