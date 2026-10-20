@@ -30,3 +30,28 @@ pub fn lacks(app: &App) -> Box<[Lacking]> {
     }
     lacking.into_boxed()
 }
+
+/// Dialect Missing arrays and the returned Lacking array coexist while entries
+/// move between them. Each conversion to a boxed slice may retain its source
+/// allocation until the shorter allocation is made. Names move, without copies.
+pub(crate) fn worst_case() -> Option<u64> {
+    use skein_forge::github::document::Permission;
+    let permissions = u32::try_from(setup::PERMISSIONS.len()).ok()?;
+    let events = u32::try_from(setup::EVENTS.len()).ok()?;
+    let missing_permissions = List::<Permission>::worst_case(permissions)?;
+    let missing_events = List::<Box<[u8]>>::worst_case(events)?;
+    let lacking = List::<Lacking>::worst_case(permissions.checked_add(events)?)?;
+    let mut total = missing_permissions
+        .checked_add(missing_permissions)?
+        .checked_add(missing_events)?
+        .checked_add(missing_events)?
+        .checked_add(lacking)?
+        .checked_add(lacking)?;
+    for (name, _) in setup::PERMISSIONS {
+        total = total.checked_add(u64::try_from(name.len()).ok()?)?;
+    }
+    for name in setup::EVENTS {
+        total = total.checked_add(u64::try_from(name.len()).ok()?)?;
+    }
+    Some(total)
+}

@@ -437,3 +437,250 @@ pub fn accepted(ids: &[u64]) -> Secret {
 pub fn app_id(id: u64) -> Secret {
     secret(&id.to_le_bytes())
 }
+
+/// Shared HTTP/browser stories; API requests are observed only through redacted records.
+pub mod github_stories {
+    use super::{Secret, github_given};
+    use crate::{Connect, Heard, HostWorld};
+    use skein_forge_setup::{
+        github::manifest::Target,
+        host::{Need, Plan},
+        item::{self, Item},
+        reconcile::Outcome,
+    };
+    use skein_lib::{Time, Token};
+    use std::{collections::BTreeMap, fmt::Write};
+    pub const FORGE: u16 = 4;
+    pub const HOOK: &[u8] = b"https://test-app.invalid/";
+    // Parse the generated elements' quoted attributes; escaped JSON stays one value.
+    #[must_use]
+    pub fn attributes(html: &str, element: &str) -> BTreeMap<String, String> {
+        let mut tags = html.split('<').filter_map(|piece| piece.split_once('>').map(|(tag, _)| tag));
+        let tag =
+            tags.find(|tag| tag.strip_prefix(element).is_some_and(|rest| rest.starts_with(' '))).expect("element");
+        let mut rest = &tag[element.len()..];
+        let mut attributes = BTreeMap::new();
+        while !rest.trim_start().is_empty() {
+            rest = rest.trim_start();
+            let (name, value) = rest.split_once('=').expect("attribute assignment");
+            let quote = value.as_bytes()[0];
+            assert!(quote == b'"' || quote == b'\'');
+            let end = value.as_bytes()[1..].iter().position(|byte| *byte == quote).expect("closing quote") + 1;
+            assert!(attributes.insert(name.to_owned(), entities(&value[1..end])).is_none());
+            rest = &value[end + 1..];
+        }
+        attributes
+    }
+    #[must_use]
+    pub fn entities(input: &str) -> String {
+        let mut output = String::new();
+        let mut rest = input;
+        while let Some(at) = rest.find('&') {
+            output.push_str(&rest[..at]);
+            let (entity, tail) = rest[at + 1..].split_once(';').expect("entity terminator");
+            output.push(match entity {
+                "amp" => '&',
+                "quot" => '"',
+                "#39" => '\'',
+                "lt" => '<',
+                "gt" => '>',
+                _ => panic!("supported HTML entity"),
+            });
+            rest = tail;
+        }
+        output.push_str(rest);
+        output
+    }
+    #[must_use]
+    pub fn encoded(input: &[u8]) -> String {
+        let mut output = String::new();
+        for byte in input {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(byte) {
+                output.push(char::from(*byte));
+            } else {
+                write!(output, "%{byte:02X}").expect("String accepts text");
+            }
+        }
+        output
+    }
+    #[must_use]
+    pub fn unencoded(input: &str) -> Vec<u8> {
+        let mut output = Vec::new();
+        let mut bytes = input.bytes();
+        while let Some(byte) = bytes.next() {
+            output.push(match byte {
+                b'+' => b' ',
+                b'%' => {
+                    let high = char::from(bytes.next().expect("high nibble")).to_digit(16).expect("hex");
+                    let low = char::from(bytes.next().expect("low nibble")).to_digit(16).expect("hex");
+                    u8::try_from(high * 16 + low).expect("byte")
+                }
+                byte => byte,
+            });
+        }
+        output
+    }
+    #[must_use]
+    pub fn query(url: &str) -> BTreeMap<String, Vec<u8>> {
+        url.split_once('?')
+            .expect("query")
+            .1
+            .split('&')
+            .map(|field| {
+                let (name, value) = field.split_once('=').expect("query field");
+                (name.to_owned(), unencoded(value))
+            })
+            .collect()
+    }
+    #[must_use]
+    pub fn request(method: &str, url: &str, body: &[u8]) -> Vec<u8> {
+        let (scheme, address) = url.split_once("://").expect("absolute browser URL");
+        assert!(scheme == "https" || scheme == "http");
+        let slash = address.find('/').expect("path");
+        let mut bytes = format!(
+        "{method} {} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n",
+        &address[slash..], &address[..slash], body.len()
+    ).into_bytes();
+        bytes.extend_from_slice(body);
+        bytes
+    }
+    #[must_use]
+    pub fn response(bytes: &[u8], status: u16) -> (&str, &str) {
+        let text = core::str::from_utf8(bytes).expect("browser response UTF-8");
+        let (head, body) = text.split_once("\r\n\r\n").expect("response head");
+        let got: u16 = head.split_whitespace().nth(1).expect("status").parse().expect("numeric status");
+        assert_eq!(got, status);
+        let length: usize = header(head, "Content-Length").expect("length").parse().expect("numeric length");
+        assert_eq!(length, body.len());
+        (head, body)
+    }
+    #[must_use]
+    pub fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
+        head.split("\r\n")
+            .skip(1)
+            .filter_map(|line| line.split_once(':'))
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.trim())
+    }
+
+    /// One manifest and conversion through the browser and host, on the same fake.
+    #[must_use]
+    pub fn connected(seed: u64) -> (HostWorld, Secret) {
+        let mut world = HostWorld::github(seed, &[]);
+        for item in [Item::AppId, Item::AppKey, Item::AppSlug, Item::User, Item::Accepted] {
+            world.forget(item);
+        }
+        world.run_plan(1, Plan::Manifest { forge: FORGE, target: Target::Personal });
+        world.settle();
+        let Some(Heard::Done { outcome: Outcome::Manifest { state, page }, .. }) = world.heard().last() else {
+            panic!("manifest")
+        };
+        let state = state.clone();
+        let html = core::str::from_utf8(page).expect("page text");
+        let form = attributes(html, "form");
+        let field = attributes(html, "input");
+        let body = format!("manifest={}", encoded(field["value"].as_bytes()));
+        let reply = world.github_page(&request("POST", &form["action"], body.as_bytes()));
+        let (_, html) = response(&reply, 200);
+        let link = attributes(html, "a");
+        let mut fields = query(&link["href"]);
+        assert_eq!(fields.remove("state").expect("state"), state.as_ref());
+        let code = Secret::new(fields.remove("code").expect("code").into_boxed_slice());
+        world.run_plan(2, Plan::Convert { forge: FORGE, code: code.clone(), state });
+        world.settle();
+        assert!(matches!(world.heard().last(), Some(Heard::Done { outcome: Outcome::Nothing, .. })));
+        (world, code)
+    }
+    #[must_use]
+    pub fn configured(script: &[Connect]) -> HostWorld {
+        HostWorld::github_scenario(7, script, skein_fake_forge_github::service::AppFacts::Complete, HOOK)
+    }
+    pub fn reconcile(world: &mut HostWorld, run: u64) {
+        world.run_plan(run, Plan::Reconcile { forge: FORGE, adopted: Box::new([]) });
+        world.settle();
+    }
+    #[must_use]
+    pub fn install(world: &mut HostWorld, run: u64) -> (Box<[u8]>, Box<[u8]>) {
+        world.run_plan(run, Plan::Install { forge: FORGE });
+        world.settle();
+        let Some(Heard::Done { outcome: Outcome::Install { state, url }, .. }) = world.heard().last() else {
+            panic!("install")
+        };
+        (state.clone(), url.clone())
+    }
+    pub fn accept(world: &mut HostWorld, run: u64, state: &[u8], id: u64) {
+        world.run_plan(
+            run,
+            Plan::Accept {
+                forge: FORGE,
+                state: state.into(),
+                installation: core::num::NonZeroU64::new(id).expect("fixture id"),
+            },
+        );
+        world.settle();
+    }
+    #[must_use]
+    pub fn accepted(world: &HostWorld) -> Box<[u64]> {
+        world.file(Item::Accepted).map_or_else(
+            || Box::from([]),
+            |value| item::accepted(value.expose(), github_given().limits.installations).expect("accepted item"),
+        )
+    }
+    #[must_use]
+    pub fn writes(world: &HostWorld, since: usize) -> Vec<Item> {
+        world.needs()[since..]
+            .iter()
+            .filter_map(|need| match need {
+                Need::Write { item, .. } => Some(*item),
+                Need::Read(_) => None,
+            })
+            .collect()
+    }
+    #[must_use]
+    pub fn mutations(world: &HostWorld, since: usize) -> Vec<(String, String)> {
+        world.github_requests()[since..]
+            .iter()
+            .filter(|row| row.method != "GET")
+            .map(|row| (row.method.clone(), row.target.clone()))
+            .collect()
+    }
+    pub fn done(world: &HostWorld, run: u64) {
+        assert_eq!(world.heard().iter().filter(|event| matches!(event, Heard::Done { run: token, .. } | Heard::Stop { run: token, .. } if *token == Token::new(run))).count(), 1);
+        let Some(Heard::Done { run: token, outcome: Outcome::Lacking { lacking }, .. }) = world.heard().last() else {
+            panic!("reconcile Done: {:?}", world.heard().last())
+        };
+        assert_eq!(*token, Token::new(run));
+        assert!(lacking.is_empty());
+    }
+    pub fn closed(world: &mut HostWorld) {
+        let diagnostics = format!("{:?} {:?} {:?}", world.heard(), world.needs(), world.github_requests());
+        let key = skein_forge_machine_world::github::app_key();
+        let pem = skein_fake_forge_github::keys::pem(key).expect("fixture PEM");
+        for secret in [key, pem.as_ref(), b"ghs_", b"eyJ"] {
+            assert!(!diagnostics.as_bytes().windows(secret.len()).any(|part| part == secret));
+            assert!(!diagnostics.contains(&format!("{secret:?}")));
+        }
+        let mut terminals = std::collections::BTreeSet::new();
+        for event in world.heard() {
+            match event {
+                Heard::Done { run, .. } | Heard::Stop { run, .. } => {
+                    assert!(terminals.insert(run.raw()), "one terminal per run");
+                }
+                Heard::Closed { .. } => panic!("close follows run terminals"),
+            }
+        }
+        world.close();
+        world.settle();
+        assert!(matches!(world.heard().last(), Some(Heard::Closed { .. })));
+        let counts = (world.heard().len(), world.connects().len(), world.needs().len());
+        world.finish();
+        assert_eq!(
+            (world.heard().len(), world.connects().len(), world.needs().len()),
+            counts,
+            "quiescent, with no expiry wake"
+        );
+    }
+    pub fn expire(world: &mut HostWorld) {
+        world.advance_to(Time::from_nanos(github_given().limits.state_life.as_nanos()));
+    }
+}

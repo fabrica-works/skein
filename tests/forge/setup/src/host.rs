@@ -31,10 +31,15 @@ pub enum Heard {
     Stop { run: Token, failure: Failure, at: Duration },
     Closed { at: Duration },
 }
+enum Api {
+    GitHub,
+    Forgejo,
+}
 struct Peer {
     pipe: Pipe,
     server: Option<fake::Server>,
     github: bool,
+    api: Api,
     above: Queue<fake::Event>,
     below: Queue<Down>,
     answer: Option<(u16, &'static [u8])>,
@@ -65,6 +70,29 @@ pub struct HostWorld {
     pending_writes: Vec<(Token, Item, Secret)>,
     pause_reads: bool,
     pending_reads: Vec<(Token, Item)>,
+    github_requests: Vec<GitHubRequest>,
+}
+/// Public API trace: browser URLs, credentials and bodies never enter it.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct GitHubRequest {
+    pub method: String,
+    pub target: String,
+    pub auth: &'static str,
+}
+fn github_record(bytes: &[u8]) -> GitHubRequest {
+    let text = core::str::from_utf8(bytes).expect("HTTP fixture text");
+    let mut line = text.lines().next().expect("request line").split_whitespace();
+    let method = line.next().expect("method").to_owned();
+    let target = line.next().expect("target");
+    let target = if target.starts_with("/app-manifests/") { "/app-manifests/<redacted>/conversions" } else { target };
+    let auth = if text.lines().any(|line| line.starts_with("Authorization: Bearer eyJ")) {
+        "App"
+    } else if text.lines().any(|line| line.starts_with("Authorization:")) {
+        "Bearer"
+    } else {
+        "None"
+    };
+    GitHubRequest { method, target: target.to_owned(), auth }
 }
 impl HostWorld {
     #[must_use]
@@ -85,6 +113,38 @@ impl HostWorld {
         world.put(Item::AppKey, fixtures::secret(github::app_key()));
         world.put(Item::Accepted, fixtures::accepted(&[1, 2]));
         world
+    }
+    /// Configured fixture App, independent of conversion and signing its public key.
+    #[must_use]
+    pub fn github_scenario(
+        seed: u64,
+        script: &[Connect],
+        facts: skein_fake_forge_github::service::AppFacts,
+        hook: &[u8],
+    ) -> Self {
+        let mut world = Self::github(seed, script);
+        world.github = Some(Fake::scenario(seed, facts, true, hook));
+        world.put(Item::AppSlug, fixtures::secret(b"test-app"));
+        world
+    }
+    #[must_use]
+    pub fn github_requests(&self) -> &[GitHubRequest] {
+        &self.github_requests
+    }
+    pub fn github_installation_ids(&mut self) -> Vec<u64> {
+        self.github.as_mut().expect("GitHub scenario").installation_ids()
+    }
+    pub fn github_remove(&mut self, id: u64) {
+        assert!(self.github.as_mut().expect("GitHub scenario").installations_mut().remove(id));
+    }
+    /// Replaces one fixture row at a supplied wall date, using the fake's store.
+    pub fn github_reinsert(&mut self, id: u64, created: Wall) -> u64 {
+        use skein_fake_forge_github::installations::{Kind, Reach};
+        let store = self.github.as_mut().expect("GitHub scenario").installations_mut();
+        let row = store.get(id).expect("fixture installation");
+        let (account, login) = (row.account, row.login.clone());
+        assert!(store.remove(id));
+        store.install(account, &login, Kind::User, Reach::All, created).expect("vacated fixture row")
     }
     /// Plays a browser request against the same fake used by the host's HTTP peer.
     pub fn github_page(&mut self, request: &[u8]) -> Vec<u8> {
@@ -148,6 +208,7 @@ impl HostWorld {
             pending_writes: Vec::new(),
             pause_reads: false,
             pending_reads: Vec::new(),
+            github_requests: Vec::new(),
         }
     }
     #[must_use]
@@ -317,9 +378,15 @@ impl HostWorld {
                 if let Some(server) = &mut peer.server {
                     fake::up(server, &mut self.service, &self.fake_env, event, &mut peer.above, &mut peer.below);
                 } else if peer.github {
-                    github_answer(peer, event, self.github.as_mut().expect("GitHub peer"), self.env.wall);
+                    github_answer(
+                        peer,
+                        event,
+                        self.github.as_mut().expect("GitHub peer"),
+                        self.env.wall,
+                        &mut self.github_requests,
+                    );
                 } else if peer.answer.is_some() {
-                    answer(peer, event);
+                    answer(peer, event, &mut self.github_requests);
                 }
             }
             if let Some(up) = peer.pipe.client_up() {
@@ -395,6 +462,11 @@ impl HostWorld {
                 let mut peer = Peer {
                     pipe: Pipe::new(self.seed ^ owner.raw(), Cut::Never),
                     server: None,
+                    api: if self.github.is_some() && addr == fixtures::github_forge().address {
+                        Api::GitHub
+                    } else {
+                        Api::Forgejo
+                    },
                     github: matches!(connect, Connect::Made | Connect::LostGitHubReply)
                         && self.github.is_some()
                         && addr == fixtures::github_forge().address,
@@ -452,7 +524,7 @@ impl HostWorld {
         self.up(skein_io::Event::Closed { owner });
     }
 }
-fn answer(peer: &mut Peer, event: Up) {
+fn answer(peer: &mut Peer, event: Up, records: &mut Vec<GitHubRequest>) {
     match event {
         Up::Bytes(bytes) => {
             peer.head.extend_from_slice(&bytes);
@@ -465,6 +537,9 @@ fn answer(peer: &mut Peer, event: Up) {
         Up::Room => {
             assert!(!peer.responded);
             peer.responded = true;
+            if matches!(peer.api, Api::GitHub) {
+                records.push(github_record(&peer.head));
+            }
             let (status, body) = peer.answer.expect("scripted answer");
             peer.below.push(Down::Send(skein_forge_machine_world::fixtures::response(status, body).into_boxed_slice()));
             peer.below.push(Down::Finish);
@@ -474,7 +549,7 @@ fn answer(peer: &mut Peer, event: Up) {
     }
 }
 
-fn github_answer(peer: &mut Peer, event: Up, fake: &mut Fake, wall: Wall) {
+fn github_answer(peer: &mut Peer, event: Up, fake: &mut Fake, wall: Wall, records: &mut Vec<GitHubRequest>) {
     match event {
         Up::Bytes(bytes) => {
             peer.head.extend_from_slice(&bytes);
@@ -488,6 +563,7 @@ fn github_answer(peer: &mut Peer, event: Up, fake: &mut Fake, wall: Wall) {
             assert!(!peer.responded);
             peer.responded = true;
             let request = core::mem::take(&mut peer.head);
+            records.push(github_record(&request));
             let response = fake.serve(&request, wall);
             if !peer.lose_reply {
                 peer.below.push(Down::Send(response.into_boxed_slice()));

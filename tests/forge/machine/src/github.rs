@@ -25,6 +25,12 @@ impl Fake {
     /// Uses the GitHub fake's fixture App, accounts, repositories and installations.
     #[must_use]
     pub fn new(seed: u64) -> Self {
+        Self::scenario(seed, AppFacts::Complete, false, b"https://hook.test/start")
+    }
+
+    /// Scenario-only App metadata and hook, using the dialect's public configuration.
+    #[must_use]
+    pub fn scenario(seed: u64, facts: AppFacts, complete: bool, hook: &[u8]) -> Self {
         let mut repositories = List::with_capacity(3);
         for (id, name, organization, private) in
             [(4, b"tools".as_slice(), false, false), (2, b"widgets", true, true), (6, b"absent", true, false)]
@@ -44,19 +50,33 @@ impl Fake {
         for (login, id, organization) in [(b"acme".as_slice(), 22, true), (b"alice".as_slice(), 31, false)] {
             accounts.push(Account { login: Box::from(login), id, organization }).expect("fixture accounts");
         }
+        let permissions = if complete {
+            github::setup::PERMISSIONS
+                .iter()
+                .map(|(name, access)| github::document::Permission { name: Box::from(*name), access: *access })
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        } else {
+            Box::from([])
+        };
+        let events = if complete {
+            github::setup::EVENTS.iter().map(|name| Box::from(*name)).collect::<Vec<_>>().into_boxed_slice()
+        } else {
+            Box::from([])
+        };
         let config = Config {
             app: App {
                 id: 7,
                 slug: Box::from(b"test-app".as_slice()),
                 owner: 1,
-                permissions: Box::from([]),
-                events: Box::from([]),
+                permissions,
+                events,
                 key: app_key(),
                 webhook: Secret::new(Box::from(b"test-webhook".as_slice())),
             },
-            app_facts: AppFacts::Complete,
+            app_facts: facts,
             bot: 9,
-            hook: Box::from(b"https://hook.test/start".as_slice()),
+            hook: Box::from(hook),
             repositories,
             accounts,
             person: Box::from(b"alice".as_slice()),
@@ -110,6 +130,12 @@ impl Fake {
     /// Scenario access to the fake's installation store.
     pub fn installations_mut(&mut self) -> &mut Installations {
         self.service.installations_mut()
+    }
+
+    /// Scenario inspection without issuing an API request.
+    #[must_use]
+    pub fn installation_ids(&mut self) -> Vec<u64> {
+        self.service.installations_mut().iter().map(|row| row.id).collect()
     }
 
     /// Answers one complete HTTP/1.1 request, keeping the connection open.

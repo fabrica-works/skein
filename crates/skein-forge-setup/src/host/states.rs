@@ -108,3 +108,13 @@ fn hex(value: u8) -> u8 {
         16..=255 => unreachable!("a nibble is below sixteen"),
     }
 }
+
+impl super::Host {
+    /// Queue slots plus the sole retained 32-byte spelling per binding.
+    pub(crate) fn github_states_worst_case(capacity: u32) -> Option<u64> {
+        Queue::<Entry>::worst_case(capacity)?.checked_add(u64::from(capacity).checked_mul(32)?)
+    }
+}
+#[cfg(test)]
+#[path = "../tests/github_memory.rs"]
+mod memory_tests;

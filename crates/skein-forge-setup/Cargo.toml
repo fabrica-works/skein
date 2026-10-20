@@ -17,6 +17,7 @@ skein-forge.workspace = true
 skein-tls.workspace = true
 
 [dev-dependencies]
+skein-heap.workspace = true
 skein-fake-forge-github.workspace = true
 
 [lints]

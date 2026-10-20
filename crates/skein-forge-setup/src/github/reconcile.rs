@@ -15,7 +15,6 @@ use core::num::NonZeroU64;
 use skein_forge::github::{
     document::{App, Document},
     request::Request,
-    setup,
 };
 use skein_lib::{List, Queue, Wall};
 
@@ -212,29 +211,23 @@ pub(crate) fn halt(machine: &mut Reconcile, why: Why, out: &mut Queue<Need>) {
 /// copies during hook repair, Accepted, bounded Lacking and its comparison
 /// scratch, hook slug/URL copies, both child queues and the sweep's sets. The
 /// host counts its own reply and output storage separately.
-#[cfg_attr(not(test), expect(dead_code, reason = "the host heap admission consumes this bound"))]
 pub(crate) fn worst_case(given: &Given) -> Option<u64> {
     let limits = &given.limits;
     let mut total = u64::try_from(size_of::<Reconcile>()).ok()?;
     for text in [&given.word, &given.web, &given.url, &given.redirect_url, &given.setup_url] {
         total = total.checked_add(u64::try_from(text.len()).ok()?)?;
     }
-    let count = u32::try_from(setup::PERMISSIONS.len().checked_add(setup::EVENTS.len())?).ok()?;
-    // lacks holds the dialect's result beside its copied output; lists can
-    // retain their full backing capacity while becoming boxed slices.
-    total = total.checked_add(List::<Lacking>::worst_case(count)?.checked_mul(3)?)?;
-    for (name, _) in setup::PERMISSIONS {
-        total = total.checked_add(u64::try_from(name.len()).ok()?.checked_mul(3)?)?;
-    }
-    for name in setup::EVENTS {
-        total = total.checked_add(u64::try_from(name.len()).ok()?.checked_mul(3)?)?;
-    }
-    total
-        .checked_add(u64::from(limits.key_bytes).checked_mul(3)?)?
-        .checked_add(List::<u64>::worst_case(limits.installations)?.checked_mul(2)?)?
-        .checked_add(u64::from(limits.name_bytes).checked_mul(5)?)?
-        .checked_add(128)?
-        .checked_add(Queue::<hook::Progress>::worst_case(reconcile::MAX_OUT)?)?
-        .checked_add(Queue::<installations::Progress>::worst_case(reconcile::MAX_OUT)?)?
-        .checked_add(installations::worst_case(limits)?)
+    let accepted = List::<u64>::worst_case(limits.installations)?;
+    total = total.checked_add(checks::worst_case()?)?.checked_add(accepted)?.checked_add(accepted)?;
+    // Hook: checked and child each keep a key; the pending auth keeps a third.
+    // Checked slug, child slug, and desired URL retain three bounded names.
+    let hook = u64::from(limits.key_bytes)
+        .checked_mul(3)?
+        .checked_add(u64::from(limits.name_bytes).checked_mul(3)?)?
+        .checked_add(u64::try_from(b"https://.invalid/".len()).ok()?)?
+        .checked_add(Queue::<hook::Progress>::worst_case(reconcile::MAX_OUT)?)?;
+    let sweep = installations::worst_case(limits)?
+        .checked_add(Queue::<installations::Progress>::worst_case(reconcile::MAX_OUT)?)?;
+    // Decimal construction and its copied failure subject each use at most 20.
+    total.checked_add(40)?.checked_add(hook.max(sweep))
 }
