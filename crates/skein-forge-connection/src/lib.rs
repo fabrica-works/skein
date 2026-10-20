@@ -2,6 +2,8 @@
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 extern crate alloc;
+#[cfg_attr(not(test), expect(dead_code, reason = "task 24's start signs with it"))]
+mod app;
 pub mod boundary;
 pub mod component;
 mod connection;
