@@ -734,6 +734,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-forge-machine-world"
+version = "0.0.0"
+dependencies = [
+ "skein-fake-forge-domain",
+ "skein-fake-forge-protocol",
+ "skein-forge",
+ "skein-forge-connection",
+ "skein-http",
+ "skein-io",
+ "skein-json",
+ "skein-lib",
+ "skein-tls",
+ "skein-world",
+]
+
+[[package]]
 name = "skein-forge-setup"
 version = "0.0.0"
 dependencies = [

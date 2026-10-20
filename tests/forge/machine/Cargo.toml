@@ -1,0 +1,38 @@
+[package]
+name = "skein-forge-machine-world"
+description = "Forge component against recorded HTTP answers and scripted io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+skein-forge.workspace = true
+skein-lib.workspace = true
+skein-http.workspace = true
+skein-json.workspace = true
+skein-io.workspace = true
+skein-tls.workspace = true
+skein-world.workspace = true
+skein-forge-connection.workspace = true
+skein-fake-forge-protocol.workspace = true
+skein-fake-forge-domain.workspace = true
+
+[dev-dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+elided_lifetimes_in_paths = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_panics_doc = "allow"
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"
+unwrap_used = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"
