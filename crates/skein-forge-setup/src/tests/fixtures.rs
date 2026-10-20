@@ -321,6 +321,26 @@ pub fn reached(
         push: true,
     })
 }
+pub fn user_repo(
+    id: u64,
+    owner_id: u64,
+    login: &[u8],
+    name: &[u8],
+    private: bool,
+    push: bool,
+) -> skein_forge::forgejo::document::Row {
+    skein_forge::forgejo::document::Row::Reachable(skein_forge::forgejo::document::Reachable {
+        repository: id,
+        owner: owner_id,
+        login: login.into(),
+        name: name.into(),
+        private,
+        push,
+    })
+}
+pub fn user_repos(rows: Box<[skein_forge::forgejo::document::Row]>) -> crate::reconcile::Event {
+    crate::reconcile::Event::Reply(crate::reconcile::Reply::Rows(rows))
+}
 pub fn search(ok: bool, rows: Box<[skein_forge::forgejo::document::Row]>) -> crate::reconcile::Event {
     use crate::reconcile::{Event, Reply};
     use skein_forge::forgejo::document::Document;

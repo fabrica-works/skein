@@ -1,4 +1,5 @@
 //! One HTTP exchange, cut into seeded fragments; credentials never enter its trace.
+use skein_fake_forge_domain::{self as domain, api};
 use skein_fake_forge_protocol::{self as fake, Service};
 use skein_forge::forgejo::{
     client as codec,
@@ -26,8 +27,18 @@ struct Exchange {
     status: u16,
     done: bool,
     closed: bool,
+    repositories: Vec<fake::Repository>,
+    login: Box<[u8]>,
 }
-pub fn send(service: &mut Service, env: &Env<fake::Limits>, request: &Request, token: &Secret, seed: u64) -> Reply {
+pub fn send(
+    service: &mut Service,
+    env: &Env<fake::Limits>,
+    request: &Request,
+    token: &Secret,
+    seed: u64,
+    repositories: &[fake::Repository],
+    login: &[u8],
+) -> Reply {
     let encoded = codec::encode(request, &env.limits.documents).expect("machine request encodes");
     let limits = http::Limits {
         request: env.limits.http.head,
@@ -50,6 +61,8 @@ pub fn send(service: &mut Service, env: &Env<fake::Limits>, request: &Request, t
         status: 0,
         done: false,
         closed: false,
+        repositories: repositories.to_vec(),
+        login: login.into(),
     };
     let method = match encoded.method {
         Method::Get => http::Method::Get,
@@ -116,7 +129,35 @@ impl Exchange {
         }
         while let Some(event) = self.events.pop() {
             match event {
-                fake::Event::Domain(_) => panic!("reconcile sends no repository requests"),
+                fake::Event::Domain(domain::Event::Call {
+                    reply_to,
+                    user,
+                    repository,
+                    op: api::Op::Read(api::Read::ListingPermission),
+                }) => {
+                    let id =
+                        self.repositories.iter().find(|repo| repo.full == repository).expect("scenario repository").id;
+                    let grant = service
+                        .setup()
+                        .find(&self.login)
+                        .filter(|account| account.id == user)
+                        .and_then(|account| service.setup().collaborator(id, &account.login));
+                    let permission = match grant {
+                        None => api::Permission::None,
+                        Some(skein_forge::forgejo::request::Grant::Read) => api::Permission::Read,
+                        Some(skein_forge::forgejo::request::Grant::Write) => api::Permission::Write,
+                        Some(skein_forge::forgejo::request::Grant::Admin) => api::Permission::Admin,
+                    };
+                    fake::down(
+                        &mut self.server,
+                        service,
+                        env,
+                        domain::Request::Reply { to: reply_to, result: Ok(api::Answer::Permission(permission)) },
+                        &mut self.events,
+                        &mut self.down,
+                    );
+                }
+                fake::Event::Domain(domain::Event::Call { .. }) => panic!("unexpected repository domain call"),
                 fake::Event::Close => fake::closed(&mut self.server, service, env, &mut self.events, &mut self.down),
                 fake::Event::Closed => self.closed = true,
             }

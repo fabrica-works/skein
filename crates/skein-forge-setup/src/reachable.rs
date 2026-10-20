@@ -1,4 +1,4 @@
-//! One page of an admin's repositories for the picker (forge-setup.md, 4.8).
+//! One page of a forge's repositories for the picker (forge-setup.md, 4.8).
 use crate::{
     given::{self, Given, Place, Refused},
     item::Item,
@@ -29,13 +29,21 @@ pub struct Reached {
 enum State {
     Begin,
     Read,
+    ApiRead,
     Admin,
     Settings,
     Search,
     Ended,
 }
 
-/// One picker page; the admin's token is held only until the plan ends.
+/// Whose token reads the page (forge-setup.md, 4.8, step 1).
+#[derive(Debug)]
+enum Token {
+    Admin,
+    Api,
+}
+
+/// One picker page; its token is held only until the plan ends.
 #[derive(Debug)]
 pub struct Reachable {
     forge: u16,
@@ -45,6 +53,7 @@ pub struct Reachable {
     limit: u32,
     state: State,
     token: Option<Secret>,
+    listing: Token,
 }
 
 impl Reachable {
@@ -62,11 +71,12 @@ impl Reachable {
             limit: given.limits.reachable,
             state: State::Begin,
             token: None,
+            listing: Token::Admin,
         })
     }
 
     fn send(&self, request: Request) -> Need {
-        Need::Send { request, token: self.token.clone().expect("admin token read before requests") }
+        Need::Send { request, token: self.token.clone().expect("listing token read before requests") }
     }
 
     fn stop(&mut self, step: Stage, subject: Box<[u8]>, why: Why) -> Need {
@@ -96,9 +106,24 @@ impl Reachable {
                     self.state = State::Admin;
                     self.send(Request::User)
                 }
-                Event::Read(None) => self.stop(Stage::Token, bytes::copy_of(b"api"), Why::Missing),
+                Event::Read(None) => {
+                    self.listing = Token::Api;
+                    self.state = State::ApiRead;
+                    Need::Read(Item::ApiToken)
+                }
                 Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => {
                     self.stop(Stage::Admin, self.admin_name.clone(), Why::Unexpected)
+                }
+            },
+            State::ApiRead => match event {
+                Event::Read(Some(token)) => {
+                    self.token = Some(token);
+                    self.state = State::Settings;
+                    self.send(Request::ApiSettings)
+                }
+                Event::Read(None) => self.stop(Stage::Token, bytes::copy_of(b"api"), Why::Missing),
+                Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => {
+                    self.stop(Stage::Token, bytes::copy_of(b"api"), Why::Unexpected)
                 }
             },
             State::Admin => match reconcile::account(event) {
@@ -113,7 +138,13 @@ impl Reachable {
             },
             State::Settings | State::Search => match self.repositories(state, event) {
                 Ok(need) => need,
-                Err(why) => self.stop(Stage::Token, self.admin_name.clone(), why),
+                Err(why) => {
+                    let subject = match self.listing {
+                        Token::Admin => self.admin_name.clone(),
+                        Token::Api => bytes::copy_of(b"api"),
+                    };
+                    self.stop(Stage::Token, subject, why)
+                }
             },
             State::Ended => unreachable!("terminal machine is not advanced"),
         }
@@ -125,14 +156,20 @@ impl Reachable {
                 Reply::Document(Document::ApiSettings(settings)) if settings.max_response_items > 0 => {
                     self.limit = core::cmp::min(self.limit, settings.max_response_items);
                     self.state = State::Search;
-                    Ok(self.send(Request::RepoSearch { page: Page { page: Some(self.page), limit: Some(self.limit) } }))
+                    let page = Page { page: Some(self.page), limit: Some(self.limit) };
+                    Ok(self.send(match self.listing {
+                        Token::Admin => Request::RepoSearch { page },
+                        Token::Api => Request::UserRepos { page },
+                    }))
                 }
                 other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
                     Err(unexpected(other))
                 }
             },
             State::Search => self.rows(reply(event)?),
-            State::Begin | State::Read | State::Admin | State::Ended => unreachable!("repository phases only"),
+            State::Begin | State::Read | State::ApiRead | State::Admin | State::Ended => {
+                unreachable!("repository phases only")
+            }
         }
     }
 
@@ -150,36 +187,44 @@ impl Reachable {
         let more = rows.len() == limit;
         let mut reached = List::with_capacity(u32::try_from(rows.len()).expect("bounded page"));
         for row in rows {
-            match row {
-                Row::Found(row) => {
-                    reached
-                        .push(Reached {
-                            id: row.repository,
-                            owner_id: row.owner,
-                            owner: row.login,
-                            name: row.name,
-                            private: row.private,
-                        })
-                        .expect("bounded page");
-                }
-                Row::Reachable(_)
-                | Row::Hook(_)
-                | Row::Token(_)
-                | Row::Team(_)
-                | Row::User(_)
-                | Row::Issue(_)
-                | Row::Comment(_)
-                | Row::Status(_)
-                | Row::Review(_)
-                | Row::ReviewComment(_)
-                | Row::Branch(_)
-                | Row::Protection(_)
-                | Row::Pull(_)
-                | Row::File(_)
-                | Row::Commit(_)
-                | Row::Run(_)
-                | Row::Job(_)
-                | Row::Step(_) => return Err(Why::Unexpected),
+            let row = match (row, &self.listing) {
+                (Row::Found(row), Token::Admin) | (Row::Reachable(row), Token::Api) => row,
+                (Row::Found(_), Token::Api)
+                | (Row::Reachable(_), Token::Admin)
+                | (
+                    Row::Hook(_)
+                    | Row::Token(_)
+                    | Row::Team(_)
+                    | Row::User(_)
+                    | Row::Issue(_)
+                    | Row::Comment(_)
+                    | Row::Status(_)
+                    | Row::Review(_)
+                    | Row::ReviewComment(_)
+                    | Row::Branch(_)
+                    | Row::Protection(_)
+                    | Row::Pull(_)
+                    | Row::File(_)
+                    | Row::Commit(_)
+                    | Row::Run(_)
+                    | Row::Job(_)
+                    | Row::Step(_),
+                    Token::Admin | Token::Api,
+                ) => return Err(Why::Unexpected),
+            };
+            if match self.listing {
+                Token::Admin => true,
+                Token::Api => row.push,
+            } {
+                reached
+                    .push(Reached {
+                        id: row.repository,
+                        owner_id: row.owner,
+                        owner: row.login,
+                        name: row.name,
+                        private: row.private,
+                    })
+                    .expect("bounded page");
             }
         }
         self.state = State::Ended;
@@ -194,7 +239,7 @@ pub fn step(machine: &mut Reachable, event: Event, out: &mut Queue<Need>) {
     let state = core::mem::replace(&mut machine.state, State::Ended);
     match state {
         State::Ended => (),
-        State::Begin | State::Read | State::Admin | State::Settings | State::Search => {
+        State::Begin | State::Read | State::ApiRead | State::Admin | State::Settings | State::Search => {
             let need = machine.advance(state, event);
             out.push(need);
         }

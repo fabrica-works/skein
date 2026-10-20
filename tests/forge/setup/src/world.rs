@@ -18,6 +18,7 @@ pub struct World {
     service: Service,
     env: Env<skein_fake_forge_protocol::Limits>,
     files: Vec<(Item, Secret)>,
+    repositories: Vec<skein_fake_forge_protocol::Repository>,
     rng: Rng,
     trace: Vec<String>,
     requests: Vec<Request>,
@@ -49,9 +50,11 @@ impl World {
     /// A scenario whose repository identities are fixed before the fake starts.
     #[must_use]
     pub fn with_config(seed: u64, owned: bool, config: skein_fake_forge_protocol::Config) -> Self {
+        let repositories = config.repositories.iter().cloned().collect();
         let (service, limits) = seeded_config(seed, owned, config);
         Self {
             given: fixtures::given(owned),
+            repositories,
             service,
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             files: vec![(Item::AdminToken, fixtures::secret(fixtures::ADMIN))],
@@ -156,6 +159,8 @@ impl World {
             &Request::RepositoryById { id: u64::from(repository) },
             &fixtures::secret(fixtures::ADMIN),
             self.rng.next_u64(),
+            &self.repositories,
+            &self.given.bot_login,
         );
         let Reply::Document(Document::Repository(repo)) = reply else { panic!("scenario repository") };
         skein_forge::forgejo::request::Repo { owner: repo.owner.login, name: repo.name }
@@ -179,6 +184,8 @@ impl World {
             &request,
             &fixtures::secret(fixtures::ADMIN),
             self.rng.next_u64(),
+            &self.repositories,
+            &self.given.bot_login,
         );
         let Reply::Document(Document::Hook(hook)) = reply else { panic!("scenario hook") };
         hook.id
@@ -192,7 +199,9 @@ impl World {
                 &self.env,
                 &request,
                 &fixtures::secret(fixtures::ADMIN),
-                self.rng.next_u64()
+                self.rng.next_u64(),
+                &self.repositories,
+                &self.given.bot_login,
             ),
             Reply::Empty
         );
@@ -243,7 +252,15 @@ impl World {
                     let reply = if self.refused == Some(skein_fake_forge_protocol::route(&request)) {
                         Reply::Status(403)
                     } else {
-                        exchange::send(&mut self.service, &self.env, &request, &token, self.rng.next_u64())
+                        exchange::send(
+                            &mut self.service,
+                            &self.env,
+                            &request,
+                            &token,
+                            self.rng.next_u64(),
+                            &self.repositories,
+                            &self.given.bot_login,
+                        )
                     };
                     if let Reply::Document(Document::Token(token)) = &reply
                         && let Some(secret) = &token.value

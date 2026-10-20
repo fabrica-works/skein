@@ -608,6 +608,8 @@ fn a_reachable_run_beside_a_writing_run_of_its_forge_is_live_with_it() {
     w.plan(2, reachable(1));
     assert_eq!(w.up.pop(), Some(owner_read(2)));
     w.answer(2, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(2), need: Need::Read(Item::ApiToken) }));
+    w.answer(2, Answer::Read(None));
     assert_eq!(w.up.pop(), Some(reachable_stop(2, Why::Missing)));
     w.answer(1, Answer::Read(None));
     assert_eq!(w.up.pop(), Some(stop(1, 1, Why::Missing)));
@@ -621,6 +623,8 @@ fn a_second_reachable_run_for_a_forge_stops_busy_naming_the_admin() {
     w.up.pop();
     w.plan(3, reachable(1));
     assert_eq!(w.up.pop(), Some(stop(3, 1, Why::Busy)));
+    w.answer(2, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(2), need: Need::Read(Item::ApiToken) }));
     w.answer(2, Answer::Read(None));
     assert_eq!(w.up.pop(), Some(reachable_stop(2, Why::Missing)));
     w.answer(3, Answer::Read(None));
@@ -682,13 +686,20 @@ fn a_reachable_run_asks_the_owner_for_the_admin_token_and_nothing_else() {
     assert!(w.up.is_empty());
 }
 #[test]
-fn a_reachable_run_without_an_admin_token_stops_naming_the_token() {
+fn a_reachable_run_with_neither_token_stops_naming_the_api_token() {
     let mut w = World::new();
     w.plan(2, reachable(1));
     w.up.pop();
     w.answer(2, Answer::Read(None));
+    assert_eq!(w.up.pop(), Some(Event::Need { run: Token::new(2), need: Need::Read(Item::ApiToken) }));
+    assert!(w.host.next_deadline().is_some());
+    assert!(w.io.is_empty());
+    w.answer(2, Answer::Read(None));
     assert_eq!(w.up.pop(), Some(reachable_stop(2, Why::Missing)));
     assert!(w.io.is_empty());
+    assert_eq!(w.host.next_deadline(), None);
+    w.plan(3, reachable(1));
+    assert_eq!(w.up.pop(), Some(owner_read(3)));
 }
 #[test]
 fn a_reachable_plan_for_an_installation_on_forgejo_stops_at_once_and_is_never_live() {

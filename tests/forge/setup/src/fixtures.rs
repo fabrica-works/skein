@@ -328,3 +328,62 @@ fn repository_config_with_cap(paths: &[&[u8]], cap: u32) -> Config {
     }
     config
 }
+
+/// The connected picker has four raw rows per page, including read-only grants.
+#[must_use]
+pub fn connected_picker(seed: u64) -> crate::World {
+    use skein_forge::forgejo::{
+        document::{Access, TeamSpec, Units},
+        request::Grant,
+    };
+    use skein_forge_setup::item::Item;
+    let mut config = config_with_cap(4);
+    config.repositories = List::with_capacity(10);
+    for (id, owner) in [
+        (1, "kit"),
+        (2, "ada"),
+        (3, "ada"),
+        (4, "ada"),
+        (5, "ada"),
+        (6, "ada"),
+        (7, "ada"),
+        (8, "grace"),
+        (9, "ada"),
+        (10, "kit"),
+    ] {
+        config
+            .repositories
+            .push(skein_fake_forge_protocol::Repository {
+                id,
+                full: format!("{owner}/repo-{id}").into_bytes().into_boxed_slice(),
+                protected: None,
+            })
+            .expect("ten repositories");
+    }
+    let mut world = crate::World::with_config(seed, false, config);
+    world.store_mut().account(b"ada", false, b"Ada");
+    world.store_mut().account(b"kit", false, b"kit:bot");
+    for id in [1, 2, 3, 6, 9, 10] {
+        world.store_mut().private(id).expect("scenario privacy");
+    }
+    world.store_mut().org(b"grace", b"ada");
+    assert_eq!(world.reconcile(), crate::Ended::Done);
+    for (id, permission) in
+        [(2, Grant::Write), (3, Grant::Read), (4, Grant::Admin), (5, Grant::Write), (6, Grant::Read), (7, Grant::Read)]
+    {
+        world.store_mut().grant(id, b"kit", permission).expect("scenario grant");
+    }
+    let team = world.store_mut().add_team(
+        b"grace",
+        TeamSpec {
+            name: b"writers".as_slice().into(),
+            permission: Access::Write,
+            includes_all_repositories: true,
+            units: Units { code: Access::Write, issues: Access::Write, pulls: Access::Write, actions: Access::Write },
+        },
+    );
+    let bot = world.store().find(b"kit").expect("bot fixture").id;
+    world.store_mut().member(team, bot);
+    world.forget(Item::AdminToken);
+    world
+}
