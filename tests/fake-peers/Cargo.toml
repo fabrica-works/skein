@@ -14,6 +14,7 @@ skein-sim.workspace = true
 
 [dev-dependencies]
 rustls = { workspace = true, features = ["std"] }
+skein-heap.workspace = true
 skein-fake-peers.workspace = true
 skein-fake-forge-domain.workspace = true
 skein-fake-forge-github.workspace = true

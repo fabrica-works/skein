@@ -633,7 +633,12 @@ name = "skein-fake-forge-tests"
 version = "0.0.0"
 dependencies = [
  "skein-fake-forge-domain",
+ "skein-fake-forge-github",
+ "skein-forge",
+ "skein-http",
+ "skein-json",
  "skein-lib",
+ "skein-tls",
  "skein-world",
 ]
 
@@ -707,6 +712,7 @@ dependencies = [
  "skein-fake-oauth",
  "skein-fake-peers",
  "skein-forge",
+ "skein-heap",
  "skein-http",
  "skein-io",
  "skein-json",
