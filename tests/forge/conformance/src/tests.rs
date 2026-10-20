@@ -431,3 +431,88 @@ fn unmasked_fields(bytes: &[u8]) -> (usize, usize) {
     }
     (bad_uuids, bad_times)
 }
+
+const USER_REPOS_ALICE: &str =
+    r#"{"id":30,"name":"widgets","private":true,"owner":{"id":1,"login":"alice"},"permissions":{"push":true}}"#;
+const USER_REPOS_BOB: &str =
+    r#"{"id":10,"name":"widgets","private":true,"owner":{"id":2,"login":"bob"},"permissions":{"push":false}}"#;
+const USER_REPOS_ACME: &str =
+    r#"{"id":20,"name":"widgets","private":true,"owner":{"id":3,"login":"acme"},"permissions":{"push":true}}"#;
+
+fn user_repos_facts(name: &str, all: &str, rest: &str, second: &str, repeat_status: u16) -> Vec<crate::facts::Fact> {
+    let out = std::env::temp_dir().join(format!("skein-user-repos-{}-{name}", std::process::id()));
+    for (name, status, body) in [
+        ("setup-user-repos", 200, format!("[{USER_REPOS_BOB}]")),
+        ("setup-user-repos-page-2", 200, format!("[{second}]")),
+        ("setup-user-repos-all", 200, all.to_owned()),
+        ("setup-user-repos-rest", 200, rest.to_owned()),
+        ("setup-user-repos-repeat", repeat_status, format!("[{USER_REPOS_BOB}]")),
+        ("setup-user-repos-past-end", 200, "[]".to_owned()),
+    ] {
+        let directory = out.join("transcripts").join(name);
+        std::fs::create_dir_all(&directory).expect("canned transcript directory");
+        std::fs::write(
+            directory.join("response"),
+            format!("HTTP/1.1 {status} canned\r\nContent-Type: application/json\r\n\r\n{body}"),
+        )
+        .expect("canned response");
+    }
+    let facts = crate::repos::facts(&out).expect("repository facts");
+    std::fs::remove_dir_all(out).expect("remove canned transcripts");
+    facts
+}
+
+#[test]
+fn forgejo_user_repos_facts_accept_owned_collaborating_team_private_pages() {
+    let all = format!("[{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ALICE}]");
+    let facts = user_repos_facts("holds", &all, "[]", USER_REPOS_ACME, 200);
+    assert_eq!(facts.len(), 3);
+    assert!(facts.iter().all(|fact| matches!(fact.outcome, crate::facts::Outcome::Holds)));
+}
+
+#[test]
+fn forgejo_user_repos_facts_accept_listing_capped_at_two_rows() {
+    let all = format!("[{USER_REPOS_BOB},{USER_REPOS_ACME}]");
+    let rest = format!("[{USER_REPOS_ALICE}]");
+    let facts = user_repos_facts("capped", &all, &rest, USER_REPOS_ACME, 200);
+    assert!(facts.iter().all(|fact| matches!(fact.outcome, crate::facts::Outcome::Holds)));
+}
+
+#[test]
+fn forgejo_user_repos_facts_reject_missing_team_or_private_access() {
+    for (name, all) in [
+        ("missing-team", format!("[{USER_REPOS_BOB},{USER_REPOS_ALICE}]")),
+        (
+            "private",
+            format!("[{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ALICE}]")
+                .replace("\"private\":true", "\"private\":false"),
+        ),
+    ] {
+        let facts = user_repos_facts(name, &all, "[]", USER_REPOS_ACME, 200);
+        assert!(matches!(facts[0].outcome, crate::facts::Outcome::Fails(_)));
+    }
+}
+
+#[test]
+fn forgejo_user_repos_facts_require_boolean_push_on_every_row() {
+    for (name, permissions) in [
+        ("missing-push", "\"permissions\":{}"),
+        ("push-type", "\"permissions\":{\"push\":\"false\"}"),
+        ("push-grant", "\"permissions\":{\"push\":true}"),
+    ] {
+        let bob = USER_REPOS_BOB.replace("\"permissions\":{\"push\":false}", permissions);
+        let all = format!("[{bob},{USER_REPOS_ACME},{USER_REPOS_ALICE}]");
+        let facts = user_repos_facts(name, &all, "[]", USER_REPOS_ACME, 200);
+        assert!(matches!(facts[0].outcome, crate::facts::Outcome::Holds));
+        assert!(matches!(facts[1].outcome, crate::facts::Outcome::Fails(_)));
+    }
+}
+
+#[test]
+fn forgejo_user_repos_facts_reject_repeated_pages_and_refused_reads() {
+    let all = format!("[{USER_REPOS_BOB},{USER_REPOS_ACME},{USER_REPOS_ALICE}]");
+    for (name, second, status) in [("same-page", USER_REPOS_BOB, 200), ("refused", USER_REPOS_ACME, 401)] {
+        let facts = user_repos_facts(name, &all, "[]", second, status);
+        assert!(matches!(facts[2].outcome, crate::facts::Outcome::Fails(_)));
+    }
+}
