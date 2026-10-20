@@ -766,7 +766,9 @@ dependencies = [
  "skein-fake-forge-domain",
  "skein-fake-forge-protocol",
  "skein-forge",
+ "skein-forge-client",
  "skein-forge-client-world",
+ "skein-forge-connection",
  "skein-forge-machine-world",
  "skein-lib",
 ]
