@@ -2,6 +2,7 @@
 use super::{Answer, Need, Plan};
 use crate::{
     adopt::{self, Adopt},
+    call::{Auth, Call},
     check::{self, Check},
     given::Given,
     item::{self, Bounds, Item},
@@ -70,8 +71,18 @@ pub(super) enum Owner {
 }
 #[derive(Debug)]
 pub(super) struct Send {
-    pub request: Request,
-    pub token: Secret,
+    pub call: Call,
+    pub auth: Auth,
+}
+/// What a Forgejo forge sends: the request and the token it carries.
+pub(crate) fn forgejo_pair(call: Call, auth: Auth) -> Result<(Request, Secret), Why> {
+    match call {
+        Call::Forgejo(request) => match auth {
+            Auth::Token(token) => Ok((request, token)),
+            Auth::App { .. } | Auth::Bearer(_) | Auth::None => Err(Why::Unexpected),
+        },
+        Call::GitHub(_) => Err(Why::Unexpected),
+    }
 }
 #[derive(Debug)]
 pub(super) struct Run {
@@ -172,7 +183,12 @@ impl Run {
         let retry = match &reply {
             Reply::Down => true,
             Reply::Status(status) => (500..600).contains(status),
-            Reply::Document(_) | Reply::Rows(_) | Reply::Empty => false,
+            Reply::Document(_)
+            | Reply::Rows(_)
+            | Reply::Empty
+            | Reply::GithubDocument(_)
+            | Reply::GithubRows(_)
+            | Reply::Unsigned => false,
         };
         if !self.answered && retry {
             self.retry = true;

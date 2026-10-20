@@ -1,4 +1,5 @@
 use super::fixtures::{self, Run, secret};
+use crate::call::Call;
 use crate::{
     given::{self, Given, Place, Refused},
     reconcile::{Event, Failure, Need, Reconcile, Reply, Stage, Why},
@@ -50,7 +51,7 @@ fn the_given_names_are_used_verbatim() {
             max_response_items: 2,
             default_paging_num: 30,
         }))));
-        let Need::Send { request: Request::CreateToken { name: found, .. }, .. } =
+        let Need::Send { request: Call::Forgejo(Request::CreateToken { name: found, .. }), .. } =
             run.step(Event::Reply(Reply::Rows(Box::new([]))))
         else {
             panic!("token creation");

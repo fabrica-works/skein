@@ -1,4 +1,5 @@
 use super::fixtures::{self, Run, secret};
+use crate::call::Auth;
 use crate::{
     item::Item,
     reconcile::{Event, Failure, Need, Reply, Stage, Why},
@@ -38,8 +39,9 @@ fn an_absent_bot_is_made_with_a_drawn_password_and_the_marker() {
                 full_name: b"kit:bot".as_slice().into(),
                 password: secret(b"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"),
                 must_change_password: false,
-            },
-            token: secret(fixtures::ADMIN),
+            }
+            .into(),
+            auth: Auth::Token(secret(fixtures::ADMIN))
         }
     );
     assert_eq!(run.step(user(fixtures::person(b"kit", b"kit:bot"))), Need::Read(Item::ApiToken));
@@ -95,6 +97,37 @@ fn a_forge_that_stops_answering_stops_the_run_at_its_step() {
         run.step(Event::Reply(Reply::Down)),
         Need::Stop(Failure { forge: 1, step: Stage::Bot, subject: b"kit".as_slice().into(), why: Why::Down })
     );
+}
+
+fn reply_steps() -> [(Run, Stage, &'static [u8]); 2] {
+    let bot = fixtures::bot_lookup_run();
+    let mut token = fixtures::token_read(Item::ApiToken);
+    token.step(Event::Read(None));
+    [(bot, Stage::Bot, b"kit"), (token, Stage::Token, b"kit-api")]
+}
+
+#[test]
+#[expect(clippy::disallowed_macros, reason = "the test checks that an unsigned failure reveals no credential")]
+fn an_unsigned_reply_is_a_key_form_stop() {
+    for (mut run, stage, subject) in reply_steps() {
+        let stopped = run.step(Event::Reply(Reply::Unsigned));
+        assert_eq!(stopped, fixtures::named_failure(stage, subject, Why::KeyForm));
+        assert!(skein_lib::bytes::find(format!("{stopped:?}").as_bytes(), fixtures::ADMIN).is_none());
+    }
+}
+
+#[test]
+#[expect(clippy::disallowed_macros, reason = "the test checks that a wrong-dialect failure reveals no credential")]
+fn a_github_reply_to_a_forgejo_step_is_unexpected() {
+    for reply in
+        [Reply::GithubDocument(skein_forge::github::document::Document::BotUser(7)), Reply::GithubRows(Box::new([]))]
+    {
+        for (mut run, stage, subject) in reply_steps() {
+            let stopped = run.step(Event::Reply(reply.clone()));
+            assert_eq!(stopped, fixtures::named_failure(stage, subject, Why::Unexpected));
+            assert!(skein_lib::bytes::find(format!("{stopped:?}").as_bytes(), fixtures::ADMIN).is_none());
+        }
+    }
 }
 #[test]
 fn the_bots_id_is_written_as_eight_bytes_only_when_the_item_differs() {

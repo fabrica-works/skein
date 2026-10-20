@@ -1,4 +1,5 @@
 use super::fixtures::{self, Run, secret};
+use crate::call::Call;
 use crate::{
     item::Item,
     reconcile::{Event, Failure, Need, Reply, Stage, Why},
@@ -306,7 +307,7 @@ fn the_webhook_secret_is_asked_once_for_many_repositories() {
     run.step(fixtures::settings_event(2));
     run.step(fixtures::rows(Box::new([])));
     assert_eq!(run.step(super::hooks::saved()), fixtures::send(Request::RepositoryById { id: 4 }));
-    let Need::Send { request: Request::RepoHooks { page, .. }, .. } = writable(&mut run, 4) else {
+    let Need::Send { request: Call::Forgejo(Request::RepoHooks { page, .. }), .. } = writable(&mut run, 4) else {
         panic!("second repository listing")
     };
     assert_eq!(page, fixtures::page(1));
@@ -318,7 +319,7 @@ fn the_page_cap_a_token_step_read_is_not_read_again() {
     let mut run = listening_access(&[9], true);
     writable(&mut run, 9);
     let need = run.step(Event::Read(Some(secret(b"hook-secret"))));
-    let Need::Send { request: Request::RepoHooks { page, .. }, .. } = need else { panic!("listing") };
+    let Need::Send { request: Call::Forgejo(Request::RepoHooks { page, .. }), .. } = need else { panic!("listing") };
     assert_eq!(page, fixtures::page(1));
 }
 #[test]
@@ -346,7 +347,8 @@ fn each_adopted_repository_is_given_its_hook_in_the_order_given() {
     run.step(Event::Read(Some(secret(b"hook-secret"))));
     run.step(fixtures::settings_event(2));
     for (id, next) in [(9_u64, Some(4)), (4, None)] {
-        let Need::Send { request: Request::CreateRepoHook { at, .. }, .. } = run.step(fixtures::rows(Box::new([])))
+        let Need::Send { request: Call::Forgejo(Request::CreateRepoHook { at, .. }), .. } =
+            run.step(fixtures::rows(Box::new([])))
         else {
             panic!("hook for {id}")
         };

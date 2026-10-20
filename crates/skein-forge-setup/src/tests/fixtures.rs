@@ -1,3 +1,4 @@
+use crate::call::Auth;
 use alloc::boxed::Box;
 use skein_lib::{Duration, bytes};
 pub const ADMIN: &[u8] = b"site-admin-token";
@@ -64,11 +65,11 @@ impl Run {
         assert_eq!(self.step(Event::Begin), Need::Read(Item::AdminToken));
         assert_eq!(
             self.step(Event::Read(Some(secret(ADMIN)))),
-            Need::Send { request: Request::User, token: secret(ADMIN) }
+            Need::Send { request: Request::User.into(), auth: Auth::Token(secret(ADMIN)) }
         );
         assert_eq!(
             self.step(Event::Reply(Reply::Document(Document::User(admin())))),
-            Need::Send { request: Request::UserOf { login: self.bot() }, token: secret(ADMIN) }
+            Need::Send { request: Request::UserOf { login: self.bot() }.into(), auth: Auth::Token(secret(ADMIN)) }
         );
     }
 }
@@ -82,7 +83,7 @@ impl Run {
         for next in [Item::GitToken, Item::User] {
             assert_eq!(
                 self.step(Event::Read(Some(secret(b"bot-token")))),
-                Need::Send { request: Request::User, token: secret(b"bot-token") }
+                Need::Send { request: Request::User.into(), auth: Auth::Token(secret(b"bot-token")) }
             );
             assert_eq!(
                 self.step(Event::Reply(Reply::Document(Document::User(person(b"kit", b"kit:bot"))))),
@@ -188,7 +189,7 @@ pub fn rows(rows: Box<[skein_forge::forgejo::document::Row]>) -> crate::reconcil
     crate::reconcile::Event::Reply(crate::reconcile::Reply::Rows(rows))
 }
 pub fn send(request: skein_forge::forgejo::request::Request) -> crate::reconcile::Need {
-    crate::reconcile::Need::Send { request, token: secret(ADMIN) }
+    crate::reconcile::Need::Send { request: request.into(), auth: Auth::Token(secret(ADMIN)) }
 }
 pub fn token_name(item: crate::item::Item) -> &'static [u8] {
     use crate::item::Item;

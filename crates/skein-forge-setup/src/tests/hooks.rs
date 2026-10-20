@@ -1,4 +1,5 @@
 use super::fixtures::{self, AdoptRun, secret};
+use crate::call::Call;
 use crate::{
     item::Item,
     reconcile::{Event, Need, Reply, Stage, Why},
@@ -63,11 +64,11 @@ fn delete(id: u64) -> Need {
 }
 fn save(need: Need, id: Option<u64>) -> HookSpec {
     match (need, id) {
-        (Need::Send { request: Request::CreateRepoHook { at: path, hook }, .. }, None) => {
+        (Need::Send { request: Call::Forgejo(Request::CreateRepoHook { at: path, hook }), .. }, None) => {
             assert_eq!(path, at());
             hook
         }
-        (Need::Send { request: Request::EditRepoHook { at: path, id: found, hook }, .. }, Some(id)) => {
+        (Need::Send { request: Call::Forgejo(Request::EditRepoHook { at: path, id: found, hook }), .. }, Some(id)) => {
             assert_eq!(path, at());
             assert_eq!(found, id);
             hook

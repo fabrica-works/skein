@@ -1,4 +1,5 @@
 //! One page of a forge's repositories for the picker (forge-setup.md, 4.8).
+use crate::call::Auth;
 use crate::{
     given::{self, Given, Place, Refused},
     item::Item,
@@ -76,7 +77,10 @@ impl Reachable {
     }
 
     fn send(&self, request: Request) -> Need {
-        Need::Send { request, token: self.token.clone().expect("listing token read before requests") }
+        Need::Send {
+            request: request.into(),
+            auth: Auth::Token(self.token.clone().expect("listing token read before requests")),
+        }
     }
 
     fn stop(&mut self, step: Stage, subject: Box<[u8]>, why: Why) -> Need {
@@ -162,9 +166,14 @@ impl Reachable {
                         Token::Api => Request::UserRepos { page },
                     }))
                 }
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             State::Search => self.rows(reply(event)?),
             State::Begin | State::Read | State::ApiRead | State::Admin | State::Ended => {
@@ -176,7 +185,13 @@ impl Reachable {
     fn rows(&mut self, answer: Reply) -> Result<Need, Why> {
         let rows = match answer {
             Reply::Rows(rows) => rows,
-            other @ (Reply::Document(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
+            other @ (Reply::Document(_)
+            | Reply::Empty
+            | Reply::Status(_)
+            | Reply::Down
+            | Reply::GithubDocument(_)
+            | Reply::GithubRows(_)
+            | Reply::Unsigned) => {
                 return Err(unexpected(other));
             }
         };

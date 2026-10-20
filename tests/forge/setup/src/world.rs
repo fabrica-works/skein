@@ -3,6 +3,7 @@ use skein_fake_forge_protocol::{Service, Tally, setup::Store};
 use skein_forge::forgejo::{document::Document, request::Request};
 use skein_forge_setup::item::Item;
 use skein_forge_setup::{
+    call::{Auth, Call},
     given::Given,
     reconcile::{self, Event, Failure, Need, Outcome, Reconcile, Reply},
 };
@@ -156,8 +157,8 @@ impl World {
         let reply = exchange::send(
             &mut self.service,
             &self.env,
-            &Request::RepositoryById { id: u64::from(repository) },
-            &fixtures::secret(fixtures::ADMIN),
+            &Request::RepositoryById { id: u64::from(repository) }.into(),
+            &Auth::Token(fixtures::secret(fixtures::ADMIN)),
             self.rng.next_u64(),
             &self.repositories,
             &self.given.bot_login,
@@ -181,8 +182,8 @@ impl World {
         let reply = exchange::send(
             &mut self.service,
             &self.env,
-            &request,
-            &fixtures::secret(fixtures::ADMIN),
+            &request.into(),
+            &Auth::Token(fixtures::secret(fixtures::ADMIN)),
             self.rng.next_u64(),
             &self.repositories,
             &self.given.bot_login,
@@ -197,8 +198,8 @@ impl World {
             exchange::send(
                 &mut self.service,
                 &self.env,
-                &request,
-                &fixtures::secret(fixtures::ADMIN),
+                &request.into(),
+                &Auth::Token(fixtures::secret(fixtures::ADMIN)),
                 self.rng.next_u64(),
                 &self.repositories,
                 &self.given.bot_login,
@@ -244,19 +245,23 @@ impl World {
             let need = out.pop().expect("one need");
             self.trace.push(format!("{need:?}"));
             event = match need {
-                Need::Send { request, token } => {
-                    if let Request::CreateUser { password, .. } = &request {
+                Need::Send { request, auth } => {
+                    let forgejo = match (&request, &auth) {
+                        (Call::Forgejo(request), Auth::Token(_)) => request,
+                        pair => panic!("unsupported setup send: {pair:?}"),
+                    };
+                    if let Request::CreateUser { password, .. } = forgejo {
                         self.secrets.push(password.clone());
                     }
-                    self.requests.push(request.clone());
-                    let reply = if self.refused == Some(skein_fake_forge_protocol::route(&request)) {
+                    self.requests.push(forgejo.clone());
+                    let reply = if self.refused == Some(skein_fake_forge_protocol::route(forgejo)) {
                         Reply::Status(403)
                     } else {
                         exchange::send(
                             &mut self.service,
                             &self.env,
                             &request,
-                            &token,
+                            &auth,
                             self.rng.next_u64(),
                             &self.repositories,
                             &self.given.bot_login,

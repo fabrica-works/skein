@@ -4,6 +4,7 @@ mod orgs;
 mod tokens;
 mod walk;
 use crate::{
+    call::{Auth, Call},
     given::{self, Given, Refused},
     item::Item,
 };
@@ -20,9 +21,16 @@ pub const MAX_OUT: u32 = 1;
 /// One effect for the host, or the run's terminal outcome.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Need {
-    Send { request: Request, token: Secret },
+    /// The host signs `Auth::App` per request, so a plan never holds a JWT.
+    Send {
+        request: Call,
+        auth: Auth,
+    },
     Read(Item),
-    Write { item: Item, bytes: Secret },
+    Write {
+        item: Item,
+        bytes: Secret,
+    },
     Draw(u32),
     Done(Outcome),
     Stop(Failure),
@@ -49,7 +57,6 @@ pub enum Event {
 }
 /// An HTTP answer decoded by the host.
 #[derive(Clone, PartialEq, Eq, Debug)]
-#[expect(clippy::large_enum_variant, reason = "a document moves whole, as the store's records do")]
 pub enum Reply {
     Document(Document),
     /// A page of rows: a list, or a repository search that answered `ok`.
@@ -57,6 +64,10 @@ pub enum Reply {
     Empty,
     Status(u16),
     Down,
+    GithubDocument(skein_forge::github::document::Document),
+    GithubRows(Box<[skein_forge::github::document::Row]>),
+    /// The host could not sign the App's JWT: the request was not sent.
+    Unsigned,
 }
 /// Names the stopped step, never its credentials.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -74,7 +85,9 @@ pub enum Stage {
     Token,
     Org,
     Repository,
+    App,
     Installation,
+    State,
 }
 /// Why the forge could not be reconciled.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -85,6 +98,12 @@ pub enum Why {
     BotIsAdmin,
     Unmarked,
     OtherUser,
+    /// The answered App id is not the id kept or given.
+    OtherApp,
+    /// The key is not an `RSA PRIVATE KEY` PEM, exceeds `key_bytes`, or will not sign.
+    KeyForm,
+    /// The state is unknown, used, expired, or belongs to another forge or plan.
+    Unknown,
     /// Another run of the forge is live, or the host's runs are full (6.3).
     Busy,
     Down,
@@ -149,14 +168,14 @@ impl Reconcile {
         })
     }
     fn send(&self, request: Request) -> Need {
-        Need::Send { request, token: self.admin.clone().expect("admin checked before bot") }
+        Need::Send { request: request.into(), auth: Auth::Token(self.admin.clone().expect("admin checked before bot")) }
     }
     fn stop(&mut self, stage: Stage, why: Why) -> Need {
         self.state = State::Ended;
         self.admin = None;
         self.shared.secret = None;
         let subject = match stage {
-            Stage::Admin | Stage::Installation => self.admin_name.clone(),
+            Stage::Admin | Stage::App | Stage::Installation | Stage::State => self.admin_name.clone(),
             Stage::Bot | Stage::Token | Stage::Org | Stage::Repository => self.bot_login.clone(),
         };
         Need::Stop(Failure { forge: self.forge, step: stage, subject, why })
@@ -307,7 +326,8 @@ pub(crate) fn account(event: Event) -> Result<skein_forge::forgejo::document::Us
             },
             Reply::Status(status) => Err(Why::Refused(status)),
             Reply::Down => Err(Why::Down),
-            Reply::Rows(_) | Reply::Empty => Err(Why::Unexpected),
+            Reply::Unsigned => Err(Why::KeyForm),
+            Reply::Rows(_) | Reply::Empty | Reply::GithubDocument(_) | Reply::GithubRows(_) => Err(Why::Unexpected),
         },
         Event::Begin | Event::Read(_) | Event::Written | Event::Drawn(_) => Err(Why::Unexpected),
     }

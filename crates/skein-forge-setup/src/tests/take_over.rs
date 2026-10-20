@@ -1,4 +1,5 @@
 use super::fixtures::{self, TAKEN, TAKEN_SUFFIX, TakeOverRun, secret, take_over_admin, take_over_row};
+use crate::call::Auth;
 use crate::{
     item::Item,
     reconcile::{Event, Need, Outcome, Reply, Stage, Why},
@@ -28,7 +29,7 @@ fn at(phase: usize) -> TakeOverRun {
     run
 }
 fn send(request: Request) -> Need {
-    Need::Send { request, token: secret(TAKEN) }
+    Need::Send { request: request.into(), auth: Auth::Token(secret(TAKEN)) }
 }
 fn listing(page: u32) -> Need {
     send(Request::Tokens { login: b"root".as_slice().into(), page: fixtures::page(page) })
@@ -57,7 +58,7 @@ fn an_empty_token_stops_before_any_request() {
 #[test]
 fn a_token_shorter_than_eight_bytes_is_checked_like_any_other() {
     let mut run = TakeOverRun::with_token(b"abc");
-    assert_eq!(run.step(Event::Begin), Need::Send { request: Request::User, token: secret(b"abc") });
+    assert_eq!(run.step(Event::Begin), Need::Send { request: Request::User.into(), auth: Auth::Token(secret(b"abc")) });
     run.step(take_over_admin());
     run.step(Event::Written);
     run.step(fixtures::settings_event(fixtures::PAGE_CAP));

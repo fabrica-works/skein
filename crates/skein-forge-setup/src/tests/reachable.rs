@@ -1,4 +1,5 @@
 use super::fixtures::{self, ADMIN, reached, search, secret, user_repo, user_repos};
+use crate::call::Auth;
 use crate::{
     given::{Place, Refused},
     item::Item,
@@ -37,7 +38,7 @@ fn at(phase: usize) -> Reachable {
     machine
 }
 fn send(request: Request) -> Need {
-    Need::Send { request, token: secret(ADMIN) }
+    Need::Send { request: request.into(), auth: Auth::Token(secret(ADMIN)) }
 }
 fn page(page: u32, limit: u32) -> Need {
     send(Request::RepoSearch { page: Page { page: Some(page), limit: Some(limit) } })
@@ -325,7 +326,7 @@ fn connected_at(phase: usize) -> Reachable {
     connected_at_page(phase, 1)
 }
 fn connected_send(request: Request) -> Need {
-    Need::Send { request, token: secret(API) }
+    Need::Send { request: request.into(), auth: Auth::Token(secret(API)) }
 }
 fn connected_page(page: u32, limit: u32) -> Need {
     connected_send(Request::UserRepos { page: Page { page: Some(page), limit: Some(limit) } })

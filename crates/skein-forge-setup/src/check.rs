@@ -1,4 +1,5 @@
 //! A connected Forgejo's tokens must belong to one user (forge-setup.md, 4.6).
+use crate::call::Auth;
 use crate::{
     item::{self, Item},
     reconcile::{self, Event, Failure, Need, Outcome, Stage, Why},
@@ -53,7 +54,7 @@ impl Check {
         match event {
             Event::Read(Some(token)) => {
                 self.state = next;
-                Need::Send { request: Request::User, token }
+                Need::Send { request: Request::User.into(), auth: Auth::Token(token) }
             }
             Event::Read(None) => self.stop(subject, Why::Missing),
             Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => self.stop(subject, Why::Unexpected),

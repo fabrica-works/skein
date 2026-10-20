@@ -1,4 +1,5 @@
 use super::fixtures::{self, CheckRun, secret};
+use crate::call::Auth;
 use crate::{
     item::Item,
     reconcile::{Event, Need, Outcome, Reply, Stage, Why},
@@ -45,12 +46,12 @@ fn the_api_token_is_sent_to_the_users_route_and_the_git_token_after_it() {
     assert_eq!(run.step(Event::Begin), Need::Read(Item::ApiToken));
     assert_eq!(
         run.step(Event::Read(Some(secret(b"api-token")))),
-        Need::Send { request: Request::User, token: secret(b"api-token") }
+        Need::Send { request: Request::User.into(), auth: Auth::Token(secret(b"api-token")) }
     );
     assert_eq!(run.step(person()), Need::Read(Item::GitToken));
     assert_eq!(
         run.step(Event::Read(Some(secret(b"git-token")))),
-        Need::Send { request: Request::User, token: secret(b"git-token") }
+        Need::Send { request: Request::User.into(), auth: Auth::Token(secret(b"git-token")) }
     );
     assert_eq!(run.step(person()), Need::Read(Item::User));
 }

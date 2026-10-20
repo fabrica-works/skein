@@ -9,7 +9,7 @@ use crate::reconcile::{self, Failure, Reply, Stage, Why};
 pub use boundary::{Answer, Event, MAX_OUT, MaxOut, Need, Plan, Request};
 use connection::Connection;
 pub use limits::{Limits, Stacked, Unusable, documents, http};
-use run::{Run, Send};
+use run::{Run, Send, forgejo_pair};
 pub use settings::{Forge, Kind, Settings, Transport};
 use skein_lib::{CryptoRng, Env, List, Map, Queue, Secret, Time, Token, bytes};
 
@@ -284,8 +284,8 @@ impl Host {
                     self.crypto.fill(&mut drawn);
                     run.step(reconcile::Event::Drawn(Secret::new(drawn)), &mut self.plan_out);
                 }
-                reconcile::Need::Send { request, token } => {
-                    run.send = Some(Send { request, token });
+                reconcile::Need::Send { request, auth } => {
+                    run.send = Some(Send { call: request, auth });
                 }
                 reconcile::Need::Done(outcome) => {
                     up.push(Event::Done { run: token, outcome });
@@ -312,8 +312,15 @@ impl Host {
         }
         let forge = configured(&self.settings, run.forge);
         let send = run.send.as_ref().expect("ready send");
+        let (request, credential) = match forgejo_pair(send.call.clone(), send.auth.clone()) {
+            Ok(pair) => pair,
+            Err(why) => {
+                run.halt(why, &mut self.plan_out);
+                return;
+            }
+        };
         let Some(connection) =
-            Connection::new(token, forge, &self.settings.user_agent, &send.request, &send.token, &env.limits)
+            Connection::new(token, forge, &self.settings.user_agent, &request, &credential, &env.limits)
         else {
             run.halt(Why::Unexpected, &mut self.plan_out);
             return;

@@ -1,10 +1,50 @@
 use super::fixtures;
 use crate::{
+    call::{Auth, Call},
     host::{Answer, Event, Forge, Host, Kind, Limits, Need, Plan, Request, Settings, Stacked, Transport, Unusable},
     item::Item,
     reconcile::{Failure, Outcome, Stage, Why},
 };
 use skein_lib::{CryptoRng, Duration, Env, List, Queue, Time, Token, Wall};
+
+#[test]
+fn a_github_call_on_a_forgejo_forge_is_refused_unexpected() {
+    for auth in [
+        Auth::Token(fixtures::secret(b"forgejo-token")),
+        Auth::App { id: 7, key: fixtures::secret(b"app-key") },
+        Auth::Bearer(fixtures::secret(b"installation-token")),
+        Auth::None,
+    ] {
+        assert_eq!(
+            crate::host::run::forgejo_pair(Call::GitHub(skein_forge::github::request::Request::App), auth),
+            Err(Why::Unexpected)
+        );
+    }
+}
+
+#[test]
+fn a_forgejo_call_on_an_app_or_bearer_or_no_auth_is_refused_unexpected() {
+    for auth in [
+        Auth::App { id: 7, key: fixtures::secret(b"app-key") },
+        Auth::Bearer(fixtures::secret(b"installation-token")),
+        Auth::None,
+    ] {
+        assert_eq!(
+            crate::host::run::forgejo_pair(Call::Forgejo(skein_forge::forgejo::request::Request::User), auth),
+            Err(Why::Unexpected)
+        );
+    }
+}
+
+#[test]
+fn a_forgejo_call_on_a_token_passes_through_forgejo_pair() {
+    let request = skein_forge::forgejo::request::Request::User;
+    let token = fixtures::secret(b"forgejo-token");
+    assert_eq!(
+        crate::host::run::forgejo_pair(request.clone().into(), Auth::Token(token.clone())),
+        Ok((request, token))
+    );
+}
 fn limits() -> Limits {
     Limits {
         forges: 2,

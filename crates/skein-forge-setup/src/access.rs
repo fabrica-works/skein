@@ -125,9 +125,14 @@ impl Access {
                     self.phase = Phase::Permission;
                     Ok(Move::Send(Request::Permission { at, login: self.bot.clone() }))
                 }
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Permission => match answer {
                 Reply::Document(Document::Permission(permission)) => match permission.permission {
@@ -141,37 +146,60 @@ impl Access {
                         }))
                     }
                 },
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Add => match answer {
                 Reply::Empty => Ok(self.hook(shared)),
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Settings => match answer {
                 Reply::Document(Document::ApiSettings(settings)) if settings.max_response_items > 0 => {
                     shared.cap = Some(settings.max_response_items);
                     Ok(self.listing(shared))
                 }
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Listing => self.rows(shared, answer),
             Phase::Delete => match answer {
                 Reply::Empty | Reply::Status(404) => Ok(self.listing(shared)),
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Save => match answer {
                 Reply::Document(Document::Hook(_)) => Ok(Move::Done),
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Secret | Phase::Draw | Phase::Write => unreachable!("host effects handled before replies"),
         }

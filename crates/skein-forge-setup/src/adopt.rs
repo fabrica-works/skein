@@ -1,4 +1,5 @@
 //! Gives the bot access before its owner's first call (forge-setup.md, 4.5, steps 1 to 4).
+use crate::call::Auth;
 use crate::{
     access::{Access, Fail, Move, Shared},
     given::{self, Given, Place, Refused},
@@ -53,7 +54,10 @@ impl Adopt {
         })
     }
     fn send(&self, request: Request) -> Need {
-        Need::Send { request, token: self.admin.clone().expect("admin checked before repository") }
+        Need::Send {
+            request: request.into(),
+            auth: Auth::Token(self.admin.clone().expect("admin checked before repository")),
+        }
     }
     fn stop(&mut self, step: Stage, why: Why) -> Need {
         self.state = State::Ended;
@@ -62,7 +66,9 @@ impl Adopt {
         let subject = match step {
             Stage::Admin => self.admin_name.clone(),
             Stage::Repository => self.access.subject(),
-            Stage::Bot | Stage::Token | Stage::Org | Stage::Installation => unreachable!("adoption's two stages"),
+            Stage::Bot | Stage::Token | Stage::Org | Stage::App | Stage::Installation | Stage::State => {
+                unreachable!("adoption's two stages")
+            }
         };
         Need::Stop(Failure { forge: self.forge, step, subject, why })
     }

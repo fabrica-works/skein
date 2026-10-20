@@ -7,10 +7,13 @@ use skein_forge::forgejo::{
     request::{Method, Request},
 };
 use skein_forge_machine_world::pipe::{Cut, Pipe};
-use skein_forge_setup::reconcile::Reply;
+use skein_forge_setup::{
+    call::{Auth, Call},
+    reconcile::Reply,
+};
 use skein_http::{Header, client as http};
 use skein_lib::{
-    Env, Queue, Secret, Time, Token, Wall,
+    Env, Queue, Time, Token, Wall,
     stream::{Down, Read, Up},
 };
 struct Exchange {
@@ -33,12 +36,16 @@ struct Exchange {
 pub fn send(
     service: &mut Service,
     env: &Env<fake::Limits>,
-    request: &Request,
-    token: &Secret,
+    request: &Call,
+    auth: &Auth,
     seed: u64,
     repositories: &[fake::Repository],
     login: &[u8],
 ) -> Reply {
+    let (request, token) = match (request, auth) {
+        (Call::Forgejo(request), Auth::Token(token)) => (request, token),
+        pair => panic!("unsupported setup send: {pair:?}"),
+    };
     let encoded = codec::encode(request, &env.limits.documents).expect("machine request encodes");
     let limits = http::Limits {
         request: env.limits.http.head,

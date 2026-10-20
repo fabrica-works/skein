@@ -1,5 +1,6 @@
 //! The two token files are checked before the bot's id (forge-setup.md, 4.3).
 use super::{Event, Need, Reconcile, Reply, State, Why};
+use crate::call::Auth;
 use crate::item::Item;
 use alloc::boxed::Box;
 use skein_forge::forgejo::{
@@ -105,7 +106,7 @@ impl Tokens {
             Phase::Read => match event {
                 Event::Read(Some(secret)) => {
                     self.phase = Phase::Check;
-                    Ok(Need::Send { request: Request::User, token: secret })
+                    Ok(Need::Send { request: Request::User.into(), auth: Auth::Token(secret) })
                 }
                 Event::Read(None) => Ok(self.remake(machine)),
                 Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => Err(Why::Unexpected),
@@ -120,16 +121,25 @@ impl Tokens {
                     self.cap = Some(settings.max_response_items);
                     Ok(self.listing(machine))
                 }
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Listing => self.rows(machine, reply(event)?),
             Phase::Delete => match reply(event)? {
                 Reply::Empty | Reply::Status(404) => Ok(self.create(machine)),
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Create => match reply(event)? {
                 Reply::Document(Document::Token(token)) => {
@@ -137,9 +147,14 @@ impl Tokens {
                     self.phase = Phase::Written;
                     Ok(Need::Write { item: self.item, bytes: value })
                 }
-                other @ (Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
-                    Err(unexpected(other))
-                }
+                other @ (Reply::Document(_)
+                | Reply::Rows(_)
+                | Reply::Empty
+                | Reply::Status(_)
+                | Reply::Down
+                | Reply::GithubDocument(_)
+                | Reply::GithubRows(_)
+                | Reply::Unsigned) => Err(unexpected(other)),
             },
             Phase::Written => match event {
                 Event::Written => Ok(self.next(machine)),
@@ -150,7 +165,13 @@ impl Tokens {
     fn rows(&mut self, machine: &Reconcile, reply: Reply) -> Result<Need, Why> {
         let rows = match reply {
             Reply::Rows(rows) => rows,
-            other @ (Reply::Document(_) | Reply::Empty | Reply::Status(_) | Reply::Down) => {
+            other @ (Reply::Document(_)
+            | Reply::Empty
+            | Reply::Status(_)
+            | Reply::Down
+            | Reply::GithubDocument(_)
+            | Reply::GithubRows(_)
+            | Reply::Unsigned) => {
                 return Err(unexpected(other));
             }
         };
@@ -202,7 +223,10 @@ pub(crate) fn unexpected(reply: Reply) -> Why {
     match reply {
         Reply::Status(status) => Why::Refused(status),
         Reply::Down => Why::Down,
-        Reply::Document(_) | Reply::Rows(_) | Reply::Empty => Why::Unexpected,
+        Reply::Unsigned => Why::KeyForm,
+        Reply::Document(_) | Reply::Rows(_) | Reply::Empty | Reply::GithubDocument(_) | Reply::GithubRows(_) => {
+            Why::Unexpected
+        }
     }
 }
 pub(super) fn advance(machine: &mut Reconcile, event: Event) -> Need {
