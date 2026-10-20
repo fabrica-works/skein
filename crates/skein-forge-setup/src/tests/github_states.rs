@@ -300,7 +300,7 @@ fn a_manifest_uses_the_normal_write_slot_and_admission_precedes_issuance() {
     let mut run = w.admit();
     assert!(run.writes);
     assert_eq!(run.pending, Some(reconcile::Need::Draw(3)));
-    let first = run.manifest_state.clone().expect("issued state");
+    let first = run.issued_state.clone().expect("issued state").1;
     let mut expected_rng = w.host.crypto.clone();
     run.pending = None; // Pause the first run between admission and its name draw.
     let previous = w.host.runs.insert(Token::new(2), run).expect("one live write");
@@ -392,7 +392,7 @@ fn the_host_caps_states_across_forges_and_uses_each_state_life() {
 fn a_halted_manifest_drops_its_state_and_its_machine_stays_silent() {
     let mut w = World::new();
     let mut run = w.admit();
-    let state = run.manifest_state.clone().expect("issued state");
+    let state = run.issued_state.clone().expect("issued state").1;
     assert!(w.host.plan_out.room() >= reconcile::MAX_OUT);
     run.halt(Why::Down, &mut w.host.plan_out);
     for event in [

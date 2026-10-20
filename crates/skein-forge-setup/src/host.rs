@@ -1,6 +1,9 @@
 //! The host component: the plans run inside a service (forge-setup.md, 6.3).
 mod boundary;
 pub(crate) mod connection;
+#[cfg(test)]
+#[path = "tests/github_host.rs"]
+mod install_tests;
 mod limits;
 pub(crate) mod run;
 mod settings;
@@ -300,8 +303,8 @@ impl Host {
                     let _ended = self.runs.remove(&token);
                 }
                 reconcile::Need::Stop(failure) => {
-                    if let Some(state) = run.manifest_state.take() {
-                        let _taken = self.states.take(run.forge, states::Purpose::Convert, &state, env.now);
+                    if let Some((purpose, state)) = run.issued_state.take() {
+                        let _taken = self.states.take(run.forge, purpose, &state, env.now);
                     }
                     up.push(Event::Stop { run: token, failure });
                     let _ended = self.runs.remove(&token);

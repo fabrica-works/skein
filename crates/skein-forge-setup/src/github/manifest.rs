@@ -51,14 +51,7 @@ impl Manifest {
                 }
             }
         }
-        if state.len() != 32 {
-            return Err(Refused { place: Place::State, other: None });
-        }
-        for byte in state {
-            if !byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte) {
-                return Err(Refused { place: Place::State, other: None });
-            }
-        }
+        check_state(state)?;
         Ok(Self { phase: Phase::Begin(Inputs { given: given.clone(), target: target.clone(), state: state.into() }) })
     }
 }
@@ -140,4 +133,17 @@ pub fn step(machine: &mut Manifest, event: Event, out: &mut Queue<Need>) {
         Phase::Ended => return,
     };
     out.push(need);
+}
+
+/// The host state spelling shared by pages and links (forge-setup.md, 5.7).
+pub(crate) fn check_state(state: &[u8]) -> Result<(), Refused> {
+    if state.len() != 32 {
+        return Err(Refused { place: Place::State, other: None });
+    }
+    for byte in state {
+        if !byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte) {
+            return Err(Refused { place: Place::State, other: None });
+        }
+    }
+    Ok(())
 }

@@ -44,6 +44,8 @@ pub enum Outcome {
     Manifest { state: Box<[u8]>, page: Box<[u8]> },
     /// The App's missing wanted access, possibly empty (5.6 and 5.8).
     Lacking { lacking: Box<[crate::github::Lacking]> },
+    /// The install link and its host-issued Accept state (5.4 and 5.7).
+    Install { state: Box<[u8]>, url: Box<[u8]> },
     /// The user a connected Forgejo's tokens belong to (4.6).
     Identity { id: u64, login: Box<[u8]> },
     /// One page of repositories for the picker (4.8).

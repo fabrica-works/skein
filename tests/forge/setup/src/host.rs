@@ -258,6 +258,13 @@ impl HostWorld {
         }
         panic!("host world's deadlines did not settle");
     }
+    /// Advances the scenario clock and settles due host work.
+    pub fn advance_to(&mut self, now: Time) {
+        assert!(now >= self.env.now);
+        self.set_time(now);
+        self.host.fire(&self.env, &mut self.above, &mut self.below);
+        self.settle();
+    }
     fn set_time(&mut self, now: Time) {
         self.env.now = now;
         self.env.wall =

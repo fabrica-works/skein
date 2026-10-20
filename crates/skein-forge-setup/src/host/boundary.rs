@@ -14,6 +14,16 @@ pub enum Plan {
         forge: u16,
         target: Target,
     },
+    /// The App install link with an Accept-purpose state (5.4 and 5.7).
+    Install {
+        forge: u16,
+    },
+    /// Verifies and retains an installation admitted by its state (5.4 and 5.7).
+    Accept {
+        forge: u16,
+        installation: NonZeroU64,
+        state: Box<[u8]>,
+    },
     Reconcile {
         forge: u16,
         adopted: Box<[u64]>,
@@ -48,7 +58,9 @@ impl Plan {
             | Self::TakeOver { forge, .. }
             | Self::Adopt { forge, .. }
             | Self::Reachable { forge, .. }
-            | Self::Manifest { forge, .. } => *forge,
+            | Self::Manifest { forge, .. }
+            | Self::Install { forge }
+            | Self::Accept { forge, .. } => *forge,
         }
     }
     /// Whether the plan may change the forge or the owner's items.
@@ -58,7 +70,9 @@ impl Plan {
             | Self::Check { .. }
             | Self::TakeOver { .. }
             | Self::Adopt { .. }
-            | Self::Manifest { .. } => true,
+            | Self::Manifest { .. }
+            | Self::Install { .. }
+            | Self::Accept { .. } => true,
             Self::Reachable { .. } => false,
         }
     }
@@ -66,6 +80,8 @@ impl Plan {
     pub(super) fn name(&self) -> &'static [u8] {
         match self {
             Self::Manifest { .. } => b"manifest",
+            Self::Install { .. } => b"install",
+            Self::Accept { .. } => b"accept",
             Self::Reconcile { .. } => b"reconcile",
             Self::Check { .. } => b"check",
             Self::TakeOver { .. } => b"take-over",
@@ -76,7 +92,7 @@ impl Plan {
     /// The dialects the plan is for.
     pub(super) fn dialect(&self) -> Dialect {
         match self {
-            Self::Manifest { .. } => Dialect::GitHub,
+            Self::Manifest { .. } | Self::Install { .. } | Self::Accept { .. } => Dialect::GitHub,
             Self::Reconcile { .. } | Self::Reachable { .. } => Dialect::Both,
             Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } => Dialect::Forgejo,
         }

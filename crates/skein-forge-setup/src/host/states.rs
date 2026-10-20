@@ -6,7 +6,6 @@ use skein_lib::{Duration, Queue, Time};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Purpose {
     Convert,
-    #[cfg_attr(not(test), expect(dead_code, reason = "the Accept callback shares this table when its host plan lands"))]
     Accept,
 }
 impl Purpose {
@@ -74,7 +73,8 @@ impl States {
         let mut taken = false;
         for _ in 0..self.entries.len() {
             let entry = self.entries.pop().expect("bounded traversal");
-            if entry.forge == forge && entry.purpose == purpose && entry.state.as_ref() == state && entry.birth <= now {
+            let same = skein_lib::sha256::equal(&entry.state, state);
+            if entry.forge == forge && entry.purpose == purpose && same && entry.birth <= now {
                 taken = true;
             } else {
                 self.entries.push(entry);
