@@ -399,6 +399,7 @@ pub(crate) fn answered(
             | Error::Refused
             | Error::InvalidAnswer
             | Error::NotConnected
+            | Error::NotInstalled
             | Error::Busy => {}
         }
     }

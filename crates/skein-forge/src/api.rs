@@ -258,6 +258,8 @@ pub enum Error {
     Busy,
     /// The forge is not connected, or stopped; no API call was made.
     NotConnected,
+    /// No accepted App installation for the repository owner account.
+    NotInstalled,
 }
 /// The kind of an item in the forge listing.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

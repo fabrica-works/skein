@@ -44,7 +44,13 @@ const REPO: Repository = Repository { forge: 2, repository: 5 };
 
 #[test]
 fn a_fresh_read_meeting_no_connection_ends_once() {
-    let error = Error::NotConnected;
+    fresh_read_refusal_ends_once(Error::NotConnected);
+}
+#[test]
+fn a_fresh_read_meeting_no_installation_ends_once() {
+    fresh_read_refusal_ends_once(Error::NotInstalled);
+}
+fn fresh_read_refusal_ends_once(error: Error) {
     let mut h = Harness::new(LIMITS);
     h.read(1);
     let sent = h.send().expect("fresh read");

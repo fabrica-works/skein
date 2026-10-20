@@ -105,6 +105,7 @@ pub(super) fn failed(
         | Error::Protected
         | Error::Refused
         | Error::NotConnected
+        | Error::NotInstalled
         | Error::Busy => super::finish(d, env, number, Outcome::Failed(error), out),
     }
 }
@@ -167,6 +168,7 @@ fn retain_uncertain(
         | Error::Protected
         | Error::Refused
         | Error::NotConnected
+        | Error::NotInstalled
         | Error::Busy => false,
     };
     if !transient {
