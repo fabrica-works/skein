@@ -100,7 +100,8 @@ fn an_endpoint_set_after_binding_delivers_the_next_hook() {
         world.bind();
         world.forge.borrow_mut().hooks = host.map(|host| fixtures::endpoint(host, secret));
         world.create_issue_and_settle();
-        assert_eq!(world.delivery_outcomes(), [&forge::Delivery::NoAddress], "{name}");
+        let expected = if host.is_some() { vec![&forge::Delivery::NoAddress] } else { vec![] };
+        assert_eq!(world.delivery_outcomes(), expected, "{name}");
         assert_eq!(world.connects, fixtures::NO_POSTS, "{name}");
         assert_eq!(world.received_posts(), fixtures::NO_POSTS, "{name}");
     }
@@ -267,10 +268,63 @@ fn a_setup_grant_lets_a_forbidden_bot_write_over_loopback() {
     let body = br#"{"new_branch_name":"bot-work","old_ref_name":"0000000000000001000000000000000000000000"}"#;
     let refused = world.exchange("POST", target, token, body);
     assert!(refused.starts_with(b"HTTP/1.1 403"), "{}", String::from_utf8_lossy(&refused));
-    let granted = world.exchange("PUT", "/api/v1/repos/org/repo/collaborators/bot", fixtures::TOKEN, br#"{"permission":"write"}"#);
+    let granted = world.exchange(
+        "PUT",
+        "/api/v1/repos/org/repo/collaborators/bot",
+        fixtures::TOKEN,
+        br#"{"permission":"write"}"#,
+    );
     assert!(granted.starts_with(b"HTTP/1.1 204"));
     let accepted = world.exchange("POST", target, token, body);
     assert!(accepted.starts_with(b"HTTP/1.1 201"), "{}", String::from_utf8_lossy(&accepted));
-    assert_eq!(world.forge.borrow().domain.permission(fixtures::REPOSITORY, bot), Ok(skein_fake_forge_domain::api::Permission::Write));
+    assert_eq!(
+        world.forge.borrow().domain.permission(fixtures::REPOSITORY, bot),
+        Ok(skein_fake_forge_domain::api::Permission::Write)
+    );
     world.settle();
+}
+
+#[test]
+fn two_setup_hooks_each_receive_the_change_with_their_own_signature() {
+    let mut world = World::delivery(SEED);
+    let addresses = world.bind_setup_receivers();
+    world.peer.setup_mut().account(b"site-admin", true, b"");
+    let secrets = ["first-listener-secret", "second-listener-secret"];
+    for (index, address) in addresses.iter().enumerate() {
+        let body = format!(
+            r#"{{"type":"forgejo","config":{{"url":"http://{address}/receiver/{index}?demo=1","content_type":"json","secret":"{}"}},"events":["issues"],"active":true}}"#,
+            secrets[index]
+        );
+        let reply = world.exchange("POST", "/api/v1/repos/org/repo/hooks", fixtures::TOKEN, body.as_bytes());
+        assert!(reply.starts_with(b"HTTP/1.1 201"), "{}", String::from_utf8_lossy(&reply));
+    }
+    let reply = world.exchange("POST", "/api/v1/repos/org/repo/issues", fixtures::TOKEN, fixtures::ISSUE_BODY);
+    assert!(reply.starts_with(b"HTTP/1.1 201"));
+    world.finish_setup_deliveries();
+    assert_eq!(world.connects, 2);
+    assert_eq!(world.delivery_outcomes(), [&forge::Delivery::Written, &forge::Delivery::Written]);
+    assert_eq!(world.wire_posts().len(), 2);
+    for (index, wire) in world.wire_posts().iter().enumerate() {
+        let split = wire.windows(4).position(|part| part == b"\r\n\r\n").unwrap() + 4;
+        let (head, body) = wire.split_at(split);
+        assert!(head.starts_with(format!("POST /receiver/{index}?demo=1 HTTP/1.1\r\n").as_bytes()));
+        assert!(
+            head.windows(format!("Host: {}\r\n", addresses[index]).len())
+                .any(|part| part == format!("Host: {}\r\n", addresses[index]).as_bytes())
+        );
+        let signature = head
+            .split(|byte| *byte == b'\n')
+            .find_map(|line| line.strip_prefix(b"X-Forgejo-Signature: "))
+            .unwrap()
+            .strip_suffix(b"\r")
+            .unwrap();
+        let mut signed = [0; 32];
+        for (byte, digits) in signed.iter_mut().zip(signature.chunks_exact(2)) {
+            *byte = u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap();
+        }
+        let mut hmac = skein_lib::sha256::Hmac::new(secrets[index].as_bytes());
+        hmac.update(body);
+        assert_eq!(signed, hmac.finish());
+    }
+    assert_eq!(world.forge.borrow().domain.tally().hooks, 1);
 }

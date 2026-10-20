@@ -46,7 +46,7 @@ pub struct Store {
     private: List<u64>,
     /// Setup grants, mirrored into a domain when the owner lends it for the call.
     collaborators: List<collaborators::Collaborator>,
-    /// Repository hooks made by setup are stored and route nothing.
+    /// Repository hooks made by setup, in creation id order.
     repo_hooks: List<RepositoryHook>,
     next_repo_hook: u64,
     next_org: u64,

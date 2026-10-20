@@ -204,6 +204,7 @@ pub struct World {
     serial: u64,
     pub replies: usize,
     receiver: Option<Receiver>,
+    second_receiver: Option<Receiver>,
     pub connects: usize,
     posts: Vec<Vec<u8>>,
     first_delivery: Option<Time>,
@@ -229,6 +230,7 @@ impl World {
             serial: 0,
             replies: 0,
             receiver: None,
+            second_receiver: None,
             connects: 0,
             posts: Vec::new(),
             first_delivery: None,
@@ -304,7 +306,11 @@ impl World {
         }
     }
     pub fn exchange(&mut self, method: &str, target: &str, token: &[u8], body: &[u8]) -> Vec<u8> {
-        let request = format!("{method} {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: token {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", std::str::from_utf8(token).expect("fixture token"), body.len());
+        let request = format!(
+            "{method} {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: token {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            std::str::from_utf8(token).expect("fixture token"),
+            body.len()
+        );
         let fd = self.open();
         self.send(fd, request.as_bytes());
         self.send(fd, body);
@@ -346,6 +352,9 @@ impl World {
     }
     pub fn settle(&mut self) {
         if let Some(receiver) = &mut self.receiver {
+            receiver.close(&mut self.sim);
+        }
+        if let Some(receiver) = &mut self.second_receiver {
             receiver.close(&mut self.sim);
         }
         self.peer.shutdown();
@@ -548,6 +557,23 @@ impl World {
         self.forge.borrow_mut().hooks = Some(endpoint(host.as_bytes(), SECRET));
         self.receiver = Some(receiver);
     }
+    pub fn bind_setup_receivers(&mut self) -> [SocketAddr; 2] {
+        self.bind();
+        let first = Receiver::bind(&mut self.sim, false);
+        let second = Receiver::bind(&mut self.sim, false);
+        let addresses = [first.address, second.address];
+        self.receiver = Some(first);
+        self.second_receiver = Some(second);
+        addresses
+    }
+    pub fn finish_setup_deliveries(&mut self) {
+        while self.delivery_outcomes().len() < 2 {
+            self.pass();
+        }
+        self.receive_post_from(false);
+        self.receive_post_from(true);
+        self.settle();
+    }
     pub fn create_issue_and_settle(&mut self) -> Vec<u8> {
         let fd = self.open();
         self.send(fd, &issue_request());
@@ -573,7 +599,11 @@ impl World {
         self.settle();
     }
     fn receive_post(&mut self) {
-        let receiver = self.receiver.as_ref().expect("a written delivery has its receiver");
+        self.receive_post_from(false);
+    }
+    fn receive_post_from(&mut self, second: bool) {
+        let receiver = if second { &self.second_receiver } else { &self.receiver };
+        let receiver = receiver.as_ref().expect("a written delivery has its receiver");
         let pid = receiver.pid;
         let listener = receiver.listener.expect("receiver listens until posts are read");
         let Done::Accepted { fd, .. } = support::call(&mut self.sim, pid, RECEIVER_OP, Op::Accept { fd: listener })

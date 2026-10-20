@@ -11,7 +11,7 @@ use skein_lib::{
     Token, bytes,
     stream::{Down, Read, Up},
 };
-use std::{mem::size_of, net::SocketAddr};
+use std::mem::size_of;
 
 pub(super) struct Outbound {
     owner: Token,
@@ -22,14 +22,22 @@ pub(super) struct Outbound {
 
 impl Peer {
     pub(super) fn deliver(&mut self, hook: &domain::Request) {
-        let Some(post) = self.service.delivery(hook, &self.protocol) else {
+        if self.endpoint == Some(false) {
             self.delivery_observation(None, Delivery::NoAddress);
             return;
-        };
-        let Some(address) = self.destination else {
-            self.delivery_observation(Some(post), Delivery::NoAddress);
-            return;
-        };
+        }
+        let posts = self.service.deliveries(hook, &self.protocol);
+        if posts.is_empty() && self.endpoint.is_some() {
+            let post = self.service.delivery(hook, &self.protocol);
+            self.delivery_observation(post, Delivery::NoAddress);
+        }
+        for delivery in posts.into_boxed() {
+            self.deliver_to(delivery);
+        }
+    }
+
+    fn deliver_to(&mut self, delivery: skein_fake_forge_protocol::delivery::Delivery) {
+        let skein_fake_forge_protocol::delivery::Delivery { address, post } = delivery;
         if self.deliveries.len() == usize::try_from(self.face.limits.connections).expect("u32 fits")
             || self.face.requests.room() == 0
         {
@@ -153,17 +161,20 @@ impl Peer {
     }
 }
 
-pub(super) fn address(endpoint: &Endpoint) -> Option<SocketAddr> {
-    let address: SocketAddr = std::str::from_utf8(&endpoint.host).ok()?.parse().ok()?;
-    address.ip().is_loopback().then_some(address)
-}
-
 pub(super) fn worst_case(limits: &Limits, protocol: &protocol::Limits, endpoint: Option<&Endpoint>) -> Option<u64> {
-    let host = u64::try_from(endpoint.map_or(0, |endpoint| endpoint.host.len())).ok()?;
-    let secret = u64::try_from(endpoint.map_or(0, |endpoint| endpoint.secret.len())).ok()?;
-    // POST target, event and signature fields, decimal content length and delimiters fit in 512 bytes.
-    let post = host.checked_add(512)?.checked_add(u64::from(protocol.documents.writer.length))?;
+    let host = u64::try_from(endpoint.map_or(0, |endpoint| endpoint.host.len()))
+        .ok()?
+        .max(u64::from(protocol.documents.string_bytes));
+    let secret = u64::try_from(endpoint.map_or(0, |endpoint| endpoint.secret.len()))
+        .ok()?
+        .max(u64::from(protocol.documents.string_bytes));
+    // A setup URL and secret each decode at documents.string_bytes; target and Host
+    // each fit that URL bound. Fixed fields and delimiters fit in 512 bytes.
+    let post = host
+        .checked_add(u64::from(protocol.documents.string_bytes))?
+        .checked_add(512)?
+        .checked_add(u64::from(protocol.documents.writer.length))?;
     let slot =
         u64::try_from(size_of::<Outbound>()).ok()?.checked_add(post)?.checked_add(u64::from(limits.io.output))?;
-    u64::from(limits.connections).checked_mul(slot)?.checked_add(host)?.checked_add(secret)
+    u64::from(limits.connections).checked_mul(slot)?.checked_add(host)?.checked_add(secret)?.checked_add(post)
 }

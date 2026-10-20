@@ -227,6 +227,7 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         .checked_add(skein_lib::Queue::<skein_lib::stream::Down>::worst_case(1)?)?;
     tables
         .checked_add(crate::setup::worst_case(limits)?)?
+        .checked_add(crate::delivery::worst_case(limits, config)?)?
         .checked_add(Slab::<Call>::worst_case(limits.calls)?)?
         .checked_add(Map::<crate::Route, u64>::worst_case(crate::tally::ROUTES)?)?
         .checked_add(Map::<u64, u64>::worst_case(config.tokens.len().saturating_add(limits.documents.inner))?)?

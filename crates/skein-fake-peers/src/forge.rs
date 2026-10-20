@@ -101,7 +101,7 @@ pub struct Peer {
     connections: Vec<Connection>,
     calls: Vec<Call>,
     deliveries: Vec<delivery::Outbound>,
-    destination: Option<SocketAddr>,
+    endpoint: Option<bool>,
     next: u64,
     observations: Vec<Observation>,
     observed_bytes: u64,
@@ -174,7 +174,7 @@ impl Peer {
             connections: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
             calls: Vec::with_capacity(usize::try_from(call_capacity).expect("u32 fits")),
             deliveries: Vec::with_capacity(usize::try_from(limits.connections).expect("u32 fits")),
-            destination: None,
+            endpoint: None,
             next: 1,
             observations: Vec::with_capacity(usize::try_from(limits.observations).expect("u32 fits")),
             observed_bytes: 0,
@@ -349,18 +349,24 @@ impl Peer {
         domain::step(domain, env, domain::Event::Call { reply_to: ReplyTo::new(token), user, repository, op }, pending);
     }
 
+    fn take_endpoint(&mut self, forge: &mut Forge) {
+        if self.service.is_github() {
+            return;
+        }
+        // Endpoint ownership lives in the service only for this pass; refusal leaves it empty.
+        self.endpoint = forge.hooks.as_ref().map(|endpoint| !endpoint.host.is_empty() && !endpoint.secret.is_empty());
+        let endpoint = if self.endpoint == Some(false) { None } else { forge.hooks.take() };
+        let previous = self.service.set_hooks(endpoint);
+        assert!(previous.is_err() || previous.expect("admitted endpoint").is_none());
+    }
+
     fn progress(&mut self, now: Time, wall: Wall) {
         let env = Env { now, wall, limits: self.protocol };
         // Moving the Rc, rather than borrowing through self, keeps the one pass borrow explicit.
         let shared = Rc::clone(&self.forge);
         let mut forge = shared.borrow_mut();
         forge.now = now;
-        // Endpoint ownership lives in the service only for this pass; refusal leaves it empty.
-        self.destination = forge.hooks.as_ref().and_then(delivery::address);
-        if !self.service.is_github() {
-            let previous = self.service.set_hooks(forge.hooks.take());
-            assert!(previous.is_err() || previous.expect("admitted endpoint").is_none());
-        }
+        self.take_endpoint(&mut forge);
         let domain_env = Env { now, wall, limits: forge.config };
         for index in 0..self.connections.len() {
             if self.face.requests.room() < 32 {
@@ -434,15 +440,22 @@ impl Peer {
             }
             self.connections.insert(index, connection);
         }
+        self.finish_pass(&mut forge, &domain_env, &env);
+    }
+    fn finish_pass(&mut self, forge: &mut Forge, domain_env: &Env<domain::Config>, env: &Env<protocol::Limits>) {
         if forge.pending.room() >= domain::MAX_OUT {
             let Forge { domain, pending, .. } = &mut *forge;
-            domain::fire(domain, &domain_env, pending);
+            domain::fire(domain, domain_env, pending);
         }
-        self.route(&mut forge, &env);
+        self.route(forge, env);
         forge.domain.reclaim();
         self.service.reclaim();
-        if !self.service.is_github() {
-            forge.hooks = self.service.set_hooks(None).expect("clearing an endpoint is valid");
+        if self.service.is_github() {
+            return;
+        }
+        let endpoint = self.service.set_hooks(None).expect("clearing an endpoint is valid");
+        if self.endpoint != Some(false) {
+            forge.hooks = endpoint;
         }
     }
 }

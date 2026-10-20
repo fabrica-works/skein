@@ -161,3 +161,19 @@ pub(crate) fn header(delivery: &Delivery) -> &'static [u8] {
     }
     unreachable!("every variant has a header")
 }
+
+/// Subscriptions in the row of forge.md, section 7, for this delivery header.
+/// Events in one row all take the same hint, including the fake's over-approximation.
+#[must_use]
+pub fn subscriptions(header: &[u8]) -> Option<&'static [&'static [u8]]> {
+    let row = match event(header)? {
+        Event::Issue => 0..4,
+        Event::Pull => 4..10,
+        Event::Comment => 10..12,
+        Event::Review(ReviewEvent::Approved | ReviewEvent::RequestChanges | ReviewEvent::Comment) => 12..15,
+        Event::Push => 15..16,
+        Event::Ref(true | false) => 16..18,
+        Event::Job(JobEnd::Success | JobEnd::Failure | JobEnd::Cancelled | JobEnd::Skipped) => 18..22,
+    };
+    SUBSCRIBED.get(row)
+}

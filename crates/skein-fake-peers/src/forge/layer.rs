@@ -70,6 +70,19 @@ impl Service {
             },
         }
     }
+    pub fn deliveries(
+        &mut self,
+        hook: &domain::Request,
+        limits: &Limits,
+    ) -> skein_lib::List<forgejo::delivery::Delivery> {
+        match (self, limits) {
+            (Self::Forgejo(service), Limits::Forgejo(limits)) => service.deliveries(hook, limits),
+            (Self::Github(_), Limits::Github(_)) => skein_lib::List::with_capacity(0),
+            (Self::Forgejo(_), Limits::Github(_)) | (Self::Github(_), Limits::Forgejo(_)) => {
+                unreachable!("paired layer")
+            }
+        }
+    }
     pub fn delivery(&mut self, hook: &domain::Request, limits: &Limits) -> Option<forgejo::delivery::Post> {
         match (self, limits) {
             (Self::Forgejo(service), Limits::Forgejo(limits)) => service.delivery(hook, limits),

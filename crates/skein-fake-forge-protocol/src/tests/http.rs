@@ -350,10 +350,11 @@ fn unauthorized_heads_are_drained_and_counted_in_the_bound() {
     const HEAD_BYTES: u64 = 4_664;
     let config = fixtures::config();
     let mut limits = fixtures::limits();
-    assert_eq!(crate::worst_case(&limits, &config), Some(BASE_BYTES + CONNECTIONS * HEAD_BYTES));
-    assert_eq!(crate::worst_case(&limits, &config), Some(5_971_457));
+    let deliveries = crate::delivery::worst_case(&limits, &config).unwrap();
+    assert_eq!(crate::worst_case(&limits, &config), Some(BASE_BYTES + CONNECTIONS * HEAD_BYTES + deliveries));
+    assert_eq!(crate::worst_case(&limits, &config), Some(5_971_457 + deliveries));
     limits.http.head += 1;
-    assert_eq!(crate::worst_case(&limits, &config), Some(5_971_597));
+    assert_eq!(crate::worst_case(&limits, &config), Some(5_971_597 + deliveries));
     let mut h = Harness::new(config);
     h.ask_as(b"GET", b"/api/v1/user", b"", b"wrong-token");
     assert_eq!(h.status(), 401);

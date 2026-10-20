@@ -7,7 +7,7 @@ use skein_forge::forgejo::{
     server::Answer,
 };
 use skein_lib::{List, Secret};
-/// A repository hook is kept for scenario inspection and routes nothing.
+/// A repository hook used for inspection and, when eligible, signed loopback deliveries.
 #[derive(Debug)]
 pub struct RepositoryHook {
     pub id: u64,
