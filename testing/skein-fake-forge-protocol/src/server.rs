@@ -31,6 +31,10 @@ pub enum Event {
     Close,
     Closed,
 }
+struct Scopes {
+    user: bool,
+    repository: bool,
+}
 #[expect(missing_debug_implementations, reason = "HTTP queues temporarily hold authorization headers")]
 pub struct Server {
     owner: Token,
@@ -44,7 +48,7 @@ pub struct Server {
     json_down: Queue<Down>,
     decoder: Option<documents::BodyDecoder>,
     user: u64,
-    user_scope: bool,
+    scopes: Scopes,
     request: Option<Request>,
     select: response::Select,
     range: Result<Option<response::Range>, api::Error>,
@@ -79,7 +83,7 @@ impl Server {
             json_down: Queue::with_capacity(1),
             decoder: None,
             user: 0,
-            user_scope: false,
+            scopes: Scopes { user: false, repository: false },
             request: None,
             select: response::Select::Document,
             range: Ok(None),
@@ -446,7 +450,10 @@ fn entrance(server: &mut Server, service: &mut Service, env: &Env<Limits>, call:
         return;
     };
     server.user = user;
-    server.user_scope = service.reads_user(call.header(b"authorization"));
+    server.scopes = Scopes {
+        user: service.reads_user(call.header(b"authorization")),
+        repository: service.accesses_repository(call.header(b"authorization"), call.method != Method::Get),
+    };
     let method = match call.method {
         Method::Get => request::Method::Get,
         Method::Post => request::Method::Post,
@@ -500,7 +507,11 @@ fn decoded(server: &mut Server, service: &mut Service, env: &Env<Limits>, reques
         respond(server, response::failure(&env.limits, errors::refusal(Refusal::MergeStyle)));
         return;
     }
-    if request == Request::User && !server.user_scope {
+    if request == Request::User && !server.scopes.user {
+        fail(server, &env.limits, 403);
+        return;
+    }
+    if repository_scoped(&request) && !server.scopes.repository {
         fail(server, &env.limits, 403);
         return;
     }
@@ -552,6 +563,72 @@ fn decoded(server: &mut Server, service: &mut Service, env: &Env<Limits>, reques
         }
         (Err(error), _, _) | (_, Err(error), _) => error_reply(server, env, error),
         (Ok(_), Ok(_), None) => error_reply(server, env, api::Error::Missing(api::What::Repository)),
+    }
+}
+fn repository_scoped(request: &Request) -> bool {
+    match request {
+        Request::RepositoryById { .. }
+        | Request::UserRepos { .. }
+        | Request::Permission { .. }
+        | Request::AddCollaborator { .. }
+        | Request::RepoHooks { .. }
+        | Request::CreateRepoHook { .. }
+        | Request::EditRepoHook { .. }
+        | Request::DeleteRepoHook { .. } => true,
+        Request::User
+        | Request::ApiSettings
+        | Request::UserSearch { .. }
+        | Request::Repository { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullFor { .. }
+        | Request::Pulls { .. }
+        | Request::CombinedStatus { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::Protection { .. }
+        | Request::Protections { .. }
+        | Request::Collaborators { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::Runs { .. }
+        | Request::Run { .. }
+        | Request::Job { .. }
+        | Request::Jobs { .. }
+        | Request::JobLog { .. }
+        | Request::CreateIssue { .. }
+        | Request::OpenPull { .. }
+        | Request::PostComment { .. }
+        | Request::PostReview { .. }
+        | Request::EditIssue { .. }
+        | Request::RequestReviewers { .. }
+        | Request::RemoveReviewers { .. }
+        | Request::Merge { .. }
+        | Request::Update { .. }
+        | Request::PostStatus { .. }
+        | Request::CreateBranch { .. }
+        | Request::Tokens { .. }
+        | Request::CreateToken { .. }
+        | Request::DeleteToken { .. }
+        | Request::UserOf { .. }
+        | Request::Org { .. }
+        | Request::CreateOrg { .. }
+        | Request::Teams { .. }
+        | Request::CreateTeam { .. }
+        | Request::EditTeam { .. }
+        | Request::TeamMembers { .. }
+        | Request::OrgHooks { .. }
+        | Request::CreateOrgHook { .. }
+        | Request::EditOrgHook { .. }
+        | Request::DeleteOrgHook { .. }
+        | Request::AddMember { .. }
+        | Request::CreateUser { .. }
+        | Request::DeleteBranch { .. } => false,
     }
 }
 fn table(service: &Service, request: &Request, user: u64) -> Option<documents::Answer> {

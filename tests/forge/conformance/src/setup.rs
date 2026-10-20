@@ -10,6 +10,7 @@ use crate::{
 use skein_throwaway_forgejo::Token;
 use std::path::Path;
 pub(crate) const ADMIN: &[&str] = &["write:admin", "write:organization", "write:user"];
+pub(crate) const ADOPT: &[&str] = &["write:admin", "read:user", "write:repository"];
 pub(crate) fn scoped(f: &Fixture, secrets: &mut Secrets, login: &str, name: &str, scopes: &[&str]) -> Result<Token> {
     let row = f.api(
         "POST",
@@ -29,7 +30,8 @@ pub(crate) fn record(f: &Fixture, out: &Path, secrets: &mut Secrets) -> Result<(
     crate::orgs::record(&mut recorder, &admin)?;
     crate::hooks::record(&mut recorder, &admin)?;
     crate::repos::record(&mut recorder, &admin)?;
-    crate::repo_setup::record(&mut recorder, &f.owner.token)
+    let adopt = scoped(f, recorder.secrets, "fixture", "setup-adopt", ADOPT)?;
+    crate::repo_setup::record(&mut recorder, &adopt)
 }
 pub(crate) fn facts(f: &Fixture, out: &Path) -> Result<Vec<Fact>> {
     let mut facts = crate::users::facts(out)?;

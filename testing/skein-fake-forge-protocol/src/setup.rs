@@ -127,6 +127,21 @@ impl Store {
         }
         false
     }
+    pub(crate) fn accesses_repository(&self, secret: &[u8], write: bool) -> bool {
+        for token in &self.tokens {
+            if token.secret.expose() == secret {
+                for scope in &token.scopes {
+                    if scope.as_ref() == b"all"
+                        || scope.as_ref() == b"write:repository"
+                        || (!write && scope.as_ref() == b"read:repository")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
     #[must_use]
     pub fn scopes(&self, user: u64, name: &[u8]) -> Option<&[Box<[u8]>]> {
         for token in &self.tokens {

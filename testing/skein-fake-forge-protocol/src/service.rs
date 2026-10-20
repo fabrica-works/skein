@@ -143,6 +143,21 @@ impl Service {
         }
         self.setup.reads_user(token)
     }
+    pub(crate) fn accesses_repository(&self, authorization: Option<&[u8]>, write: bool) -> bool {
+        let Some(value) = authorization else {
+            return false;
+        };
+        let Some(token) = value.strip_prefix(b"token ") else {
+            return false;
+        };
+        // Config tokens carry no scopes; worlds use them with unrestricted access.
+        for (known, _) in &self.config.tokens {
+            if known.expose() == token {
+                return true;
+            }
+        }
+        self.setup.accesses_repository(token, write)
+    }
     /// Scenario state for setup, without changing the repository domain.
     pub fn setup_mut(&mut self) -> &mut crate::setup::Store {
         &mut self.setup

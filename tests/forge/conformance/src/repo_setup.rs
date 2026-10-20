@@ -4,12 +4,20 @@ use crate::{
     cases::{Auth, Recorder},
     facts::{Fact, add, case},
     json::{self, At},
+    setup,
     write::SecretKind,
 };
 use skein_throwaway_forgejo::{Token, fresh_secret};
 use std::{collections::BTreeSet, path::Path};
 const ROUTE: &str = "/api/v1/repos/acme/widgets/hooks";
 const COLLABORATOR: &str = "/api/v1/repos/bob/widgets/collaborators/alice";
+const SCOPE_FACT: &str = "setup-admin-token-without-write-repository-is-refused-the-repository-routes";
+const SCOPE_CASES: &[&str] = &[
+    "setup-scope-repository-by-id",
+    "setup-scope-repository-permission",
+    "setup-scope-repository-collaborator-put",
+    "setup-scope-repository-hooks",
+];
 const EVENTS: &[&str] = &[
     "issues",
     "issue_assign",
@@ -62,6 +70,7 @@ fn body(port: u16, path: &str, secret: &str, active: bool, create: bool) -> Resu
 }
 /// Provisions collaborator access and duplicate repository hooks for recorded evaluation.
 pub(crate) fn record(r: &mut Recorder<'_>, admin: &Token) -> Result<()> {
+    record_without_repository_scope(r)?;
     r.send("setup-collaborator-put", "PUT", COLLABORATOR, Some(r#"{"permission":"write"}"#), Some(admin), None)?;
     r.send("setup-collaborator-permission", "GET", &format!("{COLLABORATOR}/permission"), None, Some(admin), None)?;
     let secret = fresh_secret().map_err(|e| crate::failure(&e))?;
@@ -100,11 +109,31 @@ pub(crate) fn record(r: &mut Recorder<'_>, admin: &Token) -> Result<()> {
     r.send("setup-repository-hook-final", "GET", ROUTE, None, Some(admin), None)?;
     Ok(())
 }
+fn record_without_repository_scope(r: &mut Recorder<'_>) -> Result<()> {
+    let token = setup::scoped(r.f, r.secrets, "fixture", "setup-no-repository", &["write:admin", "read:user"])?;
+    for (name, method, target, body) in [
+        ("setup-scope-repository-by-id", "GET", format!("/api/v1/repositories/{}", r.f.repository), None),
+        ("setup-scope-repository-permission", "GET", format!("{COLLABORATOR}/permission"), None),
+        ("setup-scope-repository-collaborator-put", "PUT", COLLABORATOR.to_owned(), Some(r#"{"permission":"write"}"#)),
+        ("setup-scope-repository-hooks", "GET", ROUTE.to_owned(), None),
+    ] {
+        r.send_new(name, method, &target, body, Auth::Token(&token), &[])?;
+    }
+    Ok(())
+}
+fn repository_scope_fact(out: &Path, facts: &mut Vec<Fact>) -> Result<()> {
+    let mut refused = true;
+    for name in SCOPE_CASES {
+        refused &= case(out, name)?.status == 403;
+    }
+    add(facts, SCOPE_FACT, refused, "a repository route did not refuse the token with HTTP 403");
+    Ok(())
+}
 fn event_set(value: At<'_>) -> Option<BTreeSet<&str>> {
     value.array().map(|rows| rows.iter().filter_map(|row| row.str()).collect())
 }
 /// Evaluates each repository setup contract using captured answers only.
-#[expect(clippy::too_many_lines, reason = "the nine named facts share the same captured repository setup snapshots")]
+#[expect(clippy::too_many_lines, reason = "the named facts share the same captured repository setup snapshots")]
 pub(crate) fn facts(out: &Path) -> Result<Vec<Fact>> {
     let put = case(out, "setup-collaborator-put")?;
     let permission = case(out, "setup-collaborator-permission")?;
@@ -210,12 +239,13 @@ pub(crate) fn facts(out: &Path) -> Result<Vec<Fact>> {
     ] {
         add(&mut facts, name, holds, "captured repository setup answer differs");
     }
+    repository_scope_fact(out, &mut facts)?;
     Ok(facts)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EVENTS, facts, json};
+    use super::{EVENTS, SCOPE_CASES, SCOPE_FACT, facts, json, repository_scope_fact};
     use crate::facts::Outcome;
     use std::path::Path;
     fn hook(id: u64, path: &str, active: bool) -> String {
@@ -264,6 +294,9 @@ mod tests {
         ] {
             response(&out, case, status, &body);
         }
+        for name in SCOPE_CASES {
+            response(&out, name, 403, "{}");
+        }
         out
     }
     fn response(out: &Path, name: &str, status: u16, body: &str) {
@@ -276,7 +309,7 @@ mod tests {
     fn repository_setup_facts_hold_for_canned_answers() {
         let out = canned("holds");
         let facts = facts(&out).expect("facts");
-        assert_eq!(facts.len(), 9);
+        assert_eq!(facts.len(), 10);
         for fact in facts {
             assert_eq!(fact.outcome, Outcome::Holds, "{}", fact.name);
         }
@@ -347,6 +380,17 @@ mod tests {
             response(&out, case, status, &body);
             let facts = facts(&out).expect("facts");
             assert!(facts.iter().any(|row| row.name == fact && matches!(row.outcome, Outcome::Fails(_))), "{fact}");
+            std::fs::remove_dir_all(out).expect("remove canned answers");
+        }
+    }
+    #[test]
+    fn repository_scope_fact_detects_each_route_that_does_not_refuse() {
+        for name in SCOPE_CASES {
+            let out = canned(name);
+            response(&out, name, 200, "{}");
+            let mut facts = Vec::new();
+            repository_scope_fact(&out, &mut facts).expect("scope fact");
+            assert!(facts.iter().any(|fact| fact.name == SCOPE_FACT && matches!(fact.outcome, Outcome::Fails(_))));
             std::fs::remove_dir_all(out).expect("remove canned answers");
         }
     }

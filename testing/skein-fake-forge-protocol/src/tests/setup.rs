@@ -76,6 +76,99 @@ fn a_token_without_user_scope_is_refused() {
     h.ask_as(b"GET", b"/api/v1/user", b"", USER_TOKEN);
     assert_eq!(h.status(), 403);
 }
+// fixtures::config names org/repo as repository 2.
+const SCOPE_REPOSITORY: u64 = 2;
+fn repository_reads() -> [Request; 4] {
+    [
+        Request::RepositoryById { id: SCOPE_REPOSITORY },
+        Request::Permission { at: fixtures::at(), login: boxed(b"person") },
+        Request::RepoHooks { at: fixtures::at(), page: PAGE },
+        Request::UserRepos { page: PAGE },
+    ]
+}
+fn repository_writes() -> [(Request, u16); 4] {
+    [
+        (
+            Request::AddCollaborator {
+                at: fixtures::at(),
+                login: boxed(b"alice"),
+                permission: skein_forge::forgejo::request::Grant::Write,
+            },
+            204,
+        ),
+        (Request::CreateRepoHook { at: fixtures::at(), hook: fixtures::hook_spec() }, 201),
+        (Request::EditRepoHook { at: fixtures::at(), id: HOOK, hook: fixtures::hook_spec() }, 200),
+        (Request::DeleteRepoHook { at: fixtures::at(), id: HOOK }, 204),
+    ]
+}
+fn scoped_repository_admin(scopes: &[&[u8]]) -> fixtures::Harness {
+    let mut h = fixtures::setup_harness();
+    h.service.setup_mut().account(b"alice", false, b"");
+    h.service.setup_mut().org(b"org", b"kit-admin");
+    h.service.setup_mut().token(fixtures::ADMIN, b"scoped", scopes, Secret::new(boxed(USER_TOKEN)));
+    h.send(&Request::CreateRepoHook { at: fixtures::at(), hook: fixtures::hook_spec() });
+    h
+}
+fn ask_repository(h: &mut fixtures::Harness, request: &Request) {
+    use skein_forge::forgejo::{client, request::Method};
+    let encoded = client::encode(request, &h.env.limits.documents).expect("repository request");
+    let method: &[u8] = match encoded.method {
+        Method::Get => b"GET",
+        Method::Post => b"POST",
+        Method::Put => b"PUT",
+        Method::Patch => b"PATCH",
+        Method::Delete => b"DELETE",
+    };
+    h.ask_as(method, &encoded.target, encoded.body.as_deref().unwrap_or(b""), USER_TOKEN);
+}
+#[test]
+fn an_admin_without_repository_scope_is_refused_each_repository_route() {
+    let mut h = scoped_repository_admin(&[b"write:admin", b"read:user"]);
+    for request in repository_reads() {
+        ask_repository(&mut h, &request);
+        assert_eq!(h.status(), 403, "{request:?}");
+    }
+    for (request, _) in repository_writes() {
+        ask_repository(&mut h, &request);
+        assert_eq!(h.status(), 403, "{request:?}");
+    }
+}
+#[test]
+fn read_repository_scope_admits_each_repository_read() {
+    let mut h = scoped_repository_admin(&[b"read:repository"]);
+    for request in repository_reads() {
+        ask_repository(&mut h, &request);
+        assert_eq!(h.status(), 200, "{request:?}");
+    }
+}
+#[test]
+fn read_repository_scope_is_refused_each_repository_write() {
+    let mut h = scoped_repository_admin(&[b"read:repository"]);
+    for (request, _) in repository_writes() {
+        ask_repository(&mut h, &request);
+        assert_eq!(h.status(), 403, "{request:?}");
+    }
+}
+#[test]
+fn write_repository_and_all_scopes_admit_each_repository_read() {
+    for scope in [b"write:repository".as_slice(), b"all"] {
+        let mut h = scoped_repository_admin(&[scope]);
+        for request in repository_reads() {
+            ask_repository(&mut h, &request);
+            assert_eq!(h.status(), 200, "{scope:?} {request:?}");
+        }
+    }
+}
+#[test]
+fn write_repository_and_all_scopes_admit_each_repository_write() {
+    for scope in [b"write:repository".as_slice(), b"all"] {
+        let mut h = scoped_repository_admin(&[scope]);
+        for (request, status) in repository_writes() {
+            ask_repository(&mut h, &request);
+            assert_eq!(h.status(), status, "{scope:?} {request:?}");
+        }
+    }
+}
 #[test]
 fn missing_setup_objects_answer_not_found() {
     for (method, target) in [
