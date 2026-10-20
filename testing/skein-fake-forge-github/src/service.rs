@@ -346,7 +346,12 @@ impl Service {
         match route {
             routes::App::Identity => answers::response(
                 200,
-                &Body::App(&d::App { id: self.app.id, slug: self.app.slug.clone() }),
+                &Body::App(&d::App {
+                    id: self.app.id,
+                    slug: self.app.slug.clone(),
+                    permissions: Box::from([]),
+                    events: Box::from([]),
+                }),
                 &self.limits,
             ),
             routes::App::Hook => answers::response(200, &Body::Hook(&d::Hook { url: self.hook.clone() }), &self.limits),

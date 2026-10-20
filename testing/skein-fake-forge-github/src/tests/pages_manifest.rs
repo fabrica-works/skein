@@ -60,13 +60,7 @@ fn github_fake_manifest_is_kept_by_state() {
     assert_eq!(manifest.default_permissions.len(), u32::try_from(setup::PERMISSIONS.len()).expect("permission count"));
     for (permission, (name, level)) in manifest.default_permissions.iter().zip(setup::PERMISSIONS) {
         assert_eq!(permission.name.as_ref(), name);
-        assert_eq!(
-            permission.level.as_ref(),
-            match level {
-                setup::Access::Read => b"read".as_slice(),
-                setup::Access::Write => b"write".as_slice(),
-            }
-        );
+        assert_eq!(permission.access, level);
     }
     assert_eq!(manifest.default_events.len(), u32::try_from(setup::EVENTS.len()).expect("event count"));
     for (event, expected) in manifest.default_events.iter().zip(setup::EVENTS) {
@@ -261,4 +255,16 @@ fn github_fake_pages_config_is_validated() {
         limits.pages.manifest_bytes = manifest_bytes;
         assert_eq!(Service::new(f::config(), &limits, 5).expect_err("zero bound"), Problem::Limits);
     }
+}
+
+#[test]
+fn github_fake_manifest_uses_the_dialects_access_vocabulary() {
+    let mut h = f::pages();
+    let answer = h.page(Method::Post, b"/settings/apps/new?state=s1", &f::form(br#"{"name":"example-app","url":"https://setup.test/","redirect_url":"http://setup.test/x","default_permissions":{"extra":"admin"}}"#));
+    assert_eq!(answer.status, 200);
+    let permission = h.service.manifest(b"s1").expect("manifest").default_permissions.get(0).expect("permission");
+    assert_eq!(permission.access, setup::Access::Admin);
+    let answer = h.page(Method::Post, b"/settings/apps/new?state=s2", &f::form(br#"{"name":"example-app","url":"https://setup.test/","redirect_url":"http://setup.test/x","default_permissions":{"extra":"owner"}}"#));
+    assert_eq!(answer.status, 422);
+    assert!(h.service.manifest(b"s2").is_none());
 }

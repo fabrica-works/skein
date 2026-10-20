@@ -181,11 +181,64 @@ pub struct GraphqlRefusal {
     pub message: Box<[u8]>,
 }
 
-/// The App's identity.
+/// An App permission's access level.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Access {
+    Read,
+    Write,
+    Admin,
+}
+impl Access {
+    /// Reads GitHub's permission access vocabulary.
+    #[must_use]
+    pub fn read(text: &[u8]) -> Option<Self> {
+        match text {
+            b"read" => Some(Self::Read),
+            b"write" => Some(Self::Write),
+            b"admin" => Some(Self::Admin),
+            _ => None,
+        }
+    }
+    /// The access value in an App or manifest document.
+    #[must_use]
+    pub const fn text(self) -> &'static [u8] {
+        match self {
+            Self::Read => b"read",
+            Self::Write => b"write",
+            Self::Admin => b"admin",
+        }
+    }
+    /// Whether this grant covers the wanted access.
+    #[must_use]
+    pub const fn satisfies(self, wanted: Self) -> bool {
+        match self {
+            Self::Read => match wanted {
+                Self::Read => true,
+                Self::Write | Self::Admin => false,
+            },
+            Self::Write => match wanted {
+                Self::Read | Self::Write => true,
+                Self::Admin => false,
+            },
+            Self::Admin => true,
+        }
+    }
+}
+
+/// A named App permission, shared with the manifest and fake.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Permission {
+    pub name: Box<[u8]>,
+    pub access: Access,
+}
+
+/// The App's identity, permissions and event subscriptions.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct App {
     pub id: u64,
     pub slug: Box<[u8]>,
+    pub permissions: Box<[Permission]>,
+    pub events: Box<[Box<[u8]>]>,
 }
 
 /// The App's webhook address.

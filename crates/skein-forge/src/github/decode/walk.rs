@@ -31,6 +31,8 @@ pub(super) enum Node {
     GraphqlErrors,
     GraphqlError,
     App,
+    AppPermissions,
+    AppEvents,
     Hook,
     Conversion,
     BotUser,
@@ -367,7 +369,16 @@ fn document_fields(node: Node) -> &'static [Field] {
         Node::ViewerData => const { &[optional(b"viewer", Read::Container(Role::Document(Node::Viewer)))] },
         Node::Viewer => const { &[field(b"databaseId", Read::Number), field(b"login", Read::Text)] },
         Node::GraphqlError => const { &[field(b"type", Read::Text), field(b"message", Read::Text)] },
-        Node::App => const { &[field(b"id", Read::Number), field(b"slug", Read::Text)] },
+        Node::App => {
+            const {
+                &[
+                    field(b"id", Read::Number),
+                    field(b"slug", Read::Text),
+                    optional(b"permissions", Read::Container(Role::Document(Node::AppPermissions))),
+                    optional(b"events", Read::Container(Role::Document(Node::AppEvents))),
+                ]
+            }
+        }
         Node::Hook => const { &[field(b"url", Read::Text)] },
         Node::Conversion => {
             const {
@@ -403,7 +414,9 @@ fn document_fields(node: Node) -> &'static [Field] {
             const { &[field(b"message", Read::Body), optional(b"errors", Read::Container(Role::Document(Node::Errors)))] }
         }
         Node::ErrorEntry => const { &[field(b"message", Read::Text)] },
-        Node::FileRows
+        Node::AppPermissions
+        | Node::AppEvents
+        | Node::FileRows
         | Node::CompareCommits
         | Node::CompareFiles
         | Node::ReviewRows
@@ -430,6 +443,7 @@ fn element(role: Role) -> Option<Role> {
         Role::Payload(_) => return None,
     };
     match node {
+        Node::AppEvents => Some(Role::Document(Node::AppEvents)),
         Node::FileRows => Some(Role::Document(Node::FileRow)),
         Node::CompareCommits => Some(Role::Document(Node::CompareCommit)),
         Node::CompareFiles => Some(Role::Document(Node::CompareFile)),
@@ -489,6 +503,7 @@ fn element(role: Role) -> Option<Role> {
         | Node::Viewer
         | Node::GraphqlError
         | Node::App
+        | Node::AppPermissions
         | Node::Hook
         | Node::Conversion
         | Node::User
@@ -526,6 +541,7 @@ enum Want {
     Key,
     Value(Field, u32),
     Element,
+    AppAccess,
     Unknown(u32),
     Done,
     Terminal,
@@ -613,9 +629,41 @@ impl Walk {
                     if frame.node == Role::Document(Node::GraphqlErrors) && frame.seen != 0 {
                         return self.unknown(&event, 0);
                     }
+                    if frame.node == Role::Document(Node::AppEvents) {
+                        frame.seen = frame.seen.checked_add(1).ok_or(Malformed::Bound { field: b"events" })?;
+                        if frame.seen > self.limits.inner {
+                            return Err(Malformed::Bound { field: b"events" });
+                        }
+                        self.want = Want::Element;
+                        return Ok(Move::Scalar(Node::AppEvents, b"events", self.app_text(event, b"events")?));
+                    }
                     frame.seen = 1;
                     let node = element(frame.node).expect("array role");
                     self.start(node, &event)
+                }
+            }
+            Want::AppAccess => {
+                self.want = Want::Key;
+                match event {
+                    Event::Token(Token::String(text)) => {
+                        Ok(Move::Scalar(Node::AppPermissions, b"access", Token::String(text)))
+                    }
+                    Event::Long(_) => Err(Malformed::Value { field: b"permissions" }),
+                    Event::Token(
+                        Token::ObjectStart
+                        | Token::ObjectEnd
+                        | Token::ArrayStart
+                        | Token::ArrayEnd
+                        | Token::Key(_)
+                        | Token::Number(_)
+                        | Token::True
+                        | Token::False
+                        | Token::Null,
+                    )
+                    | Event::Skipped(_)
+                    | Event::Done
+                    | Event::Failed(_)
+                    | Event::Closed => Err(Malformed::Shape { field: b"permissions" }),
                 }
             }
             Want::Unknown(depth) => self.unknown(&event, depth),
@@ -629,6 +677,26 @@ impl Walk {
             Want::Terminal => Err(Malformed::Shape { field: b"" }),
         }
     }
+    pub(super) fn demand(&self) -> Request {
+        match self.want {
+            Want::AppAccess => Request::Text(5),
+            Want::Key => {
+                if self.open.top().expect("object").node == Role::Document(Node::AppPermissions) {
+                    Request::Text(self.limits.string_bytes)
+                } else {
+                    Request::Next
+                }
+            }
+            Want::Element => {
+                if self.open.top().expect("array").node == Role::Document(Node::AppEvents) {
+                    Request::Text(self.limits.string_bytes)
+                } else {
+                    Request::Next
+                }
+            }
+            Want::Start(_) | Want::Value(_, _) | Want::Unknown(_) | Want::Done | Want::Terminal => Request::Next,
+        }
+    }
     fn start(&mut self, node: Role, event: &Event) -> Result<Move, Malformed> {
         let array = element(node).is_some();
         if event != &Event::Token(if array { Token::ArrayStart } else { Token::ObjectStart }) {
@@ -638,13 +706,27 @@ impl Walk {
             return Err(Malformed::Json(tokenizer::Error::TooDeep));
         }
         self.want = if array { Want::Element } else { Want::Key };
-        Ok(Move::Demand(Request::Next))
+        Ok(Move::Demand(self.demand()))
     }
     fn key(&mut self, event: Event) -> Result<Move, Malformed> {
         match event {
             Event::Token(Token::ObjectEnd) => self.end(),
+            Event::Long(_) if self.open.top().expect("object key").node == Role::Document(Node::AppPermissions) => {
+                Err(Malformed::Bound { field: b"permissions" })
+            }
             Event::Token(Token::Key(key)) => {
                 let frame = self.open.top_mut().expect("object key");
+                if frame.node == Role::Document(Node::AppPermissions) {
+                    if key.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize") {
+                        return Err(Malformed::Bound { field: b"permissions" });
+                    }
+                    frame.seen = frame.seen.checked_add(1).ok_or(Malformed::Bound { field: b"permissions" })?;
+                    if frame.seen > self.limits.inner {
+                        return Err(Malformed::Bound { field: b"permissions" });
+                    }
+                    self.want = Want::AppAccess;
+                    return Ok(Move::Scalar(Node::AppPermissions, b"name", Token::String(key)));
+                }
                 for (index, field) in fields(frame.node).iter().enumerate() {
                     if field.key == key.as_ref() {
                         let bit = 1u32.checked_shl(u32::try_from(index).expect("small table")).expect("field bit");
@@ -769,6 +851,32 @@ impl Walk {
         }
         self.want = Want::Key;
         Ok(scalar(node, field.key, token))
+    }
+    fn app_text(&self, event: Event, field: &'static [u8]) -> Result<Token, Malformed> {
+        match event {
+            Event::Token(Token::String(text)) => {
+                if text.len() > usize::try_from(self.limits.string_bytes).expect("u32 fits usize") {
+                    return Err(Malformed::Bound { field });
+                }
+                Ok(Token::String(text))
+            }
+            Event::Long(_) => Err(Malformed::Bound { field }),
+            Event::Token(
+                Token::ObjectStart
+                | Token::ObjectEnd
+                | Token::ArrayStart
+                | Token::ArrayEnd
+                | Token::Key(_)
+                | Token::Number(_)
+                | Token::True
+                | Token::False
+                | Token::Null,
+            )
+            | Event::Skipped(_)
+            | Event::Done
+            | Event::Failed(_)
+            | Event::Closed => Err(Malformed::Shape { field }),
+        }
     }
     fn unknown(&mut self, event: &Event, depth: u32) -> Result<Move, Malformed> {
         let depth = match event {

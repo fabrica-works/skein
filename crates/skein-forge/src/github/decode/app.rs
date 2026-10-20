@@ -3,7 +3,7 @@ use super::super::document::{self, Document, Kind, Row};
 use super::{Malformed, walk::Node};
 use alloc::boxed::Box;
 use skein_json::Token;
-use skein_lib::{Secret, Wall};
+use skein_lib::{List, Secret, Wall};
 
 #[derive(Debug)]
 pub(super) struct State {
@@ -14,6 +14,9 @@ pub(super) struct State {
     viewer: document::Viewer,
     graphql: document::GraphqlRefusal,
     app: document::App,
+    permissions: List<document::Permission>,
+    events: List<Box<[u8]>>,
+    permission_name: Box<[u8]>,
     hook: document::Hook,
     conversion: document::Conversion,
     bot: u64,
@@ -34,7 +37,8 @@ fn reachable() -> document::Reachable {
     document::Reachable { id: 0, owner: 0, login: Box::from([]), name: Box::from([]), private: false }
 }
 impl State {
-    pub(super) fn new(kind: Kind) -> Self {
+    pub(super) fn new(kind: Kind, inner: u32) -> Self {
+        let capacity = if kind == Kind::App { inner } else { 0 };
         Self {
             kind,
             installation: installation(),
@@ -42,7 +46,10 @@ impl State {
             reachable: reachable(),
             viewer: document::Viewer { id: 0, login: Box::from([]) },
             graphql: document::GraphqlRefusal { kind: Box::from([]), message: Box::from([]) },
-            app: document::App { id: 0, slug: Box::from([]) },
+            app: document::App { id: 0, slug: Box::from([]), permissions: Box::from([]), events: Box::from([]) },
+            permissions: List::with_capacity(capacity),
+            events: List::with_capacity(capacity),
+            permission_name: Box::from([]),
             hook: document::Hook { url: Box::from([]) },
             conversion: document::Conversion {
                 id: 0,
@@ -81,6 +88,8 @@ impl State {
             | Node::ViewerEnvelope
             | Node::ViewerData
             | Node::App
+            | Node::AppPermissions
+            | Node::AppEvents
             | Node::Hook
             | Node::Conversion
             | Node::BotUser => {}
@@ -159,7 +168,12 @@ impl State {
                     return Err(Malformed::Missing { field: b"viewer" });
                 }
             }
-            Kind::App => Document::App(self.app.clone()),
+            Kind::App => Document::App(document::App {
+                id: self.app.id,
+                slug: self.app.slug.clone(),
+                permissions: self.permissions.clone().into_boxed(),
+                events: self.events.clone().into_boxed(),
+            }),
             Kind::HookConfig => Document::HookConfig(self.hook.clone()),
             Kind::Conversion => Document::Conversion(self.conversion.clone()),
             Kind::BotUser => Document::BotUser(self.bot),
@@ -229,6 +243,17 @@ impl State {
             (Node::Viewer, b"login", Token::String(text)) => self.viewer.login = text,
             (Node::GraphqlError, b"type", Token::String(text)) => self.graphql.kind = text,
             (Node::GraphqlError, b"message", Token::String(text)) => self.graphql.message = text,
+            (Node::AppPermissions, b"name", Token::String(text)) => self.permission_name = text,
+            (Node::AppPermissions, b"access", Token::String(text)) => {
+                let access = document::Access::read(&text).ok_or(Malformed::Value { field: b"permissions" })?;
+                let name = core::mem::replace(&mut self.permission_name, Box::from([]));
+                self.permissions
+                    .push(document::Permission { name, access })
+                    .or(Err(Malformed::Bound { field: b"permissions" }))?;
+            }
+            (Node::AppEvents, b"events", Token::String(text)) => {
+                self.events.push(text).or(Err(Malformed::Bound { field: b"events" }))?;
+            }
             (Node::App, b"id", Token::Number(text)) => self.app.id = unsigned(&text),
             (Node::App, b"slug", Token::String(text)) => self.app.slug = text,
             (Node::Hook, b"url", Token::String(text)) => self.hook.url = text,
@@ -254,6 +279,8 @@ impl State {
                 | Node::GraphqlErrors
                 | Node::GraphqlError
                 | Node::App
+                | Node::AppPermissions
+                | Node::AppEvents
                 | Node::Hook
                 | Node::Conversion
                 | Node::BotUser

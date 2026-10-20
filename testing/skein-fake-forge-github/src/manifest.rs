@@ -7,12 +7,8 @@ use skein_lib::{
     stream::{Down, Up},
 };
 
-/// A requested permission, retained without interpreting its name or level.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Permission {
-    pub name: Box<[u8]>,
-    pub level: Box<[u8]>,
-}
+use skein_forge::github::document::Access;
+pub use skein_forge::github::document::Permission;
 /// The hook attributes posted by the browser.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Hook {
@@ -162,8 +158,8 @@ fn permissions(tokens: &List<Token>, at: &mut u32, bound: u32) -> Option<List<Pe
     for _field in 0..tokens.len() {
         match take(tokens, at)? {
             Token::Key(key) => {
-                let level = text(take(tokens, at)?)?;
-                kept.push(Permission { name: key.clone(), level }).ok()?;
+                let access = Access::read(&text(take(tokens, at)?)?)?;
+                kept.push(Permission { name: key.clone(), access }).ok()?;
             }
             Token::ObjectEnd => return Some(kept),
             Token::ObjectStart
@@ -335,9 +331,9 @@ pub(crate) fn worst_case(limits: &Limits, manifest_bytes: u32) -> Option<u64> {
     let strings = u64::from(limits.string_bytes);
     let lists =
         List::<Permission>::worst_case(limits.inner)?.checked_add(List::<Box<[u8]>>::worst_case(limits.inner)?)?;
-    // Scalar fields, account, and three strings per permission/event pair, plus token scratch.
+    // Scalar fields, account, and two strings per permission/event pair, plus token scratch.
     lists
-        .checked_add(strings.checked_mul(u64::from(limits.inner).checked_mul(3)?.checked_add(8)?)?)?
+        .checked_add(strings.checked_mul(u64::from(limits.inner).checked_mul(2)?.checked_add(8)?)?)?
         .checked_add(List::<Token>::worst_case(manifest_bytes)?)?
         .checked_add(u64::from(manifest_bytes))
 }

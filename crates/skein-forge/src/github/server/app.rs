@@ -158,7 +158,7 @@ pub fn graphql_refusal(kind: &[u8], message: &[u8], out: &mut Writer) -> Result<
     encode(&Answer::Graphql(kind, message), out)
 }
 
-/// Writes the App's identity.
+/// Writes the App's identity, permissions and subscriptions.
 pub fn app(row: &document::App, out: &mut Writer) -> Result<(), Overflow> {
     encode(&Answer::App(row), out)
 }
@@ -244,14 +244,7 @@ fn answer_json(answer: &Answer<'_>, json: &mut Encoder) {
             json.array_end();
             json.object_end();
         }
-        Answer::App(row) => {
-            json.object_start();
-            json.key(b"id");
-            json.unsigned(row.id);
-            json.key(b"slug");
-            json.string(&row.slug);
-            json.object_end();
-        }
+        Answer::App(row) => app_json(row, json),
         Answer::Hook(row) => {
             json.object_start();
             json.key(b"url");
@@ -316,5 +309,27 @@ fn installation_json(row: &document::Installation, json: &mut Encoder) {
     } else {
         json.null();
     }
+    json.object_end();
+}
+
+fn app_json(row: &document::App, json: &mut Encoder) {
+    json.object_start();
+    json.key(b"id");
+    json.unsigned(row.id);
+    json.key(b"slug");
+    json.string(&row.slug);
+    json.key(b"permissions");
+    json.object_start();
+    for permission in &row.permissions {
+        json.key(&permission.name);
+        json.string(permission.access.text());
+    }
+    json.object_end();
+    json.key(b"events");
+    json.array_start();
+    for event in &row.events {
+        json.string(event);
+    }
+    json.array_end();
     json.object_end();
 }

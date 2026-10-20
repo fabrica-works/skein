@@ -2,15 +2,10 @@
 
 use alloc::boxed::Box;
 use skein_json::writer::{self, Encoder};
-use skein_lib::Writer;
+use skein_lib::{List, Writer, bytes};
 
-/// An App permission's access level.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum Access {
-    Read,
-    Write,
-}
-
+pub use super::document::Access;
+use super::document::{App, Permission};
 /// The App's permissions (forge-github.md, 11).
 pub const PERMISSIONS: [(&[u8], Access); 9] = [
     (b"contents", Access::Write),
@@ -41,6 +36,44 @@ pub const EVENTS: [&[u8]; 14] = [
     b"workflow_run",
     b"merge_group",
 ];
+
+/// Wanted permissions and subscriptions absent from an App's grants.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Missing {
+    pub permissions: Box<[Permission]>,
+    pub events: Box<[Box<[u8]>]>,
+}
+
+/// Names every wanted entry the App lacks, in manifest order.
+/// Admin covers write and read; write covers read.
+#[must_use]
+pub fn lacks(app: &App) -> Missing {
+    let mut permissions = List::with_capacity(u32::try_from(PERMISSIONS.len()).expect("constant count"));
+    for (name, access) in PERMISSIONS {
+        let mut held = false;
+        for permission in &app.permissions {
+            if permission.name.as_ref() == name && permission.access.satisfies(access) {
+                held = true;
+            }
+        }
+        if !held {
+            permissions.push(Permission { name: bytes::copy_of(name), access }).expect("wanted count");
+        }
+    }
+    let mut events = List::with_capacity(u32::try_from(EVENTS.len()).expect("constant count"));
+    for name in EVENTS {
+        let mut held = false;
+        for event in &app.events {
+            if event.as_ref() == name {
+                held = true;
+            }
+        }
+        if !held {
+            events.push(bytes::copy_of(name)).expect("wanted count");
+        }
+    }
+    Missing { permissions: permissions.into_boxed(), events: events.into_boxed() }
+}
 
 /// The manifest's caller-supplied text, unescaped.
 #[derive(Clone, Copy, Debug)]
@@ -87,10 +120,7 @@ fn encode_manifest(json: &mut Encoder, values: &Values<'_>) {
     json.object_start();
     for (name, access) in PERMISSIONS {
         json.key(name);
-        json.string(match access {
-            Access::Read => b"read",
-            Access::Write => b"write",
-        });
+        json.string(access.text());
     }
     json.object_end();
     json.key(b"default_events");

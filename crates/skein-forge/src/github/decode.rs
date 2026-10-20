@@ -56,7 +56,7 @@ pub fn decoder(kind: Kind, limits: &Limits) -> Decoder {
     Decoder {
         walk: Walk::new(kind, limits),
         kind,
-        app: app::State::new(kind),
+        app: app::State::new(kind, limits.inner),
         issues: issues::State::new(limits.inner),
         pulls: pulls::State::new(limits.inner),
         pull_graphql: pull_graphql::State::new(limits.inner),
@@ -181,6 +181,8 @@ impl Decoder {
                 | Node::GraphqlErrors
                 | Node::GraphqlError
                 | Node::App
+                | Node::AppPermissions
+                | Node::AppEvents
                 | Node::Hook
                 | Node::Conversion
                 | Node::BotUser),
@@ -337,7 +339,7 @@ impl Decoder {
                 return Ok((tokenizer::Request::Close, Step::Done(document)));
             }
         }
-        Ok((tokenizer::Request::Next, Step::Demand))
+        Ok((self.walk.demand(), Step::Demand))
     }
     #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively routes every document field")]
     fn scalar(&mut self, node: Node, key: &'static [u8], token: Token) -> Result<(), Malformed> {
@@ -416,6 +418,8 @@ impl Decoder {
                 | Node::GraphqlErrors
                 | Node::GraphqlError
                 | Node::App
+                | Node::AppPermissions
+                | Node::AppEvents
                 | Node::Hook
                 | Node::Conversion
                 | Node::BotUser),

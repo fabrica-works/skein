@@ -507,6 +507,13 @@ fn decoder_heap(l: &Limits) -> Option<u64> {
         .checked_mul(3)?
         .checked_add(u64::try_from(size_of::<skein_forge::forgejo::document::User>()).ok()?.checked_mul(2)?)?
         .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?)?;
+    // An App's builder and delivered document each retain a permission and
+    // event list: two names, a Permission and a text box per entry, twice.
+    let app_inner = u64::from(l.string_bytes)
+        .checked_mul(4)?
+        .checked_add(u64::try_from(size_of::<skein_forge::github::document::Permission>()).ok()?.checked_mul(2)?)?
+        .checked_add(u64::try_from(size_of::<Box<[u8]>>()).ok()?.checked_mul(2)?)?;
+    let inner = inner.max(app_inner);
     let bytes = u64::from(l.string_bytes.max(github_mint_documents(l).string_bytes))
         .checked_mul(32)?
         .checked_add(u64::from(l.inner).checked_mul(inner)?)?

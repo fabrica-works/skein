@@ -586,7 +586,14 @@ Pure functions and decoders; forge-setup.md's plans run them.
   - `GET /app` for `id`, `slug`, `permissions` and `events`: reading
     `id` and `slug` back proves a conversion's key, and checks a pasted
     App, which the plan takes for another App when they differ
-    (forge-setup.md, section 5);
+    (forge-setup.md, section 5). Permissions retain every name and its
+    `read`, `write` or `admin` access; another access is `InvalidAnswer`.
+    Permission and event names fit `string_bytes`, each list fits `inner`,
+    and a name or list past its bound is `TooLarge`. Missing permissions
+    or events read as empty lists; id and slug remain required. Unknown
+    fields are skipped. `setup::lacks(&App)` names the wanted permissions
+    and events absent from these lists, in manifest order; admin covers
+    write and read, and write covers read;
   - `GET /app/hook/config` for `url`;
   - `GET /app/installations/<id>`, one installation's row as 8.3's,
     which the plan's accept reads; strays are found from 8.3's
