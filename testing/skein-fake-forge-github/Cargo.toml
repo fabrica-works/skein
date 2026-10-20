@@ -1,0 +1,18 @@
+[package]
+autotests = false
+name = "skein-fake-forge-github"
+description = "GitHub HTTP over the fake forge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-lib.workspace = true
+skein-forge.workspace = true
+skein-json.workspace = true
+skein-tls.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,279 @@
+//! Installations and their tokens (fake-forge.md, 10.1).
+use alloc::boxed::Box;
+use skein_lib::{Duration, List, Rng, Secret, Wall, Writer, bytes};
+
+/// GitHub's longest login, in bytes.
+pub const LOGIN_BYTES: usize = 39;
+/// The tokens' life: an hour on the forge's clock.
+pub const TOKEN_LIFE: Duration = Duration::from_secs(3600);
+const TOKEN_BYTES: usize = 40;
+const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    User,
+    Organization,
+}
+#[derive(Debug)]
+pub enum Reach {
+    All,
+    Listed(List<u32>),
+}
+#[derive(Debug)]
+pub struct Installation {
+    pub id: u64,
+    pub account: u64,
+    pub login: Box<[u8]>,
+    pub kind: Kind,
+    pub reach: Reach,
+    pub suspended: bool,
+    pub created: Wall,
+}
+/// Everything its installation may do, or contents alone (forge-github.md, 8.2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Scope {
+    Full,
+    Contents,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Grant {
+    pub installation: u64,
+    pub scope: Scope,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Limits {
+    pub installations: u32,
+    pub tokens: u32,
+    pub listed: u32,
+}
+/// Admission refused for capacity (including listed repositories or ids), or login length.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Install {
+    Full,
+    Login,
+}
+/// A mint refused for its installation, capacity, or an unrepresentable expiry.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mint {
+    Missing,
+    Suspended,
+    Full,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Denied {
+    Unknown,
+    Expired,
+}
+
+#[derive(Debug)]
+struct Issued {
+    secret: Secret,
+    grant: Grant,
+    expires: Wall,
+}
+
+/// Bounded stores. Rows stay packed and in id order; removal shifts owned
+/// rows in place, without allocating a second table.
+#[derive(Debug)]
+pub struct Installations {
+    rows: List<Option<Installation>>,
+    tokens: List<Option<Issued>>,
+    rng: Rng,
+    next: u64,
+    listed: u32,
+}
+impl Installations {
+    #[must_use]
+    pub fn new(limits: &Limits, seed: u64) -> Self {
+        Self {
+            rows: List::with_capacity(limits.installations),
+            tokens: List::with_capacity(limits.tokens),
+            rng: Rng::new(seed),
+            next: 1,
+            listed: limits.listed,
+        }
+    }
+
+    /// Ids are sequential from 1 and are never reused (fake-forge.md, 10.4).
+    /// A listed reach is capped per installation, and retained at its length.
+    pub fn install(&mut self, account: u64, login: &[u8], kind: Kind, reach: Reach, now: Wall) -> Result<u64, Install> {
+        if login.is_empty() || login.len() > LOGIN_BYTES {
+            return Err(Install::Login);
+        }
+        if self.rows.room() == 0 {
+            return Err(Install::Full);
+        }
+        let next = self.next.checked_add(1).ok_or(Install::Full)?;
+        let reach = match reach {
+            Reach::All => Reach::All,
+            Reach::Listed(repositories) => {
+                if repositories.len() > self.listed {
+                    return Err(Install::Full);
+                }
+                let mut kept = List::with_capacity(repositories.len());
+                for repository in &repositories {
+                    kept.push(*repository).expect("admitted repository count");
+                }
+                Reach::Listed(kept)
+            }
+        };
+        let id = self.next;
+        self.rows
+            .push(Some(Installation {
+                id,
+                account,
+                login: bytes::copy_of(login),
+                kind,
+                reach,
+                suspended: false,
+                created: now,
+            }))
+            .expect("installation room checked");
+        self.next = next;
+        Ok(id)
+    }
+
+    /// Removes an installation and every token it minted; false when absent.
+    pub fn remove(&mut self, id: u64) -> bool {
+        for at in 0..self.rows.len() {
+            let row = self.rows.get(at).expect("stored row").as_ref().expect("packed installation");
+            if row.id == id {
+                let last = self.rows.len().checked_sub(1).expect("installation found");
+                for index in at..last {
+                    let next = index.checked_add(1).expect("before last");
+                    let moved = self.rows.get_mut(next).expect("next row").take();
+                    *self.rows.get_mut(index).expect("prior row") = moved;
+                }
+                self.rows.truncate(last);
+                for index in (0..self.tokens.len()).rev() {
+                    let token = self.tokens.get(index).expect("stored row").as_ref().expect("packed token");
+                    if token.grant.installation == id {
+                        self.remove_token(index);
+                    }
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn suspend(&mut self, id: u64, suspended: bool) -> bool {
+        for index in 0..self.rows.len() {
+            let row = self.rows.get_mut(index).expect("stored row").as_mut().expect("packed installation");
+            if row.id == id {
+                row.suspended = suspended;
+                return true;
+            }
+        }
+        false
+    }
+
+    #[must_use]
+    pub fn get(&self, id: u64) -> Option<&Installation> {
+        let mut found = None;
+        for row in self.iter() {
+            if row.id == id {
+                found = Some(row);
+            }
+        }
+        found
+    }
+
+    /// In id order.
+    pub fn iter(&self) -> impl Iterator<Item = &Installation> {
+        self.rows.iter().flatten()
+    }
+
+    /// Mints `ghs_` and 36 seeded alphanumeric bytes, expiring an hour later.
+    /// A full store drops its expired tokens first. A clock too near the end
+    /// of `Wall` to hold the full life is refused as `Full`.
+    pub fn mint(&mut self, id: u64, scope: Scope, now: Wall) -> Result<(Secret, Wall), Mint> {
+        let row = self.get(id).ok_or(Mint::Missing)?;
+        if row.suspended {
+            return Err(Mint::Suspended);
+        }
+        let expires = Wall::from_nanos(now.as_nanos().checked_add(TOKEN_LIFE.as_nanos()).ok_or(Mint::Full)?);
+        if self.tokens.room() == 0 {
+            for index in (0..self.tokens.len()).rev() {
+                let token = self.tokens.get(index).expect("stored row").as_ref().expect("packed token");
+                if now >= token.expires {
+                    self.remove_token(index);
+                }
+            }
+        }
+        if self.tokens.room() == 0 {
+            return Err(Mint::Full);
+        }
+        let mut text = Writer::new(TOKEN_BYTES);
+        text.put(b"ghs_").expect("token prefix");
+        for _byte in 0_u32..36 {
+            let digit = usize::try_from(self.rng.below(62)).expect("alphanumeric index");
+            text.put(&[*ALPHABET.get(digit).expect("alphanumeric index")]).expect("token length");
+        }
+        let secret = Secret::new(text.finish());
+        self.tokens
+            .push(Some(Issued { secret: secret.clone(), grant: Grant { installation: id, scope }, expires }))
+            .expect("token room checked");
+        Ok((secret, expires))
+    }
+
+    /// Suspension is checked by the route; it does not revoke a grant here.
+    pub fn token(&self, bearer: &[u8], now: Wall) -> Result<&Grant, Denied> {
+        for token in self.tokens.iter().flatten() {
+            if token.secret.expose() == bearer {
+                return if now >= token.expires { Err(Denied::Expired) } else { Ok(&token.grant) };
+            }
+        }
+        Err(Denied::Unknown)
+    }
+
+    /// `DELETE /installation/token`'s store: false when unknown.
+    pub fn revoke(&mut self, bearer: &[u8]) -> bool {
+        for index in 0..self.tokens.len() {
+            let token = self.tokens.get(index).expect("stored row").as_ref().expect("packed token");
+            if token.secret.expose() == bearer {
+                self.remove_token(index);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether the grant's installation reaches the repository.
+    #[must_use]
+    pub fn reaches(&self, grant: &Grant, repository: u32) -> bool {
+        let Some(row) = self.get(grant.installation) else {
+            return false;
+        };
+        match &row.reach {
+            Reach::All => true,
+            Reach::Listed(repositories) => repositories.as_slice().contains(&repository),
+        }
+    }
+
+    fn remove_token(&mut self, at: u32) {
+        let last = self.tokens.len().checked_sub(1).expect("token found");
+        for index in at..last {
+            let next = index.checked_add(1).expect("before last");
+            let moved = self.tokens.get_mut(next).expect("next token").take();
+            *self.tokens.get_mut(index).expect("prior token") = moved;
+        }
+        self.tokens.truncate(last);
+    }
+
+    /// Heap held by both tables when full (fake-forge.md, 8), including
+    /// maximum logins, per-installation repository lists and token text.
+    #[must_use]
+    pub fn worst_case(limits: &Limits) -> Option<u64> {
+        let rows = List::<Option<Installation>>::worst_case(limits.installations)?;
+        let per_row = u64::try_from(LOGIN_BYTES).ok()?.checked_add(List::<u32>::worst_case(limits.listed)?)?;
+        let tokens = List::<Option<Issued>>::worst_case(limits.tokens)?;
+        rows.checked_add(per_row.checked_mul(u64::from(limits.installations))?)?
+            .checked_add(tokens)?
+            .checked_add(u64::try_from(TOKEN_BYTES).ok()?.checked_mul(u64::from(limits.tokens))?)
+    }
+}
+
+#[cfg(test)]
+#[path = "tests/memory.rs"]
+mod tests;

@@ -599,6 +599,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "skein-fake-forge-github"
+version = "0.0.0"
+dependencies = [
+ "skein-forge",
+ "skein-json",
+ "skein-lib",
+ "skein-tls",
+]
+
+[[package]]
 name = "skein-fake-forge-protocol"
 version = "0.0.0"
 dependencies = [
