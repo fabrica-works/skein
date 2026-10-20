@@ -415,7 +415,12 @@ impl Component {
                 | document::Row::Pull(_)
                 | document::Row::Context(_)
                 | document::Row::Run(_)
-                | document::Row::Comment(_),
+                | document::Row::Comment(_)
+                | document::Row::Collaborator(_)
+                | document::Row::Remark(_)
+                | document::Row::Review(_)
+                | document::Row::Commit(_)
+                | document::Row::File(_),
             )
             | Heard::Done(_)
             | Heard::Failed(_) => {}
