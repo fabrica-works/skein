@@ -13,6 +13,7 @@ mod github_start;
 mod github_unknown_repository;
 mod github_writes_heap;
 mod hooks;
+mod puller;
 mod reads;
 mod writes;
 use crate::{
@@ -371,8 +372,15 @@ const FIXTURE_HEAP: u64 = 2_815_387;
 // Route/discovery envelopes are in Waiting's slab slot; both own-plan
 // slots occupy 344 bytes each.
 // Total = 3*768371 + index 288 + slab 3*1408 + 491752 + 138608
-// + 2*210370 + 3888 + 1120 + 489769 + 49154 + 284 = 3_904_940.
-const GITHUB_FIXTURE_HEAP: u64 = 3_904_940;
+// + 2*210370 + 3888 + 1120 + 489769 + 49154 + 284 = 3_904_940 before the puller.
+// Puller: page = 8*(104+2*128)+2*128 = 3136; two page/header
+// handoffs = 6272, kept validator/cursor copies = 4*128 = 512.
+// LogPage/LogDelivery boxes = 400+304; pushed decoder = 272;
+// common decoder share = 19460; payload-first replay = 65536*24 slots
+// + 65536 bytes; held hint/text/body = 88+128+1042.
+// Puller payload = 1_666_878; its inline state grows GitHub 504 -> 776.
+// Checked total: 3_904_940 + 272 + 1_666_878 = 5_572_090.
+const GITHUB_FIXTURE_HEAP: u64 = 5_572_090;
 
 // At calls 2 -> 3 the B-tree node counts stay fixed. A slot adds Waiting's
 // slab 552 + drive-list pair 16 + 3*512 operation copies + 65536 held
@@ -399,7 +407,14 @@ fn a_forgejo_forge_pays_no_github_share() {
     assert_eq!(fixture_bound(FORGEJO), FIXTURE_HEAP);
     assert!(fixture_bound(FORGEJO) < fixture_bound(GITHUB));
     let l = fixtures::limits();
-    let larger = Limits { key_bytes: u32::MAX, installations: u32::MAX, log_origins: u32::MAX, ..l };
+    let larger = Limits {
+        key_bytes: u32::MAX,
+        installations: u32::MAX,
+        log_origins: u32::MAX,
+        delivery_bytes: u32::MAX,
+        log_pages: u32::MAX,
+        ..l
+    };
     assert_eq!(
         limits::worst_case(&l, &fixtures::shared(), FORGEJO, 0),
         limits::worst_case(&larger, &fixtures::shared(), FORGEJO, 0),
@@ -411,6 +426,12 @@ fn a_github_forge_pays_its_app_share() {
     assert_eq!(size_of::<skein_forge::github::decode::Decoder>(), 2400);
     assert_eq!(size_of::<skein_forge::github::plans::reads::Plan>(), 1496);
     assert_eq!(limits::github_call_heap(&fixtures::limits(), &fixtures::shared()), Some(210_370));
+    assert_eq!(size_of::<crate::installations::GitHub>(), 776);
+    assert_eq!(limits::puller_heap(&fixtures::limits()), Some(1_666_878));
+    assert_eq!(
+        3_904_940_u64.checked_add(272).expect("inline puller").checked_add(1_666_878),
+        Some(GITHUB_FIXTURE_HEAP)
+    );
     let settings = fixtures::github_settings();
     assert_eq!(limits::Forges::of(&settings), Some(GITHUB));
     assert_eq!(

@@ -108,6 +108,11 @@ impl Hosted {
             start_backoff: Duration::from_secs(1),
             start_backoff_max: Duration::from_secs(60),
             renew_before: Duration::from_secs(600),
+            // No live case reads the delivery log yet: keep its calls few.
+            log_poll: Duration::from_secs(86_400),
+            log_catch_up: Duration::from_secs(3600),
+            log_pages: 10,
+            delivery_bytes: 65_536,
             hooks: 4,
             hook_head_bytes: 8192,
             hook_body_bytes: 1_048_576,

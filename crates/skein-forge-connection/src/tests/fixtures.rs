@@ -44,6 +44,11 @@ pub fn limits() -> Limits {
         start_backoff: Duration::from_secs(1),
         start_backoff_max: Duration::from_secs(8),
         renew_before: Duration::from_secs(60),
+        // Beyond token-renewal stories; puller stories advance this timer themselves.
+        log_poll: Duration::from_secs(86_400),
+        log_catch_up: Duration::from_secs(3600),
+        log_pages: 10,
+        delivery_bytes: 65_536,
         hooks: 4,
         hook_head_bytes: 8192,
         hook_body_bytes: 1_048_576,
@@ -122,6 +127,7 @@ pub struct Harness {
     pub git_tokens: Option<List<Event>>,
     pub installation_events: Option<List<Event>>,
     pub facts: Option<List<Event>>,
+    pub hints: List<crate::hooks::Hinted>,
     pub connected_count: u32,
     pub closed: bool,
 }
@@ -162,6 +168,7 @@ impl Harness {
             git_tokens: if github { Some(List::with_capacity(32)) } else { None },
             installation_events: if github { Some(List::with_capacity(256)) } else { None },
             facts: if github { Some(List::with_capacity(32)) } else { None },
+            hints: List::with_capacity(32),
             connected_count: 0,
             closed: false,
         };
@@ -209,7 +216,8 @@ impl Harness {
                 event @ Event::GitToken { .. } => {
                     self.git_tokens.as_mut().expect("GitHub fixture").push(event).expect("fixture tokens fit");
                 }
-                Event::Hint(_) | Event::ListenerLost => panic!("webhooks absent"),
+                Event::Hint(hint) => self.hints.push(hint).expect("fixture hints fit"),
+                Event::ListenerLost => panic!("webhooks absent"),
                 Event::Closed => {
                     assert!(!self.closed, "closed once");
                     self.closed = true;

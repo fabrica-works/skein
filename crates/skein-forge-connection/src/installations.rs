@@ -353,6 +353,7 @@ pub(crate) enum Read {
 pub(crate) struct GitHub {
     pub said_origins: skein_lib::Queue<skein_forge::github::redirect::Origin>,
     pub jwt: Jwt,
+    pub puller: crate::puller::Puller,
     pub accepted: Set<u64>,
     pub known: Map<u64, Accepted>,
     pub rows: Map<u64, Row>,
@@ -379,6 +380,7 @@ impl GitHub {
         Self {
             said_origins: skein_lib::Queue::with_capacity(0),
             jwt: Jwt::new(),
+            puller: crate::puller::Puller::new(),
             accepted: Set::with_capacity(cap),
             known: Map::with_capacity(cap),
             rows: Map::with_capacity(cap),
@@ -408,6 +410,7 @@ impl GitHub {
         }
         self.connect = self.connect.wrapping_add(1);
         self.jwt.forget();
+        self.puller.pause();
         self.read = Read::Idle;
         self.forget_tokens();
         self.reread = false;

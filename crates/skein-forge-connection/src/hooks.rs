@@ -10,7 +10,7 @@ use connection::{Closing, Hooked};
 pub struct Webhooks {
     pub listener: Addr,
 }
-/// A verified hint held by its connection until root admission takes it.
+/// A delivery hint, naming its webhook or log-read connection for refusal.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Hinted {
     pub connection: Token,

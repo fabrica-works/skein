@@ -563,6 +563,9 @@ impl Connection {
                 if github::decode::kind(request) == Some(github::document::Kind::Minted) && response.status == 201 {
                     l = limits::github_mint_documents(&env.limits);
                 }
+                if github::decode::kind(request) == Some(github::document::Kind::LogDelivery) {
+                    l.json.length = env.limits.delivery_bytes;
+                }
                 self.json_limits = l.json;
                 let mut head = github::header::Head::new();
                 for field in &response.headers {

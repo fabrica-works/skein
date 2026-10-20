@@ -19,6 +19,8 @@ pub enum Change {
     Suspended,
     Unsuspended,
     Renamed,
+    /// A retained installation's repository selection changed (4.4).
+    Repositories,
 }
 /// A diagnostic for the owner's log (forge-connection.md, 4.4).
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -30,6 +32,8 @@ pub enum Fact {
     Unkept {
         installation: u64,
     },
+    /// The delivery log ended at its age or page bound before the kept guid.
+    Gap,
 }
 
 /// One call's terminal, the forge client's `Event::Answered` field for field. The
@@ -88,7 +92,7 @@ pub enum Event {
     Fact { forge: u16, fact: Fact },
     /// Git's Contents token, handed to the owner once (forge-connection.md, 5.3).
     GitToken { forge: u16, installation: u64, account: Account, token: Secret, expires: Wall },
-    /// A verified delivery, after its response is queued.
+    /// A verified webhook after its response, or a delivery read from the log.
     Hint(crate::hooks::Hinted),
     /// The webhooks listener failed to bind or was lost.
     ListenerLost,

@@ -48,6 +48,12 @@ pub struct Limits {
     pub start_backoff_max: Duration,
     /// An installation token is minted again this long before it expires (5.1).
     pub renew_before: Duration,
+    /// Delivery-log poll interval and catch-up horizon (6.5).
+    pub log_poll: Duration,
+    pub log_catch_up: Duration,
+    /// Maximum pages per poll and bytes per whole delivery.
+    pub log_pages: u32,
+    pub delivery_bytes: u32,
     /// Webhook connections, head and body bytes, request deadline and secret bytes.
     pub hooks: u32,
     pub hook_head_bytes: u32,
@@ -195,40 +201,7 @@ const MAX_RENEW_BEFORE: Duration = Duration::from_secs(1800);
 
 /// Checks neighbours' agreements, stacked demands, then every configured forge.
 pub fn check(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusable> {
-    for value in [
-        l.forges,
-        l.token_bytes,
-        l.key_bytes,
-        l.connections,
-        l.head_bytes,
-        l.headers,
-        l.body_bytes_in,
-        l.depth,
-        l.chunk,
-        l.string_bytes,
-        l.body_bytes,
-        l.inner,
-        l.target_bytes,
-        l.repositories,
-        l.users,
-        l.installations,
-        l.hooks,
-        l.hook_head_bytes,
-        l.hook_body_bytes,
-        l.hook_secret_bytes,
-        l.tls.read,
-        l.tls.send,
-        l.tls.records,
-    ] {
-        if value == 0 {
-            return Err(Unusable::Zero);
-        }
-    }
-    for value in [l.deadline, l.idle, l.start_backoff, l.start_backoff_max, l.renew_before, l.hook_deadline] {
-        if value.as_nanos() == 0 {
-            return Err(Unusable::Zero);
-        }
-    }
+    nonzero(l)?;
     if l.hook_secret_bytes < 32 {
         return Err(Unusable::SecretBytes { bytes: l.hook_secret_bytes });
     }
@@ -319,6 +292,54 @@ fn check_github(l: &Limits, s: &Shared, settings: &Settings) -> Result<(), Unusa
         }
         if usize::try_from(l.key_bytes).expect("u32 fits") < skein_tls::RS256_KEY_BYTES {
             return Err(Unusable::KeyBytes { key_bytes: l.key_bytes });
+        }
+    }
+    Ok(())
+}
+fn nonzero(l: &Limits) -> Result<(), Unusable> {
+    for value in [
+        l.forges,
+        l.token_bytes,
+        l.key_bytes,
+        l.connections,
+        l.head_bytes,
+        l.headers,
+        l.body_bytes_in,
+        l.depth,
+        l.chunk,
+        l.string_bytes,
+        l.body_bytes,
+        l.inner,
+        l.target_bytes,
+        l.repositories,
+        l.users,
+        l.installations,
+        l.log_pages,
+        l.delivery_bytes,
+        l.hooks,
+        l.hook_head_bytes,
+        l.hook_body_bytes,
+        l.hook_secret_bytes,
+        l.tls.read,
+        l.tls.send,
+        l.tls.records,
+    ] {
+        if value == 0 {
+            return Err(Unusable::Zero);
+        }
+    }
+    for value in [
+        l.deadline,
+        l.idle,
+        l.start_backoff,
+        l.start_backoff_max,
+        l.renew_before,
+        l.log_poll,
+        l.log_catch_up,
+        l.hook_deadline,
+    ] {
+        if value.as_nanos() == 0 {
+            return Err(Unusable::Zero);
         }
     }
     Ok(())
@@ -606,6 +627,34 @@ fn decoder_heap(l: &Limits, forges: Forges) -> Option<u64> {
         .checked_add(u64::try_from(fixed_decoder).ok()?)?;
     Some(bytes)
 }
+/// A full log page includes bounded event/action text and both header values.
+pub(crate) fn log_page_bytes(l: &Limits) -> Option<u32> {
+    skein_forge::github::pin::PAGE_CAP
+        .min(l.inner)
+        .checked_mul(
+            u32::try_from(size_of::<skein_forge::github::log::Row>())
+                .ok()?
+                .checked_add(l.string_bytes.checked_mul(2)?)?,
+        )?
+        .checked_add(u32::try_from(api::VALIDATOR_BYTES).ok()?.checked_mul(2)?)
+}
+/// Puller-owned rows and the whole-delivery decoder can coexist with a held hint.
+pub(crate) fn puller_heap(l: &Limits) -> Option<u64> {
+    use skein_forge::github;
+    use skein_lib::List;
+    u64::from(log_page_bytes(l)?)
+        .checked_mul(2)? // Plan/page handoff and header copies.
+        .checked_add(u64::try_from(api::VALIDATOR_BYTES).ok()?.checked_mul(4)?)?
+        .checked_add(u64::try_from(size_of::<github::plans::start::LogPage>()).ok()?)?
+        .checked_add(u64::try_from(size_of::<github::plans::start::LogDelivery>()).ok()?)?
+        .checked_add(u64::try_from(size_of::<github::delivery::Decoder>()).ok()?)?
+        .checked_add(decoder_heap(l, Forges { forgejo: 0, github: 1 })?)?
+        // Payload-first JSON is replayed by the dialect at json.length's bound.
+        .checked_add(List::<tokenizer::Event>::worst_case(l.delivery_bytes)?)?
+        .checked_add(u64::from(l.delivery_bytes))?
+        .checked_add(u64::try_from(size_of::<api::Hint>()).ok()?)?
+        .checked_add(u64::from(l.string_bytes).checked_add(u64::from(l.body_bytes))?)
+}
 /// A complete page is independent of both the retained table and ordinary calls.
 pub(crate) fn installation_bounds(l: &Limits, s: &Shared) -> Option<skein_forge::github::plans::plan::Bounds> {
     let cap = skein_forge::github::pin::PAGE_CAP;
@@ -653,6 +702,7 @@ fn github_forge_heap(l: &Limits, s: &Shared, forges: u32) -> Option<u64> {
     }
     installation_heap(l, s)?
         .checked_add(log_origin_heap(l)?)?
+        .checked_add(puller_heap(l)?)?
         .checked_add(u64::try_from(size_of::<crate::installations::GitHub>()).ok()?)?
         .checked_add(u64::from(l.key_bytes))?
         .checked_add(u64::try_from(skein_forge::github::jwt::JWT_BYTES).ok()?)?

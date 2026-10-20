@@ -13,6 +13,7 @@ mod calls;
 mod github;
 mod github_calls;
 mod github_logs;
+mod puller;
 use skein_forge::api;
 use skein_forge::forgejo::plans::{
     Body, Heard,
@@ -45,6 +46,8 @@ pub(crate) enum OwnPlan {
     GitHubInstallations(skein_forge::github::plans::start::Installations),
     GitHubMinting(skein_forge::github::plans::start::Minting),
     GitHubIdentity(skein_forge::github::plans::start::Identity),
+    GitHubLogPage(Box<skein_forge::github::plans::start::LogPage>),
+    GitHubLogDelivery(Box<skein_forge::github::plans::start::LogDelivery>),
 }
 #[derive(Debug)]
 pub(crate) struct Waiting {
@@ -275,7 +278,7 @@ impl Component {
                 let _previous: Option<Id<Waiting>> = self.calls.insert(call, id).expect("call index matches its slab");
                 self.drive(env, up, io, MAX_OUT.above);
             }
-            Request::RefusedHint(hint) => self.hooks.refused(hint),
+            Request::RefusedHint(hint) => self.refused_hint(hint),
             Request::Refused(answer) => {
                 drop(
                     self.held
@@ -292,7 +295,9 @@ impl Component {
             }
             Request::Offer => {
                 self.hooks.offer();
+                self.offer_pullers();
                 let before = up.len();
+                let below = io.len();
                 if self.settings.webhooks.is_some() {
                     self.hooks.drive(env, &self.settings, up, io, MAX_OUT.above, MAX_OUT.below);
                 }
@@ -311,6 +316,13 @@ impl Component {
                         up.push(Event::Answered(held.answer));
                     }
                 }
+                self.drive_room(
+                    env,
+                    up,
+                    io,
+                    MAX_OUT.above.saturating_sub(up.len().saturating_sub(before)),
+                    MAX_OUT.below.saturating_sub(io.len().saturating_sub(below)),
+                );
             }
             Request::Close => {
                 for _ in 0..self.calls.len() {
@@ -334,6 +346,35 @@ impl Component {
                 self.hooks.close();
                 self.drive(env, up, io, MAX_OUT.above);
             }
+        }
+    }
+    fn offer_pullers(&mut self) {
+        for at in 0..self.github.len() {
+            if let Some(gh) = self.github.get_mut(at).expect("forge slot") {
+                gh.puller.offer();
+            }
+        }
+    }
+    fn refused_hint(&mut self, hint: crate::hooks::Hinted) {
+        let mut puller = None;
+        for at in 0..self.github.len() {
+            let source = match self.github.get(at).expect("forge slot") {
+                Some(gh) => gh.puller.source,
+                None => None,
+            };
+            if source == Some(hint.connection)
+                && hint.hint.repository.forge == self.settings.forges.get(at).expect("forge").number
+            {
+                puller = Some(at);
+                break;
+            }
+        }
+        if let Some(at) = puller {
+            if let Some(gh) = self.github.get_mut(at).expect("forge slot") {
+                gh.puller.refused(hint.hint);
+            }
+        } else {
+            self.hooks.refused(hint);
         }
     }
     fn installations(&mut self, forge: u16, accepted: &[u64]) {
@@ -555,6 +596,12 @@ impl Component {
         }
         for slot in &self.github {
             if let Some(gh) = slot
+                && let Some(time) = gh.puller.due
+                && (earliest.is_none() || Some(time) < earliest)
+            {
+                earliest = Some(time);
+            }
+            if let Some(gh) = slot
                 && let Some(time) = gh.deadline()
                 && (earliest.is_none() || Some(time) < earliest)
             {
@@ -722,7 +769,13 @@ impl Component {
                 let plan = self.own_plans.get_mut(at).expect("configured forge");
                 let step = match plan {
                     Some(OwnPlan::Forgejo(plan)) => plan.heard(heard),
-                    Some(OwnPlan::GitHubInstallations(_) | OwnPlan::GitHubMinting(_) | OwnPlan::GitHubIdentity(_)) => {
+                    Some(
+                        OwnPlan::GitHubInstallations(_)
+                        | OwnPlan::GitHubMinting(_)
+                        | OwnPlan::GitHubIdentity(_)
+                        | OwnPlan::GitHubLogPage(_)
+                        | OwnPlan::GitHubLogDelivery(_),
+                    ) => {
                         unreachable!("Forgejo own plan")
                     }
                     None => None,
@@ -890,7 +943,11 @@ fn send_start(
 ) {
     let step = match plan {
         OwnPlan::Forgejo(plan) => plan.begin(),
-        OwnPlan::GitHubInstallations(_) | OwnPlan::GitHubMinting(_) | OwnPlan::GitHubIdentity(_) => {
+        OwnPlan::GitHubInstallations(_)
+        | OwnPlan::GitHubMinting(_)
+        | OwnPlan::GitHubIdentity(_)
+        | OwnPlan::GitHubLogPage(_)
+        | OwnPlan::GitHubLogDelivery(_) => {
             unreachable!("Forgejo sender")
         }
     };
