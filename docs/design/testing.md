@@ -126,8 +126,10 @@ A code forge has fakes of its own (fake-forge.md). `skein-fake-forge-domain`,
 a step crate on skein-lib alone, plays a forge's state, CI, merges and git,
 and `skein-fake-forge-protocol` serves Forgejo's API over it on skein's HTTP
 server. The forge peer in `skein-fake-peers` hosts that layer on loopback
-io. `skein-throwaway-forgejo` runs the pinned Forgejo in a scratch
-directory, for the tools and process tiers that need a real one, and a
+io. Its GitHub layer (`skein-fake-forge-github`) shares the domain and
+hosts API/browser routes on one listener and signed job logs on a second
+blob listener, with one shared connection limit. `skein-throwaway-forgejo`
+runs the pinned Forgejo in a scratch directory, for the tools and process tiers that need a real one, and a
 conformance tool outside the suites holds the dialect to it. A service
 keeps its fake of its own git component, its worlds and its cost ceilings.
 
@@ -230,7 +232,7 @@ crates/skein-fake-llm-*         the scripted LLM peer: its domain and its byte p
 crates/skein-fake-forge-domain  the fake forge's domain (fake-forge.md, 2 and 3)
 crates/skein-fake-forge-protocol its Forgejo protocol layer (fake-forge.md, 4)
 crates/skein-fake-oauth         an independent rotating OAuth issuer (oauth.md, 5)
-crates/skein-fake-peers         the LLM, OAuth and forge peers hosted on loopback io, in a world or as an application's own process (fake-forge.md, 5); links testing/skein-fake-forge-github for GitHub's face
+crates/skein-fake-peers         the LLM, OAuth and forge peers hosted on loopback io, in a world or as an application's own process (fake-forge.md, 5); links testing/skein-fake-forge-github for GitHub's API/browser and blob faces
 crates/skein-fake-checkout      files, scripted commands and local git for a service's domain worlds, and for a service's fake git as a program (fake-checkout.md)
 testing/skein-conformance       the conformance suite: the backend interface, the scenarios, the driver, the checks
 testing/skein-heap              the counting allocator, the meter that checks a step against its worst case, and the span a world meters its processes with
@@ -238,7 +240,7 @@ testing/skein-scratch           a scratch directory beneath the system's tempora
 testing/skein-world             the world harness: processes' iterate over the simulator or the real ring, the referee, the trace, the heap
 testing/skein-echo-client       the fake echo client, a step machine
 testing/skein-fake-machine      the minimal fake machine: files beneath a root, its programs, and its face behind the simulator
-testing/skein-fake-forge-github the fake forge's GitHub layer (fake-forge.md, 10)
+testing/skein-fake-forge-github the fake forge's GitHub API/browser and signed-log blob layer (fake-forge.md, 10)
 testing/skein-throwaway-forgejo the pinned Forgejo run on loopback in a scratch directory (fake-forge.md, 6)
 testing/skein-fake-channel      a scripted framed peer for a service's protocol worlds (channel.md)
 testing/skein-codegen           the codec generator, run by a consumer's tests (codec.md)
@@ -268,7 +270,7 @@ tests/forge/client              the client world: the client alone under a scrip
 tests/forge/setup               the setup world: the host component over a store of items and the fake forge's setup routes and GitHub layer, through HTTP bytes, and its worst case against the counting allocator (forge-setup.md, 7)
 tests/forge/conformance         the conformance tool, outside the suites: a throwaway Forgejo driven, each fact the dialect relies on recorded (fake-forge.md, 7)
 tests/fake-forge                the fake forge's domain against the counting allocator, skein-fake-forge-tests
-tests/fake-peers                the LLM, OAuth and forge peers on loopback io against their clients, skein-fake-peers-tests
+tests/fake-peers                the LLM, OAuth and forge peers on loopback io against their clients, including GitHub's job-log redirect to its blob listener, skein-fake-peers-tests
 tests/fake-checkout             the fake checkout's leaf tests and its replay sweep against a small private remote, skein-fake-checkout-tests
 tests/channel                   the framed channel's machine and protocol worlds, skein-channel-world
 tests/codec                     a generated sample codec and its worlds, skein-codec-tests

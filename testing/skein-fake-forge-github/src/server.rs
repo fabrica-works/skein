@@ -1,4 +1,4 @@
-//! One bounded HTTP connection over GitHub's API and browser pages.
+//! One bounded HTTP connection over GitHub's API/browser or blob listener.
 use crate::{
     answers, pages,
     service::{Limits, Outcome, Pending, Problem, Request, Response, Service},
@@ -112,7 +112,7 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
         // Service validates the repository's full URL within string_bytes, so
         // its owner/name path fits one. Read::Repository's Row has two strings.
         .checked_add(u64::from(limits.github.string_bytes).checked_mul(3)?)?
-        // Server.reply and Respond.headers' Link (API) or Location (page).
+        // Server.reply and Respond.headers' Link (API) or Location (page/log).
         // The response head encoded by HTTP is in http::worst_case above.
         .checked_add(u64::from(limits.response).checked_mul(2)?)?
         // Link (4), Content-Type (12), application/octet-stream (24): header

@@ -640,6 +640,10 @@ Each route is decoded by the server side of `skein_forge::github` and
 answered as GitHub answers. GitHub's quirks live here. The domain gains
 only what GitHub has and Forgejo lacks (10.2).
 
+Built here are the checks and job reads, signed job-log redirects, the
+peer's blob listener and its redirect scenarios, and drawn mergeability
+settle deadlines. The remaining contracts below are tracked in STATUS.md.
+
 ### 10.1 What it serves
 
 - **REST at the pin.** Every route of forge-github.md, sections 4, 8, 9
@@ -733,9 +737,26 @@ only what GitHub has and Forgejo lacks (10.2).
   600 seconds on the forge's clock. The blob listener serves the job's
   log, wants no credential, and ignores `Range`. The scenario may name a
   third origin, one the component does not know, for the diagnostic's
-  stories.
+  stories. The HMAC-SHA-256 key is drawn from the seed; the signed input
+  names the repository, job and attempt and includes the expiry. At the
+  expiry instant the target is refused. A tampered or expired target is
+  `403` with an empty body. That shape is inferred: github.com's blob
+  store is not modelled. Other paths are `404`.
+
+  `Config::third_origin` replaces the API redirect's blob origin;
+  `Config::blob_redirect` makes the blob listener answer a `302` to that
+  origin with the same signed target. Both default to `None` in fixtures.
+  Each origin is admitted only when its origin plus the largest signed
+  target fits `Limits::github.target_bytes` and `Limits::response`.
+  The listener records the path and whether `Authorization` and `Range`
+  were present, never their values. `Limits::blob_records` bounds this
+  FIFO, with the oldest request evicted when full; each path is bounded
+  by `Limits::http.head`.
 - **Mergeability, merges and the queue.** `mergeable` is null for a
   drawn `settle_min..=settle_max` after a push to the head or the base.
+  The domain draws from its seed, carries `checking` separately from
+  `mergeable`, and defaults both bounds to two seconds in fixtures.
+  Forgejo continues to render false while checking.
   A merge then decides as the domain does:
   - a stale head is `409`;
   - a merge refused for its checks or its approvals is `405` with
@@ -857,6 +878,11 @@ the fake.
   and a delivery decoded by `skein_forge::github` alike pushed and
   logged.
 - **Memory** is checked as section 8 says, with the stores full.
+  The API/browser and blob listeners share the peer's connection limit
+  and io buffers; admission reserves two listener sockets. Each accepted
+  connection uses the same bounded HTTP envelope. `worst_case` also
+  counts the blob record slots and paths, seed key, configured origins
+  and signed-target scratch.
 - **The budget** is the focused suite's, as section 8 says. The
   conformance against the fake (section 11) runs there as one test,
   within 3 seconds. The fake's clock carries the CI's and the queue's

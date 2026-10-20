@@ -1,5 +1,5 @@
 //! GitHub's HTTP over the fake forge (fake-forge.md, section 10):
-//! App authentication, installations, reads and writes over the shared domain.
+//! App authentication, installations, reads, writes and signed job logs over the shared domain.
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 

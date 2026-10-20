@@ -100,7 +100,7 @@ pub struct Limits {
     pub page: u32,
     /// Maximum request body, no larger than `github.body_bytes`.
     pub body: u32,
-    /// Maximum response body and, separately, Link value (at least 128 bytes).
+    /// Maximum response body and, separately, Link or Location value (at least 128 bytes).
     pub response: u32,
     /// Recent blob requests retained in a bounded ring.
     pub blob_records: u32,
@@ -168,7 +168,7 @@ pub struct Response {
     pub link: Option<Box<[u8]>>,
     /// Redirect target, framed through the same Location path as browser pages.
     pub location: Option<Box<[u8]>>,
-    /// JSON document, raw file bytes, or empty on 204.
+    /// JSON document, file/log bytes, or empty on a redirect or 204.
     pub body: Box<[u8]>,
 }
 impl core::fmt::Debug for Response {
