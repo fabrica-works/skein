@@ -350,6 +350,9 @@ fn fixture_domain(seed: u64) -> (fake::Domain, fake::Config) {
     (domain, config)
 }
 
+// More timers than a fixture's queue and CI can have due at once.
+const FIRES: usize = 64;
+
 // Fixture calls have zero latency and one reply, handled by the world's same thread.
 fn domain_reply(
     domain: &mut fake::Domain,
@@ -360,7 +363,11 @@ fn domain_reply(
     let env = Env { now: Time::from_nanos(wall.as_nanos()), wall, limits: *config };
     let mut out = Queue::with_capacity(fake::MAX_OUT);
     fake::step(domain, &env, event, &mut out);
-    if out.is_empty() {
+    // The queue's and CI's timers due by now fire before the call's own.
+    for _ in 0..FIRES {
+        if !out.is_empty() {
+            break;
+        }
         fake::fire(domain, &env, &mut out);
     }
     let result = match out.pop().expect("zero-latency domain reply") {

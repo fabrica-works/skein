@@ -242,7 +242,9 @@ pub fn fake_config() -> skein_fake_forge_domain::Config {
             statuses: 4,
             contexts: 4,
             pages: 1,
-            name_bytes: 64,
+            // A merge queue branch, gh-readonly-queue/<base>/pr-<n>-<sha>, is
+            // 68 bytes here: the bound leaves it room.
+            name_bytes: 96,
             title_bytes: 64,
             body_bytes: 1024,
             content_bytes: 128,
