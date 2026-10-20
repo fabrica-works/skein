@@ -246,7 +246,7 @@ fn optional_commit(value: Option<u64>) -> Option<api::Commit> {
         None => None,
     }
 }
-fn count(value: &api::Commit) -> Option<u64> {
+pub(crate) fn count(value: &api::Commit) -> Option<u64> {
     let first = value.get(..8)?.try_into().ok()?;
     let count = u64::from_be_bytes(first);
     if commit(count) == *value { Some(count) } else { None }

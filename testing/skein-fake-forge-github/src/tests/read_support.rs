@@ -69,6 +69,12 @@ pub fn response_events(h: &f::Harness, request: &Request, response: Response) ->
     if let Some(link) = &response.link {
         github::header::field(&mut head, b"Link", link, &h.limits.github);
     }
+    if response.status == 204 {
+        assert!(response.body.is_empty(), "204 has no document");
+        events.push(Heard::Head { status: response.status, head }).expect("head room");
+        events.push(Heard::Done(Body::Empty)).expect("terminal room");
+        return events;
+    }
     if response.status < 300 && github::decode::kind(request).is_none() {
         events.push(Heard::Head { status: response.status, head }).expect("head room");
         events.push(Heard::Done(Body::Raw { bytes: response.body, more: false })).expect("raw room");

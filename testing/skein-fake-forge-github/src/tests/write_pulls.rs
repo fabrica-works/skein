@@ -68,7 +68,11 @@ fn github_fake_empty_head_refuses_open_pull_without_creating() {
 #[test]
 fn github_fake_update_plan_merges_base_and_checks_expected_head() {
     let mut h = w::harness();
-    fake::settings(&mut h.domain, b"acme/widgets", a::Settings { default: f::boxed(b"trunk"), merge: true, squash: true, rebase: true });
+    fake::settings(
+        &mut h.domain,
+        b"acme/widgets",
+        a::Settings { default: f::boxed(b"trunk"), merge: true, squash: true, rebase: true },
+    );
     let (number, head) = r::pull(&mut h);
     let token = r::token(&mut h);
     let base = fake::commit(
@@ -240,14 +244,32 @@ fn github_fake_pull_writes_outside_installation_are_missing() {
 #[test]
 fn github_fake_update_conflict_preserves_the_pull_head() {
     let mut h = w::harness();
-    fake::settings(&mut h.domain, b"acme/widgets", a::Settings { default: f::boxed(b"trunk"), merge: true, squash: true, rebase: true });
+    fake::settings(
+        &mut h.domain,
+        b"acme/widgets",
+        a::Settings { default: f::boxed(b"trunk"), merge: true, squash: true, rebase: true },
+    );
     let (number, head) = r::pull(&mut h);
-    let base = fake::commit(&mut h.domain, &h.env.limits, h.first, Box::from([a::File { path: f::boxed(b"one"), content: f::boxed(b"conflicting") }]), b"conflict").unwrap().unwrap();
+    let base = fake::commit(
+        &mut h.domain,
+        &h.env.limits,
+        h.first,
+        Box::from([a::File { path: f::boxed(b"one"), content: f::boxed(b"conflicting") }]),
+        b"conflict",
+    )
+    .unwrap()
+    .unwrap();
     r::call(&mut h, a::Op::Git(a::Git::Push { branch: f::boxed(b"trunk"), commit: base, expected: None }));
     let token = r::token(&mut h);
     assert_eq!(w::write(&mut h, &token, api::Write::Update { number }), Err(api::Error::Conflict));
-    let response = w::ask(&mut h, &token, &Request::Update { owner: f::boxed(b"acme"), name: f::boxed(b"widgets"), number, head: r::object(head) });
+    let response = w::ask(
+        &mut h,
+        &token,
+        &Request::Update { owner: f::boxed(b"acme"), name: f::boxed(b"widgets"), number, head: r::object(head) },
+    );
     f::refusal(&h, &response, 422, failure::UPDATE_CONFLICT);
-    let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else { panic!("conflicted pull") };
+    let api::Answer::Pull(pull) = r::read_with_empty_ci(&mut h, &token, api::Read::Pull { number }).unwrap() else {
+        panic!("conflicted pull")
+    };
     assert_eq!(pull.commit, r::object(head));
 }

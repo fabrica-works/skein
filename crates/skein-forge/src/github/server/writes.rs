@@ -18,6 +18,23 @@ pub(super) fn route(method: super::Method, path: &[u8]) -> Option<Request> {
     let (name, tail) = super::split(tail, b'/');
     let owner = super::request::unescape(owner)?;
     let name = super::request::unescape(name)?;
+    if method == super::Method::Post && tail == b"git/refs" {
+        return Some(Request::CreateBranch { owner, name, branch: Box::from([]), commit: [0; 32] });
+    }
+    if method == super::Method::Delete
+        && let Some(branch) = tail.strip_prefix(b"git/refs/heads/") {
+            return Some(Request::DeleteBranch { owner, name, branch: super::request::unescape(branch)? });
+    }
+    if method == super::Method::Post
+        && let Some(commit) = tail.strip_prefix(b"statuses/") {
+            return Some(Request::Status {
+                owner,
+                name,
+                commit: super::id::commit(commit)?,
+                context: Box::from([]),
+                check: crate::api::Check::Pending,
+            });
+    }
     if method == super::Method::Post && tail == b"issues" {
         return Some(Request::CreateIssue { owner, name, title: Box::from([]), body: Box::from([]) });
     }
