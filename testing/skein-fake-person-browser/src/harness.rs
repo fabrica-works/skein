@@ -99,7 +99,14 @@ pub enum Outcome {
     Done,
     Failed { person: u32, step: u32, report: String },
 }
+#[derive(Debug, PartialEq, Eq)]
+pub struct Kept {
+    pub person: u32,
+    pub name: Box<[u8]>,
+    pub value: Box<[u8]>,
+}
 pub struct Harness {
+    kept: Vec<Kept>,
     server: PathBuf,
     args: Vec<OsString>,
     prefix: Box<[u8]>,
@@ -114,6 +121,7 @@ impl Harness {
     #[must_use]
     pub fn new(setup: Setup<'_>) -> Self {
         Self {
+            kept: Vec::new(),
             server: setup.server,
             args: setup.args,
             prefix: setup.printed.prefix.into(),
@@ -125,16 +133,23 @@ impl Harness {
             origins: setup.origins,
         }
     }
+    #[must_use]
+    pub fn kept(&self) -> &[Kept] {
+        &self.kept
+    }
     pub fn run(&mut self, people: &mut [&mut dyn Play]) -> Outcome {
         self.run_lending(people, &mut [])
     }
     pub fn run_lending(&mut self, people: &mut [&mut dyn Play], peers: &mut [Lent<'_>]) -> Outcome {
+        self.kept.clear();
         let mut peers = match peers::Peers::new(peers) {
             Ok(peers) => peers,
             Err(report) => return Outcome::Failed { person: 0, step: 0, report },
         };
         let profile = skein_scratch::Scratch::new("ui-browser");
-        Runtime::new(self, profile.path(), people, &peers.limits).run(self, people, &mut peers)
+        let (outcome, kept) = Runtime::new(self, profile.path(), people, &peers.limits).run(self, people, &mut peers);
+        self.kept = kept;
+        outcome
     }
 }
 pub(crate) mod capacity;
@@ -150,6 +165,7 @@ enum ServerState {
     Starting,
 }
 struct Runtime {
+    kept: Vec<Kept>,
     request_serial: u64,
     exchanges: Vec<request::Exchange>,
     expected: Vec<Vec<Box<[u8]>>>,
@@ -263,6 +279,7 @@ impl Runtime {
             pipes: server_pipes(setup.output),
         };
         Self {
+            kept: Vec::new(),
             request_serial: 0,
             exchanges: Vec::new(),
             expected: people.iter().map(|play| play.expected()).collect(),
@@ -688,8 +705,11 @@ impl Runtime {
             }
         }
         while let Some(event) = self.events.pop() {
-            for face in faces.iter_mut() {
+            for (index, face) in faces.iter_mut().enumerate() {
                 BrowserFace::event(face, &event);
+                if let Some((name, value)) = face.kept() {
+                    self.kept.push(Kept { person: u32::try_from(index).expect("person fits"), name, value });
+                }
             }
             if let Event::Opened { .. } = event {
                 opened = true;
@@ -746,7 +766,12 @@ impl Runtime {
             }
         }
     }
-    fn run(mut self, setup: &Harness, people: &mut [&mut dyn Play], peers: &mut peers::Peers<'_, '_>) -> Outcome {
+    fn run(
+        mut self,
+        setup: &Harness,
+        people: &mut [&mut dyn Play],
+        peers: &mut peers::Peers<'_, '_>,
+    ) -> (Outcome, Vec<Kept>) {
         let start = self.clock.now().now;
         let deadline = start.saturating_add(Duration::from_secs(20));
         // Reserve io's close window inside the run's twenty-second horizon.
@@ -908,7 +933,7 @@ impl Runtime {
             self.requests.push_back(request);
         }
     }
-    fn report(self) -> Outcome {
+    fn report(self) -> (Outcome, Vec<Kept>) {
         let mut outcome = self.outcome.expect("terminal outcome");
         if let Outcome::Failed { report, .. } = &mut outcome {
             write!(
@@ -921,7 +946,7 @@ impl Runtime {
             )
             .expect("string write");
         }
-        outcome
+        (outcome, self.kept)
     }
 }
 fn page(index: usize) -> Token {

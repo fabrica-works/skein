@@ -8,6 +8,11 @@ mod growth;
 
 pub enum Step {
     Person(skein_fake_person::Step<Box<[u8]>>),
+    Keep {
+        selector: Box<[u8]>,
+        attribute: Option<Box<[u8]>>,
+        name: Box<[u8]>,
+    },
     StopServer,
     StartServer,
     Title(Box<[u8]>),
@@ -64,6 +69,7 @@ pub struct Script {
     at: u32,
     action: Option<ServerAction>,
     title: Option<Box<[u8]>>,
+    keeping: bool,
     focused: Option<skein_fake_person::Find>,
     growth: Option<growth::Growth>,
     press: Option<(skein_fake_person::Find, skein_browser::boundary::Point)>,
@@ -81,6 +87,7 @@ impl Script {
             at: 0,
             action: None,
             title: None,
+            keeping: false,
             focused: None,
             press: None,
             growth: None,
@@ -190,6 +197,13 @@ impl Script {
 impl Play for Script {
     #[expect(clippy::too_many_lines, reason = "one match lists the script's steps")]
     fn next(&mut self, face: &mut BrowserFace<'_>, now: Time) -> Next<Box<[u8]>> {
+        if self.keeping {
+            if face.kept_done() {
+                self.keeping = false;
+                self.at += 1;
+            }
+            return Next::Wait { until: None };
+        }
         if self.await_step(face, now) {
             return Next::Wait { until: None };
         }
@@ -238,6 +252,10 @@ impl Play for Script {
             Step::Key(key) | Step::KeyWithShift(key) => {
                 face.key(key, matches!(step, Step::KeyWithShift(_)));
                 self.at += 1;
+            }
+            Step::Keep { selector, attribute, name } => {
+                face.keep(selector, attribute, name);
+                self.keeping = true;
             }
             Step::Address(path) => {
                 face.read_address(&path);
@@ -310,6 +328,10 @@ impl Play for Script {
         self.at + self.person.as_ref().map_or(0, Person::at)
     }
     fn check_deadline(&mut self, face: &mut BrowserFace<'_>, now: Time) {
+        if self.keeping && face.kept_done() {
+            self.keeping = false;
+            self.at += 1;
+        }
         if self.awaited.as_ref().is_some_and(|(until, _)| now >= *until) {
             self.await_step(face, now);
         }

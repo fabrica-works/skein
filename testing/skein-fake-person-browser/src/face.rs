@@ -1,5 +1,5 @@
 //! Queries and acts translated without executing script in the page.
-use skein_browser::boundary::{Event, Go, Key, Match, Query, Request, Seen};
+use skein_browser::boundary::{Event, Go, Key, Match, Query, Read, Request, Seen};
 use skein_fake_person::{Doing, Face, Find, Found, Target};
 use skein_lib::Token;
 use skein_ui::{Act, NodeId, Role};
@@ -22,6 +22,14 @@ struct Search {
     op: Token,
 }
 
+struct Keeping {
+    op: Token,
+    selector: Box<[u8]>,
+    attribute: Box<[u8]>,
+    name: Box<[u8]>,
+}
+type KeptValue = (Box<[u8]>, Box<[u8]>);
+
 /// One page's asynchronous semantic face. Nodes are numbered locally.
 pub struct BrowserFace<'a> {
     page: Token,
@@ -40,6 +48,9 @@ pub struct BrowserFace<'a> {
     warned: bool,
     go: Option<Token>,
     choice: Option<Choice>,
+    keep: Option<Keeping>,
+    kept: Option<KeptValue>,
+    keep_done: bool,
 }
 
 impl<'a> BrowserFace<'a> {
@@ -62,6 +73,9 @@ impl<'a> BrowserFace<'a> {
             warned: false,
             go: None,
             choice: None,
+            keep: None,
+            kept: None,
+            keep_done: false,
         }
     }
     pub fn title(&mut self, words: &[u8]) -> Found {
@@ -99,7 +113,34 @@ impl<'a> BrowserFace<'a> {
     }
     #[must_use]
     pub fn pending(&self) -> bool {
-        self.search.is_some() || self.acting.is_some()
+        self.search.is_some() || self.acting.is_some() || self.keep.is_some()
+    }
+    pub(crate) fn keep(&mut self, selector: Box<[u8]>, attribute: Option<Box<[u8]>>, name: Box<[u8]>) {
+        let op = self.token();
+        let attribute = attribute.unwrap_or_else(|| b"value".as_slice().into());
+        self.requests.push(Request::Attribute {
+            page: self.page,
+            op,
+            selector: selector.clone(),
+            name: attribute.clone(),
+        });
+        self.keep = Some(Keeping { op, selector, attribute, name });
+        self.keep_done = false;
+    }
+    pub(crate) fn kept(&mut self) -> Option<KeptValue> {
+        self.kept.take()
+    }
+    pub(crate) fn kept_done(&mut self) -> bool {
+        std::mem::take(&mut self.keep_done)
+    }
+    fn keep_failed(&mut self, why: &str) {
+        let Keeping { selector, attribute, .. } = self.keep.take().expect("pending keep");
+        self.fail(format!(
+            "keep selector {} attribute {}: {why}",
+            String::from_utf8_lossy(&selector),
+            String::from_utf8_lossy(&attribute)
+        ));
+        self.keep_done = true;
     }
     pub(crate) fn fail(&mut self, why: String) {
         self.failure = Some(why);
@@ -277,7 +318,23 @@ impl<'a> BrowserFace<'a> {
                     }
                 }
             }
+            Event::Attribute { op, read } => {
+                if self.keep.as_ref().map(|keep| keep.op) == Some(*op) {
+                    match read {
+                        Read::NoElement => self.keep_failed("no element"),
+                        Read::NoAttribute => self.keep_failed("no attribute"),
+                        Read::Value(value) => {
+                            let Keeping { name, .. } = self.keep.take().expect("pending keep");
+                            self.kept = Some((name, value.clone()));
+                            self.keep_done = true;
+                        }
+                    }
+                }
+            }
             Event::Refused { op, why } => {
+                if self.keep.as_ref().map(|keep| keep.op) == Some(*op) {
+                    self.keep_failed(&format!("browser refused read: {why:?}"));
+                }
                 if self.search.as_ref().map(|s| s.op) == Some(*op) {
                     self.search = None;
                     self.answer = Some(Found::Absent);
@@ -297,7 +354,6 @@ impl<'a> BrowserFace<'a> {
             | Event::Opened { .. }
             | Event::Met { .. }
             | Event::Missed { .. }
-            | Event::Attribute { .. }
             | Event::Snapshot { .. }
             | Event::Screenshot { .. }
             | Event::Closed { .. } => {}

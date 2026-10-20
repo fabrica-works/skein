@@ -163,3 +163,57 @@ fn the_focus_step_checks_the_found_nodes_focus() {
         assert_eq!(face.failure().as_deref(), expected, "focused {focused}");
     }
 }
+
+fn keeping() -> (Script, BrowserFace<'static>) {
+    let mut script = Script::new(Box::new([Step::Keep {
+        selector: b"#hidden".as_slice().into(),
+        attribute: None,
+        name: b"read".as_slice().into(),
+    }]));
+    let mut face = face();
+    script.next(&mut face, Time::ZERO);
+    assert_eq!(
+        face.requests().collect::<Vec<_>>(),
+        vec![Request::Attribute {
+            page: Token::new(7),
+            op: ADDRESS_OP,
+            selector: b"#hidden".as_slice().into(),
+            name: b"value".as_slice().into()
+        }]
+    );
+    (script, face)
+}
+#[test]
+fn a_keep_waits_for_its_terminal_before_advancing() {
+    let (mut script, mut face) = keeping();
+    script.next(&mut face, Time::ZERO);
+    assert_eq!(script.at(), 0);
+    assert!(face.pending());
+    face.event(&Event::Attribute {
+        op: ADDRESS_OP,
+        read: skein_browser::boundary::Read::Value(b"stored".as_slice().into()),
+    });
+    script.next(&mut face, Time::ZERO);
+    assert_eq!(script.at(), 1);
+    assert_eq!(face.kept(), Some((b"read".as_slice().into(), b"stored".as_slice().into())));
+}
+#[test]
+fn a_refused_keep_names_the_selector_and_attribute() {
+    let (mut script, mut face) = keeping();
+    face.event(&Event::Refused { op: ADDRESS_OP, why: skein_browser::boundary::Refusal::Protocol });
+    script.check_deadline(&mut face, Time::ZERO);
+    assert!(!face.pending());
+    assert_eq!(script.at(), 1);
+    assert_eq!(
+        face.failure().as_deref(),
+        Some("keep selector #hidden attribute value: browser refused read: Protocol")
+    );
+}
+#[test]
+fn another_operations_attribute_does_not_complete_a_keep() {
+    let (script, mut face) = keeping();
+    face.event(&Event::Attribute { op: Token::new(8), read: skein_browser::boundary::Read::NoElement });
+    assert!(face.pending());
+    assert_eq!(script.at(), 0);
+    assert_eq!(face.failure(), None);
+}
