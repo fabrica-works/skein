@@ -103,7 +103,7 @@ skein-forge-connection          the component: calls, connections, each forge's 
 ├── skein-lib, skein-io, skein-http, skein-tls, skein-json, skein-forge
 skein-forge-setup               the access and each forge's plan: Forgejo's reconcile machine;
 │                                 GitHub's manifest flow
-├── skein-lib, skein-json, skein-forge
+├── skein-lib, skein-io, skein-http, skein-json, skein-forge
 testing/skein-fake-forge-domain    the fake forge's domain
 testing/skein-fake-forge-protocol  Forgejo's API over it on skein's HTTP server; the setup's routes;
                                      signed deliveries; the tally of requests served

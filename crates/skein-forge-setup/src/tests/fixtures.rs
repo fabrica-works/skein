@@ -103,7 +103,7 @@ impl Run {
         run.bot_lookup();
         run.step(Event::Reply(Reply::Document(Document::User(person(b"kit", b"kit:bot")))));
         run.kept_tokens();
-        run.step(Event::Read(Some(secret(b"42"))));
+        run.step(Event::Read(Some(secret(&42u64.to_le_bytes()))));
         run.step(Event::Reply(Reply::Document(Document::ApiSettings(ApiSettings {
             max_response_items: 2,
             default_paging_num: 30,
@@ -220,7 +220,7 @@ pub fn to_org(run: &mut Run) {
     run.step(bot_event());
     keep_token(run);
     keep_token(run);
-    run.step(Event::Read(Some(secret(b"42"))));
+    run.step(Event::Read(Some(secret(&42u64.to_le_bytes()))));
     run.step(settings_event(PAGE_CAP));
 }
 pub fn org_event() -> crate::reconcile::Event {

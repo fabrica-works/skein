@@ -780,6 +780,8 @@ name = "skein-forge-setup"
 version = "0.0.0"
 dependencies = [
  "skein-forge",
+ "skein-http",
+ "skein-io",
  "skein-json",
  "skein-lib",
 ]
@@ -793,6 +795,7 @@ dependencies = [
  "skein-forge-machine-world",
  "skein-forge-setup",
  "skein-http",
+ "skein-io",
  "skein-json",
  "skein-lib",
 ]

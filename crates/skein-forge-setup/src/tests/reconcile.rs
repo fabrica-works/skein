@@ -44,7 +44,7 @@ fn an_absent_bot_is_made_with_a_drawn_password_and_the_marker() {
     );
     assert_eq!(run.step(user(fixtures::person(b"kit", b"kit:bot"))), Need::Read(Item::ApiToken));
     run.kept_tokens();
-    assert_eq!(run.step(Event::Read(None)), Need::Write { item: Item::User, bytes: secret(b"42") });
+    assert_eq!(run.step(Event::Read(None)), Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) });
     assert_eq!(run.step(Event::Written), Need::Send { request: Request::ApiSettings, token: secret(fixtures::ADMIN) });
 }
 #[test]
@@ -54,7 +54,7 @@ fn a_bot_with_the_marker_is_kept_and_nothing_is_written() {
     assert_eq!(run.step(user(fixtures::person(b"kit", b"note kit:bot account"))), Need::Read(Item::ApiToken));
     run.kept_tokens();
     assert_eq!(
-        run.step(Event::Read(Some(secret(b"42")))),
+        run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))),
         Need::Send { request: Request::ApiSettings, token: secret(fixtures::ADMIN) }
     );
 }
@@ -100,15 +100,21 @@ fn a_forge_that_stops_answering_stops_the_run_at_its_step() {
     );
 }
 #[test]
-fn the_bots_id_is_written_in_decimal_only_when_the_file_differs() {
-    for old in [None, Some(secret(b"041")), Some(secret(b"42\n")), Some(secret(b"43"))] {
+fn the_bots_id_is_written_as_eight_bytes_only_when_the_item_differs() {
+    for old in [
+        None,
+        Some(secret(b"42")),
+        Some(secret(&43u64.to_le_bytes())),
+        Some(secret(&42u64.to_le_bytes()[..7])),
+        Some(secret(&[42, 0, 0, 0, 0, 0, 0, 0, 0])),
+    ] {
         let mut run = Run::owned();
         run.bot_lookup();
         run.step(user(fixtures::person(b"kit", b"kit:bot")));
         run.kept_tokens();
         assert_eq!(
             run.step(Event::Read(old.clone())),
-            Need::Write { item: Item::User, bytes: secret(b"42") },
+            Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) },
             "{old:?}"
         );
         assert_eq!(
@@ -252,7 +258,10 @@ fn an_empty_git_token_is_absent() {
 #[test]
 fn an_empty_bot_id_is_absent() {
     let mut run = fixtures::id_read();
-    assert_eq!(run.step(Event::Read(Some(secret(b"")))), Need::Write { item: Item::User, bytes: secret(b"42") });
+    assert_eq!(
+        run.step(Event::Read(Some(secret(b"")))),
+        Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) }
+    );
 }
 #[test]
 fn an_empty_hook_secret_is_absent() {
@@ -320,4 +329,16 @@ fn a_down_checking_a_token_stops() {
             "{item:?}"
         );
     }
+}
+
+#[test]
+fn a_bot_of_id_zero_is_refused_as_unexpected() {
+    let mut run = Run::owned();
+    run.bot_lookup();
+    let mut bot = fixtures::person(b"kit", b"kit:bot");
+    bot.id = 0;
+    assert_eq!(
+        run.step(user(bot)),
+        Need::Stop(Failure { forge: 2, step: Stage::Bot, subject: b"kit".as_slice().into(), why: Why::Unexpected })
+    );
 }

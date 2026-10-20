@@ -12,7 +12,11 @@ fn an_empty_forge_is_given_its_bot_and_both_tokens() {
         let token = world.file(file).expect("the token is written");
         assert_eq!(world.store().token_user(token.expose()), Some(bot.id), "{file:?} answers as the bot");
     }
-    assert_eq!(world.file(Item::User).expect("the id is written").expose(), b"2".as_slice(), "the id in decimal");
+    assert_eq!(
+        world.file(Item::User).expect("the id is written").expose(),
+        &2u64.to_le_bytes(),
+        "the id in eight bytes"
+    );
     assert!(world.secrets_absent(), "no secret in a failure, a debug or the trace");
 }
 #[test]
@@ -197,7 +201,7 @@ fn a_deleted_bot_is_made_again() {
     world.store_mut().delete_account(b"kit");
     assert_eq!(world.reconcile(), Ended::Done);
     assert_eq!(world.store().find(b"kit").expect("replacement bot").id, 4);
-    assert_eq!(world.file(Item::User).expect("replacement id file").expose(), b"4");
+    assert_eq!(world.file(Item::User).expect("replacement id file").expose(), &4u64.to_le_bytes());
     assert_eq!(world.store().token_user(world.file(Item::ApiToken).expect("replacement API token").expose()), Some(4));
     assert_eq!(fixtures::write_routes(&world, since).iter().filter(|route| **route == Route::CreateUser).count(), 1);
 }

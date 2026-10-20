@@ -13,7 +13,7 @@ use skein_forge::forgejo::{
     document::{Document, Row},
     request::Request,
 };
-use skein_lib::{Decimal, Queue, Secret, Writer, bytes};
+use skein_lib::{Queue, Secret, Writer, bytes};
 /// Room the host reserves before stepping.
 pub const MAX_OUT: u32 = 1;
 /// One effect for the host, or the run's terminal outcome.
@@ -72,6 +72,8 @@ pub enum Why {
     BotIsAdmin,
     Unmarked,
     OrgMissing,
+    /// Another run of the forge is live, or the host's runs are full (6.3).
+    Busy,
     Down,
     Unexpected,
 }
@@ -140,6 +142,9 @@ impl Reconcile {
         Need::Stop(Failure { forge: self.forge, step: stage, subject, why })
     }
     fn id(&mut self, user: skein_forge::forgejo::document::User) -> Need {
+        if user.id == 0 {
+            return self.stop(Stage::Bot, Why::Unexpected);
+        }
         if !marked(&user.full_name, &self.marker) {
             return self.stop(Stage::Bot, Why::Unmarked);
         }
@@ -185,15 +190,15 @@ impl Reconcile {
             }
             State::Id(id) => match event {
                 Event::Read(value) => {
-                    let digits = Decimal::of(id);
+                    let bytes = id.to_le_bytes();
                     if match value {
-                        Some(value) => value.expose() == digits.as_bytes(),
+                        Some(value) => value.expose() == bytes,
                         None => false,
                     } {
                         self.start_orgs()
                     } else {
                         self.state = State::Written;
-                        Need::Write { item: Item::User, bytes: Secret::new(bytes::copy_of(digits.as_bytes())) }
+                        Need::Write { item: Item::User, bytes: Secret::new(bytes::copy_of(&bytes)) }
                     }
                 }
                 Event::Begin | Event::Reply(_) | Event::Written | Event::Drawn(_) => {
@@ -376,5 +381,29 @@ fn edge(byte: Option<&u8>) -> bool {
     match byte {
         None => true,
         Some(byte) => !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-'),
+    }
+}
+
+/// Stops a live plan at its step with `why`; an ended plan pushes nothing.
+pub(crate) fn halt(machine: &mut Reconcile, why: Why, out: &mut Queue<Need>) {
+    let event = match machine.state {
+        State::Begin => Event::Written,
+        State::AdminFile
+        | State::Admin
+        | State::Bot
+        | State::Draw
+        | State::Create
+        | State::Tokens
+        | State::Id(_)
+        | State::Written
+        | State::Orgs
+        | State::Hooks
+        | State::Ended => Event::Begin,
+    };
+    let mut needs = Queue::with_capacity(MAX_OUT);
+    step(machine, event, &mut needs);
+    if let Some(Need::Stop(mut failure)) = needs.pop() {
+        failure.why = why;
+        out.push(Need::Stop(failure));
     }
 }

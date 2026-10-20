@@ -33,16 +33,7 @@ impl World {
         Self::new(seed, true)
     }
     fn new(seed: u64, owned: bool) -> Self {
-        let limits = skein_forge_machine_world::fixtures::fake_limits();
-        let mut service = Service::new(fixtures::config(), &limits, seed).expect("world service");
-        let admin = service.setup_mut().account(b"kit-admin", true, b"");
-        service.setup_mut().token(admin, b"setup-admin", &[b"all"], fixtures::secret(fixtures::ADMIN));
-        if owned {
-            service.setup_mut().account(b"ada", true, b"Ada");
-        } else {
-            service.setup_mut().org(b"acme", b"kit-admin");
-            service.setup_mut().org(b"work", b"kit-admin");
-        }
+        let (service, limits) = seeded(seed, owned);
         Self {
             given: fixtures::given(owned),
             service,
@@ -154,4 +145,18 @@ impl World {
         }
         panic!("reconcile did not end")
     }
+}
+
+pub(crate) fn seeded(seed: u64, owned: bool) -> (Service, skein_fake_forge_protocol::Limits) {
+    let limits = skein_forge_machine_world::fixtures::fake_limits();
+    let mut service = Service::new(fixtures::config(), &limits, seed).expect("world service");
+    let admin = service.setup_mut().account(b"kit-admin", true, b"");
+    service.setup_mut().token(admin, b"setup-admin", &[b"all"], fixtures::secret(fixtures::ADMIN));
+    if owned {
+        service.setup_mut().account(b"ada", true, b"Ada");
+    } else {
+        service.setup_mut().org(b"acme", b"kit-admin");
+        service.setup_mut().org(b"work", b"kit-admin");
+    }
+    (service, limits)
 }

@@ -650,8 +650,9 @@ it, in skein's component shape. It holds the admin's token and the App's
 key only while a plan that asked for them runs, and drops them at its
 end.
 
-- **Construction:** `Host::new(limits, settings)` checks both (6.1).
-  The settings name each forge, its number, kind, API address and
+- **Construction:** `Host::new(limits, settings, crypto)` checks both
+  (6.1) and keeps `crypto`, the owner's `CryptoRng`, for the plans'
+  draws. The settings name each forge, its number, kind, API address and
   transport as forge-connection.md's do, and its given values: Forgejo's
   of 4.1 but the repositories, and GitHub's of 5.1 but the state; and
   the owner's user agent.
@@ -682,9 +683,9 @@ end.
 - **It does the needs** of 4.2 but the items: a `Send` on a connection of
   its own to the forge, opened for it and closed after its answer,
   waiting for the forge as 4.4 says on its own deadlines; a `Draw` from
-  the env's source; the states of 5.7. A `Read` or a `Write` goes up,
-  and the run waits for its answer. One answer per need: an answer for a
-  run with no need waiting is ignored.
+  that `CryptoRng`; the states of 5.7. A `Read` or a `Write` goes up, and
+  the run waits for its answer. One answer per need: an answer for a run
+  with no need waiting is ignored.
 - **Each run ends once,** `Done` or `Stop`, within `deadline`. `Close`
   ends every run unheard and the host says `Closed` when io has settled
   every socket.

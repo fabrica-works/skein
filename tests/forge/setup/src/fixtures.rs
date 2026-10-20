@@ -113,7 +113,7 @@ pub fn assert_bot(world: &crate::World) {
     use skein_forge_setup::item::Item;
     let bot = world.store().find(b"kit").expect("bot made");
     assert_eq!((bot.id, bot.admin, bot.full_name.as_ref()), (3, false, b"kit:bot".as_slice()));
-    assert_eq!(world.file(Item::User).expect("id file").expose(), b"3");
+    assert_eq!(world.file(Item::User).expect("id file").expose(), &3u64.to_le_bytes());
     for file in [Item::ApiToken, Item::GitToken] {
         assert_eq!(world.store().token_user(world.file(file).expect("token file").expose()), Some(3));
     }
@@ -171,7 +171,7 @@ pub fn random(seed: u64) -> (crate::World, OtherHooks) {
         seed_token(&mut world, &mut rng, bot, file, name, scopes, value);
     }
     if rng.next_u64() & 1 == 1 {
-        world.put(Item::User, secret(if rng.next_u64() & 1 == 1 { b"3" } else { b"1" }));
+        world.put(Item::User, secret(&if rng.next_u64() & 1 == 1 { 3u64 } else { 1u64 }.to_le_bytes()));
     }
     if rng.next_u64() & 1 == 1 {
         world.put(Item::WebhookSecret, secret(WEBHOOK));
@@ -230,4 +230,41 @@ fn seed_org(
         let id = world.store_mut().hook(org, OTHER_URL, secret(OTHER_SECRET));
         other.push((org.into(), id));
     }
+}
+
+#[must_use]
+pub fn host_limits() -> skein_forge_setup::host::Limits {
+    skein_forge_setup::host::Limits {
+        forges: 2,
+        runs: 2,
+        token_bytes: 64,
+        head_bytes: 4096,
+        headers: 32,
+        body_bytes_in: 65536,
+        depth: 16,
+        chunk: 1024,
+        string_bytes: 512,
+        body_bytes: 16384,
+        inner: 32,
+        target_bytes: 4096,
+        io: skein_forge_machine_world::fixtures::shared().io,
+    }
+}
+#[must_use]
+pub fn host_settings() -> skein_forge_setup::host::Settings {
+    use skein_forge_setup::host::{Forge, Kind, Settings, Transport};
+    let mut forges = List::with_capacity(2);
+    forges
+        .push(Forge {
+            kind: Kind::Forgejo,
+            address: skein_io::Addr::Ip("127.0.0.1:3000".parse().expect("loopback")),
+            transport: Transport::Plaintext { name: None },
+            given: given(false),
+        })
+        .expect("one forge");
+    Settings { forges, user_agent: b"kit/0.0.0".as_slice().into() }
+}
+#[must_use]
+pub fn crypto() -> skein_lib::CryptoRng {
+    skein_lib::CryptoRng::new(&secret(&[42; 32]), 0).expect("32-byte seed")
 }

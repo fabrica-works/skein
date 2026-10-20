@@ -82,7 +82,7 @@ skein-fake-oauth lib, json, oauth
 skein-forge    lib, json
 skein-forge-client lib, forge
 skein-forge-connection lib, io, http, tls, json, forge
-skein-forge-setup lib, json, forge
+skein-forge-setup lib, io, http, json, forge
 skein-fake-forge-domain lib
 skein-fake-forge-protocol lib, http, json, forge, fake-forge-domain
 skein-throwaway-forgejo lib, io, http, json, shell, forge

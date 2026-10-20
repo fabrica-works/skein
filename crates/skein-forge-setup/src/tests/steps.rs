@@ -158,7 +158,7 @@ fn a_zero_page_cap_is_unexpected() {
     let mut tokens = fixtures::token_read(Item::ApiToken);
     tokens.step(Event::Read(None));
     let mut orgs = fixtures::id_read();
-    orgs.step(Event::Read(Some(secret(b"42"))));
+    orgs.step(Event::Read(Some(secret(&42u64.to_le_bytes()))));
     for (mut run, stage, subject) in
         [(tokens, Stage::Token, b"kit-api".as_slice()), (orgs, Stage::Org, b"acme".as_slice())]
     {
@@ -229,7 +229,7 @@ fn bot_creation() -> Run {
 }
 fn org_settings() -> Run {
     let mut run = fixtures::id_read();
-    run.step(Event::Read(Some(secret(b"42"))));
+    run.step(Event::Read(Some(secret(&42u64.to_le_bytes()))));
     run
 }
 fn hook_draw() -> Run {
@@ -342,5 +342,26 @@ fn an_ended_machine_ignores_every_event() {
             crate::reconcile::step(&mut run.machine, event.clone(), &mut out);
             assert_eq!(out.len(), 0, "late {event:?}");
         }
+    }
+}
+
+#[test]
+fn a_halted_plan_stops_at_its_step_with_the_why_given() {
+    for PhaseCase { name, mut run, prefix, stage, subject, .. } in phase_cases() {
+        for event in prefix {
+            run.step(event);
+        }
+        let mut out = skein_lib::Queue::with_capacity(crate::reconcile::MAX_OUT);
+        crate::reconcile::halt(&mut run.machine, Why::Down, &mut out);
+        assert_eq!(
+            out.pop(),
+            Some(Need::Stop(Failure { forge: run.forge(), step: stage, subject: subject.into(), why: Why::Down })),
+            "{name}"
+        );
+    }
+    for mut run in terminal_runs() {
+        let mut out = skein_lib::Queue::with_capacity(crate::reconcile::MAX_OUT);
+        crate::reconcile::halt(&mut run.machine, Why::Down, &mut out);
+        assert!(out.is_empty());
     }
 }
