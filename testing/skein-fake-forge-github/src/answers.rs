@@ -21,6 +21,9 @@ pub(crate) enum Body<'a> {
     Repository(&'a d::Repository),
     Branch(&'a d::Branch),
     Branches(&'a [&'a [u8]]),
+    Issues(&'a [d::Issue]),
+    Issue(&'a d::Issue),
+    Comments(&'a [d::Comment]),
     Refusal(&'a [u8]),
 }
 fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
@@ -38,6 +41,9 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::Repository(row) => server::repository(row, out),
         Body::Branch(row) => server::branch(row, out),
         Body::Branches(rows) => server::branches(rows, out),
+        Body::Issues(rows) => server::issues(rows, out),
+        Body::Issue(row) => server::issue(row, out),
+        Body::Comments(rows) => server::comments(rows, out),
         Body::Refusal(message) => server::refusal(message, &[], out),
     }
 }
@@ -99,6 +105,15 @@ impl Page {
     }
     pub(crate) fn contains(&self, index: u64) -> bool {
         index >= self.start && index < self.end
+    }
+    pub(crate) fn link_next(&self, response: Response, target: &[u8], limits: &Limits) -> Response {
+        let mut response = self.link(response, target, limits);
+        if let Some(link) = &response.link
+            && let Some(end) = bytes::find(link, b", ")
+        {
+            response.link = Some(bytes::copy_of(link.get(..end).expect("link delimiter")));
+        }
+        response
     }
     pub(crate) fn link(&self, mut response: Response, target: &[u8], limits: &Limits) -> Response {
         if response.status != 200 {

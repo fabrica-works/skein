@@ -37,3 +37,6 @@ fn store(seed: u64) -> Installations {
     assert_eq!(rows.install(1, b"person", Kind::User, Reach::All, wall(1000)), Ok(1));
     rows
 }
+
+mod issues;
+mod read_support;

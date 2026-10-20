@@ -58,12 +58,18 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::Branches { owner, name, page, per_page } if page > 0 && per_page > 0 => {
             Route::Token(Token::Read(reads::Read::Branches { owner, name, page, per_page }))
         }
+        Request::Issues { owner, name, since, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::Issues { owner, name, since, page, per_page }))
+        }
+        Request::Issue { owner, name, number } => Route::Token(Token::Read(reads::Read::Issue { owner, name, number })),
+        Request::Comments { owner, name, number, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::Comments { owner, name, number, page, per_page }))
+        }
         Request::Installations { .. }
         | Request::Reachable { .. }
         | Request::Branches { .. }
         | Request::Viewer
         | Request::Issues { .. }
-        | Request::Issue { .. }
         | Request::Comments { .. }
         | Request::Pull { .. }
         | Request::PullsFor { .. }

@@ -14,11 +14,16 @@ use skein_forge::{
     forgejo::id::{ObjectFormat, ObjectId},
     github::document as d,
 };
-use skein_lib::{List, ReplyTo, bytes};
+use skein_lib::{List, ReplyTo, Wall, bytes};
+
+mod issues;
 
 #[derive(Debug)]
 pub(crate) enum Read {
     Repository(u64),
+    Issues { owner: Box<[u8]>, name: Box<[u8]>, since: Wall, page: u32, per_page: u32 },
+    Issue { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
+    Comments { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
     Locate { owner: Box<[u8]>, name: Box<[u8]> },
     Branch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
     Branches { owner: Box<[u8]>, name: Box<[u8]>, page: u32, per_page: u32 },
@@ -26,13 +31,21 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Repository(Row),
+    Issues { target: Box<[u8]>, page: u32, size: u32 },
+    Issue,
+    Comments { target: Box<[u8]>, page: u32, size: u32 },
     Branch(Box<[u8]>),
     Branches { page: u32, size: u32, target: Box<[u8]> },
 }
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::Locate { owner, name } | Read::Branch { owner, name, .. } | Read::Branches { owner, name, .. } => {
+        Read::Issues { owner, name, .. }
+        | Read::Issue { owner, name, .. }
+        | Read::Comments { owner, name, .. }
+        | Read::Locate { owner, name }
+        | Read::Branch { owner, name, .. }
+        | Read::Branches { owner, name, .. } => {
             for (_, row) in &service.repositories {
                 if row.owner == *owner && row.name == *name {
                     return Some(row);
@@ -63,6 +76,24 @@ pub(crate) fn call(
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::Issues { since, page, per_page, .. } => (
+            Pending::Issues { target: bytes::copy_of(target), page, size: per_page.min(service.limits.page) },
+            Op::Read(a::Read::Items {
+                state: None,
+                kind: None,
+                labels: Box::from([]),
+                author: None,
+                order: a::Order::LeastUpdated,
+                since: skein_lib::Time::from_nanos(since.as_nanos()),
+                page,
+                limit: per_page.min(service.limits.page),
+            }),
+        ),
+        Read::Issue { number, .. } => (Pending::Issue, Op::Read(a::Read::Item { number, after: 0 })),
+        Read::Comments { number, page, per_page, .. } => (
+            Pending::Comments { target: bytes::copy_of(target), page, size: per_page.min(service.limits.page) },
+            Op::Read(a::Read::Comments { number }),
+        ),
         Read::Repository(_) | Read::Locate { .. } => (Pending::Repository(row.clone()), Op::Read(a::Read::Settings)),
         Read::Branch { branch, .. } => (Pending::Branch(branch.clone()), Op::Read(a::Read::Branch { branch })),
         Read::Branches { page, per_page, .. } => (
@@ -95,6 +126,9 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
         Err(error) => return refused(error, limits),
     };
     match pending.kind {
+        Pending::Issues { target, page, size } => issues::items(answer, &target, page, size, limits),
+        Pending::Issue => issues::item(answer, limits),
+        Pending::Comments { target, page, size } => issues::comments(answer, &target, page, size, limits),
         Pending::Repository(row) => {
             let Answer::Settings(settings) = answer else {
                 return answers::failed();

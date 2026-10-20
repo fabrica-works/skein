@@ -101,7 +101,9 @@ impl Harness {
         Self::with(limits(), config())
     }
     pub fn with(limits: Limits, config: Config) -> Self {
-        let fake_config = domain_config();
+        Self::with_domain(limits, config, domain_config())
+    }
+    pub fn with_domain(limits: Limits, config: Config, fake_config: fake::Config) -> Self {
         let mut domain = fake::Domain::new(&fake_config, 5);
         let mut first = 0;
         for (id, name) in [(2, b"acme/widgets".as_slice()), (4, b"acme/tools")] {
@@ -217,7 +219,7 @@ impl Harness {
         // Setup's changes are outside each read story; reads must cause zero hooks.
         self.hooks = 0;
     }
-    fn drive(&mut self, event: fake::Event) -> Result<a::Answer, a::Error> {
+    pub fn drive(&mut self, event: fake::Event) -> Result<a::Answer, a::Error> {
         let mut out = Queue::with_capacity(fake::MAX_OUT);
         fake::step(&mut self.domain, &self.env, event, &mut out);
         let mut reply = None;
