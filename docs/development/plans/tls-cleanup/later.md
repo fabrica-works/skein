@@ -8,7 +8,7 @@ What the audit found and this plan does not do (`findings/audit.md`).
 | Requests after a failure on the native face: dropped or asserted (N-9) | tls.md, 7 | with the native face's first user |
 | session.rs's `process` and `encrypt` nest five deep (B-6) | none | the next plan that touches the session |
 | Tests that run more seeds and bytes than their assertions need: exchange.rs's 70 worlds for 5 waits, 100,000-byte payloads, a configuration built per run (T-8) | testing-strategy.md, 8 | when the suites near their budgets |
-| `tests/tls/tests/fake_peer.rs` tests skein-fake-peers' TLS face, with 6 dev-dependencies for it, and a 56-line test; it belongs in testing/skein-fake-peers (T-12) | tls.md, 5 | a plan that touches skein-fake-peers |
+| `tests/tls/tests/fake_peer.rs` tests skein-fake-peers' TLS face, with 6 dev-dependencies for it, and a 56-line test; it belongs in crates/skein-fake-peers (T-12) | tls.md, 5 | a plan that touches skein-fake-peers |
 | `fuzzy_native.rs` asserts nothing its focused twin does not: it does not check that short and reordered completions happened (T-13) | testing-strategy.md, 3 | the native face's first user |
 | `exchanges_swept`, 45 lines | tls.md, 5 | with T-8 |
 | smith's agent shell builds its root store by hand and calls `Config::new`, skipping `from_der`'s key filtering (smith's `crates/smith-agent-shell/src/config.rs`) | tls.md, 3.4 | a smith plan |

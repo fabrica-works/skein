@@ -25,14 +25,14 @@ members = [
     "testing/skein-fake-channel",
     "testing/skein-fake-person",
     "testing/skein-fake-person-browser",
-    "testing/skein-fake-oauth",
-    "testing/skein-fake-checkout",
-    "testing/skein-fake-forge-domain",
-    "testing/skein-fake-forge-protocol",
+    "crates/skein-fake-oauth",
+    "crates/skein-fake-checkout",
+    "crates/skein-fake-forge-domain",
+    "crates/skein-fake-forge-protocol",
     "testing/skein-fake-forge-github",
-    "testing/skein-fake-llm-domain",
-    "testing/skein-fake-llm-protocol",
-    "testing/skein-fake-peers",
+    "crates/skein-fake-llm-domain",
+    "crates/skein-fake-llm-protocol",
+    "crates/skein-fake-peers",
     "testing/skein-heap",
     "testing/skein-scratch",
     "testing/skein-throwaway-forgejo",
@@ -98,13 +98,13 @@ skein-llm = { path = "crates/skein-llm" }
 skein-llm-connection = { path = "crates/skein-llm-connection" }
 skein-oauth = { path = "crates/skein-oauth" }
 skein-oauth-accounts = { path = "crates/skein-oauth-accounts" }
-skein-fake-forge-domain = { path = "testing/skein-fake-forge-domain" }
-skein-fake-forge-protocol = { path = "testing/skein-fake-forge-protocol" }
+skein-fake-forge-domain = { path = "crates/skein-fake-forge-domain" }
+skein-fake-forge-protocol = { path = "crates/skein-fake-forge-protocol" }
 skein-fake-forge-github = { path = "testing/skein-fake-forge-github" }
-skein-fake-llm-domain = { path = "testing/skein-fake-llm-domain" }
-skein-fake-llm-protocol = { path = "testing/skein-fake-llm-protocol" }
-skein-fake-peers = { path = "testing/skein-fake-peers" }
-skein-fake-oauth = { path = "testing/skein-fake-oauth" }
+skein-fake-llm-domain = { path = "crates/skein-fake-llm-domain" }
+skein-fake-llm-protocol = { path = "crates/skein-fake-llm-protocol" }
+skein-fake-peers = { path = "crates/skein-fake-peers" }
+skein-fake-oauth = { path = "crates/skein-fake-oauth" }
 skein-tls = { path = "crates/skein-tls" }
 skein-shell = { path = "crates/skein-shell" }
 skein-sim = { path = "crates/skein-sim" }
@@ -119,7 +119,7 @@ skein-echo-client = { path = "testing/skein-echo-client" }
 skein-browser-world = { path = "tests/browser" }
 skein-fake-machine = { path = "testing/skein-fake-machine" }
 skein-fake-channel = { path = "testing/skein-fake-channel" }
-skein-fake-checkout = { path = "testing/skein-fake-checkout" }
+skein-fake-checkout = { path = "crates/skein-fake-checkout" }
 skein-world = { path = "testing/skein-world" }
 
 # The only dependencies from outside the workspace (programming-model.md,
