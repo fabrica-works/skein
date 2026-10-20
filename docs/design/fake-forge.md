@@ -227,6 +227,13 @@ domain, and holds no clock of its own.
   read by id, collaborators and hooks, and the admin's repository search,
   in id order and paged by number as Forgejo pages it) are served from this
   layer's own bounded store, not the domain's (forge-setup.md, section 4).
+- **A setup grant reaches the domain.** A collaborator grant made through
+  the setup routes is kept in the setup store, and the domain grants the
+  account's user number (section 5) the same permission on the
+  repository, as Forgejo's collaborator has it. So the bot that adoption
+  grants reads and writes through the domain's routes, as an
+  application's demo needs (temper's `protocol/setup.md`, 8.4). Only the
+  grant crosses: the store's other rows stay its own.
 
 ## 5. The forge peer
 
@@ -252,7 +259,7 @@ peers host theirs. The real loop hosts the same one.
   outgrows it fails by name rather than losing its history.
 - **A peer that serves a person keeps no records.** An application that
   runs the fake as a product, such as a demo's forge (temper's
-  `protocol/setup.md`, 7.2), lives longer than any story's caps.
+  `protocol/setup.md`, 8.4), lives longer than any story's caps.
   `without_records()`, called on a fresh peer before its first pass,
   makes it keep none: `observations()` stays empty, `worst_case` leaves
   the observations out, and the assertion never runs. A cap of zero
@@ -413,13 +420,6 @@ relies on (forge.md, section 9). It makes its own admin user and tokens.
 - **The GitHub layer's speculative merges.** A queue's group is built
   from the entry ahead, one at a time (10.2); github.com batches groups.
   Default: one at a time, until a story needs batches.
-- **Setup grants and the domain.** A collaborator grant made through the
-  setup routes is kept in the setup store and never reaches the domain's
-  permissions, so the bot that adoption grants write to still cannot
-  write through the domain's routes. An application's demo needs only
-  reads so far (temper's `protocol/setup.md`, 7.2). Default: the fake
-  stays as it is until a story writes as a granted account; that story
-  makes a setup grant reach the domain.
 - **Deliveries** go to the configured endpoint, not to the organization hook
   that reconcile makes. Whether they follow that hook is open. Default: they
   do not, so a world that wants the hook's route configures its endpoint.

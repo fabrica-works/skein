@@ -191,7 +191,7 @@ answer ownership is checked before effects or payload copies.
   `Place`'s script counts the cued scripts, then the asked ones, then
   `otherwise` as the last.
 - **Who uses it:** an application's demo model, whose scripts its
-  document gives (temper's `protocol/setup.md`, 8.3), and a world that
+  document gives (temper's `protocol/setup.md`, 8.4), and a world that
   answers a person's words rather than a charter's.
 
 ## 3. Byte peer
