@@ -93,6 +93,7 @@ pub(super) fn write(json: &mut Encoder, answer: &super::Answer) {
         | super::Answer::User(_)
         | super::Answer::ApiSettings(_)
         | super::Answer::Repository(_)
+        | super::Answer::Reachable(_)
         | super::Answer::Search { .. }
         | super::Answer::Issues(_)
         | super::Answer::Issue(_)

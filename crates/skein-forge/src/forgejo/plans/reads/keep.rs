@@ -22,7 +22,8 @@ pub(super) fn keep_row(row: &d::Row, forge: u16, tables: &mut Tables) {
             }
         }
         d::Row::Pull(pull) => keep_pull(pull, forge, tables),
-        d::Row::Token(_)
+        d::Row::Reachable(_)
+        | d::Row::Token(_)
         | d::Row::Branch(_)
         | d::Row::Protection(_)
         | d::Row::File(_)
@@ -76,7 +77,8 @@ pub(super) fn page_bound(request: &Request) -> Option<u32> {
         | Request::PullFiles { page, .. }
         | Request::Runs { page, .. } => page.limit,
         Request::UserSearch { limit, .. } => *limit,
-        Request::User
+        Request::UserRepos { .. }
+        | Request::User
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
@@ -133,7 +135,8 @@ pub fn long(heard: &Heard) -> bool {
             d::Row::Comment(row) => long_body(&row.body),
             d::Row::Review(row) => long_body(&row.body),
             d::Row::ReviewComment(row) => long_body(&row.body),
-            d::Row::Token(_)
+            d::Row::Reachable(_)
+            | d::Row::Token(_)
             | d::Row::User(_)
             | d::Row::Status(_)
             | d::Row::Branch(_)

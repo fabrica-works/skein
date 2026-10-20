@@ -50,6 +50,7 @@ pub struct Server {
     range: Result<Option<response::Range>, api::Error>,
     call: Option<Id<Call>>,
     followed: bool,
+    listing: Option<crate::setup::repos::Listing>,
     head: Option<http::Call>,
     reply: Option<Box<[u8]>>,
     offset: usize,
@@ -84,6 +85,7 @@ impl Server {
             range: Ok(None),
             call: None,
             followed: false,
+            listing: None,
             head: None,
             reply: None,
             offset: 0,
@@ -166,6 +168,36 @@ pub fn down(
         return;
     };
     if !call.active || call.server != server.owner {
+        return;
+    }
+    if server.listing.is_some() {
+        match result {
+            Ok(api::Answer::Permission(permission)) => {
+                let accepted = match &mut server.listing {
+                    Some(listing) => listing.accept(&service.setup, &service.config, server.user, permission),
+                    None => Err(Error::Limits),
+                };
+                if accepted.is_err() {
+                    server.listing = None;
+                    retire(server, service);
+                    fail(server, &env.limits, 503);
+                } else {
+                    user_repos_next(server, service, env, above);
+                }
+            }
+            Ok(answer) => {
+                drop(answer);
+                server.listing = None;
+                retire(server, service);
+                fail(server, &env.limits, 500);
+            }
+            Err(error) => {
+                server.listing = None;
+                retire(server, service);
+                error_reply(server, env, error);
+            }
+        }
+        resume(server, service, env, above, below);
         return;
     }
     let request = server.request.as_ref().expect("waiting request");
@@ -270,6 +302,7 @@ pub fn close(
         return;
     }
     retire(server, service);
+    server.listing = None;
     server.request = None;
     server.reply = None;
     server.decoder = None;
@@ -384,6 +417,7 @@ fn http_event(
         | http::Event::Failed(_)
         | http::Event::Ended => close(server, service, env, above, below),
         http::Event::Done(reuse) => {
+            server.listing = None;
             server.request = None;
             server.select = response::Select::Document;
             match reuse {
@@ -481,6 +515,18 @@ fn decoded(server: &mut Server, service: &mut Service, env: &Env<Limits>, reques
         }
         return;
     }
+    if let Request::UserRepos { page } = &request {
+        let Ok(id) = service.calls.insert(Call { server: server.owner, active: true }) else {
+            fail(server, &env.limits, 503);
+            return;
+        };
+        server.call = Some(id);
+        server.listing = Some(crate::setup::repos::Listing::new(*page, &service.config));
+        server.request = Some(request);
+        server.state = State::Waiting;
+        user_repos_next(server, service, env, above);
+        return;
+    }
     let op = routes::op(&service.config, &request);
     let select = match server.range {
         Ok(range) => response::select(&service.config, &request, range),
@@ -518,7 +564,8 @@ fn table(service: &Service, request: &Request, user: u64) -> Option<documents::A
         Request::UserSearch { uid, .. } => {
             Some(documents::Answer::Search { ok: true, data: Box::new([routes::user(&service.config, *uid)]) })
         }
-        Request::RepositoryById { .. }
+        Request::UserRepos { .. }
+        | Request::RepositoryById { .. }
         | Request::Repository { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -627,4 +674,27 @@ fn room(server: &mut Server, limits: &Limits) {
         read: Read::Nothing,
         room: u32::try_from(remaining).unwrap_or(u32::MAX).min(limits.http.send),
     }));
+}
+
+fn user_repos_next(server: &mut Server, service: &mut Service, env: &Env<Limits>, above: &mut Queue<Event>) {
+    let Some(listing) = &mut server.listing else {
+        return;
+    };
+    if let Some(repo) = listing.next(&service.config) {
+        let Some(id) = server.call else {
+            return;
+        };
+        listing.current = Some(repo.id);
+        above.push(Event::Domain(domain::Event::Call {
+            reply_to: ReplyTo::new(id.token()),
+            user: server.user,
+            repository: repo.full.clone(),
+            op: api::Op::Read(api::Read::ListingPermission),
+        }));
+    } else {
+        let reply = listing.reply(&env.limits);
+        server.listing = None;
+        retire(server, service);
+        respond(server, reply);
+    }
 }

@@ -643,6 +643,8 @@ fn raw_request(request: &request::Request) -> bool {
         | request::Request::ApiSettings
         | request::Request::RepositoryById { .. }
         | request::Request::Repository { .. }
+        // user/repos is used by the setup host, not the connection.
+        | request::Request::UserRepos { .. }
         | request::Request::UserSearch { .. }
         | request::Request::Issues { .. }
         | request::Request::Issue { .. }

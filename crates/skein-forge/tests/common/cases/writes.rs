@@ -137,6 +137,7 @@ pub fn expected(answer: Answer) -> Document {
         | Answer::User(_)
         | Answer::ApiSettings(_)
         | Answer::Repository(_)
+        | Answer::Reachable(_)
         | Answer::Search { .. }
         | Answer::Issues(_)
         | Answer::Comments(_)

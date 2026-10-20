@@ -129,6 +129,7 @@ pub(super) fn write(json: &mut Encoder, answer: &Answer) {
         | Answer::User(_)
         | Answer::ApiSettings(_)
         | Answer::Repository(_)
+        | Answer::Reachable(_)
         | Answer::Search { .. }
         | Answer::Issues(_)
         | Answer::Issue(_)

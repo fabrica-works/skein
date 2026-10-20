@@ -185,6 +185,12 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
             tables = tables.checked_add(u64::try_from(branch.len()).ok()?)?;
         }
     }
+    let listing = List::<(skein_forge::forgejo::document::Reachable, domain::api::Permission)>::worst_case(
+        limits.documents.inner,
+    )?
+    .checked_add(
+        u64::from(limits.documents.inner).checked_mul(u64::from(limits.documents.string_bytes).checked_mul(2)?)?,
+    )?;
     let per_connection = skein_http::server::worst_case(&limits.http)?
         .checked_add(skein_json::tokenizer::worst_case(&limits.documents.json)?.checked_mul(2)?)?
         .checked_add(u64::from(limits.documents.body_bytes).checked_mul(4)?)?
@@ -195,6 +201,7 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         )?
         .checked_add(u64::from(limits.documents.target_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.raw_bytes))?
+        .checked_add(listing)?
         // One sanitized HTTP call held until its owner drains the entrance.
         .checked_add(u64::try_from(size_of::<Option<skein_http::server::Call>>()).ok()?)?
         .checked_add(u64::from(limits.http.head))?

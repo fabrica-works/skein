@@ -112,6 +112,7 @@ impl Actions {
             }
             Move::End(
                 Kind::User
+                | Kind::Reachable(_)
                 | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings

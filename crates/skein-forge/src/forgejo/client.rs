@@ -21,6 +21,7 @@ use branches::BranchKind;
 use reviews::ReviewKind;
 pub(crate) mod hooks;
 pub(crate) mod orgs;
+pub(crate) mod reachable;
 pub(crate) mod setup;
 mod start;
 pub(crate) mod writes;
@@ -86,6 +87,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. } => start::encode(request, limits),
         Request::Issues { .. }
         | Request::Issue { .. }
@@ -104,6 +106,7 @@ pub struct Decoder {
 enum DecoderState {
     Error(writes::Error),
     Start(start::Start),
+    Reachable(reachable::Reachable),
     Setup(setup::Setup),
     Orgs(orgs::Orgs),
     Hooks(hooks::Hooks),
@@ -149,6 +152,7 @@ pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
         Request::Permission { .. } => Kind::Branch(BranchKind::Permission),
         Request::TeamMembers { .. } | Request::Collaborators { .. } => Kind::Users,
         Request::Pulls { .. } => Kind::Item(Item::Pulls),
+        Request::UserRepos { .. } => Kind::Reachable(reachable::ReachableKind::Listing),
         Request::UserOf { .. } | Request::CreateUser { .. } | Request::User => Kind::Setup(setup::SetupKind::Account),
         Request::Tokens { .. } => Kind::Setup(setup::SetupKind::Tokens),
         Request::CreateToken { .. } => Kind::Setup(setup::SetupKind::Token),
@@ -169,6 +173,7 @@ pub fn decoder(request: &Request, limits: &Limits) -> Option<Decoder> {
             DecoderState::Hooks(hooks::Hooks::new(kind, limits))
         }
         Kind::Setup(kind) => DecoderState::Setup(setup::Setup::new(kind, limits)),
+        Kind::Reachable(_) => DecoderState::Reachable(reachable::Reachable::new()),
         Kind::Error => DecoderState::Error(writes::Error::new()),
         Kind::Write(_) | Kind::Delivery(_) => unreachable!("answer kind selection"),
         Kind::File(kind) => DecoderState::Files(Box::new(files::Files::new(kind))),
@@ -202,6 +207,7 @@ pub fn step(decoder: &mut Decoder, limits: &Limits, event: &tokenizer::Event) ->
             DecoderState::Error(state) => state.step(movement),
             DecoderState::Files(state) => state.step(movement, &decoder.walk),
             DecoderState::Actions(state) => state.step(movement, &decoder.walk),
+            DecoderState::Reachable(state) => state.step(movement, limits),
             DecoderState::Start(state) => state.step(movement, decoder.walk.parent()),
             DecoderState::Reviews(state) => state.step(movement, &decoder.walk),
             DecoderState::Branches(state) => state.step(movement, &decoder.walk, limits),
@@ -213,7 +219,8 @@ pub fn step(decoder: &mut Decoder, limits: &Limits, event: &tokenizer::Event) ->
 pub fn keep_after(decoder: &mut Decoder, after: u64) {
     match &mut decoder.state {
         DecoderState::Items(state) => state.keep_after(after),
-        DecoderState::Hooks(_)
+        DecoderState::Reachable(_)
+        | DecoderState::Hooks(_)
         | DecoderState::Orgs(_)
         | DecoderState::Setup(_)
         | DecoderState::Error(_)

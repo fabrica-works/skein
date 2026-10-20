@@ -77,8 +77,21 @@ pub struct Repository {
     pub allow_rebase: bool,
     pub html_url: Box<[u8]>,
 }
+/// A repository a picker can reach, shared by connected and admin listings.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Reachable {
+    pub repository: u64,
+    pub owner: u64,
+    pub login: Box<[u8]>,
+    pub name: Box<[u8]>,
+    pub private: bool,
+    /// The row's `permissions.push`.
+    pub push: bool,
+}
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Row {
+    /// Retains every repository so the setup host can filter after counting the page.
+    Reachable(Reachable),
     Hook(Hook),
     Token(AccessToken),
     Team(Team),

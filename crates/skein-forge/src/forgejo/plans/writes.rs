@@ -200,7 +200,8 @@ impl Plan {
                     d::Row::User(user) => {
                         tables.keep_user(self.repository.forge, user.id, user.login);
                     }
-                    d::Row::Token(_)
+                    d::Row::Reachable(_)
+                    | d::Row::Token(_)
                     | d::Row::Issue(_)
                     | d::Row::Comment(_)
                     | d::Row::Status(_)

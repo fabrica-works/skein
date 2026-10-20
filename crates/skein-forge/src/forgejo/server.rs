@@ -75,6 +75,8 @@ fn read_route(method: Method, target: &[u8], limits: &Limits) -> Result<Route, U
 }
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Answer {
+    /// Encodes a page without filtering rows whose push permission is false.
+    Reachable(Box<[crate::forgejo::document::Reachable]>),
     Hook(crate::forgejo::document::Hook),
     Hooks(Box<[crate::forgejo::document::Hook]>),
     Token(crate::forgejo::document::AccessToken),
@@ -193,7 +195,11 @@ fn write(json: &mut writer::Encoder, answer: &Answer) -> Result<(), writer::Refu
             branches::write(json, answer);
             Ok(())
         }
-        Answer::User(_) | Answer::ApiSettings(_) | Answer::Repository(_) | Answer::Search { .. } => {
+        Answer::Reachable(_)
+        | Answer::User(_)
+        | Answer::ApiSettings(_)
+        | Answer::Repository(_)
+        | Answer::Search { .. } => {
             start::write(json, answer);
             Ok(())
         }

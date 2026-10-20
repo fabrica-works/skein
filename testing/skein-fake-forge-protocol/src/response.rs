@@ -103,6 +103,7 @@ pub fn follow(request: &Request, answer: &Answer) -> Result<Option<(a::Read, Sel
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -171,6 +172,7 @@ pub fn select(config: &Config, request: &Request, range: Option<Range>) -> Resul
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -231,6 +233,7 @@ fn status(request: &Request) -> u16 {
         | crate::Route::ApiSettings
         | crate::Route::RepositoryById
         | crate::Route::Repository
+        | crate::Route::UserRepos
         | crate::Route::UserSearch
         | crate::Route::Issues
         | crate::Route::Issue

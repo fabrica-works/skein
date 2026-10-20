@@ -128,6 +128,7 @@ fn target(request: &Request, out: &mut Target) {
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -234,7 +235,8 @@ impl Reviews {
                 ReviewKind::Reviews | ReviewKind::Comments => Ok(()),
             },
             Move::End(
-                Kind::Error
+                Kind::Reachable(_)
+                | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings
                 | Kind::Repository

@@ -33,6 +33,7 @@ pub(crate) enum Kind {
     Settings,
     Repository,
     Search,
+    Reachable(crate::forgejo::client::reachable::ReachableKind),
     Users,
     File(crate::forgejo::client::files::FileKind),
     Action(ActionKind),
@@ -66,6 +67,7 @@ const fn optional(key: &'static [u8], read: Read) -> Field {
 fn fields(kind: Kind) -> &'static [Field] {
     match kind {
         Kind::Setup(kind) => crate::forgejo::client::setup::fields(kind),
+        Kind::Reachable(kind) => crate::forgejo::client::reachable::fields(kind),
         Kind::Error => error_fields(),
         Kind::Delivery(kind) => crate::forgejo::client::delivery::fields(kind),
         Kind::Write(kind) => crate::forgejo::server::writes::fields(kind),
@@ -174,13 +176,17 @@ fn element(kind: Kind) -> Option<Kind> {
         Kind::Review(kind) => crate::forgejo::client::reviews::element(kind),
         Kind::Branch(kind) => crate::forgejo::client::branches::element(kind),
         Kind::Item(Item::Pulls) => Some(Kind::Item(Item::Pull)),
+        Kind::Reachable(crate::forgejo::client::reachable::ReachableKind::Listing) => {
+            Some(Kind::Reachable(crate::forgejo::client::reachable::ReachableKind::Row))
+        }
         Kind::Users | Kind::Item(Item::Reviewers) => Some(Kind::User),
         Kind::Item(Item::Issues) => Some(Kind::Item(Item::Issue)),
         Kind::Item(Item::Comments) => Some(Kind::Item(Item::Comment)),
         Kind::Item(Item::Statuses) => Some(Kind::Item(Item::Status)),
         Kind::Item(Item::Labels) => Some(Kind::Item(Item::Label)),
         Kind::Setup(kind) => crate::forgejo::client::setup::element(kind),
-        Kind::Delivery(_)
+        Kind::Reachable(_)
+        | Kind::Delivery(_)
         | Kind::Error
         | Kind::User
         | Kind::Settings

@@ -176,6 +176,7 @@ impl Heap for api::Read {
             | Self::Collaborators
             | Self::Statuses { .. }
             | Self::Permission { .. }
+            | Self::ListingPermission
             | Self::Tree { .. } => Some(0),
         }
     }

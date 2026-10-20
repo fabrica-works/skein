@@ -344,16 +344,16 @@ fn a_steps_log_end_is_served_by_a_suffix_range() {
 
 #[test]
 fn unauthorized_heads_are_drained_and_counted_in_the_bound() {
-    // The fixture's original bound and the added snapshot for each of its four connections.
+    // The fixture's tables and protocol state, plus each connection's captured head.
     const CONNECTIONS: u64 = 4;
-    const BASE_BYTES: u64 = 4_645_153;
+    const BASE_BYTES: u64 = 4_784_673;
     const HEAD_BYTES: u64 = 4_664;
     let config = fixtures::config();
     let mut limits = fixtures::limits();
     assert_eq!(crate::worst_case(&limits, &config), Some(BASE_BYTES + CONNECTIONS * HEAD_BYTES));
-    assert_eq!(crate::worst_case(&limits, &config), Some(4_663_809));
+    assert_eq!(crate::worst_case(&limits, &config), Some(4_803_329));
     limits.http.head += 1;
-    assert_eq!(crate::worst_case(&limits, &config), Some(4_663_949));
+    assert_eq!(crate::worst_case(&limits, &config), Some(4_803_469));
     let mut h = Harness::new(config);
     h.ask_as(b"GET", b"/api/v1/user", b"", b"wrong-token");
     assert_eq!(h.status(), 401);

@@ -112,6 +112,7 @@ fn target(request: &Request, out: &mut Target) {
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -205,6 +206,7 @@ impl Files {
             }
             Move::End(
                 Kind::User
+                | Kind::Reachable(_)
                 | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings

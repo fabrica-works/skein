@@ -166,9 +166,27 @@ pub(super) fn drive(
 fn drive_split(
     body: &[u8],
     limits: &Limits,
+    demand: tokenizer::Request,
+    event: impl FnMut(&tokenizer::Event) -> Option<tokenizer::Request>,
+    split: usize,
+) -> usize {
+    drive_parts(body, limits, demand, event, [&body[..split], &body[split..]].into_iter())
+}
+fn drive_chunked(
+    body: &[u8],
+    limits: &Limits,
+    demand: tokenizer::Request,
+    event: impl FnMut(&tokenizer::Event) -> Option<tokenizer::Request>,
+    chunk: usize,
+) -> usize {
+    drive_parts(body, limits, demand, event, body.chunks(chunk))
+}
+fn drive_parts<'a>(
+    body: &[u8],
+    limits: &Limits,
     mut demand: tokenizer::Request,
     mut event: impl FnMut(&tokenizer::Event) -> Option<tokenizer::Request>,
-    split: usize,
+    mut chunks: impl Iterator<Item = &'a [u8]>,
 ) -> usize {
     // No decoded string can exceed the complete input, including malformed
     // mutations. Keep the configured bound while reserving only useful room.
@@ -181,8 +199,6 @@ fn drive_split(
     let mut intake = Intake::with_capacity(
         u32::try_from(body.len()).expect("body fits").max(tokenizer::largest_demand(&limits.json)),
     );
-    intake.append(&body[..split]).expect("first piece fits");
-    let mut suffix = Some(&body[split..]);
     let mut read = None;
     for steps in 1..=body.len() * 4 + 32 {
         match read.take() {
@@ -191,10 +207,15 @@ fn drive_split(
                 let bytes = match first {
                     Some(bytes) => Some(bytes),
                     None => {
-                        if let Some(bytes) = suffix.take() {
-                            intake.append(bytes).expect("second piece fits");
+                        let mut met = None;
+                        for bytes in chunks.by_ref() {
+                            intake.append(bytes).expect("chunk fits");
+                            met = intake.meet(read);
+                            if met.is_some() {
+                                break;
+                            }
                         }
-                        intake.meet(read)
+                        met
                     }
                 };
                 let up = match bytes {
@@ -711,4 +732,34 @@ pub fn decode_split(request: &Request, body: &[u8], split: usize, limits: &Limit
         split,
     );
     (Decoded { rows, document: document.expect("terminal decoder"), steps }, terminals)
+}
+
+pub fn decode_chunks(request: &Request, body: &[u8], chunk: usize) -> Decoded {
+    let limits = limits();
+    let mut decoder = client::decoder(request, &limits).expect("repository decoder");
+    let mut rows = Vec::new();
+    let mut document = None;
+    let first = client::first(&decoder);
+    let steps = drive_chunked(
+        body,
+        &limits,
+        first,
+        |event| match client::step(&mut decoder, &limits, event) {
+            Step::Demand(next) => Some(next),
+            Step::Row(row, next) => {
+                rows.push(row);
+                Some(next)
+            }
+            Step::Done(value) => {
+                document = Some(Ok(value));
+                None
+            }
+            Step::Malformed(error) => {
+                document = Some(Err(error));
+                None
+            }
+        },
+        chunk,
+    );
+    Decoded { rows, document: document.expect("terminal repository decoder"), steps }
 }

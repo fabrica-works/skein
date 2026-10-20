@@ -195,6 +195,7 @@ fn pull_answer(config: &Config, request: &Request, value: &a::Pull) -> Result<An
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -271,6 +272,7 @@ fn checks(config: &Config, request: &Request, values: &[a::CheckSummary]) -> Res
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -451,6 +453,7 @@ fn collaborators(config: &Config, request: &Request, values: &[a::Collaborator])
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }

@@ -14,6 +14,12 @@ use skein_json::tokenizer;
 use skein_lib::{Decimal, Writer};
 pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
     let length = match request {
+        Request::UserRepos { page } => {
+            let mut out = super::items::Target { length: 0, writer: None };
+            out.put(b"/api/v1/user/repos");
+            out.page(*page, false);
+            out.length
+        }
         Request::User => 12,
         Request::ApiSettings => 20,
         Request::RepositoryById { id } => 21usize.saturating_add(Decimal::of(*id).as_bytes().len()),
@@ -93,6 +99,20 @@ pub(super) fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refu
 fn target(request: &Request, out: &mut Writer) -> Result<(), skein_lib::Overflow> {
     out.put(b"/api/v1/")?;
     match request {
+        Request::UserRepos { page } => {
+            out.put(b"user/repos")?;
+            let mut query = false;
+            if let Some(n) = page.page {
+                out.put(b"?page=")?;
+                out.put(Decimal::of(u64::from(n)).as_bytes())?;
+                query = true;
+            }
+            if let Some(n) = page.limit {
+                out.put(if query { b"&limit=" } else { b"?limit=" })?;
+                out.put(Decimal::of(u64::from(n)).as_bytes())?;
+            }
+            Ok(())
+        }
         Request::User => out.put(b"user"),
         Request::ApiSettings => out.put(b"settings/api"),
         Request::RepositoryById { id } => {
@@ -205,6 +225,7 @@ impl Start {
                 | Some(
                     Kind::Setup(_)
                     | Kind::User
+                    | Kind::Reachable(_)
                     | Kind::Error
                     | Kind::Write(_)
                     | Kind::Settings
@@ -218,7 +239,8 @@ impl Start {
                 ) => Step::Demand(tokenizer::Request::Next),
             },
             Move::End(
-                Kind::Error
+                Kind::Reachable(_)
+                | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings
                 | Kind::Repository
@@ -242,6 +264,7 @@ impl Start {
                     Kind::Search => Document::Search { ok: self.ok },
                     Kind::Users => Document::Listed { skipped: 0 },
                     Kind::Setup(_)
+                    | Kind::Reachable(_)
                     | Kind::Error
                     | Kind::Write(_)
                     | Kind::Review(_)
@@ -272,7 +295,8 @@ impl Start {
                         _ => unreachable!("settings table"),
                     }
                 }
-                Kind::Error
+                Kind::Reachable(_)
+                | Kind::Error
                 | Kind::Write(_)
                 | Kind::Search
                 | Kind::Setup(_)
@@ -305,7 +329,8 @@ impl Start {
                     }
                     _ => unreachable!("repository string table"),
                 },
-                Kind::Error
+                Kind::Reachable(_)
+                | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings
                 | Kind::Search
@@ -329,6 +354,7 @@ impl Start {
                     _ => unreachable!("repository bool table"),
                 },
                 Kind::User
+                | Kind::Reachable(_)
                 | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings

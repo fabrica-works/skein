@@ -13,6 +13,9 @@ pub(super) fn route(method: Method, target: &[u8], limits: &Limits) -> Result<Ro
         return Err(Unrouted::Malformed);
     };
     let request = match target.segments.as_ref() {
+        [api, v1, user, repos] if &**api == b"api" && &**v1 == b"v1" && &**user == b"user" && &**repos == b"repos" => {
+            Request::UserRepos { page: super::items::page(&target.query)? }
+        }
         [api, v1, user] if &**api == b"api" && &**v1 == b"v1" && &**user == b"user" => Request::User,
         [api, v1, settings, name]
             if &**api == b"api" && &**v1 == b"v1" && &**settings == b"settings" && &**name == b"api" =>
@@ -69,6 +72,7 @@ pub(super) fn user(json: &mut Encoder, user: &User) {
 }
 pub(super) fn write(json: &mut Encoder, answer: &Answer) {
     match answer {
+        Answer::Reachable(rows) => reachable(json, rows),
         Answer::User(value) => {
             json.object_start();
             json.key(b"id");
@@ -161,4 +165,31 @@ pub(super) fn write(json: &mut Encoder, answer: &Answer) {
         | Answer::Members(_)
         | Answer::CombinedStatus { .. } => unreachable!("start answer dispatch"),
     }
+}
+
+fn reachable(json: &mut Encoder, rows: &[document::Reachable]) {
+    json.array_start();
+    for row in rows {
+        json.object_start();
+        json.key(b"id");
+        json.unsigned(row.repository);
+        json.key(b"name");
+        json.string(&row.name);
+        json.key(b"private");
+        json.boolean(row.private);
+        json.key(b"owner");
+        json.object_start();
+        json.key(b"id");
+        json.unsigned(row.owner);
+        json.key(b"login");
+        json.string(&row.login);
+        json.object_end();
+        json.key(b"permissions");
+        json.object_start();
+        json.key(b"push");
+        json.boolean(row.push);
+        json.object_end();
+        json.object_end();
+    }
+    json.array_end();
 }

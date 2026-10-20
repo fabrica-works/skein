@@ -100,6 +100,10 @@ pub enum Request {
     Repository {
         at: Repo,
     },
+    /// Lists the connected user's repositories, retaining their write permissions.
+    UserRepos {
+        page: Page,
+    },
     UserSearch {
         uid: u64,
         limit: Option<u32>,

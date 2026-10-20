@@ -117,6 +117,7 @@ fn target(request: &Request, out: &mut Target) {
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
@@ -319,6 +320,7 @@ impl Items {
                 | Kind::Review(_)
                 | Kind::Delivery(_)
                 | Kind::Branch(_)
+                | Kind::Reachable(_)
                 | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings
@@ -355,6 +357,7 @@ impl Items {
                 | Kind::Delivery(_)
                 | Kind::Branch(_)
                 | Kind::User
+                | Kind::Reachable(_)
                 | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings

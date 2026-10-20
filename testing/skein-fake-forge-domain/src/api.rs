@@ -37,7 +37,7 @@ pub enum Op {
     Git(Git),
 }
 
-/// The reads: they change nothing. Each needs read permission.
+/// The reads change nothing; `ListingPermission` lets the protocol combine grants before filtering.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Read {
     /// The scenario's id for the named repository.
@@ -158,6 +158,8 @@ pub enum Read {
     Permission {
         user: u64,
     },
+    /// Reads the caller's direct grant for a protocol listing that adds organization access.
+    ListingPermission,
     /// Where `branch` is. Answered by [`Answer::Commit`].
     Branch {
         branch: Box<[u8]>,

@@ -230,7 +230,8 @@ impl Plan {
                 }
                 Ok(())
             }
-            d::Row::Token(_)
+            d::Row::Reachable(_)
+            | d::Row::Token(_)
             | d::Row::User(_)
             | d::Row::Issue(_)
             | d::Row::Comment(_)

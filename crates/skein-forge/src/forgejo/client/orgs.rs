@@ -139,6 +139,7 @@ fn target(request: &Request, out: &mut Target) -> Method {
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -208,6 +209,7 @@ fn body(json: &mut Encoder, request: &Request) {
         | Request::ApiSettings
         | Request::RepositoryById { .. }
         | Request::Repository { .. }
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::Issues { .. }
         | Request::Issue { .. }
@@ -332,6 +334,7 @@ impl Orgs {
             Move::End(
                 Kind::Setup(_)
                 | Kind::User
+                | Kind::Reachable(_)
                 | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings

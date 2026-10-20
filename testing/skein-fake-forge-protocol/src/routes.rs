@@ -1,4 +1,4 @@
-//! Every non-table route is exactly one call to the fake domain.
+//! Repository routes translate HTTP requests into calls to the fake domain.
 use crate::Config;
 use alloc::boxed::Box;
 use skein_fake_forge_domain::api::{self as a, Op, Read, Write};
@@ -83,6 +83,7 @@ pub fn repository(config: &Config, request: &Request) -> Option<Box<[u8]>> {
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. } => None,
         Request::RepositoryById { id } => {
             for repo in &config.repositories {
@@ -179,6 +180,7 @@ pub fn op(config: &Config, request: &Request) -> Result<Op, a::Error> {
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. } => return Err(a::Error::Refused),
         Request::RepositoryById { .. } | Request::Repository { .. } => Read::Settings,
         Request::Issues { state, kind, since, sort, page: p, .. } => {
@@ -330,6 +332,7 @@ fn write(config: &Config, request: &Request) -> Result<Op, a::Error> {
         | Request::CreateUser { .. }
         | Request::User
         | Request::ApiSettings
+        | Request::UserRepos { .. }
         | Request::UserSearch { .. }
         | Request::RepositoryById { .. }
         | Request::Repository { .. }

@@ -245,3 +245,248 @@ fn a_second_token_of_one_name_is_refused() {
     assert_eq!(h.status(), 400);
     assert_eq!(h.body().as_ref(), b"{\"message\":\"access token name has been used already\"}");
 }
+
+fn user_repos_harness(all_repositories: bool) -> fixtures::Harness {
+    use crate::{Config, Faults, Repository};
+    use skein_fake_forge_domain::{self as fake, api as a};
+    use skein_lib::{Duration, List};
+    let mut users = List::with_capacity(2);
+    users.push((1, boxed(b"alice"))).unwrap();
+    users.push((2, boxed(b"bob"))).unwrap();
+    let mut tokens = List::with_capacity(2);
+    tokens.push((Secret::new(boxed(b"example-app")), 1)).unwrap();
+    tokens.push((Secret::new(boxed(b"bob")), 2)).unwrap();
+    let mut repositories = List::with_capacity(4);
+    // Deliberately not id order: paging must follow ids rather than configuration order.
+    for (id, full) in
+        [(30, b"alice/widgets".as_slice()), (10, b"bob/widgets"), (20, b"acme/widgets"), (40, b"bob/example-app")]
+    {
+        repositories.push(Repository { id, full: boxed(full), protected: None }).unwrap();
+    }
+    let config = Config {
+        hooks: None,
+        base: boxed(b"http://example.invalid"),
+        tokens,
+        users,
+        repositories,
+        max_response_items: 4,
+        default_paging_num: 4,
+        faults: Faults { reset: 0, drop: 0, server_error: 0 },
+    };
+    let mut h = fixtures::Harness::new(config);
+    h.fake_env.limits.limits.repositories = 4;
+    h.fake_env.limits.limits.commits = 4;
+    h.domain = fake::Domain::new(&h.fake_env.limits, 3);
+    for (id, full) in
+        [(30, b"alice/widgets".as_slice()), (10, b"bob/widgets"), (20, b"acme/widgets"), (40, b"bob/example-app")]
+    {
+        fake::repository(
+            &mut h.domain,
+            &h.fake_env.limits,
+            a::Setup {
+                id,
+                name: boxed(full),
+                default: boxed(b"main"),
+                tree: Box::from([]),
+                labels: Box::from([]),
+                checks: a::Checks {
+                    contexts: Box::from([]),
+                    latency_min: Duration::ZERO,
+                    latency_max: Duration::ZERO,
+                    silent: 0,
+                    passes: 0,
+                    reruns: 0,
+                    cue: None,
+                },
+                protection: None,
+                hooked: false,
+            },
+        );
+    }
+    fake::grant(&mut h.domain, b"bob/widgets", 1, a::Permission::Write);
+    let store = h.service.setup_mut();
+    assert_eq!(store.account(b"alice", false, b""), 1);
+    assert_eq!(store.account(b"bob", false, b""), 2);
+    store.org(b"acme", b"bob");
+    let team = store.add_team(
+        b"acme",
+        d::TeamSpec {
+            name: boxed(b"example-app"),
+            permission: d::Access::Write,
+            includes_all_repositories: all_repositories,
+            units: d::Units {
+                code: d::Access::None,
+                issues: d::Access::None,
+                pulls: d::Access::None,
+                actions: d::Access::None,
+            },
+        },
+    );
+    store.member(team, 1);
+    h
+}
+fn user_repos_request(page: u32, limit: u32) -> Request {
+    Request::UserRepos { page: skein_forge::forgejo::request::Page { page: Some(page), limit: Some(limit) } }
+}
+fn ask_user_repos(h: &mut fixtures::Harness, page: u32, limit: u32) -> Box<[Row]> {
+    let request = user_repos_request(page, limit);
+    let encoded = skein_forge::forgejo::client::encode(&request, &h.env.limits.documents).unwrap();
+    h.ask_as(b"GET", &encoded.target, b"", b"example-app");
+    assert_eq!(h.status(), 200);
+    h.decoded(&request).rows
+}
+fn reachable_row(id: u64, owner: u64, login: &[u8], private: bool, push: bool) -> Row {
+    Row::Reachable(d::Reachable { repository: id, owner, login: boxed(login), name: boxed(b"widgets"), private, push })
+}
+#[test]
+fn fake_user_repos_lists_owned_collaborating_and_team_repositories() {
+    let mut h = user_repos_harness(true);
+    assert_eq!(
+        &*ask_user_repos(&mut h, 1, 4),
+        &[
+            reachable_row(10, 2, b"bob", false, true),
+            reachable_row(20, 1, b"acme", false, true),
+            reachable_row(30, 1, b"alice", false, true),
+        ]
+    );
+    assert_eq!(h.service.tally().routes.get(&crate::Route::UserRepos), Some(&1));
+    assert_eq!(h.domain.permission(b"acme/widgets", 1).unwrap(), skein_fake_forge_domain::api::Permission::None);
+}
+#[test]
+fn fake_user_repos_team_without_all_repositories_reaches_nothing() {
+    let mut h = user_repos_harness(false);
+    assert_eq!(
+        &*ask_user_repos(&mut h, 1, 4),
+        &[reachable_row(10, 2, b"bob", false, true), reachable_row(30, 1, b"alice", false, true),]
+    );
+}
+#[test]
+fn fake_user_repos_includes_private_repositories() {
+    let mut h = user_repos_harness(true);
+    h.service.setup_mut().private(20).unwrap();
+    h.service.setup_mut().private(20).unwrap();
+    assert_eq!(
+        &*ask_user_repos(&mut h, 1, 4),
+        &[
+            reachable_row(10, 2, b"bob", false, true),
+            reachable_row(20, 1, b"acme", true, true),
+            reachable_row(30, 1, b"alice", false, true),
+        ]
+    );
+}
+#[test]
+fn fake_user_repos_pages_by_page_and_limit_in_id_order() {
+    let mut h = user_repos_harness(true);
+    for (page, expected) in [
+        (1, Some(reachable_row(10, 2, b"bob", false, true))),
+        (2, Some(reachable_row(20, 1, b"acme", false, true))),
+        (3, Some(reachable_row(30, 1, b"alice", false, true))),
+        (4, None),
+        (u32::MAX, None),
+    ] {
+        let rows = ask_user_repos(&mut h, page, 1);
+        match expected {
+            Some(row) => assert_eq!(&*rows, &[row]),
+            None => assert!(rows.is_empty()),
+        }
+    }
+    assert_eq!(ask_user_repos(&mut h, 1, 99).len(), 3);
+    h.ask_as(b"GET", b"/api/v1/user/repos?limit=1", b"", b"example-app");
+    assert_eq!(h.decoded(&user_repos_request(1, 4)).rows.len(), 3);
+}
+#[test]
+fn fake_user_repos_rows_carry_permissions_push_pull_admin() {
+    use skein_fake_forge_domain::{self as fake, api::Permission};
+    for (permission, expected) in [
+        (Permission::Read, br#"[{"id":10,"name":"widgets","private":false,"owner":{"id":2,"login":"bob"},"permissions":{"push":false,"pull":true,"admin":false}}]"#.as_slice()),
+        (Permission::Write, br#"[{"id":10,"name":"widgets","private":false,"owner":{"id":2,"login":"bob"},"permissions":{"push":true,"pull":true,"admin":false}}]"#),
+        (Permission::Admin, br#"[{"id":10,"name":"widgets","private":false,"owner":{"id":2,"login":"bob"},"permissions":{"push":true,"pull":true,"admin":true}}]"#),
+    ] {
+        let mut h = user_repos_harness(true);
+        fake::grant(&mut h.domain, b"bob/widgets", 1, permission);
+        ask_user_repos(&mut h, 1, 1);
+        assert_eq!(&*h.body(), expected);
+    }
+}
+#[test]
+fn fake_user_repos_read_only_token_sees_push_false() {
+    let mut h = user_repos_harness(false);
+    skein_fake_forge_domain::grant(&mut h.domain, b"bob/widgets", 1, skein_fake_forge_domain::api::Permission::Read);
+    assert_eq!(&*ask_user_repos(&mut h, 1, 1), &[reachable_row(10, 2, b"bob", false, false)]);
+}
+#[test]
+fn fake_user_repos_without_token_is_401() {
+    let mut h = user_repos_harness(true);
+    for token in [b"".as_slice(), b"unknown"] {
+        h.ask_as(b"GET", b"/api/v1/user/repos", b"", token);
+        assert_eq!(h.status(), 401);
+    }
+    assert_eq!(h.calls, 0);
+}
+
+#[test]
+fn fake_user_repos_combines_team_grants_with_direct_permissions() {
+    use skein_fake_forge_domain::{self as fake, api::Permission};
+    for (access, direct, effective) in [
+        (d::Access::None, Permission::None, None),
+        (d::Access::Read, Permission::None, Some(false)),
+        (d::Access::Write, Permission::Read, Some(true)),
+        (d::Access::Admin, Permission::None, Some(true)),
+        (d::Access::Owner, Permission::None, Some(true)),
+        (d::Access::Read, Permission::Admin, Some(true)),
+    ] {
+        let mut h = user_repos_harness(false);
+        fake::grant(&mut h.domain, b"acme/widgets", 1, direct);
+        let store = h.service.setup_mut();
+        let team = store.add_team(
+            b"acme",
+            d::TeamSpec {
+                name: boxed(b"widgets"),
+                permission: access,
+                includes_all_repositories: true,
+                units: d::Units {
+                    code: d::Access::None,
+                    issues: d::Access::None,
+                    pulls: d::Access::None,
+                    actions: d::Access::None,
+                },
+            },
+        );
+        store.member(team, 1);
+        let rows = ask_user_repos(&mut h, 1, 4);
+        let mut found = None;
+        for row in &rows {
+            if let Row::Reachable(repo) = row
+                && repo.repository == 20
+            {
+                found = Some(row.clone());
+            }
+        }
+        match effective {
+            Some(push) => assert_eq!(found, Some(reachable_row(20, 1, b"acme", false, push))),
+            None => assert_eq!(found, None),
+        }
+        if access == d::Access::Admin || access == d::Access::Owner || direct == Permission::Admin {
+            assert!(skein_lib::bytes::find(&h.body(), b"\"admin\":true").is_some());
+        }
+    }
+}
+
+#[test]
+fn fake_user_repos_organization_owner_has_admin_permission() {
+    let mut h = user_repos_harness(false);
+    h.ask_as(b"GET", b"/api/v1/user/repos?page=2&limit=1", b"", b"bob");
+    assert_eq!(h.status(), 200);
+    assert_eq!(&*h.body(), br#"[{"id":20,"name":"widgets","private":false,"owner":{"id":1,"login":"acme"},"permissions":{"push":true,"pull":true,"admin":true}}]"#);
+}
+
+#[test]
+fn fake_user_repos_privacy_metadata_is_bounded() {
+    let mut h = user_repos_harness(false);
+    let cap = h.env.limits.documents.inner;
+    for repository in 0..cap {
+        assert_eq!(h.service.setup_mut().private(u64::from(repository)), Ok(()));
+    }
+    assert_eq!(h.service.setup_mut().private(u64::from(cap)), Err(crate::Error::Limits));
+    assert_eq!(h.service.setup_mut().private(0), Ok(()));
+}

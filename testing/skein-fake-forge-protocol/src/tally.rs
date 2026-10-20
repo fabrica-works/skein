@@ -24,6 +24,8 @@ pub enum Route {
     ApiSettings,
     RepositoryById,
     Repository,
+    /// Counts connected-token repository listings.
+    UserRepos,
     UserSearch,
     Issues,
     Issue,
@@ -85,6 +87,7 @@ pub fn route(request: &Request) -> Route {
         Request::ApiSettings => Route::ApiSettings,
         Request::RepositoryById { .. } => Route::RepositoryById,
         Request::Repository { .. } => Route::Repository,
+        Request::UserRepos { .. } => Route::UserRepos,
         Request::UserSearch { .. } => Route::UserSearch,
         Request::Issues { .. } => Route::Issues,
         Request::Issue { .. } => Route::Issue,

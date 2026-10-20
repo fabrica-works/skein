@@ -351,6 +351,7 @@ impl BodyDecoder {
                 | Request::DeleteBranch { .. }
                 | Request::RepositoryById { .. }
                 | Request::Repository { .. }
+                | Request::UserRepos { .. }
                 | Request::UserSearch { .. }
                 | Request::Issues { .. }
                 | Request::Issue { .. }
@@ -472,6 +473,7 @@ impl BodyDecoder {
             | Request::ApiSettings
             | Request::RepositoryById { .. }
             | Request::Repository { .. }
+            | Request::UserRepos { .. }
             | Request::UserSearch { .. }
             | Request::Issues { .. }
             | Request::Issue { .. }
@@ -528,6 +530,7 @@ impl BodyDecoder {
             | Request::ApiSettings
             | Request::RepositoryById { .. }
             | Request::Repository { .. }
+            | Request::UserRepos { .. }
             | Request::UserSearch { .. }
             | Request::Issues { .. }
             | Request::Issue { .. }

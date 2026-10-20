@@ -511,10 +511,14 @@ fn execute(domain: &mut Domain, env: &Env<Config>, user: u64, repository: &[u8],
     match op {
         Op::Read(read) => {
             let repository = domain.repositories.get(id).expect("a named repository");
+            if read == Read::ListingPermission {
+                return Ok(Answer::Permission(repository.permission(user)));
+            }
             repository.require(user, Permission::Read)?;
             match &read {
                 Read::Protection { .. } => repository.require(user, Permission::Admin)?,
-                Read::Locate
+                Read::ListingPermission
+                | Read::Locate
                 | Read::Items { .. }
                 | Read::Item { .. }
                 | Read::Comment { .. }

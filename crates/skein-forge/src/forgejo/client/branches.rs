@@ -153,7 +153,8 @@ impl Branches {
                 ),
             ) => Ok(()),
             Move::End(
-                Kind::Error
+                Kind::Reachable(_)
+                | Kind::Error
                 | Kind::Write(_)
                 | Kind::Settings
                 | Kind::Repository

@@ -10,6 +10,7 @@ use skein_lib::{List, Secret, Writer, bytes};
 mod accounts;
 mod hooks;
 mod orgs;
+pub(crate) mod repos;
 mod tokens;
 pub use hooks::Subscription;
 pub use orgs::{Organization, Team};
@@ -38,6 +39,7 @@ pub struct Store {
     orgs: List<Organization>,
     teams: List<Team>,
     hooks: List<Subscription>,
+    private: List<u64>,
     next_org: u64,
     next_team: u64,
     next_hook: u64,
@@ -55,6 +57,7 @@ impl Store {
             orgs: List::with_capacity(cap),
             teams: List::with_capacity(cap),
             hooks: List::with_capacity(cap),
+            private: List::with_capacity(cap),
             next_org: 1,
             next_team: 1,
             next_hook: 1,
@@ -160,6 +163,7 @@ impl Store {
             Request::ApiSettings
             | Request::RepositoryById { .. }
             | Request::Repository { .. }
+            | Request::UserRepos { .. }
             | Request::UserSearch { .. }
             | Request::Issues { .. }
             | Request::Issue { .. }
@@ -219,6 +223,7 @@ impl Store {
             | Request::ApiSettings
             | Request::RepositoryById { .. }
             | Request::Repository { .. }
+            | Request::UserRepos { .. }
             | Request::UserSearch { .. }
             | Request::Issues { .. }
             | Request::Issue { .. }
@@ -288,7 +293,8 @@ pub(crate) fn worst_case(limits: &Limits) -> Option<u64> {
         .checked_mul(2)?
         .checked_add(issued.checked_mul(2)?)?
         .checked_add(orgs::worst_case(limits)?)?
-        .checked_add(hooks::worst_case(limits)?)
+        .checked_add(hooks::worst_case(limits)?)?
+        .checked_add(List::<u64>::worst_case(cap)?)
 }
 
 fn joined(parts: &[&[u8]]) -> Box<[u8]> {
