@@ -108,11 +108,11 @@ hands them as it does Forgejo's (forge.md, 4.2):
   answers the same paths in plaintext on loopback (fake-forge.md,
   section 10). `Host` is made by `skein-forge`'s `host` (forge.md, 5.1).
 - **Every request's head** carries `Accept: application/vnd.github+json`
-  (a raw file's `application/vnd.github.raw+json`), `X-GitHub-Api-Version:
-  2026-03-10`, the owner's `User-Agent` (GitHub refuses a request with
-  none), and `Authorization: Bearer <t>` but where a row says no
-  credential. `skein-forge`'s owner gives a `User-Agent` that is not
-  empty, checked at start.
+  (a raw file's `application/vnd.github.raw+json`),
+  `X-GitHub-Api-Version: 2026-03-10`, the owner's `User-Agent`
+  (GitHub refuses a request with none), and `Authorization: Bearer <t>`
+  but where a row says no credential. `skein-forge`'s owner gives a
+  `User-Agent` that is not empty, checked at start.
 - **JSON in and out,** as forge.md 5.1. A GraphQL request is
   `{"query": <document>, "variables": {...}}`, the document a constant
   of the module (section 4.3).
@@ -331,8 +331,8 @@ As forge.md 5.3: streams, strings kept whole or not, the answer's
 bound, revisions, markers and malformed answers; and GitHub's:
 
 - **Provenance** from `created_at` and `updated_at` (a review's
-  `submitted_at` and none: a review is `Original` unless its body was not
-  kept), at a second's resolution (`comment-updated-at-on-edit`).
+  `submitted_at` and none: a review is `Original` unless its body was
+  not kept), at a second's resolution (`comment-updated-at-on-edit`).
 - **Raw bodies cut as they stream.** A file's first `max_bytes` bytes
   and a log's last are kept within what is left of `answer_bytes`, and
   the rest read through within `body_bytes_in`
@@ -540,8 +540,8 @@ subscribing; the others are temper's draft section 5's, and no more.
   no credential and ignores `Range` (`job-log-302-blob`).
 - **`github::Redirect { origin: { tls, host, port }, target }`,** parsed
   from `Location`: `https` over TLS, `http` in plaintext (the fake's,
-  fake-forge.md, 10.1), with its host and port (443 or 80 when none), the
-  target its path and query. Another scheme, or none, is
+  fake-forge.md, 10.1), with its host and port (443 or 80 when none),
+  the target its path and query. Another scheme, or none, is
   `InvalidAnswer`. A plaintext origin is never among temper's defaults.
 - **The component follows it** to an origin among its `log_origins`,
   sending nothing of the forge's, and an origin it does not know is
@@ -639,8 +639,9 @@ temper's draft section 11.
   (an App hook at `https://<name>.invalid/`; the draft's Setup probe
   saw `https://hooks.temper-probe.invalid/github` taken), both
   `unchecked` on github.com and held on the fake alone, since a live
-  run changes nothing of the App (fake-forge.md, section 11); and `job-log-host-per-owner` (whether
-  the log's redirect host differs across the two owners' repositories).
+  run changes nothing of the App (fake-forge.md, section 11); and
+  `job-log-host-per-owner` (whether the log's redirect host differs
+  across the two owners' repositories).
 
 A fact's texts (each refusal's message) are the conformance's
 transcripts, and the decoders' tests take them (section 14).
