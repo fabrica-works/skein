@@ -116,6 +116,8 @@ fn invalid(place: Place, value: &[u8]) -> Given {
         | Place::Repositories
         | Place::Repository(_)
         | Place::OrgsLimit
+        | Place::ReachableLimit
+        | Place::Page
         | Place::RepositoriesLimit
         | Place::Deadline
         | Place::Backoff
@@ -192,11 +194,19 @@ fn an_org_count_past_the_bound_is_refused() {
 fn a_zero_limit_names_its_place() {
     use crate::limits;
     use skein_lib::Duration;
-    for place in [Place::OrgsLimit, Place::RepositoriesLimit, Place::Deadline, Place::Backoff, Place::BackoffMax] {
+    for place in [
+        Place::OrgsLimit,
+        Place::RepositoriesLimit,
+        Place::ReachableLimit,
+        Place::Deadline,
+        Place::Backoff,
+        Place::BackoffMax,
+    ] {
         let mut given = fixtures::given();
         match place {
             Place::OrgsLimit => given.limits.orgs = 0,
             Place::RepositoriesLimit => given.limits.repositories = 0,
+            Place::ReachableLimit => given.limits.reachable = 0,
             Place::Deadline => given.limits.deadline = Duration::ZERO,
             Place::Backoff => given.limits.backoff = Duration::ZERO,
             Place::BackoffMax => given.limits.backoff_max = Duration::ZERO,
@@ -210,6 +220,7 @@ fn a_zero_limit_names_its_place() {
             | Place::Org(_)
             | Place::OrgOwner
             | Place::Repositories
+            | Place::Page
             | Place::Repository(_) => unreachable!("limit rows"),
         }
         assert_eq!(limits::check(&given.limits), Err(Refused { place, other: None }), "{place:?}");

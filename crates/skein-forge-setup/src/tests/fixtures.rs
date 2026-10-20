@@ -96,6 +96,7 @@ pub fn limits() -> crate::limits::Limits {
     crate::limits::Limits {
         orgs: PROFILE_ORGS,
         repositories: PROFILE_REPOSITORIES,
+        reachable: PROFILE_REACHABLE,
         deadline: Duration::from_secs(120),
         backoff: Duration::from_millis(100),
         backoff_max: Duration::from_secs(5),
@@ -127,6 +128,7 @@ pub fn to_bot(run: &mut Run) {
     run.step(Event::Reply(Reply::Document(Document::User(admin()))));
 }
 // Shared profile and small page sizes from forge-setup.md, 4.3 and 4.4.
+pub const PROFILE_REACHABLE: u32 = 4;
 pub const PROFILE_ORGS: u32 = 8;
 pub const PROFILE_REPOSITORIES: u32 = 8;
 pub const PAGE_CAP: u32 = 2;
@@ -301,4 +303,29 @@ pub fn take_over_row(id: u64, last_eight: &[u8]) -> skein_forge::forgejo::docume
         last_eight: last_eight.into(),
         value: None,
     })
+}
+
+pub fn reached(
+    id: u64,
+    owner_id: u64,
+    login: &[u8],
+    name: &[u8],
+    private: bool,
+) -> skein_forge::forgejo::document::Row {
+    skein_forge::forgejo::document::Row::Found(skein_forge::forgejo::document::Reachable {
+        repository: id,
+        owner: owner_id,
+        login: login.into(),
+        name: name.into(),
+        private,
+        push: true,
+    })
+}
+pub fn search(ok: bool, rows: Box<[skein_forge::forgejo::document::Row]>) -> crate::reconcile::Event {
+    use crate::reconcile::{Event, Reply};
+    use skein_forge::forgejo::document::Document;
+    Event::Reply(if ok { Reply::Rows(rows) } else { Reply::Document(Document::RepoSearch { ok: false }) })
+}
+pub fn reachable(page: u32) -> crate::reachable::Reachable {
+    crate::reachable::Reachable::new(&given(), None, page).expect("fixture admitted")
 }

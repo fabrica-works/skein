@@ -27,14 +27,19 @@ pub struct World {
 impl World {
     #[must_use]
     pub fn managed(seed: u64) -> Self {
-        Self::new(seed, false)
+        Self::new(seed, false, 2, false)
     }
     #[must_use]
     pub fn owned(seed: u64) -> Self {
-        Self::new(seed, true)
+        Self::new(seed, true, 2, false)
     }
-    fn new(seed: u64, owned: bool) -> Self {
-        let (service, limits) = seeded(seed, owned);
+    /// A managed picker with ten repositories and the given page cap.
+    #[must_use]
+    pub fn managed_paged(seed: u64, cap: u32) -> Self {
+        Self::new(seed, false, cap, true)
+    }
+    fn new(seed: u64, owned: bool, cap: u32, picker: bool) -> Self {
+        let (service, limits) = seeded_with_cap(seed, owned, cap, picker);
         Self {
             given: fixtures::given(owned),
             service,
@@ -63,6 +68,9 @@ impl World {
         } else {
             self.files.push((file, bytes));
         }
+    }
+    pub fn forget(&mut self, item: Item) {
+        self.files.retain(|(file, _)| *file != item);
     }
     #[must_use]
     pub fn store(&self) -> &Store {
@@ -105,6 +113,11 @@ impl World {
     pub fn check(&mut self) -> Ended {
         let mut machine = skein_forge_setup::check::Check::new(1);
         self.drive(|event, out| skein_forge_setup::check::step(&mut machine, event, out))
+    }
+    pub fn reachable(&mut self, installation: Option<u64>, page: u32) -> Ended {
+        let mut machine =
+            skein_forge_setup::reachable::Reachable::new(&self.given, installation, page).expect("fixture admitted");
+        self.drive(|event, out| skein_forge_setup::reachable::step(&mut machine, event, out))
     }
     pub fn take_over(&mut self, token: &[u8]) -> Ended {
         let secret = fixtures::secret(token);
@@ -164,12 +177,22 @@ impl World {
 }
 
 pub(crate) fn seeded(seed: u64, owned: bool) -> (Service, skein_fake_forge_protocol::Limits) {
+    seeded_with_cap(seed, owned, 2, false)
+}
+fn seeded_with_cap(seed: u64, owned: bool, cap: u32, picker: bool) -> (Service, skein_fake_forge_protocol::Limits) {
     let limits = skein_forge_machine_world::fixtures::fake_limits();
-    let mut service = Service::new(fixtures::config(), &limits, seed).expect("world service");
+    let mut config = fixtures::config_with_cap(cap);
+    if picker {
+        fixtures::picker_repositories(&mut config);
+    }
+    let mut service = Service::new(config, &limits, seed).expect("world service");
     let admin = service.setup_mut().account(b"kit-admin", true, b"");
     service.setup_mut().token(admin, b"setup-admin", &[b"all"], fixtures::secret(fixtures::ADMIN));
     if owned {
         service.setup_mut().account(b"ada", true, b"Ada");
+    }
+    if picker {
+        fixtures::picker_owners(service.setup_mut());
     }
     (service, limits)
 }

@@ -24,6 +24,7 @@ pub fn given(owned: bool) -> Given {
         limits: Limits {
             orgs: 8,
             repositories: 8,
+            reachable: 4,
             deadline: Duration::from_secs(120),
             backoff: Duration::from_millis(100),
             backoff_max: Duration::from_secs(5),
@@ -32,14 +33,17 @@ pub fn given(owned: bool) -> Given {
 }
 #[must_use]
 pub fn config() -> Config {
+    config_with_cap(2)
+}
+#[must_use]
+pub fn config_with_cap(cap: u32) -> Config {
     Config {
         hooks: None,
         base: b"http://127.0.0.1:3000".as_slice().into(),
         tokens: List::with_capacity(0),
         users: List::with_capacity(0),
         repositories: List::with_capacity(0),
-        // A third token requires a second page; all other fake limits are shipped.
-        max_response_items: 2,
+        max_response_items: cap,
         default_paging_num: 30,
         faults: Faults { reset: 0, drop: 0, server_error: 0 },
     }
@@ -218,4 +222,34 @@ pub fn admin_handover(world: &mut crate::World) -> u64 {
     }
     world.store_mut().token(id, b"handover", &[b"all"], secret(TAKEN));
     id
+}
+
+/// Ten repositories in reverse id order, of a person, the bot and another person.
+pub fn picker_repositories(config: &mut Config) {
+    config.repositories = List::with_capacity(10);
+    for id in (1..=10).rev() {
+        let owner = match id % 3 {
+            1 => "ada",
+            2 => "kit",
+            0 => "grace",
+            _ => unreachable!("remainder"),
+        };
+        config
+            .repositories
+            .push(skein_fake_forge_protocol::Repository {
+                id,
+                full: format!("{owner}/repo-{id}").into_bytes().into_boxed_slice(),
+                protected: None,
+            })
+            .expect("ten repositories");
+    }
+}
+/// The configured owners and scenario privacy share the fake's setup store.
+pub fn picker_owners(store: &mut skein_fake_forge_protocol::setup::Store) {
+    store.account(b"ada", false, b"Ada");
+    store.account(b"kit", false, b"kit:bot");
+    store.account(b"grace", false, b"Grace");
+    for id in [2, 3, 6, 10] {
+        store.private(id).expect("bounded privacy metadata");
+    }
 }

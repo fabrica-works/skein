@@ -4,8 +4,10 @@ use skein_lib::Duration;
 /// Limits checked before a setup is read.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Limits {
-    pub orgs: u32,             // Orgs per forge.
-    pub repositories: u32,     // Repositories adopted per forge.
+    pub orgs: u32,         // Orgs per forge.
+    pub repositories: u32, // Repositories adopted per forge.
+    /// Repositories held in one picker page (forge-setup.md, 4.8).
+    pub reachable: u32,
     pub deadline: Duration,    // Whole reconcile run.
     pub backoff: Duration,     // First retry delay.
     pub backoff_max: Duration, // Largest retry delay.
@@ -15,6 +17,7 @@ pub fn check(limits: &Limits) -> Result<(), Refused> {
     for (zero, place) in [
         (limits.orgs == 0, Place::OrgsLimit),
         (limits.repositories == 0, Place::RepositoriesLimit),
+        (limits.reachable == 0, Place::ReachableLimit),
         (limits.deadline == Duration::ZERO, Place::Deadline),
         (limits.backoff == Duration::ZERO, Place::Backoff),
         (limits.backoff_max == Duration::ZERO, Place::BackoffMax),

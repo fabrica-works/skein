@@ -36,3 +36,50 @@ fn the_first_broken_relation_wins() {
     value.backoff_max = value.deadline;
     assert_eq!(limits::check(&value), Err(Refused { place: Place::Backoff, other: Some(Place::BackoffMax) }));
 }
+
+#[test]
+fn a_zero_reachable_limit_is_refused() {
+    let mut value = fixtures::limits();
+    value.reachable = 0;
+    assert_eq!(limits::check(&value), Err(Refused { place: Place::ReachableLimit, other: None }));
+}
+#[test]
+fn zero_limits_are_refused_in_design_order() {
+    let mut value = fixtures::limits();
+    value.orgs = 0;
+    value.repositories = 0;
+    value.reachable = 0;
+    value.deadline = Duration::ZERO;
+    value.backoff = Duration::ZERO;
+    value.backoff_max = Duration::ZERO;
+    for place in [
+        Place::OrgsLimit,
+        Place::RepositoriesLimit,
+        Place::ReachableLimit,
+        Place::Deadline,
+        Place::Backoff,
+        Place::BackoffMax,
+    ] {
+        assert_eq!(limits::check(&value), Err(Refused { place, other: None }));
+        match place {
+            Place::OrgsLimit => value.orgs = 1,
+            Place::RepositoriesLimit => value.repositories = 1,
+            Place::ReachableLimit => value.reachable = 1,
+            Place::Deadline => value.deadline = fixtures::limits().deadline,
+            Place::Backoff => value.backoff = fixtures::limits().backoff,
+            Place::BackoffMax => value.backoff_max = fixtures::limits().backoff_max,
+            Place::Word
+            | Place::BotLogin
+            | Place::BotEmail
+            | Place::AdminName
+            | Place::ApiName
+            | Place::GitName
+            | Place::Orgs
+            | Place::Org(_)
+            | Place::OrgOwner
+            | Place::Repositories
+            | Place::Repository(_)
+            | Place::Page => unreachable!("limit rows"),
+        }
+    }
+}

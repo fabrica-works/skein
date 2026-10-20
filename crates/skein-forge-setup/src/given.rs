@@ -38,6 +38,8 @@ pub enum Place {
     Repository(u32),
     OrgsLimit,
     RepositoriesLimit,
+    ReachableLimit,
+    Page,
     Deadline,
     Backoff,
     BackoffMax,

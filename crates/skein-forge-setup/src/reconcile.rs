@@ -33,6 +33,8 @@ pub enum Outcome {
     Nothing,
     /// The user a connected Forgejo's tokens belong to (4.6).
     Identity { id: u64, login: Box<[u8]> },
+    /// One page of repositories for the picker (4.8).
+    Reachable { rows: Box<[crate::reachable::Reached]>, more: bool },
 }
 /// The outcome of the outstanding need.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -49,6 +51,7 @@ pub enum Event {
 #[expect(clippy::large_enum_variant, reason = "a document moves whole, as the store's records do")]
 pub enum Reply {
     Document(Document),
+    /// A page of rows: a list, or a repository search that answered `ok`.
     Rows(Box<[Row]>),
     Empty,
     Status(u16),
@@ -70,6 +73,7 @@ pub enum Stage {
     Token,
     Org,
     Repository,
+    Installation,
 }
 /// Why the forge could not be reconciled.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -139,7 +143,7 @@ impl Reconcile {
         self.state = State::Ended;
         self.admin = None;
         let subject = match stage {
-            Stage::Admin => self.admin_name.clone(),
+            Stage::Admin | Stage::Installation => self.admin_name.clone(),
             Stage::Bot | Stage::Token | Stage::Org | Stage::Repository => self.bot_login.clone(),
         };
         Need::Stop(Failure { forge: self.forge, step: stage, subject, why })

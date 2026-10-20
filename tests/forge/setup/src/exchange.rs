@@ -173,9 +173,33 @@ fn decode(request: &Request, status: u16, body: &[u8], limits: &fake::Limits) ->
     };
     let answer = crate::decode::decode_answer(decoder, body, &limits.documents);
     let document = answer.document.expect("fake answer decodes");
-    if document == (Document::Listed { skipped: 0 }) {
-        Reply::Rows(answer.rows.into_boxed_slice())
-    } else {
-        Reply::Document(document)
+    match document {
+        Document::Listed { skipped: 0 } | Document::RepoSearch { ok: true } => {
+            Reply::Rows(answer.rows.into_boxed_slice())
+        }
+        other @ (Document::Hook(_)
+        | Document::Token(_)
+        | Document::Org(_)
+        | Document::Team(_)
+        | Document::User(_)
+        | Document::ApiSettings(_)
+        | Document::Repository(_)
+        | Document::Search { .. }
+        | Document::RepoSearch { ok: false }
+        | Document::Listed { .. }
+        | Document::Issue(_)
+        | Document::Comment(_)
+        | Document::Status(_)
+        | Document::Review(_)
+        | Document::Pull(_)
+        | Document::CombinedStatus(_)
+        | Document::Branch(_)
+        | Document::Protection(_)
+        | Document::Permission(_)
+        | Document::Compare(_)
+        | Document::Runs { .. }
+        | Document::Run(_)
+        | Document::Job(_)
+        | Document::Error(_)) => Reply::Document(other),
     }
 }
