@@ -1,10 +1,33 @@
 use crate::github;
+use skein_forge::github::{
+    document::{App, Permission},
+    setup,
+};
 use skein_lib::{
-    Duration, Secret, Writer,
+    Duration, List, Secret, Writer,
     base64::{self, Alphabet},
+    bytes,
 };
 /// The small DER envelope used by the item decoder tests; no RSA operations.
 pub const DER: &[u8] = b"\x30\x03\x02\x01\x07";
+
+/// A hand-built App with every wanted grant; no key or signing operation.
+pub fn app() -> App {
+    let mut permissions = List::with_capacity(u32::try_from(setup::PERMISSIONS.len()).expect("wanted count"));
+    for (name, access) in setup::PERMISSIONS {
+        permissions.push(Permission { name: bytes::copy_of(name), access }).expect("wanted permission");
+    }
+    let mut events = List::with_capacity(u32::try_from(setup::EVENTS.len()).expect("wanted count"));
+    for name in setup::EVENTS {
+        events.push(bytes::copy_of(name)).expect("wanted event");
+    }
+    App {
+        id: 19,
+        slug: b"kit-app".as_slice().into(),
+        permissions: permissions.into_boxed(),
+        events: events.into_boxed(),
+    }
+}
 
 pub fn pem(der: &[u8], ending: &[u8], surround: &[u8]) -> Secret {
     let size = base64::encoded_len(Alphabet::Standard, u32::try_from(der.len()).expect("fixture length"))

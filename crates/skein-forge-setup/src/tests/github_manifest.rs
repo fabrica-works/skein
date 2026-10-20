@@ -73,7 +73,9 @@ fn page(given: &Given, target: &Target) -> Box<[u8]> {
         | Need::Write { .. }
         | Need::Draw(_)
         | Need::Stop(_)
-        | Need::Done(Outcome::Nothing | Outcome::Identity { .. } | Outcome::Reachable { .. }) => {
+        | Need::Done(
+            Outcome::Nothing | Outcome::Identity { .. } | Outcome::Reachable { .. } | Outcome::Lacking { .. },
+        ) => {
             panic!("manifest outcome")
         }
     }
