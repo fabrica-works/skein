@@ -11,13 +11,21 @@ pub const LIMITS: skein_forge_client::Limits = skein_forge_client_world::LIMITS;
 #[derive(Clone, Copy)]
 pub(crate) enum Shape {
     Plain,
+    Github,
     Hooked,
 }
 
 impl Shape {
+    pub(crate) fn author(self) -> u64 {
+        match self {
+            Self::Plain | Self::Hooked => 1,
+            Self::Github => crate::github_fixture::USER,
+        }
+    }
+
     pub(crate) fn limits(self) -> Limits {
         match self {
-            Self::Plain => limits(),
+            Self::Plain | Self::Github => limits(),
             Self::Hooked => Limits { repositories: 1, ..fixtures::hook_limits() },
         }
     }
@@ -25,6 +33,7 @@ impl Shape {
     pub(crate) fn settings(self) -> Settings {
         let mut settings = match self {
             Self::Plain => settings(),
+            Self::Github => return crate::github_fixture::settings(),
             Self::Hooked => fixtures::hook_settings(),
         };
         settings.forges.get_mut(0).expect("fixture forge").access.as_mut().expect("fixture access").user = 1;
@@ -116,4 +125,46 @@ pub fn mixed_calls(seed: u64) -> World {
     world.run_for(Duration::from_secs(1));
     let _ = world.read(Read::Item { number, after: 0 });
     world
+}
+
+/// A GitHub creation served by the fake, with its response held past the deadline.
+#[must_use]
+pub fn github_lost_creation(seed: u64) -> World {
+    let mut world = World::github(seed, 0);
+    world.startup();
+    world.lose_creation_answer(Entry {
+        number: 1,
+        task: 1,
+        repository: REPO,
+        effect: Effect {
+            write: Write::CreateIssue {
+                key: effect_key(b"kit", b"github-lost", LIMITS.op_bytes).expect("effect key"),
+                title: Box::from(b"kit".as_slice()),
+                body: Box::from(b"kit".as_slice()),
+            },
+            condition: Condition::None,
+        },
+        start: None,
+        attempt: None,
+        failures: 0,
+        queued: false,
+    });
+    world
+}
+
+/// A durable owner decision supplies records to the credential referee.
+pub fn github_close(world: &mut World, number: u64) {
+    world.event(skein_forge_client::Event::Make {
+        entry: Entry {
+            number: 2,
+            task: 1,
+            repository: REPO,
+            effect: Effect { write: Write::Close { number }, condition: Condition::None },
+            start: None,
+            attempt: None,
+            failures: 0,
+            queued: false,
+        },
+    });
+    world.run_for(Duration::from_secs(20));
 }

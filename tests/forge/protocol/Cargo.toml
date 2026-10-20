@@ -12,6 +12,9 @@ skein-forge.workspace = true
 skein-forge-client.workspace = true
 skein-forge-connection.workspace = true
 skein-lib.workspace = true
+skein-io.workspace = true
+skein-http.workspace = true
+skein-fake-forge-github.workspace = true
 skein-forge-machine-world = { path = "../machine" }
 skein-forge-client-world = { path = "../client" }
 skein-fake-forge-domain.workspace = true

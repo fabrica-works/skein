@@ -805,12 +805,15 @@ name = "skein-forge-protocol-world"
 version = "0.0.0"
 dependencies = [
  "skein-fake-forge-domain",
+ "skein-fake-forge-github",
  "skein-fake-forge-protocol",
  "skein-forge",
  "skein-forge-client",
  "skein-forge-client-world",
  "skein-forge-connection",
  "skein-forge-machine-world",
+ "skein-http",
+ "skein-io",
  "skein-lib",
 ]
 

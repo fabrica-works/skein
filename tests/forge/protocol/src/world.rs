@@ -1,3 +1,4 @@
+use crate::driver::Driver;
 use crate::fixtures::{self, LIMITS, Shape};
 use crate::referee::{Accounting, Referee};
 use skein_fake_forge_domain::{
@@ -55,7 +56,7 @@ pub struct World {
     client: client::Domain,
     env: Env<client::Limits>,
     out: Queue<Request>,
-    joint: Joint,
+    joint: Driver,
     durable: Map<Key, Stored>,
     entries: Map<u64, Entry>,
     held: Map<u64, Entry>,
@@ -86,19 +87,32 @@ impl World {
     }
 
     pub(crate) fn with(seed: u64, cut_chance: u32, shape: Shape) -> Self {
-        let config = match shape {
-            Shape::Plain => machine::protocol_config(),
-            Shape::Hooked => machine::hooked_protocol_config(),
-        };
         let settings = shape.settings();
         let mut referee = Referee::default();
         referee.settings(&settings);
-        let joint =
-            Joint::with(seed, cut_chance, config, shape.limits(), settings, fixtures::shared(), joint::checks(1000));
+        let joint = match shape {
+            Shape::Plain | Shape::Hooked => {
+                let config = match shape {
+                    Shape::Plain => machine::protocol_config(),
+                    Shape::Hooked => machine::hooked_protocol_config(),
+                    Shape::Github => unreachable!("Forgejo fixture branch"),
+                };
+                Driver::Forgejo(Box::new(Joint::with(
+                    seed,
+                    cut_chance,
+                    config,
+                    shape.limits(),
+                    settings,
+                    fixtures::shared(),
+                    joint::checks(1000),
+                )))
+            }
+            Shape::Github => Driver::Github(Box::new(crate::github::Github::new(seed, cut_chance))),
+        };
         let mut world = Self {
             referee,
-            client: configured(seed),
-            env: Env { now: joint.now(), wall: joint.env.wall, limits: LIMITS },
+            client: configured(seed, shape.author()),
+            env: Env { now: joint.now(), wall: joint.wall(), limits: LIMITS },
             out: Queue::with_capacity(client::max_out(&LIMITS)),
             joint,
             durable: Map::with_capacity(LIMITS.resources + LIMITS.repositories),
@@ -123,8 +137,57 @@ impl World {
             slow_creation: false,
             seed,
         };
+        if let Shape::Github = shape {
+            let access = crate::github_fixture::access(crate::github_fixture::key());
+            world.referee.access(&access);
+            let request = skein_forge_connection::Request::Connect { forge: 1, access };
+            world.referee.fact(format!("{request:?}"));
+            world.joint.action(request);
+        }
         world.event(Event::Restored { clock: RecoveryClock::Monotonic });
         world
+    }
+
+    /// One GitHub forge, with its App access handed at runtime.
+    #[must_use]
+    pub fn github(seed: u64, cut_chance: u32) -> Self {
+        Self::with(seed, cut_chance, Shape::Github)
+    }
+
+    /// Replace the fake App's key and the component's access while calls run.
+    pub fn replace_github_access(&mut self) {
+        let end = self.joint.now().saturating_add(Duration::from_secs(5));
+        for _ in 0..TURNS {
+            if !self.pending.is_empty() {
+                break;
+            }
+            assert!(self.iterate(end), "owner releases a call before key replacement");
+        }
+        assert!(!self.pending.is_empty(), "replacement crosses an admitted call");
+        let written = self.joint.accounting().written;
+        for _ in 0..10_000 {
+            self.joint.tick();
+            if self.joint.accounting().written > written {
+                break;
+            }
+            self.joint.time(self.joint.now().saturating_add(MIN_TURN));
+        }
+        assert!(self.joint.accounting().written > written, "old access wrote a request before replacement");
+        let key = skein_fake_forge_github::keys::KEYS[1];
+        let access = crate::github_fixture::access(key);
+        self.referee.access(&access);
+        self.referee.fact(format!("{:?}", skein_forge_connection::Request::Connect { forge: 1, access }));
+        self.joint.rotate(key);
+    }
+
+    #[must_use]
+    pub fn github_mints(&self) -> u64 {
+        self.joint.mints()
+    }
+
+    #[must_use]
+    pub fn github_credentials(&self) -> (usize, usize, usize) {
+        self.referee.credential_counts()
     }
 
     pub fn event(&mut self, event: Event) {
@@ -216,10 +279,13 @@ impl World {
                 author: None,
                 since: Time::ZERO,
                 page,
-                limit: self.joint.fake_env.limits.limits.page_size,
+                limit: self.joint.fake_env().limits.limits.page_size,
             };
-            let raw::Answer::Items { items, more, .. } =
-                self.joint.domain.inspect(&self.joint.fake_env.limits, b"org/repo", &read).expect("fake snapshot")
+            let raw::Answer::Items { items, more, .. } = self
+                .joint
+                .domain()
+                .inspect(&self.joint.fake_env().limits, self.joint.path(), &read)
+                .expect("fake snapshot")
             else {
                 panic!("fake snapshot must return items, seed {}", self.seed)
             };
@@ -271,7 +337,7 @@ impl World {
         self.startup();
         // The replaced component owns no calls from the former process.
         self.pending = Map::with_capacity(LIMITS.calls);
-        self.client = configured(self.seed);
+        self.client = configured(self.seed, self.shape.author());
         let records: Vec<_> = self.durable.iter().map(|(_, record)| record.clone()).collect();
         for record in records {
             self.event(Event::Restore { record });
@@ -308,19 +374,14 @@ impl World {
                     self.entries,
                     self.durable
                 );
-                assert_eq!(self.joint.domain.observations_lost(), 0);
+                assert_eq!(self.joint.domain().observations_lost(), 0);
                 self.referee.freeze();
                 self.referee.fact(format!("{:?}", skein_forge_connection::Request::Close));
-                self.joint.component.down(
-                    &self.joint.env,
-                    skein_forge_connection::Request::Close,
-                    &mut self.joint.above,
-                    &mut self.joint.below,
-                );
+                self.joint.action(skein_forge_connection::Request::Close);
                 for _ in 0..TURNS {
                     self.joint.tick();
                     self.route();
-                    if self.joint.closed && !self.joint.busy() {
+                    if self.joint.closed() && !self.joint.busy() {
                         return;
                     }
                     assert!(self.joint.now() < end, "component teardown within 60 s, seed {}", self.seed);
@@ -340,39 +401,30 @@ impl World {
 
     #[must_use]
     pub fn accounting(&self) -> Accounting {
-        let requests = self.joint.request_counts();
-        Accounting {
-            reported: self.referee.reported(),
-            written: requests.written,
-            served: self
-                .joint
-                .tally()
-                .total
-                .checked_sub(self.joint.start_counts().served)
-                .expect("startup entrances are served"),
-            cut_in_head: requests.cut_in_head,
-        }
+        let mut accounting = self.joint.accounting();
+        accounting.reported = self.referee.reported();
+        accounting
     }
 
     #[must_use]
     pub fn secrets_absent(&self) -> bool {
         self.referee.secrets_absent(
-            self.joint.request_lines(),
-            &self.joint.events,
-            &format!("{:?}", self.joint.observations),
+            self.joint.lines(),
+            self.joint.events(),
+            &format!("{:?}", self.joint.observations()),
         )
     }
 
     pub(crate) fn startup(&mut self) {
-        let connected = self.joint.connected;
+        let connected = self.joint.connected();
         // A replacement begins its start synchronously; only Connected releases work.
         for _ in 0..60 {
-            if matches!(self.joint.component.start(1), Some(skein_forge_connection::start::Start::Ready { .. })) {
+            if matches!(self.joint.component().start(1), Some(skein_forge_connection::start::Start::Ready { .. })) {
                 self.joint.tick();
                 return;
             }
             self.joint.run_for(Duration::from_secs(1));
-            if self.joint.connected > connected {
+            if self.joint.connected() > connected {
                 return;
             }
         }
@@ -391,9 +443,9 @@ impl World {
             self.referee.access(&access);
             let request = skein_forge_connection::Request::Connect { forge: 1, access };
             self.referee.fact(format!("{request:?}"));
-            self.joint.component.down(&self.joint.env, request, &mut self.joint.above, &mut self.joint.below);
+            self.joint.action(request);
             if refused {
-                let event = self.joint.above.pop().expect("synchronous invalid connect terminal");
+                let event = self.joint.pop().expect("synchronous invalid connect terminal");
                 self.referee.fact(format!("{event:?}"));
                 assert!(matches!(
                     event,
@@ -425,9 +477,9 @@ impl World {
     pub fn creations(&self) -> u32 {
         u32::try_from(
             self.joint
-                .observations
+                .observations()
                 .iter()
-                .filter(|observation| matches!(observation, Observation::Opened { kind: Kind::Issue, by: 1, .. }))
+                .filter(|observation| matches!(observation, Observation::Opened { kind: Kind::Issue, by, .. } if *by == self.shape.author()))
                 .count(),
         )
         .expect("world creation count")
@@ -512,7 +564,7 @@ impl World {
 
     fn sync_env(&mut self) {
         self.env.now = self.joint.now();
-        self.env.wall = self.joint.env.wall;
+        self.env.wall = self.joint.wall();
     }
 
     fn iterate(&mut self, end: Time) -> bool {
@@ -552,7 +604,10 @@ impl World {
     }
 
     fn route(&mut self) {
-        for (token, answer) in std::mem::take(&mut self.joint.answers) {
+        for secret in self.joint.secrets() {
+            self.referee.bearer(secret.expose());
+        }
+        for (token, answer) in self.joint.answers() {
             let pending = self.pending.remove(&token).expect("terminal names an owner call");
             self.referee.terminal(&answer, pending.generation, pending.client);
             self.deliveries.push_back(Delivery {
@@ -567,7 +622,7 @@ impl World {
                 write: pending.write,
             });
         }
-        for hinted in self.joint.hints.drain(..) {
+        for hinted in self.joint.hints() {
             self.deliveries.push_back(Delivery {
                 generation: None,
                 event: Event::Hint { hint: hinted.hint },
@@ -575,9 +630,7 @@ impl World {
             });
         }
         if self.slow_creation && self.creations() > 0 {
-            let config = machine::fake_config();
-            self.joint.fake_env.limits.latency_min = config.latency_min;
-            self.joint.fake_env.limits.latency_max = config.latency_max;
+            self.joint.restore_latency();
             self.slow_creation = false;
         }
     }
@@ -656,9 +709,7 @@ impl World {
             .expect("owner call capacity");
         self.releases.push(Release { decision: self.decisions.len() - 1, write, covered });
         if self.lose_creation && matches!(op, Op::Write(Write::CreateIssue { .. })) {
-            let latency = LIMITS.lifetime.saturating_mul(2);
-            self.joint.fake_env.limits.latency_min = latency;
-            self.joint.fake_env.limits.latency_max = latency;
+            self.joint.delay_creation();
             self.lose_creation = false;
             self.slow_creation = true;
         }
@@ -667,13 +718,13 @@ impl World {
     }
 }
 
-fn configured(seed: u64) -> client::Domain {
+fn configured(seed: u64, author: u64) -> client::Domain {
     client::Domain::configured(
         &LIMITS,
         seed,
         client::Config {
             namespace: Box::from(b"kit".as_slice()),
-            writers: Box::new([client::Writer { forge: 1, author: 1 }]),
+            writers: Box::new([client::Writer { forge: 1, author }]),
         },
     )
     .expect("owner authenticated writer")
