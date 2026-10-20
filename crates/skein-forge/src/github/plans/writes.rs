@@ -560,6 +560,7 @@ fn matches_rate(error: api::Error) -> bool {
         | api::Error::Refused
         | api::Error::InvalidAnswer
         | api::Error::Busy
-        | api::Error::NotConnected => false,
+        | api::Error::NotConnected
+        | api::Error::NotInstalled => false,
     }
 }
