@@ -67,6 +67,7 @@ pub enum Request {
     Edit { owner: Box<[u8]>, name: Box<[u8]>, number: u64, title: Option<Box<[u8]>>, body: Option<Box<[u8]>> },
     Status { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, context: Box<[u8]>, check: api::Check },
     CreateBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]>, commit: api::Commit },
+    Review { owner: Box<[u8]>, name: Box<[u8]>, number: u64, verdict: api::Verdict, body: Box<[u8]> },
     Post { owner: Box<[u8]>, name: Box<[u8]>, number: u64, body: Box<[u8]> },
     CreateIssue { owner: Box<[u8]>, name: Box<[u8]>, title: Box<[u8]>, body: Box<[u8]> },
     OpenPull { owner: Box<[u8]>, name: Box<[u8]>, title: Box<[u8]>, body: Box<[u8]>, head: Box<[u8]>, base: Box<[u8]> },
@@ -145,6 +146,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
@@ -272,6 +274,12 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
             out.repo(owner, name)?;
             out.put(b"/statuses/");
             out.commit(commit)?;
+        }
+        Request::Review { owner, name, number, .. } => {
+            out.repo(owner, name)?;
+            out.put(b"/pulls/");
+            out.number(*number);
+            out.put(b"/reviews");
         }
         Request::Post { owner, name, number, .. } => {
             out.repo(owner, name)?;
@@ -474,6 +482,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
@@ -522,7 +531,8 @@ fn selection(request: &Request) -> (Method, Auth) {
         Request::Uninstall { .. } => (Method::Delete, Auth::App),
         Request::Conversion { .. } => (Method::Post, Auth::None),
         Request::BotUser { .. } => (Method::Get, Auth::None),
-        Request::Post { .. }
+        Request::Review { .. }
+        | Request::Post { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
         | Request::CreateBranch { .. }
@@ -557,7 +567,8 @@ fn selection(request: &Request) -> (Method, Auth) {
 }
 fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal> {
     match request {
-        Request::Post { .. }
+        Request::Review { .. }
+        | Request::Post { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
         | Request::CreateBranch { .. }
@@ -623,6 +634,16 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
 fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) -> Result<(), Refusal> {
     json.object_start();
     match request {
+        Request::Review { verdict, body, .. } => {
+            json.key(b"event");
+            json.string(match verdict {
+                api::Verdict::Approve => b"APPROVE",
+                api::Verdict::RequestChanges => b"REQUEST_CHANGES",
+                api::Verdict::Comment => b"COMMENT",
+            });
+            json.key(b"body");
+            json.string(body);
+        }
         Request::Post { body, .. } => {
             json.key(b"body");
             json.string(body);
@@ -796,6 +817,7 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::Edit { .. }
         | Request::Status { .. }
         | Request::CreateBranch { .. }
+        | Request::Review { .. }
         | Request::Post { .. }
         | Request::CreateIssue { .. }
         | Request::OpenPull { .. }
@@ -813,7 +835,7 @@ fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
 
 fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
     match request {
-        Request::Post { body, .. } => bounded(body, limits.body_bytes)?,
+        Request::Review { body, .. } | Request::Post { body, .. } => bounded(body, limits.body_bytes)?,
         Request::CreateIssue { title, body, .. } => {
             bounded(title, limits.string_bytes)?;
             bounded(body, limits.body_bytes)?;

@@ -428,6 +428,7 @@ fn github_app_server_round_trip() {
                 | Request::Edit { .. }
                 | Request::Status { .. }
                 | Request::CreateBranch { .. }
+                | Request::Review { .. }
                 | Request::Post { .. }
                 | Request::CreateIssue { .. }
                 | Request::OpenPull { .. }

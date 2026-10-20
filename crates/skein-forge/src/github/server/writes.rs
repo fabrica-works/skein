@@ -211,6 +211,23 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[expect(clippy::too_many_lines, reason = "the dispatcher exhaustively names each write request body")]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Review { owner, name, number, .. } => {
+            let fields = parse(
+                body,
+                &[
+                    Field { key: b"event", body: true, required: true },
+                    Field { key: b"body", body: true, required: true },
+                ],
+                limits,
+            )?;
+            let verdict = match fields.get(b"event")? {
+                b"APPROVE" => crate::api::Verdict::Approve,
+                b"REQUEST_CHANGES" => crate::api::Verdict::RequestChanges,
+                b"COMMENT" => crate::api::Verdict::Comment,
+                _ => return None,
+            };
+            Some(Request::Review { owner, name, number, verdict, body: Box::from(fields.get(b"body")?) })
+        }
         Request::Post { owner, name, number, .. } => {
             let fields = parse(body, &[Field { key: b"body", body: true, required: true }], limits)?;
             Some(Request::Post { owner, name, number, body: Box::from(fields.get(b"body")?) })

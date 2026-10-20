@@ -26,6 +26,16 @@ fn github_decode_kind_names_each_documented_answer() {
             Kind::Number,
         ),
         (Request::Post { owner: owner(), name: name(), number: 9, body: Box::from([]) }, Kind::Id),
+        (
+            Request::Review {
+                owner: owner(),
+                name: name(),
+                number: 9,
+                verdict: crate::api::Verdict::Approve,
+                body: Box::from([]),
+            },
+            Kind::Id,
+        ),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
         (

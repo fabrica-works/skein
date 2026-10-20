@@ -811,3 +811,83 @@ fn github_post_original_key_find() {
         assert_eq!(proves, updated == "\"2026-10-20T08:00:00Z\"");
     }
 }
+
+fn review(verdict: api::Verdict, body: &[u8]) -> api::Write {
+    api::Write::Review { number: NUMBER, key: Box::from([0, 255]), verdict, body: Box::from(body) }
+}
+#[test]
+fn github_review_events_and_marker() {
+    for (verdict, event) in [
+        (api::Verdict::Approve, "APPROVE"),
+        (api::Verdict::RequestChanges, "REQUEST_CHANGES"),
+        (api::Verdict::Comment, "COMMENT"),
+    ] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(review(verdict, b"text"));
+        let request = begin(&mut plan, &mut tables);
+        let body =
+            alloc::fmt::format(format_args!(r#"{{"event":"{event}","body":"<!-- example-app:key 00ff -->\ntext"}}"#));
+        golden(
+            &request,
+            Method::Post,
+            b"/repos/acme/widgets/pulls/9007199254740993/reviews",
+            Some(body.as_bytes()),
+            Some(Kind::Id),
+        );
+        roundtrip_body(&request);
+        encoded_body_bounds(&request);
+        head(&mut plan, 200, &mut tables);
+        assert_eq!(
+            finish(&mut plan, Body::Document(Document::Id(NUMBER)), &mut tables),
+            ended(Ok(api::Answer::Reviewed(NUMBER)))
+        );
+    }
+}
+#[test]
+fn github_review_self_approval_and_bounds() {
+    for (status, message, error) in [
+        (422, crate::github::failure::OWN_REVIEW, api::Error::Refused),
+        (422, b"unknown", api::Error::Empty),
+        (409, b"unknown", api::Error::Refused),
+    ] {
+        let mut tables = cached_tables();
+        let mut plan = write_plan(review(api::Verdict::Approve, b""));
+        let request = begin(&mut plan, &mut tables);
+        roundtrip_body(&request);
+        encoded_body_bounds(&request);
+        head(&mut plan, status, &mut tables);
+        assert_eq!(finish(&mut plan, refusal(message), &mut tables), ended(Err(error)));
+    }
+    let mut tables = cached_tables();
+    let mut plan = write_plan(review(api::Verdict::Comment, b"text"));
+    assert_eq!(plan.begin(Bounds { body_bytes: 1, ..bounds() }, WORD, &mut tables), Err(api::Error::TooLarge));
+    for body in
+        [Body::Empty, Body::Document(Document::Done), Body::Malformed(decoding::Malformed::Missing { field: b"id" })]
+    {
+        let mut plan = write_plan(review(api::Verdict::Comment, b"text"));
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 200, &mut tables);
+        assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(api::Error::Timeout)));
+    }
+}
+#[test]
+fn github_review_original_key_find() {
+    let mut tables = cached_tables();
+    let mut write = write_plan(review(api::Verdict::Comment, b"text"));
+    let Request::Review { body, .. } = begin(&mut write, &mut tables) else { panic!("review") };
+    assert_eq!(crate::marker::decode(WORD, &body).as_deref(), Some([0, 255].as_slice()));
+    assert_eq!(crate::marker::decode(b"alice", &body), None);
+    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), ended(Err(api::Error::Timeout)));
+    assert_eq!(write.heard(Heard::Failed(Failure::Seen), bounds(), WORD, &mut tables), Err(api::Error::InvalidAnswer));
+    // Task 18 supplies Reviews decoding and Original provenance for the separate proof read.
+    let request = Request::Reviews {
+        owner: Box::from(*b"acme"),
+        name: Box::from(*b"widgets"),
+        number: NUMBER,
+        page: 1,
+        per_page: 4,
+    };
+    golden(&request, Method::Get, b"/repos/acme/widgets/pulls/9007199254740993/reviews?per_page=4&page=1", None, None);
+    let mut proof = Plan::new(KEY, api::Op::Read(api::Read::Reviews { number: NUMBER, page: 1 }));
+    assert_eq!(proof.begin(bounds(), WORD, &mut tables), Err(api::Error::Refused));
+}
