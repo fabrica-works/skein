@@ -57,6 +57,7 @@ mod issues;
 mod limits;
 mod next;
 mod observe;
+pub mod promises;
 mod pulls;
 mod queue;
 mod reads;

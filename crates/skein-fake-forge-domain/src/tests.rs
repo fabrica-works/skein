@@ -3,6 +3,7 @@
 mod actions;
 mod locate;
 mod next;
+mod promises;
 mod protection;
 mod queue;
 

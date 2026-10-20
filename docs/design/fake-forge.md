@@ -183,6 +183,52 @@ Chances are per mille, in `Config`, and drawn from the domain's seed.
   room, it forgets the statuses of the oldest commit no head shows, never a
   commit.
 
+### 2.5 The promises' judge
+
+The domain's `promises` module judges a client's writes over the decoded
+stream of section 2.4. Its `Profile` supplies the client's user id, key
+markers, owned branch prefixes, allowances on foreign items and table
+bounds. `Recorded` supplies observations with the encoder's `forward`
+answer and cumulative loss checkpoints. `Decision` supplies the exact
+repository, pull number and head the client considered; `decided()` says
+all decisions have arrived, even when there are none.
+
+- **Once:** two client creations with the same marked key, per repository
+  and kind (issue, pull or comment). Only the first opening marker and its
+  next closing marker count.
+- **Forced:** a client move that does not descend, including a remake
+  after deletion, or a rejected push. An existing branch moved without a
+  `forward` answer leaves the judgement undecided.
+- **Foreign:** writes to branches, items or comments the client did not
+  make in the stream, except owned branch prefixes and the profile's
+  explicit item allowances. A body edit over another user's last edit
+  breaches this promise even on an owned object. Label allowances apply
+  to added and removed labels against the last set seen; an unseen
+  item's first `Labelled` is a baseline and judges nothing. The forge's
+  merge base moves and queue group branch creations and deletions are
+  recognized by their observation order and commit, and exempted.
+- **Order:** a client merge or enqueue must have a decision at that exact
+  head. A queue merge at the enqueued head shares its obligation.
+  Decisions can arrive before or after the observation.
+
+`Defined`, `Reported`, `Wiki` and `Refused` are judged by no promise.
+Groups identify the queue's writes; dequeues introduce no obligation.
+
+The judge allocates repository slots and each repository's item, comment,
+branch, key, label and evidence tables at `bounds.objects`, and the
+shared decision table at `bounds.decisions`. Last editors live with
+items and comments; labels, including removed labels, are remembered per
+item. Any table overflow is sticky and leaves the judgement undecided.
+
+`verdict()` yields `Pass`, `Fail` with breaches, or `Undecided` with its
+reason and the breaches still visible. Reasons take precedence in this
+order: the latest lost count when nonzero, no final checkpoint, a full table,
+a merge or enqueue before `decided()`, and a move lacking `forward`.
+Breaches are deduplicated by promise and subject, in first-seen order.
+Their `line()` is `promise/<promise>/<subject>`: names and keys are
+percent-encoded byte by byte, numbers decimal. The judge does no parsing,
+printing or network work.
+
 ## 3. Its git, and the remote boundary
 
 What a fake of a service's git component may rely on. That fake is the
