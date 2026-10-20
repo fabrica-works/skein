@@ -1,5 +1,5 @@
 //! Scripted HTTP responses, seeded streams and the forge component's io.
-use crate::{fixtures, peer::Peer};
+use crate::{fixtures, github, peer::Peer};
 use skein_forge::api;
 use skein_forge_connection::{Answered, Component, Event, Limits, Request, Settings, Stopped};
 use skein_lib::{
@@ -23,12 +23,19 @@ impl Answer {
     pub fn case(request: &'static str, case: &'static str) -> Self {
         Self { request, response: Response::Case(case) }
     }
+    /// Answers from the fake GitHub layer.
+    #[must_use]
+    pub fn served(request: &'static str) -> Self {
+        Self { request, response: Response::Served }
+    }
 }
 /// The bytes or fault one request receives.
 #[derive(Debug)]
 pub enum Response {
     /// A recorded HTTP response.
     Case(&'static str),
+    /// Computed by the fake GitHub layer from the request the component sent (`Machine::github`).
+    Served,
     /// A literal HTTP response.
     Bytes(Vec<u8>),
     /// A reset after the request but before its response.
@@ -93,6 +100,8 @@ pub struct Machine {
     settling: Vec<Token>,
     event_order: Vec<&'static str>,
     tls_addresses: Vec<skein_io::Addr>,
+    fake: Option<github::Fake>,
+    wall_base: Option<Wall>,
     handshake_cut: Option<crate::tls::HandshakeCut>,
     flight_length: Option<usize>,
     flight_status: Option<crate::tls::CutStatus>,
@@ -126,6 +135,14 @@ impl Machine {
     /// Starts with other component limits or settings; shared bounds stay the fixture's.
     #[must_use]
     pub fn with(seed: u64, limits: Limits, settings: Settings, script: Vec<Answer>) -> Self {
+        Self::build(seed, limits, settings, script, false)
+    }
+    /// Starts with a fake GitHub peer and a wall that follows the clock.
+    #[must_use]
+    pub fn github(seed: u64, limits: Limits, settings: Settings, script: Vec<Answer>) -> Self {
+        Self::build(seed, limits, settings, script, true)
+    }
+    fn build(seed: u64, limits: Limits, settings: Settings, script: Vec<Answer>, github: bool) -> Self {
         let tls_addresses = settings
             .forges
             .iter()
@@ -134,7 +151,15 @@ impl Machine {
                     .then_some(forge.address)
             })
             .collect::<Vec<_>>();
-        let wall = if tls_addresses.is_empty() { Wall::EPOCH } else { skein_tls_world::pki::VALID };
+        assert!(!github || tls_addresses.is_empty(), "Machine::github serves plaintext forges");
+        let wall_base = if github {
+            Some(github::WALL_BASE)
+        } else if tls_addresses.is_empty() {
+            None
+        } else {
+            Some(skein_tls_world::pki::VALID)
+        };
+        let wall = wall_base.unwrap_or(Wall::EPOCH);
         let access_answers = settings.forges.iter().filter(|forge| forge.access.is_some()).count();
         let mut world = Self {
             component: Component::new(settings, &limits, &fixtures::shared()).expect("fixture bounds agree"),
@@ -165,6 +190,8 @@ impl Machine {
             settling: Vec::new(),
             event_order: Vec::new(),
             tls_addresses,
+            fake: github.then(|| github::Fake::new(seed)),
+            wall_base,
             handshake_cut: None,
             flight_length: None,
             flight_status: None,
@@ -202,6 +229,11 @@ impl Machine {
             };
         }
         self.tick();
+    }
+    /// The wall of the last tick.
+    #[must_use]
+    pub fn wall(&self) -> Wall {
+        self.env.wall
     }
     /// Holds the next exchange at an observable io boundary.
     pub fn pause(&mut self, pause: Pause) {
@@ -314,9 +346,8 @@ impl Machine {
         for peer in self.peers.values_mut() {
             peer.begin_tick();
         }
-        if !self.tls_addresses.is_empty() {
-            self.env.wall =
-                Wall::from_nanos(skein_tls_world::pki::VALID.as_nanos().saturating_add(self.env.now.as_nanos()));
+        if let Some(base) = self.wall_base {
+            self.env.wall = Wall::from_nanos(base.as_nanos().saturating_add(self.env.now.as_nanos()));
         }
         self.events();
         while let Some(request) = self.below.pop() {
@@ -547,6 +578,12 @@ impl Machine {
         peer.responding();
         let response = match answer.response {
             Response::Case(case) => Response::Bytes(case_bytes(case)),
+            Response::Served => Response::Bytes(
+                self.fake
+                    .as_mut()
+                    .expect("Answer::served needs Machine::github")
+                    .serve(self.requests.last().expect("captured request"), self.env.wall),
+            ),
             other @ (Response::Bytes(_) | Response::Reset | Response::Cut { .. } | Response::Silent) => other,
         };
         if let Response::Bytes(bytes) = &response {
@@ -570,10 +607,7 @@ impl Machine {
             }
         }
         match response {
-            Response::Case(case) => {
-                let bytes = case_bytes(case);
-                peer.write(&bytes);
-            }
+            Response::Case(_) | Response::Served => unreachable!("converted above"),
             Response::Bytes(bytes) => {
                 peer.write(&bytes);
             }

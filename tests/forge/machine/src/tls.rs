@@ -103,6 +103,7 @@ pub fn tls_cuts(seed: u64, sweep: Sweep) -> Vec<(u64, u64, u64, u64)> {
         let response = match fixtures::locate_script().remove(request).response {
             crate::machine::Response::Bytes(bytes) => bytes,
             crate::machine::Response::Case(_)
+            | crate::machine::Response::Served
             | crate::machine::Response::Reset
             | crate::machine::Response::Cut { .. }
             | crate::machine::Response::Silent => unreachable!("generated framing"),

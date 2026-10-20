@@ -1,5 +1,6 @@
 //! The forge component against recorded responses over seeded in-memory streams.
 pub mod fixtures;
+pub mod github;
 pub mod hooks;
 pub mod joint;
 pub mod machine;

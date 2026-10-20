@@ -21,7 +21,7 @@ fn plaintext_request_cuts_end_once() {
     for (request, length) in requests.into_iter().enumerate() {
         let response = match fixtures::locate_script().remove(request).response {
             Response::Bytes(bytes) => bytes,
-            Response::Case(_) | Response::Reset | Response::Cut { .. } | Response::Silent => {
+            Response::Case(_) | Response::Served | Response::Reset | Response::Cut { .. } | Response::Silent => {
                 unreachable!("generated response")
             }
         };

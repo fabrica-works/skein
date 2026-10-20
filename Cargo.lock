@@ -750,6 +750,7 @@ name = "skein-forge-machine-world"
 version = "0.0.0"
 dependencies = [
  "skein-fake-forge-domain",
+ "skein-fake-forge-github",
  "skein-fake-forge-protocol",
  "skein-forge",
  "skein-forge-connection",

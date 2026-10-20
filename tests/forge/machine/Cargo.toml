@@ -19,6 +19,7 @@ skein-world.workspace = true
 skein-forge-connection.workspace = true
 skein-fake-forge-protocol.workspace = true
 skein-fake-forge-domain.workspace = true
+skein-fake-forge-github.workspace = true
 
 [dev-dependencies]
 
