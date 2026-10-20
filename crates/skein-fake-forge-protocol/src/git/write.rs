@@ -28,7 +28,7 @@ fn optional(json: &mut Encoder, key: &[u8], value: Option<u64>) {
         json.null();
     }
 }
-fn content(json: &mut Encoder, key: &[u8], value: &[u8]) -> Result<(), writer::Refusal> {
+pub(crate) fn content(json: &mut Encoder, key: &[u8], value: &[u8]) -> Result<(), writer::Refusal> {
     let count = u32::try_from(value.len()).or(Err(writer::Refusal::TooLong))?;
     let length = base64::encoded_len(base64::Alphabet::Standard, count).ok_or(writer::Refusal::TooLong)?;
     let mut encoded = Writer::new(usize::try_from(length).expect("u32 fits"));
@@ -112,7 +112,7 @@ pub(super) fn call(json: &mut Encoder, call: &Call) -> Result<(), writer::Refusa
     json.object_end();
     Ok(())
 }
-pub(super) fn parents(json: &mut Encoder, value: Parents) {
+pub(crate) fn parents(json: &mut Encoder, value: Parents) {
     number(json, b"commit", value.commit);
     optional(json, b"parent", value.parent);
     optional(json, b"merge_parent", value.merge_parent);

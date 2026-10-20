@@ -229,6 +229,7 @@ fn status(request: &Request) -> u16 {
         | crate::Route::Tokens
         | crate::Route::CreateToken
         | crate::Route::DeleteToken
+        | crate::Route::Git(_)
         | crate::Route::Org
         | crate::Route::CreateOrg
         | crate::Route::Teams

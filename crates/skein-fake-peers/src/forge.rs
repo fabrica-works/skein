@@ -453,7 +453,7 @@ impl Peer {
                     protocol::up_with_domain(
                         &mut connection.server,
                         &mut self.service,
-                        &mut forge.domain,
+                        forgejo::Hosted { domain: &mut forge.domain, config: &domain_env.limits },
                         &env,
                         up,
                         &mut connection.above,
@@ -464,7 +464,7 @@ impl Peer {
                     protocol::resume_with_domain(
                         &mut connection.server,
                         &mut self.service,
-                        &mut forge.domain,
+                        forgejo::Hosted { domain: &mut forge.domain, config: &domain_env.limits },
                         &env,
                         &mut connection.above,
                         &mut connection.below,

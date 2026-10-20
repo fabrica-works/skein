@@ -275,3 +275,90 @@ fn git_fits_matches_real_encoding_at_each_bound() {
         assert_eq!(client::encode(&call, &limits).is_ok(), delta == 0, "call encoding delta {delta}");
     }
 }
+
+fn basic(login: &[u8], token: &[u8]) -> Box<[u8]> {
+    use skein_lib::{Writer, base64};
+    let mut clear = Writer::new(login.len().saturating_add(1).saturating_add(token.len()));
+    clear.put(login).expect("login");
+    clear.put(b":").expect("colon");
+    clear.put(token).expect("token");
+    let clear = clear.finish();
+    let size = base64::encoded_len(base64::Alphabet::Standard, clear.len().try_into().expect("credential"))
+        .expect("credential");
+    let mut out = Writer::new(6_usize.saturating_add(size.try_into().expect("credential")));
+    out.put(b"Basic ").expect("scheme");
+    base64::encode(base64::Alphabet::Standard, &clear, &mut out).expect("credential");
+    out.finish()
+}
+fn ask_raw(h: &mut fixtures::Harness, method: &[u8], path: &[u8], body: &[u8], authorization: Option<&[u8]>) {
+    use skein_lib::{Decimal, Writer};
+    let authorization = authorization.unwrap_or(b"");
+    let digits = Decimal::of(body.len().try_into().expect("body length"));
+    let parts = [
+        method,
+        b" ",
+        path,
+        b" HTTP/1.1\r\nHost: localhost\r\nAuthorization: ",
+        authorization,
+        b"\r\nContent-Length: ",
+        digits.as_bytes(),
+        b"\r\n\r\n",
+        body,
+    ];
+    let mut length = 0_usize;
+    for part in parts {
+        length = length.saturating_add(part.len());
+    }
+    let mut out = Writer::new(length);
+    for part in parts {
+        out.put(part).expect("sized request");
+    }
+    h.request(&out.finish());
+    h.run();
+}
+fn ask(h: &mut fixtures::Harness, call: &Call) {
+    let encoded = client::encode(call, &h.env.limits).expect("call");
+    ask_raw(h, b"POST", &encoded.target, &encoded.body, Some(&basic(b"engine", fixtures::TOKEN)));
+}
+fn answer(h: &fixtures::Harness, name: Name) -> Answer {
+    let client::Step::Decoded(Ok(answer)) = decode_answer(&h.body(), name, h.status(), &h.env.limits, usize::MAX)
+    else {
+        panic!("git answer: {} {:?}", h.status(), h.body());
+    };
+    answer
+}
+#[test]
+fn git_branch_moves_share_the_domain() {
+    let mut h = fixtures::Harness::new(fixtures::config());
+    let rows = [
+        (
+            Call::CommitTree { parent: FIRST, merging: None, tree: tree(), message: boxed(b"\xffmessage") },
+            Answer::Stored(Some(SECOND)),
+        ),
+        (
+            Call::Create { repository: boxed(b"org/repo"), branch: boxed(b"work"), commit: FIRST },
+            Answer::Created(api::Created::Created),
+        ),
+        (
+            Call::Push {
+                repository: boxed(b"org/repo"),
+                branch: boxed(b"work"),
+                commit: SECOND,
+                expected: Some(FIRST),
+            },
+            Answer::Pushed(api::Pushed::Pushed),
+        ),
+        (Call::Branch { repository: boxed(b"org/repo"), branch: boxed(b"work") }, Answer::Commit(SECOND)),
+    ];
+    for (call, expected) in rows {
+        ask(&mut h, &call);
+        assert_eq!(answer(&h, call.name()), expected);
+    }
+    assert_eq!(h.domain_calls(), 3);
+    assert_eq!(h.service.tally().total, 4);
+    assert_eq!(h.service.tally().unauthorized, 0);
+    assert_eq!(
+        h.domain.inspect(&h.fake_env.limits, b"org/repo", &api::Read::Branch { branch: boxed(b"work") }),
+        Ok(api::Answer::Commit(SECOND))
+    );
+}

@@ -159,7 +159,7 @@ impl Harness {
             crate::resume_with_domain(
                 &mut self.server,
                 &mut self.service,
-                &mut self.domain,
+                crate::Hosted { domain: &mut self.domain, config: &self.fake_env.limits },
                 &self.env,
                 &mut self.above,
                 &mut self.below,
@@ -194,7 +194,7 @@ impl Harness {
                     crate::up_with_domain(
                         &mut self.server,
                         &mut self.service,
-                        &mut self.domain,
+                        crate::Hosted { domain: &mut self.domain, config: &self.fake_env.limits },
                         &self.env,
                         up,
                         &mut self.above,

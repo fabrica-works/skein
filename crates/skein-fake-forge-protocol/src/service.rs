@@ -129,6 +129,32 @@ impl Service {
         }
         self.setup.token_user(token)
     }
+    pub(crate) fn git_user(&self, authorization: Option<&[u8]>, write: bool) -> Option<(u64, bool)> {
+        let value = authorization?.strip_prefix(b"Basic ")?;
+        let max = u32::try_from(value.len()).ok()?;
+        let decoded = skein_lib::base64::decode(skein_lib::base64::Alphabet::Standard, value, max).ok()?;
+        let colon = skein_lib::bytes::find(&decoded, b":")?;
+        let login = decoded.get(..colon)?;
+        let token = decoded.get(colon.checked_add(1)?..)?;
+        if login.is_empty() || token.is_empty() {
+            return None;
+        }
+        for (known, user) in &self.config.tokens {
+            if known.expose() == token {
+                for (id, name) in &self.config.users {
+                    if id == user && name.as_ref() == login {
+                        return Some((*user, true));
+                    }
+                }
+                return None;
+            }
+        }
+        let user = self.setup.token_user(token)?;
+        if self.setup.user(user)?.login.as_ref() != login {
+            return None;
+        }
+        Some((user, self.setup.accesses_repository(token, write)))
+    }
     pub(crate) fn reads_user(&self, authorization: Option<&[u8]>) -> bool {
         let Some(value) = authorization else {
             return false;
@@ -217,6 +243,14 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
         .checked_add(u64::from(limits.documents.target_bytes).checked_mul(2)?)?
         .checked_add(u64::from(limits.raw_bytes))?
         .checked_add(listing)?
+        .checked_add(crate::git::decoder_worst_case(limits)?)?
+        // Object walk: selected ids, parent rows, and two parents per
+        // input asked entry or output entry, at most twice the response cap.
+        .checked_add(List::<u64>::worst_case(config.max_response_items)?)?
+        .checked_add(List::<crate::git::Parents>::worst_case(config.max_response_items)?)?
+        .checked_add(skein_lib::Set::<core::cmp::Reverse<u64>>::worst_case(config.max_response_items.checked_mul(4)?)?)?
+        // Basic's decoded login and token live for the entrance pass only.
+        .checked_add(u64::from(limits.http.head))?
         // One sanitized HTTP call held until its owner drains the entrance.
         .checked_add(u64::try_from(size_of::<Option<skein_http::server::Call>>()).ok()?)?
         .checked_add(u64::from(limits.http.head))?

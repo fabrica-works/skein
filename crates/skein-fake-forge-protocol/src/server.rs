@@ -1,5 +1,6 @@
 //! One bounded HTTP connection over Forgejo documents and the fake's calls.
-use crate::{Error, Limits, Service, errors, response, routes, service::Call};
+mod git;
+use crate::{Error, Hosted, Limits, Service, errors, response, routes, service::Call};
 use alloc::boxed::Box;
 use skein_fake_forge_domain::{self as domain, api};
 use skein_forge::forgejo::{
@@ -47,6 +48,8 @@ pub struct Server {
     json_events: Queue<json::Event>,
     json_down: Queue<Down>,
     decoder: Option<documents::BodyDecoder>,
+    git: Option<crate::git::Name>,
+    git_decoder: Option<crate::git::server::BodyDecoder>,
     user: u64,
     scopes: Scopes,
     request: Option<Request>,
@@ -82,6 +85,8 @@ impl Server {
             json_events: Queue::with_capacity(1),
             json_down: Queue::with_capacity(1),
             decoder: None,
+            git: None,
+            git_decoder: None,
             user: 0,
             scopes: Scopes { user: false, repository: false },
             request: None,
@@ -140,7 +145,7 @@ pub fn up(
 pub fn up_with_domain(
     server: &mut Server,
     service: &mut Service,
-    domain: &mut domain::Domain,
+    domain: Hosted<'_>,
     env: &Env<Limits>,
     event: Up,
     above: &mut Queue<Event>,
@@ -151,7 +156,7 @@ pub fn up_with_domain(
 fn up_on(
     server: &mut Server,
     service: &mut Service,
-    domain: Option<&mut domain::Domain>,
+    domain: Option<Hosted<'_>>,
     env: &Env<Limits>,
     event: Up,
     above: &mut Queue<Event>,
@@ -227,6 +232,11 @@ pub fn down(
         resume(server, service, env, above, below);
         return;
     }
+    if server.git.is_some() {
+        git::down(server, service, env, result, above, below);
+        resume(server, service, env, above, below);
+        return;
+    }
     let request = server.request.as_ref().expect("waiting request");
     if !server.followed {
         if service.rng.chance(service.config.faults.drop) {
@@ -290,7 +300,7 @@ pub fn resume(
 pub fn resume_with_domain(
     server: &mut Server,
     service: &mut Service,
-    domain: &mut domain::Domain,
+    domain: Hosted<'_>,
     env: &Env<Limits>,
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
@@ -300,7 +310,7 @@ pub fn resume_with_domain(
 fn resume_on(
     server: &mut Server,
     service: &mut Service,
-    mut domain: Option<&mut domain::Domain>,
+    mut domain: Option<Hosted<'_>>,
     env: &Env<Limits>,
     above: &mut Queue<Event>,
     below: &mut Queue<Down>,
@@ -310,8 +320,22 @@ fn resume_on(
             break;
         }
         if let Some(event) = server.events.pop() {
-            http_event(server, service, domain.as_deref_mut(), env, event, above, below);
+            http_event(server, service, domain.as_mut(), env, event, above, below);
         } else if let Some(event) = server.json_events.pop() {
+            if let Some(decoder) = &mut server.git_decoder {
+                match crate::git::server::body(decoder, &env.limits, &event) {
+                    crate::git::server::BodyStep::Demand(request) => json_down(server, env, request),
+                    crate::git::server::BodyStep::Decoded(call) => {
+                        server.git_decoder = None;
+                        git::decoded(server, service, domain.as_mut(), env, call, above, below);
+                    }
+                    crate::git::server::BodyStep::Malformed => {
+                        server.git_decoder = None;
+                        malformed(server, env);
+                    }
+                }
+                continue;
+            }
             let Some(decoder) = &mut server.decoder else {
                 continue;
             };
@@ -319,15 +343,11 @@ fn resume_on(
                 documents::BodyStep::Demand(request) => json_down(server, env, request),
                 documents::BodyStep::Decoded(request) => {
                     server.decoder = None;
-                    decoded(server, service, domain.as_deref_mut(), env, request, above);
+                    decoded(server, service, domain.as_mut(), env, request, above);
                 }
                 documents::BodyStep::Malformed(_) => {
                     server.decoder = None;
-                    json_down(server, env, json::Request::Close);
-                    server.json = Tokenizer::new(&env.limits.documents.json);
-                    server.json_started = false;
-                    server.requests.push(http::Request::Discard);
-                    fail(server, &env.limits, 422);
+                    malformed(server, env);
                 }
             }
         } else if let Some(down) = server.json_down.pop() {
@@ -354,6 +374,7 @@ pub fn close(
     server.request = None;
     server.reply = None;
     server.decoder = None;
+    server.git_decoder = None;
     for _ in 0..server.events.capacity() {
         drop(server.events.pop());
     }
@@ -417,9 +438,10 @@ fn http_down(server: &mut Server, env: &Env<Limits>, request: http::Request, bel
     );
 }
 fn json_down(server: &mut Server, env: &Env<Limits>, request: json::Request) {
+    let limits = git::json_limits(server, &env.limits);
     json::down(
         &mut server.json,
-        &Env { now: env.now, wall: env.wall, limits: env.limits.documents.json },
+        &Env { now: env.now, wall: env.wall, limits },
         request,
         &mut server.json_events,
         &mut server.json_down,
@@ -428,7 +450,7 @@ fn json_down(server: &mut Server, env: &Env<Limits>, request: json::Request) {
 fn http_event(
     server: &mut Server,
     service: &mut Service,
-    domain: Option<&mut domain::Domain>,
+    domain: Option<&mut Hosted<'_>>,
     env: &Env<Limits>,
     event: http::Event,
     above: &mut Queue<Event>,
@@ -438,9 +460,10 @@ fn http_event(
         http::Event::Call(call) => entrance(server, service, domain, env, call, above),
         http::Event::Body(up) => {
             if server.state == State::Body {
+                let limits = git::json_limits(server, &env.limits);
                 json::up(
                     &mut server.json,
-                    &Env { now: env.now, wall: env.wall, limits: env.limits.documents.json },
+                    &Env { now: env.now, wall: env.wall, limits },
                     up,
                     &mut server.json_events,
                     &mut server.json_down,
@@ -466,6 +489,8 @@ fn http_event(
         | http::Event::Failed(_)
         | http::Event::Ended => close(server, service, env, above, below),
         http::Event::Done(reuse) => {
+            server.git = None;
+            server.git_decoder = None;
             server.listing = None;
             server.request = None;
             server.select = response::Select::Document;
@@ -480,7 +505,7 @@ fn http_event(
 fn entrance(
     server: &mut Server,
     service: &mut Service,
-    domain: Option<&mut domain::Domain>,
+    domain: Option<&mut Hosted<'_>>,
     env: &Env<Limits>,
     call: http::Call,
     above: &mut Queue<Event>,
@@ -493,6 +518,10 @@ fn entrance(
         }
     }
     server.head = Some(snapshot);
+    if let Some(name) = crate::git::name(&call.target) {
+        git::entrance(server, service, env, &call, name);
+        return;
+    }
     let user = service.user(call.header(b"authorization"));
     service.tally.count(None, user);
     server.range = response::range(call.header(b"range"));
@@ -550,7 +579,7 @@ fn entrance(
 fn decoded(
     server: &mut Server,
     service: &mut Service,
-    domain: Option<&mut domain::Domain>,
+    domain: Option<&mut Hosted<'_>>,
     env: &Env<Limits>,
     request: Request,
     above: &mut Queue<Event>,
@@ -574,7 +603,11 @@ fn decoded(
         fail(server, &env.limits, 403);
         return;
     }
-    if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &service.config, &env.limits, domain) {
+    let lent = match domain {
+        Some(hosted) => Some(&mut *hosted.domain),
+        None => None,
+    };
+    if let Some(reply) = service.setup.answer_with_domain(&request, server.user, &service.config, &env.limits, lent) {
         respond(server, reply);
         return;
     }
@@ -840,4 +873,12 @@ fn user_repos_next(server: &mut Server, service: &mut Service, env: &Env<Limits>
         retire(server, service);
         respond(server, reply);
     }
+}
+
+fn malformed(server: &mut Server, env: &Env<Limits>) {
+    json_down(server, env, json::Request::Close);
+    server.json = Tokenizer::new(&env.limits.documents.json);
+    server.json_started = false;
+    server.requests.push(http::Request::Discard);
+    fail(server, &env.limits, 422);
 }

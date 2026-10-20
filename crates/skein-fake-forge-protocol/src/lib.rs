@@ -57,3 +57,10 @@ pub struct Config {
 }
 #[cfg(test)]
 mod tests;
+
+/// The forge lent for one hosted pass, including direct object-store calls.
+#[derive(Debug)]
+pub struct Hosted<'a> {
+    pub domain: &'a mut skein_fake_forge_domain::Domain,
+    pub config: &'a skein_fake_forge_domain::Config,
+}

@@ -642,6 +642,7 @@ version = "0.0.0"
 dependencies = [
  "skein-fake-forge-domain",
  "skein-forge",
+ "skein-heap",
  "skein-http",
  "skein-json",
  "skein-lib",

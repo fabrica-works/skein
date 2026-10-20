@@ -1,6 +1,6 @@
 //! Requests counted at their HTTP entrance (fake-forge.md, section 4).
 use skein_lib::Map;
-pub(crate) const ROUTES: u32 = 64;
+pub(crate) const ROUTES: u32 = 74;
 use skein_forge::forgejo::request::Request;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Route {
@@ -75,6 +75,77 @@ pub enum Route {
     PostStatus,
     CreateBranch,
     DeleteBranch,
+    Git(crate::git::Name),
+}
+impl Route {
+    pub(crate) const fn is_git(self) -> bool {
+        match self {
+            Self::Git(_) => true,
+            Self::Org
+            | Self::CreateOrg
+            | Self::Teams
+            | Self::CreateTeam
+            | Self::EditTeam
+            | Self::TeamMembers
+            | Self::AddMember
+            | Self::AddCollaborator
+            | Self::RepoHooks
+            | Self::CreateRepoHook
+            | Self::EditRepoHook
+            | Self::DeleteRepoHook
+            | Self::OrgHooks
+            | Self::CreateOrgHook
+            | Self::EditOrgHook
+            | Self::DeleteOrgHook
+            | Self::User
+            | Self::Tokens
+            | Self::CreateToken
+            | Self::DeleteToken
+            | Self::UserOf
+            | Self::CreateUser
+            | Self::ApiSettings
+            | Self::RepositoryById
+            | Self::Repository
+            | Self::UserRepos
+            | Self::RepoSearch
+            | Self::UserSearch
+            | Self::Issues
+            | Self::Issue
+            | Self::Comments
+            | Self::Pull
+            | Self::PullFor
+            | Self::Pulls
+            | Self::CombinedStatus
+            | Self::Reviews
+            | Self::ReviewComments
+            | Self::Branch
+            | Self::Branches
+            | Self::Protection
+            | Self::Protections
+            | Self::Collaborators
+            | Self::Permission
+            | Self::PullFiles
+            | Self::Compare
+            | Self::Raw
+            | Self::Runs
+            | Self::Run
+            | Self::Jobs
+            | Self::Job
+            | Self::JobLog
+            | Self::CreateIssue
+            | Self::OpenPull
+            | Self::PostComment
+            | Self::PostReview
+            | Self::EditIssue
+            | Self::RequestReviewers
+            | Self::RemoveReviewers
+            | Self::Merge
+            | Self::Update
+            | Self::PostStatus
+            | Self::CreateBranch
+            | Self::DeleteBranch => false,
+        }
+    }
 }
 #[must_use]
 pub fn route(request: &Request) -> Route {
@@ -165,6 +236,10 @@ impl Tally {
             unrouted: 0,
             unauthorized: 0,
         }
+    }
+    pub(crate) fn count_store(&mut self, route: Option<Route>) {
+        self.count(route, None);
+        self.unauthorized = self.unauthorized.saturating_sub(1);
     }
     pub fn count(&mut self, route: Option<Route>, user: Option<u64>) {
         self.total = self.total.saturating_add(1);

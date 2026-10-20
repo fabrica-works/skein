@@ -20,6 +20,15 @@ pub fn answer(error: Error, route: Route, now: Time) -> Failure {
     failure.status = match error {
         Error::Missing(What::Branch) if route == Route::DeleteBranch => 500,
         Error::Missing(_) => 404,
+        Error::Refused if route.is_git() => 403,
+        Error::Full
+            if route == Route::Git(crate::git::Name::Commit)
+                || route == Route::Git(crate::git::Name::Merge)
+                || route == Route::Git(crate::git::Name::CommitTree) =>
+        {
+            507
+        }
+        Error::Unreachable if route.is_git() => 502,
         Error::RateLimited { reset } => {
             let nanos = reset.saturating_since(now).as_nanos();
             failure.retry_after = Some(nanos.div_ceil(1_000_000_000));

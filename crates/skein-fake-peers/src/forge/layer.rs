@@ -170,8 +170,8 @@ macro_rules! entry {
     }
 }
 entry!(start => start, start);
-entry!(up_with_domain => up_with_domain, up; domain: &mut domain::Domain, event: Up);
-entry!(resume_with_domain => resume_with_domain, resume; domain: &mut domain::Domain);
+entry!(up_with_domain => up_with_domain, up; domain: forgejo::Hosted<'_>, event: Up);
+entry!(resume_with_domain => resume_with_domain, resume; domain: forgejo::Hosted<'_>);
 entry!(close => close, close);
 entry!(closed => closed, closed);
 pub(super) fn down(

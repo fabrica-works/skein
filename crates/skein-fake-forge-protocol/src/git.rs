@@ -6,7 +6,8 @@ use skein_lib::List;
 pub mod client;
 mod read;
 pub mod server;
-mod write;
+pub(crate) mod store;
+pub(crate) mod write;
 
 pub use skein_forge::forgejo::server::Unrouted;
 
@@ -137,7 +138,7 @@ pub enum Answer {
 /// Each count is capped by the body bound: even a one-byte token costs a byte
 /// on the wire. No tree or object list exceeds `documents.inner`.
 #[derive(Debug)]
-pub struct Decoder {
+pub(crate) struct Decoder {
     records: List<skein_json::Compact>,
     text: List<u8>,
     over: bool,
