@@ -1,4 +1,4 @@
-//! Seeded byte fragments and resets, without recording bytes or credentials.
+//! Seeded fragments and resets, observing request framing and METHOD/target lines.
 use skein_lib::stream::{Down, Fault, Read, Up};
 use skein_lib::{Intake, Rng};
 use std::collections::VecDeque;
@@ -93,19 +93,113 @@ impl End {
             || self.demand.is_some_and(|(read, room)| room > 0 || (read != Read::Nothing && eof && !self.ended))
     }
 }
+/// First-byte writes and requests ended before their delivered head completed.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RequestCounts {
+    pub written: u64,
+    pub cut_in_head: u64,
+}
+
+#[derive(Default, PartialEq, Eq)]
+enum Head {
+    #[default]
+    Waiting,
+    Line,
+    Headers,
+}
+
+#[derive(Default)]
+struct Framing {
+    lines: Vec<Vec<u8>>,
+    line: Vec<u8>,
+    line_bytes: u64,
+    length_line: bool,
+    cr: bool,
+    head: Head,
+    body: u64,
+    length: u64,
+    written: u64,
+    heads: u64,
+}
+impl Framing {
+    fn bytes(&mut self, bytes: &[u8], retain_lines: bool) {
+        for byte in bytes {
+            if self.body > 0 {
+                self.body -= 1;
+                continue;
+            }
+            if self.head == Head::Waiting {
+                self.written += 1;
+                self.head = Head::Line;
+                self.length_line = true;
+                self.length = 0;
+                if retain_lines {
+                    self.lines.push(Vec::new());
+                }
+            }
+            if self.head == Head::Line && retain_lines {
+                self.lines.last_mut().expect("request line").push(*byte);
+            }
+            self.line_bytes += 1;
+            if self.head == Head::Headers && self.length_line {
+                let prefix = b"content-length:";
+                if self.line.len() < prefix.len() && byte.to_ascii_lowercase() != prefix[self.line.len()] {
+                    self.length_line = false;
+                    self.line.clear();
+                } else {
+                    self.line.push(*byte);
+                }
+            }
+            if self.cr && *byte == b'\n' {
+                if self.head == Head::Line {
+                    self.head = Head::Headers;
+                } else if self.line_bytes == 2 {
+                    self.heads += 1;
+                    self.head = Head::Waiting;
+                    self.body = self.length;
+                } else if self.length_line {
+                    self.length = std::str::from_utf8(&self.line[b"content-length:".len()..])
+                        .expect("HTTP length")
+                        .trim()
+                        .parse()
+                        .expect("HTTP length");
+                }
+                self.line.clear();
+                self.line_bytes = 0;
+                self.length_line = true;
+            }
+            self.cr = *byte == b'\r';
+        }
+    }
+}
 pub struct Pipe {
     client: End,
     server: End,
     rng: Rng,
     cut: Cut,
     carried: u64,
+    sent: Framing,
+    received: Framing,
+    frozen: bool,
 }
 impl Pipe {
     #[must_use]
     pub fn new(seed: u64, cut: Cut) -> Self {
-        Self { client: End::new(), server: End::new(), rng: Rng::new(seed), cut, carried: 0 }
+        Self {
+            client: End::new(),
+            server: End::new(),
+            rng: Rng::new(seed),
+            cut,
+            carried: 0,
+            sent: Framing::default(),
+            received: Framing::default(),
+            frozen: false,
+        }
     }
     pub fn client_down(&mut self, down: Down) {
+        if let Down::Send(bytes) = &down {
+            self.sent.bytes(bytes, true);
+        }
         self.client.down(&mut self.server, down);
     }
     pub fn server_down(&mut self, down: Down) {
@@ -115,7 +209,30 @@ impl Pipe {
         self.client.up(self.server.finished, &mut self.rng, &mut self.carried, self.cut)
     }
     pub fn server_up(&mut self) -> Option<Up> {
-        self.server.up(self.client.finished, &mut self.rng, &mut self.carried, self.cut)
+        let up = self.server.up(self.client.finished, &mut self.rng, &mut self.carried, self.cut);
+        if let Some(Up::Bytes(bytes)) = &up {
+            self.received.bytes(bytes, false);
+        }
+        up
+    }
+    pub(crate) fn freeze(&mut self) {
+        self.frozen = true;
+    }
+    #[must_use]
+    pub fn request_counts(&self) -> RequestCounts {
+        let ended = self.frozen || self.client.failed || self.server.failed;
+        RequestCounts {
+            written: self.sent.written,
+            cut_in_head: if ended {
+                self.sent.written.checked_sub(self.received.heads).expect("heads follow writes")
+            } else {
+                0
+            },
+        }
+    }
+    #[must_use]
+    pub fn request_lines(&self) -> &[Vec<u8>] {
+        &self.sent.lines
     }
     #[must_use]
     pub fn carried(&self) -> u64 {

@@ -85,3 +85,35 @@ pub fn lost_creation(seed: u64) -> World {
     world.lose_creation_answer(entry);
     world
 }
+
+/// Bounded owner reads and durable writes through cuts, reconnect and restart.
+#[must_use]
+pub fn mixed_calls(seed: u64) -> World {
+    use skein_forge::api::Read;
+    use skein_forge_client::Event;
+    use skein_lib::Time;
+
+    let mut world = World::with(seed, 300, Shape::Hooked);
+    world.startup();
+    world.reconnect();
+    let number = world.person_issue(b"mixed");
+    for page in 1..=2 {
+        let _ = world.read(Read::Items { since: Time::ZERO, page, kind: None });
+    }
+    world.event(Event::Make {
+        entry: Entry {
+            number: 1,
+            task: 1,
+            repository: REPO,
+            effect: Effect { write: Write::Close { number }, condition: Condition::None },
+            start: None,
+            attempt: None,
+            failures: 0,
+            queued: false,
+        },
+    });
+    world.checkpoint();
+    world.run_for(Duration::from_secs(1));
+    let _ = world.read(Read::Item { number, after: 0 });
+    world
+}

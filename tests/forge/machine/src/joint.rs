@@ -1,7 +1,7 @@
-//! The real forge component and fake HTTP service, joined without byte logs.
+//! The forge component and fake HTTP service, observing starts, events and request lines.
 use crate::{
     fixtures,
-    pipe::{Cut, Pipe},
+    pipe::{Cut, Pipe, RequestCounts},
 };
 use skein_fake_forge_domain::{self as fake, api as raw};
 use skein_fake_forge_protocol::{self as protocol, Faults, Server, Service, Tally};
@@ -9,8 +9,20 @@ use skein_forge::api;
 use skein_forge_connection::{Component, Event, Limits, Request, Settings, Shared};
 use skein_lib::{Duration, Env, Queue, ReplyTo, Rng, Time, Token, Wall};
 use std::collections::BTreeMap;
+const LISTENER: Token = Token::new(1_u64 << 57_u32);
+
+/// Startup traffic measured independently of call terminals.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StartCounts {
+    pub written: u64,
+    pub served: u64,
+    pub cut_in_head: u64,
+}
+
 pub const REPO: api::Repository = api::Repository { forge: 1, repository: 2 };
 struct Peer {
+    heads: std::collections::VecDeque<bool>,
+    line_indices: Vec<usize>,
     pipe: Pipe,
     server: Server,
     above: Queue<protocol::Event>,
@@ -38,6 +50,15 @@ pub struct Joint {
     rng: Rng,
     cut_chance: u32,
     direct: Option<Result<raw::Answer, raw::Error>>,
+    closed_counts: RequestCounts,
+    starts: StartCounts,
+    lines: Vec<Vec<u8>>,
+    /// Component events as emitted, before the driver's dispatch.
+    pub events: Vec<String>,
+    // Forge identities whose public start boundaries tag first-byte writes.
+    forges: Vec<u16>,
+    pub connected: u64,
+    pub closed: bool,
 }
 impl Joint {
     #[must_use]
@@ -102,6 +123,7 @@ impl Joint {
         fake::grant(&mut domain, b"org/repo", 1, raw::Permission::Admin);
         fake::grant(&mut domain, b"org/repo", 2, raw::Permission::Write);
         let now = Time::from_nanos(100_000_000_000);
+        let forges = settings.forges.iter().map(|forge| forge.number).collect();
         let mut world = Self {
             component: Component::new(settings, &limits, &shared).expect("component"),
             env: Env { now, wall: Wall::from_nanos(now.as_nanos()), limits },
@@ -124,6 +146,13 @@ impl Joint {
             rng: Rng::new(seed),
             cut_chance,
             direct: None,
+            closed_counts: RequestCounts::default(),
+            starts: StartCounts::default(),
+            lines: Vec::new(),
+            events: Vec::new(),
+            forges,
+            connected: 0,
+            closed: false,
         };
         world.component.begin(&world.env, &mut world.above, &mut world.below);
         world
@@ -183,7 +212,9 @@ impl Joint {
         for owner in owners {
             let peer = self.peers.get_mut(&owner).expect("peer");
             protocol::resume(&mut peer.server, &mut self.service, &self.protocol_env, &mut peer.above, &mut peer.below);
-            let _ = peer.server.take_head();
+            if peer.server.take_head().is_some() && peer.heads.pop_front().expect("head follows first byte") {
+                self.starts.served += 1;
+            }
             while let Some(down) = peer.below.pop() {
                 peer.pipe.server_down(down);
             }
@@ -196,7 +227,9 @@ impl Joint {
                     &mut peer.above,
                     &mut peer.below,
                 );
-                let _ = peer.server.take_head();
+                if peer.server.take_head().is_some() && peer.heads.pop_front().expect("head follows first byte") {
+                    self.starts.served += 1;
+                }
             }
             let client_up = peer.pipe.client_up();
             if let Some(up) = client_up {
@@ -248,6 +281,7 @@ impl Joint {
             self.component.fire(&self.env, &mut self.above, &mut self.below);
         }
         while let Some(event) = self.above.pop() {
+            self.events.push(format!("{event:?}"));
             match event {
                 Event::Answered(answer) => {
                     assert!(self.answers.insert(answer.call.raw(), answer).is_none(), "one answer per call");
@@ -255,7 +289,8 @@ impl Joint {
                 Event::Stopped { forge, why } => panic!("forge {forge} stopped: {why:?}"),
                 Event::Hint(hint) => self.hints.push(hint),
                 Event::ListenerLost => panic!("hook listener lost"),
-                Event::Connected { .. } | Event::Closed => {}
+                Event::Connected { .. } => self.connected += 1,
+                Event::Closed => self.closed = true,
             }
         }
         while let Some(observation) = self.domain.pop_observation() {
@@ -303,6 +338,8 @@ impl Joint {
                 let cut =
                     if self.rng.chance(self.cut_chance) { Cut::At(self.rng.between(0, 2048)) } else { Cut::Never };
                 let mut peer = Peer {
+                    heads: std::collections::VecDeque::new(),
+                    line_indices: Vec::new(),
                     pipe: Pipe::new(self.rng.next_u64(), cut),
                     server: Server::new(owner, &self.protocol_env.limits).expect("server"),
                     above: Queue::with_capacity(64),
@@ -323,13 +360,39 @@ impl Joint {
                 if let Some(peer) = self.hook_peers.get_mut(&stream) {
                     peer.wire.take(down);
                 } else if let Some(peer) = self.peers.get_mut(&stream) {
+                    let before = peer.pipe.request_counts().written;
                     peer.pipe.client_down(down);
+                    let written = peer.pipe.request_counts().written.checked_sub(before).expect("monotonic writes");
+                    let startup = self.forges.iter().any(|forge| {
+                        matches!(
+                            self.component.start(*forge),
+                            Some(
+                                skein_forge_connection::start::Start::Checking { .. }
+                                    | skein_forge_connection::start::Start::Settings { .. }
+                                    | skein_forge_connection::start::Start::Waiting { .. }
+                            )
+                        )
+                    });
+                    for _ in 0..written {
+                        peer.heads.push_back(startup);
+                        if startup {
+                            self.starts.written += 1;
+                        }
+                    }
+                    for (at, line) in peer.pipe.request_lines().iter().enumerate() {
+                        if let Some(index) = peer.line_indices.get(at) {
+                            self.lines[*index].clone_from(line);
+                        } else {
+                            peer.line_indices.push(self.lines.len());
+                            self.lines.push(line.clone());
+                        }
+                    }
                 }
             }
             skein_io::Request::Abort { entity } | skein_io::Request::Close { entity } => self.end(entity),
             skein_io::Request::Listen { owner, addr } => {
                 self.hook_listener = Some(owner);
-                self.up(skein_io::Event::Listening { owner, listener: Token::new(1_u64 << 57_u32), addr });
+                self.up(skein_io::Event::Listening { owner, listener: LISTENER, addr });
             }
             skein_io::Request::Bind { owner, socket } => {
                 self.hook_waiting = false;
@@ -344,13 +407,56 @@ impl Joint {
         }
     }
     pub(crate) fn end(&mut self, owner: Token) {
+        if owner == LISTENER
+            && let Some(owner) = self.hook_listener.take()
+        {
+            self.up(skein_io::Event::Closed { owner });
+        }
         if let Some(peer) = self.hook_peers.remove(&owner) {
             self.up(skein_io::Event::Closed { owner: peer.owner.expect("bound hook") });
         }
         if let Some(mut peer) = self.peers.remove(&owner) {
+            peer.pipe.freeze();
+            let counts = peer.pipe.request_counts();
+            self.closed_counts.written += counts.written;
+            self.closed_counts.cut_in_head += counts.cut_in_head;
+            if counts.cut_in_head > 0 {
+                assert_eq!(counts.cut_in_head, 1, "one head in flight per pipe");
+                if peer.heads.pop_front().expect("cut follows first byte") {
+                    self.starts.cut_in_head += 1;
+                }
+            }
             protocol::closed(&mut peer.server, &mut self.service, &self.protocol_env, &mut peer.above, &mut peer.below);
             self.up(skein_io::Event::Closed { owner });
         }
+    }
+    #[must_use]
+    pub fn start_counts(&self) -> StartCounts {
+        let mut counts = self.starts;
+        for peer in self.peers.values() {
+            let requests = peer.pipe.request_counts();
+            if requests.cut_in_head > 0 && peer.heads.front() == Some(&true) {
+                counts.cut_in_head += requests.cut_in_head;
+            }
+        }
+        counts
+    }
+    #[must_use]
+    pub fn request_counts(&self) -> RequestCounts {
+        let mut counts = self.closed_counts;
+        for peer in self.peers.values() {
+            let requests = peer.pipe.request_counts();
+            counts.written += requests.written;
+            counts.cut_in_head += requests.cut_in_head;
+        }
+        let starts = self.start_counts();
+        counts.written = counts.written.checked_sub(starts.written).expect("starts are written requests");
+        counts.cut_in_head = counts.cut_in_head.checked_sub(starts.cut_in_head).expect("start cuts are cuts");
+        counts
+    }
+    #[must_use]
+    pub fn request_lines(&self) -> &[Vec<u8>] {
+        &self.lines
     }
     #[must_use]
     pub fn answered(&self, call: u64) -> Option<&skein_forge_connection::Answered> {
@@ -395,7 +501,9 @@ impl Joint {
             self.end(owner);
         }
         self.component = component;
-        while self.above.pop().is_some() {}
+        while let Some(event) = self.above.pop() {
+            self.events.push(format!("{event:?}"));
+        }
         while self.below.pop().is_some() {}
         self.component.begin(&self.env, &mut self.above, &mut self.below);
     }

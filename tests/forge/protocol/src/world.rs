@@ -1,4 +1,5 @@
 use crate::fixtures::{self, LIMITS, Shape};
+use crate::referee::{Accounting, Referee};
 use skein_fake_forge_domain::{
     Observation,
     api::{self as raw, Kind},
@@ -50,6 +51,7 @@ enum Decision {
 
 /// Scripted durable owner; finish settles its accepted calls.
 pub struct World {
+    referee: Referee,
     client: client::Domain,
     env: Env<client::Limits>,
     out: Queue<Request>,
@@ -88,16 +90,13 @@ impl World {
             Shape::Plain => machine::protocol_config(),
             Shape::Hooked => machine::hooked_protocol_config(),
         };
-        let joint = Joint::with(
-            seed,
-            cut_chance,
-            config,
-            shape.limits(),
-            shape.settings(),
-            fixtures::shared(),
-            joint::checks(1000),
-        );
+        let settings = shape.settings();
+        let mut referee = Referee::default();
+        referee.settings(&settings);
+        let joint =
+            Joint::with(seed, cut_chance, config, shape.limits(), settings, fixtures::shared(), joint::checks(1000));
         let mut world = Self {
+            referee,
             client: configured(seed),
             env: Env { now: joint.now(), wall: joint.env.wall, limits: LIMITS },
             out: Queue::with_capacity(client::max_out(&LIMITS)),
@@ -129,9 +128,11 @@ impl World {
     }
 
     pub fn event(&mut self, event: Event) {
+        self.referee.fact(format!("{event:?}"));
         match &event {
             Event::Make { entry } | Event::Remake { entry } => {
                 assert_eq!(entry.repository, REPO);
+                self.referee.record(format!("{entry:?}"));
                 self.held.remove(&entry.number);
                 self.entries.insert(entry.number, entry.clone()).expect("owner outbox capacity");
                 self.decisions.push(Decision::Make(Box::new(entry.clone())));
@@ -262,9 +263,12 @@ impl World {
     pub fn restart(&mut self) {
         self.route();
         self.generation = self.generation.checked_add(1).expect("owner generation bound");
-        let component = Component::new(self.shape.settings(), &self.shape.limits(), &fixtures::shared())
+        let settings = self.shape.settings();
+        self.referee.settings(&settings);
+        let component = Component::new(settings, &self.shape.limits(), &fixtures::shared())
             .expect("component admits client limits");
         self.joint.replace(component);
+        self.startup();
         // The replaced component owns no calls from the former process.
         self.pending = Map::with_capacity(LIMITS.calls);
         self.client = configured(self.seed);
@@ -289,18 +293,132 @@ impl World {
         let end = self.joint.now().saturating_add(Duration::from_secs(60));
         for _ in 0..TURNS {
             self.route();
-            if self.pending.is_empty()
+            if self.entries.is_empty()
+                && self.pending.is_empty()
                 && self.deliveries.is_empty()
                 && !self.client.is_ready()
                 && !self.client.is_due(self.joint.now())
             {
-                assert!(self.entries.is_empty() && self.durable.is_empty(), "owner outbox and store settled");
+                assert!(
+                    self.entries.is_empty() && self.durable.is_empty(),
+                    "owner outbox and store settled: seed {}, calls/answers {:?}, accounting {:?}, entries {:?}, durable {:?}",
+                    self.seed,
+                    self.calls_and_answers(),
+                    self.accounting(),
+                    self.entries,
+                    self.durable
+                );
                 assert_eq!(self.joint.domain.observations_lost(), 0);
-                return;
+                self.referee.freeze();
+                self.referee.fact(format!("{:?}", skein_forge_connection::Request::Close));
+                self.joint.component.down(
+                    &self.joint.env,
+                    skein_forge_connection::Request::Close,
+                    &mut self.joint.above,
+                    &mut self.joint.below,
+                );
+                for _ in 0..TURNS {
+                    self.joint.tick();
+                    self.route();
+                    if self.joint.closed && !self.joint.busy() {
+                        return;
+                    }
+                    assert!(self.joint.now() < end, "component teardown within 60 s, seed {}", self.seed);
+                    self.joint.time(self.joint.now().saturating_add(MIN_TURN));
+                }
+                panic!("component teardown did not settle, seed {}", self.seed);
             }
             assert!(self.iterate(end), "protocol world did not finish within 60 s, seed {}", self.seed);
         }
         panic!("protocol world did not settle, seed {}", self.seed);
+    }
+
+    #[must_use]
+    pub fn calls_and_answers(&self) -> (u64, u64) {
+        self.referee.counts()
+    }
+
+    #[must_use]
+    pub fn accounting(&self) -> Accounting {
+        let requests = self.joint.request_counts();
+        Accounting {
+            reported: self.referee.reported(),
+            written: requests.written,
+            served: self
+                .joint
+                .tally()
+                .total
+                .checked_sub(self.joint.start_counts().served)
+                .expect("startup entrances are served"),
+            cut_in_head: requests.cut_in_head,
+        }
+    }
+
+    #[must_use]
+    pub fn secrets_absent(&self) -> bool {
+        self.referee.secrets_absent(
+            self.joint.request_lines(),
+            &self.joint.events,
+            &format!("{:?}", self.joint.observations),
+        )
+    }
+
+    pub(crate) fn startup(&mut self) {
+        let connected = self.joint.connected;
+        // A replacement begins its start synchronously; only Connected releases work.
+        for _ in 0..60 {
+            if matches!(self.joint.component.start(1), Some(skein_forge_connection::start::Start::Ready { .. })) {
+                self.joint.tick();
+                return;
+            }
+            self.joint.run_for(Duration::from_secs(1));
+            if self.joint.connected > connected {
+                return;
+            }
+        }
+        panic!("startup did not connect within 60 s, seed {}", self.seed);
+    }
+
+    /// Retain the synchronous refusal before the driver's Stopped panic boundary.
+    pub(crate) fn reconnect(&mut self) {
+        let mut invalid = machine::access(machine::TOKEN, 1, Some(machine::HOOK_SECRET));
+        invalid.credential = skein_forge::credential::Credential::Token(skein_lib::Secret::new(Box::from(
+            [machine::TOKEN, b"\r"].concat(),
+        )));
+        for (access, refused) in
+            [(invalid, true), (machine::access(machine::TOKEN, 1, Some(machine::HOOK_SECRET)), false)]
+        {
+            self.referee.access(&access);
+            let request = skein_forge_connection::Request::Connect { forge: 1, access };
+            self.referee.fact(format!("{request:?}"));
+            self.joint.component.down(&self.joint.env, request, &mut self.joint.above, &mut self.joint.below);
+            if refused {
+                let event = self.joint.above.pop().expect("synchronous invalid connect terminal");
+                self.referee.fact(format!("{event:?}"));
+                assert!(matches!(
+                    event,
+                    skein_forge_connection::Event::Stopped {
+                        forge: 1,
+                        why: skein_forge_connection::Stopped::Invalid { value: skein_forge_connection::Value::Token }
+                    }
+                ));
+            }
+        }
+        self.startup();
+    }
+
+    /// Restart only after the component's submitted set has all its terminals.
+    pub(crate) fn checkpoint(&mut self) {
+        let end = self.joint.now().saturating_add(Duration::from_secs(60));
+        for _ in 0..TURNS {
+            self.route();
+            if self.referee.outstanding() == 0 {
+                self.restart();
+                return;
+            }
+            assert!(self.iterate(end), "checkpoint did not settle, seed {}", self.seed);
+        }
+        panic!("checkpoint did not settle, seed {}", self.seed);
     }
 
     #[must_use]
@@ -436,6 +554,7 @@ impl World {
     fn route(&mut self) {
         for (token, answer) in std::mem::take(&mut self.joint.answers) {
             let pending = self.pending.remove(&token).expect("terminal names an owner call");
+            self.referee.terminal(&answer, pending.generation, pending.client);
             self.deliveries.push_back(Delivery {
                 generation: Some(pending.generation),
                 event: Event::Answered { call: pending.client, cost: answer.cost, result: answer.result },
@@ -462,8 +581,10 @@ impl World {
         let mut calls = Vec::new();
         let mut settle = false;
         while let Some(request) = self.out.pop() {
+            self.referee.fact(format!("{request:?}"));
             match &request {
                 Request::Save { record } => {
+                    self.referee.record(format!("{record:?}"));
                     let key = match record {
                         Stored::Live(record) => Key::Live(record.watch.resource.clone()),
                         Stored::Repository(record) => Key::Repository(record.repository),
@@ -475,6 +596,7 @@ impl World {
                     self.durable.remove(key).expect("stored row erased");
                 }
                 Request::Progress { entry } => {
+                    self.referee.record(format!("{entry:?}"));
                     self.entries.insert(entry.number, entry.clone()).expect("owner outbox capacity");
                 }
                 Request::Outcome { entry, outcome, .. } => {
@@ -534,6 +656,7 @@ impl World {
             self.lose_creation = false;
             self.slow_creation = true;
         }
+        self.referee.submit(self.sequence, self.generation, call);
         self.joint.call(self.sequence, repository, op);
     }
 }
