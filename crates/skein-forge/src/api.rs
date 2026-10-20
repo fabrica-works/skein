@@ -440,9 +440,22 @@ pub struct File {
     pub before: Option<Box<[u8]>>,
     pub after: Option<Box<[u8]>>,
 }
+/// The App's own ability to bypass a ruleset (forge-github.md, 5.3).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum Bypass {
+    Never,
+    PullsOnly,
+    Always,
+}
 /// A branch protection rule as the writer could observe it.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[expect(clippy::struct_excessive_bools, reason = "protection reports independent provider rules")]
 pub struct Protection {
+    pub queue: bool,
+    pub signatures: bool,
+    pub linear: bool,
+    pub code_owners: bool,
+    pub bypass: Bypass,
     pub branch: Box<[u8]>,
     pub contexts: Box<[Box<[u8]>]>,
     pub approvals: u32,

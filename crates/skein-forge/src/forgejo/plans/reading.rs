@@ -215,6 +215,11 @@ pub fn repository(value: d::Repository) -> crate::forgejo::plans::tables::Reposi
 #[must_use]
 pub fn protection(value: d::BranchProtection) -> api::Protection {
     api::Protection {
+        queue: false,
+        signatures: false,
+        linear: false,
+        code_owners: false,
+        bypass: api::Bypass::Never,
         branch: value.rule_name,
         contexts: if value.enable_status_check { value.status_check_contexts } else { Box::from([]) },
         approvals: value.required_approvals,

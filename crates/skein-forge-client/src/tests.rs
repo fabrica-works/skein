@@ -414,6 +414,11 @@ fn confirmed_write_terminals_do_not_invent_update_commits_or_branch_success() {
 fn protection_nested_contexts_and_checks_provider_details_are_bounded() {
     let contexts = Box::new([Box::from(&b"ci"[..]), Box::from(&b"gate"[..])]);
     let protection = Answer::Protection(Some(api::Protection {
+        queue: false,
+        signatures: false,
+        linear: false,
+        code_owners: false,
+        bypass: api::Bypass::Never,
         branch: Box::from(&b"main"[..]),
         contexts,
         approvals: 2,

@@ -246,6 +246,11 @@ fn measure_answer_string() {
     measured(&Answer::Item { item, comments: Box::new([]), more: false }, 19);
     measured(
         &Answer::Protection(Some(api::Protection {
+            queue: false,
+            signatures: false,
+            linear: false,
+            code_owners: false,
+            bypass: api::Bypass::Never,
             branch: Box::from(WORD),
             contexts: Box::new([Box::from(&b"x"[..])]),
             approvals: 0,

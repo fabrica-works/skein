@@ -307,6 +307,11 @@ fn row_cases(rows: u32) -> [(&'static str, Read, Answer); ROW_CASES] {
         Answer::Item { item, comments: Box::new([]), more: false },
         Answer::Pull(super::fixtures::keep::reviewed_pull(reviewers.into_boxed())),
         Answer::Protection(Some(api::Protection {
+            queue: false,
+            signatures: false,
+            linear: false,
+            code_owners: false,
+            bypass: api::Bypass::Never,
             branch: Box::from(&b"kit"[..]),
             contexts: empty_rows(rows),
             approvals: 0,
