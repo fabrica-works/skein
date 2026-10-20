@@ -164,7 +164,8 @@ impl TakeOver {
                         return Ok(self.send(Request::DeleteToken { login: self.login.clone(), id: token.id }));
                     }
                 }
-                Row::Hook(_)
+                Row::Reachable(_)
+                | Row::Hook(_)
                 | Row::Team(_)
                 | Row::User(_)
                 | Row::Issue(_)
