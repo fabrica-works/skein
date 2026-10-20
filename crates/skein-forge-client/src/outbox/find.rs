@@ -43,7 +43,12 @@ pub(super) fn listed(
                 None => super::retry::not_found(d, env, number, out),
             }
         }
-        Phase::Check | Phase::Make | Phase::Compare { .. } | Phase::AfterUpdate | Phase::AfterMerge { .. } => {
+        Phase::Queued
+        | Phase::Check
+        | Phase::Make
+        | Phase::Compare { .. }
+        | Phase::AfterUpdate
+        | Phase::AfterMerge { .. } => {
             unreachable!("items answer only clock or issue find")
         }
     }
@@ -64,6 +69,7 @@ pub(super) fn comments_found(
         Phase::Find { after, .. } => after,
         Phase::Clock
         | Phase::Check
+        | Phase::Queued
         | Phase::Make
         | Phase::Compare { .. }
         | Phase::AfterUpdate
@@ -132,6 +138,7 @@ pub(super) fn reviews_found(
         Phase::Find { page, .. } => page,
         Phase::Clock
         | Phase::Check
+        | Phase::Queued
         | Phase::Make
         | Phase::Compare { .. }
         | Phase::AfterUpdate
@@ -163,6 +170,7 @@ pub(super) fn compared(
         Phase::Compare { head, .. } => head,
         Phase::Clock
         | Phase::Check
+        | Phase::Queued
         | Phase::Make
         | Phase::Find { .. }
         | Phase::AfterUpdate

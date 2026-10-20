@@ -145,5 +145,6 @@ pub(super) fn entry(write: Write) -> crate::Entry {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     }
 }

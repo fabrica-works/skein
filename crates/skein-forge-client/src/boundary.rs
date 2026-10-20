@@ -111,6 +111,8 @@ pub struct Entry {
     pub start: Option<Position>,
     pub attempt: Option<Attempt>,
     pub failures: u32,
+    /// The merge was answered `Queued` and the forge's queue holds it (forge-client.md, 7.7).
+    pub queued: bool,
 }
 /// A live forge object watched by the client.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -233,6 +235,8 @@ pub enum Outcome {
     Raced { made: Made, why: Error },
     /// The write may still land and will be sought again.
     Uncertain,
+    /// The forge's queue holds the merge; like `Uncertain`, it settles nothing (7.7).
+    Queued,
     /// The write may still land, but Forgejo cannot make its retry safe.
     Held,
     /// The top withdrew the unsent effect.

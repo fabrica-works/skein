@@ -11,24 +11,19 @@ pub(super) fn failed(
     error: Error,
     out: &mut Queue<Request>,
 ) {
+    if phase == Phase::Queued {
+        d.outbox.entries.get_mut(&number).expect("queued look owns entry").restart_checked = true;
+    }
     if retain_uncertain(d, env, number, phase, error, out) {
         return;
     }
     match error {
         Error::RateLimited { .. } => unreachable!("request budget handles rate resets without completing owner"),
         Error::Timeout | Error::InvalidAnswer => match phase {
-            Phase::Make => {
-                let w = d.outbox.entries.get_mut(&number).expect("failed write remains");
-                w.uncertain = true;
-                w.entry.failures = w.entry.failures.saturating_add(1);
-                let phase = super::find(&w.entry);
-                let task = w.entry.task;
-                out.push(Request::Progress { entry: w.entry.clone() });
-                out.push(Request::Outcome { entry: number, task, outcome: Outcome::Uncertain });
-                super::next(d, number, phase);
-            }
+            Phase::Make => write_uncertain(d, number, out),
             Phase::Clock
             | Phase::Check
+            | Phase::Queued
             | Phase::Find { .. }
             | Phase::Compare { .. }
             | Phase::AfterUpdate
@@ -39,7 +34,11 @@ pub(super) fn failed(
         Error::Unavailable => backoff(d, env, number, phase, out),
         Error::TooLarge => match phase {
             Phase::Clock | Phase::Check | Phase::Make => super::finish(d, env, number, Outcome::Failed(error), out),
-            Phase::Find { .. } | Phase::Compare { .. } | Phase::AfterUpdate | Phase::AfterMerge { .. } => {
+            Phase::Queued
+            | Phase::Find { .. }
+            | Phase::Compare { .. }
+            | Phase::AfterUpdate
+            | Phase::AfterMerge { .. } => {
                 backoff(d, env, number, phase, out);
             }
         },
@@ -76,7 +75,12 @@ pub(super) fn failed(
                     | Write::Status { .. }
                     | Write::CreateBranch { .. } => super::finish(d, env, number, Outcome::Failed(error), out),
                 },
-                Phase::Clock | Phase::Check | Phase::Compare { .. } | Phase::AfterUpdate | Phase::AfterMerge { .. } => {
+                Phase::Queued
+                | Phase::Clock
+                | Phase::Check
+                | Phase::Compare { .. }
+                | Phase::AfterUpdate
+                | Phase::AfterMerge { .. } => {
                     super::finish(d, env, number, Outcome::Failed(error), out);
                 }
             }
@@ -103,6 +107,16 @@ pub(super) fn failed(
         | Error::NotConnected
         | Error::Busy => super::finish(d, env, number, Outcome::Failed(error), out),
     }
+}
+fn write_uncertain(d: &mut Domain, number: u64, out: &mut Queue<Request>) {
+    let w = d.outbox.entries.get_mut(&number).expect("failed write remains");
+    w.uncertain = true;
+    w.entry.failures = w.entry.failures.saturating_add(1);
+    let phase = super::find(&w.entry);
+    let task = w.entry.task;
+    out.push(Request::Progress { entry: w.entry.clone() });
+    out.push(Request::Outcome { entry: number, task, outcome: Outcome::Uncertain });
+    super::next(d, number, phase);
 }
 fn backoff(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, out: &mut Queue<Request>) {
     let w = d.outbox.entries.get_mut(&number).expect("retry belongs to retained entry");
@@ -133,6 +147,9 @@ fn retain_uncertain(
     error: Error,
     out: &mut Queue<Request>,
 ) -> bool {
+    if phase == Phase::Queued && error == Error::Missing {
+        return false;
+    }
     let transient = match error {
         Error::Timeout | Error::InvalidAnswer | Error::Unavailable | Error::TooLarge | Error::RateLimited { .. } => {
             true
@@ -182,6 +199,7 @@ fn retain_uncertain(
             }
             Phase::Clock
             | Phase::Check
+            | Phase::Queued
             | Phase::Make
             | Phase::Find { .. }
             | Phase::Compare { .. }

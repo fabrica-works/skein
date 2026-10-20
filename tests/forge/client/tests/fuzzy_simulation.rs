@@ -25,6 +25,7 @@ fn seeded_faults_restarts_and_keyed_effects() {
                 start: None,
                 attempt: None,
                 failures: 0,
+                queued: false,
             });
         }
         world.run_for(2);
@@ -61,6 +62,7 @@ fn unrecoverable_branch_creation_survives_cuts_before_and_after_its_late_copy() 
             start: None,
             attempt: None,
             failures: 0,
+            queued: false,
         });
         world.run_for(1);
         world.calm();

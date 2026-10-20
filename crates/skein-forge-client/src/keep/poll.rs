@@ -203,6 +203,7 @@ pub(crate) fn hint(d: &mut Domain, env: &Env<Limits>, hint: api::Hint) {
             Scan::Due(_) | Scan::Busy(_) | Scan::Waiting(_) => row.hinted = true,
         }
     }
+    crate::outbox::queue::hinted(d, env, &hint);
 }
 fn affected(row: &Live, key: &Resource, change: &Change) -> bool {
     match change {

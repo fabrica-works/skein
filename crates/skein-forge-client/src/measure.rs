@@ -90,6 +90,7 @@ pub fn answer_rows(value: &Answer, rows: u32) -> bool {
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        // Only a merge is answered Queued; it never reaches a read.
         | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => true,

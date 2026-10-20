@@ -8,6 +8,7 @@ use skein_lib::{Env, List, Map, Queue, Wall};
 // Observation room for twenty outcomes and eight queued calls in outbox stories.
 const OUTCOME_ROOM: u32 = 20;
 const CALL_ROOM: u32 = 8;
+const REFUSED_ROOM: u32 = 1;
 #[derive(Debug)]
 pub(in crate::tests) struct Harness {
     pub(in crate::tests) domain: Domain,
@@ -16,6 +17,7 @@ pub(in crate::tests) struct Harness {
     pub(in crate::tests) outcomes: List<(u64, Outcome)>,
     pub(in crate::tests) calls: Queue<Sent>,
     pub(in crate::tests) writes: u32,
+    pub(in crate::tests) outbox_done: u32,
 }
 impl Harness {
     pub(in crate::tests) fn new() -> Harness {
@@ -26,10 +28,11 @@ impl Harness {
                 wall: Wall::from_nanos(at(100).as_nanos()),
                 limits: Limits { rate: 100, reserve: 0, ..LIMITS },
             },
-            store: Map::with_capacity(LIMITS.entries),
+            store: Map::with_capacity(LIMITS.entries + REFUSED_ROOM),
             outcomes: List::with_capacity(OUTCOME_ROOM),
             calls: Queue::with_capacity(CALL_ROOM),
             writes: 0,
+            outbox_done: 0,
         };
         h.step(Event::Restored { clock: RecoveryClock::Monotonic });
         h
@@ -48,7 +51,7 @@ impl Harness {
                 }
                 Request::Outcome { entry, task: _, outcome } => {
                     match outcome {
-                        Outcome::Uncertain => {}
+                        Outcome::Uncertain | Outcome::Queued => {}
                         Outcome::Made { .. }
                         | Outcome::Failed(_)
                         | Outcome::Raced { .. }
@@ -85,7 +88,8 @@ impl Harness {
                 | Request::Changed { .. }
                 | Request::Drift { .. } => panic!("outbox tests keep no resources"),
                 Request::Read { .. } => panic!("outbox tests make no parent read requests"),
-                Request::ReadAfreshDone | Request::OutboxDone => {
+                Request::OutboxDone => self.outbox_done = self.outbox_done.saturating_add(1),
+                Request::ReadAfreshDone => {
                     panic!("ordinary outbox test did not request restart phases")
                 }
             }
@@ -118,6 +122,7 @@ impl Harness {
             start: None,
             attempt: None,
             failures: 0,
+            queued: false,
         };
         self.store.insert(number, entry.clone()).expect("top store fits");
         self.step(Event::Make { entry });

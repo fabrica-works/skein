@@ -19,6 +19,7 @@ fn post(entry: u64, number: u64) -> Entry {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     }
 }
 fn run(settings: Settings) -> skein_forge_client_world::Stats {
@@ -33,6 +34,7 @@ fn run(settings: Settings) -> skein_forge_client_world::Stats {
             | Outcome::Failed(_)
             | Outcome::Raced { .. }
             | Outcome::Uncertain
+            | Outcome::Queued
             | Outcome::Held
             | Outcome::Withdrawn => {}
         }
@@ -82,6 +84,7 @@ fn an_uncertain_open_pull_is_found_without_retry() {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     });
     world.run_for(1);
     assert_eq!(world.stats().writes, 1);
@@ -137,6 +140,7 @@ fn a_late_opening_closed_by_another_hand_is_reported_as_drift() {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     });
     world.run_for(1);
     world.calm();
@@ -233,6 +237,7 @@ fn a_conditional_merge_lands_once_within_its_attempt_lifetime() {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     });
     world.run_for(1);
     assert_eq!(world.stats().writes, 1);
@@ -272,6 +277,7 @@ fn a_late_set_reaches_its_final_state() {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     });
     world.run_for(1);
     world.calm();
@@ -316,6 +322,7 @@ fn another_writer_taking_a_branch_name_is_reported_without_overwriting_it() {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     });
     world.run_for(1);
     world.calm();

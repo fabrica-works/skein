@@ -93,6 +93,7 @@ pub(crate) fn answered_repository(
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        // Only a merge is answered Queued; it never reaches a read.
         | Answer::Queued
         | Answer::Branch(_)
         | Answer::Located { .. }
@@ -192,6 +193,7 @@ pub(crate) fn answered_resource(
         | Answer::Commented(_)
         | Answer::Reviewed(_)
         | Answer::Merged(_)
+        // Only a merge is answered Queued; it never reaches a read.
         | Answer::Queued
         | Answer::Branch(_)
         | Answer::Done => unreachable!("resource operation answer shape"),

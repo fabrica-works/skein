@@ -479,7 +479,7 @@ impl World {
                 }
                 Request::Outcome { entry, outcome, .. } => {
                     match outcome {
-                        Outcome::Uncertain => {}
+                        Outcome::Uncertain | Outcome::Queued => {}
                         Outcome::Made { .. } | Outcome::Failed(_) | Outcome::Raced { .. } | Outcome::Withdrawn => {
                             self.entries.remove(entry).expect("stored entry settled");
                         }

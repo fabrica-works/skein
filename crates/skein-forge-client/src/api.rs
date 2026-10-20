@@ -26,38 +26,37 @@ enum Shape {
     Commented,
     Reviewed,
     Merged,
+    Queued,
     Branch,
     Done,
 }
-fn shape(answer: &Answer) -> Option<Shape> {
+fn shape(answer: &Answer) -> Shape {
     match answer {
-        Answer::Located { .. } => Some(Shape::Located),
-        Answer::Items { .. } => Some(Shape::Items),
-        Answer::Item { .. } => Some(Shape::Item),
-        Answer::Pull(_) => Some(Shape::Pull),
-        Answer::Reviews { .. } => Some(Shape::Reviews),
-        Answer::Statuses { .. } => Some(Shape::Statuses),
-        Answer::Remarks { .. } => Some(Shape::Remarks),
-        Answer::Commit(_) => Some(Shape::Commit),
-        Answer::Branches(_) => Some(Shape::Branches),
-        Answer::PullFiles { .. } => Some(Shape::PullFiles),
-        Answer::Compare { .. } => Some(Shape::Compare),
-        Answer::Checks(_) => Some(Shape::Checks),
-        Answer::Job { .. } => Some(Shape::Job),
-        Answer::File { .. } => Some(Shape::File),
-        Answer::Protection(_) => Some(Shape::Protection),
-        Answer::Settings(_) => Some(Shape::Settings),
-        Answer::Collaborators { .. } => Some(Shape::Collaborators),
-        Answer::Permission(_) => Some(Shape::Permission),
-        Answer::Created(_) => Some(Shape::Created),
-        Answer::Commented(_) => Some(Shape::Commented),
-        Answer::Reviewed(_) => Some(Shape::Reviewed),
-        Answer::Merged(_) => Some(Shape::Merged),
-        Answer::Branch(_) => Some(Shape::Branch),
-        // Forgejo never answers Queued; it gets its meaning in runtime 30
-        // (the client's merge queue, forge-client 7.7).
-        Answer::Queued => None,
-        Answer::Done => Some(Shape::Done),
+        Answer::Located { .. } => Shape::Located,
+        Answer::Items { .. } => Shape::Items,
+        Answer::Item { .. } => Shape::Item,
+        Answer::Pull(_) => Shape::Pull,
+        Answer::Reviews { .. } => Shape::Reviews,
+        Answer::Statuses { .. } => Shape::Statuses,
+        Answer::Remarks { .. } => Shape::Remarks,
+        Answer::Commit(_) => Shape::Commit,
+        Answer::Branches(_) => Shape::Branches,
+        Answer::PullFiles { .. } => Shape::PullFiles,
+        Answer::Compare { .. } => Shape::Compare,
+        Answer::Checks(_) => Shape::Checks,
+        Answer::Job { .. } => Shape::Job,
+        Answer::File { .. } => Shape::File,
+        Answer::Protection(_) => Shape::Protection,
+        Answer::Settings(_) => Shape::Settings,
+        Answer::Collaborators { .. } => Shape::Collaborators,
+        Answer::Permission(_) => Shape::Permission,
+        Answer::Created(_) => Shape::Created,
+        Answer::Commented(_) => Shape::Commented,
+        Answer::Reviewed(_) => Shape::Reviewed,
+        Answer::Merged(_) => Shape::Merged,
+        Answer::Branch(_) => Shape::Branch,
+        Answer::Queued => Shape::Queued,
+        Answer::Done => Shape::Done,
     }
 }
 pub(crate) fn accepts(op: &Op, answer: &Answer) -> bool {
@@ -97,7 +96,7 @@ pub(crate) fn accepts(op: &Op, answer: &Answer) -> bool {
             | Write::DeleteBranch { .. } => Shape::Done,
         },
     };
-    if shape(answer) != Some(expected) {
+    if shape(answer) != expected && !(expected == Shape::Merged && shape(answer) == Shape::Queued) {
         return false;
     }
     match op {

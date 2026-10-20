@@ -43,10 +43,11 @@ pub(crate) fn answered(
         }
         Answer::Branch(created) => branch_created(d, env, number, created, out),
         Answer::Done => done(d, env, number, out),
-        // Forgejo never answers Queued; it gets its meaning in runtime 30
-        // (the client's merge queue, forge-client 7.7).
-        Answer::Queued
-        | Answer::Statuses { .. }
+        Answer::Queued => {
+            assert!(phase == Phase::Make && super::is_merge(&w.entry.effect.write), "only a merge is queued");
+            super::queue::queued(d, env, number, out);
+        }
+        Answer::Statuses { .. }
         | Answer::Branches(_)
         | Answer::Remarks { .. }
         | Answer::PullFiles { .. }
@@ -222,6 +223,7 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
             | Write::CreateBranch { .. }
             | Write::DeleteBranch { .. } => unreachable!("pull find belongs to pull creation or transition"),
         },
+        Phase::Queued => super::queue::looked(d, env, number, pull, out),
         Phase::AfterMerge { merged } => merge_verified(d, env, number, pull, merged, false, out),
         Phase::AfterUpdate => {
             let base = match w.entry.effect.condition {
@@ -237,7 +239,7 @@ fn pulled(d: &mut Domain, env: &Env<Limits>, number: u64, phase: Phase, pull: ap
         }
     }
 }
-fn merge_verified(
+pub(super) fn merge_verified(
     d: &mut Domain,
     env: &Env<Limits>,
     number: u64,

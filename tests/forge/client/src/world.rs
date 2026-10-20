@@ -37,6 +37,8 @@ pub const LIMITS: Limits = Limits {
 pub struct Settings {
     pub seed: u64,
     pub faults: bool,
+    /// Script the forge's merge queue (forge-client.md, 7.7).
+    pub queue: bool,
     /// Whether the client starts with its forge's writer (forge-client.md, 7.1).
     pub writer: bool,
     pub facts: u32,
@@ -45,11 +47,11 @@ pub struct Settings {
 impl Settings {
     #[must_use]
     pub const fn calm(seed: u64) -> Settings {
-        Settings { seed, faults: false, writer: true, facts: 8, history: 0 }
+        Settings { seed, queue: false, faults: false, writer: true, facts: 8, history: 0 }
     }
     #[must_use]
     pub const fn random(seed: u64) -> Settings {
-        Settings { seed, faults: true, writer: true, facts: 8, history: 20 }
+        Settings { seed, queue: false, faults: true, writer: true, facts: 8, history: 20 }
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -74,6 +76,10 @@ struct Pending {
     op: api::Op,
     generation: u64,
 }
+#[derive(Debug)]
+struct Held {
+    ejected: bool,
+}
 struct Delivery {
     generation: u64,
     event: Event,
@@ -91,6 +97,8 @@ pub struct World {
     durable: Map<Key, Stored>,
     entries: Map<u64, Entry>,
     held: Map<u64, Entry>,
+    queued: Map<u64, Held>,
+    queue: bool,
     writers: List<Resource>,
     read_afresh_done: u32,
     outbox_done: u32,
@@ -151,6 +159,8 @@ impl World {
             durable: Map::with_capacity(16),
             entries: Map::with_capacity(limits.entries),
             held: Map::with_capacity(limits.entries),
+            queued: Map::with_capacity(limits.entries),
+            queue: settings.queue,
             writers: List::with_capacity(limits.resources),
             read_afresh_done: 0,
             outbox_done: 0,
@@ -301,6 +311,7 @@ impl World {
             self.pending.is_empty() && self.to_forge.is_empty() && self.to_client.is_empty() && self.readers.is_empty()
         );
         assert!(self.entries.is_empty(), "outbox settled");
+        assert!(self.queued.is_empty(), "merge queue settled");
         for (_, record) in &self.durable {
             assert!(matches!(record, Stored::Writer(_)), "working set settled; writer rows remain");
         }
@@ -377,9 +388,12 @@ impl World {
                 }
                 Request::Outcome { entry, outcome, .. } => {
                     match outcome {
-                        Outcome::Uncertain => {}
+                        Outcome::Uncertain | Outcome::Queued => {}
                         Outcome::Made { .. } | Outcome::Failed(_) | Outcome::Raced { .. } | Outcome::Withdrawn => {
-                            self.entries.remove(&entry).expect("top settles stored entry");
+                            let saved = self.entries.remove(&entry).expect("top settles stored entry");
+                            if let api::Write::Merge { number, .. } = saved.effect.write {
+                                self.queued.remove(&number);
+                            }
                         }
                         Outcome::Held => {
                             let saved = self.entries.remove(&entry).expect("top holds stored entry");
@@ -454,6 +468,17 @@ impl World {
             api::Op::Read(_) => self.stats.reads = self.stats.reads.saturating_add(1),
         }
         self.stats.calls = self.stats.calls.saturating_add(1);
+        if self.queue
+            && let api::Op::Write(api::Write::Merge { number, .. }) = &op
+        {
+            assert!(self.queued.insert(*number, Held { ejected: false }).expect("world queue limit").is_none());
+            self.stats.terminals = self.stats.terminals.saturating_add(1);
+            self.to_client.push(Delivery {
+                generation: self.generation,
+                event: Event::Answered { call, cost: 1, result: Ok(api::Answer::Queued) },
+            });
+            return;
+        }
         self.sequence = self.sequence.checked_add(1).expect("world call limit");
         let token = Token::new(self.sequence);
         let raw = translate::op(&op, &self.env.limits);
@@ -468,7 +493,20 @@ impl World {
                 forge::Request::Reply { to, result } => {
                     let pending = self.pending.remove(&to.into_token()).expect("one terminal per submitted fake call");
                     let result = match result {
-                        Ok(answer) => Ok(translate::answer(&pending.op, answer, &self.env.limits)),
+                        Ok(answer) => {
+                            let mut answer = translate::answer(&pending.op, answer, &self.env.limits);
+                            if let api::Answer::Pull(pull) = &mut answer
+                                && let Some(held) = self.queued.get(&pull.number)
+                            {
+                                if held.ejected {
+                                    pull.queued = None;
+                                    pull.dequeued = Some(Box::from(&b"CI_FAILURE"[..]));
+                                } else {
+                                    pull.queued = Some(1);
+                                }
+                            }
+                            Ok(answer)
+                        }
                         Err(error) => {
                             Err(translate::error(error, forge::time(&self.forge_env.limits, self.forge_env.now)))
                         }
@@ -563,6 +601,30 @@ impl World {
             self.external_at(raw::Op::Write(raw::Write::DeleteBranch { branch: Box::from(branch) }), 21_010, 2, now),
             raw::Answer::Done,
         );
+    }
+    /// Land a merge the scripted queue holds, through the fake's real merge.
+    pub fn land_queued(&mut self, number: u64) {
+        self.queued.remove(&number).expect("merge is queued");
+        let saved = self
+            .entries
+            .iter()
+            .find_map(|(_, entry)| {
+                if let api::Write::Merge { number: pull, head } = entry.effect.write
+                    && pull == number
+                {
+                    Some(api::Write::Merge { number, head })
+                } else {
+                    None
+                }
+            })
+            .expect("queued merge has a durable entry");
+        let op = translate::op(&api::Op::Write(saved), &self.env.limits);
+        let answer = self.external(op, 21_011, 1);
+        assert!(matches!(answer, raw::Answer::Merged(_)));
+    }
+    /// Eject a merge while leaving its open pull request intact.
+    pub fn eject_queued(&mut self, number: u64) {
+        self.queued.get_mut(&number).expect("merge is queued").ejected = true;
     }
     pub fn historical_review(&mut self, number: u64, pending: bool) -> u64 {
         let verdict = if pending { None } else { Some(raw::Verdict::Comment) };

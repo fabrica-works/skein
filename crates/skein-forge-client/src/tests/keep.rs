@@ -103,6 +103,7 @@ fn own_comment_echo_never_skips_an_intervening_unread_human_comment() {
             start: None,
             attempt: None,
             failures: 0,
+            queued: false,
         },
     });
     h.clock();
@@ -198,6 +199,7 @@ fn a_full_echo_ledger_blocks_new_writes_until_the_inbox_reads_past_it() {
                 start: None,
                 attempt: None,
                 failures: 0,
+                queued: false,
             },
         });
         h.clock();
@@ -355,6 +357,7 @@ fn a_reserved_background_share_is_admitted_even_with_one_pending_slot_and_replen
                     start: None,
                     attempt: None,
                     failures: 0,
+                    queued: false,
                 },
             });
             h.clock();
@@ -371,6 +374,7 @@ fn a_reserved_background_share_is_admitted_even_with_one_pending_slot_and_replen
                 start: None,
                 attempt: None,
                 failures: 0,
+                queued: false,
             },
         });
         h.event(Event::Read {
@@ -511,6 +515,7 @@ fn a_first_inbox_read_never_hides_an_edited_or_unknown_completed_own_echo() {
                 start: None,
                 attempt: None,
                 failures: 0,
+                queued: false,
             },
         });
         h.clock();

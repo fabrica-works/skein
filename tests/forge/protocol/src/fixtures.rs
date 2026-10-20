@@ -80,6 +80,7 @@ pub fn lost_creation(seed: u64) -> World {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     };
     world.lose_creation_answer(entry);
     world

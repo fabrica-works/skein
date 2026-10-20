@@ -436,7 +436,8 @@ was neither made nor refused, and it lands, or not, later.
   it is not mergeable, else `Failed(Refused)`; the pull's `dequeued`
   holds the queue's own words, for the owner to read. The owner repairs
   and commits a new merge entry; the client never queues a pull again by
-  itself.
+  itself. A look answered `Missing` is `Failed(Missing)`, and the lane
+  is free.
 
 ## 8. Restart
 

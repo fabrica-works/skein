@@ -9,6 +9,7 @@
 //! reports settlement; the parent commits them before releasing calls.
 pub(crate) mod answer;
 pub(crate) mod find;
+pub(crate) mod queue;
 pub(crate) mod retry;
 use crate::calls::{self, Owner};
 use crate::domain::{Alarm, Domain};
@@ -34,6 +35,7 @@ struct Writing {
     lane: Lane,
     clock: Time,
     state: State,
+    look: queue::Look,
     uncertain: bool,
     restart_checked: bool,
     withdrawn: bool,
@@ -56,6 +58,7 @@ enum Phase {
     Clock,
     Check,
     Make,
+    Queued,
     Find { page: u32, after: u64 },
     Compare { head: Commit, base: Commit },
     AfterUpdate,
@@ -92,6 +95,9 @@ pub(crate) fn worst_case(l: &Limits) -> Option<u64> {
     Map::<u64, Writing>::worst_case(l.entries)?.checked_add(u64::from(l.entries).checked_mul(u64::from(l.op_bytes))?)
 }
 fn valid(entry: &Entry, l: &Limits) -> bool {
+    if entry.queued && (entry.attempt.is_none() || !is_merge(&entry.effect.write)) {
+        return false;
+    }
     if entry.attempt.is_some() && entry.start.is_none() {
         return false;
     }
@@ -180,7 +186,14 @@ pub(crate) fn make(d: &mut Domain, env: &Env<Limits>, entry: Entry, again: bool,
     let number = entry.number;
     let lane = lane(&entry);
     let uncertain = entry.attempt.is_some();
-    let phase = if uncertain { find(&entry) } else { Phase::Clock };
+    let phase = if entry.queued {
+        Phase::Queued
+    } else if uncertain {
+        find(&entry)
+    } else {
+        Phase::Clock
+    };
+    let again = again && !entry.queued;
     d.outbox
         .entries
         .insert(
@@ -190,6 +203,7 @@ pub(crate) fn make(d: &mut Domain, env: &Env<Limits>, entry: Entry, again: bool,
                 lane,
                 clock: Time::ZERO,
                 state: State::Due(phase),
+                look: queue::Look::new(env.now),
                 uncertain,
                 restart_checked: !uncertain,
                 withdrawn: false,
@@ -270,6 +284,7 @@ pub(crate) fn pump(d: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) 
         }
         Phase::Clock
         | Phase::Check
+        | Phase::Queued
         | Phase::Make
         | Phase::Compare { .. }
         | Phase::AfterUpdate
@@ -282,6 +297,7 @@ pub(crate) fn pump(d: &mut Domain, env: &Env<Limits>, out: &mut Queue<Request>) 
         Phase::Make => Priority::Write,
         Phase::Clock
         | Phase::Check
+        | Phase::Queued
         | Phase::Find { .. }
         | Phase::Compare { .. }
         | Phase::AfterUpdate
@@ -297,7 +313,7 @@ fn operation(w: &Writing, phase: Phase) -> Op {
         Phase::Clock => Read::Items { since: Time::from_nanos(u64::MAX), page: 1, kind: None },
         Phase::Make => return Op::Write(w.entry.effect.write.clone()),
         Phase::Compare { head, base } => Read::Compare { before: head, after: base },
-        Phase::Check | Phase::AfterUpdate | Phase::AfterMerge { .. } => {
+        Phase::Check | Phase::Queued | Phase::AfterUpdate | Phase::AfterMerge { .. } => {
             Read::Pull { number: w.lane.number.expect("conditional effect names an item") }
         }
         Phase::Find { page, after } => match &w.entry.effect.write {
@@ -346,6 +362,7 @@ pub(crate) fn sent(d: &mut Domain, env: &Env<Limits>, number: u64, out: &mut Que
         }
         Phase::Clock
         | Phase::Check
+        | Phase::Queued
         | Phase::Find { .. }
         | Phase::Compare { .. }
         | Phase::AfterUpdate
@@ -374,7 +391,7 @@ fn finish(d: &mut Domain, env: &Env<Limits>, number: u64, outcome: Outcome, out:
         Outcome::Made { made, .. } | Outcome::Raced { made, .. } => {
             crate::keep::echo::made(d, env, &w.entry, made, out);
         }
-        Outcome::Failed(_) | Outcome::Uncertain | Outcome::Held | Outcome::Withdrawn => {}
+        Outcome::Failed(_) | Outcome::Uncertain | Outcome::Queued | Outcome::Held | Outcome::Withdrawn => {}
     }
     d.alarms.cancel(Alarm::Entry(number));
     out.push(Request::Outcome { entry: number, task: w.entry.task, outcome });
@@ -383,7 +400,11 @@ fn next(d: &mut Domain, number: u64, phase: Phase) {
     d.outbox.entries.get_mut(&number).expect("entry remains").state = State::Due(phase);
 }
 fn wait(d: &mut Domain, number: u64, phase: Phase, until: Time) {
-    d.outbox.entries.get_mut(&number).expect("entry remains").state = State::Waiting(phase);
+    let w = d.outbox.entries.get_mut(&number).expect("entry remains");
+    w.state = State::Waiting(phase);
+    if phase == Phase::Queued {
+        w.look.due(until);
+    }
     d.alarms.arm(Alarm::Entry(number), until).expect("one alarm per entry fits");
 }
 fn is_set(write: &Write) -> bool {
@@ -464,4 +485,22 @@ pub(crate) fn echo(d: &Domain, repository: Repository, key: &[u8]) -> bool {
         }
     }
     false
+}
+
+fn is_merge(write: &Write) -> bool {
+    match write {
+        Write::Merge { .. } => true,
+        Write::CreateIssue { .. }
+        | Write::OpenPull { .. }
+        | Write::Post { .. }
+        | Write::Review { .. }
+        | Write::Edit { .. }
+        | Write::SetReviewers { .. }
+        | Write::Close { .. }
+        | Write::Reopen { .. }
+        | Write::Update { .. }
+        | Write::Status { .. }
+        | Write::CreateBranch { .. }
+        | Write::DeleteBranch { .. } => false,
+    }
 }

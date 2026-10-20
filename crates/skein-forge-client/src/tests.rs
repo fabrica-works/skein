@@ -5,6 +5,7 @@ use fixtures::{Harness, Sent, at, configured, listing_item, terminal};
 mod keep;
 mod locate;
 mod outbox;
+mod queue;
 mod recovery;
 mod writer;
 use crate::{Domain, Event, Fact, Limits, Priority, Request, worst_case};
@@ -467,6 +468,7 @@ fn entry_refusal_is_observable_even_without_diagnostics() {
                 start: None,
                 attempt: None,
                 failures: 0,
+                queued: false,
             },
         });
         if number == 2 {
@@ -604,7 +606,7 @@ fn a_zero_settle_window_is_refused() {
 }
 
 #[test]
-fn vocabulary_queued_is_not_accepted_for_merge() {
+fn vocabulary_queued_is_accepted_for_merge() {
     let merge = Op::Write(Write::Merge { number: 1, head: [1; 32] });
-    assert!(!crate::api::accepts(&merge, &Answer::Queued));
+    assert!(crate::api::accepts(&merge, &Answer::Queued));
 }

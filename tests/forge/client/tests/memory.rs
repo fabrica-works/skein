@@ -278,6 +278,7 @@ fn full_live_caches_inbox_stamps_echoes_outbox_and_every_entry_point_fit() {
                     start: None,
                     attempt: None,
                     failures: 0,
+                    queued: false,
                 },
             });
         }

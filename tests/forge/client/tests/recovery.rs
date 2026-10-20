@@ -1,4 +1,4 @@
-mod fixtures;
+pub mod fixtures;
 use skein_forge_client::{Made, Outcome, Resource, Watch, What};
 use skein_forge_client_world::{REPO, Settings, World};
 

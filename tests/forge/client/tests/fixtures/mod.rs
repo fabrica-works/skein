@@ -19,6 +19,7 @@ pub fn issue(entry: u64) -> Entry {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     }
 }
 
@@ -38,6 +39,7 @@ pub fn branch_entry(head: u64) -> Entry {
         start: None,
         attempt: None,
         failures: 0,
+        queued: false,
     }
 }
 
@@ -56,4 +58,21 @@ pub fn held_branch() -> (World, Entry, u64) {
     world.outside_delete_branch(b"kit/7");
     world.run_for(6);
     (world, entry, head)
+}
+
+#[must_use]
+pub fn merge_entry(pull: u64, head: u64) -> Entry {
+    Entry {
+        number: 1,
+        task: 7,
+        repository: REPO,
+        effect: Effect {
+            write: api::Write::Merge { number: pull, head: skein_forge_client_world::translate::commit(head) },
+            condition: Condition::Merge { base: Box::from(&b"main"[..]) },
+        },
+        start: None,
+        attempt: None,
+        failures: 0,
+        queued: false,
+    }
 }
