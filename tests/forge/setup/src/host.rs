@@ -22,6 +22,8 @@ pub enum Connect {
     Silent,
     Unavailable,
     Answers(u16, &'static [u8]),
+    /// GitHub processes the request, then the connection loses its response.
+    LostGitHubReply,
 }
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Heard {
@@ -38,6 +40,7 @@ struct Peer {
     answer: Option<(u16, &'static [u8])>,
     head: Vec<u8>,
     responded: bool,
+    lose_reply: bool,
 }
 pub struct HostWorld {
     host: Host,
@@ -71,7 +74,10 @@ impl HostWorld {
     /// The two forge kinds, with the GitHub peer's App and accepted installations.
     #[must_use]
     pub fn github(seed: u64, script: &[Connect]) -> Self {
-        let mut world = Self::new_with(seed, script, fixtures::github_settings(), fixtures::host_limits());
+        let mut limits = fixtures::host_limits();
+        // Conversion accepts PEM text up to twice the DER bound (forge-setup.md, 5.2).
+        limits.string_bytes = fixtures::github_given().limits.key_bytes.checked_mul(2).expect("PEM bound");
+        let mut world = Self::new_with(seed, script, fixtures::github_settings(), limits);
         world.github = Some(Fake::new(seed));
         world.wall_base = Some(github::WALL_BASE);
         world.set_time(Time::ZERO);
@@ -79,6 +85,15 @@ impl HostWorld {
         world.put(Item::AppKey, fixtures::secret(github::app_key()));
         world.put(Item::Accepted, fixtures::accepted(&[1, 2]));
         world
+    }
+    /// Plays a browser request against the same fake used by the host's HTTP peer.
+    pub fn github_page(&mut self, request: &[u8]) -> Vec<u8> {
+        self.github.as_mut().expect("GitHub scenario").page(request, self.env.wall)
+    }
+    /// The browser's posted manifest, using the fake's read-only model.
+    #[must_use]
+    pub fn github_manifest(&self, state: &[u8]) -> Option<&skein_fake_forge_github::manifest::Manifest> {
+        self.github.as_ref().expect("GitHub scenario").manifest(state)
     }
     #[must_use]
     pub fn new_with(seed: u64, script: &[Connect], settings: Settings, limits: Limits) -> Self {
@@ -105,7 +120,11 @@ impl HostWorld {
         limits: Limits,
     ) -> Self {
         let (service, fake_limits) = seeded_config(seed, false, config);
-        assert_eq!(skein_forge_setup::host::documents(&limits), fake_limits.documents);
+        let mut documents = skein_forge_setup::host::documents(&limits);
+        // The host may retain a larger GitHub PEM scalar than Forgejo's peer emits.
+        assert!(documents.string_bytes >= fake_limits.documents.string_bytes);
+        documents.string_bytes = fake_limits.documents.string_bytes;
+        assert_eq!(documents, fake_limits.documents);
         Self {
             host: Host::new(&limits, settings, fixtures::crypto()).expect("host fixtures"),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
@@ -206,10 +225,16 @@ impl HostWorld {
     pub fn close(&mut self) {
         self.action(Request::Close);
     }
+    fn reserve(&self) {
+        assert!(self.above.room() >= skein_forge_setup::host::MAX_OUT.above);
+        assert!(self.below.room() >= skein_forge_setup::host::MAX_OUT.below);
+    }
     fn action(&mut self, request: Request) {
+        self.reserve();
         self.host.down(&self.env, request, &mut self.above, &mut self.below);
     }
     fn up(&mut self, event: skein_io::Event) {
+        self.reserve();
         self.host.up(&self.env, event, &mut self.above, &mut self.below);
     }
     #[must_use]
@@ -254,6 +279,7 @@ impl HostWorld {
             };
             assert!(at >= self.env.now);
             self.set_time(at);
+            self.reserve();
             self.host.fire(&self.env, &mut self.above, &mut self.below);
         }
         panic!("host world's deadlines did not settle");
@@ -262,6 +288,7 @@ impl HostWorld {
     pub fn advance_to(&mut self, now: Time) {
         assert!(now >= self.env.now);
         self.set_time(now);
+        self.reserve();
         self.host.fire(&self.env, &mut self.above, &mut self.below);
         self.settle();
     }
@@ -316,6 +343,7 @@ impl HostWorld {
             }
         }
         if self.host.next_deadline().is_some_and(|at| at <= self.env.now) {
+            self.reserve();
             self.host.fire(&self.env, &mut self.above, &mut self.below);
         }
         self.service.reclaim();
@@ -367,7 +395,7 @@ impl HostWorld {
                 let mut peer = Peer {
                     pipe: Pipe::new(self.seed ^ owner.raw(), Cut::Never),
                     server: None,
-                    github: matches!(connect, Connect::Made)
+                    github: matches!(connect, Connect::Made | Connect::LostGitHubReply)
                         && self.github.is_some()
                         && addr == fixtures::github_forge().address,
                     above: Queue::with_capacity(16),
@@ -375,10 +403,11 @@ impl HostWorld {
                     answer: match connect {
                         Connect::Unavailable => Some((503, b"")),
                         Connect::Answers(status, body) => Some((status, body)),
-                        Connect::Made | Connect::Refused | Connect::Silent => None,
+                        Connect::Made | Connect::Refused | Connect::Silent | Connect::LostGitHubReply => None,
                     },
                     head: Vec::new(),
                     responded: false,
+                    lose_reply: matches!(connect, Connect::LostGitHubReply),
                 };
                 if peer.github {
                     peer.below.push(Down::Demand { read: Read::Arrived { max: 4096 }, room: 0 });
@@ -460,7 +489,9 @@ fn github_answer(peer: &mut Peer, event: Up, fake: &mut Fake, wall: Wall) {
             peer.responded = true;
             let request = core::mem::take(&mut peer.head);
             let response = fake.serve(&request, wall);
-            peer.below.push(Down::Send(response.into_boxed_slice()));
+            if !peer.lose_reply {
+                peer.below.push(Down::Send(response.into_boxed_slice()));
+            }
             peer.below.push(Down::Finish);
         }
         Up::End => (),

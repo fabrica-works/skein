@@ -14,6 +14,12 @@ pub enum Plan {
         forge: u16,
         target: Target,
     },
+    /// Converts a manifest callback, retaining its items before Done (5.2).
+    Convert {
+        forge: u16,
+        code: Secret,
+        state: Box<[u8]>,
+    },
     /// The App install link with an Accept-purpose state (5.4 and 5.7).
     Install {
         forge: u16,
@@ -59,6 +65,7 @@ impl Plan {
             | Self::Adopt { forge, .. }
             | Self::Reachable { forge, .. }
             | Self::Manifest { forge, .. }
+            | Self::Convert { forge, .. }
             | Self::Install { forge }
             | Self::Accept { forge, .. } => *forge,
         }
@@ -71,6 +78,7 @@ impl Plan {
             | Self::TakeOver { .. }
             | Self::Adopt { .. }
             | Self::Manifest { .. }
+            | Self::Convert { .. }
             | Self::Install { .. }
             | Self::Accept { .. } => true,
             Self::Reachable { .. } => false,
@@ -80,6 +88,7 @@ impl Plan {
     pub(super) fn name(&self) -> &'static [u8] {
         match self {
             Self::Manifest { .. } => b"manifest",
+            Self::Convert { .. } => b"convert",
             Self::Install { .. } => b"install",
             Self::Accept { .. } => b"accept",
             Self::Reconcile { .. } => b"reconcile",
@@ -92,7 +101,9 @@ impl Plan {
     /// The dialects the plan is for.
     pub(super) fn dialect(&self) -> Dialect {
         match self {
-            Self::Manifest { .. } | Self::Install { .. } | Self::Accept { .. } => Dialect::GitHub,
+            Self::Manifest { .. } | Self::Convert { .. } | Self::Install { .. } | Self::Accept { .. } => {
+                Dialect::GitHub
+            }
             Self::Reconcile { .. } | Self::Reachable { .. } => Dialect::Both,
             Self::Check { .. } | Self::TakeOver { .. } | Self::Adopt { .. } => Dialect::Forgejo,
         }

@@ -224,7 +224,6 @@ pub fn step(machine: &mut Convert, event: Event, out: &mut Queue<Need>) {
     }
 }
 /// Stops a live conversion at its current step, dropping private material.
-#[cfg_attr(not(test), expect(dead_code, reason = "the conversion host arm calls halt when it is added"))]
 pub(crate) fn halt(machine: &mut Convert, why: Why, out: &mut Queue<Need>) {
     match machine.state {
         State::Ended => (),

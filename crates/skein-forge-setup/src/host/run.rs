@@ -9,6 +9,7 @@ use crate::{
     check::{self, Check},
     github::{
         accept::{self, Accept},
+        convert::{self, Convert},
         install::{self, Install},
         manifest::{self, Manifest},
     },
@@ -31,6 +32,7 @@ pub(crate) fn given_for(forge: &Given, adopted: &[u64]) -> Given {
 #[derive(Debug)]
 pub(crate) enum Machine {
     Manifest(Manifest),
+    Convert(Convert),
     Install(Install),
     Accept(Accept),
     Reconcile(Box<Reconcile>),
@@ -43,6 +45,7 @@ impl Machine {
     pub(crate) fn step(&mut self, event: Event, out: &mut Queue<reconcile::Need>) {
         match self {
             Self::Manifest(machine) => manifest::step(machine, event, out),
+            Self::Convert(machine) => convert::step(machine, event, out),
             Self::Install(machine) => install::step(machine, event, out),
             Self::Accept(machine) => accept::step(machine, event, out),
             Self::Reconcile(machine) => reconcile::step(machine, event, out),
@@ -56,6 +59,7 @@ impl Machine {
     pub(crate) fn halt(&mut self, why: Why, out: &mut Queue<reconcile::Need>) {
         match self {
             Self::Reconcile(machine) => reconcile::halt(machine, why, out),
+            Self::Convert(machine) => convert::halt(machine, why, out),
             Self::Manifest(_)
             | Self::Install(_)
             | Self::Accept(_)
@@ -138,7 +142,7 @@ impl Run {
         let mut issued_state = None;
         let machine = match &forge.kind {
             Kind::Forgejo(given) => match plan {
-                Plan::Manifest { .. } | Plan::Install { .. } | Plan::Accept { .. } => {
+                Plan::Manifest { .. } | Plan::Convert { .. } | Plan::Install { .. } | Plan::Accept { .. } => {
                     return Err(super::about(forge, &plan, Why::Unexpected));
                 }
                 Plan::Reconcile { adopted, .. } => Machine::Reconcile(Box::new(
@@ -171,6 +175,14 @@ impl Run {
                     };
                     issued_state = Some((Purpose::Convert, state));
                     Machine::Manifest(machine)
+                }
+                Plan::Convert { ref code, ref state, .. } => {
+                    states.take(given.forge, Purpose::Convert, state, now)?;
+                    let Ok(machine) = Convert::new(given, code.expose()) else {
+                        return Err(super::about(forge, &plan, Why::Unexpected));
+                    };
+                    // The owner answers the browser only after all four Written replies (5.2).
+                    Machine::Convert(machine)
                 }
                 Plan::Install { .. } => {
                     let state = issue_state(given, Purpose::Accept, now, crypto, states, b"install")?;

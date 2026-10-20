@@ -107,3 +107,187 @@ fn wrong_forge_acceptance_preserves_the_right_binding_and_kind_checks_come_first
         assert!(io.is_empty());
     }
 }
+
+const CONVERT_FORGE: u16 = 4;
+const CONVERT_CODE: &[u8] = b"private-conversion-code";
+const STATE_LIFE: Duration = Duration::from_secs(600);
+
+struct ConvertHost {
+    host: Host,
+    env: Env<super::Limits>,
+    up: Queue<Event>,
+    io: Queue<skein_io::Request>,
+}
+impl ConvertHost {
+    fn new() -> Self {
+        let limits = fixtures::limits();
+        Self {
+            host: Host::new(&limits, fixtures::github_settings(), fixtures::crypto()).expect("host"),
+            env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
+            up: Queue::with_capacity(MAX_OUT.above),
+            io: Queue::with_capacity(MAX_OUT.below),
+        }
+    }
+    fn state(&mut self, forge: u16, purpose: Purpose) -> Box<[u8]> {
+        self.host.states.issue(forge, purpose, &[0; 16], Time::ZERO, STATE_LIFE, b"manifest").expect("state")
+    }
+    fn down(&mut self, request: Request) {
+        assert!(self.up.room() >= MAX_OUT.above && self.io.room() >= MAX_OUT.below);
+        self.host.down(&self.env, request, &mut self.up, &mut self.io);
+        assert!(self.up.len() <= 1, "one outstanding owner need");
+    }
+    fn convert(&mut self, run: u64, forge: u16, state: &[u8]) {
+        self.down(Request::Run {
+            run: Token::new(run),
+            plan: Plan::Convert { forge, code: secret(CONVERT_CODE), state: state.into() },
+        });
+    }
+    fn unknown(&mut self, run: u64) {
+        assert_eq!(
+            self.up.pop(),
+            Some(Event::Stop {
+                run: Token::new(run),
+                failure: Failure {
+                    forge: CONVERT_FORGE,
+                    step: Stage::State,
+                    subject: b"convert".as_slice().into(),
+                    why: Why::Unknown,
+                },
+            })
+        );
+        assert!(self.up.is_empty() && self.io.is_empty());
+    }
+    fn close(&mut self) {
+        let connection = match self.io.pop() {
+            Some(skein_io::Request::Connect { owner, .. }) => Some(owner),
+            None => None,
+            Some(_) => panic!("expected connect"),
+        };
+        assert!(self.io.is_empty());
+        self.down(Request::Close);
+        if let Some(owner) = connection {
+            assert!(self.up.room() >= MAX_OUT.above && self.io.room() >= MAX_OUT.below);
+            self.host.up(&self.env, skein_io::Event::Closed { owner }, &mut self.up, &mut self.io);
+        }
+        assert_eq!(self.up.pop(), Some(Event::Closed));
+        assert!(self.up.is_empty() && self.io.is_empty());
+        assert_eq!(self.host.next_deadline(), None);
+        assert!(self.up.room() >= MAX_OUT.above && self.io.room() >= MAX_OUT.below);
+        self.host.fire(&self.env, &mut self.up, &mut self.io);
+        assert!(self.up.is_empty() && self.io.is_empty(), "ended host is silent");
+    }
+}
+
+#[test]
+fn convert_takes_its_state_before_the_first_send() {
+    for (state, now) in [
+        (b"unknown".as_slice(), Time::ZERO),
+        (b"00000000000000000000000000000001", Time::ZERO),
+        (b"00000000000000000000000000000000", Time::from_nanos(STATE_LIFE.as_nanos())),
+    ] {
+        let mut world = ConvertHost::new();
+        world.state(CONVERT_FORGE, Purpose::Convert);
+        world.env.now = now;
+        world.convert(1, CONVERT_FORGE, state);
+        world.unknown(1);
+        world.close();
+    }
+    let mut world = ConvertHost::new();
+    let state = world.state(CONVERT_FORGE, Purpose::Convert);
+    world.convert(1, CONVERT_FORGE, &state);
+    assert!(world.up.is_empty());
+    assert_eq!(world.io.len(), 1, "first send opens one connection without an item read");
+    assert!(world.host.states.take(CONVERT_FORGE, Purpose::Convert, &state, Time::ZERO).is_err());
+    let send = world.host.runs.get(&Token::new(1)).expect("running conversion").send.as_ref().expect("first send");
+    match &send.call {
+        crate::call::Call::GitHub(skein_forge::github::request::Request::Conversion { code }) => {
+            assert!(code.as_ref() == CONVERT_CODE);
+        }
+        crate::call::Call::GitHub(_) | crate::call::Call::Forgejo(_) => panic!("conversion request"),
+    }
+    world.close();
+}
+
+#[test]
+fn a_wrong_binding_or_busy_convert_does_not_take_a_valid_state() {
+    for (forge, purpose, callback, step, why) in [
+        (5, Purpose::Convert, CONVERT_FORGE, Stage::State, Why::Unknown),
+        (CONVERT_FORGE, Purpose::Accept, CONVERT_FORGE, Stage::State, Why::Unknown),
+        (CONVERT_FORGE, Purpose::Convert, 1, Stage::Admin, Why::Unexpected),
+    ] {
+        let mut world = ConvertHost::new();
+        let state = world.state(forge, purpose);
+        world.convert(1, callback, &state);
+        let Some(Event::Stop { failure, .. }) = world.up.pop() else { panic!("admission refusal") };
+        assert_eq!(failure.step, step);
+        assert_eq!(failure.why, why);
+        assert!(world.io.is_empty());
+        assert_eq!(world.host.states.take(forge, purpose, &state, Time::ZERO), Ok(()));
+        world.close();
+    }
+    // Both the forge's writing slot and the host's total run cap precede take.
+    for (plan, runs) in [(Plan::Install { forge: CONVERT_FORGE }, 2), (Plan::Check { forge: 1 }, 1)] {
+        let mut world = ConvertHost::new();
+        world.env.limits.runs = runs;
+        world.host = Host::new(&world.env.limits, fixtures::github_settings(), fixtures::crypto()).expect("host");
+        let state = world.state(CONVERT_FORGE, Purpose::Convert);
+        world.down(Request::Run { run: Token::new(1), plan });
+        match world.up.pop() {
+            Some(Event::Need { .. }) => (),
+            Some(Event::Done { .. } | Event::Stop { .. } | Event::Closed) | None => panic!("held owner need"),
+        }
+        world.convert(2, CONVERT_FORGE, &state);
+        assert_eq!(
+            world.up.pop(),
+            Some(Event::Stop {
+                run: Token::new(2),
+                failure: Failure {
+                    forge: CONVERT_FORGE,
+                    step: Stage::App,
+                    subject: b"convert".as_slice().into(),
+                    why: Why::Busy,
+                },
+            })
+        );
+        assert!(world.io.is_empty());
+        assert_eq!(world.host.states.take(CONVERT_FORGE, Purpose::Convert, &state, Time::ZERO), Ok(()));
+        world.close();
+    }
+}
+
+#[test]
+fn a_started_failed_convert_cannot_reuse_its_state() {
+    for (reply, why) in [(Some(crate::reconcile::Reply::Status(404)), Why::Refused(404)), (None, Why::Down)] {
+        let mut world = ConvertHost::new();
+        let state = world.state(CONVERT_FORGE, Purpose::Convert);
+        // A terminal scripted reply or the deadline halts at the conversion step.
+        let forge = super::configured(&world.host.settings, CONVERT_FORGE);
+        assert!(world.host.plan_out.room() >= crate::reconcile::MAX_OUT);
+        let mut run = super::run::Run::new(
+            forge,
+            Plan::Convert { forge: CONVERT_FORGE, code: secret(CONVERT_CODE), state: state.clone() },
+            super::bounds(&world.env.limits, forge),
+            Time::ZERO,
+            &mut world.host.crypto,
+            &mut world.host.states,
+            &mut world.host.plan_out,
+        )
+        .expect("admitted conversion");
+        match reply {
+            Some(reply) => run.reply(reply, &mut world.host.plan_out),
+            None => run.halt(why, &mut world.host.plan_out),
+        }
+        assert_eq!(
+            run.pending.take(),
+            Some(crate::reconcile::Need::Stop(Failure {
+                forge: CONVERT_FORGE,
+                step: Stage::App,
+                subject: b"convert".as_slice().into(),
+                why,
+            }))
+        );
+        world.convert(2, CONVERT_FORGE, &state);
+        world.unknown(2);
+        world.close();
+    }
+}

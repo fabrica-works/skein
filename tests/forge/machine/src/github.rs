@@ -4,6 +4,7 @@ use skein_fake_forge_github::{
     app::App,
     installations::{self, Installations, Kind, Reach},
     keys::KEYS,
+    manifest::Manifest,
     pages,
     service::{Account, AppFacts, Config, Limits, Outcome, Request, Row, Service},
 };
@@ -66,7 +67,9 @@ impl Fake {
                 writer: writer::Limits { depth: 10, length: 8192 },
                 string_bytes: 256,
                 body_bytes: 4096,
-                inner: 8,
+                // Browser manifests carry every subscribed event and wanted permission.
+                inner: u32::try_from(github::setup::EVENTS.len().max(github::setup::PERMISSIONS.len()))
+                    .expect("manifest lists fit"),
                 target_bytes: 1024,
             },
             installations: installations::Limits { installations: 3, tokens: 4, listed: 2 },
@@ -111,68 +114,15 @@ impl Fake {
 
     /// Answers one complete HTTP/1.1 request, keeping the connection open.
     pub fn serve(&mut self, request: &[u8], wall: Wall) -> Vec<u8> {
-        let end = request.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("complete request head");
-        let mut lines =
-            request[..end].split(|byte| *byte == b'\n').map(|line| line.strip_suffix(b"\r").unwrap_or(line));
-        let mut line = lines.next().expect("request line").split(|byte| *byte == b' ');
-        let method = match line.next().expect("request method") {
-            b"GET" => Some(Method::Get),
-            b"POST" => Some(Method::Post),
-            b"PUT" => Some(Method::Put),
-            b"PATCH" => Some(Method::Patch),
-            b"DELETE" => Some(Method::Delete),
-            _ => None,
-        }
-        .expect("supported request method");
-        let target = line.next().expect("request target");
-        assert_eq!(line.next(), Some(b"HTTP/1.1".as_slice()), "HTTP version");
-        assert!(line.next().is_none(), "complete request line");
-        let mut authorization = None;
-        let mut version = None;
-        let mut agent = false;
-        for line in lines {
-            let colon = line.iter().position(|byte| *byte == b':').expect("header colon");
-            let name = &line[..colon];
-            let value = line[colon + 1..].trim_ascii();
-            if name.eq_ignore_ascii_case(b"Authorization") {
-                authorization = Some(value);
-            } else if name.eq_ignore_ascii_case(b"X-GitHub-Api-Version") {
-                version = Some(value);
-            } else if name.eq_ignore_ascii_case(b"User-Agent") {
-                agent = true;
-            }
-        }
-        let response = match self.service.request(
-            &Request { method, target, authorization, version, agent, body: &request[end + 4..] },
-            wall,
-            ReplyTo::new(Token::new(77)),
-        ) {
+        let request = parse(request);
+        let response = match self.service.request(&request, wall, ReplyTo::new(Token::new(77))) {
             Outcome::Reply(response) => response,
             Outcome::Call(pending, event) => {
                 let result = domain_reply(&mut self.domain, &self.config, wall, event);
                 self.service.finish(pending, result)
             }
         };
-        let status = response.status;
-        let reason = match status {
-            200 => "OK",
-            201 => "Created",
-            204 => "No Content",
-            400 => "Bad Request",
-            401 => "Unauthorized",
-            403 => "Forbidden",
-            404 => "Not Found",
-            413 => "Content Too Large",
-            422 => "Unprocessable Content",
-            500 => "Internal Server Error",
-            503 => "Service Unavailable",
-            _ => "Status",
-        };
-        let mut bytes = format!(
-            "HTTP/1.1 {status} {reason}\r\nDate: {}\r\nContent-Type: application/json; charset=utf-8\r\n",
-            imf(wall)
-        )
-        .into_bytes();
+        let mut bytes = response_head(response.status, wall, Some("application/json; charset=utf-8"));
         if let Some(link) = response.link {
             bytes.extend_from_slice(b"Link: ");
             bytes.extend_from_slice(&link);
@@ -182,6 +132,91 @@ impl Fake {
         bytes.extend_from_slice(&response.body);
         bytes
     }
+
+    /// Answers one complete browser request without the API's headers or credentials.
+    pub fn page(&mut self, request: &[u8], wall: Wall) -> Vec<u8> {
+        let request = parse(request);
+        assert!(request.authorization.is_none(), "browser carries no API credential");
+        let answer = self
+            .service
+            .page(&pages::Page { method: request.method, target: request.target, body: request.body }, wall);
+        let media = match answer.media {
+            pages::Media::Html => Some("text/html; charset=utf-8"),
+            pages::Media::None => None,
+        };
+        let mut bytes = response_head(answer.status, wall, media);
+        if let Some(location) = answer.location {
+            bytes.extend_from_slice(b"Location: ");
+            bytes.extend_from_slice(&location);
+            bytes.extend_from_slice(b"\r\n");
+        }
+        bytes.extend_from_slice(format!("Content-Length: {}\r\n\r\n", answer.body.len()).as_bytes());
+        bytes.extend_from_slice(&answer.body);
+        bytes
+    }
+
+    /// The fake's posted manifest, readable after conversion until reclamation.
+    #[must_use]
+    pub fn manifest(&self, state: &[u8]) -> Option<&Manifest> {
+        self.service.manifest(state)
+    }
+}
+
+fn parse(request: &[u8]) -> Request<'_> {
+    let end = request.windows(4).position(|bytes| bytes == b"\r\n\r\n").expect("complete request head");
+    let mut lines = request[..end].split(|byte| *byte == b'\n').map(|line| line.strip_suffix(b"\r").unwrap_or(line));
+    let mut line = lines.next().expect("request line").split(|byte| *byte == b' ');
+    let method = match line.next().expect("request method") {
+        b"GET" => Some(Method::Get),
+        b"POST" => Some(Method::Post),
+        b"PUT" => Some(Method::Put),
+        b"PATCH" => Some(Method::Patch),
+        b"DELETE" => Some(Method::Delete),
+        _ => None,
+    }
+    .expect("supported request method");
+    let target = line.next().expect("request target");
+    assert_eq!(line.next(), Some(b"HTTP/1.1".as_slice()), "HTTP version");
+    assert!(line.next().is_none(), "complete request line");
+    let mut authorization = None;
+    let mut version = None;
+    let mut agent = false;
+    for line in lines {
+        let colon = line.iter().position(|byte| *byte == b':').expect("header colon");
+        let name = &line[..colon];
+        let value = line[colon + 1..].trim_ascii();
+        if name.eq_ignore_ascii_case(b"Authorization") {
+            authorization = Some(value);
+        } else if name.eq_ignore_ascii_case(b"X-GitHub-Api-Version") {
+            version = Some(value);
+        } else if name.eq_ignore_ascii_case(b"User-Agent") {
+            agent = true;
+        }
+    }
+    Request { method, target, authorization, version, agent, body: &request[end + 4..] }
+}
+
+fn response_head(status: u16, wall: Wall, media: Option<&str>) -> Vec<u8> {
+    let reason = match status {
+        200 => "OK",
+        201 => "Created",
+        204 => "No Content",
+        302 => "Found",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        413 => "Content Too Large",
+        422 => "Unprocessable Content",
+        500 => "Internal Server Error",
+        503 => "Service Unavailable",
+        _ => "Status",
+    };
+    let mut bytes = format!("HTTP/1.1 {status} {reason}\r\nDate: {}\r\n", imf(wall)).into_bytes();
+    if let Some(media) = media {
+        bytes.extend_from_slice(format!("Content-Type: {media}\r\n").as_bytes());
+    }
+    bytes
 }
 
 /// The fake App's public test key.

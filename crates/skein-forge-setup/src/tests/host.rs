@@ -567,7 +567,11 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                     None
                 }
                 Plan::TakeOver { .. } => Some(w.connect()),
-                Plan::Reachable { .. } | Plan::Manifest { .. } | Plan::Install { .. } | Plan::Accept { .. } => {
+                Plan::Reachable { .. }
+                | Plan::Manifest { .. }
+                | Plan::Convert { .. }
+                | Plan::Install { .. }
+                | Plan::Accept { .. } => {
                     unreachable!("Forgejo writing plan table")
                 }
             };
@@ -598,7 +602,11 @@ fn a_second_run_of_any_plan_for_a_forge_with_one_live_stops_busy() {
                 let expected = match first {
                     Plan::Check { .. } => token_stop(Why::Missing),
                     Plan::Reconcile { .. } | Plan::Adopt { .. } | Plan::TakeOver { .. } => stop(1, 1, Why::Missing),
-                    Plan::Reachable { .. } | Plan::Manifest { .. } | Plan::Install { .. } | Plan::Accept { .. } => {
+                    Plan::Reachable { .. }
+                    | Plan::Manifest { .. }
+                    | Plan::Convert { .. }
+                    | Plan::Install { .. }
+                    | Plan::Accept { .. } => {
                         unreachable!("Forgejo writing plan table")
                     }
                 };
