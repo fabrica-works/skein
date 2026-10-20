@@ -28,6 +28,9 @@ pub(crate) enum Body<'a> {
     Pulls(&'a [d::Pull]),
     Files(&'a [d::File]),
     Compare(&'a d::Compare, &'a [skein_forge::api::Commit], &'a [d::File]),
+    User(&'a d::User),
+    Collaborators(&'a [d::Collaborator]),
+    Permission(skein_forge::api::Permission),
     Refusal(&'a [u8]),
 }
 fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
@@ -52,6 +55,9 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::Pulls(rows) => server::pulls(rows, out),
         Body::Files(rows) => server::file_rows(rows, out),
         Body::Compare(row, commits, files) => server::compare(row, commits, files, out),
+        Body::User(row) => server::user(row, out),
+        Body::Collaborators(rows) => server::collaborators(rows, out),
+        Body::Permission(value) => server::permission(*value, out),
         Body::Refusal(message) => server::refusal(message, &[], out),
     }
 }

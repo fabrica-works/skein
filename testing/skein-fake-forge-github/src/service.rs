@@ -340,6 +340,7 @@ impl Service {
                         };
                         Outcome::Reply(response)
                     }
+                    routes::Token::User(id) => Outcome::Reply(reads::user(self, id, self.body_fits(request.body))),
                     routes::Token::Viewer => Outcome::Reply(self.viewer(request.body)),
                     routes::Token::Read(read) => {
                         reads::call(self, read, &grant, request.target, self.body_fits(request.body), reply_to)

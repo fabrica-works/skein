@@ -1,5 +1,5 @@
 //! Pull and file documents carry the shared domain's exact commits.
-use super::{commit, issues::listing};
+use super::{commit, issues::listing, optional_commit};
 use crate::{
     answers::{self, Body},
     service::{Limits, Response},
@@ -13,10 +13,7 @@ pub(super) fn document(row: a::Pull) -> Option<d::Pull> {
         number: row.number,
         closed: row.state == a::State::Closed,
         merged: row.merged.is_some(),
-        merge_commit: match row.merged {
-            Some(value) => Some(commit(value)),
-            None => None,
-        },
+        merge_commit: optional_commit(row.merged),
         mergeable: row.mergeable,
         head: row.head,
         base: row.base,
@@ -91,13 +88,7 @@ pub(super) fn compare(answer: a::Answer, size: u32, limits: &Limits) -> Response
     for row in files.into_iter().take(300) {
         rows.push(file(row)).expect("comparison file cap");
     }
-    let document = d::Compare {
-        total_commits,
-        behind_by: u64::from(!contains_base),
-        merge_base: match merge_base {
-            Some(value) => Some(commit(value)),
-            None => None,
-        },
-    };
+    let document =
+        d::Compare { total_commits, behind_by: u64::from(!contains_base), merge_base: optional_commit(merge_base) };
     answers::response(200, &Body::Compare(&document, ids.as_slice(), rows.as_slice()), limits)
 }

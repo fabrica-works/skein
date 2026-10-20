@@ -18,7 +18,7 @@ fn github_fake_heads_are_checked() {
         (true, Some(b"2020-01-01".as_slice()), b"/app", 400),
         (true, Some(github::pin::API_VERSION.as_bytes()), b"/user", 404),
         (true, Some(github::pin::API_VERSION.as_bytes()), b"/repos/o/n/pulls", 404),
-        (true, Some(github::pin::API_VERSION.as_bytes()), b"/user/1", 404),
+        (true, Some(github::pin::API_VERSION.as_bytes()), b"/user/1", 401),
     ] {
         let outcome = h.service.request(
             &Request { method: Method::Get, target, authorization: None, agent, version, body: b"" },

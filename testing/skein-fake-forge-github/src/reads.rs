@@ -17,11 +17,14 @@ use skein_forge::{
 use skein_lib::{List, ReplyTo, Wall, bytes};
 
 mod issues;
+mod people;
 mod pulls;
 
 #[derive(Debug)]
 pub(crate) enum Read {
     Repository(u64),
+    Collaborators { owner: Box<[u8]>, name: Box<[u8]>, page: u32, per_page: u32 },
+    Permission { owner: Box<[u8]>, name: Box<[u8]>, login: Box<[u8]> },
     Pull { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     PullsFor { owner: Box<[u8]>, name: Box<[u8]>, head: Box<[u8]>, base: Box<[u8]>, open: bool },
     PullFiles { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
@@ -37,6 +40,8 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Repository(Row),
+    Collaborators { page: u32, size: u32, target: Box<[u8]> },
+    Permission,
     Pull,
     PullsFor { open: bool },
     PullFiles { target: Box<[u8]>, page: u32, size: u32 },
@@ -51,7 +56,9 @@ pub(crate) enum Pending {
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::Pull { owner, name, .. }
+        Read::Collaborators { owner, name, .. }
+        | Read::Permission { owner, name, .. }
+        | Read::Pull { owner, name, .. }
         | Read::PullsFor { owner, name, .. }
         | Read::PullFiles { owner, name, .. }
         | Read::Compare { owner, name, .. }
@@ -92,6 +99,16 @@ pub(crate) fn call(
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::Collaborators { page, per_page, .. } => (
+            Pending::Collaborators { page, size: per_page.min(service.limits.page), target: bytes::copy_of(target) },
+            Op::Read(a::Read::Collaborators),
+        ),
+        Read::Permission { login, .. } => {
+            let Some(user) = people::id(service, &login) else {
+                return Outcome::Reply(answers::missing(&service.limits));
+            };
+            (Pending::Permission, Op::Read(a::Read::Permission { user }))
+        }
         Read::Pull { number, .. } => (Pending::Pull, Op::Read(a::Read::Pull { number })),
         Read::PullsFor { head, base, open, .. } => {
             (Pending::PullsFor { open }, Op::Read(a::Read::PullFor { head, base }))
@@ -160,6 +177,13 @@ fn commit(count: u64) -> api::Commit {
 }
 
 // Reject a non-domain SHA rather than silently folding it onto a stored count.
+#[expect(clippy::manual_map, reason = "step code spells Option transformations with exhaustive matches")]
+fn optional_commit(value: Option<u64>) -> Option<api::Commit> {
+    match value {
+        Some(value) => Some(commit(value)),
+        None => None,
+    }
+}
 fn count(value: &api::Commit) -> Option<u64> {
     let first = value.get(..8)?.try_into().ok()?;
     let count = u64::from_be_bytes(first);
@@ -174,7 +198,9 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
             }
             result => result,
         },
-        Pending::Repository(_)
+        Pending::Collaborators { .. }
+        | Pending::Permission
+        | Pending::Repository(_)
         | Pending::Issues { .. }
         | Pending::Issue
         | Pending::Comments { .. }
@@ -190,6 +216,13 @@ pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, l
         Err(error) => return refused(error, limits),
     };
     match pending.kind {
+        Pending::Collaborators { page, size, target } => people::collaborators(answer, page, size, &target, limits),
+        Pending::Permission => {
+            let Answer::Permission(value) = answer else {
+                return answers::failed();
+            };
+            answers::response(200, &Body::Permission(people::permission(value)), limits)
+        }
         Pending::Pull => pulls::pull(answer, limits),
         Pending::PullsFor { open } => pulls::pulls_for(answer, open, limits),
         Pending::PullFiles { target, page, size } => pulls::files(answer, &target, page, size, limits),
@@ -264,35 +297,38 @@ fn refused(error: Error, limits: &Limits) -> Response {
 }
 
 fn repository(row: Row, answer: Answer, limits: &Limits) -> Response {
-            let Answer::Settings(settings) = answer else {
-                return answers::failed();
-            };
-            let Ok(length) = u32::try_from(settings.default.len()) else {
-                return answers::failed();
-            };
-            if length > limits.github.string_bytes {
-                return answers::failed();
-            }
-            let Some(full) = full(&row) else {
-                return answers::failed();
-            };
-            // Routing/owner data is GitHub's table; settings and default come
-            // only from the domain. html_url uses GitHub's public web origin.
-            let Some(html_url) = service::joined(b"https://github.com/", &full) else {
-                return answers::failed();
-            };
-            let document = d::Repository {
-                id: u64::from(row.id),
-                owner: row.owner,
-                owner_id: row.owner_id,
-                organization: row.organization,
-                name: row.name,
-                default_branch: settings.default,
-                html_url,
-                merge: settings.merge,
-                squash: settings.squash,
-                rebase: settings.rebase,
-            };
-            answers::response(200, &Body::Repository(&document), limits)
+    let Answer::Settings(settings) = answer else {
+        return answers::failed();
+    };
+    let Ok(length) = u32::try_from(settings.default.len()) else {
+        return answers::failed();
+    };
+    if length > limits.github.string_bytes {
+        return answers::failed();
+    }
+    let Some(full) = full(&row) else {
+        return answers::failed();
+    };
+    // Routing/owner data is GitHub's table; settings and default come
+    // only from the domain. html_url uses GitHub's public web origin.
+    let Some(html_url) = service::joined(b"https://github.com/", &full) else {
+        return answers::failed();
+    };
+    let document = d::Repository {
+        id: u64::from(row.id),
+        owner: row.owner,
+        owner_id: row.owner_id,
+        organization: row.organization,
+        name: row.name,
+        default_branch: settings.default,
+        html_url,
+        merge: settings.merge,
+        squash: settings.squash,
+        rebase: settings.rebase,
+    };
+    answers::response(200, &Body::Repository(&document), limits)
+}
 
+pub(crate) fn user(service: &Service, id: u64, body_fits: bool) -> Response {
+    people::user(service, id, body_fits)
 }

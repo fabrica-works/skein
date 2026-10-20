@@ -41,4 +41,5 @@ fn store(seed: u64) -> Installations {
 mod issues;
 mod read_support;
 
+mod people;
 mod pulls;

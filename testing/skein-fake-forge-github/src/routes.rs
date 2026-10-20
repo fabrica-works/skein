@@ -28,6 +28,7 @@ pub(crate) enum App {
 pub(crate) enum Token {
     Reachable(u32),
     Viewer,
+    User(u64),
     Read(reads::Read),
 }
 
@@ -78,6 +79,13 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::Raw { owner, name, commit, path } => {
             Route::Token(Token::Read(reads::Read::Raw { owner, name, commit, path }))
         }
+        Request::User { id } => Route::Token(Token::User(id)),
+        Request::Collaborators { owner, name, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::Collaborators { owner, name, page, per_page }))
+        }
+        Request::Permission { owner, name, login } => {
+            Route::Token(Token::Read(reads::Read::Permission { owner, name, login }))
+        }
         Request::Installations { .. }
         | Request::Reachable { .. }
         | Request::Branches { .. }
@@ -96,7 +104,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }
         | Request::Collaborators { .. }
-        | Request::Permission { .. }
         | Request::Reopen { .. }
         | Request::Edit { .. }
         | Request::Status { .. }
@@ -111,7 +118,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::DeleteBranch { .. }
         | Request::Enqueue { .. }
         | Request::Merge { .. }
-        | Request::PullGraphql { .. }
-        | Request::User { .. } => return None,
+        | Request::PullGraphql { .. } => return None,
     })
 }
