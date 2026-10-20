@@ -1,3 +1,4 @@
+mod check;
 mod fixtures;
 mod given;
 mod host;

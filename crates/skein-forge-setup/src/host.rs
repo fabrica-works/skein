@@ -266,7 +266,7 @@ impl Host {
                 reconcile::Need::Send { request, token } => {
                     run.send = Some(Send { request, token });
                 }
-                reconcile::Need::Done => {
+                reconcile::Need::Done(_) => {
                     up.push(Event::Done { run: token });
                     let _ended = self.runs.remove(&token);
                 }

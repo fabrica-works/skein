@@ -22,8 +22,16 @@ pub enum Need {
     Read(Item),
     Write { item: Item, bytes: Secret },
     Draw(u32),
-    Done,
+    Done(Outcome),
     Stop(Failure),
+}
+/// What a plan hands its owner when it ends (forge-setup.md, 4.2).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Outcome {
+    /// Nothing to serve or show.
+    Nothing,
+    /// The user a connected Forgejo's tokens belong to (4.6).
+    Identity { id: u64, login: Box<[u8]> },
 }
 /// The outcome of the outstanding need.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -70,6 +78,7 @@ pub enum Why {
     NotAdmin,
     BotIsAdmin,
     Unmarked,
+    OtherUser,
     /// Another run of the forge is live, or the host's runs are full (6.3).
     Busy,
     Down,
@@ -248,7 +257,7 @@ impl Reconcile {
         }
     }
 }
-fn account(event: Event) -> Result<skein_forge::forgejo::document::User, Why> {
+pub(crate) fn account(event: Event) -> Result<skein_forge::forgejo::document::User, Why> {
     match event {
         Event::Reply(reply) => match reply {
             Reply::Document(document) => match document {
@@ -285,10 +294,7 @@ fn account(event: Event) -> Result<skein_forge::forgejo::document::User, Why> {
 }
 /// Consumes one event and emits at most one need; terminal machines ignore later events.
 pub fn step(machine: &mut Reconcile, event: Event, out: &mut Queue<Need>) {
-    let event = match event {
-        Event::Read(Some(value)) if value.is_empty() => Event::Read(None),
-        other @ (Event::Begin | Event::Read(_) | Event::Reply(_) | Event::Written | Event::Drawn(_)) => other,
-    };
+    let event = normal(event);
     let state = core::mem::replace(&mut machine.state, State::Ended);
     match state {
         State::Ended => (),
@@ -305,6 +311,14 @@ pub fn step(machine: &mut Reconcile, event: Event, out: &mut Queue<Need>) {
             let need = machine.advance(state, event);
             out.push(need);
         }
+    }
+}
+
+/// An empty secret read is no secret: `Read(Some(empty))` is `Read(None)`.
+pub(crate) fn normal(event: Event) -> Event {
+    match event {
+        Event::Read(Some(value)) if value.is_empty() => Event::Read(None),
+        other @ (Event::Begin | Event::Read(_) | Event::Reply(_) | Event::Written | Event::Drawn(_)) => other,
     }
 }
 
@@ -332,7 +346,7 @@ impl Reconcile {
     fn finish(&mut self) -> Need {
         self.admin = None;
         self.state = State::Ended;
-        Need::Done
+        Need::Done(Outcome::Nothing)
     }
     fn stop_named(&mut self, stage: Stage, name: &[u8], why: Why) -> Need {
         let Need::Stop(mut failure) = self.stop(stage, why) else { unreachable!("stop") };

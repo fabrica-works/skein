@@ -190,3 +190,14 @@ pub fn host_settings() -> skein_forge_setup::host::Settings {
 pub fn crypto() -> skein_lib::CryptoRng {
     skein_lib::CryptoRng::new(&secret(&[42; 32]), 0).expect("32-byte seed")
 }
+
+/// A person's two tokens for a connected Forgejo, with no user kept yet.
+pub fn connected_tokens(world: &mut crate::World) -> u64 {
+    use skein_forge_setup::item::Item;
+    let id = world.store_mut().account(b"temper", false, b"A person");
+    world.store_mut().token(id, b"connected-api", &[b"read:user", b"write:issue", b"write:repository"], secret(API));
+    world.store_mut().token(id, b"connected-git", &[b"write:repository", b"read:user"], secret(GIT));
+    world.put(Item::ApiToken, secret(API));
+    world.put(Item::GitToken, secret(GIT));
+    id
+}

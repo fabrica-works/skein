@@ -16,7 +16,7 @@ fn an_owned_forge_makes_a_missing_org_for_its_person() {
 #[test]
 fn a_managed_forge_reads_no_org() {
     let mut run = fixtures::id_read();
-    assert_eq!(run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))), Need::Done);
+    assert_eq!(run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))), Need::Done(fixtures::done()));
     let mut out = skein_lib::Queue::with_capacity(crate::reconcile::MAX_OUT);
     crate::reconcile::step(&mut run.machine, Event::Reply(Reply::Down), &mut out);
     assert!(out.is_empty());
@@ -161,7 +161,7 @@ fn an_out_of_order_event_stops_each_phase() {
 }
 fn terminal_runs() -> [Run; 2] {
     let mut done = fixtures::id_read();
-    assert_eq!(done.step(Event::Read(Some(secret(&42u64.to_le_bytes())))), Need::Done);
+    assert_eq!(done.step(Event::Read(Some(secret(&42u64.to_le_bytes())))), Need::Done(fixtures::done()));
     let mut stop = Run::managed();
     stop.step(Event::Begin);
     stop.step(Event::Read(None));

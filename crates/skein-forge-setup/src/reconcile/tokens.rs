@@ -200,7 +200,7 @@ pub(super) fn advance(machine: &mut Reconcile, event: Event) -> Need {
             let mut failure = machine.stop(super::Stage::Token, why);
             match &mut failure {
                 Need::Stop(f) => f.subject = bytes::copy_of(tokens.name()),
-                Need::Send { .. } | Need::Read(_) | Need::Write { .. } | Need::Draw(_) | Need::Done => {
+                Need::Send { .. } | Need::Read(_) | Need::Write { .. } | Need::Draw(_) | Need::Done(_) => {
                     unreachable!("stop")
                 }
             }

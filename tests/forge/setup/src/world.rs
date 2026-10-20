@@ -4,7 +4,7 @@ use skein_forge::forgejo::{document::Document, request::Request};
 use skein_forge_setup::item::Item;
 use skein_forge_setup::{
     given::Given,
-    reconcile::{self, Event, Failure, Need, Reconcile, Reply},
+    reconcile::{self, Event, Failure, Need, Outcome, Reconcile, Reply},
 };
 use skein_lib::{Env, Queue, Rng, Secret, Time, Wall};
 use std::net::SocketAddr;
@@ -22,6 +22,7 @@ pub struct World {
     trace: Vec<String>,
     requests: Vec<Request>,
     secrets: Vec<Secret>,
+    outcome: Option<Outcome>,
 }
 impl World {
     #[must_use]
@@ -43,6 +44,7 @@ impl World {
             trace: Vec::new(),
             requests: Vec::new(),
             secrets: vec![fixtures::secret(fixtures::ADMIN)],
+            outcome: None,
         }
     }
     pub fn listening(&mut self, address: SocketAddr) {
@@ -97,13 +99,24 @@ impl World {
         true
     }
     pub fn reconcile(&mut self) -> Ended {
-        self.secrets.extend(self.service.setup().issued().iter().map(|token| token.secret.clone()));
         let mut machine = Reconcile::new(&self.given).expect("fixture admitted");
+        self.drive(|event, out| reconcile::step(&mut machine, event, out))
+    }
+    pub fn check(&mut self) -> Ended {
+        let mut machine = skein_forge_setup::check::Check::new(1);
+        self.drive(|event, out| skein_forge_setup::check::step(&mut machine, event, out))
+    }
+    #[must_use]
+    pub fn outcome(&self) -> Option<&Outcome> {
+        self.outcome.as_ref()
+    }
+    fn drive(&mut self, mut step: impl FnMut(Event, &mut Queue<Need>)) -> Ended {
+        self.secrets.extend(self.service.setup().issued().iter().map(|token| token.secret.clone()));
         let mut out = Queue::with_capacity(reconcile::MAX_OUT);
         let mut event = Event::Begin;
         for _ in 0..4096 {
             self.trace.push(format!("{event:?}"));
-            reconcile::step(&mut machine, event, &mut out);
+            step(event, &mut out);
             assert_eq!(out.len(), 1, "one outstanding need");
             let need = out.pop().expect("one need");
             self.trace.push(format!("{need:?}"));
@@ -133,11 +146,14 @@ impl World {
                     }
                     Event::Drawn(Secret::new(bytes.into_boxed_slice()))
                 }
-                Need::Done => return Ended::Done,
+                Need::Done(outcome) => {
+                    self.outcome = Some(outcome);
+                    return Ended::Done;
+                }
                 Need::Stop(failure) => return Ended::Stop(failure),
             };
         }
-        panic!("reconcile did not end")
+        panic!("plan did not end")
     }
 }
 

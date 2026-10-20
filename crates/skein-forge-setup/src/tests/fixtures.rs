@@ -243,3 +243,26 @@ pub fn owned_org_read() -> Run {
 pub fn page(number: u32) -> skein_forge::forgejo::request::Page {
     skein_forge::forgejo::request::Page { page: Some(number), limit: Some(PAGE_CAP) }
 }
+
+pub fn done() -> crate::reconcile::Outcome {
+    crate::reconcile::Outcome::Nothing
+}
+
+pub struct CheckRun {
+    pub(super) machine: crate::check::Check,
+}
+impl CheckRun {
+    pub fn new() -> Self {
+        Self { machine: crate::check::Check::new(1) }
+    }
+    pub fn step(&mut self, event: crate::reconcile::Event) -> crate::reconcile::Need {
+        let mut out = skein_lib::Queue::with_capacity(crate::check::MAX_OUT);
+        crate::check::step(&mut self.machine, event, &mut out);
+        assert_eq!(out.len(), 1);
+        out.pop().expect("one need")
+    }
+}
+
+pub fn user(id: u64, login: &[u8], is_admin: bool) -> skein_forge::forgejo::document::User {
+    skein_forge::forgejo::document::User { id, login: bytes::copy_of(login), is_admin, full_name: Box::new([]) }
+}

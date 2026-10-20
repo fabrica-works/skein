@@ -45,7 +45,7 @@ fn an_absent_bot_is_made_with_a_drawn_password_and_the_marker() {
     assert_eq!(run.step(user(fixtures::person(b"kit", b"kit:bot"))), Need::Read(Item::ApiToken));
     run.kept_tokens();
     assert_eq!(run.step(Event::Read(None)), Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) });
-    assert_eq!(run.step(Event::Written), Need::Done);
+    assert_eq!(run.step(Event::Written), Need::Done(fixtures::done()));
 }
 #[test]
 fn a_bot_with_the_marker_is_kept_and_nothing_is_written() {
@@ -53,7 +53,7 @@ fn a_bot_with_the_marker_is_kept_and_nothing_is_written() {
     run.bot_lookup();
     assert_eq!(run.step(user(fixtures::person(b"kit", b"note kit:bot account"))), Need::Read(Item::ApiToken));
     run.kept_tokens();
-    assert_eq!(run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))), Need::Done);
+    assert_eq!(run.step(Event::Read(Some(secret(&42u64.to_le_bytes())))), Need::Done(fixtures::done()));
 }
 #[test]
 fn a_user_of_the_bots_login_without_the_marker_is_refused_naming_the_login() {
@@ -220,7 +220,7 @@ fn an_empty_bot_id_is_absent() {
         run.step(Event::Read(Some(secret(b"")))),
         Need::Write { item: Item::User, bytes: secret(&42u64.to_le_bytes()) }
     );
-    assert_eq!(run.step(Event::Written), Need::Done);
+    assert_eq!(run.step(Event::Written), Need::Done(fixtures::done()));
 }
 fn remake_script(status: u16) {
     use skein_forge::forgejo::request::Page;
