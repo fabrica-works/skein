@@ -127,7 +127,7 @@ Chances are per mille, in `Config`, and drawn from the domain's seed.
 - **Written out, each is a JSON line,** for a referee in another process,
   such as temper's fake forge's `--observations` file (temper's
   `protocol/setup.md`, 8.4). The protocol layer's `observations` holds the
-  encoding, since the domain has no JSON: `encode` writes a `Line`, an
+  encoding, since the domain has no JSON: `encode` writes a `Recorded`, an
   observation or a checkpoint, as one object and a newline, and
   `decode` reads one back exactly. For example:
 
