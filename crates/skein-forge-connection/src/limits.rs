@@ -663,12 +663,14 @@ pub fn worst_case(l: &Limits, s: &Shared, forges: u32, owned_bytes: u64) -> Opti
         .checked_add(u64::try_from(size_of::<Answered>()).ok()?)
 }
 
-// Both boxed plan envelopes, retained operation/answer overlap and discovery staging.
+// Both boxed plan envelopes, retained operation/answer overlap, discovery staging and candidates.
 fn github_call_heap(l: &Limits, s: &Shared) -> Option<u64> {
     u64::try_from(size_of::<skein_forge::github::plans::reads::Plan>())
         .ok()?
+        .checked_mul(2)?
         .checked_add(u64::try_from(size_of::<skein_forge::github::plans::writes::Plan>()).ok()?)?
         .checked_add(github_tables_heap(l, 1, 1)?)?
+        .checked_add(skein_lib::List::<crate::installations::Selected>::worst_case(l.installations)?)?
         .checked_add(u64::from(s.answer_bytes).checked_mul(3)?)
 }
 // Tuple envelopes price each dialect-private entry's row and LRU counter.

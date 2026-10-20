@@ -7,6 +7,7 @@ mod github_installation_loss;
 mod github_installations;
 pub(crate) mod github_renewal;
 mod github_start;
+mod github_unknown_repository;
 mod hooks;
 mod reads;
 mod writes;
@@ -320,7 +321,9 @@ fn the_worst_case_counts_answers_and_refuses_overflow() {
     // GitHub calls add 405_504 bytes: both resolution tables, boxed plans,
     // discovery staging, route metadata and simultaneous answer/operation handoffs
     // (16 of them from the writes plan's SetReviewers state).
-    const FIXTURE_HEAP: u64 = 4_049_390;
+    // Discovery adds 2 * (72 candidate bytes + 56 record bytes + 1344
+    // bytes for the probe/original read-plan overlap), for both active calls.
+    const FIXTURE_HEAP: u64 = 4_052_334;
     let limits = fixtures::limits();
     let shared = fixtures::shared();
     let bytes = limits::worst_case(

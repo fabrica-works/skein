@@ -395,3 +395,34 @@ fn github_tables_and_discovery_plans_are_priced_at_simultaneous_peak() {
     assert!(super::worst_case(&more, &s, 1, 0).expect("larger tables") > base);
     assert_eq!(super::worst_case(&l, &s, 1, u64::MAX - base + 1), None);
 }
+
+#[test]
+fn discovery_candidates_fit_the_installation_bound_for_every_call() {
+    use crate::installations::Selected;
+    const ROWS: u32 = 3;
+    const CALLS: u32 = 2;
+    let l = super::Limits { installations: ROWS, ..fixtures::limits() };
+    let s = Shared { calls: CALLS, ..fixtures::shared() };
+    let empty = super::Limits { installations: 0, ..l };
+    let before = super::worst_case(&empty, &s, 0, 0).expect("no candidate storage");
+    let after = super::worst_case(&l, &s, 0, 0).expect("candidate storage for all calls");
+    assert_eq!(after - before, u64::from(CALLS) * List::<Selected>::worst_case(ROWS).expect("candidate list"));
+}
+#[test]
+fn discovery_handoff_prices_two_live_read_plans_and_the_retained_operation() {
+    let l = fixtures::limits();
+    let s = fixtures::shared();
+    let reads = u64::try_from(size_of::<skein_forge::github::plans::reads::Plan>()).expect("read size");
+    let staged = super::github_tables_heap(&l, 1, 1).expect("staged row");
+    let candidates = List::<crate::installations::Selected>::worst_case(l.installations).expect("candidate storage");
+    let heap = super::github_call_heap(&l, &s).expect("discovery and handoff");
+    assert!(heap >= reads * 2 + staged + candidates + u64::from(s.answer_bytes) * 3);
+    let base = super::worst_case(&l, &s, 1, 0).expect("all calls");
+    assert!(base >= heap * u64::from(s.calls) + u64::from(s.op_bytes) * 3 * u64::from(s.calls));
+}
+#[test]
+fn discovery_candidate_storage_refuses_checked_overflow() {
+    let l = super::Limits { installations: u32::MAX, ..fixtures::limits() };
+    let s = Shared { calls: u32::MAX, ..fixtures::shared() };
+    assert_eq!(super::worst_case(&l, &s, 0, 0), None);
+}

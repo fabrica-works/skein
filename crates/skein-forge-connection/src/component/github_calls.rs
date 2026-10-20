@@ -1,4 +1,4 @@
-//! Installation account routing and one bounded repository discovery (forge-connection.md, 4).
+//! Installation account routing and bounded repository discovery (forge-connection.md, 4).
 use super::{CallPlan, Component, Waiting, calls};
 use crate::{
     Event, Limits,
@@ -17,7 +17,7 @@ use skein_forge::{
         request::Auth,
     },
 };
-use skein_lib::{Env, Id, Queue, Token};
+use skein_lib::{Env, Id, List, Queue, Token};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Route {
@@ -25,11 +25,80 @@ pub(crate) struct Route {
     token_revision: u64,
     status: Option<u16>,
 }
+/// One call's finite eligibility snapshot and private validated row.
+#[derive(Debug)]
+pub(crate) struct Discovery {
+    candidates: List<Selected>,
+    cursor: u32,
+    skipped: Option<api::Error>,
+    tables: Tables,
+}
+impl Discovery {
+    fn new(gh: &crate::installations::GitHub) -> Self {
+        let mut candidates = List::with_capacity(gh.rows.capacity());
+        let mut recent = None;
+        if let Some(id) = gh.recent
+            && let Some(row) = gh.rows.get(&id)
+            && eligible(row)
+        {
+            candidates.push(Selected { id, connect: gh.connect, revision: row.revision }).expect("row bound");
+            recent = Some(id);
+        }
+        for (id, row) in &gh.rows {
+            if Some(*id) != recent && eligible(row) {
+                candidates.push(Selected { id: *id, connect: gh.connect, revision: row.revision }).expect("row bound");
+            }
+        }
+        Self { candidates, cursor: 0, skipped: None, tables: Tables::new(1, 1) }
+    }
+    fn advance(&mut self) {
+        self.cursor = self.cursor.checked_add(1).expect("bounded candidates");
+    }
+    fn select(&mut self, gh: &crate::installations::GitHub) -> Result<Selected, api::Error> {
+        for _ in self.cursor..self.candidates.len() {
+            let selected = *self.candidates.get(self.cursor).expect("candidate cursor");
+            if selected.connect != gh.connect {
+                return Err(api::Error::Forbidden);
+            }
+            if gh.valid(selected)
+                && gh.rows.get(&selected.id).expect("valid row").state != crate::installations::Tokens::Gone
+            {
+                return Ok(selected);
+            }
+            self.skipped = Some(match gh.rows.get(&selected.id) {
+                Some(row) if row.accepted && row.suspended => api::Error::Forbidden,
+                Some(_) | None => api::Error::NotInstalled,
+            });
+            self.advance();
+        }
+        Err(self.skipped.unwrap_or(api::Error::Missing))
+    }
+}
+fn eligible(row: &crate::installations::Row) -> bool {
+    row.accepted && !row.suspended && row.state != crate::installations::Tokens::Gone
+}
 impl Component {
     #[expect(clippy::manual_map, reason = "the programming model excludes closures")]
     fn github_route(&mut self, id: Id<Waiting>, at: u32, env: &Env<Limits>) -> Result<bool, api::Error> {
         let waiting = self.waiting.get_mut(id).expect("call");
         let gh = self.github.get(at).expect("forge").as_ref().expect("GitHub");
+        if let Some(discovery) = &mut waiting.discovery {
+            if waiting.revoked {
+                return Err(api::Error::Forbidden);
+            }
+            let selected = discovery.select(gh)?;
+            if let Some(route) = waiting.route
+                && (route.selected.id != selected.id || route.selected.revision != selected.revision)
+            {
+                waiting.plan = None;
+                discovery.tables = Tables::new(1, 1);
+            }
+            let row = gh.rows.get(&selected.id).expect("eligible row");
+            if waiting.route.is_none() || waiting.plan.is_none() {
+                waiting.route = Some(Route { selected, token_revision: row.token_revision, status: None });
+            }
+            return Ok(gh.identity_checked && row.credential(env.now).is_some());
+        }
         if let Some(route) = waiting.route {
             if waiting.revoked || !gh.valid(route.selected) {
                 return Err(api::Error::Forbidden);
@@ -100,8 +169,19 @@ impl Component {
             self.finish(call, id, Err(api::Error::Refused), up);
             return;
         }
-        if waiting.plan.is_none() && waiting.cost == 0 {
-            self.waiting.get_mut(id).expect("call").route = None;
+        if waiting.plan.is_none() && waiting.discovery.is_none() && waiting.discovered.is_none() && waiting.cost == 0 {
+            let missing =
+                waiting.repository.repository != 0 && self.github_tables.repository(waiting.repository).is_none();
+            let waiting = self.waiting.get_mut(id).expect("call");
+            waiting.route = None;
+            if missing {
+                let discovery = Discovery::new(self.github.get(at).expect("forge").as_ref().expect("GitHub"));
+                if discovery.candidates.is_empty() {
+                    self.finish(call, id, Err(api::Error::NotInstalled), up);
+                    return;
+                }
+                waiting.discovery = Some(discovery);
+            }
         }
         if self.waiting.get(id).expect("call").connection.is_none() {
             match self.github_route(id, at, env) {
@@ -151,9 +231,7 @@ impl Component {
     }
     fn initialize_github_plan(&mut self, id: Id<Waiting>, env: &Env<Limits>) -> Result<Step, api::Error> {
         let waiting = self.waiting.get_mut(id).expect("call");
-        let missing = waiting.repository.repository != 0 && self.github_tables.repository(waiting.repository).is_none();
-        let op = if missing {
-            waiting.discovery = Some(Tables::new(1, 1));
+        let op = if waiting.discovery.is_some() {
             api::Op::Read(api::Read::Settings)
         } else {
             waiting.op.take().expect("operation")
@@ -161,7 +239,7 @@ impl Component {
         waiting.page_size = calls::page_size(&op, github::pin::PAGE_CAP, &env.limits, &self.shared);
         let mut plan = Plan::new(waiting.repository, op);
         let tables = match &mut waiting.discovery {
-            Some(tables) => tables,
+            Some(discovery) => &mut discovery.tables,
             None => &mut self.github_tables,
         };
         let step = plan.begin(bounds(waiting.page_size, env, &self.shared), &self.settings.word, tables);
@@ -201,6 +279,10 @@ impl Component {
                         self.finish(call, id, Err(error), up);
                         break;
                     }
+                }
+                if self.waiting.get(id).expect("call").plan.is_none() && !self.begin_github_call(call, id, env, up, io)
+                {
+                    break;
                 }
                 if let Err(error) = self.send_github_call(id, at, env) {
                     self.finish(call, id, Err(error), up);
@@ -308,7 +390,7 @@ impl Component {
         let mut discarded = Tables::new(0, 0);
         let tables = if valid {
             match &mut waiting.discovery {
-                Some(tables) => tables,
+                Some(discovery) => &mut discovery.tables,
                 None => &mut self.github_tables,
             }
         } else {
@@ -390,7 +472,7 @@ impl Component {
         match result {
             Ok(answer) => {
                 let waiting = self.waiting.get_mut(id).expect("call");
-                let mut staged = waiting.discovery.take().expect("discovery table");
+                let mut staged = waiting.discovery.take().expect("discovery table").tables;
                 let row = staged.repository(waiting.repository).expect("validated Settings row").clone();
                 self.github_tables.keep_user(waiting.repository.forge, row.owner_id, row.owner.clone());
                 self.github_tables.keep_repository(waiting.repository, row);
@@ -433,6 +515,17 @@ impl Component {
                 self.wake = Some(env.now);
             }
             Err(error) => {
+                let waiting = self.waiting.get_mut(id).expect("call");
+                if valid && error == api::Error::Missing && waiting.route.expect("probe route").status == Some(404) {
+                    let discovery = waiting.discovery.as_mut().expect("discovery");
+                    discovery.advance();
+                    discovery.tables = Tables::new(1, 1);
+                    waiting.plan = None;
+                    waiting.route = None;
+                    self.release_github_call(id, env, io);
+                    self.wake = Some(env.now);
+                    return;
+                }
                 self.release_github_call(id, env, io);
                 self.finish(call, id, Err(error), up);
             }

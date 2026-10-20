@@ -82,7 +82,7 @@ fn suspended_account_is_forbidden_without_io() {
     }
 }
 #[test]
-fn missing_repository_uses_one_recent_installation() {
+fn missing_repository_succeeds_on_its_recent_installation() {
     let mut h = f::github_calls();
     f::github_account(&mut h, 2, 23, b"other", b"artificial-full-two");
     h.component.test_github_mut().recent = Some(2);
@@ -97,12 +97,15 @@ fn missing_repository_uses_one_recent_installation() {
     assert_eq!(h.request_lines(FORGE).len(), 2);
 }
 #[test]
-fn discovery_404_is_missing_without_another_candidate() {
+fn discovery_404_searches_the_next_candidate() {
     let mut h = f::github_calls();
     f::github_account(&mut h, 2, 23, b"other", b"artificial-full-two");
     begin(&mut h, branch());
     h.answer(FORGE, &f::status(404));
-    answered(&mut h, 1, Err(Error::Missing));
+    h.run(Duration::ZERO);
+    h.connected(FORGE);
+    h.answer(FORGE, &f::status(404));
+    answered(&mut h, 2, Err(Error::Missing));
     assert_eq!(h.connections_for(FORGE), 0);
 }
 #[test]

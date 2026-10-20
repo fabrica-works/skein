@@ -946,6 +946,12 @@ pub fn github_account(h: &mut Harness, installation: u64, account: u64, login: &
             )
             .expect("fixture installation"),
     );
+    let account = gh.rows.get(&installation).expect("fixture row").account.clone();
+    drop(
+        gh.known
+            .insert(installation, crate::installations::Accepted { known: Some(account), checked: true })
+            .expect("fixture accepted bookkeeping"),
+    );
 }
 pub fn github_repository(h: &mut Harness, repository: api::Repository, account: u64) {
     h.component.github_tables().keep_repository(

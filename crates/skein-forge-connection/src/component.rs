@@ -51,7 +51,7 @@ pub(crate) struct Waiting {
     pub op: Option<api::Op>,
     pub plan: Option<CallPlan>,
     pub route: Option<github_calls::Route>,
-    pub discovery: Option<skein_forge::github::plans::tables::Tables>,
+    pub discovery: Option<github_calls::Discovery>,
     pub discovered: Option<api::Answer>,
     pub page_size: u32,
     pub connection: Option<Token>,
