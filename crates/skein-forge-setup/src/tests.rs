@@ -7,6 +7,7 @@ mod github_fixtures;
 mod github_given;
 mod github_manifest;
 mod github_picker;
+mod github_send;
 mod given;
 mod hooks;
 mod host;

@@ -3,7 +3,7 @@ use super::{
     Limits, limits,
     settings::{self, Forge},
 };
-use crate::reconcile::Reply;
+use crate::{call::Auth, reconcile::Reply};
 use alloc::boxed::Box;
 use skein_forge::{
     credential::Credential,
@@ -13,21 +13,22 @@ use skein_forge::{
         document::{Document, Row},
         request,
     },
+    github as dialect,
 };
 use skein_http::client as http;
 use skein_json::tokenizer;
 use skein_lib::{
-    Env, List, Queue, Secret, Token, bytes,
+    Duration, Env, List, Queue, Secret, Token, Wall, bytes,
     stream::{Down, Read, Up},
 };
 
-pub(super) struct Connection {
+pub(crate) struct Connection {
     pub(super) run: Token,
-    pub(super) socket: Option<Token>,
+    pub(crate) socket: Option<Token>,
     pub(super) closed: bool,
     pub(super) closing: Option<bool>,
     close_sent: bool,
-    pub(super) result: Option<Reply>,
+    pub(crate) result: Option<Reply>,
     answered: bool,
     http: http::Client,
     http_up: Queue<http::Event>,
@@ -36,16 +37,33 @@ pub(super) struct Connection {
     json_up: Queue<tokenizer::Event>,
     json_down: Queue<Down>,
     json_next: Option<tokenizer::Request>,
-    decoder: Option<documents::Decoder>,
-    document: Option<Document>,
-    rows: List<Row>,
-    request: request::Request,
-    call: Option<http::Call>,
-    upload: Option<Box<[u8]>>,
+    speech: Speech,
+    pub(crate) call: Option<http::Call>,
+    pub(crate) upload: Option<Box<[u8]>>,
     uploaded: usize,
 }
+#[expect(clippy::large_enum_variant, reason = "a connection reserves one concrete decoder for either dialect")]
+enum Speech {
+    Forgejo {
+        request: request::Request,
+        decoder: Option<documents::Decoder>,
+        document: Option<Document>,
+        rows: List<Row>,
+    },
+    GitHub {
+        kind: Option<dialect::document::Kind>,
+        decoder: Option<dialect::decode::Decoder>,
+        document: Option<dialect::document::Document>,
+        rows: List<dialect::document::Row>,
+    },
+}
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Refused {
+    Unexpected,
+    Unsigned,
+}
 impl Connection {
-    pub(super) fn new(
+    pub(crate) fn new(
         run: Token,
         forge: &Forge,
         agent: &[u8],
@@ -88,17 +106,82 @@ impl Connection {
             json_up: Queue::with_capacity(8),
             json_down: Queue::with_capacity(8),
             json_next: None,
-            decoder: None,
-            document: None,
-            // Each row consumes at least one input byte; the tokenizer bounds the page.
-            rows: List::with_capacity(l.body_bytes_in),
-            request: request.clone(),
+            speech: Speech::Forgejo {
+                request: request.clone(),
+                decoder: None,
+                document: None,
+                // Each row consumes at least one input byte; the tokenizer bounds the page.
+                rows: List::with_capacity(l.body_bytes_in),
+            },
             call: Some(http::Call { method, target: encoded.target, headers: headers.into_boxed(), body, close: true }),
             upload: encoded.body,
             uploaded: 0,
         })
     }
-    pub(super) fn connect(&mut self, env: &Env<Limits>) {
+    pub(crate) fn github(
+        run: Token,
+        forge: &Forge,
+        agent: &[u8],
+        request: &dialect::request::Request,
+        auth: &Auth,
+        wall: Wall,
+        l: &Limits,
+    ) -> Result<Self, Refused> {
+        let kind = kind_of(request)?;
+        let encoded = dialect::request::encode(request, &limits::github(l)).or(Err(Refused::Unexpected))?;
+        let authorization = authorization(auth, encoded.auth, wall)?;
+        let mut headers = List::with_capacity(6);
+        let host = settings::host(forge).ok_or(Refused::Unexpected)?;
+        headers.push(field(b"Host", &host)).expect("six headers");
+        headers.push(field(b"User-Agent", agent)).expect("six headers");
+        if let Some(authorization) = authorization {
+            headers.push(field(b"Authorization", authorization.expose())).expect("six headers");
+        }
+        for (name, value) in dialect::request::fields(&encoded) {
+            headers.push(field(name, value)).expect("six headers");
+        }
+        let body = match &encoded.body {
+            Some(body) => {
+                headers.push(field(b"Content-Type", b"application/json")).expect("six headers");
+                http::Body::Length(u64::try_from(body.len()).expect("bounded body"))
+            }
+            None => http::Body::None,
+        };
+        let method = match encoded.method {
+            dialect::request::Method::Get => skein_http::Method::Get,
+            dialect::request::Method::Post => skein_http::Method::Post,
+            dialect::request::Method::Put => skein_http::Method::Put,
+            dialect::request::Method::Patch => skein_http::Method::Patch,
+            dialect::request::Method::Delete => skein_http::Method::Delete,
+        };
+        Ok(Self {
+            run,
+            socket: None,
+            closed: false,
+            closing: None,
+            close_sent: false,
+            result: None,
+            answered: false,
+            http: http::Client::new(&limits::http(l)),
+            http_up: Queue::with_capacity(8),
+            http_down: Queue::with_capacity(8),
+            json: tokenizer::Tokenizer::new(&limits::github(l).json),
+            json_up: Queue::with_capacity(8),
+            json_down: Queue::with_capacity(8),
+            json_next: None,
+            speech: Speech::GitHub { kind, decoder: None, document: None, rows: List::with_capacity(l.body_bytes_in) },
+            call: Some(http::Call { method, target: encoded.target, headers: headers.into_boxed(), body, close: true }),
+            upload: encoded.body,
+            uploaded: 0,
+        })
+    }
+    fn json_limits(&self, l: &Limits) -> tokenizer::Limits {
+        match &self.speech {
+            Speech::Forgejo { .. } => limits::documents(l).json,
+            Speech::GitHub { .. } => limits::github(l).json,
+        }
+    }
+    pub(crate) fn connect(&mut self, env: &Env<Limits>) {
         if self.closing.is_some() {
             return;
         }
@@ -112,7 +195,7 @@ impl Connection {
             }
         }
     }
-    pub(super) fn stream(&mut self, env: &Env<Limits>, event: Up) {
+    pub(crate) fn stream(&mut self, env: &Env<Limits>, event: Up) {
         if self.closing.is_some() {
             return;
         }
@@ -124,7 +207,7 @@ impl Connection {
         http::down(&mut self.http, &h, request, &mut self.http_up, &mut self.http_down);
     }
     fn json_down(&mut self, env: &Env<Limits>, request: tokenizer::Request) {
-        let j = Env { now: env.now, wall: env.wall, limits: limits::documents(&env.limits).json };
+        let j = Env { now: env.now, wall: env.wall, limits: self.json_limits(&env.limits) };
         tokenizer::down(&mut self.json, &j, request, &mut self.json_up, &mut self.json_down);
     }
     pub(super) fn fail(&mut self) {
@@ -147,7 +230,7 @@ impl Connection {
         self.call = None;
     }
     /// Routes one owned movement, with room reserved for one io request.
-    pub(super) fn pump(&mut self, env: &Env<Limits>, io: &mut Queue<skein_io::Request>) -> bool {
+    pub(crate) fn pump(&mut self, env: &Env<Limits>, io: &mut Queue<skein_io::Request>) -> bool {
         if let Some(abort) = self.closing {
             if !self.closed
                 && !self.close_sent
@@ -208,17 +291,28 @@ impl Connection {
         match event {
             http::Event::Response(response) => {
                 if (200..300).contains(&response.status) {
-                    self.decoder = documents::decoder(&self.request, &limits::documents(&env.limits));
-                    match &self.decoder {
-                        Some(decoder) => self.json_next = Some(documents::first(decoder)),
-                        None => self.finish(Reply::Empty),
+                    match &mut self.speech {
+                        Speech::Forgejo { request, decoder, .. } => {
+                            *decoder = documents::decoder(request, &limits::documents(&env.limits));
+                            match decoder {
+                                Some(decoder) => self.json_next = Some(documents::first(decoder)),
+                                None => self.finish(Reply::Empty),
+                            }
+                        }
+                        Speech::GitHub { kind, decoder, .. } => match kind {
+                            Some(kind) => {
+                                *decoder = Some(dialect::decode::decoder(*kind, &limits::github(&env.limits)));
+                                self.json_next = Some(tokenizer::Request::Next);
+                            }
+                            None => self.finish(Reply::Empty),
+                        },
                     }
                 } else {
                     self.finish(Reply::Status(response.status));
                 }
             }
             http::Event::Body(event) => {
-                let j = Env { now: env.now, wall: env.wall, limits: limits::documents(&env.limits).json };
+                let j = Env { now: env.now, wall: env.wall, limits: self.json_limits(&env.limits) };
                 tokenizer::up(&mut self.json, &j, event, &mut self.json_up, &mut self.json_down);
             }
             http::Event::Upload(event) => match event {
@@ -226,13 +320,23 @@ impl Connection {
                 Up::Failed(_) | Up::Bytes(_) | Up::End => self.fail(),
             },
             http::Event::Done(_) => {
-                let reply = match self.document.take() {
-                    Some(Document::Listed { skipped: 0 } | Document::RepoSearch { ok: true }) => {
-                        let rows = core::mem::replace(&mut self.rows, List::with_capacity(0));
-                        Reply::Rows(rows.into_boxed())
-                    }
-                    Some(document) => Reply::Document(document),
-                    None => Reply::Down,
+                let reply = match &mut self.speech {
+                    Speech::Forgejo { document, rows, .. } => match document.take() {
+                        Some(Document::Listed { skipped: 0 } | Document::RepoSearch { ok: true }) => {
+                            let rows = core::mem::replace(rows, List::with_capacity(0));
+                            Reply::Rows(rows.into_boxed())
+                        }
+                        Some(document) => Reply::Document(document),
+                        None => Reply::Down,
+                    },
+                    Speech::GitHub { document, rows, .. } => match document.take() {
+                        Some(dialect::document::Document::Rows) => {
+                            let rows = core::mem::replace(rows, List::with_capacity(0));
+                            Reply::GithubRows(rows.into_boxed())
+                        }
+                        Some(document) => Reply::GithubDocument(document),
+                        None => Reply::Down,
+                    },
                 };
                 self.finish(reply);
             }
@@ -241,20 +345,42 @@ impl Connection {
         }
     }
     fn json_event(&mut self, env: &Env<Limits>, event: &tokenizer::Event) {
-        let Some(decoder) = &mut self.decoder else {
-            return;
-        };
-        match documents::step(decoder, &limits::documents(&env.limits), event) {
-            Step::Demand(next) => self.json_next = Some(next),
-            Step::Row(row, next) => {
-                if self.rows.push(row).is_err() {
-                    self.fail();
-                } else {
-                    self.json_next = Some(next);
+        match &mut self.speech {
+            Speech::Forgejo { decoder, document, rows, .. } => {
+                let Some(decoder) = decoder else {
+                    return;
+                };
+                match documents::step(decoder, &limits::documents(&env.limits), event) {
+                    Step::Demand(next) => self.json_next = Some(next),
+                    Step::Row(row, next) => {
+                        if rows.push(row).is_err() {
+                            self.fail();
+                        } else {
+                            self.json_next = Some(next);
+                        }
+                    }
+                    Step::Done(done) => *document = Some(done),
+                    Step::Malformed(_) => self.fail(),
                 }
             }
-            Step::Done(document) => self.document = Some(document),
-            Step::Malformed(_) => self.fail(),
+            Speech::GitHub { decoder, document, rows, .. } => {
+                let Some(decoder) = decoder else {
+                    return;
+                };
+                let (next, step) = decoder.step(event.clone());
+                match step {
+                    dialect::decode::Step::Demand => self.json_next = Some(next),
+                    dialect::decode::Step::Row(row) => {
+                        if rows.push(row).is_err() {
+                            self.fail();
+                        } else {
+                            self.json_next = Some(next);
+                        }
+                    }
+                    dialect::decode::Step::Done(done) => *document = Some(done),
+                    dialect::decode::Step::Malformed(_) => self.fail(),
+                }
+            }
         }
     }
     fn upload(&mut self, env: &Env<Limits>) {
@@ -290,5 +416,90 @@ impl core::fmt::Debug for Connection {
             .field("closing", &self.closing)
             .field("closed", &self.closed)
             .finish_non_exhaustive()
+    }
+}
+
+/// The setup document a request is answered with, or no document for uninstall.
+pub(crate) fn kind_of(request: &dialect::request::Request) -> Result<Option<dialect::document::Kind>, Refused> {
+    use dialect::{document::Kind, request::Request};
+    Ok(Some(match request {
+        Request::Installations { .. } => Kind::InstallationRows,
+        Request::Installation { .. } => Kind::Installation,
+        Request::Mint { .. } => Kind::Minted,
+        Request::Reachable { .. } => Kind::ReachableRows,
+        Request::Viewer => Kind::Viewer,
+        Request::App => Kind::App,
+        Request::HookConfig | Request::SetHook { .. } => Kind::HookConfig,
+        Request::Conversion { .. } => Kind::Conversion,
+        Request::BotUser { .. } => Kind::BotUser,
+        Request::Uninstall { .. } => return Ok(None),
+        Request::PullGraphql { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::Raw { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::User { .. }
+        | Request::Reopen { .. }
+        | Request::Edit { .. }
+        | Request::Status { .. }
+        | Request::CreateBranch { .. }
+        | Request::Update { .. }
+        | Request::Review { .. }
+        | Request::Post { .. }
+        | Request::CreateIssue { .. }
+        | Request::OpenPull { .. }
+        | Request::Close { .. }
+        | Request::DeleteBranch { .. }
+        | Request::Reviewers { .. } => return Err(Refused::Unexpected),
+    }))
+}
+fn authorization(auth: &Auth, encoded: dialect::request::Auth, wall: Wall) -> Result<Option<Secret>, Refused> {
+    use dialect::request::Auth as Selected;
+    match auth {
+        Auth::Token(_) => match encoded {
+            Selected::App | Selected::Installation | Selected::None => Err(Refused::Unexpected),
+        },
+        Auth::App { id, key } => match encoded {
+            Selected::App => {
+                let issued = Wall::from_nanos(wall.as_nanos().saturating_sub(Duration::from_secs(60).as_nanos()));
+                let expires = Wall::from_nanos(issued.as_nanos().saturating_add(dialect::jwt::LIFE.as_nanos()));
+                let input = dialect::jwt::signing_input(*id, issued, expires).ok_or(Refused::Unsigned)?;
+                let signature = skein_tls::sign_rs256(key.expose(), &input).ok_or(Refused::Unsigned)?;
+                let jwt = dialect::jwt::token(&input, &signature).ok_or(Refused::Unsigned)?;
+                let bearer = dialect::credential::bearer(&jwt).ok_or(Refused::Unsigned)?;
+                Ok(Some(bearer))
+            }
+            Selected::Installation | Selected::None => Err(Refused::Unexpected),
+        },
+        Auth::Bearer(token) => match encoded {
+            Selected::Installation => {
+                let bearer = dialect::credential::bearer(token).ok_or(Refused::Unexpected)?;
+                Ok(Some(bearer))
+            }
+            Selected::App | Selected::None => Err(Refused::Unexpected),
+        },
+        Auth::None => match encoded {
+            Selected::None => Ok(None),
+            Selected::App | Selected::Installation => Err(Refused::Unexpected),
+        },
     }
 }

@@ -1,14 +1,14 @@
 //! The host component: the plans run inside a service (forge-setup.md, 6.3).
 mod boundary;
-mod connection;
+pub(crate) mod connection;
 mod limits;
 pub(crate) mod run;
 mod settings;
 use crate::item::Bounds;
 use crate::reconcile::{self, Failure, Reply, Stage, Why};
 pub use boundary::{Answer, Event, MAX_OUT, MaxOut, Need, Plan, Request};
-use connection::Connection;
-pub use limits::{Limits, Stacked, Unusable, documents, http};
+use connection::{Connection, Refused};
+pub use limits::{Limits, Stacked, Unusable, documents, github, http};
 use run::{Run, Send, forgejo_pair};
 pub use settings::{Forge, Kind, Settings, Transport};
 use skein_lib::{CryptoRng, Env, List, Map, Queue, Secret, Time, Token, bytes};
@@ -305,18 +305,16 @@ impl Host {
         }
         let forge = configured(&self.settings, run.forge);
         let send = run.send.as_ref().expect("ready send");
-        let (request, credential) = match forgejo_pair(send.call.clone(), send.auth.clone()) {
-            Ok(pair) => pair,
-            Err(why) => {
-                run.halt(why, &mut self.plan_out);
+        let connection = match open(token, forge, &self.settings.user_agent, send, env) {
+            Ok(connection) => connection,
+            Err(Refused::Unexpected) => {
+                run.halt(Why::Unexpected, &mut self.plan_out);
                 return;
             }
-        };
-        let Some(connection) =
-            Connection::new(token, forge, &self.settings.user_agent, &request, &credential, &env.limits)
-        else {
-            run.halt(Why::Unexpected, &mut self.plan_out);
-            return;
+            Err(Refused::Unsigned) => {
+                run.reply(Reply::Unsigned, &mut self.plan_out);
+                return;
+            }
         };
         let owner = Token::new(self.next_token);
         self.next_token = self.next_token.checked_add(1).expect("connection tokens never repeat");
@@ -325,6 +323,21 @@ impl Host {
         let previous = self.connections.insert(owner, connection).expect("connection room reserved");
         assert!(previous.is_none(), "fresh owner token");
         io.push(skein_io::Request::Connect { owner, addr: forge.address });
+    }
+}
+fn open(run: Token, forge: &Forge, agent: &[u8], send: &Send, env: &Env<Limits>) -> Result<Connection, Refused> {
+    match &forge.kind {
+        Kind::Forgejo(_) => {
+            let (request, credential) =
+                forgejo_pair(send.call.clone(), send.auth.clone()).or(Err(Refused::Unexpected))?;
+            Connection::new(run, forge, agent, &request, &credential, &env.limits).ok_or(Refused::Unexpected)
+        }
+        Kind::GitHub(_) => match &send.call {
+            crate::call::Call::GitHub(request) => {
+                Connection::github(run, forge, agent, request, &send.auth, env.wall, &env.limits)
+            }
+            crate::call::Call::Forgejo(_) => Err(Refused::Unexpected),
+        },
     }
 }
 fn earlier(earliest: &mut Option<Time>, time: Time) {

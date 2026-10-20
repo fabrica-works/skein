@@ -45,7 +45,7 @@ fn a_forgejo_call_on_a_token_passes_through_forgejo_pair() {
         Ok((request, token))
     );
 }
-fn limits() -> Limits {
+pub(super) fn limits() -> Limits {
     Limits {
         forges: 2,
         runs: 2,
@@ -1124,4 +1124,28 @@ fn a_wrong_kind_plan_is_unexpected_even_when_the_host_is_full() {
     assert_eq!(w.up.pop(), Some(github_stop(2, b"check", Why::Unexpected)));
     assert_eq!(w.up.len(), 0);
     assert_eq!(w.io.len(), 0);
+}
+
+#[test]
+fn a_host_with_no_github_forge_checks_what_it_did() {
+    const HOST_BYTES: u32 = 14; // 127.0.0.1:3000, from forge().
+    const AGENT_BYTES: u32 = 9; // kit/0.0.0, from settings().
+    const FRAMING: u32 = 192; // Forgejo's request-head overhead in host::limits.
+    let mut l = limits();
+    l.depth = 9;
+    l.io.output = l.target_bytes + HOST_BYTES + l.token_bytes + AGENT_BYTES + FRAMING;
+    Host::new(&l, settings(&[1]), crypto()).unwrap();
+}
+#[test]
+fn a_github_forge_with_documents_that_cannot_hold_the_pin_is_unusable() {
+    let mut l = limits();
+    l.depth = 9;
+    assert_eq!(
+        Host::new(&l, github_settings(), crypto()).err(),
+        Some(Unusable::GitHubDocuments(skein_forge::github::limits::Problem::Depth))
+    );
+    // Scalar and body strings have independent bounds.
+    l.depth = skein_forge::github::limits::DEPTH;
+    l.string_bytes = 1;
+    Host::new(&l, github_settings(), crypto()).unwrap();
 }

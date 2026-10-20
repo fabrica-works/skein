@@ -1,6 +1,6 @@
 //! Admission and stack bounds for the host (forge-setup.md, 6.3).
 use super::settings::{self, Kind, Settings, Transport};
-use skein_forge::forgejo::limits as docs;
+use skein_forge::{forgejo::limits as docs, github as dialect};
 use skein_json::{tokenizer, writer};
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Limits {
@@ -49,6 +49,24 @@ pub fn documents(l: &Limits) -> docs::Limits {
         target_bytes: l.target_bytes,
     }
 }
+/// GitHub documents' limits from the host's, as `documents` does Forgejo's.
+#[must_use]
+pub fn github(l: &Limits) -> dialect::limits::Limits {
+    dialect::limits::Limits {
+        json: tokenizer::Limits {
+            depth: l.depth,
+            string: l.body_bytes.max(l.string_bytes),
+            number: 32,
+            chunk: l.chunk,
+            length: l.body_bytes_in,
+        },
+        writer: writer::Limits { depth: l.depth, length: l.body_bytes_in },
+        string_bytes: l.string_bytes,
+        body_bytes: l.body_bytes,
+        inner: l.inner,
+        target_bytes: l.target_bytes,
+    }
+}
 /// HTTP's limits on plaintext, with complete heads sent within io's cap.
 #[must_use]
 pub fn http(l: &Limits) -> skein_http::client::Limits {
@@ -72,6 +90,7 @@ pub enum Unusable {
         token_bytes: u32,
     },
     Documents(docs::Problem),
+    GitHubDocuments(dialect::limits::Problem),
     Stack {
         stacked: Stacked,
         demand: u32,
@@ -160,11 +179,21 @@ pub(super) fn check(l: &Limits, settings: &Settings) -> Result<(), Unusable> {
             skein_io::Addr::Ip(_) | skein_io::Addr::InProcess(_) => return Err(Unusable::Address { forge: number }),
         }
         let host = settings::host(forge).ok_or(Unusable::Request { forge: number })?;
+        let (credential, framing) = match &forge.kind {
+            Kind::Forgejo(_) => (u64::from(l.token_bytes), 192),
+            Kind::GitHub(_) => {
+                if let Err(problem) = dialect::limits::check(&github(l)) {
+                    return Err(Unusable::GitHubDocuments(problem));
+                }
+                stack(Stacked::JsonOverHttp, tokenizer::largest_demand(&github(l).json), h.read)?;
+                (u64::from(l.token_bytes).max(u64::try_from(dialect::jwt::JWT_BYTES).expect("JWT bound fits")), 320)
+            }
+        };
         let head = u64::from(l.target_bytes)
             .saturating_add(u64::try_from(host.len()).expect("host length fits"))
-            .saturating_add(u64::from(l.token_bytes))
+            .saturating_add(credential)
             .saturating_add(u64::try_from(settings.user_agent.len()).expect("agent length fits"))
-            .saturating_add(192);
+            .saturating_add(framing);
         if !header_value(&settings.user_agent) || head > u64::from(h.request) {
             return Err(Unusable::Request { forge: number });
         }

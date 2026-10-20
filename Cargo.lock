@@ -783,11 +783,13 @@ dependencies = [
 name = "skein-forge-setup"
 version = "0.0.0"
 dependencies = [
+ "skein-fake-forge-github",
  "skein-forge",
  "skein-http",
  "skein-io",
  "skein-json",
  "skein-lib",
+ "skein-tls",
 ]
 
 [[package]]
