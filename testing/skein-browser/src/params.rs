@@ -10,6 +10,9 @@ pub(crate) enum Params<'a> {
     Empty,
     Dialog { accept: bool },
     Document,
+    Root,
+    Selector { node: u64, selector: &'a [u8] },
+    Node(u64),
     Object(&'a [u8]),
     Context(&'a [u8]),
     Target { url: &'a [u8], context: &'a [u8] },
@@ -48,6 +51,22 @@ impl Params<'_> {
             Params::Dialog { accept } => {
                 json.key(b"accept");
                 json.boolean(*accept);
+            }
+            Params::Root => {
+                json.key(b"depth");
+                json.signed(0);
+                json.key(b"pierce");
+                json.boolean(false);
+            }
+            Params::Selector { node, selector } => {
+                json.key(b"nodeId");
+                json.unsigned(*node);
+                json.key(b"selector");
+                json.string(selector);
+            }
+            Params::Node(node) => {
+                json.key(b"nodeId");
+                json.unsigned(*node);
             }
             Params::Document => {
                 json.key(b"expression");

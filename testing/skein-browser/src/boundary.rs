@@ -39,6 +39,7 @@ pub enum Request {
     Keys { page: Token, op: Token, node: Node, text: Box<[u8]> },
     Key { page: Token, op: Token, key: Key, shift: bool },
     Address { page: Token, op: Token },
+    Attribute { page: Token, op: Token, selector: Box<[u8]>, name: Box<[u8]> },
     Snapshot { page: Token, op: Token },
     Screenshot { page: Token, op: Token },
     Close { entity: Token },
@@ -83,6 +84,10 @@ pub enum Event {
         op: Token,
         url: Box<[u8]>,
     },
+    Attribute {
+        op: Token,
+        read: Read,
+    },
     Snapshot {
         op: Token,
         text: Box<[u8]>,
@@ -99,6 +104,14 @@ pub enum Event {
     Closed {
         owner: Token,
     },
+}
+
+/// A selected element's whole markup attribute, including an empty value.
+#[derive(PartialEq, Eq, Debug)]
+pub enum Read {
+    NoElement,
+    NoAttribute,
+    Value(Box<[u8]>),
 }
 
 /// Where to navigate.

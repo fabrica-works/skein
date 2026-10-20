@@ -94,6 +94,7 @@ enum OpKind {
     Type { text: Box<[u8]>, entry: Entry },
     Key { key: Key, shift: bool },
     Address,
+    Attribute { selector: Box<[u8]>, name: Box<[u8]> },
     Snapshot,
     Screenshot,
 }
@@ -150,6 +151,9 @@ enum Step {
     KeyUp,
     Character { offset: usize, down: bool },
     Address,
+    AttributeRoot,
+    AttributeSelector,
+    AttributeValue,
     Snapshot,
     Screenshot,
 }
@@ -625,6 +629,16 @@ impl Browser {
                     return;
                 }
                 self.issue_step(env, op, b"Page.getNavigationHistory", &Params::Empty, Step::Address);
+            }
+            Request::Attribute { page, op, selector, name } => {
+                let limit = usize::try_from(env.limits.text).expect("text fits usize");
+                if selector.len() > limit || name.len() > limit {
+                    self.events.push_back(Event::Refused { op, why: Refusal::Limit });
+                    return;
+                }
+                if self.admit_op(env, page, op, OpKind::Attribute { selector, name }) {
+                    self.start_attribute(env, op);
+                }
             }
             Request::Snapshot { page, op } => {
                 if !self.admit_op(env, page, op, OpKind::Snapshot) {
@@ -1170,6 +1184,7 @@ pub fn fire(browser: &mut Browser, env: &Env<Limits>, now: Time, above: &mut Que
                         | OpKind::Press { .. }
                         | OpKind::Type { .. }
                         | OpKind::Key { .. }
+                        | OpKind::Attribute { .. }
                         | OpKind::Address
                         | OpKind::Snapshot
                         | OpKind::Screenshot,
@@ -1182,6 +1197,8 @@ pub fn fire(browser: &mut Browser, env: &Env<Limits>, now: Time, above: &mut Que
             }
             if is_find {
                 browser.start_find(env, op);
+            } else if let Some(Operation { kind: OpKind::Attribute { .. }, .. }) = browser.op(op) {
+                browser.start_attribute(env, op);
             } else {
                 browser.finish_refused(op, Refusal::Timeout);
             }
@@ -1304,7 +1321,13 @@ impl Browser {
             | PendingKind::Navigate(page)
             | PendingKind::ClosePage(page) => self.close_page_local(page),
             PendingKind::Step(op, step) => {
-                let reason = if step == Step::Hit && why == Refusal::Gone { Refusal::Covered } else { why };
+                let reason = if step == Step::AttributeSelector {
+                    Refusal::Protocol
+                } else if step == Step::Hit && why == Refusal::Gone {
+                    Refusal::Covered
+                } else {
+                    why
+                };
                 self.finish_refused(op, reason);
             }
         }
@@ -1429,6 +1452,7 @@ impl Browser {
                     | OpKind::Press { .. }
                     | OpKind::Type { .. }
                     | OpKind::Key { .. }
+                    | OpKind::Attribute { .. }
                     | OpKind::Address
                     | OpKind::Snapshot
                     | OpKind::Screenshot => {}
@@ -1584,7 +1608,7 @@ impl Browser {
     fn restart_finds(&mut self, env: &Env<Limits>, page: Token) {
         for op in self.ops.iter_mut().flatten() {
             if op.page == page
-                && let OpKind::Find { .. } = &op.kind
+                && let OpKind::Find { .. } | OpKind::Attribute { .. } = &op.kind
             {
                 op.due = Some(env.now);
             }
@@ -1596,7 +1620,7 @@ impl Browser {
                 for op in ops.iter().flatten() {
                     if op.token == token
                         && op.page == page
-                        && let OpKind::Find { .. } = &op.kind
+                        && let OpKind::Find { .. } | OpKind::Attribute { .. } = &op.kind
                     {
                         outgoing.retain(|command| command.id != pending.id);
                         return false;
@@ -1947,6 +1971,9 @@ impl Browser {
                     self.issue_key(env, token, key, shift, false);
                 }
             }
+            Step::AttributeRoot | Step::AttributeSelector | Step::AttributeValue => {
+                self.attribute_reply(env, token, step, result);
+            }
             Step::Address => {
                 let current = field_i64(result, b"currentIndex");
                 let entries = field_array(result, b"entries");
@@ -2073,6 +2100,9 @@ impl Browser {
             | Step::KeyDown
             | Step::KeyUp
             | Step::Character { .. }
+            | Step::AttributeRoot
+            | Step::AttributeSelector
+            | Step::AttributeValue
             | Step::Address
             | Step::Snapshot
             | Step::Screenshot => unreachable!("only mouse steps reach mouse"),
@@ -2080,3 +2110,5 @@ impl Browser {
         self.issue_step(env, token, b"Input.dispatchMouseEvent", &Params::Mouse { kind, x, y, pressed }, step);
     }
 }
+
+mod attribute;

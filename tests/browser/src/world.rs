@@ -14,6 +14,7 @@ pub enum Fault {
     Error,
     ContextGone,
     ScopeGone,
+    InvalidSelector,
     Oversize,
     Crash,
     PageCrash,
@@ -29,6 +30,8 @@ pub struct World {
     pub below: Queue<Down>,
     pub sent: Vec<Vec<u8>>,
     pub ax_visible: bool,
+    pub selected: u64,
+    pub attributes: String,
     pub disabled: bool,
     pub covered: bool,
     pub hidden: bool,
@@ -59,6 +62,8 @@ impl World {
             below: Queue::with_capacity(below_room),
             sent: Vec::new(),
             ax_visible: true,
+            selected: 7,
+            attributes: r#"["value","first","data-note","named","empty",""]"#.into(),
             disabled: false,
             covered: false,
             hidden: false,
@@ -163,6 +168,7 @@ impl World {
                         match fault {
                             Some(Fault::Drop) => {}
                             Some(Fault::Delay) => self.delayed.push_back(reply),
+                            Some(Fault::InvalidSelector) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"DOM Error while querying\"}}}}\0").into_bytes()),
                             Some(Fault::ScopeGone) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Node with given id does not belong to the document\"}}}}\0").into_bytes()),
                             Some(Fault::ContextGone) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"Cannot find context with specified id\"}}}}\0").into_bytes()),
                             Some(Fault::Error) => replies.push_back(format!("{{\"id\":{id}{session_field},\"error\":{{\"code\":-32000,\"message\":\"No node found for given backend id\"}}}}\0").into_bytes()),
@@ -228,8 +234,15 @@ impl World {
         panic!("world did not settle");
     }
 
-    fn reply(&self, method: &[u8], params: Option<skein_browser::wire::decode::Value<'_>>) -> &'static str {
-        match method {
+    fn reply(&self, method: &[u8], params: Option<skein_browser::wire::decode::Value<'_>>) -> String {
+        if method == b"DOM.querySelector" {
+            return format!("{{\"nodeId\":{}}}", self.selected);
+        }
+        if method == b"DOM.getAttributes" {
+            return format!("{{\"attributes\":{}}}", self.attributes);
+        }
+        let result = match method {
+            b"DOM.getDocument" => r#"{"root":{"nodeId":1}}"#,
             b"Browser.getVersion" => r#"{"product":"Chrome/153"}"#,
             b"Target.createBrowserContext" => r#"{"browserContextId":"ctx1"}"#,
             b"Target.createTarget" => r#"{"targetId":"t1"}"#,
@@ -263,7 +276,8 @@ impl World {
             }
             b"Page.captureScreenshot" => r#"{"data":"iVBORw0KGgo="}"#,
             _ => "{}",
-        }
+        };
+        result.into()
     }
 
     pub fn open(&mut self) {

@@ -514,6 +514,7 @@ impl Runtime {
             | Event::Missed { .. }
             | Event::Done { .. }
             | Event::Refused { .. }
+            | Event::Attribute { .. }
             | Event::Address { .. }
             | Event::Snapshot { .. }
             | Event::Screenshot { .. }

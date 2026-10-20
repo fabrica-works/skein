@@ -544,3 +544,5 @@ fn keys_refuse_text_that_is_not_utf8() {
         other => panic!("expected Protocol, got {other:?}"),
     }
 }
+
+mod attribute;

@@ -297,6 +297,7 @@ impl<'a> BrowserFace<'a> {
             | Event::Opened { .. }
             | Event::Met { .. }
             | Event::Missed { .. }
+            | Event::Attribute { .. }
             | Event::Snapshot { .. }
             | Event::Screenshot { .. }
             | Event::Closed { .. } => {}

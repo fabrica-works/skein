@@ -70,14 +70,19 @@ pub fn worst_case(limits: &Limits) -> Option<u64> {
     let persons = u64::from(limits.persons).checked_mul(512_u64.checked_add(text)?)?;
     let pages =
         u64::from(limits.pages).checked_mul(1024_u64.checked_add(command)?.checked_add(text.checked_mul(3)?)?)?;
-    let ops = u64::from(limits.ops).checked_mul(1024_u64.checked_add(report)?.checked_add(command)?)?;
+    // Each attribute operation owns a selector and an attribute name.
+    let ops = u64::from(limits.ops)
+        .checked_mul(1024_u64.checked_add(report)?.checked_add(command)?.checked_add(text.checked_mul(2)?)?)?;
     let commands = u64::from(limits.commands).checked_mul(512_u64.checked_add(command.checked_mul(2)?)?)?;
     let events = u64::from(limits.persons)
         .checked_add(u64::from(limits.pages))?
         .checked_add(u64::from(limits.ops))?
         .checked_add(4)?;
     let events = events.checked_mul(u64::try_from(size_of::<crate::boundary::Event>()).ok()?.checked_add(report)?)?;
-    let transient =
-        message.checked_mul(4)?.checked_add(command.checked_mul(4)?)?.checked_add(u64::from(limits.stderr))?;
+    let transient = message
+        .checked_mul(4)?
+        .checked_add(command.checked_mul(4)?)?
+        .checked_add(text.checked_mul(2)?)?
+        .checked_add(u64::from(limits.stderr))?;
     persons.checked_add(pages)?.checked_add(ops)?.checked_add(commands)?.checked_add(events)?.checked_add(transient)
 }

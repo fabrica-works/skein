@@ -146,6 +146,7 @@ pub enum Scenario {
     Dates,
     Reduction,
     ScopeReload,
+    Attribute { selector: &'static [u8], name: &'static [u8], expected: Option<&'static [u8]> },
     Leave,
     Confirm,
 }
@@ -167,7 +168,8 @@ impl Scenario {
             | Scenario::Select
             | Scenario::Dates
             | Scenario::Reduction
-            | Scenario::ScopeReload => "/facts",
+            | Scenario::ScopeReload
+            | Scenario::Attribute { .. } => "/facts",
         }
     }
 }
@@ -446,6 +448,28 @@ impl Rig {
     }
 
     fn browser_event(&mut self, event: Event) {
+        let event = if let Scenario::Attribute { selector, name, expected } = self.scenario {
+            match event {
+                Event::Opened { page } => {
+                    assert_eq!(page, PAGE);
+                    self.stage = Stage::Finding;
+                    self.ask(Request::Attribute { page: PAGE, op: FIND, selector: selector.into(), name: name.into() });
+                    return;
+                }
+                Event::Attribute { op, read } => {
+                    assert_eq!(op, FIND);
+                    let expected = expected.map_or(skein_browser::boundary::Read::NoElement, |bytes| {
+                        skein_browser::boundary::Read::Value(bytes.into())
+                    });
+                    assert_eq!(read, expected);
+                    self.close_browser();
+                    return;
+                }
+                event => event,
+            }
+        } else {
+            event
+        };
         let event = if matches!(self.scenario, Scenario::ScopeReload) {
             match self.scope_event(event) {
                 Ok(()) => return,
@@ -475,7 +499,7 @@ impl Rig {
                 assert_eq!(self.stage, Stage::Opening);
                 self.stage = Stage::Finding;
                 match self.scenario {
-                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload => {
+                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload | Scenario::Attribute { .. } => {
                         unreachable!("dialog scenario handled above")
                     }
                     Scenario::Reduction => {
@@ -551,7 +575,7 @@ impl Rig {
                 assert_eq!(seen.len(), 1, "one accessible target for {:?}", self.scenario);
                 let node = seen.get(0).expect("target").node;
                 match self.scenario {
-                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload => {
+                    Scenario::Leave | Scenario::Confirm | Scenario::ScopeReload | Scenario::Attribute { .. } => {
                         unreachable!("dialog scenario handled above")
                     }
                     Scenario::Choose => {
@@ -653,7 +677,8 @@ impl Rig {
                         | Scenario::Select
                         | Scenario::Dates
                         | Scenario::Reduction
-                        | Scenario::ScopeReload => {
+                        | Scenario::ScopeReload
+                        | Scenario::Attribute { .. } => {
                             panic!("no action should complete for {:?}", self.scenario)
                         }
                     };
