@@ -1,6 +1,6 @@
-//! Gives the bot access before its owner's first call (forge-setup.md, 4.5, steps 1 to 3).
+//! Gives the bot access before its owner's first call (forge-setup.md, 4.5, steps 1 to 4).
 use crate::{
-    access::{Access, Fail, Move},
+    access::{Access, Fail, Move, Shared},
     given::{self, Given, Place, Refused},
     item::Item,
     reconcile::{self, Event, Failure, Need, Outcome, Stage, Why},
@@ -27,6 +27,7 @@ pub struct Adopt {
     state: State,
     admin: Option<Secret>,
     access: Access,
+    shared: Shared,
 }
 impl Adopt {
     /// Refuses an invalid given or repository zero, at index zero in a list of one.
@@ -40,7 +41,15 @@ impl Adopt {
             admin_name: given.admin_name.clone(),
             state: State::Begin,
             admin: None,
-            access: Access::new(repository, &given.bot_login),
+            shared: Shared { cap: None, secret: None },
+            access: Access::new(
+                repository,
+                &given.bot_login,
+                match given.listener {
+                    Some(address) => reconcile::hook_url(address, given.forge),
+                    None => None,
+                },
+            ),
         })
     }
     fn send(&self, request: Request) -> Need {
@@ -49,6 +58,7 @@ impl Adopt {
     fn stop(&mut self, step: Stage, why: Why) -> Need {
         self.state = State::Ended;
         self.admin = None;
+        self.shared.secret = None;
         let subject = match step {
             Stage::Admin => self.admin_name.clone(),
             Stage::Repository => self.access.subject(),
@@ -91,11 +101,15 @@ impl Adopt {
             },
             State::Access => {
                 self.state = State::Access;
-                match self.access.event(event) {
+                match self.access.event(&mut self.shared, event) {
                     Ok(Move::Send(request)) => self.send(request),
+                    Ok(Move::Read(item)) => Need::Read(item),
+                    Ok(Move::Draw(count)) => Need::Draw(count),
+                    Ok(Move::Write { item, bytes }) => Need::Write { item, bytes },
                     Ok(Move::Done) => {
                         self.state = State::Ended;
                         self.admin = None;
+                        self.shared.secret = None;
                         Need::Done(Outcome::Nothing)
                     }
                     Err(Fail::Gone) => self.stop(Stage::Repository, Why::Missing),

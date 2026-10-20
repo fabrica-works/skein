@@ -14,9 +14,9 @@ pub(super) struct Walk {
     access: Access,
 }
 impl Walk {
-    pub fn new(given: &Given) -> Option<Self> {
+    pub fn new(given: &Given, url: Option<Box<[u8]>>) -> Option<Self> {
         let id = *given.adopted.first()?;
-        Some(Self { ids: given.adopted.clone(), at: 0, access: Access::new(id, &given.bot_login) })
+        Some(Self { ids: given.adopted.clone(), at: 0, access: Access::new(id, &given.bot_login, url) })
     }
     pub fn begin(&mut self) -> Request {
         self.access.begin()
@@ -25,7 +25,7 @@ impl Walk {
         self.at = self.at.checked_add(1).expect("bounded repositories");
         match self.ids.get(self.at) {
             Some(id) => {
-                self.access = Access::new(*id, &machine.bot_login);
+                self.access = Access::new(*id, &machine.bot_login, machine.url.clone());
                 let request = self.access.begin();
                 machine.send(request)
             }
@@ -36,8 +36,11 @@ impl Walk {
 pub(super) fn advance(machine: &mut Reconcile, event: Event) -> Need {
     machine.state = State::Access;
     let mut walk = machine.access.take().expect("access phase owns its walk");
-    let need = match walk.access.event(event) {
+    let need = match walk.access.event(&mut machine.shared, event) {
         Ok(Move::Send(request)) => machine.send(request),
+        Ok(Move::Read(item)) => Need::Read(item),
+        Ok(Move::Draw(count)) => Need::Draw(count),
+        Ok(Move::Write { item, bytes }) => Need::Write { item, bytes },
         Ok(Move::Done) | Err(Fail::Gone) => walk.next(machine),
         Err(Fail::Why(why)) => machine.stop_named(Stage::Repository, &walk.access.subject(), why),
     };

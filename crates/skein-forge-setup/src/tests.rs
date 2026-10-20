@@ -4,6 +4,7 @@ mod fixtures;
 mod github_fixtures;
 mod github_given;
 mod given;
+mod hooks;
 mod host;
 mod item;
 mod limits;

@@ -1,4 +1,4 @@
-//! A listener's hook URL (forge-setup.md, 4.5); task 12 gives the hook's steps back.
+//! A listener's hook URL (forge-setup.md, 4.5).
 use alloc::boxed::Box;
 use core::net::{IpAddr, SocketAddr};
 use skein_forge::forgejo::delivery::hook_target;

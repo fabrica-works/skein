@@ -376,3 +376,23 @@ pub fn access_run(ids: &[u64]) -> Run {
     to_org(&mut run);
     run
 }
+
+pub fn hook(id: u64, url: &[u8]) -> skein_forge::forgejo::document::Row {
+    skein_forge::forgejo::document::Row::Hook(skein_forge::forgejo::document::Hook {
+        id,
+        url: url.into(),
+        events: Box::new([]),
+        active: false,
+    })
+}
+pub fn listener() -> core::net::SocketAddr {
+    core::net::SocketAddr::from(([127, 0, 0, 1], 8080))
+}
+pub fn adopt_listening() -> AdoptRun {
+    let mut given = given();
+    given.listener = Some(listener());
+    AdoptRun { machine: crate::adopt::Adopt::new(&given, 7).expect("fixture admitted") }
+}
+
+// The 32 fixture draw bytes rendered in lowercase hex.
+pub const DRAWN_HEX: &[u8] = b"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a";

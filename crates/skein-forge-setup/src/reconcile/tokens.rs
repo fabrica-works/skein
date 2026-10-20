@@ -39,6 +39,9 @@ impl Tokens {
             phase: Phase::Read,
         }
     }
+    pub fn cap(&self) -> Option<u32> {
+        self.cap
+    }
     pub fn name(&self) -> &[u8] {
         match self.item {
             Item::ApiToken => &self.api_name,
@@ -85,6 +88,7 @@ impl Tokens {
             self.phase = Phase::Read;
             Need::Read(self.item)
         } else {
+            machine.shared.cap = self.cap();
             machine.state = State::Id(self.id);
             Need::Read(Item::User)
         }

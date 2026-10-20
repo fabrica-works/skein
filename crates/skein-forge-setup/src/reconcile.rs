@@ -120,11 +120,17 @@ pub struct Reconcile {
     tokens: Option<tokens::Tokens>,
     orgs: Option<orgs::Orgs>,
     access: Option<walk::Walk>,
+    shared: crate::access::Shared,
+    url: Option<Box<[u8]>>,
 }
 impl Reconcile {
     /// Starts one entry.
     pub fn new(given: &Given) -> Result<Self, Refused> {
         given::check(given)?;
+        let url = match given.listener {
+            Some(address) => hook_url(address, given.forge),
+            None => None,
+        };
         Ok(Self {
             forge: given.forge,
             bot_login: given.bot_login.clone(),
@@ -137,7 +143,9 @@ impl Reconcile {
             state: State::Begin,
             tokens: None,
             orgs: orgs::Orgs::new(given),
-            access: walk::Walk::new(given),
+            access: walk::Walk::new(given, url.clone()),
+            shared: crate::access::Shared { cap: None, secret: None },
+            url,
         })
     }
     fn send(&self, request: Request) -> Need {
@@ -146,6 +154,7 @@ impl Reconcile {
     fn stop(&mut self, stage: Stage, why: Why) -> Need {
         self.state = State::Ended;
         self.admin = None;
+        self.shared.secret = None;
         let subject = match stage {
             Stage::Admin | Stage::Installation => self.admin_name.clone(),
             Stage::Bot | Stage::Token | Stage::Org | Stage::Repository => self.bot_login.clone(),
@@ -334,7 +343,7 @@ pub(crate) fn normal(event: Event) -> Event {
     }
 }
 
-fn hex(value: &Secret) -> Secret {
+pub(crate) fn hex(value: &Secret) -> Secret {
     let mut out = Writer::new(64);
     for byte in value.expose() {
         for nibble in [byte >> 4_u8, byte & 15] {
@@ -367,6 +376,7 @@ impl Reconcile {
     }
     fn finish(&mut self) -> Need {
         self.admin = None;
+        self.shared.secret = None;
         self.state = State::Ended;
         Need::Done(Outcome::Nothing)
     }

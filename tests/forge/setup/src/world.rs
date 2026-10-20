@@ -23,6 +23,7 @@ pub struct World {
     requests: Vec<Request>,
     secrets: Vec<Secret>,
     outcome: Option<Outcome>,
+    refused: Option<skein_fake_forge_protocol::Route>,
 }
 impl World {
     #[must_use]
@@ -59,7 +60,14 @@ impl World {
             requests: Vec::new(),
             secrets: vec![fixtures::secret(fixtures::ADMIN)],
             outcome: None,
+            refused: None,
         }
+    }
+    pub fn forge_number(&mut self, forge: u16) {
+        self.given.forge = forge;
+    }
+    pub fn refuse(&mut self, route: skein_fake_forge_protocol::Route) {
+        self.refused = Some(route);
     }
     pub fn listening(&mut self, address: SocketAddr) {
         self.given.listener = Some(address);
@@ -103,7 +111,14 @@ impl World {
     #[must_use]
     pub fn secrets_absent(&self) -> bool {
         let mut checked = Vec::new();
-        for secret in self.secrets.iter().chain(self.service.setup().issued().iter().map(|token| &token.secret)) {
+        for secret in self.secrets.iter().chain(self.service.setup().issued().iter().map(|token| &token.secret)).chain(
+            self.given
+                .adopted
+                .iter()
+                .filter_map(|id| u32::try_from(*id).ok())
+                .flat_map(|id| self.store().repository_hooks(id))
+                .map(|hook| &hook.secret),
+        ) {
             if secret.is_empty() || checked.contains(&secret) {
                 continue;
             }
@@ -129,6 +144,58 @@ impl World {
         self.given.api_name = [word, b"-api"].concat().into();
         self.given.git_name = [word, b"-git"].concat().into();
         self.files.retain(|(item, _)| *item == Item::AdminToken);
+    }
+    #[must_use]
+    pub fn repository_hooks(&self, repository: u32) -> Vec<&skein_fake_forge_protocol::setup::RepositoryHook> {
+        self.store().repository_hooks(repository).collect()
+    }
+    fn repository_path(&mut self, repository: u32) -> skein_forge::forgejo::request::Repo {
+        let reply = exchange::send(
+            &mut self.service,
+            &self.env,
+            &Request::RepositoryById { id: u64::from(repository) },
+            &fixtures::secret(fixtures::ADMIN),
+            self.rng.next_u64(),
+        );
+        let Reply::Document(Document::Repository(repo)) = reply else { panic!("scenario repository") };
+        skein_forge::forgejo::request::Repo { owner: repo.owner.login, name: repo.name }
+    }
+    /// Seeds a hook through the fake's existing repository route.
+    pub fn with_hook(&mut self, repository: u32, url: &[u8], secret: Secret) -> u64 {
+        let at = self.repository_path(repository);
+        self.secrets.push(secret.clone());
+        let request = Request::CreateRepoHook {
+            at,
+            hook: skein_forge::forgejo::request::HookSpec {
+                url: url.into(),
+                secret,
+                events: Box::new([]),
+                active: false,
+            },
+        };
+        let reply = exchange::send(
+            &mut self.service,
+            &self.env,
+            &request,
+            &fixtures::secret(fixtures::ADMIN),
+            self.rng.next_u64(),
+        );
+        let Reply::Document(Document::Hook(hook)) = reply else { panic!("scenario hook") };
+        hook.id
+    }
+    pub fn delete_repository_hook(&mut self, repository: u32, id: u64) {
+        let at = self.repository_path(repository);
+        let request = Request::DeleteRepoHook { at, id };
+        assert_eq!(
+            exchange::send(
+                &mut self.service,
+                &self.env,
+                &request,
+                &fixtures::secret(fixtures::ADMIN),
+                self.rng.next_u64()
+            ),
+            Reply::Empty
+        );
     }
     pub fn adopt(&mut self, repository: u64) -> Ended {
         let mut machine = skein_forge_setup::adopt::Adopt::new(&self.given, repository).expect("fixture admitted");
@@ -173,7 +240,11 @@ impl World {
                         self.secrets.push(password.clone());
                     }
                     self.requests.push(request.clone());
-                    let reply = exchange::send(&mut self.service, &self.env, &request, &token, self.rng.next_u64());
+                    let reply = if self.refused == Some(skein_fake_forge_protocol::route(&request)) {
+                        Reply::Status(403)
+                    } else {
+                        exchange::send(&mut self.service, &self.env, &request, &token, self.rng.next_u64())
+                    };
                     if let Reply::Document(Document::Token(token)) = &reply
                         && let Some(secret) = &token.value
                     {
@@ -191,7 +262,9 @@ impl World {
                     for _ in 0..count {
                         bytes.push(self.rng.next_u64().to_le_bytes()[0]);
                     }
-                    Event::Drawn(Secret::new(bytes.into_boxed_slice()))
+                    let drawn = Secret::new(bytes.into_boxed_slice());
+                    self.secrets.push(drawn.clone());
+                    Event::Drawn(drawn)
                 }
                 Need::Done(outcome) => {
                     self.outcome = Some(outcome);

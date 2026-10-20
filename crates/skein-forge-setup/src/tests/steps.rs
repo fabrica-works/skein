@@ -246,6 +246,10 @@ fn a_halted_adopt_stops_at_each_phase_with_the_why_given() {
     for (name, run, stage, subject) in super::adopt::phase_cases().into_iter().skip(1) {
         halted(crate::host::run::Machine::Adopt(run.machine), stage, subject, name);
     }
+    for phase in 0..7 {
+        let run = super::hooks::phase(phase);
+        halted(crate::host::run::Machine::Adopt(run.machine), Stage::Repository, b"acme/specimen", "hook");
+    }
 }
 #[test]
 fn a_halt_of_an_ended_plan_pushes_nothing() {
@@ -260,4 +264,110 @@ fn a_halt_of_an_ended_plan_pushes_nothing() {
         machine.halt(Why::Down, &mut out);
         assert!(out.is_empty());
     }
+}
+
+fn listening_access(ids: &[u64], repair: bool) -> Run {
+    let mut given = fixtures::given();
+    given.adopted = ids.into();
+    given.listener = Some(fixtures::listener());
+    let mut run = Run::with_given(given);
+    fixtures::to_bot(&mut run);
+    run.step(fixtures::bot_event());
+    if repair {
+        assert_eq!(run.step(Event::Read(None)), fixtures::send(Request::ApiSettings));
+        run.step(fixtures::settings_event(2));
+        run.step(fixtures::rows(Box::new([])));
+        run.step(fixtures::token_event());
+        assert_eq!(run.step(Event::Written), Need::Read(Item::GitToken));
+    } else {
+        fixtures::keep_token(&mut run);
+    }
+    fixtures::keep_token(&mut run);
+    let need = run.step(Event::Read(Some(secret(&42u64.to_le_bytes()))));
+    if ids.is_empty() {
+        assert_eq!(need, Need::Done(fixtures::done()));
+    }
+    run
+}
+fn writable(run: &mut Run, id: u64) -> Need {
+    run.step(fixtures::repository(id, b"acme", b"specimen"));
+    run.step(fixtures::permission(skein_forge::forgejo::document::Permission::Write))
+}
+#[test]
+fn the_webhook_secret_is_asked_once_for_many_repositories() {
+    let mut run = listening_access(&[9, 4], false);
+    assert_eq!(writable(&mut run, 9), Need::Read(Item::WebhookSecret));
+    assert_eq!(run.step(Event::Read(None)), Need::Draw(32));
+    assert_eq!(
+        run.step(fixtures::drawn()),
+        Need::Write { item: Item::WebhookSecret, bytes: secret(fixtures::DRAWN_HEX) }
+    );
+    assert_eq!(run.step(Event::Written), fixtures::send(Request::ApiSettings));
+    run.step(fixtures::settings_event(2));
+    run.step(fixtures::rows(Box::new([])));
+    assert_eq!(run.step(super::hooks::saved()), fixtures::send(Request::RepositoryById { id: 4 }));
+    let Need::Send { request: Request::RepoHooks { page, .. }, .. } = writable(&mut run, 4) else {
+        panic!("second repository listing")
+    };
+    assert_eq!(page, fixtures::page(1));
+    run.step(fixtures::rows(Box::new([])));
+    assert_eq!(run.step(super::hooks::saved()), Need::Done(fixtures::done()));
+}
+#[test]
+fn the_page_cap_a_token_step_read_is_not_read_again() {
+    let mut run = listening_access(&[9], true);
+    writable(&mut run, 9);
+    let need = run.step(Event::Read(Some(secret(b"hook-secret"))));
+    let Need::Send { request: Request::RepoHooks { page, .. }, .. } = need else { panic!("listing") };
+    assert_eq!(page, fixtures::page(1));
+}
+#[test]
+fn a_run_that_kept_both_tokens_reads_the_cap_at_the_first_hook_listing() {
+    let mut run = listening_access(&[9], false);
+    writable(&mut run, 9);
+    assert_eq!(run.step(Event::Read(Some(secret(b"hook-secret")))), fixtures::send(Request::ApiSettings));
+}
+#[test]
+fn a_run_with_both_tokens_valid_and_no_listener_reads_no_cap_and_no_secret() {
+    let mut run = fixtures::access_run(&[9]);
+    assert_eq!(writable(&mut run, 9), Need::Done(fixtures::done()));
+}
+#[test]
+fn a_run_with_both_tokens_valid_and_no_adopted_repository_reads_no_cap_and_no_secret() {
+    let mut run = listening_access(&[], false);
+    let mut out = skein_lib::Queue::with_capacity(crate::reconcile::MAX_OUT);
+    crate::reconcile::step(&mut run.machine, Event::Begin, &mut out);
+    assert!(out.is_empty());
+}
+#[test]
+fn each_adopted_repository_is_given_its_hook_in_the_order_given() {
+    let mut run = listening_access(&[9, 4], false);
+    writable(&mut run, 9);
+    run.step(Event::Read(Some(secret(b"hook-secret"))));
+    run.step(fixtures::settings_event(2));
+    for (id, next) in [(9_u64, Some(4)), (4, None)] {
+        let Need::Send { request: Request::CreateRepoHook { at, .. }, .. } = run.step(fixtures::rows(Box::new([])))
+        else {
+            panic!("hook for {id}")
+        };
+        assert_eq!(at.name.as_ref(), b"specimen");
+        let need = run.step(super::hooks::saved());
+        if let Some(next) = next {
+            assert_eq!(need, fixtures::send(Request::RepositoryById { id: next }));
+            writable(&mut run, next);
+        } else {
+            assert_eq!(need, Need::Done(fixtures::done()));
+        }
+    }
+}
+#[test]
+fn a_failure_in_a_hook_stops_the_run_naming_the_repositorys_path() {
+    let mut run = listening_access(&[9, 4], false);
+    writable(&mut run, 9);
+    run.step(Event::Read(Some(secret(b"hook-secret"))));
+    run.step(fixtures::settings_event(2));
+    assert_eq!(
+        run.step(Event::Reply(Reply::Status(403))),
+        fixtures::named_failure(Stage::Repository, b"acme/specimen", Why::Refused(403))
+    );
 }

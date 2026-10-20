@@ -62,11 +62,20 @@ impl HostWorld {
     }
     #[must_use]
     pub fn with_config(seed: u64, script: &[Connect], config: fake::Config) -> Self {
+        Self::with_settings(seed, script, config, fixtures::host_settings())
+    }
+    #[must_use]
+    pub fn with_settings(
+        seed: u64,
+        script: &[Connect],
+        config: fake::Config,
+        settings: skein_forge_setup::host::Settings,
+    ) -> Self {
         let limits = fixtures::host_limits();
         let (service, fake_limits) = seeded_config(seed, false, config);
         assert_eq!(skein_forge_setup::host::documents(&limits), fake_limits.documents);
         Self {
-            host: Host::new(&limits, fixtures::host_settings(), fixtures::crypto()).expect("host fixtures"),
+            host: Host::new(&limits, settings, fixtures::crypto()).expect("host fixtures"),
             env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits },
             service,
             fake_env: Env { now: Time::ZERO, wall: Wall::EPOCH, limits: fake_limits },

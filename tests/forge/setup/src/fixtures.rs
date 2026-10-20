@@ -127,7 +127,8 @@ pub fn random(seed: u64) -> crate::World {
         if permissions[1] == 4 { b"kit/two".as_slice() } else { b"alice/two" },
         if permissions[2] == 4 { b"kit/three".as_slice() } else { b"alice/three" },
     ];
-    let mut world = repositories(seed, true, &paths);
+    let cap = 2 + u32::try_from(rng.next_u64() & 1).expect("one bit");
+    let mut world = repositories_with_cap(seed, true, &paths, cap);
     let bot = (rng.next_u64() & 1 == 1).then(|| world.store_mut().account(b"kit", false, b"kit:bot"));
     for (file, name, scopes, value) in [
         (
@@ -304,10 +305,16 @@ pub fn picker_owners(store: &mut skein_fake_forge_protocol::setup::Store) {
 pub fn repositories(seed: u64, owned: bool, paths: &[&[u8]]) -> crate::World {
     crate::World::with_config(seed, owned, repository_config(paths))
 }
+fn repositories_with_cap(seed: u64, owned: bool, paths: &[&[u8]], cap: u32) -> crate::World {
+    crate::World::with_config(seed, owned, repository_config_with_cap(paths, cap))
+}
 /// Repository identities shared by the plan and HTTP host worlds.
 #[must_use]
 pub fn repository_config(paths: &[&[u8]]) -> Config {
-    let mut config = config();
+    repository_config_with_cap(paths, 2)
+}
+fn repository_config_with_cap(paths: &[&[u8]], cap: u32) -> Config {
+    let mut config = config_with_cap(cap);
     config.repositories = List::with_capacity(u32::try_from(paths.len()).expect("scenario count"));
     for (index, path) in paths.iter().enumerate() {
         config
