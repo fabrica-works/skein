@@ -7,7 +7,7 @@ use skein_shell::Host;
 
 use std::net::{Ipv4Addr, SocketAddr};
 
-mod support;
+use skein_fake_peers_tests as support;
 
 fn make(transport: Transport, terms: Option<issuer::Terms>) -> oauth::Peer {
     let scheme = if transport == Transport::Plaintext { "http" } else { "https" };

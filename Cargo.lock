@@ -591,11 +591,17 @@ name = "skein-fake-checkout"
 version = "0.0.0"
 
 [[package]]
+name = "skein-fake-checkout-tests"
+version = "0.0.0"
+dependencies = [
+ "skein-fake-checkout",
+]
+
+[[package]]
 name = "skein-fake-forge-domain"
 version = "0.0.0"
 dependencies = [
  "skein-lib",
- "skein-world",
 ]
 
 [[package]]
@@ -618,6 +624,15 @@ dependencies = [
  "skein-http",
  "skein-json",
  "skein-lib",
+]
+
+[[package]]
+name = "skein-fake-forge-tests"
+version = "0.0.0"
+dependencies = [
+ "skein-fake-forge-domain",
+ "skein-lib",
+ "skein-world",
 ]
 
 [[package]]
@@ -668,8 +683,25 @@ dependencies = [
  "skein-fake-llm-domain",
  "skein-fake-llm-protocol",
  "skein-fake-oauth",
+ "skein-http",
+ "skein-io",
+ "skein-lib",
+ "skein-llm",
+ "skein-oauth",
+ "skein-shell",
+]
+
+[[package]]
+name = "skein-fake-peers-tests"
+version = "0.0.0"
+dependencies = [
+ "skein-fake-forge-domain",
+ "skein-fake-forge-protocol",
+ "skein-fake-llm-domain",
+ "skein-fake-llm-protocol",
+ "skein-fake-oauth",
+ "skein-fake-peers",
  "skein-forge",
- "skein-heap",
  "skein-http",
  "skein-io",
  "skein-json",

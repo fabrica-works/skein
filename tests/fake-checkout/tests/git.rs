@@ -1,12 +1,10 @@
 //! Local git boundaries extracted from consuming checkout-world stories;
 //! service remote policy and routing stay outside this kit (fake-checkout.md, section 4).
 
-mod common;
-
 use skein_fake_checkout::Checkout;
 use skein_fake_checkout::git::{self, CommitFailure, Created, Fault, NotFetched, Pushed, Remote, Want, What};
 
-use common::{Store, cloned, files, merge_case, tree};
+use skein_fake_checkout_tests::{Store, cloned, files, merge_case, tree};
 
 #[test]
 fn clone_and_fetch_import_both_parent_chains_without_rewriting_existing_objects() {

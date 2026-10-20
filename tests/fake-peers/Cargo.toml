@@ -1,0 +1,43 @@
+[package]
+name = "skein-fake-peers-tests"
+description = "Loopback fake peers against their clients"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+skein-io.workspace = true
+skein-lib.workspace = true
+skein-sim.workspace = true
+
+[dev-dependencies]
+skein-fake-peers.workspace = true
+skein-fake-forge-domain.workspace = true
+skein-fake-forge-protocol.workspace = true
+skein-fake-llm-domain.workspace = true
+skein-fake-llm-protocol.workspace = true
+skein-fake-oauth.workspace = true
+skein-forge.workspace = true
+skein-http.workspace = true
+skein-json.workspace = true
+skein-llm.workspace = true
+skein-oauth.workspace = true
+skein-shell.workspace = true
+skein-llm-world = { path = "../llm" }
+
+# Ordinary Rust (programming-model.md, 10.2); tests/clippy.toml governs these tests.
+[lints.rust]
+unsafe_code = "forbid"
+elided_lifetimes_in_paths = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_panics_doc = "allow"
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"
+unwrap_used = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"

@@ -1,5 +1,4 @@
 [package]
-autotests = false
 name = "skein-fake-forge-protocol"
 description = "Forgejo HTTP over the fake forge's domain"
 version.workspace = true

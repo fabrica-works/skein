@@ -11,7 +11,7 @@ use skein_shell::Host;
 
 #[path = "llm/request.rs"]
 mod request;
-mod support;
+use skein_fake_peers_tests as support;
 
 fn limits() -> Limits {
     Limits {

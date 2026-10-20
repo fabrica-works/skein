@@ -1,10 +1,10 @@
-use super::support;
 use skein_fake_forge_domain::{self as domain, api};
 use skein_fake_forge_protocol::{Config, Faults, Repository};
 use skein_fake_peers::{
     Limits,
     forge::{self, Forge, Peer},
 };
+use skein_fake_peers_tests as support;
 use skein_io::kernel::{Complete, Done, Family, Fd, Op, Submit};
 use skein_lib::{Duration, List, Queue, Secret, Time, Token, bytes};
 use skein_shell::Host;

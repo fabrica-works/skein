@@ -19,22 +19,23 @@ struct Commit {
 /// Tests supply existing parent IDs and finite trees; it keeps no domain state
 /// (fake-checkout.md, section 5).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Store {
+pub struct Store {
     commits: BTreeMap<u64, Commit>,
     branches: BTreeMap<Vec<u8>, u64>,
     next: u64,
 
     /// Scripted transport refusal for the focused boundary scenarios (fake-checkout.md, section 5).
-    pub(super) fault: Option<Fault>,
+    pub fault: Option<Fault>,
 
     /// Last exact push arguments observed at the remote boundary (fake-checkout.md, section 5).
-    pub(super) last_push: Option<(Vec<u8>, u64, Option<u64>)>,
+    pub last_push: Option<(Vec<u8>, u64, Option<u64>)>,
     moves: usize,
 }
 
 impl Store {
     /// One root commit, ID 1, at the fixture's `main` branch (fake-checkout.md, section 5).
-    pub(super) fn new(tree: Tree) -> Store {
+    #[must_use]
+    pub fn new(tree: Tree) -> Store {
         Store {
             commits: BTreeMap::from([(1, Commit { parent: None, merging: None, tree, message: Vec::new() })]),
             branches: BTreeMap::from([(b"main".to_vec(), 1)]),
@@ -46,12 +47,14 @@ impl Store {
     }
 
     /// Pure branch lookup for the independent expected reference check (fake-checkout.md, section 5).
-    pub(super) fn branch(&self, branch: &[u8]) -> Option<u64> {
+    #[must_use]
+    pub fn branch(&self, branch: &[u8]) -> Option<u64> {
         self.branches.get(branch).copied()
     }
 
     /// Number of reference moves performed by the private fixture (fake-checkout.md, section 5).
-    pub(super) fn moves(&self) -> usize {
+    #[must_use]
+    pub fn moves(&self) -> usize {
         self.moves
     }
 
@@ -140,12 +143,14 @@ impl Remote for Store {
 }
 
 /// Owned byte tree from explicit independent expectations (fake-checkout.md, section 5).
-pub(super) fn tree(files: &[(&[u8], &[u8])]) -> Tree {
+#[must_use]
+pub fn tree(files: &[(&[u8], &[u8])]) -> Tree {
     files.iter().map(|(path, bytes)| (path.to_vec(), bytes.to_vec())).collect()
 }
 
 /// One root commit cloned and checked out at `work`, without moving references (fake-checkout.md, section 5).
-pub(super) fn cloned(files: &[(&[u8], &[u8])]) -> (Store, Checkout, u64) {
+#[must_use]
+pub fn cloned(files: &[(&[u8], &[u8])]) -> (Store, Checkout, u64) {
     let mut store = Store::new(tree(files));
     let mut checkout = Checkout::new();
     git::clone_repository(&mut store, &mut checkout, b"repo", b"work").expect("fixture clone");
@@ -154,7 +159,8 @@ pub(super) fn cloned(files: &[(&[u8], &[u8])]) -> (Store, Checkout, u64) {
 }
 
 /// Regular working files excluding metadata, for explicit expected-tree checks (fake-checkout.md, section 5).
-pub(super) fn files(checkout: &Checkout) -> Tree {
+#[must_use]
+pub fn files(checkout: &Checkout) -> Tree {
     let mut files = checkout.tree(b"work");
     files.retain(|path, _| !skein_fake_checkout::in_git(path));
     files
@@ -162,7 +168,8 @@ pub(super) fn files(checkout: &Checkout) -> Tree {
 
 /// Independent tiny line-edit/conflict scenario and complete replay snapshot.
 /// Seed numbers select explicit edits, not kit-derived expectations (fake-checkout.md, section 5).
-pub(super) fn merge_case(seed: u64) -> String {
+#[must_use]
+pub fn merge_case(seed: u64) -> String {
     let base = [b"a\n".to_vec(), b"b\n".to_vec(), b"c\n".to_vec()];
     let left_index = usize::try_from(seed % 3).expect("three lines");
     let right_index = usize::try_from((seed / 3) % 3).expect("three lines");

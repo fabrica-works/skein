@@ -5,7 +5,6 @@ use skein_shell::Host;
 
 #[path = "forge/fixtures.rs"]
 mod fixtures;
-mod support;
 use fixtures::{ONE_REPLY, World};
 
 #[test]

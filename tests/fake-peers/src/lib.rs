@@ -2,6 +2,7 @@ use skein_io::kernel::{Done, Op, Submit};
 use skein_lib::{Queue, Token};
 use skein_sim::{Pid, Sim};
 
+/// Submit one scripted client operation and drive it to completion.
 pub fn call(sim: &mut Sim, pid: Pid, token: u64, kind: Op) -> Done {
     let mut submissions = Queue::with_capacity(1);
     let mut completions = Queue::with_capacity(1);
