@@ -210,6 +210,19 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[must_use]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Edit { owner, name, number, .. } => {
+            let fields = parse(
+                body,
+                &[
+                    Field { key: b"title", body: false, required: false },
+                    Field { key: b"body", body: true, required: false },
+                ],
+                limits,
+            )?;
+            let title = copy_optional(fields.get(b"title"));
+            let body = copy_optional(fields.get(b"body"));
+            Some(Request::Edit { owner, name, number, title, body })
+        }
         Request::Reopen { owner, name, number } => {
             let fields = parse(body, &[Field { key: b"state", body: false, required: true }], limits)?;
             if fields.get(b"state")? != b"open" {
@@ -266,5 +279,13 @@ pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Requ
         | Request::Collaborators { .. }
         | Request::Permission { .. }
         | Request::User { .. } => None,
+    }
+}
+
+#[expect(clippy::manual_map, reason = "step code spells out optional copies without closure combinators")]
+fn copy_optional(text: Option<&[u8]>) -> Option<Box<[u8]>> {
+    match text {
+        Some(text) => Some(Box::from(text)),
+        None => None,
     }
 }

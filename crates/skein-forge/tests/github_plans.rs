@@ -357,7 +357,6 @@ fn github_plans_writes_refused() {
         api::Write::OpenPull { title: Box::from([]), body: Box::from([]), head: Box::from([]), base: Box::from([]) },
         api::Write::Post { number: 1, key: Box::from([]), body: Box::from([]) },
         api::Write::Review { number: 1, key: Box::from([]), verdict: api::Verdict::Approve, body: Box::from([]) },
-        api::Write::Edit { number: 1, title: None, body: None },
         api::Write::SetReviewers { number: 1, reviewers: Box::from([]) },
         api::Write::Merge { number: 1, head: [0; 32] },
         api::Write::Update { number: 1 },

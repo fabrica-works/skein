@@ -423,6 +423,7 @@ fn github_app_server_round_trip() {
                 | Request::Collaborators { .. }
                 | Request::Permission { .. }
                 | Request::Reopen { .. }
+                | Request::Edit { .. }
                 | Request::Close { .. }
                 | Request::DeleteBranch { .. }
                 | Request::User { .. } => {}

@@ -64,6 +64,7 @@ pub enum Request {
     Permission { owner: Box<[u8]>, name: Box<[u8]>, login: Box<[u8]> },
     User { id: u64 },
     Reopen { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
+    Edit { owner: Box<[u8]>, name: Box<[u8]>, number: u64, title: Option<Box<[u8]>>, body: Option<Box<[u8]>> },
     Close { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     DeleteBranch { owner: Box<[u8]>, name: Box<[u8]>, branch: Box<[u8]> },
 }
@@ -90,51 +91,7 @@ pub enum Refusal {
 }
 /// Measures, checks and writes a request's target and body.
 pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
-    match request {
-        Request::DeleteBranch { branch, .. }
-            if u64::try_from(branch.len()).ok().ok_or(Refusal::TooLong)? > u64::from(limits.string_bytes) =>
-        {
-            return Err(Refusal::TooLong);
-        }
-        Request::DeleteBranch { .. }
-        | Request::Raw { .. }
-        | Request::Installations { .. }
-        | Request::Installation { .. }
-        | Request::Mint { .. }
-        | Request::Reachable { .. }
-        | Request::Viewer
-        | Request::App
-        | Request::HookConfig
-        | Request::SetHook { .. }
-        | Request::Uninstall { .. }
-        | Request::Conversion { .. }
-        | Request::BotUser { .. }
-        | Request::Repository { .. }
-        | Request::Locate { .. }
-        | Request::Issues { .. }
-        | Request::Issue { .. }
-        | Request::Comments { .. }
-        | Request::Pull { .. }
-        | Request::PullsFor { .. }
-        | Request::Reviews { .. }
-        | Request::ReviewComments { .. }
-        | Request::CombinedStatus { .. }
-        | Request::CheckRuns { .. }
-        | Request::Job { .. }
-        | Request::JobLog { .. }
-        | Request::Branch { .. }
-        | Request::Branches { .. }
-        | Request::PullFiles { .. }
-        | Request::Compare { .. }
-        | Request::RulesForBranch { .. }
-        | Request::Ruleset { .. }
-        | Request::ClassicProtection { .. }
-        | Request::Collaborators { .. }
-        | Request::Permission { .. }
-        | Request::Reopen { .. }
-        | Request::Close { .. }
-        | Request::User { .. } => {}
-    }
+    bounded_fields(request, limits)?;
     let mut out = Target { length: 0, writer: None };
     target(request, &mut out)?;
     if out.length > usize::try_from(limits.target_bytes).expect("u32 fits usize") {
@@ -180,6 +137,7 @@ pub fn encode(request: &Request, limits: &Limits) -> Result<Encoded, Refusal> {
         | Request::DeleteBranch { .. }
         | Request::Reopen { .. }
         | Request::Close { .. }
+        | Request::Edit { .. }
         | Request::User { .. } => Accept::Json,
     };
     let (method, auth) = selection(request);
@@ -293,7 +251,9 @@ fn target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::ReviewComments { .. }
         | Request::PullFiles { .. }
         | Request::Branches { .. } => return items_target(request, out),
-        Request::Close { owner, name, number } | Request::Reopen { owner, name, number } => {
+        Request::Edit { owner, name, number, .. }
+        | Request::Close { owner, name, number }
+        | Request::Reopen { owner, name, number } => {
             out.repo(owner, name)?;
             out.put(b"/issues/");
             out.number(*number);
@@ -477,6 +437,7 @@ fn items_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::DeleteBranch { .. }
         | Request::Reopen { .. }
         | Request::Close { .. }
+        | Request::Edit { .. }
         | Request::User { .. } => unreachable!("item target dispatch"),
     }
     Ok(())
@@ -512,7 +473,7 @@ fn escape_digit(byte: u8) -> Option<u8> {
 
 fn selection(request: &Request) -> (Method, Auth) {
     match request {
-        Request::Close { .. } | Request::Reopen { .. } => (Method::Patch, Auth::Installation),
+        Request::Edit { .. } | Request::Close { .. } | Request::Reopen { .. } => (Method::Patch, Auth::Installation),
         Request::DeleteBranch { .. } => (Method::Delete, Auth::Installation),
         Request::Installations { .. } | Request::Installation { .. } | Request::App | Request::HookConfig => {
             (Method::Get, Auth::App)
@@ -556,7 +517,8 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
         | Request::Viewer
         | Request::SetHook { .. }
         | Request::Reopen { .. }
-        | Request::Close { .. } => {}
+        | Request::Close { .. }
+        | Request::Edit { .. } => {}
         Request::Mint { scope: Scope::Full, .. }
         | Request::Installations { .. }
         | Request::Installation { .. }
@@ -611,6 +573,17 @@ fn body(request: &Request, limits: &Limits) -> Result<Option<Box<[u8]>>, Refusal
 fn body_json(request: &Request, json: &mut skein_json::writer::Encoder) {
     json.object_start();
     match request {
+        Request::Edit { title, body, .. } => {
+            if let Some(title) = title {
+                json.key(b"title");
+                json.string(title);
+            }
+            if let Some(body) = body {
+                json.key(b"body");
+                json.string(body);
+            }
+        }
+
         Request::Reopen { .. } => {
             json.key(b"state");
             json.string(b"open");
@@ -732,7 +705,73 @@ fn app_target(request: &Request, out: &mut Target) -> Result<(), Refusal> {
         | Request::DeleteBranch { .. }
         | Request::Reopen { .. }
         | Request::Close { .. }
+        | Request::Edit { .. }
         | Request::User { .. } => unreachable!("App target dispatch"),
+    }
+    Ok(())
+}
+
+fn bounded(text: &[u8], limit: u32) -> Result<(), Refusal> {
+    if u64::try_from(text.len()).ok().ok_or(Refusal::TooLong)? > u64::from(limit) {
+        return Err(Refusal::TooLong);
+    }
+    Ok(())
+}
+
+fn bounded_fields(request: &Request, limits: &Limits) -> Result<(), Refusal> {
+    match request {
+        Request::Edit { title, body, .. } => {
+            if let Some(title) = title {
+                bounded(title, limits.string_bytes)?;
+            }
+            if let Some(body) = body {
+                bounded(body, limits.body_bytes)?;
+            }
+        }
+
+        Request::DeleteBranch { branch, .. }
+            if u64::try_from(branch.len()).ok().ok_or(Refusal::TooLong)? > u64::from(limits.string_bytes) =>
+        {
+            return Err(Refusal::TooLong);
+        }
+        Request::DeleteBranch { .. }
+        | Request::Raw { .. }
+        | Request::Installations { .. }
+        | Request::Installation { .. }
+        | Request::Mint { .. }
+        | Request::Reachable { .. }
+        | Request::Viewer
+        | Request::App
+        | Request::HookConfig
+        | Request::SetHook { .. }
+        | Request::Uninstall { .. }
+        | Request::Conversion { .. }
+        | Request::BotUser { .. }
+        | Request::Repository { .. }
+        | Request::Locate { .. }
+        | Request::Issues { .. }
+        | Request::Issue { .. }
+        | Request::Comments { .. }
+        | Request::Pull { .. }
+        | Request::PullsFor { .. }
+        | Request::Reviews { .. }
+        | Request::ReviewComments { .. }
+        | Request::CombinedStatus { .. }
+        | Request::CheckRuns { .. }
+        | Request::Job { .. }
+        | Request::JobLog { .. }
+        | Request::Branch { .. }
+        | Request::Branches { .. }
+        | Request::PullFiles { .. }
+        | Request::Compare { .. }
+        | Request::RulesForBranch { .. }
+        | Request::Ruleset { .. }
+        | Request::ClassicProtection { .. }
+        | Request::Collaborators { .. }
+        | Request::Permission { .. }
+        | Request::Reopen { .. }
+        | Request::Close { .. }
+        | Request::User { .. } => {}
     }
     Ok(())
 }

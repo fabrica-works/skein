@@ -962,6 +962,7 @@ fn github_raw_request(request: &github::request::Request) -> bool {
         | Request::Collaborators { .. }
         | Request::Permission { .. }
         | Request::Reopen { .. }
+        | Request::Edit { .. }
         | Request::Close { .. }
         | Request::DeleteBranch { .. }
         | Request::User { .. } => false,

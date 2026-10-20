@@ -47,12 +47,14 @@ impl Plan {
             return Err(api::Error::InvalidAnswer);
         }
         match self.write {
-            api::Write::DeleteBranch { .. } | api::Write::Close { .. } | api::Write::Reopen { .. } => {}
+            api::Write::DeleteBranch { .. }
+            | api::Write::Close { .. }
+            | api::Write::Reopen { .. }
+            | api::Write::Edit { .. } => {}
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
-            | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
@@ -81,6 +83,9 @@ impl Plan {
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::Edit { number, title, body } => {
+                Request::Edit { owner, name, number: *number, title: title.clone(), body: body.clone() }
+            }
             api::Write::Reopen { number } => Request::Reopen { owner, name, number: *number },
             api::Write::Close { number } => Request::Close { owner, name, number: *number },
             api::Write::DeleteBranch { branch } => Request::DeleteBranch { owner, name, branch: branch.clone() },
@@ -88,7 +93,6 @@ impl Plan {
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
-            | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
@@ -102,13 +106,15 @@ impl Plan {
         if self.asked() == Asked::DeleteBranch { 204 } else { 200 }
     }
     fn asked(&self) -> Asked {
-        match self.write {
+        match &self.write {
             api::Write::DeleteBranch { .. } => Asked::DeleteBranch,
+            api::Write::Edit { title, body, .. } => {
+                Asked::Write { empty: empty(title.as_deref()) || empty(body.as_deref()) }
+            }
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
-            | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
             | api::Write::Close { .. }
             | api::Write::Reopen { .. }
@@ -304,5 +310,12 @@ impl Plan {
                 self.terminal(api::Answer::Done, bounds)
             }
         }
+    }
+}
+
+fn empty(text: Option<&[u8]>) -> bool {
+    match text {
+        Some(text) => text.is_empty(),
+        None => false,
     }
 }

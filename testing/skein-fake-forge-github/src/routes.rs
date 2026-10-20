@@ -80,6 +80,7 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::Collaborators { .. }
         | Request::Permission { .. }
         | Request::Reopen { .. }
+        | Request::Edit { .. }
         | Request::Close { .. }
         | Request::DeleteBranch { .. }
         | Request::User { .. } => return None,
