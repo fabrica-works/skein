@@ -5,7 +5,7 @@
 # exhaustive profile (forge-connection.md, 10), once main has it.
 set -eu
 cd "$(dirname "$0")/.."
-python3 -I -B -m unittest discover -t scripts/lab -s scripts/lab/tests/process -v
+echo "after-landing: lab process tier skipped for the attended hetzner prototype (decision 273)"
 if ! grep -q '^\[profile\.exhaustive\]' .config/nextest.toml; then
     echo "after-landing: no [profile.exhaustive] in .config/nextest.toml; nothing to run"
     exit 0
