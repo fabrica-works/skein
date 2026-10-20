@@ -321,6 +321,16 @@ impl Domain {
         Ok(self.repositories.get(id).expect("live repository name").queue.as_slice())
     }
 
+    /// A branch's protection, without authorization, rate, fault or observation
+    /// effects, for a server describing its own refusal or a world inspecting it.
+    #[must_use]
+    pub fn inspect_protection(&self, repository: &[u8], branch: &[u8]) -> Option<&crate::api::Protection> {
+        let id = self.names.get(repository)?;
+        let stored = self.repositories.get(*id).expect("live repository name");
+        let protection = stored.protection.as_ref()?;
+        if protection.branch.as_ref() == branch { Some(protection) } else { None }
+    }
+
     /// Metadata for the protocol's provider-specific repository document.
     pub fn metadata(&self, repository: &[u8]) -> Result<Metadata, Error> {
         let Some(&id) = self.names.get(repository) else {

@@ -233,3 +233,18 @@ fn comparisons_carry_the_shared_base_of_divergent_and_unrelated_histories() {
     assert_eq!(merge_base, None);
     assert!(!contains_base);
 }
+
+#[test]
+fn inspection_reads_protection_without_client_authorization_or_calls() {
+    let mut configured = setup();
+    let protection = Protection { branch: copy_of(MAIN), contexts: names(&[b"ci"]), approvals: 1, dismiss_stale: true };
+    configured.protection = Some(protection.clone());
+    let h = Harness::with(CALM, configured);
+    let tally = h.domain.tally();
+    assert_eq!(h.domain.inspect_protection(REPOSITORY, MAIN), Some(&protection));
+    assert_eq!(h.domain.inspect_protection(REPOSITORY, b"other"), None);
+    assert_eq!(h.domain.inspect_protection(b"missing/repo", MAIN), None);
+    assert_eq!(h.domain.tally(), tally);
+    let unprotected = Harness::new(CALM);
+    assert_eq!(unprotected.domain.inspect_protection(REPOSITORY, MAIN), None);
+}
