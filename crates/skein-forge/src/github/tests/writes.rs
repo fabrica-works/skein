@@ -255,3 +255,45 @@ fn github_close_replay_and_failures() {
         assert_eq!(finish(&mut plan, body, &mut tables), ended(Err(api::Error::Timeout)));
     }
 }
+
+#[test]
+fn github_reopen_request_and_done() {
+    let mut tables = tables();
+    let mut plan = plan(api::Write::Reopen { number: NUMBER });
+    let request = begin(&mut plan, &mut tables);
+    golden(
+        &request,
+        Method::Patch,
+        b"/repos/acme/widgets/issues/9007199254740993",
+        Some(br#"{"state":"open"}"#),
+        Some(Kind::Done),
+    );
+    let encoded = request::encode(&request, &limits()).unwrap();
+    assert_eq!(
+        crate::github::server::write_body(request.clone(), encoded.body.as_deref().unwrap(), &limits()),
+        Some(request.clone())
+    );
+    let size = u32::try_from(encoded.body.unwrap().len()).unwrap();
+    for (body_bytes, ok) in [(size, true), (size - 1, false)] {
+        assert_eq!(request::encode(&request, &crate::github::limits::Limits { body_bytes, ..limits() }).is_ok(), ok);
+    }
+    head(&mut plan, 200, &mut tables);
+    assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+}
+#[test]
+fn github_reopen_replay_and_failures() {
+    for _attempt in 0_u32..2 {
+        let mut tables = tables();
+        let mut plan = plan(api::Write::Reopen { number: NUMBER });
+        begin(&mut plan, &mut tables);
+        head(&mut plan, 200, &mut tables);
+        assert_eq!(finish(&mut plan, Body::Document(Document::Done), &mut tables), ended(Ok(api::Answer::Done)));
+    }
+    for status in [409, 422] {
+        let mut tables = tables();
+        let mut plan = plan(api::Write::Reopen { number: NUMBER });
+        begin(&mut plan, &mut tables);
+        head(&mut plan, status, &mut tables);
+        assert_eq!(finish(&mut plan, refusal(b"unknown"), &mut tables), ended(Err(api::Error::Refused)));
+    }
+}

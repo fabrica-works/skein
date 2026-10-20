@@ -47,14 +47,13 @@ impl Plan {
             return Err(api::Error::InvalidAnswer);
         }
         match self.write {
-            api::Write::DeleteBranch { .. } | api::Write::Close { .. } => {}
+            api::Write::DeleteBranch { .. } | api::Write::Close { .. } | api::Write::Reopen { .. } => {}
             api::Write::CreateIssue { .. }
             | api::Write::OpenPull { .. }
             | api::Write::Post { .. }
             | api::Write::Review { .. }
             | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
-            | api::Write::Reopen { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
             | api::Write::Status { .. }
@@ -82,6 +81,7 @@ impl Plan {
         let owner = row.owner.clone();
         let name = row.name.clone();
         let request = match &self.write {
+            api::Write::Reopen { number } => Request::Reopen { owner, name, number: *number },
             api::Write::Close { number } => Request::Close { owner, name, number: *number },
             api::Write::DeleteBranch { branch } => Request::DeleteBranch { owner, name, branch: branch.clone() },
             api::Write::CreateIssue { .. }
@@ -90,7 +90,6 @@ impl Plan {
             | api::Write::Review { .. }
             | api::Write::Edit { .. }
             | api::Write::SetReviewers { .. }
-            | api::Write::Reopen { .. }
             | api::Write::Merge { .. }
             | api::Write::Update { .. }
             | api::Write::Status { .. }

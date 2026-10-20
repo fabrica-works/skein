@@ -210,6 +210,13 @@ fn parse(body: &[u8], specs: &[Field], limits: &Limits) -> Option<Fields> {
 #[must_use]
 pub fn write_body(request: Request, body: &[u8], limits: &Limits) -> Option<Request> {
     match request {
+        Request::Reopen { owner, name, number } => {
+            let fields = parse(body, &[Field { key: b"state", body: false, required: true }], limits)?;
+            if fields.get(b"state")? != b"open" {
+                return None;
+            }
+            Some(Request::Reopen { owner, name, number })
+        }
         Request::Close { owner, name, number } => {
             let fields = parse(body, &[Field { key: b"state", body: false, required: true }], limits)?;
             if fields.get(b"state")? != b"closed" {

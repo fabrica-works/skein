@@ -23,6 +23,7 @@ fn github_decode_kind_names_each_documented_answer() {
         (Request::Reachable { page: 1, per_page: 100 }, Kind::ReachableRows),
         (Request::Viewer, Kind::Viewer),
         (Request::App, Kind::App),
+        (Request::Reopen { owner: owner(), name: name(), number: 9 }, Kind::Done),
         (Request::Close { owner: owner(), name: name(), number: 9 }, Kind::Done),
         (Request::HookConfig, Kind::HookConfig),
         (Request::SetHook { url: Box::from(*b"https://example.test/hook") }, Kind::HookConfig),

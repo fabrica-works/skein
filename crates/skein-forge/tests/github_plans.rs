@@ -359,7 +359,6 @@ fn github_plans_writes_refused() {
         api::Write::Review { number: 1, key: Box::from([]), verdict: api::Verdict::Approve, body: Box::from([]) },
         api::Write::Edit { number: 1, title: None, body: None },
         api::Write::SetReviewers { number: 1, reviewers: Box::from([]) },
-        api::Write::Reopen { number: 1 },
         api::Write::Merge { number: 1, head: [0; 32] },
         api::Write::Update { number: 1 },
         api::Write::Status { commit: [0; 32], context: Box::from([]), check: api::Check::Pending },
