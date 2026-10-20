@@ -26,7 +26,10 @@ fn github_fake_issues_and_comments_drive_the_dialect_plans() {
             panic!("items answer")
         };
         assert_eq!(actual, more);
-        assert_eq!(items.iter().map(|item| item.number).collect::<Vec<_>>(), expected);
+        assert_eq!(items.len(), expected.len());
+        for (item, expected) in items.iter().zip(expected) {
+            assert_eq!(item.number, *expected);
+        }
     }
     let api::Answer::Item { item, comments, more } =
         r::read(&mut h, &token, api::Read::Item { number: first, after: 0 }).expect("item and paged comments plan")
@@ -35,11 +38,11 @@ fn github_fake_issues_and_comments_drive_the_dialect_plans() {
     };
     assert_eq!(item.number, first);
     assert_eq!(item.title.as_ref(), b"first");
-    assert_eq!(
-        comments.iter().map(|comment| comment.body.as_ref()).collect::<Vec<_>>(),
-        [b"one".as_slice(), b"two", b"three"]
-    );
-    assert!(comments.iter().all(|comment| comment.provenance == api::Provenance::Original));
+    assert_eq!(comments.len(), 3);
+    for (comment, body) in comments.iter().zip([b"one".as_slice(), b"two", b"three"]) {
+        assert_eq!(comment.body.as_ref(), body);
+        assert_eq!(comment.provenance, api::Provenance::Original);
+    }
     assert!(!more);
     let api::Answer::Item { comments: after, .. } =
         r::read(&mut h, &token, api::Read::Item { number: first, after: comments.first().expect("first comment").id })
@@ -74,10 +77,10 @@ fn github_fake_issues_list_pulls_in_the_same_numbering() {
     else {
         panic!("items")
     };
-    assert_eq!(
-        items.iter().map(|item| (item.number, item.kind)).collect::<Vec<_>>(),
-        [(issue, api::Kind::Issue), (pull, api::Kind::Pull)]
-    );
+    assert_eq!(items.len(), 2);
+    for (item, (number, kind)) in items.iter().zip([(issue, api::Kind::Issue), (pull, api::Kind::Pull)]) {
+        assert_eq!((item.number, item.kind), (number, kind));
+    }
     let api::Answer::Items { items, .. } =
         r::read(&mut h, &token, api::Read::Items { since: Time::ZERO, page: 1, kind: Some(api::Kind::Issue) })
             .expect("kind filtering")
@@ -121,11 +124,13 @@ fn github_fake_issue_routes_refuse_outside_installation_and_invalid_pages() {
         per_page: 100,
     };
     let events = r::events(&mut h, &request, &token);
-    assert_eq!(
-        events.iter().filter(|event| matches!(event, skein_forge::github::plans::Heard::Row(Row::Issue(_)))).count(),
-        2,
-        "scenario page cap"
-    );
+    let mut rows = 0_u32;
+    for event in events.into_boxed() {
+        if let skein_forge::github::plans::Heard::Row(Row::Issue(_)) = event {
+            rows = rows.checked_add(1).unwrap();
+        }
+    }
+    assert_eq!(rows, 2, "scenario page cap");
     for target in [
         b"/repos/acme/widgets/issues/1/comments?per_page=0&page=1".as_slice(),
         b"/repos/acme/widgets/issues/1/comments?per_page=1&page=0",

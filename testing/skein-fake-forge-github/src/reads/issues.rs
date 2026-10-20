@@ -82,7 +82,7 @@ pub(super) fn comments(answer: a::Answer, target: &[u8], page: u32, size: u32, l
 }
 // The domain supplies a page and a more bit. One row beyond it is enough
 // to advertise the next page; the caller discovers the remaining pages in turn.
-fn listing(page: u32, size: u32, rows: u32, more: bool) -> Option<Page> {
+pub(super) fn listing(page: u32, size: u32, rows: u32, more: bool) -> Option<Page> {
     let total = u64::from(page.checked_sub(1)?)
         .checked_mul(u64::from(size))?
         .checked_add(u64::from(rows))?

@@ -65,14 +65,25 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         Request::Comments { owner, name, number, page, per_page } if page > 0 && per_page > 0 => {
             Route::Token(Token::Read(reads::Read::Comments { owner, name, number, page, per_page }))
         }
+        Request::Pull { owner, name, number } => Route::Token(Token::Read(reads::Read::Pull { owner, name, number })),
+        Request::PullsFor { owner, name, head, base, open } => {
+            Route::Token(Token::Read(reads::Read::PullsFor { owner, name, head, base, open }))
+        }
+        Request::PullFiles { owner, name, number, page, per_page } if page > 0 && per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::PullFiles { owner, name, number, page, per_page }))
+        }
+        Request::Compare { owner, name, before, after, per_page } if per_page > 0 => {
+            Route::Token(Token::Read(reads::Read::Compare { owner, name, before, after, per_page }))
+        }
+        Request::Raw { owner, name, commit, path } => {
+            Route::Token(Token::Read(reads::Read::Raw { owner, name, commit, path }))
+        }
         Request::Installations { .. }
         | Request::Reachable { .. }
         | Request::Branches { .. }
         | Request::Viewer
         | Request::Issues { .. }
         | Request::Comments { .. }
-        | Request::Pull { .. }
-        | Request::PullsFor { .. }
         | Request::Reviews { .. }
         | Request::ReviewComments { .. }
         | Request::CombinedStatus { .. }
@@ -81,7 +92,6 @@ pub(crate) fn decode(method: Method, target: &[u8], limits: &Limits) -> Option<R
         | Request::JobLog { .. }
         | Request::PullFiles { .. }
         | Request::Compare { .. }
-        | Request::Raw { .. }
         | Request::RulesForBranch { .. }
         | Request::Ruleset { .. }
         | Request::ClassicProtection { .. }

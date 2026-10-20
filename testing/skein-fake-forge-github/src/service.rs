@@ -119,7 +119,7 @@ pub struct Response {
     pub status: u16,
     /// Optional absolute next and last links.
     pub link: Option<Box<[u8]>>,
-    /// JSON document, or empty on 204.
+    /// JSON document, raw file bytes, or empty on 204.
     pub body: Box<[u8]>,
 }
 impl core::fmt::Debug for Response {
@@ -580,6 +580,12 @@ pub fn worst_case(limits: &Limits, config: &Config) -> Option<u64> {
             u64::from(limits.github.string_bytes).checked_mul(2)?.checked_mul(u64::from(limits.github.inner))?,
         )?;
     bytes = bytes.checked_add(app_lists.checked_mul(2)?)?;
+    // Compare moves file paths from the caller-owned domain reply into at
+    // most 300 descriptors, alongside one page of commit ids. Those bounded
+    // vectors coexist with the response encoder; file contents are dropped.
+    bytes = bytes
+        .checked_add(List::<d::File>::worst_case(300)?)?
+        .checked_add(List::<skein_forge::api::Commit>::worst_case(limits.page)?)?;
     let row_bytes = u64::from(limits.github.string_bytes).checked_mul(4)?.checked_add(256)?;
     bytes
         .checked_add(row_bytes.checked_mul(u64::from(limits.page))?)?

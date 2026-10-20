@@ -17,10 +17,16 @@ use skein_forge::{
 use skein_lib::{List, ReplyTo, Wall, bytes};
 
 mod issues;
+mod pulls;
 
 #[derive(Debug)]
 pub(crate) enum Read {
     Repository(u64),
+    Pull { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
+    PullsFor { owner: Box<[u8]>, name: Box<[u8]>, head: Box<[u8]>, base: Box<[u8]>, open: bool },
+    PullFiles { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
+    Compare { owner: Box<[u8]>, name: Box<[u8]>, before: api::Commit, after: api::Commit, per_page: u32 },
+    Raw { owner: Box<[u8]>, name: Box<[u8]>, commit: api::Commit, path: Box<[u8]> },
     Issues { owner: Box<[u8]>, name: Box<[u8]>, since: Wall, page: u32, per_page: u32 },
     Issue { owner: Box<[u8]>, name: Box<[u8]>, number: u64 },
     Comments { owner: Box<[u8]>, name: Box<[u8]>, number: u64, page: u32, per_page: u32 },
@@ -31,6 +37,11 @@ pub(crate) enum Read {
 #[derive(Debug)]
 pub(crate) enum Pending {
     Repository(Row),
+    Pull,
+    PullsFor { open: bool },
+    PullFiles { target: Box<[u8]>, page: u32, size: u32 },
+    Compare { size: u32 },
+    Raw,
     Issues { target: Box<[u8]>, page: u32, size: u32 },
     Issue,
     Comments { target: Box<[u8]>, page: u32, size: u32 },
@@ -40,7 +51,12 @@ pub(crate) enum Pending {
 fn row<'a>(service: &'a Service, read: &Read) -> Option<&'a Row> {
     match read {
         Read::Repository(id) => service.repositories.get(&u32::try_from(*id).ok()?),
-        Read::Issues { owner, name, .. }
+        Read::Pull { owner, name, .. }
+        | Read::PullsFor { owner, name, .. }
+        | Read::PullFiles { owner, name, .. }
+        | Read::Compare { owner, name, .. }
+        | Read::Raw { owner, name, .. }
+        | Read::Issues { owner, name, .. }
         | Read::Issue { owner, name, .. }
         | Read::Comments { owner, name, .. }
         | Read::Locate { owner, name }
@@ -76,6 +92,29 @@ pub(crate) fn call(
         return Outcome::Reply(answers::failed());
     };
     let (kind, op) = match read {
+        Read::Pull { number, .. } => (Pending::Pull, Op::Read(a::Read::Pull { number })),
+        Read::PullsFor { head, base, open, .. } => {
+            (Pending::PullsFor { open }, Op::Read(a::Read::PullFor { head, base }))
+        }
+        Read::PullFiles { number, page, per_page, .. } => (
+            Pending::PullFiles { target: bytes::copy_of(target), page, size: per_page.min(service.limits.page) },
+            Op::Read(a::Read::PullFiles { number, page, limit: per_page.min(service.limits.page) }),
+        ),
+        Read::Compare { before, after, per_page, .. } => {
+            let (Some(base), Some(head)) = (count(&before), count(&after)) else {
+                return Outcome::Reply(answers::missing(&service.limits));
+            };
+            (
+                Pending::Compare { size: per_page.min(service.limits.page) },
+                Op::Read(a::Read::Compare { base, head, page: 1, limit: per_page.min(service.limits.page) }),
+            )
+        }
+        Read::Raw { commit, path, .. } => {
+            let Some(commit) = count(&commit) else {
+                return Outcome::Reply(answers::missing(&service.limits));
+            };
+            (Pending::Raw, Op::Read(a::Read::File { commit, path }))
+        }
         Read::Issues { since, page, per_page, .. } => (
             Pending::Issues { target: bytes::copy_of(target), page, size: per_page.min(service.limits.page) },
             Op::Read(a::Read::Items {
@@ -120,47 +159,54 @@ fn commit(count: u64) -> api::Commit {
     object(count).bytes
 }
 
+// Reject a non-domain SHA rather than silently folding it onto a stored count.
+fn count(value: &api::Commit) -> Option<u64> {
+    let first = value.get(..8)?.try_into().ok()?;
+    let count = u64::from_be_bytes(first);
+    if commit(count) == *value { Some(count) } else { None }
+}
+
 pub(crate) fn finish(pending: service::Pending, result: Result<Answer, Error>, limits: &Limits) -> Response {
+    let result = match &pending.kind {
+        Pending::PullsFor { .. } => match result {
+            Err(Error::Missing(a::What::Item | a::What::Pull)) => {
+                return answers::response(200, &Body::Pulls(&[]), limits);
+            }
+            result => result,
+        },
+        Pending::Repository(_)
+        | Pending::Issues { .. }
+        | Pending::Issue
+        | Pending::Comments { .. }
+        | Pending::Branch(_)
+        | Pending::Branches { .. }
+        | Pending::Pull
+        | Pending::PullFiles { .. }
+        | Pending::Compare { .. }
+        | Pending::Raw => result,
+    };
     let answer = match result {
         Ok(answer) => answer,
         Err(error) => return refused(error, limits),
     };
     match pending.kind {
+        Pending::Pull => pulls::pull(answer, limits),
+        Pending::PullsFor { open } => pulls::pulls_for(answer, open, limits),
+        Pending::PullFiles { target, page, size } => pulls::files(answer, &target, page, size, limits),
+        Pending::Compare { size } => pulls::compare(answer, size, limits),
+        Pending::Raw => {
+            let Answer::File(body) = answer else {
+                return answers::failed();
+            };
+            if body.len() > usize::try_from(limits.response).expect("response bound") {
+                return answers::failed();
+            }
+            Response { status: 200, link: None, body }
+        }
         Pending::Issues { target, page, size } => issues::items(answer, &target, page, size, limits),
         Pending::Issue => issues::item(answer, limits),
         Pending::Comments { target, page, size } => issues::comments(answer, &target, page, size, limits),
-        Pending::Repository(row) => {
-            let Answer::Settings(settings) = answer else {
-                return answers::failed();
-            };
-            let Ok(length) = u32::try_from(settings.default.len()) else {
-                return answers::failed();
-            };
-            if length > limits.github.string_bytes {
-                return answers::failed();
-            }
-            let Some(full) = full(&row) else {
-                return answers::failed();
-            };
-            // Routing/owner data is GitHub's table; settings and default come
-            // only from the domain. html_url uses GitHub's public web origin.
-            let Some(html_url) = service::joined(b"https://github.com/", &full) else {
-                return answers::failed();
-            };
-            let document = d::Repository {
-                id: u64::from(row.id),
-                owner: row.owner,
-                owner_id: row.owner_id,
-                organization: row.organization,
-                name: row.name,
-                default_branch: settings.default,
-                html_url,
-                merge: settings.merge,
-                squash: settings.squash,
-                rebase: settings.rebase,
-            };
-            answers::response(200, &Body::Repository(&document), limits)
-        }
+        Pending::Repository(row) => repository(row, answer, limits),
         Pending::Branch(name) => {
             let Answer::Commit(count) = answer else {
                 return answers::failed();
@@ -215,4 +261,38 @@ fn refused(error: Error, limits: &Limits) -> Response {
         | Error::Unreachable
         | Error::Refused => answers::failed(),
     }
+}
+
+fn repository(row: Row, answer: Answer, limits: &Limits) -> Response {
+            let Answer::Settings(settings) = answer else {
+                return answers::failed();
+            };
+            let Ok(length) = u32::try_from(settings.default.len()) else {
+                return answers::failed();
+            };
+            if length > limits.github.string_bytes {
+                return answers::failed();
+            }
+            let Some(full) = full(&row) else {
+                return answers::failed();
+            };
+            // Routing/owner data is GitHub's table; settings and default come
+            // only from the domain. html_url uses GitHub's public web origin.
+            let Some(html_url) = service::joined(b"https://github.com/", &full) else {
+                return answers::failed();
+            };
+            let document = d::Repository {
+                id: u64::from(row.id),
+                owner: row.owner,
+                owner_id: row.owner_id,
+                organization: row.organization,
+                name: row.name,
+                default_branch: settings.default,
+                html_url,
+                merge: settings.merge,
+                squash: settings.squash,
+                rebase: settings.rebase,
+            };
+            answers::response(200, &Body::Repository(&document), limits)
+
 }

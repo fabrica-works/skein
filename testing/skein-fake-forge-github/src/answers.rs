@@ -24,6 +24,10 @@ pub(crate) enum Body<'a> {
     Issues(&'a [d::Issue]),
     Issue(&'a d::Issue),
     Comments(&'a [d::Comment]),
+    Pull(&'a d::Pull),
+    Pulls(&'a [d::Pull]),
+    Files(&'a [d::File]),
+    Compare(&'a d::Compare, &'a [skein_forge::api::Commit], &'a [d::File]),
     Refusal(&'a [u8]),
 }
 fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
@@ -44,6 +48,10 @@ fn encode(body: &Body<'_>, out: &mut Writer) -> Result<(), Overflow> {
         Body::Issues(rows) => server::issues(rows, out),
         Body::Issue(row) => server::issue(row, out),
         Body::Comments(rows) => server::comments(rows, out),
+        Body::Pull(row) => server::pull(row, out),
+        Body::Pulls(rows) => server::pulls(rows, out),
+        Body::Files(rows) => server::file_rows(rows, out),
+        Body::Compare(row, commits, files) => server::compare(row, commits, files, out),
         Body::Refusal(message) => server::refusal(message, &[], out),
     }
 }

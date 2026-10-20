@@ -66,6 +66,11 @@ fn response_events(h: &f::Harness, request: &Request, response: Response) -> Lis
     if let Some(link) = &response.link {
         github::header::field(&mut head, b"Link", link, &h.limits.github);
     }
+    if response.status == 200 && github::decode::kind(request).is_none() {
+        events.push(Heard::Head { status: response.status, head }).expect("head room");
+        events.push(Heard::Done(Body::Raw { bytes: response.body, more: false })).expect("raw room");
+        return events;
+    }
     let kind = if response.status == 200 { github::decode::kind(request).expect("JSON read") } else { Kind::Error };
     let (rows, document) = h.decode(kind, &response);
     events.push(Heard::Head { status: response.status, head }).expect("head room");
@@ -79,12 +84,12 @@ pub fn read(h: &mut f::Harness, token: &Secret, read: api::Read) -> Result<api::
     let mut plan = Plan::new(api::Repository { forge: 1, repository: 2 }, read);
     let mut tables = Tables::new(4, 8);
     let mut step = plan.begin(bounds(), b"example-app", &mut tables).expect("begin read plan");
-    for _exchange in 0..64 {
+    for _exchange in 0..64_u32 {
         let exchange = match step {
             Step::Done(result) => return result,
             Step::Send(exchange) => exchange,
         };
-        let events = events(h, &exchange.request, token);
+        let events = exchange_events(h, &exchange, token);
         let mut next = None;
         for event in events.into_boxed() {
             next = plan.heard(event, bounds(), b"example-app", &mut tables).expect("ordered exchange");
@@ -95,4 +100,93 @@ pub fn read(h: &mut f::Harness, token: &Secret, read: api::Read) -> Result<api::
         step = next.expect("exchange advances plan");
     }
     panic!("plan settles within fixture bound")
+}
+
+pub fn exchange_events(h: &mut f::Harness, exchange: &github::plans::plan::Exchange, token: &Secret) -> List<Heard> {
+    let encoded = github::request::encode(&exchange.request, &h.limits.github).expect("encoded exchange");
+    let response = h.ask(encoded.method, &encoded.target, Some(token.expose()), encoded.body.as_deref().unwrap_or(b""));
+    if response.status != 200 {
+        return response_events(h, &exchange.request, response);
+    }
+    if exchange.comparison == github::plans::plan::Comparison::MergeBase {
+        let (rows, document) =
+            f::decode_with(github::decode::merge_base_decoder(&h.limits.github), &response.body, &h.limits.github);
+        assert_eq!(rows.len(), 0);
+        let mut events = List::with_capacity(2);
+        events.push(Heard::Head { status: 200, head: Head::new() }).unwrap();
+        events.push(Heard::Done(Body::Document(document))).unwrap();
+        return events;
+    }
+    let mut events = response_events(h, &exchange.request, response);
+    if let Some(retention) = exchange.retention {
+        for index in 0..events.len() {
+            let event = events.get_mut(index).unwrap();
+            if let Heard::Done(Body::Raw { bytes, more }) = event {
+                let cap = match retention {
+                    github::plans::plan::Retention::Head { bytes }
+                    | github::plans::plan::Retention::Whole { bytes }
+                    | github::plans::plan::Retention::Tail { bytes } => usize::try_from(bytes).unwrap(),
+                };
+                if bytes.len() > cap {
+                    *more = true;
+                    *bytes = f::boxed(bytes.get(..cap).unwrap());
+                }
+            }
+        }
+    }
+    events
+}
+pub fn select_pull(h: &mut f::Harness, token: &Secret, read: api::Read) -> github::document::Pull {
+    let mut plan = Plan::new(api::Repository { forge: 1, repository: 2 }, read);
+    let mut tables = Tables::new(4, 8);
+    let mut step = plan.begin(bounds(), b"example-app", &mut tables).unwrap();
+    let mut pull = None;
+    for _exchange in 0..8_u32 {
+        let Step::Send(exchange) = step else { panic!("pull selection reaches CI") };
+        if github::decode::kind(&exchange.request) == Some(Kind::CombinedStatus) {
+            return pull.expect("selected pull document");
+        }
+        let mut next = None;
+        for event in exchange_events(h, &exchange, token).into_boxed() {
+            if let Heard::Done(Body::Document(github::document::Document::Pull(row))) = &event {
+                pull = Some(row.clone());
+            }
+            next = plan.heard(event, bounds(), b"example-app", &mut tables).unwrap();
+            if next.is_some() {
+                break;
+            }
+        }
+        step = next.expect("plan advances");
+    }
+    panic!("selection bound")
+}
+pub fn object(count: u64) -> api::Commit {
+    let mut bytes = [0; 32];
+    for (out, byte) in bytes.iter_mut().zip(count.to_be_bytes()) {
+        *out = byte;
+    }
+    bytes
+}
+pub fn pull(h: &mut f::Harness) -> (u64, u64) {
+    let first = h.first;
+    let tree = Box::from([
+        a::File { path: f::boxed(b"one"), content: f::boxed(b"one contents") },
+        a::File { path: f::boxed(b"two"), content: f::boxed(b"two contents") },
+        a::File { path: f::boxed(b"three"), content: f::boxed(b"three contents") },
+    ]);
+    let commit = fake::commit(&mut h.domain, &h.env.limits, first, tree, b"feature").unwrap().unwrap();
+    call(h, a::Op::Git(a::Git::Push { branch: f::boxed(b"feature"), commit, expected: None }));
+    let a::Answer::Created(number) = call(
+        h,
+        a::Op::Write(a::Write::OpenPull {
+            title: f::boxed(b"feature"),
+            body: f::boxed(b"pull body"),
+            head: f::boxed(b"feature"),
+            base: f::boxed(b"trunk"),
+            opens_empty: false,
+        }),
+    ) else {
+        panic!("created pull")
+    };
+    (number, commit)
 }

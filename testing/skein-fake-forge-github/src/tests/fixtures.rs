@@ -247,9 +247,15 @@ impl Harness {
     }
 }
 pub fn decode_body(kind: DocumentKind, body: &[u8], limits: &github::limits::Limits) -> (List<DocumentRow>, Document) {
+    decode_with(decode::decoder(kind, limits), body, limits)
+}
+pub fn decode_with(
+    mut decoder: decode::Decoder,
+    body: &[u8],
+    limits: &github::limits::Limits,
+) -> (List<DocumentRow>, Document) {
     let env = Env { now: Time::ZERO, wall: Wall::EPOCH, limits: limits.json };
     let mut tokenizer = tokenizer::Tokenizer::new(&limits.json);
-    let mut decoder = decode::decoder(kind, limits);
     let mut above = Queue::with_capacity(1);
     let mut below = Queue::with_capacity(1);
     let mut intake = Intake::with_capacity(
