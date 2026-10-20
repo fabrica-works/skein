@@ -56,6 +56,7 @@ pub(crate) struct Runner<'a> {
     pub serial: usize,
     tables: github::plans::tables::Tables,
     repositories: std::collections::BTreeMap<String, u64>,
+    null_pulls: std::collections::BTreeSet<u64>,
     request_bytes: Vec<u8>,
     response_bytes: Vec<u8>,
     pub leftover_mints: Vec<String>,
@@ -102,10 +103,14 @@ impl<'a> Runner<'a> {
             serial: 0,
             tables: github::plans::tables::Tables::new(16, 512),
             repositories: std::collections::BTreeMap::new(),
+            null_pulls: std::collections::BTreeSet::new(),
             request_bytes: vec![],
             response_bytes: vec![],
             leftover_mints: vec![],
         }
+    }
+    pub fn created_pull_null(&self, number: u64) -> bool {
+        self.null_pulls.contains(&number)
     }
     pub fn fake(&self) -> bool {
         matches!(self.target, Target::Fake(_))
@@ -132,7 +137,8 @@ impl<'a> Runner<'a> {
             .iter()
             .map(|(_, made)| match made {
                 Made::Mint { .. } | Made::Branch { .. } | Made::Access { .. } => 1,
-                Made::Pull { .. } | Made::Issue { .. } | Made::Rules { .. } => 2,
+                Made::Pull { .. } | Made::Issue { .. } => 3,
+                Made::Rules { .. } => 2,
             })
             .sum();
         if self.requests >= 400
@@ -151,6 +157,7 @@ impl<'a> Runner<'a> {
             Target::Fake(w) => w.exchange(request)?,
             Target::Live(c) => c.exchange(request)?,
         };
+        self.record_created(request, &response)?;
         let credentials = request.target.ends_with("/access_tokens") || request.target.ends_with("/conversions");
         if credentials && response.status == 201 {
             let j = response.json()?;
@@ -189,9 +196,56 @@ impl<'a> Runner<'a> {
         let body = self.mask.body(&response.body, credentials);
         let masked_response = crate::wire::framed(&head, &body);
         write::check(self.case, &masked_request, &masked_response, &self.secrets)?;
+        if !self.request_bytes.is_empty() {
+            self.request_bytes.extend_from_slice(b"\r\n");
+            self.response_bytes.extend_from_slice(b"\r\n");
+        }
         self.request_bytes.extend_from_slice(&masked_request);
         self.response_bytes.extend_from_slice(&masked_response);
         Ok(response)
+    }
+    fn record_created(&mut self, request: &Request, response: &Response) -> Result<()> {
+        if request.method == Method::Post
+            && (response.status == 201 || (400..500).contains(&response.status))
+            && (request.target.ends_with("/issues") || request.target.ends_with("/pulls"))
+        {
+            let input = json::Json::parse(&request.body)?;
+            let id = self.journal.pending.iter().rev().find_map(|(id, made)| match made {
+                Made::Issue { repo, title }
+                    if request.target == format!("/repos/{repo}/issues") && input.root().get("title").is(title) =>
+                {
+                    Some(*id)
+                }
+                Made::Pull { repo, head, base }
+                    if request.target == format!("/repos/{repo}/pulls")
+                        && input.root().get("head").is(head)
+                        && input.root().get("base").is(base) =>
+                {
+                    Some(*id)
+                }
+                Made::Branch { .. }
+                | Made::Pull { .. }
+                | Made::Issue { .. }
+                | Made::Rules { .. }
+                | Made::Access { .. }
+                | Made::Mint { .. } => None,
+            });
+            if response.status == 201 {
+                let id = id.ok_or("created object has no write-ahead entry")?;
+                let number = response.json()?.root().get("number").u64().ok_or("created number absent")?;
+                self.journal.created(id, number, &self.secrets)?;
+                if request.target.ends_with("/pulls")
+                    && response.json()?.root().get("mergeable").kind() == Some(skein_json::Kind::Null)
+                {
+                    self.null_pulls.insert(number);
+                }
+            } else if let Some(id) = id
+                && !self.journal.numbers.contains_key(&id)
+            {
+                self.journal.cancel(id, &self.secrets)?;
+            }
+        }
+        Ok(())
     }
     pub fn raw(&mut self, method: Method, target: impl Into<String>, token: &str, body: &[u8]) -> Result<Response> {
         self.ask(&Request::new(method, target, (!token.is_empty()).then_some(token), body))
@@ -234,6 +288,13 @@ impl<'a> Runner<'a> {
         )?;
         if response.status != 201 {
             return Err("mint was refused".into());
+        }
+        if contents {
+            if response.json()?.root().get("permissions").kind() != Some(skein_json::Kind::ObjectStart) {
+                return Err("mint permissions object absent".into());
+            }
+            self.provenance
+                .push("# token-narrowed-not-enforced mint permissions object recorded in response transcript".into());
         }
         Ok(response.json()?.root().get("token").str().ok_or("mint token absent")?.into())
     }
@@ -676,71 +737,57 @@ impl<'a> Runner<'a> {
                     return Err("branch cleanup refused".into());
                 }
             }
-            Made::Pull { repo, head, base } => {
+            Made::Pull { repo, .. } | Made::Issue { repo, .. } => {
                 let owner = repo.split_once('/').ok_or("invalid cleanup repository")?.0;
                 let token = self.fixtures.people.get(owner).ok_or("cleanup owner absent")?.clone();
-                let r = self.raw(
-                    Method::Get,
-                    format!(
-                        "/repos/{repo}/pulls?state=open&head={owner}%3A{}&base={base}&per_page=1",
-                        percent(head.as_bytes())
-                    ),
-                    &token,
-                    b"",
-                )?;
-                if r.status != 200 {
-                    return Err("pull cleanup lookup refused".into());
-                }
-                for row in r.json()?.root().items() {
-                    if let Some(number) = row.get("number").u64() {
-                        let r = self.raw(
-                            Method::Patch,
-                            format!("/repos/{repo}/issues/{number}"),
-                            &token,
-                            br#"{"state":"closed"}"#,
-                        )?;
-                        if r.status != 200 {
-                            return Err("pull cleanup refused".into());
-                        }
-                    }
-                }
-            }
-            Made::Issue { repo, title } => {
-                let owner = repo.split_once('/').ok_or("invalid cleanup repository")?.0;
-                let token = self.fixtures.people.get(owner).ok_or("cleanup owner absent")?.clone();
-                let mut page = 1;
-                loop {
-                    let r = self.raw(
-                    Method::Get,
-                    format!("/repos/{repo}/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page={page}"),
-                    &token,
-                    b"",
-                )?;
-                    if r.status != 200 {
-                        return Err("issue cleanup lookup refused".into());
-                    }
-                    let more = r.header("link").is_some_and(|link| link.contains("rel=\"next\""));
+                if let Some(number) = self.journal.numbers.get(&id).copied() {
+                    self.close_number(repo, number, &token)?;
+                } else {
+                    let mut page = 1;
                     let mut found = false;
-                    for row in r.json()?.root().items() {
-                        if row.get("title").is(title)
-                            && let Some(number) = row.get("number").u64()
-                        {
-                            let r = self.raw(
-                                Method::Patch,
-                                format!("/repos/{repo}/issues/{number}"),
-                                &token,
-                                br#"{"state":"closed"}"#,
-                            )?;
-                            if r.status != 200 {
-                                return Err("issue cleanup refused".into());
-                            }
-                            found = true;
+                    loop {
+                        let target = format!(
+                            "/repos/{repo}/issues?state=all&since=1970-01-01T00%3A00%3A00Z&sort=updated&direction=asc&per_page=100&page={page}"
+                        );
+                        let response = self.raw(Method::Get, target, &token, b"")?;
+                        if response.status != 200 {
+                            return Err("cleanup lookup refused".into());
                         }
+                        let more = response.header("link").is_some_and(|v| v.contains("rel=\"next\""));
+                        for row in response.json()?.root().items() {
+                            let belongs = match made {
+                                Made::Issue { title, .. } => row.get("title").is(title),
+                                Made::Pull { head, base, .. } if row.get("pull_request").kind().is_some() => {
+                                    let number = row.get("number").u64().ok_or("cleanup pull number absent")?;
+                                    let pull =
+                                        self.raw(Method::Get, format!("/repos/{repo}/pulls/{number}"), &token, b"")?;
+                                    if pull.status != 200 {
+                                        return Err("cleanup pull read refused".into());
+                                    }
+                                    let doc = pull.json()?;
+                                    doc.root().get("head").get("ref").is(head)
+                                        && doc.root().get("base").get("ref").is(base)
+                                }
+                                Made::Branch { .. }
+                                | Made::Pull { .. }
+                                | Made::Rules { .. }
+                                | Made::Access { .. }
+                                | Made::Mint { .. } => false,
+                            };
+                            if belongs {
+                                let number = row.get("number").u64().ok_or("cleanup number absent")?;
+                                self.close_number(repo, number, &token)?;
+                                found = true;
+                            }
+                        }
+                        if !more {
+                            break;
+                        }
+                        page += 1;
                     }
-                    if found || !more {
-                        break;
+                    if !found {
+                        return Err("cleanup object not found; intention retained".into());
                     }
-                    page += 1;
                 }
             }
             Made::Rules { repo, name } => {
@@ -782,6 +829,24 @@ impl<'a> Runner<'a> {
             }
         }
         self.journal.done(id, &self.secrets)
+    }
+    fn close_number(&mut self, repo: &str, number: u64, token: &str) -> Result<()> {
+        let target = format!("/repos/{repo}/issues/{number}");
+        let first = self.raw(Method::Get, &target, token, b"")?;
+        if first.status != 200 {
+            return Err("cleanup object read refused".into());
+        }
+        if !first.json()?.root().get("state").is("closed") {
+            let response = self.raw(Method::Patch, &target, token, br#"{"state":"closed"}"#)?;
+            if response.status != 200 {
+                return Err("cleanup close refused".into());
+            }
+            let read = self.raw(Method::Get, &target, token, b"")?;
+            if read.status != 200 || !read.json()?.root().get("state").is("closed") {
+                return Err("cleanup object is not closed; intention retained".into());
+            }
+        }
+        Ok(())
     }
     pub fn complete(&mut self, run: Result<()>) -> Result<()> {
         let cleanup = self.finish();

@@ -33,6 +33,7 @@ pub(crate) struct Journal {
     path: PathBuf,
     pub pending: Vec<(usize, Made)>,
     next: usize,
+    pub numbers: std::collections::BTreeMap<usize, u64>,
 }
 impl Journal {
     pub fn create(out: &Path, live: bool, secrets: &Secrets) -> Result<Self> {
@@ -44,7 +45,7 @@ impl Journal {
         file.write_all(bytes)?;
         file.sync_all()?;
         fs::File::open(out)?.sync_all()?;
-        Ok(Self { path, pending: vec![], next: 0 })
+        Ok(Self { path, pending: vec![], next: 0, numbers: std::collections::BTreeMap::new() })
     }
     fn append(&self, line: &str, secrets: &Secrets) -> Result<()> {
         write::check("journal", line.as_bytes(), b"", secrets)?;
@@ -62,6 +63,16 @@ impl Journal {
         self.append(&format!("make\t{}\t{row}", self.next), secrets)?;
         self.pending.push((self.next, made));
         Ok(self.next)
+    }
+    pub fn created(&mut self, id: usize, number: u64, secrets: &Secrets) -> Result<()> {
+        self.append(&format!("number\t{id}\t{number}"), secrets)?;
+        self.numbers.insert(id, number);
+        Ok(())
+    }
+    pub fn cancel(&mut self, id: usize, secrets: &Secrets) -> Result<()> {
+        self.append(&format!("cancel\t{id}"), secrets)?;
+        self.pending.retain(|(key, _)| *key != id);
+        Ok(())
     }
     pub fn done(&mut self, id: usize, secrets: &Secrets) -> Result<()> {
         self.append(&format!("done\t{id}"), secrets)?;
@@ -89,11 +100,18 @@ impl Journal {
             Some("github-conformance-v1\tfake") => false,
             _ => return Err("unknown journal format".into()),
         };
-        let mut result = Self { path, pending: vec![], next: 0 };
+        let mut result = Self { path, pending: vec![], next: 0, numbers: std::collections::BTreeMap::new() };
         for line in lines {
             let parts: Vec<_> = line.split('\t').collect();
             match parts.as_slice() {
-                ["done", id] => {
+                ["number", id, number] => {
+                    let id: usize = id.parse()?;
+                    if !result.pending.iter().any(|(key, _)| *key == id) {
+                        return Err("number has no pending intention".into());
+                    }
+                    result.numbers.insert(id, number.parse()?);
+                }
+                ["done" | "cancel", id] => {
                     let id: usize = id.parse()?;
                     result.pending.retain(|(key, _)| *key != id);
                 }

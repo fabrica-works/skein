@@ -17,7 +17,7 @@ use skein_forge_conformance::{
 
 pub(crate) const NAMES: &[&str] = &[
     "token-expires-in-an-hour",
-    "token-narrowed-refused",
+    "token-narrowed-not-enforced",
     "rate-core-5000",
     "jwt-calls-no-rate",
     "viewer-is-bot",
@@ -27,7 +27,7 @@ pub(crate) const NAMES: &[&str] = &[
     "mergeable-null-then-settles",
     "combined-pending-with-no-status",
     "job-log-302-blob",
-    "job-log-range-ignored",
+    "job-log-range-honoured",
     "merge-stale-409",
     "merge-after-move-405-not-mergeable",
     "merge-unheld-by-ci",
@@ -62,7 +62,8 @@ pub(crate) const NAMES: &[&str] = &[
     "refs-422-exists",
     "refs-delete-missing-422",
     "update-conflict-422",
-    "merge-closed-405-not-mergeable",
+    "merge-repeat-idempotent",
+    "merge-repeat-stale-409",
     "compare-files-capped-300",
     "comment-updated-at-on-edit",
     "inactive-hook-visible",
@@ -159,6 +160,9 @@ fn rule(r: &mut Runner<'_>, base: &str, approvals: u64, queue: bool, bypass: boo
         out.array_start();
         out.string(format!("refs/heads/{base}").as_bytes());
         out.array_end();
+        out.key(b"exclude");
+        out.array_start();
+        out.array_end();
         out.object_end();
         out.object_end();
         out.key(b"bypass_actors");
@@ -183,6 +187,15 @@ fn rule(r: &mut Runner<'_>, base: &str, approvals: u64, queue: bool, bypass: boo
         out.object_start();
         out.key(b"required_approving_review_count");
         out.unsigned(approvals);
+        for name in [
+            b"dismiss_stale_reviews_on_push".as_slice(),
+            b"require_code_owner_review",
+            b"require_last_push_approval",
+            b"required_review_thread_resolution",
+        ] {
+            out.key(name);
+            out.boolean(false);
+        }
         out.object_end();
         out.object_end();
         if queue {
@@ -246,14 +259,27 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
             .ok_or("mint expiry absent")?;
         Ok(response.status == 201 && expires.as_nanos().abs_diff(before + 3_600_000_000_000) < 2_000_000_000)
     })?;
-    case(r, "token-narrowed-refused", |r| {
+    case(r, "token-narrowed-not-enforced", |r| {
         let token = r.mint(0, true)?;
         let repo = r.repo(0)?;
-        let title = r.name("refused-issue");
+        let title = r.name("narrowed-issue");
         r.before(Made::Issue { repo: repo.clone(), title: title.clone() })?;
-        let body = json::object(&[("title", &title)])?;
+        let body = json::object(&[("body", &title), ("title", &title)])?;
         let response = r.raw(Method::Post, format!("/repos/{repo}/issues"), &token, &body)?;
-        Ok(response.is(403, "Resource not accessible by integration"))
+        let accepted = response.header("x-accepted-github-permissions");
+        r.provenance.push(format!(
+            "# token-narrowed-not-enforced issue POST status {} accepted permissions {}",
+            response.status,
+            accepted.unwrap_or("absent")
+        ));
+        if response.status != 201 {
+            return Ok(false);
+        }
+        let number = response.json()?.root().get("number").u64().ok_or("created issue number absent")?;
+        let body = json::object(&[("title", &format!("{title}-edited"))])?;
+        let edited = r.raw(Method::Patch, format!("/repos/{repo}/issues/{number}"), &token, &body)?;
+        r.provenance.push(format!("# token-narrowed-not-enforced issue title PATCH status {}", edited.status));
+        Ok(accepted.is_some() && edited.status == 200)
     })?;
     case(r, "rate-core-5000", |r| {
         let token = r.token(0)?;
@@ -306,15 +332,18 @@ fn authentication(r: &mut Runner<'_>) -> Result<()> {
 fn pulls(r: &mut Runner<'_>) -> Result<()> {
     r.next("mergeable-null-then-settles")?;
     let (base, head, previous, n) = scenario(r, 0, "FAIL")?;
+    let created = pull_doc(r, 0, n)?;
     let sha = r.advance(0, &previous, &head, "FAIL initial move", files("probe.txt", "FAIL initial move"))?;
     let immediate = pull_doc(r, 0, n)?;
     r.wait(4);
     let settled = pull_doc(r, 0, n)?;
     r.fact(
         "mergeable-null-then-settles",
-        immediate.json()?.root().get("mergeable").kind() == Some(skein_json::Kind::Null)
+        (created.json()?.root().get("mergeable").kind() == Some(skein_json::Kind::Null)
+            || immediate.json()?.root().get("mergeable").kind() == Some(skein_json::Kind::Null)
+            || r.created_pull_null(n))
             && settled.json()?.root().get("mergeable").bool().is_some(),
-        "mergeability did not settle from null",
+        "mergeability was not null on create or after a move, then boolean within the wait",
     );
     case(r, "combined-pending-with-no-status", |r| {
         let first = r.base(0)?;
@@ -346,22 +375,42 @@ fn pulls(r: &mut Runner<'_>) -> Result<()> {
     );
     r.wait(4);
     case(r, "etag-304-free", |r| {
-        r.wait(4);
-        let first = r.app(Method::Get, "/app/hook/deliveries?per_page=100", b"")?;
-        let tag = first.header("etag").ok_or("delivery log ETag absent")?.to_owned();
-        let mut request = Request::new(Method::Get, "/app/hook/deliveries?per_page=100", Some(&r.jwt), b"");
+        let repo = r.repo(0)?;
+        let token = r.token(0)?;
+        let target = format!("/repos/{repo}");
+        let first = r.raw(Method::Get, &target, &token, b"")?;
+        let tag = first.header("etag").ok_or("repository ETag absent")?.to_owned();
+        let mut request = Request::new(Method::Get, target, Some(&token), b"");
         request.headers.push(("If-None-Match".into(), tag));
         let second = r.ask(&request)?;
         Ok(first.status == 200
             && second.status == 304
             && second.body.is_empty()
+            && first.header("x-ratelimit-remaining").is_some()
             && first.header("x-ratelimit-remaining") == second.header("x-ratelimit-remaining"))
     })?;
     case(r, "merge-unheld-by-ci", |r| {
         let answer = r.plan(0, api::Op::Write(api::Write::Merge { number: n, head: oid(&moved)? }))?;
         Ok(matches!(answer, Ok(api::Answer::Merged(_))))
     })?;
-    case(r, "merge-closed-405-not-mergeable", |r| Ok(merge(r, n, &moved)?.is(405, "Pull Request is not mergeable")))?;
+    case(r, "merge-repeat-idempotent", |r| {
+        let first = merge(r, n, &moved)?;
+        let second = merge(r, n, &moved)?;
+        let landed = pull_doc(r, 0, n)?;
+        Ok(first.status == 200
+            && second.status == 200
+            && first.json()?.root().get("merged").bool() == Some(true)
+            && second.json()?.root().get("merged").bool() == Some(true)
+            && second.json()?.root().get("message").is("Pull Request successfully merged")
+            && first.json()?.root().get("sha").str() == second.json()?.root().get("sha").str()
+            && first.json()?.root().get("sha").str() == landed.json()?.root().get("merge_commit_sha").str())
+    })?;
+    r.provenance
+        .push("# inferred merge-repeat-stale-409: different-sha repeat merge is 409; live expectation unknown".into());
+    case(r, "merge-repeat-stale-409", |r| {
+        Ok(merge(r, n, "0000000000000000000000000000000000000000")?
+            .is(409, "Head branch was modified. Review and try the merge again."))
+    })?;
     case(r, "update-202-later", |r| {
         let (base, head, sha, n) = scenario(r, 0, "head")?;
         let initial = r.base(0)?;
@@ -414,13 +463,15 @@ fn job_logs(r: &mut Runner<'_>, index: usize, sha: &str) -> Result<()> {
             && matches!(plan, Ok(api::Answer::Job { .. })),
         "job log redirect did not yield a credential-free blob",
     );
-    r.next("job-log-range-ignored")?;
+    r.next("job-log-range-honoured")?;
     request.headers.push(("Range".into(), "bytes=0-0".into()));
     let ranged = r.ask(&request)?;
     r.fact(
-        "job-log-range-ignored",
-        ranged.status == 200 && ranged.body == whole.body,
-        "Range changed the blob response",
+        "job-log-range-honoured",
+        ranged.status == 206
+            && ranged.header("content-range") == Some(format!("bytes 0-0/{}", whole.body.len()).as_str())
+            && ranged.body == whole.body[..1],
+        "Range did not yield the first byte with Content-Range",
     );
     Ok(())
 }
@@ -442,7 +493,8 @@ fn rules(r: &mut Runner<'_>) -> Result<()> {
     )?;
     r.fact(
         "approve-own-422",
-        response.is(422, "Can not approve your own pull request"),
+        response.is(422, "Unprocessable Entity")
+            && response.json()?.root().get("errors").nth(0).is("Review Can not approve your own pull request"),
         "own approval was not refused",
     );
     r.next("ruleset-approval-405")?;

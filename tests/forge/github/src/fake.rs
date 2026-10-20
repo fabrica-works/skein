@@ -58,7 +58,7 @@ fn config() -> domain::Config {
             users: 4,
             bypassing_users: 4,
             labels: 4,
-            items: 64,
+            items: 128,
             comments: 32,
             dependencies: 2,
             reviews: 8,
@@ -109,6 +109,8 @@ pub(crate) struct World {
     peer_pid: Pid,
     client_pid: Pid,
     serial: u64,
+    #[cfg(test)]
+    pub last_wire: Vec<u8>,
 }
 impl World {
     #[expect(clippy::too_many_lines, reason = "one declared fixture binds domain, service and peer limits")]
@@ -227,7 +229,16 @@ impl World {
         let mut sim = Sim::new(23, skein_sim::Config::calm());
         let peer_pid = sim.spawn_process();
         let client_pid = sim.spawn_process();
-        let mut w = Self { peer, forge, sim, peer_pid, client_pid, serial: 0 };
+        let mut w = Self {
+            peer,
+            forge,
+            sim,
+            peer_pid,
+            client_pid,
+            serial: 0,
+            #[cfg(test)]
+            last_wire: vec![],
+        };
         for _ in 0..1000 {
             if w.peer.address().is_some() && w.peer.blob_address().is_some() {
                 return Ok(w);
@@ -272,6 +283,10 @@ impl World {
     }
     pub fn exchange(&mut self, request: &Request) -> Result<(Vec<u8>, Response)> {
         let wire = request.wire("127.0.0.1")?;
+        #[cfg(test)]
+        {
+            self.last_wire = wire.clone();
+        }
         let socket = self.client(Op::Socket { family: Family::Ipv4 })?;
         let Ok(Done::Fd(fd)) = socket.result else {
             return Err("fake socket refused".into());

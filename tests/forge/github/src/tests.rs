@@ -435,7 +435,7 @@ fn github_conformance_clean_finishes_a_run_stopped_partway() {
     let repo = r.repo(0).expect("repo");
     let person = r.person(0).expect("person");
     r.before(Made::Rules { repo: repo.clone(), name: "stopped-rule".into() }).expect("write ahead");
-    assert_eq!(r.raw(Method::Post, format!("/repos/{repo}/rulesets"), &person, br#"{"name":"stopped-rule","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/main"]}},"bypass_actors":[],"rules":[{"type":"pull_request","parameters":{"required_approving_review_count":1}}]}"#).expect("rule").status,201);
+    assert_eq!(r.raw(Method::Post, format!("/repos/{repo}/rulesets"), &person, br#"{"name":"stopped-rule","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"bypass_actors":[],"rules":[{"type":"pull_request","parameters":{"required_approving_review_count":1,"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_review_thread_resolution":false}}]}"#).expect("rule").status,201);
     r.before(Made::Access { installation: 1, repository: 6, owner: "acme".into(), add: false }).expect("write ahead");
     assert_eq!(r.raw(Method::Put, "/user/installations/1/repositories/6", &person, b"").expect("grant").status, 204);
     let minted = r.token(0).expect("memory token");
@@ -524,4 +524,119 @@ fn github_conformance_checks_logged_payload_signatures() {
     let mut secrets = Secrets::of(&[]);
     live::register(&mut secrets, SecretKind::HookSecret, "invented\nsecret");
     assert!(write::check("escaped", br#"{"unexpected":"invented\nsecret"}"#, b"", &secrets).is_err());
+}
+
+#[test]
+fn github_conformance_cleanup_finds_an_issue_after_more_than_one_page() {
+    for known_number in [false, true] {
+        let out = Temp::new(if known_number { "number-cleanup" } else { "title-cleanup" });
+        let mut r = runner(&out.0);
+        r.start().expect("start");
+        let repo = r.repo(0).expect("repository");
+        let Target::Fake(w) = &mut r.target else { unreachable!() };
+        for i in 0..101 {
+            w.call(
+                &repo,
+                crate::fake::PERSON,
+                skein_fake_forge_domain::api::Op::Write(skein_fake_forge_domain::api::Write::CreateIssue {
+                    title: crate::fake::boxed(format!("older issue {i}").as_bytes()),
+                    body: crate::fake::boxed(b"older fixture"),
+                    labels: Box::new([]),
+                }),
+            )
+            .expect("older issue");
+        }
+        let number = if known_number {
+            let number = r.issue(0).expect("made issue");
+            assert!(Journal::load(&out.0).expect("durable journal").0.numbers.values().any(|n| *n == number));
+            number
+        } else {
+            let title = "conformance-killed-issue";
+            r.before(Made::Issue { repo: repo.clone(), title: title.into() })
+                .expect("intention before interrupted reply");
+            let Target::Fake(w) = &mut r.target else { unreachable!() };
+            let answer = w
+                .call(
+                    &repo,
+                    crate::fake::PERSON,
+                    skein_fake_forge_domain::api::Op::Write(skein_fake_forge_domain::api::Write::CreateIssue {
+                        title: crate::fake::boxed(title.as_bytes()),
+                        body: crate::fake::boxed(b"interrupted reply"),
+                        labels: Box::new([]),
+                    }),
+                )
+                .expect("issue created without received response");
+            let skein_fake_forge_domain::api::Answer::Created(number) = answer else { panic!("created issue") };
+            number
+        };
+        r.wait(4);
+        r.finish().expect("verified cleanup");
+        assert!(r.journal.pending.is_empty());
+        let person = r.person(0).expect("person");
+        let read =
+            r.raw(Method::Get, format!("/repos/{repo}/issues/{number}"), &person, b"").expect("read closed issue");
+        assert!(read.json().expect("issue").root().get("state").is("closed"));
+        if !known_number {
+            assert!(r.replay.iter().any(|(_, request)| request.target.ends_with("page=2")));
+        }
+        shutdown(&mut r);
+    }
+}
+
+#[test]
+fn github_conformance_cleanup_retains_an_unfound_issue() {
+    let out = Temp::new("missing-cleanup");
+    let mut r = runner(&out.0);
+    r.start().expect("start");
+    r.before(Made::Issue { repo: "acme/widgets".into(), title: "conformance-no-reply".into() }).expect("intention");
+    assert!(r.finish().is_err());
+    assert_eq!(r.journal.pending.len(), 1);
+    assert_eq!(Journal::load(&out.0).expect("durable pending intention").0.pending.len(), 1);
+    shutdown(&mut r);
+}
+
+#[test]
+fn github_conformance_transcripts_put_every_status_and_headers_on_their_own_lines() {
+    let out = Temp::new("all-statuses");
+    let mut r = runner(&out.0);
+    r.start().expect("start");
+    r.next("many-responses").expect("case");
+    let person = r.person(0).expect("person");
+    for _ in 0..3 {
+        r.raw(Method::Get, "/repos/acme/widgets", &person, b"").expect("response");
+    }
+    r.flush().expect("transcript");
+    let dir = out.0.join("transcripts/many-responses");
+    let response = fs::read_to_string(dir.join("response")).expect("responses");
+    let request = fs::read_to_string(dir.join("request")).expect("requests");
+    assert_eq!(response.lines().filter(|line| line.starts_with("HTTP/1.1 200")).count(), 3);
+    assert_eq!(
+        response.lines().filter(|line| line.to_ascii_lowercase().starts_with("x-ratelimit-remaining:")).count(),
+        3
+    );
+    assert_eq!(request.lines().filter(|line| line.starts_with("GET ")).count(), 3);
+    r.finish().expect("cleanup");
+    shutdown(&mut r);
+}
+
+#[test]
+fn github_conformance_raw_sends_the_supplied_narrowed_token() {
+    let out = Temp::new("raw-narrowed");
+    let mut r = runner(&out.0);
+    r.start().expect("start");
+    let full = r.token(0).expect("full token");
+    let narrowed = r.mint(0, true).expect("narrowed token");
+    assert!(full != narrowed, "minted credentials differ");
+    let response = r.raw(Method::Get, "/repos/acme/widgets", &narrowed, b"").expect("raw read");
+    assert_eq!(response.status, 200);
+    let Target::Fake(w) = &r.target else { panic!("fake target") };
+    let expected = format!("Authorization: Bearer {narrowed}\r\n");
+    let other = format!("Authorization: Bearer {full}\r\n");
+    assert!(
+        w.last_wire.windows(expected.len()).any(|part| part == expected.as_bytes()),
+        "supplied authorization on wire"
+    );
+    assert!(!w.last_wire.windows(other.len()).any(|part| part == other.as_bytes()), "full token is not substituted");
+    r.finish().expect("cleanup");
+    shutdown(&mut r);
 }
