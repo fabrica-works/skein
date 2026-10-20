@@ -594,9 +594,20 @@ pub fn up(client: &mut Client, env: &Env<Limits>, event: Up, above: &mut Queue<E
     // A peer failure ends the accepted attempt even when ordered provider
     // output is parked on an undemanded Next. Data backpressure must not
     // postpone faults or settlement of the actual lower binding.
-    let failure = if transport_failed { Some(Failure::Unavailable) } else { queued_http_failure(client) };
-    if let Some(failure) = failure {
-        fail(client, failure, bytes::copy_of(b"provider transport or HTTP framing failed"), above);
+    let queued = queued_http_failure(client);
+    // A failed stream is `Unavailable` whatever the HTTP machine made of it;
+    // the queued error, if any, says how far the exchange had gone.
+    let failure = if transport_failed {
+        let detail = match queued {
+            Some((_, detail)) => detail,
+            None => bytes::copy_of(b"connection failed"),
+        };
+        Some((Failure::Unavailable, detail))
+    } else {
+        queued
+    };
+    if let Some((failure, detail)) = failure {
+        fail(client, failure, detail, above);
         closing(client, env, above, below);
         return;
     }
@@ -790,17 +801,19 @@ fn http_event(
         }
         http::Event::Failed(error) => {
             let failure = http_failure(error, &env.limits);
-            fail(client, failure, bytes::copy_of(b"HTTP exchange failed"), above);
+            fail(client, failure, bytes::copy_of(http_detail(error)), above);
             closing(client, env, above, below);
         }
         http::Event::Closed => {}
     }
 }
 
-fn queued_http_failure(client: &Client) -> Option<Failure> {
+fn queued_http_failure(client: &Client) -> Option<(Failure, Box<[u8]>)> {
     for event in &client.http_events {
         match event {
-            http::Event::Failed(error) => return Some(http_failure(*error, &client.limits)),
+            http::Event::Failed(error) => {
+                return Some((http_failure(*error, &client.limits), bytes::copy_of(http_detail(*error))));
+            }
             http::Event::Response(_)
             | http::Event::Upload(_)
             | http::Event::Body(_)
@@ -814,9 +827,9 @@ fn queued_http_failure(client: &Client) -> Option<Failure> {
 fn http_failure(error: http::Error, limits: &Limits) -> Failure {
     match error {
         http::Error::Refused(_) => Failure::Invalid,
-        http::Error::Closed(_) | http::Error::Stream(_) => Failure::Unavailable,
-        http::Error::Truncated { .. }
-        | http::Error::Status
+        // A cut exchange is no answer of the provider's (llm.md, section 2.5).
+        http::Error::Closed(_) | http::Error::Truncated { .. } | http::Error::Stream(_) => Failure::Unavailable,
+        http::Error::Status
         | http::Error::Version
         | http::Error::Header
         | http::Error::Framing
@@ -830,6 +843,28 @@ fn http_failure(error: http::Error, limits: &Limits) -> Failure {
         http::Error::TooManyHeaders => {
             Failure::Limit { which: crate::Cap::ResponseFields, bound: u64::from(limits.http.headers) }
         }
+    }
+}
+
+/// What happened to the exchange, for the failure's detail. The limits' own
+/// details replace these when the failure is reported.
+const fn http_detail(error: http::Error) -> &'static [u8] {
+    match error {
+        http::Error::Refused(_) => b"request refused by the HTTP layer",
+        http::Error::Closed(_) => b"connection closed before the request was sent",
+        http::Error::Truncated { answered: false } => b"connection closed before a response",
+        http::Error::Truncated { answered: true } => b"connection closed within the response",
+        http::Error::Stream(_) => b"connection failed",
+        http::Error::Status => b"malformed HTTP response: status line",
+        http::Error::Version => b"malformed HTTP response: version",
+        http::Error::Header => b"malformed HTTP response: header",
+        http::Error::Framing => b"malformed HTTP response: framing",
+        http::Error::ChunkSize => b"malformed HTTP response: chunk size",
+        http::Error::Chunk => b"malformed HTTP response: chunk",
+        http::Error::Trailer => b"malformed HTTP response: trailer",
+        http::Error::Upgrade => b"malformed HTTP response: upgrade",
+        http::Error::HeadTooLong => b"HTTP response head too long",
+        http::Error::TooManyHeaders => b"HTTP response has too many headers",
     }
 }
 
@@ -1794,3 +1829,6 @@ fn block_size(block: &Block) -> u64 {
     }
     bytes
 }
+
+#[cfg(test)]
+mod tests;
