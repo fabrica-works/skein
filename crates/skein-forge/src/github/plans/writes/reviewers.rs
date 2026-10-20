@@ -61,7 +61,7 @@ impl Plan {
     ) -> Result<Option<Step>, api::Error> {
         let (number, desired) = self.reviewers_given().ok_or(api::Error::InvalidAnswer)?;
         if pull.number != number {
-            return Err(api::Error::Unavailable);
+            return Err(self.invalid());
         }
         let desired_count = ids_fit(desired, bounds)?;
         let current_count = ids_fit(&pull.reviewers, bounds)?;
@@ -149,7 +149,7 @@ impl Plan {
     ) -> Result<Option<Step>, api::Error> {
         let reviewers = self.reviewers.as_ref().ok_or(api::Error::InvalidAnswer)?;
         if reviewers.next() != Some(user.id) {
-            return Err(api::Error::Unavailable);
+            return Err(self.invalid());
         }
         self.reviewers_login(&user.login, bounds)?;
         tables.keep_user(self.repository.forge, user.id, user.login);
