@@ -557,7 +557,7 @@ impl World {
             self.referee.terminal(&answer, pending.generation, pending.client);
             self.deliveries.push_back(Delivery {
                 generation: Some(pending.generation),
-                event: Event::Answered { call: pending.client, cost: answer.cost, result: answer.result },
+                event: Event::Answered { call: pending.client, cost: answer.cost, free: 0, result: answer.result },
                 write: pending.write,
             });
         }

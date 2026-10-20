@@ -1,4 +1,5 @@
 //! Step tests of admission, request accounting, bounded answers and recovery.
+mod budget;
 mod contracts;
 mod fixtures;
 use fixtures::{Harness, Sent, at, configured, listing_item, terminal};
@@ -499,7 +500,7 @@ fn an_answer_for_another_pull_cannot_satisfy_a_fresh_read() {
         mergeable: true,
         ci: api::Ci::None,
     };
-    let out = h.step(Event::Answered { call: call.call, cost: 1, result: Ok(Answer::Pull(answer)) });
+    let out = h.step(Event::Answered { call: call.call, cost: 1, free: 0, result: Ok(Answer::Pull(answer)) });
     assert_eq!(out.as_ref(), &[Request::Read { owner: Token::new(8), result: Err(Error::InvalidAnswer) }]);
 }
 

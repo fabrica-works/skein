@@ -274,7 +274,15 @@ pub enum Event {
     /// A page read for a decision. Always enters the fresh class.
     Read { owner: Token, repository: Repository, read: Read },
     /// Exactly one terminal for each Call, including calls with no HTTP cost.
-    Answered { call: Token, cost: u32, result: Result<Answer, Error> },
+    Answered {
+        call: Token,
+        cost: u32,
+        /// How many of the call's `cost` requests the forge answered `304`;
+        /// its rate does not count them (forge-client.md, 6). Zero until a
+        /// call's read takes a validator.
+        free: u32,
+        result: Result<Answer, Error>,
+    },
 }
 /// A decision or API call emitted to the connector top.
 #[derive(PartialEq, Eq, Hash, Debug)]

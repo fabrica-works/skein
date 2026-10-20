@@ -89,7 +89,16 @@ impl Harness {
         self.send().expect("call ready")
     }
     pub(in crate::tests) fn answer(&mut self, sent: &Sent, cost: u32, result: Result<Answer, Error>) -> Box<[Request]> {
-        self.step(Event::Answered { call: sent.call, cost, result })
+        self.answer_free(sent, cost, 0, result)
+    }
+    pub(in crate::tests) fn answer_free(
+        &mut self,
+        sent: &Sent,
+        cost: u32,
+        free: u32,
+        result: Result<Answer, Error>,
+    ) -> Box<[Request]> {
+        self.step(Event::Answered { call: sent.call, cost, free, result })
     }
     pub(in crate::tests) fn fire(&mut self) {
         let mut out = Queue::with_capacity(CALL_ROOM);

@@ -262,6 +262,7 @@ pub(crate) fn answered(
     env: &Env<Limits>,
     token: Token,
     cost: u32,
+    free: u32,
     result: Result<Answer, Error>,
     out: &mut Queue<Request>,
 ) {
@@ -274,7 +275,7 @@ pub(crate) fn answered(
     let owner = call.owner.clone();
     let priority = call.priority;
     let window = call.window;
-    settle(d, env, priority, window, cost);
+    settle(d, env, priority, window, cost.saturating_sub(free));
     let result = match result {
         Ok(answer) => {
             let op = &d.calls.slab.get(id).expect("the terminal call remains").op;

@@ -151,7 +151,7 @@ impl Measured {
             },
             Asked::Done => api::Answer::Done,
         };
-        self.event(Event::Answered { call: call.token, cost: 1, result: Ok(result) });
+        self.event(Event::Answered { call: call.token, cost: 1, free: 0, result: Ok(result) });
     }
     fn drive(&mut self) {
         for _ in 0..100 {

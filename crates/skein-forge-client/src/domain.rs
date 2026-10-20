@@ -220,8 +220,8 @@ pub fn step(d: &mut Domain, env: &Env<Limits>, event: Event, out: &mut Queue<Req
                 None => calls::queue(&mut d.calls, calls::Owner::Read(owner), repository, op, Priority::Fresh),
             }
         }
-        Event::Answered { call, cost, result } => {
-            calls::answered(d, env, call, cost, result, out);
+        Event::Answered { call, cost, free, result } => {
+            calls::answered(d, env, call, cost, free, result, out);
             if keep::restore::fresh_done(d) {
                 out.push(Request::ReadAfreshDone);
             }
