@@ -50,8 +50,17 @@ flock 7
     fi
 } >"$log" 2>&1 || { report "could not be checked out"; exit 1; }
 
+bytes=$(wc -c <"$log")
 status=0
 (cd "$wt" && HEAVY_LABEL="after-landing $repo" "$kit/heavy" --gate -- scripts/after-landing.sh) >>"$log" 2>&1 ||
     status=$?
-((status == 0)) || report "failed (exit $status)"
+if ((status != 0)); then
+    out=$(tail -c "+$((bytes + 1))" "$log")
+    if grep -qE '^heavy: (queued )?task [0-9]+ ' <<<"$out"; then
+        report "failed (exit $status)"
+    else
+        reason=$(sed -n '/^heavy: /{p;q;}' <<<"$out")
+        report "was refused by heavy, so nothing ran: $reason"
+    fi
+fi
 exit "$status"

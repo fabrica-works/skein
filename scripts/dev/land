@@ -47,6 +47,7 @@
 #   6  main kept moving, or its ref stayed locked
 #   7  fetching or pushing failed
 #   8  another command failed
+#   9  heavy refused to run the build or gate, so nothing ran
 set -euo pipefail
 
 kit=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
@@ -282,6 +283,10 @@ Name each test for its one behaviour, and split one that checks two (testing-str
             if [[ -n $prebuild && -f Cargo.toml ]]; then
                 if ! HEAVY_LABEL="land $repo prebuild" "$kit/heavy" --tail 60 bash -c "$prebuild" >"$out" 2>&1; then
                     cat "$out"
+                    if ! grep -qE '^heavy: (queued )?task [0-9]+ ' "$out"; then
+                        rm -f "$out"
+                        die 9 "heavy refused to run the build on $(git rev-parse --short HEAD), so nothing ran (its reason above); land again once that is put right"
+                    fi
                     rm -f "$out"
                     die 4 "the build or its lints failed on $(git rev-parse --short HEAD), in the build lane; the gate did not run"
                 fi
@@ -289,6 +294,10 @@ Name each test for its one behaviour, and split one that checks two (testing-str
             fi
             if ! HEAVY_LABEL="land $repo" "$kit/heavy" --gate --tail 60 bash -c "$gate" >"$out" 2>&1; then
                 cat "$out"
+                if ! grep -qE '^heavy: (queued )?task [0-9]+ ' "$out"; then
+                    rm -f "$out"
+                    die 9 "heavy refused to run the gate on $(git rev-parse --short HEAD), so nothing ran (its reason above); land again once that is put right"
+                fi
                 rm -f "$out"
                 die 4 "the gate failed on $(git rev-parse --short HEAD)"
             fi

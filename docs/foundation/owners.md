@@ -207,7 +207,8 @@ it rebases on `origin/main`, builds and lints, runs the repository's
 gate (`scripts/check.sh`) through `heavy --gate`, records the evidence
 in the tip commit's trailers, and pushes. `land --docs` lands Markdown
 alone, without the gate. Its exit status 3 is a rebase stopped on
-conflicts, left in progress; 4 a failed build, lint or gate. The owner
+conflicts, left in progress; 4 a failed build, lint or gate; 9 heavy
+refused to run the build or gate, so nothing ran. The owner
 updates the repository's `docs/design/STATUS.md` rows its work changes.
 
 ### 4.5 Sharing the machines

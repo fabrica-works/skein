@@ -2085,6 +2085,7 @@ tries. Its exit status:
 | 6 | main kept moving, or its ref stayed locked: a lost ref-lock race is retried like a moved main, and exits 6 when the retries run out |
 | 7 | fetching or pushing failed |
 | 8 | another command failed |
+| 9 | heavy refused to run the build or gate, so nothing ran |
 
 ### 9.2 Evidence
 
