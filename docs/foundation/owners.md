@@ -213,7 +213,11 @@ updates the repository's `docs/design/STATUS.md` rows its work changes.
 ### 4.5 Sharing the machines
 
 - **Worktrees** under `tmp/owners/<name>/`, one per implementer, never
-  a primary checkout. A worktree's `target/` is cleared when done with.
+  a primary checkout. A worktree's `target/` is cleared when done with,
+  as soon as its branch lands: the build cache's limit leaves out the
+  entries a target shares blocks with (cloned or linked, since evicting
+  them frees nothing), so a kept target holds its entries on the disk
+  past the limit until it goes and the cache is next collected.
   Worktrees of different repositories may share a target directory,
   named by its real path in `CARGO_TARGET_DIR`, never through a
   `target` link: a test that refuses a path reached through a link
