@@ -664,9 +664,10 @@ answered, and a connect sent, only on what a restart would find.
   keeps it so today, in a managed or an owned forge's `user` file, which
   temper-service reads at its start. That is the one stored-format break
   this pin makes. The crate reads and writes the 8 bytes alone; the
-  owner converts its old value once, before it first answers a `Read` of
-  it, and tells the two forms apart by its own record, never by length,
-  since an id of eight digits is eight bytes too.
+  owner never answers a `Read` with the old value: it converts it once,
+  before its first answer, or never reads it and has a plan write the
+  item afresh. It tells the two forms apart by its own record, never by
+  length, since an id of eight digits is eight bytes too.
 
 ## 7. Verification
 
